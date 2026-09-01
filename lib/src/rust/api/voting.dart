@@ -12,7 +12,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `chain_client`, `chain_operation_cancelled`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `log_sink_closed`, `open_chain_voting_db`, `parse_tx_events_json`, `reconcile_chain_submission`, `routed_voting_transport`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
 ///
@@ -69,7 +69,7 @@ Future<String> voteCommitmentWireJson({
 ///
 /// Callers should invoke this only after normal submission and transaction-hash
 /// reconciliation cannot identify the delegation that spent the nullifier.
-Future<ApiDelegationVanRecoveryReport> recoverConfirmedDelegations({
+Future<Uint32List> recoverConfirmedDelegations({
   required ApiVotingRoundContext ctx,
   required List<int> storedHotkeySecret,
   required List<String> apiServerUrls,
@@ -1094,29 +1094,6 @@ class ApiDelegationProofEvent {
           phase == other.phase &&
           proofProgress == other.proofProgress &&
           signedDelegationPayload == other.signedDelegationPayload;
-}
-
-/// FFI-safe result of scanning the vote tree for reconstructed delegation VANs.
-class ApiDelegationVanRecoveryReport {
-  final Uint32List recoveredBundleIndices;
-  final Uint32List missingBundleIndices;
-
-  const ApiDelegationVanRecoveryReport({
-    required this.recoveredBundleIndices,
-    required this.missingBundleIndices,
-  });
-
-  @override
-  int get hashCode =>
-      recoveredBundleIndices.hashCode ^ missingBundleIndices.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiDelegationVanRecoveryReport &&
-          runtimeType == other.runtimeType &&
-          recoveredBundleIndices == other.recoveredBundleIndices &&
-          missingBundleIndices == other.missingBundleIndices;
 }
 
 /// One wallet-side fetch outcome for a single dynamic config mirror.

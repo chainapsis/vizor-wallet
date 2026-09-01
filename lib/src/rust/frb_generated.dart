@@ -1003,8 +1003,7 @@ abstract class RustLibApi extends BaseApi {
     Uint8List? acceptedRawTransaction,
   });
 
-  Future<ApiDelegationVanRecoveryReport>
-  crateApiVotingRecoverConfirmedDelegations({
+  Future<Uint32List> crateApiVotingRecoverConfirmedDelegations({
     required ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
     required List<String> apiServerUrls,
@@ -7397,8 +7396,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<ApiDelegationVanRecoveryReport>
-  crateApiVotingRecoverConfirmedDelegations({
+  Future<Uint32List> crateApiVotingRecoverConfirmedDelegations({
     required ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
     required List<String> apiServerUrls,
@@ -7420,7 +7418,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_api_delegation_van_recovery_report,
+          decodeSuccessData: sse_decode_list_prim_u_32_strict,
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVotingRecoverConfirmedDelegationsConstMeta,
@@ -9829,20 +9827,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       proofProgress: dco_decode_opt_box_autoadd_f_64(arr[1]),
       signedDelegationPayload:
           dco_decode_opt_box_autoadd_signed_delegation_payload_view(arr[2]),
-    );
-  }
-
-  @protected
-  ApiDelegationVanRecoveryReport dco_decode_api_delegation_van_recovery_report(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return ApiDelegationVanRecoveryReport(
-      recoveredBundleIndices: dco_decode_list_prim_u_32_strict(arr[0]),
-      missingBundleIndices: dco_decode_list_prim_u_32_strict(arr[1]),
     );
   }
 
@@ -12672,23 +12656,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       phase: var_phase,
       proofProgress: var_proofProgress,
       signedDelegationPayload: var_signedDelegationPayload,
-    );
-  }
-
-  @protected
-  ApiDelegationVanRecoveryReport sse_decode_api_delegation_van_recovery_report(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_recoveredBundleIndices = sse_decode_list_prim_u_32_strict(
-      deserializer,
-    );
-    var var_missingBundleIndices = sse_decode_list_prim_u_32_strict(
-      deserializer,
-    );
-    return ApiDelegationVanRecoveryReport(
-      recoveredBundleIndices: var_recoveredBundleIndices,
-      missingBundleIndices: var_missingBundleIndices,
     );
   }
 
@@ -16350,16 +16317,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.signedDelegationPayload,
       serializer,
     );
-  }
-
-  @protected
-  void sse_encode_api_delegation_van_recovery_report(
-    ApiDelegationVanRecoveryReport self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_list_prim_u_32_strict(self.recoveredBundleIndices, serializer);
-    sse_encode_list_prim_u_32_strict(self.missingBundleIndices, serializer);
   }
 
   @protected

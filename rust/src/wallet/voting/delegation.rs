@@ -336,7 +336,7 @@ pub async fn setup_delegation_bundles(
 /// This is the rare recovery path for a wallet whose delegation reached the
 /// chain but whose local voting sidecar no longer contains the confirmed VAN
 /// position. Snapshot note selection comes from the wallet DB; VAN
-/// reconstruction and validated tree scanning remain owned by `zcash_voting`.
+/// reconstruction and position discovery remain owned by `zcash_voting`.
 pub async fn recover_confirmed_delegations(
     db_path: &str,
     account_uuid: &str,
@@ -346,7 +346,7 @@ pub async fn recover_confirmed_delegations(
     stored_hotkey_secret: Vec<u8>,
     chain_client: &zcash_voting::ChainClient,
     cancel: &(dyn Fn() -> bool + Send + Sync),
-) -> Result<zcash_voting::DelegationVanRecoveryReport, String> {
+) -> Result<Vec<u32>, String> {
     let stored_hotkey_secret = Zeroizing::new(stored_hotkey_secret);
     let voting_hotkey =
         zcash_voting::VotingHotkey::from_stored_secret(stored_hotkey_secret.as_slice(), network)

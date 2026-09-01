@@ -8437,18 +8437,6 @@ impl SseDecode for crate::api::voting::ApiDelegationProofEvent {
     }
 }
 
-impl SseDecode for crate::api::voting::ApiDelegationVanRecoveryReport {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_recoveredBundleIndices = <Vec<u32>>::sse_decode(deserializer);
-        let mut var_missingBundleIndices = <Vec<u32>>::sse_decode(deserializer);
-        return crate::api::voting::ApiDelegationVanRecoveryReport {
-            recovered_bundle_indices: var_recoveredBundleIndices,
-            missing_bundle_indices: var_missingBundleIndices,
-        };
-    }
-}
-
 impl SseDecode for crate::api::voting::ApiDynamicConfigAttempt {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -12129,27 +12117,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiDelegationProofEve
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiDelegationVanRecoveryReport {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.recovered_bundle_indices.into_into_dart().into_dart(),
-            self.missing_bundle_indices.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiDelegationVanRecoveryReport
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiDelegationVanRecoveryReport>
-    for crate::api::voting::ApiDelegationVanRecoveryReport
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiDelegationVanRecoveryReport {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiDynamicConfigAttempt {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -15265,14 +15232,6 @@ impl SseEncode for crate::api::voting::ApiDelegationProofEvent {
             self.signed_delegation_payload,
             serializer,
         );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiDelegationVanRecoveryReport {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Vec<u32>>::sse_encode(self.recovered_bundle_indices, serializer);
-        <Vec<u32>>::sse_encode(self.missing_bundle_indices, serializer);
     }
 }
 

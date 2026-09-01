@@ -533,7 +533,7 @@ abstract interface class VotingRustApi {
     required BigInt operationEpoch,
   });
 
-  Future<rust_api.ApiDelegationVanRecoveryReport> recoverConfirmedDelegations({
+  Future<List<int>> recoverConfirmedDelegations({
     required rust_api.ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
     required List<String> apiServerUrls,
@@ -1062,7 +1062,7 @@ class FrbVotingRustApi implements VotingRustApi {
   );
 
   @override
-  Future<rust_api.ApiDelegationVanRecoveryReport> recoverConfirmedDelegations({
+  Future<List<int>> recoverConfirmedDelegations({
     required rust_api.ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
     required List<String> apiServerUrls,

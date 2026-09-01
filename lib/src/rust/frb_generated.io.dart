@@ -121,11 +121,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
 
   @protected
-  ApiDelegationVanRecoveryReport dco_decode_api_delegation_van_recovery_report(
-    dynamic raw,
-  );
-
-  @protected
   ApiDynamicConfigAttempt dco_decode_api_dynamic_config_attempt(dynamic raw);
 
   @protected
@@ -1028,11 +1023,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ApiDelegationVanRecoveryReport sse_decode_api_delegation_van_recovery_report(
     SseDeserializer deserializer,
   );
 
@@ -2166,12 +2156,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_delegation_proof_event(
     ApiDelegationProofEvent self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_api_delegation_van_recovery_report(
-    ApiDelegationVanRecoveryReport self,
     SseSerializer serializer,
   );
 

@@ -4959,15 +4959,12 @@ class _NoopVotingRustApi implements VotingRustApi {
   void cancelVotingChainOperations() {}
 
   @override
-  Future<rust_api.ApiDelegationVanRecoveryReport> recoverConfirmedDelegations({
+  Future<List<int>> recoverConfirmedDelegations({
     required rust_api.ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
     required List<String> apiServerUrls,
     required BigInt operationEpoch,
-  }) async => rust_api.ApiDelegationVanRecoveryReport(
-    recoveredBundleIndices: Uint32List(0),
-    missingBundleIndices: Uint32List(0),
-  );
+  }) async => const <int>[];
 
   @override
   String? selectPirSnapshotEndpoint({

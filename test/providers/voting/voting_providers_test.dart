@@ -12220,7 +12220,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_api.ApiDelegationVanRecoveryReport> recoverConfirmedDelegations({
+  Future<List<int>> recoverConfirmedDelegations({
     required rust_api.ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
     required List<String> apiServerUrls,
@@ -12231,14 +12231,11 @@ class FakeVotingRustApi implements VotingRustApi {
       List<int>.from(storedHotkeySecret),
     );
     final recovered = recoveredDelegationBundleIndices.toList()..sort();
-    return rust_api.ApiDelegationVanRecoveryReport(
-      recoveredBundleIndices: Uint32List.fromList(recovered),
-      missingBundleIndices: Uint32List.fromList([
-        for (var bundleIndex = 0; bundleIndex < bundleCount; bundleIndex++)
-          if (!recoveredDelegationBundleIndices.contains(bundleIndex))
-            bundleIndex,
-      ]),
-    );
+    final recovery = helperRecoveryApi;
+    if (recovery != null) {
+      recovery.state = _withRecoveredDelegations(recovery.state, recovered);
+    }
+    return recovered;
   }
 
   @override
@@ -13712,5 +13709,33 @@ rust_frb_types.RoundRecoveryStateView _withUnconfirmedShares(
     shares: state.shares,
     shareDelegations: state.shareDelegations,
     unconfirmedShareDelegations: unconfirmed,
+  );
+}
+
+rust_frb_types.RoundRecoveryStateView _withRecoveredDelegations(
+  rust_frb_types.RoundRecoveryStateView state,
+  List<int> recoveredBundleIndexes,
+) {
+  final delegations = <int, rust_frb_types.DelegationRecoveryView>{
+    for (final delegation in state.delegation)
+      delegation.bundleIndex: delegation,
+  };
+  for (final bundleIndex in recoveredBundleIndexes) {
+    delegations[bundleIndex] = rust_frb_types.DelegationRecoveryView(
+      bundleIndex: bundleIndex,
+      phase: VotingWorkflowPhase.confirmed,
+      txHash: null,
+      vanLeafPosition: bundleIndex,
+    );
+  }
+  return rust_frb_types.RoundRecoveryStateView(
+    roundId: state.roundId,
+    bundleCount: state.bundleCount,
+    delegation: delegations.values.toList(),
+    votes: state.votes,
+    commitmentBundles: state.commitmentBundles,
+    shares: state.shares,
+    shareDelegations: state.shareDelegations,
+    unconfirmedShareDelegations: state.unconfirmedShareDelegations,
   );
 }

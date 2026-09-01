@@ -551,6 +551,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             },
           ),
         );
+      } on _DelegationStateRecovered catch (recovery) {
+        completedBundleIndexes.addAll(recovery.bundleIndexes);
+        _recordRecoveredDelegationProgress(
+          context: context,
+          bundleIndexes: recovery.bundleIndexes,
+          progress: progress,
+        );
       } on _StaleVotingSessionAction {
         rethrow;
       } catch (error, stackTrace) {
@@ -579,8 +586,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final nextPhase =
           refreshedPlan.pendingDelegationBundleIndexes
-              .where((index) => !completedBundleIndexes.contains(index))
-              .isEmpty
+                  .where((index) => !completedBundleIndexes.contains(index))
+                  .isEmpty &&
+              refreshedPlan.submittedDelegationBundleIndexes
+                  .where((index) => !completedBundleIndexes.contains(index))
+                  .isEmpty
           ? VotingSessionPhase.delegated
           : VotingSessionPhase.readyToDelegate;
       _setStateForContext(
@@ -942,6 +952,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             },
           ),
         );
+      } on _DelegationStateRecovered catch (recovery) {
+        completedBundleIndexes.addAll(recovery.bundleIndexes);
+        _recordRecoveredDelegationProgress(
+          context: context,
+          bundleIndexes: recovery.bundleIndexes,
+          progress: progress,
+        );
       } on _StaleVotingSessionAction {
         rethrow;
       } catch (error, stackTrace) {
@@ -957,8 +974,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final nextPhase =
           refreshedPlan.pendingDelegationBundleIndexes
-              .where((index) => !completedBundleIndexes.contains(index))
-              .isEmpty
+                  .where((index) => !completedBundleIndexes.contains(index))
+                  .isEmpty &&
+              refreshedPlan.submittedDelegationBundleIndexes
+                  .where((index) => !completedBundleIndexes.contains(index))
+                  .isEmpty
           ? VotingSessionPhase.delegated
           : VotingSessionPhase.readyToDelegate;
       _setStateForContext(
@@ -2391,6 +2411,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
+  void _recordRecoveredDelegationProgress({
+    required _VotingSessionContext context,
+    required Set<int> bundleIndexes,
+    required Map<int, VotingSessionProgress> progress,
+  }) {
+    for (final bundleIndex in bundleIndexes) {
+      progress[bundleIndex] = VotingSessionProgress(
+        phase: 'confirmed',
+        bundleIndex: bundleIndex,
+        message: 'Recovered from the vote tree',
+      );
+    }
+    debugPrint(
+      '[zcash] Voting: recovered delegation state; reloading durable plan '
+      'round=${context.round.roundId} bundles=${bundleIndexes.toList()}',
+    );
+  }
+
   Future<Set<int>> _runDelegationBundleBatch({
     required _VotingSessionContext context,
     required VotingSessionState fallbackState,
@@ -2473,7 +2511,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // Broadcasts remain serial because the vote server API does not expose an
     // idempotency key. Persist each returned hash before starting the next one.
     for (final bundleIndex in bundleIndexes) {
-      if (completed.contains(bundleIndex)) continue;
       final proof = proofOutcomes[bundleIndex]!;
       if (proof.error != null) {
         publishProgress(
@@ -2494,42 +2531,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
       try {
         _throwIfContextStale(context, '$logLabel-delegation-submit');
-        final submissionResult = await _submitDelegation(
+        final txHash = await _submitDelegation(
           context: context,
           bundleIndex: bundleIndex,
           storedHotkeySecret: recoveryHotkeySecret,
           submission: proof.value!,
         );
-        final txHash = submissionResult.txHash;
-        if (txHash != null) {
-          submittedTxHashes[bundleIndex] = txHash;
-          publishProgress(
-            VotingSessionProgress(
-              phase: 'submitted',
-              bundleIndex: bundleIndex,
-              message: txHash,
-            ),
-          );
-        } else {
-          for (final recoveredIndex
-              in submissionResult.recoveredBundleIndexes) {
-            completed.add(recoveredIndex);
-            if (!bundleIndexes.contains(recoveredIndex)) continue;
-            publishProgress(
-              VotingSessionProgress(
-                phase: 'confirmed',
-                bundleIndex: recoveredIndex,
-                message: 'Recovered from the vote tree',
-              ),
-            );
-            debugPrint(
-              '[zcash] Voting: $logLabel delegation bundle recovered '
-              'round=${context.round.roundId} bundle=$recoveredIndex '
-              'total=${formatElapsedSeconds(timers[recoveredIndex]!.elapsed)}',
-            );
-          }
-        }
+        submittedTxHashes[bundleIndex] = txHash;
+        publishProgress(
+          VotingSessionProgress(
+            phase: 'submitted',
+            bundleIndex: bundleIndex,
+            message: txHash,
+          ),
+        );
       } catch (error) {
+        if (error is _DelegationStateRecovered) rethrow;
         publishProgress(
           VotingSessionProgress(
             phase: 'failed',
@@ -2551,9 +2568,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
     }
 
-    final bundlesNeedingConfirmation = submittedTxHashes.keys
-        .where((bundleIndex) => !completed.contains(bundleIndex))
-        .toList(growable: false);
+    final bundlesNeedingConfirmation = submittedTxHashes.keys.toList(
+      growable: false,
+    );
     final confirmationOutcomes = await _runBoundedBundleWork(
       bundlesNeedingConfirmation,
       concurrency: _votingWorkConcurrency,
@@ -2617,7 +2634,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return completed;
   }
 
-  Future<_DelegationSubmissionResult> _submitDelegation({
+  Future<String> _submitDelegation({
     required _VotingSessionContext context,
     required int bundleIndex,
     required List<int> storedHotkeySecret,
@@ -2664,19 +2681,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         resolved = reconciled;
       } else {
         _throwIfContextStale(context, 'delegation-tree-recovery');
-        final recovery = await rust.recoverConfirmedDelegations(
+        final recoveredBundleIndexes = await rust.recoverConfirmedDelegations(
           ctx: _apiRoundContext(context),
           storedHotkeySecret: storedHotkeySecret,
           apiServerUrls: context.config.apiServers.endpointUrls,
           operationEpoch: rust.beginVotingChainOperation(),
         );
         _throwIfContextStale(context, 'delegation-tree-recovery-response');
-        if (!recovery.recoveredBundleIndices.contains(bundleIndex)) {
+        if (!recoveredBundleIndexes.contains(bundleIndex)) {
           throw const _VotingAlreadyStarted();
         }
-        return _DelegationSubmissionResult.recovered(
-          recovery.recoveredBundleIndices.toSet(),
-        );
+        throw _DelegationStateRecovered(recoveredBundleIndexes.toSet());
       }
     }
     final txHash = _requireChainAccepted(
@@ -2689,7 +2704,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'txHash=$txHash status=${result.status} '
       'elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
     );
-    return _DelegationSubmissionResult.accepted(txHash);
+    return txHash;
   }
 
   Future<({String txHash, int leafIndex})> _confirmDelegation({
@@ -4624,15 +4639,10 @@ class _DelegationBundleFailure {
   final Object error;
 }
 
-class _DelegationSubmissionResult {
-  const _DelegationSubmissionResult.accepted(this.txHash)
-    : recoveredBundleIndexes = const <int>{};
+class _DelegationStateRecovered implements Exception {
+  const _DelegationStateRecovered(this.bundleIndexes);
 
-  const _DelegationSubmissionResult.recovered(this.recoveredBundleIndexes)
-    : txHash = null;
-
-  final String? txHash;
-  final Set<int> recoveredBundleIndexes;
+  final Set<int> bundleIndexes;
 }
 
 class _DelegationBundleBatchException implements Exception {
