@@ -112,59 +112,71 @@ class RustPaymentLinkHardwareSigningService
     final sendFlowId =
         'payment-link-hw-${DateTime.now().microsecondsSinceEpoch}';
 
-    return _ref
-        .read(syncProvider.notifier)
-        .runWithAuthoritativeSpendable(
-          accountUuid: sourceAccountUuid,
-          operation: () async {
-            final dbPath = await getWalletDbPath();
-            final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-            BigInt? proposalId;
-            var proposalConsumed = false;
+    try {
+      return await _ref
+          .read(syncProvider.notifier)
+          .runWithAuthoritativeSpendable(
+            accountUuid: sourceAccountUuid,
+            operation: () async {
+              final dbPath = await getWalletDbPath();
+              final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+              BigInt? proposalId;
+              var proposalConsumed = false;
 
-            try {
-              final proposal = await rust_sync.proposeSend(
-                dbPath: dbPath,
-                network: endpoint.networkName,
-                accountUuid: sourceAccountUuid,
-                sendFlowId: sendFlowId,
-                toAddress: link.address,
-                amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-              );
-              proposalId = proposal.proposalId;
-              final pcztBytes = await rust_sync.createPcztFromProposal(
-                dbPath: dbPath,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-                network: endpoint.networkName,
-                proposalId: proposal.proposalId,
-                sendFlowId: sendFlowId,
-              );
-              proposalConsumed = true;
-              return PaymentLinkHardwarePcztDraft(
-                link: link,
-                pcztBytes: pcztBytes,
-                needsSaplingParams: proposal.needsSaplingParams,
-                feeZatoshi: proposal.feeZatoshi,
-                proposalId: proposal.proposalId,
-                sendFlowId: sendFlowId,
-              );
-            } finally {
-              if (proposalId != null && !proposalConsumed) {
-                try {
-                  await rust_sync.discardProposal(
-                    proposalId: proposalId,
-                    sendFlowId: sendFlowId,
-                  );
-                } catch (error) {
-                  log(
-                    'PaymentLinkHardwareSigning: proposal cleanup failed '
-                    'flow=$sendFlowId proposal=$proposalId error=$error',
-                  );
+              try {
+                final proposal = await rust_sync.proposeSend(
+                  dbPath: dbPath,
+                  network: endpoint.networkName,
+                  accountUuid: sourceAccountUuid,
+                  sendFlowId: sendFlowId,
+                  toAddress: link.address,
+                  amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+                );
+                proposalId = proposal.proposalId;
+                final pcztBytes = await rust_sync.createPcztFromProposal(
+                  dbPath: dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                  network: endpoint.networkName,
+                  proposalId: proposal.proposalId,
+                  sendFlowId: sendFlowId,
+                );
+                proposalConsumed = true;
+                return PaymentLinkHardwarePcztDraft(
+                  link: link,
+                  pcztBytes: pcztBytes,
+                  needsSaplingParams: proposal.needsSaplingParams,
+                  feeZatoshi: proposal.feeZatoshi,
+                  proposalId: proposal.proposalId,
+                  sendFlowId: sendFlowId,
+                );
+              } finally {
+                if (proposalId != null && !proposalConsumed) {
+                  try {
+                    await rust_sync.discardProposal(
+                      proposalId: proposalId,
+                      sendFlowId: sendFlowId,
+                    );
+                  } catch (error) {
+                    log(
+                      'PaymentLinkHardwareSigning: proposal cleanup failed '
+                      'flow=$sendFlowId proposal=$proposalId error=$error',
+                    );
+                  }
                 }
               }
-            }
-          },
+            },
+          );
+    } catch (error, stackTrace) {
+      try {
+        await _recoveryStore.removeUnsubmittedDraft(address: link.address);
+      } catch (cleanupError) {
+        log(
+          'PaymentLinkHardwareSigning: failed PCZT draft cleanup '
+          'address=${link.address} error=$cleanupError',
         );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   @override
@@ -235,8 +247,7 @@ class RustPaymentLinkHardwareSigningService
   }) async {
     await _discardProposal(draft);
     try {
-      await _recoveryStore.clearPrepared(address: draft.link.address);
-      await _recoveryStore.removeUnsubmittedDraft(address: draft.link.address);
+      await _recoveryStore.removeUnbroadcastDraft(address: draft.link.address);
     } catch (error) {
       log(
         'PaymentLinkHardwareSigning: canceled funding cleanup failed '

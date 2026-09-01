@@ -272,28 +272,6 @@ class PaymentLinkRecoveryStore {
     });
   }
 
-  Future<PaymentLinkRecoveryRecord> clearPrepared({
-    required String address,
-    DateTime? updatedAt,
-  }) {
-    return _runExclusive(() async {
-      final records = await _loadUnlocked();
-      final existing = _findRequired(records, address);
-      if (existing.state != PaymentLinkRecoveryState.draft ||
-          (existing.fundingTxids?.trim().isEmpty ?? true)) {
-        return existing;
-      }
-      final updated = existing.copyWith(
-        state: PaymentLinkRecoveryState.draft,
-        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
-        fundingTxids: null,
-        preparedExpiryHeight: null,
-      );
-      await _writeRecords(_replaceByAddress(records, updated));
-      return updated;
-    });
-  }
-
   Future<PaymentLinkRecoveryRecord> markShared({
     required String address,
     DateTime? updatedAt,
@@ -343,6 +321,22 @@ class PaymentLinkRecoveryStore {
           existing.preparedExpiryHeight != null) {
         throw StateError(
           'Only an unsubmitted payment link draft can be removed.',
+        );
+      }
+      await _writeRecords(
+        records.where((record) => record.link.address != address).toList(),
+      );
+    });
+  }
+
+  Future<void> removeUnbroadcastDraft({required String address}) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findByAddress(records, address);
+      if (existing == null) return;
+      if (existing.state != PaymentLinkRecoveryState.draft) {
+        throw StateError(
+          'Only an unbroadcast payment link draft can be removed.',
         );
       }
       await _writeRecords(

@@ -182,8 +182,7 @@ void main() {
         expiryHeight: 3_456_829,
       );
 
-      await store.clearPrepared(address: link.address);
-      await store.removeUnsubmittedDraft(address: link.address);
+      await store.removeUnbroadcastDraft(address: link.address);
 
       expect(await store.load(), isEmpty);
       expect(await store.countUnsharedFundedForAccount('source-account'), 0);

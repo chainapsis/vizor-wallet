@@ -20,6 +20,14 @@ final paymentLinkRecoveryReconcilerProvider =
         loadCurrentHeight: () => ref
             .read(rpcEndpointFailoverProvider.notifier)
             .getLatestBlockHeight(),
+        loadScannedHeight: () async {
+          final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+          final status = await rust_sync.getSyncStatus(
+            dbPath: await getWalletDbPath(),
+            network: endpoint.networkName,
+          );
+          return status.scannedHeight;
+        },
         loadTransactionsByAccount: (accountUuids) async {
           final endpoint = ref.read(rpcEndpointFailoverProvider).current;
           final dbPath = await getWalletDbPath();
@@ -53,6 +61,7 @@ PaymentLinkPreparedFundingDisposition _paymentLinkPreparedFundingDisposition({
   required String fundingTxid,
   required int expiryHeight,
   required BigInt currentHeight,
+  required BigInt scannedHeight,
   required List<rust_sync.TransactionInfo> transactions,
 }) {
   if (paymentLinkFundingTransactionExists(
@@ -61,7 +70,8 @@ PaymentLinkPreparedFundingDisposition _paymentLinkPreparedFundingDisposition({
   )) {
     return PaymentLinkPreparedFundingDisposition.funded;
   }
-  if (currentHeight >= BigInt.from(expiryHeight)) {
+  if (currentHeight >= BigInt.from(expiryHeight) &&
+      scannedHeight >= BigInt.from(expiryHeight)) {
     return PaymentLinkPreparedFundingDisposition.expired;
   }
   return PaymentLinkPreparedFundingDisposition.pending;
@@ -71,12 +81,15 @@ class PaymentLinkRecoveryReconciler {
   const PaymentLinkRecoveryReconciler(
     this._store, {
     required Future<BigInt> Function() loadCurrentHeight,
+    required Future<BigInt> Function() loadScannedHeight,
     required PaymentLinkFundingHistoryLoader loadTransactionsByAccount,
   }) : _loadCurrentHeight = loadCurrentHeight,
+       _loadScannedHeight = loadScannedHeight,
        _loadTransactionsByAccount = loadTransactionsByAccount;
 
   final PaymentLinkRecoveryStore _store;
   final Future<BigInt> Function() _loadCurrentHeight;
+  final Future<BigInt> Function() _loadScannedHeight;
   final PaymentLinkFundingHistoryLoader _loadTransactionsByAccount;
 
   Future<int> countUnsharedFundedForAccount(String sourceAccountUuid) async {
@@ -101,13 +114,15 @@ class PaymentLinkRecoveryReconciler {
     try {
       final lookupResults = await Future.wait<Object>([
         _loadCurrentHeight(),
+        _loadScannedHeight(),
         _loadTransactionsByAccount(
           preparedDrafts.map((record) => record.sourceAccountUuid).toSet(),
         ),
       ]);
       final currentHeight = lookupResults[0] as BigInt;
+      final scannedHeight = lookupResults[1] as BigInt;
       final transactionsByAccount =
-          lookupResults[1] as Map<String, List<rust_sync.TransactionInfo>>;
+          lookupResults[2] as Map<String, List<rust_sync.TransactionInfo>>;
 
       var changed = false;
       for (final record in preparedDrafts) {
@@ -116,6 +131,7 @@ class PaymentLinkRecoveryReconciler {
           fundingTxid: fundingTxid,
           expiryHeight: record.preparedExpiryHeight!,
           currentHeight: currentHeight,
+          scannedHeight: scannedHeight,
           transactions:
               transactionsByAccount[record.sourceAccountUuid] ?? const [],
         );
@@ -131,7 +147,7 @@ class PaymentLinkRecoveryReconciler {
               changed = true;
               break;
             case PaymentLinkPreparedFundingDisposition.expired:
-              await _store.clearPrepared(address: record.link.address);
+              await _store.removeUnbroadcastDraft(address: record.link.address);
               changed = true;
               break;
           }

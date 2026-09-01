@@ -12,6 +12,7 @@ void main() {
     final reconciler = PaymentLinkRecoveryReconciler(
       fixture.store,
       loadCurrentHeight: () async => BigInt.from(119),
+      loadScannedHeight: () async => BigInt.from(119),
       loadTransactionsByAccount: (_) async => const {'source-account': []},
     );
 
@@ -24,20 +25,17 @@ void main() {
   });
 
   test(
-    'clears a prepared Gift Card once its absent transaction expires',
+    'removes a prepared Gift Card once its absent transaction expires',
     () async {
       final fixture = await _preparedFixture();
       final reconciler = PaymentLinkRecoveryReconciler(
         fixture.store,
         loadCurrentHeight: () async => BigInt.from(120),
+        loadScannedHeight: () async => BigInt.from(120),
         loadTransactionsByAccount: (_) async => const {'source-account': []},
       );
 
-      final record = (await reconciler.load()).single;
-
-      expect(record.state, PaymentLinkRecoveryState.draft);
-      expect(record.fundingTxids, isNull);
-      expect(record.preparedExpiryHeight, isNull);
+      expect(await reconciler.load(), isEmpty);
       expect(
         await reconciler.countUnsharedFundedForAccount('source-account'),
         0,
@@ -50,6 +48,7 @@ void main() {
     final reconciler = PaymentLinkRecoveryReconciler(
       fixture.store,
       loadCurrentHeight: () async => BigInt.from(120),
+      loadScannedHeight: () async => BigInt.from(120),
       loadTransactionsByAccount: (_) async => {
         'source-account': [_transaction(txid: _preparedTxid)],
       },
@@ -67,6 +66,7 @@ void main() {
     final reconciler = PaymentLinkRecoveryReconciler(
       fixture.store,
       loadCurrentHeight: () => throw StateError('offline'),
+      loadScannedHeight: () async => BigInt.from(120),
       loadTransactionsByAccount: (_) async => const {'source-account': []},
     );
 
@@ -76,6 +76,24 @@ void main() {
     expect(record.fundingTxids, _preparedTxid);
     expect(record.preparedExpiryHeight, 120);
   });
+
+  test(
+    'retains an expired prepared Gift Card until wallet scan catches up',
+    () async {
+      final fixture = await _preparedFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(125),
+        loadScannedHeight: () async => BigInt.from(119),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.fundingTxids, _preparedTxid);
+      expect(record.preparedExpiryHeight, 120);
+    },
+  );
 
   test('refreshes the cached unshared count after lifecycle writes', () async {
     final reconciler = _CountingRecoveryReconciler();
@@ -165,6 +183,7 @@ class _CountingRecoveryReconciler extends PaymentLinkRecoveryReconciler {
     : super(
         PaymentLinkRecoveryStore(_MemoryStorage()),
         loadCurrentHeight: () async => BigInt.zero,
+        loadScannedHeight: () async => BigInt.zero,
         loadTransactionsByAccount: (_) async => const {},
       );
 
