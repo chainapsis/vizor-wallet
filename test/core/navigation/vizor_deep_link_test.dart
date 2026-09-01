@@ -3,19 +3,16 @@ import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 
 void main() {
   group('VizorDeepLink', () {
-    test(
-      'uses the configured base URL and defines the production default',
-      () {
-        const configuredBaseUrl = String.fromEnvironment(
-          kVizorDeeplinkBaseUrlEnvKey,
-          defaultValue: kDefaultVizorDeeplinkBaseUrl,
-        );
+    test('uses the configured base URL and defines the production default', () {
+      const configuredBaseUrl = String.fromEnvironment(
+        kVizorDeeplinkBaseUrlEnvKey,
+        defaultValue: kDefaultVizorDeeplinkBaseUrl,
+      );
 
-        expect(kDefaultVizorDeeplinkBaseUrl, 'https://link.vizor.cash');
-        expect(VizorDeepLink.baseUrl, configuredBaseUrl);
-        expect(VizorDeepLink.host, Uri.parse(configuredBaseUrl).host);
-      },
-    );
+      expect(kDefaultVizorDeeplinkBaseUrl, 'https://link.vizor.cash');
+      expect(VizorDeepLink.baseUrl, configuredBaseUrl);
+      expect(VizorDeepLink.host, Uri.parse(configuredBaseUrl).host);
+    });
 
     test('routes only the supported paths on the trusted HTTPS origin', () {
       expect(

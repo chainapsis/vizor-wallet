@@ -785,10 +785,9 @@ import UIKit
 /// handler. Never logs the URL because a route may contain bearer material.
 final class IncomingUriChannelBridge {
   static let shared = IncomingUriChannelBridge()
-  private static let deeplinkHosts: Set<String> = [
-    "link.vizor.cash",
-    "2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws",
-  ]
+  static let deeplinkHost =
+    (Bundle.main.object(forInfoDictionaryKey: "VizorDeeplinkHost") as? String)?
+    .lowercased() ?? "link.vizor.cash"
   private static let maxIncomingUriBytes = 16 * 1024
   private static let maxPendingUris = 16
   private init() {}
@@ -830,7 +829,7 @@ final class IncomingUriChannelBridge {
 
   func handles(_ url: URL) -> Bool {
     url.scheme?.lowercased() == "https"
-      && Self.deeplinkHosts.contains(url.host?.lowercased() ?? "")
+      && url.host?.lowercased() == Self.deeplinkHost
       && url.user == nil
       && url.port == nil
   }

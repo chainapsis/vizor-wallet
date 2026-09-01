@@ -43,6 +43,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>FlutterDeepLinkingEnabled</key>
 	<false/>
+	<key>VizorDeeplinkHost</key>
+	<string>$(VIZOR_DEEPLINK_HOST)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -9,6 +11,24 @@ val androidKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
 val androidKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
 val androidKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
 val androidKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+val defaultVizorDeeplinkBaseUrl = "https://link.vizor.cash"
+val vizorDeeplinkBaseUrl = providers.gradleProperty("VIZOR_DEEPLINK_BASE_URL")
+    .orElse(providers.environmentVariable("VIZOR_DEEPLINK_BASE_URL"))
+    .getOrElse(defaultVizorDeeplinkBaseUrl)
+    .trim()
+val vizorDeeplinkUri = URI(vizorDeeplinkBaseUrl)
+require(
+    vizorDeeplinkUri.scheme.equals("https", ignoreCase = true) &&
+        !vizorDeeplinkUri.host.isNullOrBlank() &&
+        vizorDeeplinkUri.rawUserInfo == null &&
+        vizorDeeplinkUri.port == -1 &&
+        (vizorDeeplinkUri.rawPath.isNullOrEmpty() || vizorDeeplinkUri.rawPath == "/") &&
+        vizorDeeplinkUri.rawQuery == null &&
+        vizorDeeplinkUri.rawFragment == null
+) {
+    "VIZOR_DEEPLINK_BASE_URL must be an HTTPS origin without a path, query, fragment, or port."
+}
+val vizorDeeplinkHost = vizorDeeplinkUri.host.lowercase()
 val hasAndroidReleaseSigning = listOf(
     androidKeystorePath,
     androidKeystorePassword,
@@ -30,6 +50,10 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.keplr.vizor"
@@ -40,6 +64,8 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["vizorDeeplinkHost"] = vizorDeeplinkHost
+        buildConfigField("String", "VIZOR_DEEPLINK_HOST", "\"$vizorDeeplinkHost\"")
     }
 
     signingConfigs {

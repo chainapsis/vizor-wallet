@@ -194,7 +194,7 @@ class MainActivity : FlutterFragmentActivity() {
         if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
         val data = intent.data ?: return
         if (!"https".equals(data.scheme, ignoreCase = true)) return
-        if (data.host?.lowercase() !in DEEPLINK_HOSTS) return
+        if (!DEEPLINK_HOST.equals(data.host, ignoreCase = true)) return
         if (data.userInfo != null || data.port != -1) return
         val rawUri = intent.dataString ?: data.toString()
         if (rawUri.length > MAX_INCOMING_URI_BYTES) return
@@ -219,10 +219,7 @@ class MainActivity : FlutterFragmentActivity() {
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
         private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
         private const val INCOMING_URI_CHANNEL = "com.zcash.wallet/payment_uri"
-        private val DEEPLINK_HOSTS = setOf(
-            "link.vizor.cash",
-            "2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws",
-        )
+        private val DEEPLINK_HOST = BuildConfig.VIZOR_DEEPLINK_HOST
         private const val MAX_INCOMING_URI_BYTES = 16 * 1024
         private const val MAX_PENDING_INCOMING_URIS = 16
     }

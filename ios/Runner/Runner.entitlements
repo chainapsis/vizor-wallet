@@ -8,8 +8,7 @@
 	</array>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:link.vizor.cash</string>
-		<string>applinks:2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws</string>
+		<string>applinks:$(VIZOR_DEEPLINK_HOST)</string>
 	</array>
 </dict>
 </plist>

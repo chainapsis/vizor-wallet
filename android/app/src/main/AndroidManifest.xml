@@ -40,16 +40,7 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data
                     android:scheme="https"
-                    android:host="link.vizor.cash"
-                    android:pathPrefix="/" />
-            </intent-filter>
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data
-                    android:scheme="https"
-                    android:host="2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws"
+                    android:host="${vizorDeeplinkHost}"
                     android:pathPrefix="/" />
             </intent-filter>
         </activity>

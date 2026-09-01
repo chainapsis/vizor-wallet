@@ -10,20 +10,12 @@ class RunnerTests: XCTestCase {
 
   func testIncomingDeeplinkAcceptsOnlyVerifiedHTTPSHost() {
     let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
 
     XCTAssertTrue(
       bridge.handles(
         URL(
-          string:
-            "https://link.vizor.cash/payment-links/open#v1=test"
-        )!
-      )
-    )
-    XCTAssertTrue(
-      bridge.handles(
-        URL(
-          string:
-            "https://2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws/payment-links/open#v1=test"
+          string: "https://\(host)/payment-links/open#v1=test"
         )!
       )
     )
@@ -33,8 +25,7 @@ class RunnerTests: XCTestCase {
     XCTAssertTrue(
       bridge.handles(
         URL(
-          string:
-            "https://2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws/payment-links/other#v1=test"
+          string: "https://\(host)/payment-links/other#v1=test"
         )!
       )
     )
@@ -46,8 +37,7 @@ class RunnerTests: XCTestCase {
     XCTAssertFalse(
       bridge.handles(
         URL(
-          string:
-            "https://user@2uvwiiaivoz74ugx3d7oish5rm0ihehh.lambda-url.us-west-2.on.aws/"
+          string: "https://user@\(host)/"
         )!
       )
     )
