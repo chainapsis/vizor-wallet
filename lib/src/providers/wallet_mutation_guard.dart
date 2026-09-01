@@ -6,7 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'account_provider.dart';
 import 'sync_provider.dart';
+import 'voting/voting_share_tracking_registry_provider.dart';
 
+/// Pauses foreground sync around a wallet mutation.
+///
+/// Destructive callers set [quiesceVotingWork] so voting work is drained before
+/// the sync pause. This prevents a waiting precompute from queuing a newer sync
+/// between the pause and the database mutation.
 Future<T> runWithSyncPausedForAccountMutation<T>(
   WidgetRef ref,
   Future<T> Function() action, {
@@ -16,6 +22,7 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
   bool resumeAfterFailure = true,
   bool Function(Object error, StackTrace stackTrace)? shouldResumeAfterFailure,
   bool quiesceMigrationWork = true,
+  bool quiesceVotingWork = false,
   IronwoodMigrationBackgroundLifecycle? migrationLifecycle,
 }) async {
   final hasExistingAccounts =
@@ -28,6 +35,11 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
       migrationLifecycle ?? IronwoodMigrationBackgroundLifecycle.instance;
   var migrationWorkQuiesced = false;
   var migrationQuiesceAttempted = false;
+  final votingRegistry = quiesceVotingWork
+      ? ref.read(votingShareTrackingRegistryProvider)
+      : null;
+  var votingQuiesceAttempted = false;
+  var shouldRequestVotingRestore = resumeAfterMutation;
 
   try {
     // Migration preparation has its own native sync/advance loop. Stop that
@@ -39,6 +51,11 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
       migrationQuiesceAttempted = true;
       await lifecycle.quiesce();
       migrationWorkQuiesced = true;
+    }
+
+    if (votingRegistry != null) {
+      votingQuiesceAttempted = true;
+      await votingRegistry.quiesceAndDrain();
     }
 
     if (!hasExistingAccounts && !syncNotifier.needsPauseForWalletMutation()) {
@@ -80,7 +97,24 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
         syncNotifier.resumeAfterWalletMutation(pause);
       }
     }
+  } catch (error, stackTrace) {
+    shouldRequestVotingRestore =
+        shouldResumeAfterFailure?.call(error, stackTrace) ?? resumeAfterFailure;
+    rethrow;
   } finally {
+    if (votingQuiesceAttempted) {
+      votingRegistry!.resume();
+      if (shouldRequestVotingRestore) {
+        try {
+          votingRegistry.requestRestore();
+        } catch (error, stackTrace) {
+          log(
+            'Failed to restore voting background work after account mutation: '
+            '$error\n$stackTrace',
+          );
+        }
+      }
+    }
     if (migrationQuiesceAttempted) {
       try {
         await lifecycle.resumeAfterMutation();
@@ -121,6 +155,7 @@ Future<void> runWithSyncPausedForWalletReset(
     resumeAfterMutation: false,
     shouldResumeAfterFailure: (error, stackTrace) =>
         error is! WalletResetException || !error.dbDeleted,
+    quiesceVotingWork: true,
     migrationLifecycle: migrationLifecycle,
   );
 }
