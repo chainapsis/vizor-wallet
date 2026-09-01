@@ -73,6 +73,37 @@ bool paymentLinkTxidsMatch(String first, String second) {
 }
 
 @visibleForTesting
+bool isRecoverablePaymentLinkFundingTransaction({
+  required PaymentLinkRecoveryRecord record,
+  required rust_sync.TransactionInfo transaction,
+  required rust_sync.TransactionDetail detail,
+}) {
+  if (record.state != PaymentLinkRecoveryState.draft ||
+      transaction.txKind != 'sent' ||
+      transaction.expiredUnmined ||
+      detail.txKind != 'sent') {
+    return false;
+  }
+  final createdAtSeconds = transaction.createdTime.toInt();
+  final earliestExpectedSeconds =
+      record.updatedAt
+          .subtract(const Duration(minutes: 5))
+          .millisecondsSinceEpoch ~/
+      1000;
+  if (createdAtSeconds <= 0 || createdAtSeconds < earliestExpectedSeconds) {
+    return false;
+  }
+  final expectedAmount = paymentLinkFundingAmountZatoshi(
+    record.link.amountZatoshi,
+  );
+  return detail.outputs.any(
+    (output) =>
+        output.address == record.link.address &&
+        output.amountZatoshi == expectedAmount,
+  );
+}
+
+@visibleForTesting
 PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
   required String claimTxids,
   required List<rust_sync.TransactionInfo> transactions,
@@ -521,7 +552,11 @@ class PaymentLinkService implements PaymentLinkOperations {
     List<PaymentLinkRecoveryRecord> records,
   ) async {
     final needsHistory = records
-        .where((record) => record.state == PaymentLinkRecoveryState.funded)
+        .where(
+          (record) =>
+              record.state == PaymentLinkRecoveryState.draft ||
+              record.state == PaymentLinkRecoveryState.funded,
+        )
         .toList();
     if (needsHistory.isEmpty) {
       return {
@@ -546,6 +581,82 @@ class PaymentLinkService implements PaymentLinkOperations {
             limit: null,
           );
     }
+    final detailCache = <String, Future<rust_sync.TransactionDetail?>>{};
+    Future<rust_sync.TransactionDetail?> loadDetail(
+      String accountUuid,
+      rust_sync.TransactionInfo transaction,
+    ) {
+      final key = '$accountUuid:${transaction.txidHex}';
+      return detailCache.putIfAbsent(key, () async {
+        try {
+          return await rust_sync.getTransactionDetail(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            txidHex: transaction.txidHex,
+            txKind: transaction.txKind,
+          );
+        } catch (error, stackTrace) {
+          log(
+            'PaymentLinkService: funding detail recovery failed for '
+            '${transaction.txidHex}: $error\n$stackTrace',
+          );
+          return null;
+        }
+      });
+    }
+
+    final reconciledByAddress = <String, PaymentLinkRecoveryRecord>{
+      for (final record in records) record.link.address: record,
+    };
+    await Future.wait(
+      records
+          .where((record) => record.state == PaymentLinkRecoveryState.draft)
+          .map((record) async {
+            final transactions =
+                transactionsByAccount[record.sourceAccountUuid] ?? const [];
+            final earliestExpectedSeconds =
+                record.updatedAt
+                    .subtract(const Duration(minutes: 5))
+                    .millisecondsSinceEpoch ~/
+                1000;
+            final recoveredTxids = <String>[];
+            await Future.wait(
+              transactions
+                  .where(
+                    (transaction) =>
+                        transaction.txKind == 'sent' &&
+                        !transaction.expiredUnmined &&
+                        transaction.createdTime >=
+                            BigInt.from(earliestExpectedSeconds),
+                  )
+                  .map((transaction) async {
+                    final detail = await loadDetail(
+                      record.sourceAccountUuid,
+                      transaction,
+                    );
+                    if (detail != null &&
+                        isRecoverablePaymentLinkFundingTransaction(
+                          record: record,
+                          transaction: transaction,
+                          detail: detail,
+                        )) {
+                      recoveredTxids.add(transaction.txidHex);
+                    }
+                  }),
+            );
+            if (recoveredTxids.isEmpty) return;
+            final recovered = await _recoveryStore.markFunded(
+              address: record.link.address,
+              fundingTxids: recoveredTxids.join(','),
+            );
+            reconciledByAddress[record.link.address] = recovered;
+          }),
+    );
+    final reconciledRecords = [
+      for (final record in records)
+        reconciledByAddress[record.link.address] ?? record,
+    ];
     final cachedTip = _ref.read(syncProvider).value?.chainTipHeight ?? 0;
     final chainTipHeight = cachedTip > 0
         ? BigInt.from(cachedTip)
@@ -553,7 +664,7 @@ class PaymentLinkService implements PaymentLinkOperations {
               .read(rpcEndpointFailoverProvider.notifier)
               .getLatestBlockHeight();
     return {
-      for (final record in records)
+      for (final record in reconciledRecords)
         record.link.address: record.state == PaymentLinkRecoveryState.shared
             ? const PaymentLinkFundingProgress(
                 confirmationCount: kPaymentLinkShareConfirmationTarget,
@@ -789,17 +900,26 @@ class PaymentLinkService implements PaymentLinkOperations {
         receiverAddress.isEmpty) {
       throw StateError('No active receive account.');
     }
-    final session = await _prepareSpend(
-      link: link,
-      destinationAddress: receiverAddress,
-      destinationAccountUuid: receiverAccountUuid,
-    );
-    if (!session.canClaim) return session;
+    await _requireShieldedAddress(receiverAddress);
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    if (link.network != endpoint.networkName) {
+      throw StateError(
+        'Payment link is for ${link.network}, but this wallet is using '
+        '${endpoint.networkName}.',
+      );
+    }
+    // Intake is durable before tip lookup, temporary DB creation, or scanning.
+    // A process exit during those operations therefore leaves an actionable
+    // Card that can be retried after restart.
+    await _receivedStore.saveReady(link);
     try {
-      await _receivedStore.saveReady(link);
-      return session;
-    } catch (_) {
-      await discardClaimSession(session);
+      return await _prepareSpend(
+        link: link,
+        destinationAddress: receiverAddress,
+        destinationAccountUuid: receiverAccountUuid,
+      );
+    } on FormatException {
+      await _receivedStore.removeUnstarted(address: link.address);
       rethrow;
     }
   }

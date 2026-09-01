@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
 import '../services/payment_link_service.dart';
+import 'payment_link_recovery_coordinator.dart';
 
 @immutable
 class PaymentLinkCardsSnapshot {
@@ -19,6 +20,7 @@ class PaymentLinkCardsSnapshot {
 typedef PaymentLinkCardsLoader = Future<PaymentLinkCardsSnapshot> Function();
 
 final paymentLinkCardsLoaderProvider = Provider<PaymentLinkCardsLoader>((ref) {
+  ref.watch(paymentLinkRecoveryCoordinatorProvider);
   final operations = ref.watch(paymentLinkOperationsProvider);
   return () => loadPaymentLinkCardsSnapshot(operations);
 });

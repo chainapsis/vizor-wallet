@@ -19,6 +19,20 @@ final paymentLinkReceivedStoreProvider = Provider<PaymentLinkReceivedStore>((
 
 enum PaymentLinkReceivedStatus { readyToClaim, receiving, received }
 
+class PaymentLinkInFlightClaimsException implements Exception {
+  const PaymentLinkInFlightClaimsException({
+    required this.destinationAccountUuid,
+    required this.count,
+  });
+
+  final String destinationAccountUuid;
+  final int count;
+
+  @override
+  String toString() =>
+      'Finish receiving Gift Cards before deleting this account.';
+}
+
 class PaymentLinkReceivedRecord {
   const PaymentLinkReceivedRecord({
     required this.network,
@@ -145,6 +159,20 @@ class PaymentLinkReceivedStore {
 
   Future<List<PaymentLinkReceivedRecord>> load() {
     return _runExclusive(_loadUnlocked);
+  }
+
+  Future<int> countInFlightForDestinationAccount(
+    String destinationAccountUuid,
+  ) async {
+    if (destinationAccountUuid.isEmpty) return 0;
+    final records = await load();
+    return records
+        .where(
+          (record) =>
+              record.status != PaymentLinkReceivedStatus.received &&
+              record.destinationAccountUuid == destinationAccountUuid,
+        )
+        .length;
   }
 
   Future<PaymentLinkReceivedRecord> saveReady(
@@ -299,6 +327,26 @@ class PaymentLinkReceivedStore {
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
+    });
+  }
+
+  /// Removes a link that failed deterministic validation after its intake was
+  /// durably recorded. Network and process failures leave the record intact so
+  /// the user can retry after restarting the app.
+  Future<void> removeUnstarted({required String address}) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findByAddress(records, address);
+      if (existing == null ||
+          existing.status != PaymentLinkReceivedStatus.readyToClaim ||
+          existing.destinationAccountUuid != null ||
+          existing.claimTxids != null) {
+        return;
+      }
+      await _writeRecords([
+        for (final record in records)
+          if (record.address != address) record,
+      ]);
     });
   }
 

@@ -17,7 +17,9 @@ import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_recovery_coordinator.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -489,14 +491,21 @@ void main() {
       records: [_sharedRecovery],
       fundingConfirmationCount: 5,
     );
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    final syncNotifier = FakeSyncNotifier(
+      SyncState(chainTipHeight: 100, isSyncComplete: true),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      syncNotifier: syncNotifier,
+    );
 
     expect(find.text('Preparing...'), findsOneWidget);
     expect(find.text('Copy link'), findsNothing);
 
     operations.fundingConfirmationCount = 6;
-    await tester.pump(const Duration(seconds: 10));
-    await tester.pumpAndSettle();
+    syncNotifier.emit(SyncState(chainTipHeight: 101, isSyncComplete: true));
+    await tester.pump();
 
     expect(find.text('Preparing...'), findsNothing);
     expect(find.text('Copy link'), findsOneWidget);
@@ -506,7 +515,23 @@ void main() {
     tester,
   ) async {
     final operations = _FakePaymentLinkOperations(fundingConfirmationCount: 0);
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    final syncNotifier = FakeSyncNotifier(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        chainTipHeight: 100,
+        isSyncComplete: true,
+        percentage: 1,
+        displayTargetPercentage: 1,
+        spendableBalance: BigInt.from(14223000000),
+        displaySpendableBalance: BigInt.from(14223000000),
+      ),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      syncNotifier: syncNotifier,
+    );
 
     await tester.tap(find.text('Create new card'));
     await tester.pumpAndSettle();
@@ -529,15 +554,15 @@ void main() {
     expect(find.byType(PaymentLinkConfetti), findsNothing);
 
     operations.fundingConfirmationCount = 3;
-    await tester.pump(const Duration(seconds: 10));
-    await tester.pumpAndSettle();
+    syncNotifier.emit(SyncState(chainTipHeight: 101, isSyncComplete: true));
+    await tester.pump();
     expect(find.text('Link will be available soon'), findsOneWidget);
     expect(find.text('Your link will be here'), findsNothing);
     expect(find.byType(PaymentLinkConfetti), findsNothing);
 
     operations.fundingConfirmationCount = 6;
-    await tester.pump(const Duration(seconds: 10));
-    await tester.pumpAndSettle();
+    syncNotifier.emit(SyncState(chainTipHeight: 102, isSyncComplete: true));
+    await tester.pump();
     expect(find.text('Copy link'), findsOneWidget);
     expect(find.text('Link will be available soon'), findsNothing);
     expect(find.byType(PaymentLinkConfetti), findsOneWidget);
@@ -991,8 +1016,7 @@ void main() {
 
     operations.receivedClaimStatuses[_incomingLink.address] =
         PaymentLinkReceivedStatus.received;
-    await tester.pump(const Duration(seconds: 10));
-    await tester.pumpAndSettle();
+    await _runPaymentLinkRecovery(tester);
 
     expect(find.text('Receiving...'), findsNothing);
     expect(find.text('Received'), findsWidgets);
@@ -1072,6 +1096,37 @@ void main() {
       find.byKey(const ValueKey('payment_link_received_u1paymentlinkaddress')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('rereads cards after mounting from a sidebar snapshot', (
+    tester,
+  ) async {
+    final stale = PaymentLinkReceivedRecord.fromLink(_incomingLink).copyWith(
+      status: PaymentLinkReceivedStatus.receiving,
+      destinationAccountUuid: 'account-1',
+      claimTxids: 'claim-txid',
+    );
+    final fresh = stale.copyWith(
+      status: PaymentLinkReceivedStatus.received,
+      claimLink: null,
+    );
+    final operations = _FakePaymentLinkOperations(receivedRecords: [fresh]);
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+      cardsLoader: () async =>
+          PaymentLinkCardsSnapshot(created: const [], received: [stale]),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('sidebar_payment_links_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Receiving...'), findsNothing);
+    expect(find.text('Received'), findsWidgets);
   });
 
   testWidgets('keeps a submitted claim in Receiving state', (tester) async {
@@ -1166,6 +1221,18 @@ void main() {
   });
 }
 
+Future<void> _runPaymentLinkRecovery(WidgetTester tester) async {
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp)),
+  );
+  await container
+      .read(paymentLinkRecoveryCoordinatorProvider.notifier)
+      .recoverNow();
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 1));
+  await tester.pump();
+}
+
 Future<void> _pumpPaymentLinksScreen(
   WidgetTester tester, {
   _FakePaymentLinkOperations? operations,
@@ -1175,6 +1242,7 @@ Future<void> _pumpPaymentLinksScreen(
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   FakeSyncNotifier? syncNotifier,
+  PaymentLinkCardsLoader? cardsLoader,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1080, 720));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1192,6 +1260,8 @@ Future<void> _pumpPaymentLinksScreen(
           accountProvider.overrideWith(() => accountNotifier),
         paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
         paymentLinkClipboardProvider.overrideWithValue(paymentLinkClipboard),
+        if (cardsLoader != null)
+          paymentLinkCardsLoaderProvider.overrideWithValue(cardsLoader),
         if (hardwareSigning != null)
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(
             hardwareSigning,

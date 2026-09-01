@@ -115,6 +115,55 @@ void main() {
     });
 
     test(
+      'counts only unfinished claims bound to a destination account',
+      () async {
+        final storage = _FakePaymentLinkReceivedStorage();
+        final store = PaymentLinkReceivedStore(storage);
+        final inFlight = _link();
+        final ready = VizorPaymentLink(
+          network: inFlight.network,
+          address: '${inFlight.address}ready',
+          amountZatoshi: inFlight.amountZatoshi,
+          mnemonic: inFlight.mnemonic,
+          birthdayHeight: inFlight.birthdayHeight,
+          label: inFlight.label,
+          createdAt: inFlight.createdAt,
+        );
+
+        await store.saveReady(inFlight);
+        await store.markClaimStarted(
+          address: inFlight.address,
+          destinationAccountUuid: 'receiver-account',
+        );
+        await store.saveReady(ready);
+
+        expect(
+          await store.countInFlightForDestinationAccount('receiver-account'),
+          1,
+        );
+        expect(await store.countInFlightForDestinationAccount('other'), 0);
+      },
+    );
+
+    test('removes only an unstarted invalid intake', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+
+      await store.saveReady(link);
+      await store.removeUnstarted(address: link.address);
+      expect(await store.load(), isEmpty);
+
+      await store.saveReady(link);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+      );
+      await store.removeUnstarted(address: link.address);
+      expect(await store.load(), hasLength(1));
+    });
+
+    test(
       'does not reintroduce a secret for an already received card',
       () async {
         final storage = _FakePaymentLinkReceivedStorage();

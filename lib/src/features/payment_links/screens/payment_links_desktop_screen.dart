@@ -17,6 +17,7 @@ import '../../../providers/sync_provider.dart';
 import '../models/vizor_payment_link.dart';
 import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
+import '../providers/payment_link_recovery_coordinator.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
@@ -92,7 +93,6 @@ class _PaymentLinksDesktopScreenState
   final FocusNode _messageFocusNode = FocusNode();
   late final PaymentLinkOperations _paymentLinkOperations;
   Timer? _fundingQuoteDebounce;
-  Timer? _fundingProgressTimer;
 
   _PaymentLinksLocalPage _page = _PaymentLinksLocalPage.home;
   PaymentLinkCardArtwork _selectedArtwork = PaymentLinkCardArtwork.gift;
@@ -122,7 +122,6 @@ class _PaymentLinksDesktopScreenState
   bool _receivedShowsBack = false;
   bool _messageEditorRevealed = false;
   bool _operationInProgress = false;
-  bool _receivedRefreshInProgress = false;
   bool _pendingIntakeScheduled = false;
 
   PaymentLinkClaimSession? get _receivedClaimSession {
@@ -160,21 +159,19 @@ class _PaymentLinksDesktopScreenState
         unawaited(_loadRecoveries());
         unawaited(_loadReceivedCards());
       } else {
-        unawaited(_refreshFundingProgress(records: initialCards.created));
-        unawaited(_refreshReceivedClaims(records: initialCards.received));
+        // The sidebar snapshot keeps the first frame populated, then these
+        // reads close the race where app-wide recovery finishes between the
+        // snapshot load and this screen subscribing to its revision.
+        unawaited(_loadRecoveries(showError: false));
+        unawaited(_loadReceivedCards(showError: false));
       }
       unawaited(_consumePendingPaymentLink());
-    });
-    _fundingProgressTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      unawaited(_refreshFundingProgress());
-      unawaited(_refreshReceivedClaims());
     });
   }
 
   @override
   void dispose() {
     _fundingQuoteDebounce?.cancel();
-    _fundingProgressTimer?.cancel();
     for (final entry in _receivedClaimSessions.entries) {
       if (_claimSubmissions.contains(entry.key)) continue;
       final claimSession = entry.value;
@@ -309,44 +306,10 @@ class _PaymentLinksDesktopScreenState
       final sorted = List<PaymentLinkReceivedRecord>.of(records)
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       setState(() => _receivedCards = sorted);
-      unawaited(_refreshReceivedClaims(records: sorted));
     } catch (_) {
       if (mounted && showError) {
         _showError('Received Gift Cards could not be loaded.');
       }
-    }
-  }
-
-  Future<void> _refreshReceivedClaims({
-    List<PaymentLinkReceivedRecord>? records,
-  }) async {
-    final receivedCards = records ?? _receivedCards;
-    final hasMonitorableClaim = receivedCards.any(
-      (record) =>
-          record.status == PaymentLinkReceivedStatus.receiving ||
-          (record.status == PaymentLinkReceivedStatus.readyToClaim &&
-              record.destinationAccountUuid != null),
-    );
-    if (!hasMonitorableClaim ||
-        _operationInProgress ||
-        _claimSubmissions.isNotEmpty ||
-        _receivedRefreshInProgress) {
-      return;
-    }
-    _receivedRefreshInProgress = true;
-    try {
-      final updated = await ref
-          .read(paymentLinkOperationsProvider)
-          .inspectReceivedLinkClaims();
-      if (!mounted) return;
-      final sorted = List<PaymentLinkReceivedRecord>.of(updated)
-        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      setState(() => _receivedCards = sorted);
-    } catch (_) {
-      // Keep the last persisted status. The main wallet sync and the next
-      // timer tick will retry the mined-history check.
-    } finally {
-      _receivedRefreshInProgress = false;
     }
   }
 
@@ -385,7 +348,9 @@ class _PaymentLinksDesktopScreenState
     if (record.status == PaymentLinkReceivedStatus.readyToClaim &&
         record.destinationAccountUuid != null &&
         (record.claimTxids == null || record.claimTxids!.trim().isEmpty)) {
-      unawaited(_refreshReceivedClaims(records: [record]));
+      unawaited(
+        ref.read(paymentLinkRecoveryCoordinatorProvider.notifier).recoverNow(),
+      );
       return;
     }
     final session = _receivedClaimSessions[link.address];
@@ -464,6 +429,17 @@ class _PaymentLinksDesktopScreenState
       }
       _handleAmountChanged(_amountController.text);
     });
+  }
+
+  void _handleFundingSyncChanged(
+    ({int chainTipHeight, bool isSyncing})? previous,
+    ({int chainTipHeight, bool isSyncing}) next,
+  ) {
+    if (previous == null) return;
+    final completed = previous.isSyncing && !next.isSyncing;
+    if (completed || previous.chainTipHeight != next.chainTipHeight) {
+      unawaited(_refreshFundingProgress());
+    }
   }
 
   void _handleAmountChanged(String value) {
@@ -954,7 +930,9 @@ class _PaymentLinksDesktopScreenState
         if (mobile) _receivedLink = null;
       });
       showAppToast(context, 'Gift claim submitted');
-      unawaited(_refreshReceivedClaims());
+      unawaited(
+        ref.read(paymentLinkRecoveryCoordinatorProvider.notifier).recoverNow(),
+      );
       if (mobile) context.go('/home');
     } catch (_) {
       if (mounted) {
@@ -986,6 +964,11 @@ class _PaymentLinksDesktopScreenState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(paymentLinkRecoveryCoordinatorProvider, (previous, next) {
+      if (previous == null || previous == next) return;
+      unawaited(_loadRecoveries(showError: false));
+      unawaited(_loadReceivedCards(showError: false));
+    });
     ref.listen<String?>(
       accountProvider.select((state) => state.value?.activeAccountUuid),
       _handleActiveAccountChanged,
@@ -1000,6 +983,16 @@ class _PaymentLinksDesktopScreenState
         );
       }),
       _handleFeeQuoteSyncGateChanged,
+    );
+    ref.listen<({int chainTipHeight, bool isSyncing})>(
+      syncProvider.select((state) {
+        final sync = state.value;
+        return (
+          chainTipHeight: sync?.chainTipHeight ?? 0,
+          isSyncing: sync?.isSyncing ?? false,
+        );
+      }),
+      _handleFundingSyncChanged,
     );
     final pendingLink = ref.watch(
       paymentLinkIntakeProvider.select((state) => state.pendingLink),

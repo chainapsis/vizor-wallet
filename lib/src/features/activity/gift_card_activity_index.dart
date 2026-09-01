@@ -4,6 +4,7 @@ import '../../rust/api/sync.dart' as rust_sync;
 import '../payment_links/services/payment_link_received_store.dart';
 import '../payment_links/services/payment_link_recovery_store.dart';
 import '../payment_links/services/payment_link_service.dart';
+import '../payment_links/providers/payment_link_recovery_coordinator.dart';
 
 enum GiftCardActivityKind { created, redeemed }
 
@@ -54,6 +55,7 @@ class GiftCardActivityIndex {
 
 final giftCardActivityIndexProvider = FutureProvider.autoDispose
     .family<GiftCardActivityIndex, String>((ref, accountUuid) async {
+      ref.watch(paymentLinkRecoveryCoordinatorProvider);
       final operations = ref.watch(paymentLinkOperationsProvider);
       final records = await Future.wait<Object>([
         operations.loadCreatedLinkRecoveries(),

@@ -782,6 +782,7 @@ void main() {
 
     for (final label in [
       'Contacts',
+      'Gift Cards',
       'Secret Passphrase',
       'Viewing Key',
       'Keep screen awake',

@@ -347,6 +347,60 @@ void main() {
     expect(sameLinkName, isNot(contains('abandon')));
   });
 
+  test('recovers a draft only from the exact live funding output', () {
+    final link = _link();
+    final updatedAt = DateTime.utc(2026, 8, 5, 12);
+    final record = PaymentLinkRecoveryRecord(
+      link: link,
+      sourceAccountUuid: 'account-1',
+      state: PaymentLinkRecoveryState.draft,
+      updatedAt: updatedAt,
+    );
+    final transaction = _transaction(
+      txid: 'funding',
+      txKind: 'sent',
+      createdTime: updatedAt.millisecondsSinceEpoch ~/ 1000,
+    );
+    rust_sync.TransactionDetail detail({String? address, BigInt? amount}) =>
+        rust_sync.TransactionDetail(
+          txidHex: transaction.txidHex,
+          txKind: 'sent',
+          outputs: [
+            rust_sync.TransactionDetailOutput(
+              address: address ?? link.address,
+              amountZatoshi:
+                  amount ?? paymentLinkFundingAmountZatoshi(link.amountZatoshi),
+              pool: 'orchard',
+            ),
+          ],
+        );
+
+    expect(
+      isRecoverablePaymentLinkFundingTransaction(
+        record: record,
+        transaction: transaction,
+        detail: detail(),
+      ),
+      isTrue,
+    );
+    expect(
+      isRecoverablePaymentLinkFundingTransaction(
+        record: record,
+        transaction: transaction,
+        detail: detail(address: 'u1different'),
+      ),
+      isFalse,
+    );
+    expect(
+      isRecoverablePaymentLinkFundingTransaction(
+        record: record,
+        transaction: transaction,
+        detail: detail(amount: link.amountZatoshi),
+      ),
+      isFalse,
+    );
+  });
+
   test(
     'hardware funding is rejected before creating a recovery draft',
     () async {
@@ -432,6 +486,7 @@ rust_sync.TransactionInfo _transaction({
   required String txKind,
   int minedHeight = 0,
   bool expiredUnmined = false,
+  int createdTime = 0,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
@@ -444,6 +499,6 @@ rust_sync.TransactionInfo _transaction({
     txKind: txKind,
     displayAmount: BigInt.one,
     displayPool: 'shielded',
-    createdTime: BigInt.zero,
+    createdTime: BigInt.from(createdTime),
   );
 }
