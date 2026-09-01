@@ -27,6 +27,29 @@ bool IsZcashUri(const std::string& value) {
   return true;
 }
 
+// Returns true when |value| is something the Dart side can actually decode.
+// The channel carries the URI through StandardMessageCodec, which throws on
+// malformed UTF-8; a bad payload that arrives before Dart is ready aborts
+// takePendingUris and wedges the payment-URI channel for the rest of the
+// session. Control characters are rejected too: no ZIP-321 URI contains one,
+// and they have no business reaching the send screen.
+bool IsDecodablePaymentUriPayload(const std::string& value) {
+  if (value.empty()) {
+    return false;
+  }
+
+  for (const char raw_byte : value) {
+    const auto byte = static_cast<unsigned char>(raw_byte);
+    if (byte < 0x20 || byte == 0x7F) {
+      return false;
+    }
+  }
+
+  return ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                               static_cast<int>(value.size()), nullptr,
+                               0) != 0;
+}
+
 void CreateAndAttachConsole() {
   if (::AllocConsole()) {
     FILE *unused;
@@ -65,7 +88,11 @@ std::vector<std::string> GetZcashUriArguments(
     const std::vector<std::string>& arguments) {
   std::vector<std::string> uris;
   for (const auto& argument : arguments) {
-    if (IsZcashUri(argument)) {
+    // Screen a cold-start URI with the same rule the forwarding path applies,
+    // so the two entry points accept the same set. An argv URI reaches Dart
+    // through the identical channel, and an undecodable one wedges it just as
+    // thoroughly as a forwarded one would.
+    if (IsZcashUri(argument) && IsDecodablePaymentUriPayload(argument)) {
       uris.push_back(argument);
     }
   }

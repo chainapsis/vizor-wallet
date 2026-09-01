@@ -31,4 +31,9 @@ std::vector<std::string> GetZcashUriArguments(
 // native launch-URI bridge.
 bool IsZcashUri(const std::string& value);
 
+// Returns whether |value| is a payment-URI payload the Dart side can actually
+// decode. Both entry points -- a cold-start argv URI and one forwarded from a
+// secondary process -- screen with this, so the two accept the same set.
+bool IsDecodablePaymentUriPayload(const std::string& value);
+
 #endif  // RUNNER_UTILS_H_
