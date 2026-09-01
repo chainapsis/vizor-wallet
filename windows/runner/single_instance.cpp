@@ -22,9 +22,6 @@ namespace {
 #define VIZOR_WIDEN(value) VIZOR_WIDEN2(value)
 
 constexpr wchar_t kLockDirectoryName[] = L"VizorInstanceLocks";
-constexpr DWORD kActivationRetryWindowMs = 2000;
-constexpr DWORD kActivationRetryDelayMs = 50;
-constexpr UINT kActivationMessageTimeoutMs = 100;
 
 std::wstring SanitizedFileName(std::wstring value) {
   constexpr wchar_t kInvalidChars[] = L"<>:\"/\\|?*";
@@ -109,9 +106,8 @@ BOOL CALLBACK SendActivationMessage(HWND window, LPARAM parameter) {
 
   DWORD_PTR response = 0;
   if (::SendMessageTimeoutW(
-          window, context->message, 0, 0,
-          SMTO_ABORTIFHUNG | SMTO_BLOCK, kActivationMessageTimeoutMs,
-          &response) != 0 &&
+          window, context->message, 0, 0, SMTO_ABORTIFHUNG | SMTO_BLOCK,
+          kSingleInstanceActivationMessageTimeoutMs, &response) != 0 &&
       response ==
           static_cast<DWORD_PTR>(kSingleInstanceActivationAcknowledged)) {
     context->acknowledged = true;
@@ -191,7 +187,8 @@ bool ActivateExistingInstance(UINT activation_message) {
     return false;
   }
 
-  const ULONGLONG deadline = ::GetTickCount64() + kActivationRetryWindowMs;
+  const ULONGLONG deadline =
+      ::GetTickCount64() + kSingleInstanceActivationRetryWindowMs;
   do {
     ActivationContext context{activation_message, false};
     ::EnumWindows(SendActivationMessage,
@@ -199,7 +196,7 @@ bool ActivateExistingInstance(UINT activation_message) {
     if (context.acknowledged) {
       return true;
     }
-    ::Sleep(kActivationRetryDelayMs);
+    ::Sleep(kSingleInstanceActivationRetryDelayMs);
   } while (::GetTickCount64() < deadline);
 
   return false;
