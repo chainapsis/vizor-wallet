@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::panic;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use flutter_rust_bridge::frb;
 use zeroize::Zeroizing;
@@ -13,6 +14,8 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
+static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -187,6 +190,101 @@ pub fn is_sync_cancel_requested() -> bool {
 #[frb(sync)]
 pub fn is_sync_running() -> bool {
     SYNC_RUNNING.load(Ordering::SeqCst)
+}
+
+/// Starts an isolated scan for one short-lived payment-link claim database.
+///
+/// Unlike `start_full_sync`, this entrypoint has no process-global running
+/// guard or desired mode. Different claim IDs can therefore scan independent
+/// databases concurrently, while duplicate work for the same claim is
+/// rejected.
+pub fn start_payment_link_claim_sync(
+    claim_id: String,
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    sink: StreamSink<ApiSyncProgressEvent>,
+) -> Result<(), String> {
+    if claim_id.trim().is_empty() {
+        return Err("Payment-link claim ID must not be empty".into());
+    }
+
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut active = PAYMENT_LINK_CLAIM_SYNCS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if active.contains_key(&claim_id) {
+            return Err(format!(
+                "Payment-link claim sync already running: {claim_id}"
+            ));
+        }
+        active.insert(claim_id.clone(), cancel.clone());
+    }
+
+    let result = catch(panic::AssertUnwindSafe(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let runtime = tokio::runtime::Runtime::new().map_err(|error| format!("tokio: {error}"))?;
+        runtime.block_on(sync_engine::run_payment_link_claim_sync(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            cancel,
+            |progress| {
+                if sink
+                    .add(ApiSyncProgressEvent {
+                        scanned_height: progress.scanned_height,
+                        chain_tip_height: progress.chain_tip_height,
+                        percentage: progress.percentage,
+                        display_target_percentage: progress.display_target_percentage,
+                        display_target_blocks: progress.display_target_blocks,
+                        is_syncing: progress.is_syncing,
+                        is_complete: progress.is_complete,
+                        has_new_tx: progress.has_new_tx,
+                        phase_completed_units: progress.phase_completed_units,
+                        phase_total_units: progress.phase_total_units,
+                        phase: progress.phase.clone(),
+                    })
+                    .is_err()
+                {
+                    log::warn!("payment-link claim sync: progress stream closed");
+                }
+            },
+        ))
+    }));
+
+    PAYMENT_LINK_CLAIM_SYNCS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&claim_id);
+
+    if let Err(error) = result {
+        if sink.add_error(error.clone()).is_err() {
+            log::warn!("payment-link claim sync: stream closed before error: {error}");
+        }
+    }
+    Ok(())
+}
+
+/// Cancels only the isolated scan associated with `claim_id`.
+#[frb(sync)]
+pub fn cancel_payment_link_claim_sync(claim_id: String) {
+    if let Some(cancel) = PAYMENT_LINK_CLAIM_SYNCS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&claim_id)
+    {
+        cancel.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Reports whether the specified isolated claim scan is active.
+#[frb(sync)]
+pub fn is_payment_link_claim_sync_running(claim_id: String) -> bool {
+    PAYMENT_LINK_CLAIM_SYNCS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .contains_key(&claim_id)
 }
 
 pub(crate) static SYNC_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =

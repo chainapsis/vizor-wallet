@@ -2245,6 +2245,295 @@ pub async fn run_sync_inner(
     Err(last_err)
 }
 
+/// Runs the bounded shielded scan needed by one payment-link claim wallet.
+///
+/// Claim wallets are fresh, single-account databases with their own lifetime.
+/// They deliberately do not join the process-global foreground sync lane and
+/// skip transparent refresh, transaction enhancement, migration preparation,
+/// and main-wallet completion metadata. Each caller owns its DB exclusively,
+/// so the CPU-heavy scan does not take the process-wide wallet write lock.
+pub async fn run_payment_link_claim_sync(
+    db_data_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    cancel: Arc<AtomicBool>,
+    progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
+) -> Result<(), String> {
+    const MAX_RETRIES: u32 = 3;
+    let mut last_error = String::new();
+
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay_secs = 1u64 << attempt;
+            for _ in 0..delay_secs {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                if cancel.load(Ordering::Relaxed) {
+                    return Ok(());
+                }
+            }
+        }
+
+        match run_payment_link_claim_sync_once(
+            db_data_path,
+            lightwalletd_url,
+            network,
+            cancel.clone(),
+            &progress_fn,
+        )
+        .await
+        {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let strategy = error.recovery_strategy();
+                last_error = error.to_string();
+                if matches!(strategy, RecoveryStrategy::Fatal) {
+                    return Err(last_error);
+                }
+            }
+        }
+    }
+
+    Err(last_error)
+}
+
+async fn run_payment_link_claim_sync_once(
+    db_data_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    cancel: Arc<AtomicBool>,
+    progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
+) -> Result<(), SyncError> {
+    let should_exit = || cancel.load(Ordering::Relaxed);
+    let mut client = open_lwd_channel(lightwalletd_url).await?;
+    let mut db = open_db(db_data_path, network)?;
+    let initial_tip = get_latest_block(&mut client).await?;
+    let mut current_tip_height = initial_tip.height;
+    if let Some((_, db_tip_height)) = sync::wallet_scan_heights(&mut db).map_err(SyncError::db)? {
+        let stored_hash = stored_hash_for_refreshed_tip(&db, db_tip_height, initial_tip.height)?;
+        match classify_refreshed_tip_with_fallback(
+            &mut client,
+            db_tip_height,
+            stored_hash,
+            initial_tip.height,
+            &initial_tip.hash,
+        )
+        .await?
+        {
+            RefreshedTipRelation::ServerBehind => {
+                return Err(lagging_lightwalletd_tip(db_tip_height, initial_tip.height));
+            }
+            RefreshedTipRelation::Reorg => {
+                rewind_for_confirmed_tip_reorg(&mut db, initial_tip.height)?;
+            }
+            RefreshedTipRelation::Advanced
+            | RefreshedTipRelation::Unchanged
+            | RefreshedTipRelation::UnchangedUnverified => {}
+        }
+    }
+    let tip_height = block_height_from_u64(current_tip_height, "payment-link chain tip")?;
+    db.update_chain_tip(tip_height)
+        .map_err(|error| SyncError::db(format!("payment-link update_chain_tip: {error}")))?;
+    crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
+        .map_err(|error| SyncError::db(format!("payment-link recover send locks: {error}")))?;
+
+    download_subtree_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
+
+    let initial_ranges = db
+        .suggest_scan_ranges()
+        .map_err(|error| SyncError::db(format!("payment-link suggest_scan_ranges: {error}")))?;
+    let initial_total = pending_scan_blocks(&initial_ranges).max(1);
+    let mut rewind_attempts = 0u32;
+
+    loop {
+        if should_exit() {
+            return Ok(());
+        }
+
+        let ranges = db
+            .suggest_scan_ranges()
+            .map_err(|error| SyncError::db(format!("payment-link suggest_scan_ranges: {error}")))?;
+        let next_range = ranges
+            .iter()
+            .find(|range| is_pending_scan_range(range))
+            .cloned();
+
+        let Some(range) = next_range else {
+            let fresh_tip = get_latest_block(&mut client).await?;
+            let stored_hash =
+                stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
+            match classify_refreshed_tip_with_fallback(
+                &mut client,
+                current_tip_height,
+                stored_hash,
+                fresh_tip.height,
+                &fresh_tip.hash,
+            )
+            .await?
+            {
+                RefreshedTipRelation::Advanced => {
+                    current_tip_height = fresh_tip.height;
+                    let height =
+                        block_height_from_u64(current_tip_height, "payment-link refreshed tip")?;
+                    db.update_chain_tip(height).map_err(|error| {
+                        SyncError::db(format!("payment-link update_chain_tip({height}): {error}"))
+                    })?;
+                    continue;
+                }
+                RefreshedTipRelation::Reorg => {
+                    if rewind_attempts >= MAX_REWINDS_PER_RUN {
+                        return Err(SyncError::continuity(
+                            fresh_tip.height,
+                            "payment-link tip reorg rewind budget exhausted",
+                        ));
+                    }
+                    rewind_attempts += 1;
+                    let fresh_height =
+                        block_height_from_u64(fresh_tip.height, "payment-link reorg tip")?;
+                    let requested = confirmed_reorg_rewind_target(fresh_height)?;
+                    truncate_wallet_with(requested, fresh_height, |height| {
+                        db.truncate_to_height(height)
+                    })?;
+                    db.update_chain_tip(fresh_height).map_err(|error| {
+                        SyncError::db(format!("payment-link update tip after reorg: {error}"))
+                    })?;
+                    current_tip_height = fresh_tip.height;
+                    continue;
+                }
+                RefreshedTipRelation::ServerBehind => {
+                    return Err(lagging_lightwalletd_tip(
+                        current_tip_height,
+                        fresh_tip.height,
+                    ));
+                }
+                RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {
+                    ensure_complete_scan_state(&mut db, current_tip_height)?;
+                    let _ = crate::wallet::sync::resubmit_pending_transactions(
+                        db_data_path,
+                        lightwalletd_url,
+                        &mut client,
+                        u32::try_from(current_tip_height).unwrap_or(u32::MAX),
+                        &std::collections::HashSet::new(),
+                        &should_exit,
+                    )
+                    .await;
+                    progress_fn(SyncProgressEvent {
+                        scanned_height: current_tip_height,
+                        chain_tip_height: current_tip_height,
+                        percentage: 1.0,
+                        display_target_percentage: 1.0,
+                        display_target_blocks: 0,
+                        is_syncing: false,
+                        is_complete: true,
+                        has_new_tx: true,
+                        phase_completed_units: 0,
+                        phase_total_units: 0,
+                        phase: String::new(),
+                    });
+                    return Ok(());
+                }
+            }
+        };
+
+        let start = range.block_range().start;
+        let range_end = range.block_range().end;
+        let Some((_, end)) =
+            scannable_batch_end(BATCH_SIZE_FOREGROUND, start, range_end, current_tip_height)
+        else {
+            return Err(SyncError::continuity(
+                current_tip_height,
+                "payment-link pending scan range starts after the observed tip",
+            ));
+        };
+        let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
+        let remaining = pending_scan_blocks(&ranges);
+        let percentage = (1.0 - remaining as f64 / initial_total as f64).clamp(0.0, 1.0);
+        progress_fn(SyncProgressEvent {
+            scanned_height: u32::from(start) as u64,
+            chain_tip_height: current_tip_height,
+            percentage,
+            display_target_percentage: percentage,
+            display_target_blocks: batch_blocks,
+            is_syncing: true,
+            is_complete: false,
+            has_new_tx: false,
+            phase_completed_units: 0,
+            phase_total_units: 0,
+            phase: "download".into(),
+        });
+
+        let (block_source, from_state) =
+            download_scan_batch(&mut client, start, end - 1, network).await?;
+        validate_scan_batch(&block_source, &from_state, start, end)?;
+        if should_exit() {
+            return Ok(());
+        }
+
+        let scan_result = scan_cached_blocks(
+            &network,
+            &block_source,
+            &mut db,
+            start,
+            &from_state,
+            batch_blocks as usize,
+        );
+        match scan_result {
+            Ok(_) => {
+                progress_fn(SyncProgressEvent {
+                    scanned_height: u32::from(end).saturating_sub(1) as u64,
+                    chain_tip_height: current_tip_height,
+                    percentage,
+                    display_target_percentage: percentage,
+                    display_target_blocks: batch_blocks,
+                    is_syncing: true,
+                    is_complete: false,
+                    has_new_tx: true,
+                    phase_completed_units: 0,
+                    phase_total_units: 0,
+                    phase: "scan".into(),
+                });
+            }
+            Err(error) => {
+                let sync_error = match error {
+                    ChainError::Scan(scan_error) if scan_error.is_continuity_error() => {
+                        SyncError::continuity(
+                            u32::from(scan_error.at_height()) as u64,
+                            scan_error.to_string(),
+                        )
+                    }
+                    ChainError::Wallet(SqliteClientError::BlockConflict(at)) => {
+                        SyncError::continuity(u32::from(at) as u64, "payment-link block conflict")
+                    }
+                    ChainError::Wallet(wallet_error)
+                        if is_commitment_tree_root_conflict(&wallet_error) =>
+                    {
+                        SyncError::continuity(
+                            u32::from(start) as u64,
+                            format!("payment-link commitment tree root conflict: {wallet_error}"),
+                        )
+                    }
+                    ChainError::Wallet(wallet_error) => {
+                        SyncError::db(format!("payment-link scan wallet: {wallet_error}"))
+                    }
+                    other => SyncError::other(format!("payment-link scan: {other}")),
+                };
+                if !sync_error.is_continuity() || rewind_attempts >= MAX_REWINDS_PER_RUN {
+                    return Err(sync_error);
+                }
+                let attempt = rewind_attempts;
+                rewind_attempts += 1;
+                let requested_height = sync_error
+                    .rewind_target_for_attempt(attempt)
+                    .unwrap_or_else(|| u32::from(start).saturating_sub(10) as u64);
+                let requested =
+                    block_height_from_u64(requested_height, "payment-link scan rewind target")?;
+                let fresh_tip =
+                    block_height_from_u64(current_tip_height, "payment-link scan rewind tip")?;
+                truncate_wallet_with(requested, fresh_tip, |height| db.truncate_to_height(height))?;
+            }
+        }
+    }
+}
+
 /// Inner sync implementation. Called by run_sync_inner (with retry wrapper).
 async fn run_sync_impl(
     db_data_path: &str,

@@ -104,7 +104,9 @@ class _PaymentLinksDesktopScreenState
   List<PaymentLinkReceivedRecord> _receivedCards = const [];
   PaymentLinkFundingQuote? _fundingQuote;
   String? _fundingQuoteRequestedAccountUuid;
-  PaymentLinkClaimSession? _receivedClaimSession;
+  final Map<String, PaymentLinkClaimSession> _receivedClaimSessions = {};
+  final Set<String> _claimPreparations = {};
+  final Set<String> _claimSubmissions = {};
   VizorPaymentLink? _readyLink;
   VizorPaymentLink? _receivedLink;
   _PaymentLinkKeystoneFundingRequest? _keystoneFundingRequest;
@@ -122,6 +124,16 @@ class _PaymentLinksDesktopScreenState
   bool _operationInProgress = false;
   bool _receivedRefreshInProgress = false;
   bool _pendingIntakeScheduled = false;
+
+  PaymentLinkClaimSession? get _receivedClaimSession {
+    final address = _receivedLink?.address;
+    return address == null ? null : _receivedClaimSessions[address];
+  }
+
+  bool get _activeClaimInProgress {
+    final address = _receivedLink?.address;
+    return address != null && _claimSubmissions.contains(address);
+  }
 
   @override
   void initState() {
@@ -163,8 +175,7 @@ class _PaymentLinksDesktopScreenState
   void dispose() {
     _fundingQuoteDebounce?.cancel();
     _fundingProgressTimer?.cancel();
-    final claimSession = _receivedClaimSession;
-    if (claimSession != null) {
+    for (final claimSession in _receivedClaimSessions.values) {
       unawaited(_paymentLinkOperations.discardClaimSession(claimSession));
     }
     _amountFocusNode
@@ -232,10 +243,13 @@ class _PaymentLinksDesktopScreenState
   }
 
   Future<void> _consumePendingPaymentLink() async {
-    if (_operationInProgress) return;
-    final link = ref.read(paymentLinkIntakeProvider.notifier).takePending();
-    if (link == null || !mounted) return;
-    await _checkPaymentLink(link);
+    if (!mounted) return;
+    final notifier = ref.read(paymentLinkIntakeProvider.notifier);
+    while (mounted) {
+      final link = notifier.takePending();
+      if (link == null) return;
+      unawaited(_checkPaymentLink(link));
+    }
   }
 
   Future<void> _loadRecoveries({bool showError = true}) async {
@@ -308,7 +322,10 @@ class _PaymentLinksDesktopScreenState
     final hasReceiving = receivedCards.any(
       (record) => record.status == PaymentLinkReceivedStatus.receiving,
     );
-    if (!hasReceiving || _operationInProgress || _receivedRefreshInProgress) {
+    if (!hasReceiving ||
+        _operationInProgress ||
+        _claimSubmissions.isNotEmpty ||
+        _receivedRefreshInProgress) {
       return;
     }
     _receivedRefreshInProgress = true;
@@ -359,7 +376,16 @@ class _PaymentLinksDesktopScreenState
 
   void _openReceivedCard(PaymentLinkReceivedRecord record) {
     final link = record.claimLink;
-    if (link == null || _operationInProgress) return;
+    if (link == null) return;
+    final session = _receivedClaimSessions[link.address];
+    if (session != null) {
+      setState(() {
+        _receivedLink = link;
+        _receivedShowsBack = false;
+        _page = _PaymentLinksLocalPage.received;
+      });
+      return;
+    }
     unawaited(_checkPaymentLink(link));
   }
 
@@ -815,9 +841,8 @@ class _PaymentLinksDesktopScreenState
   }
 
   Future<void> _checkPaymentLink(VizorPaymentLink link) async {
-    if (_operationInProgress) return;
+    if (!_claimPreparations.add(link.address)) return;
     setState(() {
-      _operationInProgress = true;
       _redeemState = PaymentLinkRedeemVisualState.loading;
       _page = _PaymentLinksLocalPage.redeem;
       _showHelp = false;
@@ -825,19 +850,12 @@ class _PaymentLinksDesktopScreenState
     try {
       await _prepareDecodedPaymentLink(link);
     } finally {
-      if (mounted) setState(() => _operationInProgress = false);
+      _claimPreparations.remove(link.address);
+      if (mounted) setState(() {});
     }
   }
 
   Future<void> _prepareDecodedPaymentLink(VizorPaymentLink link) async {
-    final previousSession = _receivedClaimSession;
-    if (previousSession != null &&
-        previousSession.link.address != link.address) {
-      await ref
-          .read(paymentLinkOperationsProvider)
-          .discardClaimSession(previousSession);
-      _receivedClaimSession = null;
-    }
     try {
       final session = await ref
           .read(paymentLinkOperationsProvider)
@@ -853,14 +871,14 @@ class _PaymentLinksDesktopScreenState
             .read(paymentLinkOperationsProvider)
             .discardClaimSession(session);
         setState(() {
-          _receivedClaimSession = null;
+          _receivedClaimSessions.remove(link.address);
           _redeemState = PaymentLinkRedeemVisualState.unavailable;
           _page = _PaymentLinksLocalPage.redeem;
         });
         return;
       }
       setState(() {
-        _receivedClaimSession = session;
+        _receivedClaimSessions[link.address] = session;
         _receivedLink = link;
         _receivedShowsBack = false;
         _rememberReceivedLink(link);
@@ -886,11 +904,11 @@ class _PaymentLinksDesktopScreenState
       await ref
           .read(paymentLinkOperationsProvider)
           .discardClaimSession(claimSession);
+      _receivedClaimSessions.remove(claimSession.link.address);
     }
     ref.read(paymentLinkIntakeProvider.notifier).clearError();
     if (mounted) {
       setState(() {
-        _receivedClaimSession = null;
         _redeemState = PaymentLinkRedeemVisualState.paste;
       });
     }
@@ -899,10 +917,13 @@ class _PaymentLinksDesktopScreenState
   Future<void> _claimReceivedLink() async {
     final link = _receivedLink;
     final session = _receivedClaimSession;
-    if (link == null || session == null || _operationInProgress) return;
+    if (link == null ||
+        session == null ||
+        !_claimSubmissions.add(link.address)) {
+      return;
+    }
     final mobile = kAppFormFactor == AppFormFactor.mobile;
     setState(() {
-      _operationInProgress = true;
       _receivedShowsBack = false;
       _setReceivedCardStatus(link.address, PaymentLinkReceivedStatus.receiving);
       _activeCardsTab = PaymentLinkCardsTab.received;
@@ -917,8 +938,8 @@ class _PaymentLinksDesktopScreenState
       if (!mounted) return;
       setState(() {
         // Broadcast acceptance is not receipt. The persisted receiver record
-        // remains Receiving until main-wallet history sees the claim mined.
-        _receivedClaimSession = null;
+        // remains Receiving until claim history reaches six confirmations.
+        _receivedClaimSessions.remove(link.address);
         if (mobile) _receivedLink = null;
       });
       showAppToast(context, 'Gift claim submitted');
@@ -938,7 +959,8 @@ class _PaymentLinksDesktopScreenState
         );
       }
     } finally {
-      if (mounted) setState(() => _operationInProgress = false);
+      _claimSubmissions.remove(link.address);
+      if (mounted) setState(() {});
     }
   }
 
@@ -1080,8 +1102,8 @@ class _PaymentLinksDesktopScreenState
       onRevealMessage: hasMessage
           ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
           : null,
-      onClaim: _operationInProgress ? null : _claimReceivedLink,
-      claimLabel: _operationInProgress ? 'Claiming...' : 'Claim the gift',
+      onClaim: _activeClaimInProgress ? null : _claimReceivedLink,
+      claimLabel: _activeClaimInProgress ? 'Claiming...' : 'Claim the gift',
     );
   }
 
@@ -1432,11 +1454,11 @@ class _PaymentLinksDesktopScreenState
       card: card,
       decoration: const PaymentLinkConfetti(),
       onBack: () => _showPage(_PaymentLinksLocalPage.home),
-      onClaim: _operationInProgress ? null : _claimReceivedLink,
+      onClaim: _activeClaimInProgress ? null : _claimReceivedLink,
       onRevealMessage: hasMessage
           ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
           : null,
-      claimLabel: _operationInProgress ? 'Claiming...' : 'Claim my gift',
+      claimLabel: _activeClaimInProgress ? 'Claiming...' : 'Claim my gift',
     );
   }
 

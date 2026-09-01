@@ -105,6 +105,7 @@ void main() {
     expect(
       paymentLinkReceivedStatusForTransactions(
         claimTxids: 'claim-a,claim-b',
+        chainTipHeight: BigInt.from(18),
         transactions: [
           _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
           _transaction(txid: 'claim-b', txKind: 'receiving'),
@@ -115,19 +116,37 @@ void main() {
     expect(
       paymentLinkReceivedStatusForTransactions(
         claimTxids: 'claim-a,claim-b',
+        chainTipHeight: BigInt.from(18),
         transactions: [
           _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
-          _transaction(txid: 'claim-b', txKind: 'received', minedHeight: 13),
+          _transaction(txid: 'claim-b', txKind: 'sent', minedHeight: 13),
         ],
       ),
       PaymentLinkReceivedStatus.received,
     );
   });
 
+  test(
+    'claim remains Receiving until every transaction has six confirmations',
+    () {
+      expect(
+        paymentLinkReceivedStatusForTransactions(
+          claimTxids: 'claim-a',
+          chainTipHeight: BigInt.from(16),
+          transactions: [
+            _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
+          ],
+        ),
+        PaymentLinkReceivedStatus.receiving,
+      );
+    },
+  );
+
   test('expired unmined claim becomes actionable again', () {
     expect(
       paymentLinkReceivedStatusForTransactions(
         claimTxids: 'claim-txid',
+        chainTipHeight: BigInt.from(100),
         transactions: [
           _transaction(
             txid: 'claim-txid',
@@ -137,6 +156,28 @@ void main() {
         ],
       ),
       PaymentLinkReceivedStatus.readyToClaim,
+    );
+  });
+
+  test('a mined claim is not reopened by stale expired history', () {
+    expect(
+      paymentLinkReceivedStatusForTransactions(
+        claimTxids: 'claim-txid',
+        chainTipHeight: BigInt.from(102),
+        transactions: [
+          _transaction(
+            txid: 'claim-txid',
+            txKind: 'sent',
+            expiredUnmined: true,
+          ),
+          _transaction(
+            txid: 'claim-txid',
+            txKind: 'received',
+            minedHeight: 100,
+          ),
+        ],
+      ),
+      PaymentLinkReceivedStatus.receiving,
     );
   });
 
@@ -166,25 +207,7 @@ void main() {
     );
   });
 
-  test('pending and partial claim broadcasts retain their wallet DB', () {
-    expect(
-      shouldRetainPaymentLinkClaimWallet(
-        paymentLinkClaimBroadcastStatusFromWire('pending_broadcast'),
-      ),
-      isTrue,
-    );
-    expect(
-      shouldRetainPaymentLinkClaimWallet(
-        paymentLinkClaimBroadcastStatusFromWire('partial_broadcast'),
-      ),
-      isTrue,
-    );
-    expect(
-      shouldRetainPaymentLinkClaimWallet(
-        paymentLinkClaimBroadcastStatusFromWire('broadcasted'),
-      ),
-      isFalse,
-    );
+  test('rejects unknown claim broadcast status', () {
     expect(
       () => paymentLinkClaimBroadcastStatusFromWire('unexpected'),
       throwsStateError,

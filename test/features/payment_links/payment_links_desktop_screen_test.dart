@@ -868,6 +868,51 @@ void main() {
     expect(find.text('Receiving...'), findsOneWidget);
   });
 
+  testWidgets('prepares multiple incoming Gift Cards concurrently', (
+    tester,
+  ) async {
+    final firstGate = Completer<void>();
+    final secondGate = Completer<void>();
+    final secondLink = VizorPaymentLink(
+      network: _incomingLink.network,
+      address: 'u1secondincomingpaymentlinkaddress',
+      amountZatoshi: _incomingLink.amountZatoshi,
+      mnemonic: List.filled(24, 'zoo').join(' '),
+      birthdayHeight: _incomingLink.birthdayHeight,
+      label: _incomingLink.label,
+      createdAt: _incomingLink.createdAt,
+    );
+    final operations = _FakePaymentLinkOperations(
+      prepareGates: {
+        _incomingLink.address: firstGate,
+        secondLink.address: secondGate,
+      },
+    );
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+    final container = ProviderScope.containerOf(
+      tester.element(
+        find.byKey(const ValueKey('payment_links_desktop_screen')),
+      ),
+    );
+    final intake = container.read(paymentLinkIntakeProvider.notifier);
+    intake.receive(_incomingLink.toUri().toString());
+    intake.receive(secondLink.toUri().toString());
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(operations.preparedAddresses.toSet(), {
+      _incomingLink.address,
+      secondLink.address,
+    });
+    expect(firstGate.isCompleted, isFalse);
+    expect(secondGate.isCompleted, isFalse);
+
+    firstGate.complete();
+    secondGate.complete();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('shows selected artwork and Receiving while claim is pending', (
     tester,
   ) async {
@@ -1293,12 +1338,14 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     this.claimCompleter,
     this.fundingConfirmationCount = kPaymentLinkShareConfirmationTarget,
     this.claimable = true,
+    this.prepareGates = const {},
   }) : records = List.of(records),
        receivedRecords = List.of(receivedRecords);
 
   final Completer<PaymentLinkClaimResult>? claimCompleter;
   int fundingConfirmationCount;
   final bool claimable;
+  final Map<String, Completer<void>> prepareGates;
   final List<PaymentLinkRecoveryRecord> records;
   final List<PaymentLinkReceivedRecord> receivedRecords;
   final Map<String, PaymentLinkReceivedStatus> receivedClaimStatuses = {};
@@ -1310,6 +1357,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<VizorPaymentLink> sharedLinks = [];
   final List<VizorPaymentLink> claimedLinks = [];
   final List<String> discardedClaimAddresses = [];
+  final List<String> preparedAddresses = [];
 
   @override
   Future<PaymentLinkFundingQuote> quoteFunding({
@@ -1426,6 +1474,9 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
 
   @override
   Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link) async {
+    preparedAddresses.add(link.address);
+    final prepareGate = prepareGates[link.address];
+    if (prepareGate != null) await prepareGate.future;
     if (claimable &&
         !receivedRecords.any((record) => record.address == link.address)) {
       receivedRecords.insert(

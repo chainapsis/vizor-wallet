@@ -63,6 +63,36 @@ bool isSyncCancelRequested() =>
 /// Check if a sync is currently running.
 bool isSyncRunning() => RustLib.instance.api.crateApiSyncIsSyncRunning();
 
+/// Starts an isolated scan for one short-lived payment-link claim database.
+///
+/// Unlike `start_full_sync`, this entrypoint has no process-global running
+/// guard or desired mode. Different claim IDs can therefore scan independent
+/// databases concurrently, while duplicate work for the same claim is
+/// rejected.
+Stream<ApiSyncProgressEvent> startPaymentLinkClaimSync({
+  required String claimId,
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+}) => RustLib.instance.api.crateApiSyncStartPaymentLinkClaimSync(
+  claimId: claimId,
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+);
+
+/// Cancels only the isolated scan associated with `claim_id`.
+void cancelPaymentLinkClaimSync({required String claimId}) => RustLib
+    .instance
+    .api
+    .crateApiSyncCancelPaymentLinkClaimSync(claimId: claimId);
+
+/// Reports whether the specified isolated claim scan is active.
+bool isPaymentLinkClaimSyncRunning({required String claimId}) => RustLib
+    .instance
+    .api
+    .crateApiSyncIsPaymentLinkClaimSyncRunning(claimId: claimId);
+
 /// Start the background mempool observer.
 ///
 /// Blocks until [`stop_mempool_observer`] is called or the
