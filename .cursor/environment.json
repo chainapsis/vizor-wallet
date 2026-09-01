@@ -1,0 +1,14 @@
+{
+  "name": "Vizor (Flutter + Rust, Linux desktop)",
+  "user": "ubuntu",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "linux-display",
+      "command": "bash .cursor/xvfb.sh"
+    }
+  ]
+}
