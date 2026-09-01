@@ -13,7 +13,6 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_skeleton.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 
 void main() {
@@ -687,9 +686,7 @@ void main() {
     },
   );
 
-  testWidgets('redeem loading uses the Figma skeleton color hierarchy', (
-    tester,
-  ) async {
+  testWidgets('redeem loading uses the Figma card placeholder', (tester) async {
     await _pump(
       tester,
       const PaymentLinkDesktopPreview(
@@ -721,32 +718,11 @@ void main() {
     ]);
     expect(decoration.borderRadius, BorderRadius.circular(AppRadii.large));
     expect(
-      tester.getSize(find.byKey(const ValueKey('payment_link_loading_label'))),
-      const Size(60, 12),
+      tester.getSize(find.byKey(const ValueKey('payment_link_loading_card'))),
+      const Size(360, 225),
     );
-    expect(
-      tester.getSize(find.byKey(const ValueKey('payment_link_loading_amount'))),
-      const Size(130, 31),
-    );
-    for (final key in const [
-      ValueKey('payment_link_loading_label'),
-      ValueKey('payment_link_loading_amount'),
-    ]) {
-      final placeholder = tester.widget<PaymentLinkSkeletonBar>(
-        find.byKey(key),
-      );
-      expect(placeholder.colors, const [Color(0x00858686), Color(0x80858686)]);
-    }
     expect(
       find.byKey(const ValueKey('payment_link_loading_shimmer')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey('payment_link_loading_label_shimmer')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey('payment_link_loading_amount_shimmer')),
       findsNothing,
     );
   });
@@ -818,7 +794,9 @@ void main() {
     expect(tester.binding.hasScheduledFrame, isFalse);
   });
 
-  testWidgets('confetti bursts once and redeem shimmer moves', (tester) async {
+  testWidgets('confetti bursts once and redeem card shimmer moves', (
+    tester,
+  ) async {
     await _pump(
       tester,
       const SizedBox.expand(child: PaymentLinkConfetti()),
@@ -840,40 +818,12 @@ void main() {
       ),
       disableAnimations: false,
     );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('payment_link_loading_label')),
-        matching: find.byKey(
-          const ValueKey('payment_link_loading_label_shimmer'),
-        ),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('payment_link_loading_amount')),
-        matching: find.byKey(
-          const ValueKey('payment_link_loading_amount_shimmer'),
-        ),
-      ),
-      findsOneWidget,
-    );
     Transform shimmer() => tester.widget<Transform>(
       find.byKey(const ValueKey('payment_link_loading_shimmer')),
     );
-    Transform labelShimmer() => tester.widget<Transform>(
-      find.byKey(const ValueKey('payment_link_loading_label_shimmer')),
-    );
-    Transform amountShimmer() => tester.widget<Transform>(
-      find.byKey(const ValueKey('payment_link_loading_amount_shimmer')),
-    );
     final firstX = shimmer().transform.getTranslation().x;
-    final firstLabelX = labelShimmer().transform.getTranslation().x;
-    final firstAmountX = amountShimmer().transform.getTranslation().x;
     await tester.pump(const Duration(milliseconds: 300));
     expect(shimmer().transform.getTranslation().x, isNot(firstX));
-    expect(labelShimmer().transform.getTranslation().x, isNot(firstLabelX));
-    expect(amountShimmer().transform.getTranslation().x, isNot(firstAmountX));
     await tester.pumpWidget(const SizedBox.shrink());
 
     await _pump(
@@ -1221,10 +1171,63 @@ void main() {
         state: PaymentLinkPreviewState.redeemPaste,
       ),
     );
-    expect(
-      tester.getCenter(find.text('Paste card link')).dy,
-      lessThan(tester.getCenter(find.text('Redeem the Card')).dy),
+    final redeemDropZone = find.byKey(
+      const ValueKey('payment_link_redeem_drop_zone'),
     );
+    expect(tester.getTopLeft(find.text('Redeem the Card')).dy, closeTo(166, 1));
+    expect(tester.getTopLeft(redeemDropZone), const Offset(492, 251));
+    expect(tester.getSize(redeemDropZone), const Size(360, 225));
+    expect(
+      tester.getCenter(
+        find.byKey(const ValueKey('payment_link_redeem_paste_button')),
+      ),
+      tester.getCenter(redeemDropZone),
+    );
+    expect(
+      tester
+          .getTopLeft(
+            find.text(
+              'Copy the card link you’ve received, and paste it below.',
+            ),
+          )
+          .dy,
+      closeTo(534, 1),
+    );
+
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(
+        state: PaymentLinkPreviewState.redeemLoading,
+      ),
+    );
+    expect(tester.getTopLeft(find.text('Checking ...')).dy, closeTo(166, 1));
+    expect(
+      tester.getTopLeft(
+        find.byKey(const ValueKey('payment_link_loading_card')),
+      ),
+      const Offset(492, 251),
+    );
+    expect(redeemDropZone, findsNothing);
+    expect(
+      find.byKey(const ValueKey('payment_link_redeem_paste_button')),
+      findsNothing,
+    );
+
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(
+        state: PaymentLinkPreviewState.redeemInvalid,
+      ),
+    );
+    expect(redeemDropZone, findsOneWidget);
+    expect(
+      find.descendant(
+        of: redeemDropZone,
+        matching: find.text('The link doesn’t look legit.'),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.getTopLeft(find.text('Clear clipboard')).dy, closeTo(621, 1));
 
     await _pump(
       tester,

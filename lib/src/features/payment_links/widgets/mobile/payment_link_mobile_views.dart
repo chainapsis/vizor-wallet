@@ -16,7 +16,6 @@ const _navHeight = 74.0;
 const _sideInset = 16.0;
 const _subtitleTop = 102.0;
 const _cardTop = 207.0;
-const _redeemCardTop = 231.0;
 const _receivedCardTop = 221.0;
 const kPaymentLinkMobileCardWidth = 361.0;
 const kPaymentLinkMobileCardHeight = 225.625;
@@ -664,6 +663,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
 class PaymentLinkRedeemMobileView extends StatelessWidget {
   const PaymentLinkRedeemMobileView({
     required this.state,
+    required this.card,
     required this.onBack,
     this.onPaste,
     this.onClearClipboard,
@@ -679,6 +679,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
   });
 
   final PaymentLinkRedeemMobileState state;
+  final Widget card;
   final VoidCallback onBack;
   final VoidCallback? onPaste;
   final VoidCallback? onClearClipboard;
@@ -698,96 +699,63 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
     final unavailable = state == PaymentLinkRedeemMobileState.unavailable;
     final showError = invalid || unavailable;
 
-    return _MobilePaymentLinkFrame(
+    return _MobilePaymentLinkWizardFrame(
       title: title,
+      subtitle: subtitle,
       onBack: onBack,
-      body: Stack(
-        fit: StackFit.expand,
+      card: loading ? const _PaymentLinkLoadingMobileCard() : card,
+      action: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Positioned(
-            top: _subtitleTop,
-            left: 48,
-            right: 48,
-            child: Text(
-              subtitle,
-              key: const ValueKey('payment_link_mobile_redeem_subtitle'),
+          if (loading) ...[
+            Text(
+              'Checking Gift Card...',
+              key: const ValueKey('payment_link_mobile_redeem_checking'),
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: context.colors.text.secondary,
               ),
             ),
-          ),
-          Positioned(
-            top: _redeemCardTop,
-            left: _sideInset,
-            right: _sideInset,
-            child: loading
-                ? const _PaymentLinkLoadingMobileCard()
-                : _PaymentLinkMobileDropZone(
-                    child: showError
-                        ? Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                invalid ? invalidTitle : unavailableTitle,
-                                textAlign: TextAlign.center,
-                                style: AppTypography.bodyMediumStrong.copyWith(
-                                  color: context.colors.text.destructive,
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.xs),
-                              Text(
-                                invalid ? invalidSubtitle : unavailableSubtitle,
-                                textAlign: TextAlign.center,
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: context.colors.text.secondary,
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.sm),
-                              _MobilePasteButton(
-                                label: pasteLabel,
-                                onPressed: onPaste,
-                              ),
-                            ],
-                          )
-                        : _MobilePasteButton(
-                            label: pasteLabel,
-                            onPressed: onPaste,
-                          ),
-                  ),
-          ),
-          if (loading)
-            Positioned(
-              top: _redeemCardTop + _cardHeight + AppSpacing.md,
-              left: 0,
-              right: 0,
-              child: Text(
-                'Checking ...',
-                key: const ValueKey('payment_link_mobile_redeem_checking'),
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: context.colors.text.secondary,
-                ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          if (showError) ...[
+            Text(
+              invalid ? invalidTitle : unavailableTitle,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: context.colors.text.destructive,
               ),
             ),
-          if (showError)
-            Positioned(
-              top: _redeemCardTop + _cardHeight + AppSpacing.lg,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: AppButton(
-                  key: const ValueKey(
-                    'payment_link_mobile_clear_clipboard_button',
-                  ),
-                  onPressed: onClearClipboard,
-                  variant: AppButtonVariant.ghost,
-                  size: AppButtonSize.mediumLarge,
-                  leading: const AppIcon(AppIcons.trash, size: 20),
-                  child: Text(clearLabel),
-                ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              invalid ? invalidSubtitle : unavailableSubtitle,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.secondary,
               ),
             ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          AppButton(
+            key: const ValueKey('payment_link_mobile_paste_button'),
+            onPressed: loading ? null : onPaste,
+            size: AppButtonSize.large,
+            height: _buttonHeight,
+            expand: true,
+            leading: const AppIcon(AppIcons.paste, size: 20),
+            child: Text(loading ? 'Checking...' : pasteLabel),
+          ),
+          if (showError) ...[
+            const SizedBox(height: AppSpacing.xs),
+            AppButton(
+              key: const ValueKey('payment_link_mobile_clear_clipboard_button'),
+              onPressed: onClearClipboard,
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.mediumLarge,
+              leading: const AppIcon(AppIcons.trash, size: 20),
+              child: Text(clearLabel),
+            ),
+          ],
         ],
       ),
     );
@@ -943,47 +911,6 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MobilePasteButton extends StatelessWidget {
-  const _MobilePasteButton({required this.label, this.onPressed});
-
-  final String label;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppButton(
-      key: const ValueKey('payment_link_mobile_paste_button'),
-      onPressed: onPressed,
-      size: AppButtonSize.mediumLarge,
-      height: 36,
-      leading: const AppIcon(AppIcons.paste, size: 20),
-      child: Text(label),
-    );
-  }
-}
-
-class _PaymentLinkMobileDropZone extends StatelessWidget {
-  const _PaymentLinkMobileDropZone({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      key: const ValueKey('payment_link_mobile_redeem_drop_zone'),
-      painter: _MobileDashedBorderPainter(
-        color: context.colors.border.medium,
-        radius: AppRadii.xLarge,
-      ),
-      child: SizedBox(
-        width: _cardWidth,
-        height: _cardHeight,
-        child: Center(child: child),
       ),
     );
   }

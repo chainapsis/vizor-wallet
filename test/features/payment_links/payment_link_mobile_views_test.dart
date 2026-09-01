@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -107,10 +108,7 @@ void main() {
     tester,
   ) async {
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.paste);
-    expect(
-      find.byKey(const ValueKey('payment_link_mobile_redeem_drop_zone')),
-      findsOneWidget,
-    );
+    expect(find.byType(PaymentLinkGiftCard), findsOneWidget);
     expect(find.text('Paste card link'), findsOneWidget);
 
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.loading);
@@ -118,7 +116,7 @@ void main() {
       find.byKey(const ValueKey('payment_link_mobile_loading_card')),
       findsOneWidget,
     );
-    expect(find.text('Checking ...'), findsOneWidget);
+    expect(find.text('Checking Gift Card...'), findsOneWidget);
 
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.invalid);
     expect(find.text('The link doesn’t look legit.'), findsOneWidget);
@@ -294,6 +292,14 @@ Future<void> _pumpRedeem(
           height: 773,
           child: PaymentLinkRedeemMobileView(
             state: state,
+            card: const PaymentLinkGiftCard(
+              artwork: PaymentLinkCardArtwork.gift,
+              cardWidth: kPaymentLinkMobileCardWidth,
+              cardHeight: kPaymentLinkMobileCardHeight,
+              currencySymbol: '',
+              emptyAmountLabel: 'Gift Card link',
+              showCaret: false,
+            ),
             onBack: _noop,
             onPaste: _noop,
             onClearClipboard: _noop,

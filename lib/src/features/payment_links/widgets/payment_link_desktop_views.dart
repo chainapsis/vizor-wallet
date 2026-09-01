@@ -15,7 +15,6 @@ import '../../../core/widgets/app_tooltip.dart';
 import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
 import 'payment_link_gift_card.dart';
-import 'payment_link_skeleton.dart';
 
 const kPaymentLinkMessageTooLargeText =
     'This message is too large. Try using fewer complex emoji.';
@@ -1139,74 +1138,135 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
       child: Align(
         alignment: Alignment.topCenter,
         child: SizedBox(
-          width: 420,
-          child: Column(
+          width: 396,
+          height: 624,
+          child: Stack(
             children: [
-              const SizedBox(
-                height:
-                    AppSpacing.lg +
-                    AppSpacing.lg +
-                    AppSpacing.base +
-                    AppSpacing.sm,
-              ),
-              if (loading)
-                loadingPlaceholder ?? const _PaymentLinkLoadingCard()
-              else
-                _DashedDropZone(
-                  child: showError
-                      ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              invalid ? invalidTitle : unavailableTitle,
-                              style: AppTypography.bodyMediumStrong.copyWith(
-                                color: context.colors.text.destructive,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              invalid ? invalidSubtitle : unavailableSubtitle,
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: context.colors.text.secondary,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            _PasteButton(label: pasteLabel, onPressed: onPaste),
-                          ],
-                        )
-                      : _PasteButton(label: pasteLabel, onPressed: onPaste),
-                ),
-              const SizedBox(height: AppSpacing.lg),
-              Text(
-                title ?? (loading ? 'Checking ...' : 'Redeem the Card'),
-                textAlign: TextAlign.center,
-                style: AppTypography.headlineLarge.copyWith(
-                  color: context.colors.text.accent,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.s),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 260),
+              Positioned(
+                top: 94,
+                left: 0,
+                right: 0,
                 child: Text(
-                  subtitle,
+                  title ?? (loading ? 'Checking ...' : 'Redeem the Card'),
                   textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: context.colors.text.secondary,
+                  style: AppTypography.headlineLarge.copyWith(
+                    color: context.colors.text.accent,
                   ),
                 ),
               ),
-              if (showError) ...[
-                const SizedBox(height: AppSpacing.lg + AppSpacing.sm),
-                _TextAction(
-                  label: clearLabel,
-                  onTap: onClearClipboard,
-                  leading: const AppIcon(AppIcons.trash),
+              Positioned(
+                top: 179,
+                left: 18,
+                child: loading
+                    ? loadingPlaceholder ?? const _PaymentLinkLoadingCard()
+                    : _DashedDropZone(
+                        child: showError
+                            ? Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    invalid ? invalidTitle : unavailableTitle,
+                                    textAlign: TextAlign.center,
+                                    style: AppTypography.bodyMediumStrong
+                                        .copyWith(
+                                          color:
+                                              context.colors.text.destructive,
+                                        ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Text(
+                                    invalid
+                                        ? invalidSubtitle
+                                        : unavailableSubtitle,
+                                    textAlign: TextAlign.center,
+                                    style: AppTypography.bodyMedium.copyWith(
+                                      color: context.colors.text.secondary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.sm),
+                                  _PasteButton(
+                                    label: pasteLabel,
+                                    onPressed: onPaste,
+                                  ),
+                                ],
+                              )
+                            : _PasteButton(
+                                label: pasteLabel,
+                                onPressed: onPaste,
+                              ),
+                      ),
+              ),
+              Positioned(
+                top: 462,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 260),
+                    child: Text(
+                      subtitle,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                    ),
+                  ),
                 ),
-              ],
+              ),
+              if (showError)
+                Positioned(
+                  top: 545,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: _TextAction(
+                      label: clearLabel,
+                      onTap: onClearClipboard,
+                      leading: const AppIcon(AppIcons.trash),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PasteButton extends StatelessWidget {
+  const _PasteButton({required this.label, this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppButton(
+      key: const ValueKey('payment_link_redeem_paste_button'),
+      onPressed: onPressed,
+      size: AppButtonSize.mediumLarge,
+      leading: const AppIcon(AppIcons.paste),
+      child: Text(label),
+    );
+  }
+}
+
+class _DashedDropZone extends StatelessWidget {
+  const _DashedDropZone({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      key: const ValueKey('payment_link_redeem_drop_zone'),
+      painter: _DashedBorderPainter(
+        color: context.colors.border.medium,
+        radius: AppRadii.large,
+        strokeWidth: 3,
+      ),
+      child: SizedBox(width: 360, height: 225, child: Center(child: child)),
     );
   }
 }
@@ -1504,40 +1564,6 @@ class _HelpStep extends StatelessWidget {
   }
 }
 
-class _PasteButton extends StatelessWidget {
-  const _PasteButton({required this.label, this.onPressed});
-
-  final String label;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppButton(
-      onPressed: onPressed,
-      size: AppButtonSize.mediumLarge,
-      leading: const AppIcon(AppIcons.paste),
-      child: Text(label),
-    );
-  }
-}
-
-class _DashedDropZone extends StatelessWidget {
-  const _DashedDropZone({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _DashedBorderPainter(
-        color: context.colors.border.medium,
-        radius: AppRadii.xLarge,
-      ),
-      child: SizedBox(width: 323, height: 203, child: Center(child: child)),
-    );
-  }
-}
-
 class _DashedStatusPill extends StatelessWidget {
   const _DashedStatusPill({required this.label});
 
@@ -1582,17 +1608,22 @@ class _DashedStatusPill extends StatelessWidget {
 }
 
 class _DashedBorderPainter extends CustomPainter {
-  const _DashedBorderPainter({required this.color, required this.radius});
+  const _DashedBorderPainter({
+    required this.color,
+    required this.radius,
+    this.strokeWidth = 2,
+  });
 
   final Color color;
   final double radius;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+      ..strokeWidth = strokeWidth;
     final path = Path()
       ..addRRect(
         RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
@@ -1608,7 +1639,9 @@ class _DashedBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) =>
-      oldDelegate.color != color || oldDelegate.radius != radius;
+      oldDelegate.color != color ||
+      oldDelegate.radius != radius ||
+      oldDelegate.strokeWidth != strokeWidth;
 }
 
 class _PaymentLinkLoadingCard extends StatefulWidget {
@@ -1661,8 +1694,8 @@ class _PaymentLinkLoadingCardState extends State<_PaymentLinkLoadingCard>
     const cardRadius = BorderRadius.all(Radius.circular(AppRadii.large));
     final card = Container(
       key: const ValueKey('payment_link_loading_card'),
-      width: 320,
-      height: 200,
+      width: 360,
+      height: 225,
       decoration: BoxDecoration(
         color: context.colors.background.ground,
         borderRadius: cardRadius,
@@ -1680,47 +1713,6 @@ class _PaymentLinkLoadingCardState extends State<_PaymentLinkLoadingCard>
                   Color(0x0D141818),
                 ],
                 stops: [0, 0.5, 1],
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Align(
-              alignment: Alignment.bottomLeft,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(
-                    height: 16,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: PaymentLinkSkeletonBar(
-                        key: ValueKey('payment_link_loading_label'),
-                        width: 60,
-                        height: 12,
-                        shimmerKey: ValueKey(
-                          'payment_link_loading_label_shimmer',
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.s),
-                  const SizedBox(
-                    height: 46,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: PaymentLinkSkeletonBar(
-                        key: ValueKey('payment_link_loading_amount'),
-                        width: 130,
-                        height: 31,
-                        shimmerKey: ValueKey(
-                          'payment_link_loading_amount_shimmer',
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
               ),
             ),
           ),

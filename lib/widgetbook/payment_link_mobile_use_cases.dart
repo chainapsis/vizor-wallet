@@ -26,6 +26,14 @@ const _fixtureFee = '0.04 ZEC';
 const _fixtureTotal = '4.49 ZEC';
 const _fixtureMessage = 'Hey there! Welcome to the Shielded World ;)';
 const _fixtureArtwork = PaymentLinkCardArtwork.chestLava;
+const _redeemCardFixture = PaymentLinkGiftCard(
+  artwork: PaymentLinkCardArtwork.gift,
+  cardWidth: _cardWidth,
+  cardHeight: _cardHeight,
+  currencySymbol: '',
+  emptyAmountLabel: 'Gift Card link',
+  showCaret: false,
+);
 const kMobilePaymentLinkPreviewFiatDelay = Duration(milliseconds: 1200);
 
 Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
@@ -170,6 +178,7 @@ Widget buildMobilePaymentLinkRedeemPasteUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: PaymentLinkRedeemMobileView(
       state: PaymentLinkRedeemMobileState.paste,
+      card: _redeemCardFixture,
       onBack: _noop,
       onPaste: _noop,
     ),
@@ -183,6 +192,7 @@ Widget buildMobilePaymentLinkRedeemLongSyncWarningUseCase(
     child: MobileModalOverlay(
       background: PaymentLinkRedeemMobileView(
         state: PaymentLinkRedeemMobileState.paste,
+        card: _redeemCardFixture,
         onBack: _noop,
         onPaste: _noop,
       ),
@@ -195,6 +205,7 @@ Widget buildMobilePaymentLinkRedeemLoadingUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: PaymentLinkRedeemMobileView(
       state: PaymentLinkRedeemMobileState.loading,
+      card: _redeemCardFixture,
       onBack: _noop,
     ),
   );
@@ -204,6 +215,7 @@ Widget buildMobilePaymentLinkRedeemInvalidUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: PaymentLinkRedeemMobileView(
       state: PaymentLinkRedeemMobileState.invalid,
+      card: _redeemCardFixture,
       onBack: _noop,
       onPaste: _noop,
       onClearClipboard: _noop,
