@@ -19,8 +19,8 @@ import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 void main() {
   setUpAll(_loadAppFonts);
 
-  test('preview inventory covers all 25 desktop states', () {
-    expect(PaymentLinkPreviewState.values, hasLength(25));
+  test('preview inventory covers all 26 desktop states', () {
+    expect(PaymentLinkPreviewState.values, hasLength(26));
   });
 
   for (final state in PaymentLinkPreviewState.values) {
@@ -34,6 +34,28 @@ void main() {
       expect(find.byType(PaymentLinkDesktopPreview), findsOneWidget);
     });
   }
+
+  testWidgets('long sync warning explains the wait and available choices', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(
+        state: PaymentLinkPreviewState.redeemLongSyncWarning,
+      ),
+    );
+
+    expect(
+      find.text('This Gift Card may take a while'),
+      findsOneWidget,
+    );
+    expect(find.text('Check Gift Card'), findsOneWidget);
+    expect(find.text('Go back'), findsOneWidget);
+    expect(find.textContaining('100000'), findsNothing);
+  });
 
   testWidgets('home actions forward their callbacks', (tester) async {
     var helpPressed = false;

@@ -936,6 +936,11 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobilePaymentLinkRedeemPasteUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Redeem - Long sync warning',
+                      builder:
+                          buildMobilePaymentLinkRedeemLongSyncWarningUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Redeem - Checking',
                       builder: buildMobilePaymentLinkRedeemLoadingUseCase,
                     ),
@@ -1079,6 +1084,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Paste link',
                       builder: buildPaymentLinkRedeemPasteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long sync warning',
+                      builder: buildPaymentLinkRedeemLongSyncWarningUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Loading',

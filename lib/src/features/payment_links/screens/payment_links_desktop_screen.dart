@@ -28,6 +28,7 @@ import '../widgets/payment_link_confetti.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_keystone_signing_overlay.dart';
+import '../widgets/payment_link_long_sync_warning.dart';
 import '../widgets/mobile/payment_link_mobile_views.dart';
 
 enum _PaymentLinksLocalPage {
@@ -118,6 +119,7 @@ class _PaymentLinksDesktopScreenState
   PaymentLinkClaimSession? _receivedClaimSession;
   VizorPaymentLink? _readyLink;
   VizorPaymentLink? _receivedLink;
+  VizorPaymentLink? _longSyncLink;
   _PaymentLinkKeystoneFundingRequest? _keystoneFundingRequest;
   bool _showHelp = false;
   bool _amountFocused = false;
@@ -206,6 +208,7 @@ class _PaymentLinksDesktopScreenState
       }
       _page = page;
       _showHelp = false;
+      _longSyncLink = null;
     });
   }
 
@@ -226,6 +229,7 @@ class _PaymentLinksDesktopScreenState
       _messageEditorRevealed = false;
       _page = _PaymentLinksLocalPage.amount;
       _showHelp = false;
+      _longSyncLink = null;
     });
   }
 
@@ -832,6 +836,7 @@ class _PaymentLinksDesktopScreenState
       _redeemState = PaymentLinkRedeemVisualState.loading;
       _page = _PaymentLinksLocalPage.redeem;
       _showHelp = false;
+      _longSyncLink = null;
     });
     try {
       await _prepareDecodedPaymentLink(link);
@@ -840,7 +845,10 @@ class _PaymentLinksDesktopScreenState
     }
   }
 
-  Future<void> _prepareDecodedPaymentLink(VizorPaymentLink link) async {
+  Future<void> _prepareDecodedPaymentLink(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) async {
     final previousSession = _receivedClaimSession;
     if (previousSession != null &&
         previousSession.link.address != link.address) {
@@ -852,7 +860,7 @@ class _PaymentLinksDesktopScreenState
     try {
       final session = await ref
           .read(paymentLinkOperationsProvider)
-          .prepareClaim(link);
+          .prepareClaim(link, allowLongSync: allowLongSync);
       if (!mounted) {
         await ref
             .read(paymentLinkOperationsProvider)
@@ -865,6 +873,7 @@ class _PaymentLinksDesktopScreenState
             .discardClaimSession(session);
         setState(() {
           _receivedClaimSession = null;
+          _longSyncLink = null;
           _redeemState = PaymentLinkRedeemVisualState.unavailable;
           _page = _PaymentLinksLocalPage.redeem;
         });
@@ -873,20 +882,60 @@ class _PaymentLinksDesktopScreenState
       setState(() {
         _receivedClaimSession = session;
         _receivedLink = link;
+        _longSyncLink = null;
         _receivedShowsBack = false;
         _rememberReceivedLink(link);
         _redeemState = PaymentLinkRedeemVisualState.paste;
         _page = _PaymentLinksLocalPage.received;
       });
+    } on PaymentLinkLongSyncConfirmationRequired {
+      if (!mounted) return;
+      setState(() {
+        _redeemState = PaymentLinkRedeemVisualState.paste;
+        if (kAppFormFactor == AppFormFactor.desktop) {
+          _longSyncLink = link;
+        }
+      });
+      if (kAppFormFactor == AppFormFactor.mobile) {
+        final confirmed = await showPaymentLinkLongSyncWarningSheet(context);
+        if (!confirmed || !mounted) return;
+        setState(() => _redeemState = PaymentLinkRedeemVisualState.loading);
+        await _prepareDecodedPaymentLink(link, allowLongSync: true);
+      }
     } on FormatException {
       if (mounted) {
-        setState(() => _redeemState = PaymentLinkRedeemVisualState.invalid);
+        setState(() {
+          _longSyncLink = null;
+          _redeemState = PaymentLinkRedeemVisualState.invalid;
+        });
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _redeemState = PaymentLinkRedeemVisualState.paste);
+        setState(() {
+          _longSyncLink = null;
+          _redeemState = PaymentLinkRedeemVisualState.paste;
+        });
         _showError('Card balance could not be checked. Try again.');
       }
+    }
+  }
+
+  void _cancelLongSyncWarning() {
+    setState(() => _longSyncLink = null);
+  }
+
+  Future<void> _confirmLongSyncWarning() async {
+    final link = _longSyncLink;
+    if (link == null) return;
+    setState(() {
+      _longSyncLink = null;
+      _operationInProgress = true;
+      _redeemState = PaymentLinkRedeemVisualState.loading;
+    });
+    try {
+      await _prepareDecodedPaymentLink(link, allowLongSync: true);
+    } finally {
+      if (mounted) setState(() => _operationInProgress = false);
     }
   }
 
@@ -902,6 +951,7 @@ class _PaymentLinksDesktopScreenState
     if (mounted) {
       setState(() {
         _receivedClaimSession = null;
+        _longSyncLink = null;
         _redeemState = PaymentLinkRedeemVisualState.paste;
       });
     }
@@ -1006,6 +1056,7 @@ class _PaymentLinksDesktopScreenState
 
     final currentPage = _buildCurrentPage();
     final keystoneRequest = _keystoneFundingRequest;
+    final longSyncLink = _longSyncLink;
     final pane = keystoneRequest != null
         ? Stack(
             fit: StackFit.expand,
@@ -1019,6 +1070,17 @@ class _PaymentLinksDesktopScreenState
                   onCancel: _cancelKeystoneFunding,
                   onFundingBroadcast: _completeKeystoneFunding,
                 ),
+              ),
+            ],
+          )
+        : longSyncLink != null
+        ? Stack(
+            fit: StackFit.expand,
+            children: [
+              currentPage,
+              PaymentLinkLongSyncWarningModal(
+                onConfirm: _confirmLongSyncWarning,
+                onCancel: _cancelLongSyncWarning,
               ),
             ],
           )

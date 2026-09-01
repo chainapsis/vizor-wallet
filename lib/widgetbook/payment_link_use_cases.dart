@@ -18,6 +18,7 @@ import '../src/features/payment_links/widgets/payment_link_card_selector_rail.da
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
 import '../src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
+import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 
 const _previewWindowSize = Size(1080, 720);
 const _message = 'Hey there! Welcome to the Shielded\nWorld ;)';
@@ -44,6 +45,7 @@ enum PaymentLinkPreviewState {
   cardsReceiving,
   cardsReceived,
   redeemPaste,
+  redeemLongSyncWarning,
   redeemLoading,
   redeemInvalid,
   redeemUnavailable,
@@ -155,6 +157,11 @@ Widget buildPaymentLinkCardsReceivedUseCase(BuildContext context) =>
 
 Widget buildPaymentLinkRedeemPasteUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.redeemPaste);
+
+Widget buildPaymentLinkRedeemLongSyncWarningUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.redeemLongSyncWarning,
+    );
 
 Widget buildPaymentLinkRedeemLoadingUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(
@@ -422,6 +429,22 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         onPaste: _noop,
         subtitle: 'Copy the card link you’ve received, and paste it below.',
         pasteLabel: 'Paste card link',
+      ),
+      PaymentLinkPreviewState.redeemLongSyncWarning => Stack(
+        fit: StackFit.expand,
+        children: [
+          PaymentLinkRedeemDesktopView(
+            state: PaymentLinkRedeemVisualState.paste,
+            onBack: _noop,
+            onPaste: _noop,
+            subtitle: 'Copy the card link you’ve received, and paste it below.',
+            pasteLabel: 'Paste card link',
+          ),
+          const PaymentLinkLongSyncWarningModal(
+            onConfirm: _noop,
+            onCancel: _noop,
+          ),
+        ],
       ),
       PaymentLinkPreviewState.redeemLoading =>
         const PaymentLinkRedeemDesktopView(

@@ -843,6 +843,100 @@ void main() {
     expect(find.text('Congratulations!'), findsOneWidget);
   });
 
+  testWidgets('confirms before checking a Gift Card with a long scan', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(
+      longSyncConfirmationRequired: true,
+    );
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('This Gift Card may take a while'),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Vizor needs to scan more history than usual before it can verify the '
+        'balance. This is safe, but it may take a long time.',
+      ),
+      findsOneWidget,
+    );
+    expect(operations.allowLongSyncCalls, [isFalse]);
+
+    await tester.tap(find.text('Go back'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('This Gift Card may take a while'), findsNothing);
+    expect(find.text('Paste card link'), findsOneWidget);
+
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check Gift Card'));
+    await tester.pumpAndSettle();
+
+    expect(operations.allowLongSyncCalls, [isFalse, isFalse, isTrue]);
+    expect(find.text('You’ve received\na gift card!'), findsOneWidget);
+  });
+
+  testWidgets(
+    'mobile confirms before checking a Gift Card with a long scan',
+    (tester) async {
+      final operations = _FakePaymentLinkOperations(
+        longSyncConfirmationRequired: true,
+      );
+      final clipboard = _FakePaymentLinkClipboard(
+        text: _incomingLink.toUri().toString(),
+      );
+      await _pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: clipboard,
+      );
+
+      expect(
+        find.byKey(const ValueKey('payment_links_mobile_screen')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Paste card link'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('payment_link_long_sync_warning_sheet')),
+        findsOneWidget,
+      );
+      expect(operations.allowLongSyncCalls, [isFalse]);
+
+      await tester.tap(find.text('Go back'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('payment_link_long_sync_warning_sheet')),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Paste card link'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Check Gift Card'));
+      await tester.pumpAndSettle();
+
+      expect(operations.allowLongSyncCalls, [isFalse, isFalse, isTrue]);
+      expect(find.text('You’ve received a gift!'), findsOneWidget);
+    },
+    tags: ['mobile'],
+  );
+
   testWidgets('routes an accepted incoming payment link and claims it', (
     tester,
   ) async {
@@ -1192,10 +1286,15 @@ Future<void> _pumpPaymentLinksScreen(
   );
   await tester.pump();
   for (var i = 0; i < 20; i++) {
-    if (find
+    final hasDesktopScreen = find
         .byKey(const ValueKey('payment_links_desktop_screen'))
         .evaluate()
-        .isNotEmpty) {
+        .isNotEmpty;
+    final hasMobileScreen = find
+        .byKey(const ValueKey('payment_links_mobile_screen'))
+        .evaluate()
+        .isNotEmpty;
+    if (hasDesktopScreen || hasMobileScreen) {
       break;
     }
     await tester.pump(const Duration(milliseconds: 50));
@@ -1337,12 +1436,14 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     this.claimCompleter,
     this.fundingConfirmationCount = kPaymentLinkShareConfirmationTarget,
     this.claimable = true,
+    this.longSyncConfirmationRequired = false,
   }) : records = List.of(records),
        receivedRecords = List.of(receivedRecords);
 
   final Completer<PaymentLinkClaimResult>? claimCompleter;
   int fundingConfirmationCount;
   final bool claimable;
+  final bool longSyncConfirmationRequired;
   final List<PaymentLinkRecoveryRecord> records;
   final List<PaymentLinkReceivedRecord> receivedRecords;
   final Map<String, PaymentLinkReceivedStatus> receivedClaimStatuses = {};
@@ -1354,6 +1455,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<VizorPaymentLink> sharedLinks = [];
   final List<VizorPaymentLink> claimedLinks = [];
   final List<String> discardedClaimAddresses = [];
+  final List<bool> allowLongSyncCalls = [];
 
   @override
   Future<PaymentLinkFundingQuote> quoteFunding({
@@ -1469,7 +1571,14 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   }
 
   @override
-  Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link) async {
+  Future<PaymentLinkClaimSession> prepareClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) async {
+    allowLongSyncCalls.add(allowLongSync);
+    if (longSyncConfirmationRequired && !allowLongSync) {
+      throw const PaymentLinkLongSyncConfirmationRequired();
+    }
     if (claimable &&
         !receivedRecords.any((record) => record.address == link.address)) {
       receivedRecords.insert(

@@ -236,7 +236,10 @@ abstract interface class PaymentLinkOperations {
     List<PaymentLinkReceivedRecord> records,
   );
 
-  Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link);
+  Future<PaymentLinkClaimSession> prepareClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  });
 
   Future<PaymentLinkClaimResult> claimPreparedLink(
     PaymentLinkClaimSession session,
@@ -335,6 +338,24 @@ int validatePaymentLinkClaimBirthday({
     );
   }
   return advertisedBirthdayHeight;
+}
+
+const kPaymentLinkLongSyncLookbackBlocks = 100000;
+
+@visibleForTesting
+bool isLongPaymentLinkSync({
+  required int birthdayHeight,
+  required int currentTipHeight,
+}) {
+  validatePaymentLinkClaimBirthday(
+    advertisedBirthdayHeight: birthdayHeight,
+    currentTipHeight: currentTipHeight,
+  );
+  return currentTipHeight - birthdayHeight > kPaymentLinkLongSyncLookbackBlocks;
+}
+
+class PaymentLinkLongSyncConfirmationRequired implements Exception {
+  const PaymentLinkLongSyncConfirmationRequired();
 }
 
 class PaymentLinkClaimDestinationChangedException implements Exception {
@@ -843,7 +864,10 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   @override
-  Future<PaymentLinkClaimSession> prepareClaim(VizorPaymentLink link) async {
+  Future<PaymentLinkClaimSession> prepareClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) async {
     final receiverState = _ref.read(accountProvider).value;
     final receiverAccountUuid = receiverState?.activeAccountUuid;
     final receiverAddress = receiverState?.activeAddress;
@@ -856,6 +880,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       link: link,
       destinationAddress: receiverAddress,
       destinationAccountUuid: receiverAccountUuid,
+      allowLongSync: allowLongSync,
     );
     if (!session.canClaim) return session;
     try {
@@ -871,6 +896,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     required VizorPaymentLink link,
     required String destinationAddress,
     required String destinationAccountUuid,
+    required bool allowLongSync,
   }) async {
     await _requireShieldedAddress(destinationAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
@@ -888,6 +914,13 @@ class PaymentLinkService implements PaymentLinkOperations {
       advertisedBirthdayHeight: link.birthdayHeight,
       currentTipHeight: currentTipHeight.toInt(),
     );
+    if (!allowLongSync &&
+        isLongPaymentLinkSync(
+          birthdayHeight: claimBirthdayHeight,
+          currentTipHeight: currentTipHeight.toInt(),
+        )) {
+      throw const PaymentLinkLongSyncConfirmationRequired();
+    }
 
     final tempWallet = await _createOrOpenTemporaryWalletDb(link);
     var deleteOnError = !tempWallet.existed;

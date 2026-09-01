@@ -259,6 +259,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkRedeemPasteUseCase,
   ),
   FigmaCompareScenario(
+    id: 'payment-link-redeem-long-sync-warning',
+    description: 'Desktop Gift Card long-sync warning',
+    builder: buildPaymentLinkRedeemLongSyncWarningUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-redeem-loading',
     description: 'Desktop Gift Card redeem loading state',
     builder: buildPaymentLinkRedeemLoadingUseCase,
@@ -364,6 +369,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-payment-link-redeem-paste',
     description: 'Mobile Gift Card redeem paste state',
     builder: buildMobilePaymentLinkRedeemPasteUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-redeem-long-sync-warning',
+    description: 'Mobile Gift Card long-sync warning',
+    builder: buildMobilePaymentLinkRedeemLongSyncWarningUseCase,
     desktop: false,
     mobile: true,
   ),

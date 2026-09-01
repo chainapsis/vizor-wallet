@@ -15,6 +15,7 @@ import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
 import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
+import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 
 const _mobilePreviewSize = Size(393, 773);
 const _cardWidth = 361.0;
@@ -169,6 +170,21 @@ Widget buildMobilePaymentLinkRedeemPasteUseCase(BuildContext context) {
       state: PaymentLinkRedeemMobileState.paste,
       onBack: _noop,
       onPaste: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkRedeemLongSyncWarningUseCase(
+  BuildContext context,
+) {
+  return const _MobilePaymentLinkFrame(
+    child: MobileModalOverlay(
+      background: PaymentLinkRedeemMobileView(
+        state: PaymentLinkRedeemMobileState.paste,
+        onBack: _noop,
+        onPaste: _noop,
+      ),
+      child: PaymentLinkLongSyncWarningSheet(onConfirm: _noop, onCancel: _noop),
     ),
   );
 }

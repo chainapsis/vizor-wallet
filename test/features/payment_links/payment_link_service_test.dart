@@ -352,6 +352,24 @@ void main() {
     );
   });
 
+  test('flags claim scans beyond the normal lookback', () {
+    const currentTip = 3500000;
+    expect(
+      isLongPaymentLinkSync(
+        birthdayHeight: currentTip - kPaymentLinkLongSyncLookbackBlocks,
+        currentTipHeight: currentTip,
+      ),
+      isFalse,
+    );
+    expect(
+      isLongPaymentLinkSync(
+        birthdayHeight: currentTip - kPaymentLinkLongSyncLookbackBlocks - 1,
+        currentTipHeight: currentTip,
+      ),
+      isTrue,
+    );
+  });
+
   test('claim wallet cache identity uses the account and birthday only', () {
     final link = _link();
     final sameLinkName = paymentLinkClaimWalletDirectoryName(link);
