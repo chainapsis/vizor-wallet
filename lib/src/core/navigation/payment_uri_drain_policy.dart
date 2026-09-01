@@ -42,6 +42,12 @@ const kPaymentUriSendInProgressMessage =
 const kPaymentUriBusyMessage =
     'Finish or cancel what you are doing before opening a payment link.';
 
+/// Shown when a Private (Ironwood) migration has the account's whole
+/// spendable balance in flight, so the product disables sending entirely.
+/// Delivering the link would open a send form that cannot be submitted.
+const kPaymentUriMigrationSendGateMessage =
+    'Finish the migration before opening payment links.';
+
 /// The kind of in-progress surface occupying a location, if any.
 enum PaymentUriBlockedSurface {
   /// Payment-URI delivery is allowed here.
@@ -267,6 +273,7 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// | `/welcome`, no wallet                        | drop + no-wallet msg      |
 /// | onboarding / import / add-account location   | drop + onboarding msg     |
 /// | other in-progress surface, or a busy overlay | drop + busy msg           |
+/// | migration disables sending                   | drop + migration msg      |
 /// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
 /// | locked, already on `/unlock`/`/lost-password`| wait (stay parked)        |
 /// | locked, anywhere else                        | `/unlock` (stay parked)   |
@@ -282,7 +289,9 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// failed, which makes the status screen safe to leave. [hasBusySurface] is
 /// true when an in-progress surface that owns no route of its own is mounted
 /// — see `paymentUriBusySurfaceProvider`; it blocks exactly like
-/// [PaymentUriBlockedSurface.other].
+/// [PaymentUriBlockedSurface.other]. [sendGatedByMigration] is true when the
+/// product disables sending because a Private migration holds the whole
+/// spendable balance — see `migrationSendGateProvider`.
 PaymentUriDrainDecision decidePaymentUriDrain({
   required bool hasParkedPrefill,
   required Duration? parkedFor,
@@ -295,6 +304,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   Map<String, String> queryParameters = const {},
   bool sendStatusIsTerminal = false,
   bool hasBusySurface = false,
+  bool sendGatedByMigration = false,
 }) {
   if (!hasParkedPrefill) return _waitDecision;
 
@@ -351,6 +361,18 @@ PaymentUriDrainDecision decidePaymentUriDrain({
     return const PaymentUriDrainDecision(
       PaymentUriDrainAction.dropWithMessage,
       message: kPaymentUriBusyMessage,
+    );
+  }
+
+  // Sits with the busy row for the same reason it outranks the wallet and
+  // lock rows: the send form the link would open is one the product has
+  // already taken away, so the user needs the migration explanation, not a
+  // dead compose screen. Below the busy row, because an overlay actually in
+  // flight is the more urgent thing to say.
+  if (sendGatedByMigration) {
+    return const PaymentUriDrainDecision(
+      PaymentUriDrainAction.dropWithMessage,
+      message: kPaymentUriMigrationSendGateMessage,
     );
   }
 

@@ -99,6 +99,7 @@ import 'src/providers/linux_update_provider.dart';
 import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
+import 'src/providers/migration_send_gate_provider.dart';
 import 'src/providers/payment_uri_prefill_provider.dart';
 import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
@@ -1354,6 +1355,7 @@ class _PaymentUriLinkListenerState
       // In-progress surfaces that own no route of their own — today the
       // desktop Keystone shield signing overlay, which sits on `/home`.
       hasBusySurface: ref.read(paymentUriBusySurfaceProvider) > 0,
+      sendGatedByMigration: ref.read(migrationSendGateProvider),
     );
 
     switch (decision.action) {

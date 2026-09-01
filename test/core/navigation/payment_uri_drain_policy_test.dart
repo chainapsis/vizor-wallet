@@ -16,6 +16,7 @@ PaymentUriDrainDecision decide({
   Map<String, String> queryParameters = const {},
   bool sendStatusIsTerminal = false,
   bool hasBusySurface = false,
+  bool sendGatedByMigration = false,
 }) => decidePaymentUriDrain(
   hasParkedPrefill: hasParkedPrefill,
   parkedFor: parkedFor,
@@ -28,6 +29,7 @@ PaymentUriDrainDecision decide({
   queryParameters: queryParameters,
   sendStatusIsTerminal: sendStatusIsTerminal,
   hasBusySurface: hasBusySurface,
+  sendGatedByMigration: sendGatedByMigration,
 );
 
 void main() {
@@ -510,6 +512,76 @@ void main() {
           parkedFor: null,
         ).action,
         PaymentUriDrainAction.wait,
+      );
+    });
+  });
+
+  group('migration send gate', () {
+    test('drops the link with the migration message', () {
+      final decision = decide(sendGatedByMigration: true);
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriMigrationSendGateMessage);
+    });
+
+    test('an ungated migration state delivers', () {
+      expect(
+        decide(sendGatedByMigration: false).action,
+        PaymentUriDrainAction.deliver,
+      );
+    });
+
+    test('outranks the no-wallet, locked, and send rows', () {
+      for (final decision in [
+        decide(sendGatedByMigration: true, hasWallet: false),
+        decide(sendGatedByMigration: true, isUnlocked: false),
+        decide(sendGatedByMigration: true, matchedLocation: '/send'),
+        decide(
+          sendGatedByMigration: true,
+          matchedLocation: '/send/status',
+          sendStatusIsTerminal: true,
+        ),
+      ]) {
+        expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+        expect(decision.message, kPaymentUriMigrationSendGateMessage);
+      }
+    });
+
+    test('a busy surface keeps its own, more urgent message', () {
+      expect(
+        decide(sendGatedByMigration: true, hasBusySurface: true).message,
+        kPaymentUriBusyMessage,
+      );
+    });
+
+    test('does not outrank the stale, failure, or onboarding rows', () {
+      expect(
+        decide(
+          sendGatedByMigration: true,
+          parkedFor: kPaymentUriParkTtl + const Duration(minutes: 1),
+        ).action,
+        PaymentUriDrainAction.dropSilently,
+      );
+      expect(
+        decide(sendGatedByMigration: true, walletHasError: true).message,
+        kPaymentUriUnavailableMessage,
+      );
+      expect(
+        decide(sendGatedByMigration: true, walletIsLoading: true).action,
+        PaymentUriDrainAction.wait,
+      );
+      expect(
+        decide(
+          sendGatedByMigration: true,
+          matchedLocation: '/onboarding/seed',
+        ).message,
+        kPaymentUriOnboardingMessage,
+      );
+    });
+
+    test('the message is sentence case', () {
+      expect(
+        kPaymentUriMigrationSendGateMessage,
+        'Finish the migration before opening payment links.',
       );
     });
   });
