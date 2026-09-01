@@ -1298,6 +1298,10 @@ class _PaymentUriLinkListenerState
       if (!mounted) return;
       _drainPendingPrefill();
     });
+    // addPostFrameCallback does not request a frame on its own. An idle app
+    // (locked, nothing animating) would otherwise sit on the parked link until
+    // some unrelated frame happens to be scheduled.
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   void _drainPendingPrefill() {
@@ -1359,6 +1363,9 @@ class _PaymentUriLinkListenerState
         SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
       );
     });
+    // See _schedulePendingDrain: the post-frame callback needs a frame to run
+    // in, and an idle app has none pending.
+    WidgetsBinding.instance.scheduleFrame();
   }
 }
 

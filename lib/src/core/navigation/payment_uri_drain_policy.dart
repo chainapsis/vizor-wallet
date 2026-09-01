@@ -195,12 +195,10 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// | other in-progress surface                    | drop + busy msg           |
 /// | otherwise                                    | deliver                   |
 ///
-/// [sendStatusIsTerminal] is true when the app is on `/send/status` and that
-/// send has already succeeded or failed, which makes the status screen safe to
-/// leave.
-///
 /// [parkedFor] is how long the prefill has been parked (null when nothing is
-/// parked, or when the park time is unknown).
+/// parked, or when the park time is unknown). [sendStatusIsTerminal] is true
+/// when the app is on `/send/status` and that send has already succeeded or
+/// failed, which makes the status screen safe to leave.
 PaymentUriDrainDecision decidePaymentUriDrain({
   required bool hasParkedPrefill,
   required Duration? parkedFor,
