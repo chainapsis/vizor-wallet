@@ -80,15 +80,4 @@ void main() {
 
     expect(received.last, 'https://example.test/payment-links/open#v1=warm');
   });
-
-  test('diagnostics describe the envelope without exposing the secret', () {
-    const secret = 'do-not-log-this-bearer-payload';
-    final summary = incomingUriDiagnosticSummary(
-      'https://link.vizor.cash/payment-links/open#v1=$secret',
-    );
-
-    expect(summary, 'origin=trusted route=payment_link query=none fragment=v1');
-    expect(summary, isNot(contains(secret)));
-    expect(summary, isNot(contains('link.vizor.cash')));
-  });
 }

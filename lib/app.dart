@@ -1266,10 +1266,7 @@ class _IncomingDeepLinkHostState extends ConsumerState<_IncomingDeepLinkHost> {
           widget.router.go('/home');
         }
       case VizorDeepLinkRoute.paymentLink:
-        final result = ref
-            .read(paymentLinkIntakeProvider.notifier)
-            .receive(rawUri);
-        log('Incoming URI: payment link intake=${result.name}');
+        ref.read(paymentLinkIntakeProvider.notifier).receive(rawUri);
       case null:
         return;
     }
