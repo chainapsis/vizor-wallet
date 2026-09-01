@@ -62,26 +62,71 @@ void SetStringValue(HKEY key, const wchar_t* name, const std::wstring& value) {
       static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
 }
 
-std::wstring ReadDefaultCommand() {
-  DWORD type = 0;
+// Whether the effective zcash: shell open command could be read, and if so
+// whether one exists at all. Any failure we cannot attribute to "there is no
+// registration" is kUnreadable: a REG_EXPAND_SZ whose expansion needs a
+// second pass, a value of an unexpected type, a key an ACL keeps us out of.
+// Callers must read kUnreadable as "somebody owns the scheme" -- reporting it
+// as absent is how a failed read ends up overwriting another wallet's handler.
+enum class DefaultCommandState {
+  kAbsent,
+  kPresent,
+  kUnreadable,
+};
+
+// Reads the effective zcash: shell open command into |command|, which is left
+// empty unless kPresent is returned. Only ERROR_FILE_NOT_FOUND -- no key, or
+// no default value under it -- counts as kAbsent.
+DefaultCommandState ReadDefaultCommand(std::wstring* command) {
+  command->clear();
+
   DWORD size = 0;
-  if (::RegGetValueW(HKEY_CLASSES_ROOT, kEffectiveProtocolCommandKeyPath,
-                     nullptr, RRF_RT_REG_SZ, &type, nullptr, &size) !=
-          ERROR_SUCCESS ||
-      size == 0) {
-    return L"";
+  LSTATUS status =
+      ::RegGetValueW(HKEY_CLASSES_ROOT, kEffectiveProtocolCommandKeyPath,
+                     nullptr, RRF_RT_REG_SZ, nullptr, nullptr, &size);
+  if (status == ERROR_FILE_NOT_FOUND) {
+    return DefaultCommandState::kAbsent;
+  }
+  if (status != ERROR_SUCCESS) {
+    return DefaultCommandState::kUnreadable;
   }
 
-  std::wstring value(size / sizeof(wchar_t), L'\0');
-  if (::RegGetValueW(HKEY_CLASSES_ROOT, kEffectiveProtocolCommandKeyPath,
-                     nullptr, RRF_RT_REG_SZ, &type, value.data(), &size) !=
-      ERROR_SUCCESS) {
-    return L"";
+  // RRF_RT_REG_SZ expands a REG_EXPAND_SZ value into the caller's buffer, and
+  // the size reported by the query above does not account for that expansion,
+  // so the read itself can come back ERROR_MORE_DATA asking for more room.
+  // Retry with the size the API reports, bounded, and only while that
+  // requirement actually grows, so a value that keeps asking for more cannot
+  // spin here.
+  constexpr int kMaxReadAttempts = 4;
+  for (int attempt = 0; attempt < kMaxReadAttempts; ++attempt) {
+    std::wstring value(size / sizeof(wchar_t) + 1, L'\0');
+    const DWORD capacity_bytes =
+        static_cast<DWORD>(value.size() * sizeof(wchar_t));
+    DWORD read_bytes = capacity_bytes;
+    status =
+        ::RegGetValueW(HKEY_CLASSES_ROOT, kEffectiveProtocolCommandKeyPath,
+                       nullptr, RRF_RT_REG_SZ, nullptr, value.data(),
+                       &read_bytes);
+    if (status == ERROR_SUCCESS) {
+      const size_t written = static_cast<size_t>(read_bytes) / sizeof(wchar_t);
+      if (written < value.size()) {
+        value.resize(written);
+      }
+      while (!value.empty() && value.back() == L'\0') {
+        value.pop_back();
+      }
+      *command = std::move(value);
+      return DefaultCommandState::kPresent;
+    }
+    if (status == ERROR_FILE_NOT_FOUND) {
+      return DefaultCommandState::kAbsent;
+    }
+    if (status != ERROR_MORE_DATA || read_bytes <= capacity_bytes) {
+      return DefaultCommandState::kUnreadable;
+    }
+    size = read_bytes;
   }
-  while (!value.empty() && value.back() == L'\0') {
-    value.pop_back();
-  }
-  return value;
+  return DefaultCommandState::kUnreadable;
 }
 
 // Extracts the executable path from a shell open command, that is the first
@@ -171,8 +216,18 @@ void RegisterZcashProtocolHandler() {
 
 void UnregisterZcashProtocolHandler() {
   const std::wstring module_path = ToLower(ModuleFileName());
-  const std::wstring command = ToLower(ReadDefaultCommand());
-  if (module_path.empty() || command.find(module_path) == std::wstring::npos) {
+  if (module_path.empty()) {
+    return;
+  }
+  // Delete only a registration we could actually read and that points at this
+  // module. An unreadable command is not evidence the scheme is ours, so leave
+  // it alone rather than tearing down a handler that may belong to someone
+  // else.
+  std::wstring command;
+  if (ReadDefaultCommand(&command) != DefaultCommandState::kPresent) {
+    return;
+  }
+  if (ToLower(command).find(module_path) == std::wstring::npos) {
     return;
   }
 
@@ -191,8 +246,16 @@ void RegisterZcashProtocolHandlerIfUnclaimed() {
   // from another wallet (or another Vizor channel) the user selected. Install
   // and update hooks still register unconditionally -- that is the intended
   // moment to claim the handler.
-  const std::wstring command = ReadDefaultCommand();
-  if (!command.empty()) {
+  std::wstring command;
+  const DefaultCommandState state = ReadDefaultCommand(&command);
+  // A read we could not complete says nothing about who owns the scheme, so
+  // assume it is owned and write nothing. Treating a permissions error or an
+  // ERROR_MORE_DATA expansion as "unclaimed" is what would let a plain launch
+  // overwrite the handler another wallet is holding.
+  if (state == DefaultCommandState::kUnreadable) {
+    return;
+  }
+  if (state == DefaultCommandState::kPresent && !command.empty()) {
     // Already ours: return without writing. Rewriting the same four values and
     // firing SHChangeNotify on every launch is pure churn for an install that
     // owns the scheme.
