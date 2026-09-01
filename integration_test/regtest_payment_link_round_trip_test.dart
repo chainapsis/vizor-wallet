@@ -73,7 +73,7 @@ void main() {
         ZecAmount.fromZatoshi(senderStartingBalance.total).balance.amountText,
       );
 
-      await _openPaymentLinksFromSidebar(tester);
+      await _openPaymentLinksFromSettings(tester);
       await tapAppButton(
         tester,
         const ValueKey('payment_link_create_card_button'),
@@ -180,7 +180,7 @@ void main() {
       final receiverStartingBalance = await _readAccountBalance(
         receiverAccountUuid,
       );
-      await _openPaymentLinksFromSidebar(tester);
+      await _openPaymentLinksFromSettings(tester);
       await _tapText(tester, 'Redeem a card');
       await _tapText(tester, 'Paste card link');
       await pumpUntil(
@@ -311,8 +311,9 @@ Future<void> _waitForForegroundSyncIdle(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 250));
 }
 
-Future<void> _openPaymentLinksFromSidebar(WidgetTester tester) async {
-  await tapAppWidget(tester, const ValueKey('sidebar_payment_links_button'));
+Future<void> _openPaymentLinksFromSettings(WidgetTester tester) async {
+  await _tapText(tester, 'Settings');
+  await tapAppWidget(tester, const ValueKey('settings_gift_cards_row'));
   await pumpUntil(
     tester,
     () =>
