@@ -10,25 +10,35 @@ typedef VotingShareTrackingDrain = Future<void> Function();
 class VotingShareTrackingRegistry {
   final Map<VotingSessionKey, _VotingShareTrackingRegistration> _registrations =
       {};
-  final Set<Completer<void>> _discoveries = {};
+  final Map<Completer<void>, String?> _backgroundWork = {};
   final Set<VoidCallback> _restoreRequestListeners = {};
   final Map<String, int> _accountQuiescenceDepths = {};
   int _globalQuiescenceDepth = 0;
+
+  /// Starts drainable voting work before its first asynchronous operation.
+  ///
+  /// A null account scope may inspect every account. Account delete/reset block
+  /// matching work and await the returned lease before mutating wallet state.
+  VoidCallback? beginBackgroundWork({String? accountUuid}) {
+    final accountIsQuiesced = accountUuid == null
+        ? _accountQuiescenceDepths.isNotEmpty
+        : (_accountQuiescenceDepths[accountUuid] ?? 0) > 0;
+    if (_globalQuiescenceDepth > 0 || accountIsQuiesced) return null;
+
+    final completion = Completer<void>();
+    _backgroundWork[completion] = accountUuid;
+    return () {
+      if (!_backgroundWork.containsKey(completion)) return;
+      _backgroundWork.remove(completion);
+      completion.complete();
+    };
+  }
 
   /// Starts discovery before its first asynchronous operation.
   ///
   /// Destructive wallet operations block new discovery and await the returned
   /// lease, so sidecar reads cannot outlive the state they are inspecting.
-  VoidCallback? beginDiscovery() {
-    if (_globalQuiescenceDepth > 0 || _accountQuiescenceDepths.isNotEmpty) {
-      return null;
-    }
-    final completion = Completer<void>();
-    _discoveries.add(completion);
-    return () {
-      if (_discoveries.remove(completion)) completion.complete();
-    };
-  }
+  VoidCallback? beginDiscovery() => beginBackgroundWork();
 
   void addRestoreRequestListener(VoidCallback listener) {
     _restoreRequestListeners.add(listener);
@@ -68,7 +78,7 @@ class VotingShareTrackingRegistry {
         (_accountQuiescenceDepths[accountUuid] ?? 0) > 0;
   }
 
-  /// Blocks matching discovery until paired with [resume].
+  /// Blocks matching background work until paired with [resume].
   ///
   /// Global calls are reference counted so overlapping owners cannot release
   /// each other's destructive boundary.
@@ -86,12 +96,16 @@ class VotingShareTrackingRegistry {
       for (final entry in _registrations.entries)
         if (accountUuid == null || entry.key.accountUuid == accountUuid) entry,
     ];
-    final discoveries = [
-      for (final completion in _discoveries) completion.future,
+    final backgroundWork = [
+      for (final entry in _backgroundWork.entries)
+        if (accountUuid == null ||
+            entry.value == null ||
+            entry.value == accountUuid)
+          entry.key.future,
     ];
     try {
       await Future.wait([
-        ...discoveries,
+        ...backgroundWork,
         ...sessions.map((entry) => entry.value.stopAndDrain()),
       ]);
     } finally {

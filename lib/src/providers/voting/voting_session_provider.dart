@@ -423,6 +423,30 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     String accountUuid, {
     required String precomputeKey,
   }) async {
+    final releaseBackgroundWork = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork(accountUuid: accountUuid);
+    if (releaseBackgroundWork == null) {
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute skipped '
+        'round=$_roundId reason=wallet-mutation-in-progress',
+      );
+      return;
+    }
+    try {
+      await _runRegisteredSnapshotBundlePrecomputeForAccount(
+        accountUuid,
+        precomputeKey: precomputeKey,
+      );
+    } finally {
+      releaseBackgroundWork();
+    }
+  }
+
+  Future<void> _runRegisteredSnapshotBundlePrecomputeForAccount(
+    String accountUuid, {
+    required String precomputeKey,
+  }) async {
     final context = await _loadContext(_roundId);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     final current = state.value;

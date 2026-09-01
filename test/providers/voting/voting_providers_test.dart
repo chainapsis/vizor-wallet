@@ -8384,6 +8384,21 @@ void main() {
     releaseDiscovery!();
   });
 
+  test('account quiescence blocks matching background work only', () async {
+    final registry = VotingShareTrackingRegistry();
+
+    await registry.quiesceAndDrain(accountUuid: 'account-1');
+
+    expect(registry.beginBackgroundWork(accountUuid: 'account-1'), isNull);
+    final otherAccountWork = registry.beginBackgroundWork(
+      accountUuid: 'account-2',
+    );
+    expect(otherAccountWork, isNotNull);
+
+    otherAccountWork!();
+    registry.resume(accountUuid: 'account-1');
+  });
+
   test('repeated lifecycle pause acquires one quiescence owner', () async {
     final container = _sessionContainer(
       pendingShareRoundLoader:
@@ -9091,6 +9106,49 @@ void main() {
     backgroundProofGate.complete();
     await precomputeFuture;
   });
+
+  test(
+    'destructive drain waits for precompute before secure hotkey wipe',
+    () async {
+      final hotkeyGenerationGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        hotkeyGenerationGate: hotkeyGenerationGate,
+      );
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final container = _sessionContainer(rust: rust, hotkeyStore: hotkeyStore);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      final precompute = notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
+      await rust.hotkeyGenerationStarted.future;
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      var secureStorageWiped = false;
+      final drainAndWipe = registry.quiesceAndDrain().then((_) {
+        hotkeyStore.hotkey = null;
+        secureStorageWiped = true;
+      });
+
+      try {
+        await Future<void>.delayed(Duration.zero);
+        expect(secureStorageWiped, isFalse);
+      } finally {
+        if (!hotkeyGenerationGate.isCompleted) {
+          hotkeyGenerationGate.complete();
+        }
+        await Future.wait([precompute, drainAndWipe]);
+        registry.resume();
+      }
+
+      expect(rust.backgroundDelegationProofCalls, [0]);
+      expect(secureStorageWiped, isTrue);
+      expect(hotkeyStore.hotkey, isNull);
+    },
+  );
 
   test('prepareDelegation warms proving caches before bundle setup', () async {
     final rust = FakeVotingRustApi();
