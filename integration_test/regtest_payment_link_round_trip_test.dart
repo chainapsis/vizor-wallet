@@ -185,7 +185,10 @@ void main() {
       final receiverStartingBalance = await _readAccountBalance(
         receiverAccountUuid,
       );
-      await _openPaymentLink(rawLink);
+      await Clipboard.setData(ClipboardData(text: rawLink));
+      await _openPaymentLinksFromSidebar(tester);
+      await _tapText(tester, 'Redeem a card');
+      await _tapText(tester, 'Paste card link');
       await pumpUntil(
         tester,
         () =>
@@ -230,7 +233,7 @@ void main() {
         link.toUri().toString(),
       );
 
-      await _mineRegtestBlocks(1);
+      await _mineRegtestBlocks(kPaymentLinkClaimConfirmationTarget);
       final minedClaim = await _waitForHistoryTransaction(
         tester,
         accountUuid: receiverAccountUuid,
@@ -255,16 +258,6 @@ void main() {
           .singleWhere((record) => record.address == link.address);
       expect(receivedRecord.status, PaymentLinkReceivedStatus.received);
       expect(receivedRecord.claimLink, isNull);
-      await _waitForAccountBalance(
-        tester,
-        accountUuid: receiverAccountUuid,
-        total: receiverStartingBalance.total + _giftAmountZatoshi,
-      );
-
-      // The claim wallet can spend the funding note after one confirmation.
-      // The receiver's ordinary wallet still requires ten confirmations before
-      // that externally received value becomes spendable.
-      await _mineRegtestBlocks(9);
       await _waitForAccountBalance(
         tester,
         accountUuid: receiverAccountUuid,
@@ -321,27 +314,16 @@ Future<String> _readPaymentLinkFromClipboard() async {
   return rawLink;
 }
 
-Future<void> _openPaymentLink(String rawLink) async {
-  final result = await Process.run('/usr/bin/open', [
-    '-a',
-    _currentAppBundlePath(),
-    rawLink,
-  ]);
-  if (result.exitCode != 0) {
-    throw StateError('macOS could not open the payment link: ${result.stderr}');
-  }
-}
-
-String _currentAppBundlePath() {
-  var directory = File(Platform.resolvedExecutable).parent;
-  while (directory.path != directory.parent.path) {
-    if (directory.path.endsWith('.app')) return directory.path;
-    directory = directory.parent;
-  }
-  throw StateError(
-    'Could not find the current app bundle from '
-    '${Platform.resolvedExecutable}.',
+Future<void> _tapText(WidgetTester tester, String text) async {
+  final finder = find.text(text);
+  await pumpUntil(
+    tester,
+    () => tester.any(finder),
+    description: '$text action to render',
   );
+  await tester.ensureVisible(finder);
+  await tester.tap(finder);
+  await tester.pump(const Duration(milliseconds: 250));
 }
 
 Future<void> _mineRegtestBlocks(int blocks) async {

@@ -25,7 +25,11 @@ cd "$ROOT_DIR"
 if [[ "$RESET_REGTEST" == "1" ]]; then
   scripts/regtest/reset.sh
 fi
-scripts/regtest/up.sh
+if ! scripts/regtest/up.sh; then
+  echo "regtest startup failed; retrying once with prepared bind mounts" >&2
+  scripts/regtest/down.sh >/dev/null 2>&1 || true
+  scripts/regtest/up.sh
+fi
 
 echo "funding payment-link sender with ${SENDER_AMOUNT} TAZ"
 scripts/regtest/fund-wallet.sh \
