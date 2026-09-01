@@ -6,6 +6,15 @@ import '../../core/config/network_config.dart';
 
 const kMinimumLedgerZcashAppVersion = '3.9.2';
 
+/// Legacy Orchard funds can only come from unreleased Ledger Zcash app builds.
+///
+/// Keep this as an explicit capability boundary so the preserved migration
+/// signer can be re-enabled deliberately after a future Ledger app is verified
+/// against the migration canary.
+const ledgerAutomaticOrchardMigrationCapability = LedgerCapability.unsupported(
+  'Automatic Orchard migration is not available for Ledger accounts.',
+);
+
 enum LedgerBluetoothCapability { supported, unsupported, unknown }
 
 LedgerBluetoothCapability ledgerBluetoothCapabilityForModel(String? model) {

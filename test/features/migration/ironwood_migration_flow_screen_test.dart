@@ -512,65 +512,25 @@ void main() {
     expect(find.text('keystone-immediate-sign-route:9990000'), findsOneWidget);
   });
 
-  testWidgets('Ledger offers only Immediate migration and signs with Ledger', (
-    tester,
-  ) async {
+  testWidgets('Ledger cannot enter the migration flow', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final signature = Completer<List<LedgerVotingSignature>>();
     await tester.pumpWidget(
       _migrationOptionsHarness(
         activeAccountIsHardware: true,
         activeHardwareSignerKind: HardwareSignerKind.ledger,
-        ledgerImmediateMigrationService: _ledgerImmediateMigrationService(
-          signature: signature.future,
-        ),
       ),
     );
     await tester.pumpAndSettle();
 
-    final privateOption = find.byKey(
-      const ValueKey('ironwood_migration_private_option'),
-    );
-    final privateGesture = find.descendant(
-      of: privateOption,
-      matching: find.byType(GestureDetector),
-    );
-    expect(tester.widget<GestureDetector>(privateGesture).onTap, isNull);
-    expect(find.text('Not available for Ledger accounts.'), findsOneWidget);
-
-    await tester.tap(find.text('Select & review'));
-    await tester.pumpAndSettle();
-    expect(find.text('Review Migration Plan'), findsOneWidget);
-    expect(find.widgetWithText(AppButton, 'Back'), findsOneWidget);
-    expect(
-      find.textContaining(
-        'Private migration is not available for Ledger accounts.',
-      ),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.widgetWithText(AppButton, 'Authorise anyway'));
-    await tester.pump();
-
+    expect(find.text('home'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('ledger_immediate_migration_signing_overlay')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.textContaining('keystone-immediate-sign-route'), findsNothing);
-
-    signature.complete(const [
-      LedgerVotingSignature(
-        pool: 0,
-        actionIndex: 0,
-        signature: _ledgerMigrationSignature,
-      ),
-    ]);
-    await tester.pumpAndSettle();
-    expect(find.text('home'), findsOneWidget);
   });
 
   testWidgets('Immediate review reports an unavailable plan', (tester) async {
@@ -1403,9 +1363,7 @@ void main() {
     expect(find.text('keystone-combined-sign-route:1:144'), findsOneWidget);
   });
 
-  testWidgets('Ledger private migration never enters Keystone signing', (
-    tester,
-  ) async {
+  testWidgets('Ledger private migration route is quarantined', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
     addTearDown(tester.view.resetPhysicalSize);
@@ -1420,16 +1378,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await _openShuffleReview(tester);
-    await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text(
-        'Ledger private migration is excluded because the current flow requires batched signing.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('home'), findsOneWidget);
     expect(find.textContaining('keystone-combined-sign-route'), findsNothing);
     expect(
       find.textContaining('keystone-denomination-sign-route'),
@@ -6435,6 +6384,9 @@ rust_sync.OrchardMigrationImmediatePlan _immediatePlan() {
   );
 }
 
+// Preserved with the quarantined signer so a future capability enablement can
+// restore the end-to-end widget test without rebuilding its Ledger fixture.
+// ignore: unused_element
 LedgerImmediateMigrationService _ledgerImmediateMigrationService({
   required Future<List<LedgerVotingSignature>> signature,
 }) {
@@ -6480,6 +6432,7 @@ LedgerImmediateMigrationService _ledgerImmediateMigrationService({
   );
 }
 
+// ignore: unused_element
 const _ledgerMigrationSignature = <int>[
   1,
   1,
