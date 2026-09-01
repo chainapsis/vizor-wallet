@@ -399,9 +399,7 @@ class _PaymentLinksDesktopScreenState
     List<PaymentLinkReceivedRecord>? records,
   }) async {
     final receivedCards = records ?? _receivedCards;
-    final hasReceiving = receivedCards.any(
-      (record) => record.status == PaymentLinkReceivedStatus.receiving,
-    );
+    final hasReceiving = receivedCards.any((record) => record.isClaimInFlight);
     if (!hasReceiving || _receivedRefreshInProgress) {
       return;
     }
@@ -1101,6 +1099,17 @@ class _PaymentLinksDesktopScreenState
         setState(() => _redeemState = PaymentLinkRedeemVisualState.loading);
         await _prepareDecodedPaymentLink(link, allowLongSync: true);
       }
+    } on PaymentLinkClaimInFlightException catch (error) {
+      log('PaymentLinkClaim: ignored duplicate in-flight link');
+      if (!mounted) return;
+      setState(() {
+        _activeCardsTab = PaymentLinkCardsTab.received;
+        _longSyncLink = null;
+        _retryLink = null;
+        _redeemState = PaymentLinkRedeemVisualState.paste;
+        _page = _PaymentLinksLocalPage.home;
+      });
+      _showError(error.toString());
     } on FormatException catch (error) {
       log(
         'PaymentLinkClaim: preparation rejected '
@@ -1302,12 +1311,7 @@ class _PaymentLinksDesktopScreenState
       }
     } catch (_) {
       if (mounted) {
-        setState(() {
-          _setReceivedCardStatus(
-            link.address,
-            PaymentLinkReceivedStatus.readyToClaim,
-          );
-        });
+        unawaited(_refreshReceivedClaims());
         _showError(
           'Gift Card claim failed. It may still be waiting for confirmation '
           'or may already be spent.',
@@ -1850,6 +1854,7 @@ class _PaymentLinksDesktopScreenState
         : record.status;
     final statusText = switch (effectiveStatus) {
       PaymentLinkReceivedStatus.readyToClaim => 'Claim',
+      PaymentLinkReceivedStatus.submitting => 'Receiving...',
       PaymentLinkReceivedStatus.receiving => 'Receiving...',
       PaymentLinkReceivedStatus.received => 'Received',
     };
@@ -1868,7 +1873,9 @@ class _PaymentLinksDesktopScreenState
       dateText: _formatCardDate(record.createdAt),
       statusText: statusText,
       onAction: canClaim ? () => _openReceivedCard(record) : null,
-      showLoader: effectiveStatus == PaymentLinkReceivedStatus.receiving,
+      showLoader:
+          effectiveStatus == PaymentLinkReceivedStatus.submitting ||
+          effectiveStatus == PaymentLinkReceivedStatus.receiving,
     );
   }
 

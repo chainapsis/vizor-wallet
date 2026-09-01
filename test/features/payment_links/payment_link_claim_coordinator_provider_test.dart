@@ -54,7 +54,7 @@ void main() {
     },
   );
 
-  test('receiving claims resume outside the Gift Card screen', () async {
+  test('submitting claims resume outside the Gift Card screen', () async {
     var recoveryCalls = 0;
     final secondCall = Completer<void>();
     final container = ProviderContainer(
@@ -65,7 +65,7 @@ void main() {
         ),
         paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(() async {
           recoveryCalls++;
-          if (recoveryCalls == 1) return [_receivingRecord];
+          if (recoveryCalls == 1) return [_submittingRecord];
           if (!secondCall.isCompleted) secondCall.complete();
           return [_receivedRecord];
         }),
@@ -147,6 +147,11 @@ final _receivingRecord = PaymentLinkReceivedRecord(
   destinationAccountUuid: 'destination-account-claim-1',
   claimTxids: 'tx-1',
   updatedAt: DateTime.utc(2026, 9, 1),
+);
+
+final _submittingRecord = _receivingRecord.copyWith(
+  status: PaymentLinkReceivedStatus.submitting,
+  claimTxids: null,
 );
 
 final _receivedRecord = _receivingRecord.copyWith(

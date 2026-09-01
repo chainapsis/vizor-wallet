@@ -33,6 +33,7 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 
 const kPaymentLinkShareConfirmationTarget = 1;
 const kPaymentLinkClaimConfirmationTarget = 6;
+const _paymentLinkClaimMetadataWriteAttempts = 2;
 
 /// The ZIP-317 fee for the payment link's expected one-input, one-output
 /// shielded claim transaction.
@@ -192,6 +193,22 @@ bool paymentLinkClaimTransactionsExpired({
           transaction.expiredUnmined,
     ),
   );
+}
+
+@visibleForTesting
+List<String> paymentLinkActiveClaimTxids(
+  Iterable<rust_sync.TransactionInfo> transactions,
+) {
+  return transactions
+      .where(
+        (transaction) =>
+            transaction.txKind == 'sent' &&
+            !transaction.expiredUnmined &&
+            transaction.txidHex.trim().isNotEmpty,
+      )
+      .map((transaction) => transaction.txidHex.trim())
+      .toSet()
+      .toList();
 }
 
 class PaymentLinkFundingQuote {
@@ -440,6 +457,13 @@ class PaymentLinkClaimDestinationChangedException implements Exception {
   @override
   String toString() =>
       'The Gift Card receiving account or address changed before claim.';
+}
+
+class PaymentLinkClaimInFlightException implements Exception {
+  const PaymentLinkClaimInFlightException();
+
+  @override
+  String toString() => 'This Gift Card is already being received.';
 }
 
 @visibleForTesting
@@ -766,7 +790,33 @@ class PaymentLinkService implements PaymentLinkOperations {
     // The screen can optimistically render Receiving before the broadcast
     // result returns. Always reconcile from the persisted copy, which owns
     // the destination account UUID and claim txids needed for history lookup.
-    final persistedRecords = await _receivedStore.load();
+    var persistedRecords = await _receivedStore.load();
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final submitting = persistedRecords
+        .where(
+          (record) =>
+              record.needsClaimMetadataRecovery &&
+              record.network == endpoint.networkName,
+        )
+        .toList();
+    await Future.wait(
+      submitting.map((record) async {
+        try {
+          await _recoverClaimMetadata(
+            record: record,
+            network: endpoint.networkName,
+          );
+        } catch (error, stackTrace) {
+          log(
+            'PaymentLinkService: retained claim metadata recovery failed for '
+            '${record.address}: $error\n$stackTrace',
+          );
+        }
+      }),
+    );
+    if (submitting.isNotEmpty) {
+      persistedRecords = await _receivedStore.load();
+    }
     final receiving = persistedRecords
         .where(
           (record) =>
@@ -778,7 +828,6 @@ class PaymentLinkService implements PaymentLinkOperations {
         .toList();
     if (receiving.isEmpty) return persistedRecords;
 
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final currentNetworkRecords = receiving
         .where((record) => record.network == endpoint.networkName)
         .toList();
@@ -843,6 +892,10 @@ class PaymentLinkService implements PaymentLinkOperations {
       switch (status) {
         case PaymentLinkReceivedStatus.readyToClaim:
           await _receivedStore.markReadyToClaim(address: record.address);
+        case PaymentLinkReceivedStatus.submitting:
+          throw StateError(
+            'Transaction reconciliation cannot produce submitting state.',
+          );
         case PaymentLinkReceivedStatus.receiving:
           break;
         case PaymentLinkReceivedStatus.received:
@@ -940,6 +993,10 @@ class PaymentLinkService implements PaymentLinkOperations {
     required bool allowLongSync,
   }) async {
     log('PaymentLinkClaim: preparation started');
+    final existingRecord = await _receivedStore.find(link.address);
+    if (existingRecord?.isClaimInFlight ?? false) {
+      throw const PaymentLinkClaimInFlightException();
+    }
     await _requireShieldedAddress(destinationAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     if (link.network != endpoint.networkName) {
@@ -1114,20 +1171,31 @@ class PaymentLinkService implements PaymentLinkOperations {
     // interrupted submission remains recoverable without making previews look
     // received.
     await _receivedStore.saveReady(session.link);
-    var didBroadcast = false;
+    await _receivedStore.markClaimStarted(
+      address: session.link.address,
+      destinationAccountUuid: session.destinationAccountUuid,
+    );
+    var submissionStarted = false;
     try {
-      final result = await _broadcastPreparedSpend(session);
-      didBroadcast = true;
-      await _receivedStore.markReceiving(
-        address: session.link.address,
-        destinationAccountUuid: session.destinationAccountUuid,
+      final result = await _broadcastPreparedSpend(
+        session,
+        onSubmissionStarted: () => submissionStarted = true,
+      );
+      final metadataSaved = await _saveClaimMetadata(
+        session: session,
         claimTxids: result.txids,
       );
+      if (!metadataSaved) {
+        log(
+          'PaymentLinkService: claim was submitted but receiving metadata '
+          'could not be saved after retry; retaining the claim wallet',
+        );
+      }
       // Keep the claim database for rebroadcast/reorg recovery. Reconciliation
       // deletes it only after every claim transaction reaches six confirmations.
       return result;
     } catch (_) {
-      if (!didBroadcast) {
+      if (!submissionStarted) {
         await _receivedStore.markReadyToClaim(address: session.link.address);
       }
       rethrow;
@@ -1135,8 +1203,9 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   Future<PaymentLinkClaimResult> _broadcastPreparedSpend(
-    PaymentLinkClaimSession session,
-  ) async {
+    PaymentLinkClaimSession session, {
+    void Function()? onSubmissionStarted,
+  }) async {
     if (!session.canClaim) {
       throw StateError('Payment link has no spendable shielded balance yet.');
     }
@@ -1168,6 +1237,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       memo: null,
       mnemonic: session.link.mnemonic,
       beforeExecute: () => _revalidateClaimDestination(session),
+      onSubmissionStarted: onSubmissionStarted,
     );
     final claimResult = PaymentLinkClaimResult(
       txids: sendResult.txids,
@@ -1175,6 +1245,31 @@ class PaymentLinkService implements PaymentLinkOperations {
     );
     unawaited(_refreshMainWalletAfterSend());
     return claimResult;
+  }
+
+  Future<bool> _saveClaimMetadata({
+    required PaymentLinkClaimSession session,
+    required String claimTxids,
+  }) async {
+    for (
+      var attempt = 0;
+      attempt < _paymentLinkClaimMetadataWriteAttempts;
+      attempt++
+    ) {
+      try {
+        await _receivedStore.markReceiving(
+          address: session.link.address,
+          destinationAccountUuid: session.destinationAccountUuid,
+          claimTxids: claimTxids,
+        );
+        return true;
+      } catch (_) {
+        if (attempt + 1 == _paymentLinkClaimMetadataWriteAttempts) {
+          return false;
+        }
+      }
+    }
+    return false;
   }
 
   Future<void> _revalidateClaimDestination(
@@ -1404,6 +1499,48 @@ class PaymentLinkService implements PaymentLinkOperations {
             );
           },
         );
+  }
+
+  Future<void> _recoverClaimMetadata({
+    required PaymentLinkReceivedRecord record,
+    required String network,
+  }) async {
+    final link = record.claimLink;
+    final destinationAccountUuid = record.destinationAccountUuid;
+    if (link == null || destinationAccountUuid == null) return;
+
+    final tempWallet = await _temporaryWalletLocation(link);
+    if (!await File(tempWallet.dbPath).exists()) return;
+
+    await _runClaimSync(link: link, dbPath: tempWallet.dbPath);
+    final accounts = await rust_wallet.listAccounts(
+      dbPath: tempWallet.dbPath,
+      network: network,
+    );
+    if (shouldRecreatePaymentLinkClaimWallet(
+      accountAddresses: [
+        for (final account in accounts) account.unifiedAddress,
+      ],
+      expectedAddress: link.address,
+    )) {
+      return;
+    }
+    final transactions = await rust_sync.getTransactionHistory(
+      dbPath: tempWallet.dbPath,
+      network: network,
+      accountUuid: accounts.single.uuid,
+      limit: null,
+    );
+    final activeTxids = paymentLinkActiveClaimTxids(transactions);
+    if (activeTxids.isEmpty) {
+      await _receivedStore.markReadyToClaim(address: record.address);
+      return;
+    }
+    await _receivedStore.markReceiving(
+      address: record.address,
+      destinationAccountUuid: destinationAccountUuid,
+      claimTxids: activeTxids.join(','),
+    );
   }
 
   Future<bool> _syncRetainedClaimWallet({

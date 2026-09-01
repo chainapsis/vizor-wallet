@@ -78,6 +78,15 @@ void main() {
       await store.saveReady(link);
       expect(await store.countReceivingForAccount('receiver-account'), 0);
 
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+      );
+      expect(await store.countReceivingForAccount('receiver-account'), 1);
+
+      await store.markReadyToClaim(address: link.address);
+      expect(await store.countReceivingForAccount('receiver-account'), 0);
+
       await store.markReceiving(
         address: link.address,
         destinationAccountUuid: 'receiver-account',
@@ -89,6 +98,30 @@ void main() {
       await store.markReceived(address: link.address);
       expect(await store.countReceivingForAccount('receiver-account'), 0);
     });
+
+    test(
+      'restores a submitting claim before its transaction id is saved',
+      () async {
+        final storage = _FakePaymentLinkReceivedStorage();
+        final link = _link();
+        final store = PaymentLinkReceivedStore(storage);
+
+        await store.saveReady(link);
+        await store.markClaimStarted(
+          address: link.address,
+          destinationAccountUuid: 'receiver-account',
+        );
+
+        final restored = await PaymentLinkReceivedStore(storage).load();
+        expect(restored.single.status, PaymentLinkReceivedStatus.submitting);
+        expect(restored.single.destinationAccountUuid, 'receiver-account');
+        expect(restored.single.claimTxids, isNull);
+        expect(restored.single.isClaimInFlight, isTrue);
+        expect(restored.single.needsClaimMetadataRecovery, isTrue);
+        expect((await store.find(link.address))?.isClaimInFlight, isTrue);
+        expect(await store.find('u1missinggiftcard'), isNull);
+      },
+    );
 
     test(
       'refreshes the cached receiving count after lifecycle writes',

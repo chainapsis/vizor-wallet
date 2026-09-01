@@ -335,6 +335,17 @@ void main() {
     );
   });
 
+  test('recovers only active sent claim transaction ids', () {
+    expect(
+      paymentLinkActiveClaimTxids([
+        _transaction(txid: 'active', txKind: 'sent'),
+        _transaction(txid: 'expired', txKind: 'sent', expiredUnmined: true),
+        _transaction(txid: 'funding', txKind: 'received'),
+      ]),
+      ['active'],
+    );
+  });
+
   test('claim exposes only the amount promised by the link', () {
     final recipientAmount = BigInt.from(100000000);
 

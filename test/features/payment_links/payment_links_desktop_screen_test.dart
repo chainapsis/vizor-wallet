@@ -1147,6 +1147,51 @@ void main() {
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
   });
 
+  testWidgets('does not reopen an in-flight received Gift Card', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord(
+          network: _incomingLink.network,
+          address: _incomingLink.address,
+          amountZatoshi: _incomingLink.amountZatoshi,
+          createdAt: _incomingLink.createdAt,
+          artworkId: _incomingLink.presentation?.artworkId,
+          message: _incomingLink.presentation?.message,
+          status: PaymentLinkReceivedStatus.submitting,
+          claimLink: _incomingLink,
+          destinationAccountUuid: 'account-1',
+          claimTxids: null,
+          updatedAt: DateTime.utc(2026, 8, 6, 2),
+        ),
+      ],
+      prepareClaimError: const PaymentLinkClaimInFlightException(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(
+      find.text('This Gift Card is already being received.'),
+      findsOneWidget,
+    );
+    expect(find.text('Receiving...'), findsOneWidget);
+    expect(operations.discardedClaimAddresses, isEmpty);
+  });
+
   testWidgets(
     'loads Created and Received in parallel before consuming an incoming link',
     (tester) async {
@@ -1848,6 +1893,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     this.receivedLoadGate,
     this.receivedLoadFailures = 0,
     this.prepareClaimFailures = 0,
+    this.prepareClaimError,
     this.fundingMetadataSavedOnCreate = true,
     this.fundingBroadcastAcceptedOnCreate = true,
     this.fundingConfirmationCount = kPaymentLinkShareConfirmationTarget,
@@ -1863,6 +1909,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final Completer<void>? receivedLoadGate;
   int receivedLoadFailures;
   int prepareClaimFailures;
+  final Object? prepareClaimError;
   final bool fundingMetadataSavedOnCreate;
   final bool fundingBroadcastAcceptedOnCreate;
   int fundingConfirmationCount;
@@ -2014,6 +2061,12 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
           claimTxids: null,
           updatedAt: DateTime.utc(2026, 8, 6, 3),
         ),
+        PaymentLinkReceivedStatus.submitting => record.copyWith(
+          status: status,
+          destinationAccountUuid: record.destinationAccountUuid ?? 'account-1',
+          claimTxids: null,
+          updatedAt: DateTime.utc(2026, 8, 6, 3),
+        ),
         PaymentLinkReceivedStatus.receiving => record,
         PaymentLinkReceivedStatus.received => record.copyWith(
           status: status,
@@ -2031,6 +2084,8 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     bool allowLongSync = false,
   }) async {
     allowLongSyncCalls.add(allowLongSync);
+    final configuredError = prepareClaimError;
+    if (configuredError != null) throw configuredError;
     if (prepareClaimFailures > 0) {
       prepareClaimFailures -= 1;
       throw StateError('transient claim preparation failure');

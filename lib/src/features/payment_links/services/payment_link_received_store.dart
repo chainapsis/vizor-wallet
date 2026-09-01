@@ -31,7 +31,7 @@ final paymentLinkReceivingCountProvider = FutureProvider.family<int, String>((
       .countReceivingForAccount(destinationAccountUuid);
 });
 
-enum PaymentLinkReceivedStatus { readyToClaim, receiving, received }
+enum PaymentLinkReceivedStatus { readyToClaim, submitting, receiving, received }
 
 class PaymentLinkInFlightClaimsException implements Exception {
   const PaymentLinkInFlightClaimsException({
@@ -96,6 +96,13 @@ class PaymentLinkReceivedRecord {
   final String? destinationAccountUuid;
   final String? claimTxids;
   final DateTime updatedAt;
+
+  bool get isClaimInFlight =>
+      status == PaymentLinkReceivedStatus.submitting ||
+      status == PaymentLinkReceivedStatus.receiving;
+
+  bool get needsClaimMetadataRecovery =>
+      status == PaymentLinkReceivedStatus.submitting;
 
   PaymentLinkReceivedRecord copyWith({
     PaymentLinkReceivedStatus? status,
@@ -181,13 +188,19 @@ class PaymentLinkReceivedStore {
     return _runExclusive(_loadUnlocked);
   }
 
+  Future<PaymentLinkReceivedRecord?> find(String address) {
+    return _runExclusive(() async {
+      return _findByAddress(await _loadUnlocked(), address);
+    });
+  }
+
   Future<int> countReceivingForAccount(String destinationAccountUuid) async {
     if (destinationAccountUuid.isEmpty) return 0;
     final records = await load();
     return records
         .where(
           (record) =>
-              record.status == PaymentLinkReceivedStatus.receiving &&
+              record.isClaimInFlight &&
               record.destinationAccountUuid == destinationAccountUuid,
         )
         .length;
@@ -258,6 +271,40 @@ class PaymentLinkReceivedStore {
         claimLink: existing.claimLink,
         destinationAccountUuid: destinationAccountUuid.trim(),
         claimTxids: claimTxids.trim(),
+        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+      );
+      await _writeRecords(_replaceByAddress(records, updated));
+      return updated;
+    });
+  }
+
+  Future<PaymentLinkReceivedRecord> markClaimStarted({
+    required String address,
+    required String destinationAccountUuid,
+    DateTime? updatedAt,
+  }) {
+    return _runExclusive(() async {
+      final normalizedAccountUuid = destinationAccountUuid.trim();
+      if (normalizedAccountUuid.isEmpty) {
+        throw ArgumentError.value(
+          destinationAccountUuid,
+          'destinationAccountUuid',
+          'A started payment link claim requires a destination account.',
+        );
+      }
+      final records = await _loadUnlocked();
+      final existing = _findRequired(records, address);
+      if (existing.status == PaymentLinkReceivedStatus.received) {
+        return existing;
+      }
+      if (existing.status != PaymentLinkReceivedStatus.readyToClaim ||
+          existing.claimLink == null) {
+        throw StateError('Only a ready Gift Card claim can be started.');
+      }
+      final updated = existing.copyWith(
+        status: PaymentLinkReceivedStatus.submitting,
+        destinationAccountUuid: normalizedAccountUuid,
+        claimTxids: null,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
       );
       await _writeRecords(_replaceByAddress(records, updated));
@@ -513,6 +560,23 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       ((claimTxids as String?)?.trim().isEmpty ?? true)) {
     throw const PaymentLinkReceivedStoreFormatException(
       'A receiving Card must retain its claim transaction id.',
+    );
+  }
+  if (status == PaymentLinkReceivedStatus.submitting &&
+      ((destinationAccountUuid as String?)?.trim().isEmpty ?? true)) {
+    throw const PaymentLinkReceivedStoreFormatException(
+      'A submitting Card must retain its destination account.',
+    );
+  }
+  if (status == PaymentLinkReceivedStatus.submitting && claimTxids != null) {
+    throw const PaymentLinkReceivedStoreFormatException(
+      'A submitting Card cannot retain claim transaction ids.',
+    );
+  }
+  if (status == PaymentLinkReceivedStatus.readyToClaim &&
+      (destinationAccountUuid != null || claimTxids != null)) {
+    throw const PaymentLinkReceivedStoreFormatException(
+      'A ready Card cannot retain in-flight claim metadata.',
     );
   }
 
