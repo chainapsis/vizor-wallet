@@ -105,6 +105,14 @@ void main() {
       }
     });
 
+    test('blocks the desktop wallet-link pairing screen', () {
+      expect(app.paymentUriBlockedAtLocation('/settings/link-mobile'), isTrue);
+      expect(
+        paymentUriBlockedSurfaceAt('/settings/link-mobile'),
+        PaymentUriBlockedSurface.other,
+      );
+    });
+
     test('allows browsing surfaces', () {
       for (final location in [
         '/home',

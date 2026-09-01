@@ -133,6 +133,8 @@ const _blockedExactLocations = <String>{
   '/pay/review',
   // Settings uninstall: its removing stage must not be interrupted.
   '/settings/uninstall',
+  // Desktop wallet link: a live pairing-QR session that dies with the screen.
+  '/settings/link-mobile',
   // Mobile shield flow.
   '/home/keystone-shield',
   // Voting hardware scan (desktop tree).
