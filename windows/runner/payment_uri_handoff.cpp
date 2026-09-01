@@ -33,6 +33,29 @@ bool IsVizorPrimaryWindow(HWND hwnd, UINT activation_message) {
              static_cast<DWORD_PTR>(kSingleInstanceActivationAcknowledged);
 }
 
+// Returns true when |value| is something the Dart side can actually decode.
+// The channel carries the URI through StandardMessageCodec, which throws on
+// malformed UTF-8; a bad payload that arrives before Dart is ready aborts
+// takePendingUris and wedges the payment-URI channel for the rest of the
+// session. Control characters are rejected too: no ZIP-321 URI contains one,
+// and they have no business reaching the send screen.
+bool IsDecodablePaymentUriPayload(const std::string& value) {
+  if (value.empty()) {
+    return false;
+  }
+
+  for (const char raw_byte : value) {
+    const auto byte = static_cast<unsigned char>(raw_byte);
+    if (byte < 0x20 || byte == 0x7F) {
+      return false;
+    }
+  }
+
+  return ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                               static_cast<int>(value.size()), nullptr,
+                               0) != 0;
+}
+
 bool SendPaymentUri(HWND hwnd, const std::string& uri) {
   if (!IsZcashUri(uri)) {
     return false;
@@ -140,7 +163,7 @@ bool TryReadPaymentUriCopyData(LPARAM lparam, std::string* uri) {
   }
 
   std::string value(raw, copy_data->cbData - 1);
-  if (!IsZcashUri(value)) {
+  if (!IsZcashUri(value) || !IsDecodablePaymentUriPayload(value)) {
     return false;
   }
 
