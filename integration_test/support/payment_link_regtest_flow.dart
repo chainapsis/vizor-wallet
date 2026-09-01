@@ -6,11 +6,14 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
@@ -28,6 +31,7 @@ const paymentLinkRegtestZcashdRpcUrl = String.fromEnvironment(
 );
 const paymentLinkRegtestZcashdRpcUser = 'zcash';
 const paymentLinkRegtestZcashdRpcPassword = 'zcash';
+const paymentLinkRegtestProxyUrl = 'http://127.0.0.1:19068';
 const paymentLinkRestartManifestName =
     'payment_link_restart_regtest_manifest.json';
 
@@ -94,6 +98,15 @@ class PaymentLinkRestartClaim {
     'amountZatoshi': amountZatoshi.toString(),
     'directoryName': directoryName,
   };
+}
+
+Future<void> configurePaymentLinkRegtestProxyPrimary() async {
+  final storage = AppSecureStore.instance;
+  await storage.writePlain(kRpcEndpointUrlKey, paymentLinkRegtestProxyUrl);
+  await storage.writePlain(
+    kRpcEndpointPresetKey,
+    kRegtestSlowRpcEndpointPresetId,
+  );
 }
 
 Future<void> openPaymentLinksFromSettings(WidgetTester tester) async {
@@ -381,6 +394,27 @@ Future<T> paymentLinkZcashdRpc<T>(
   } finally {
     client.close(force: true);
   }
+}
+
+Future<void> waitForPaymentLinkMempoolTxids(
+  WidgetTester tester,
+  Iterable<String> txids, {
+  Duration timeout = const Duration(minutes: 2),
+}) async {
+  final expected = txids.map(normalizePaymentLinkTxid).toSet();
+  Set<String> last = const {};
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final raw = await paymentLinkZcashdRpc<List<Object?>>('getrawmempool');
+    last = raw.map((txid) => normalizePaymentLinkTxid('$txid')).toSet();
+    if (last.containsAll(expected)) return;
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  fail(
+    'Timed out waiting for claim txids in the regtest mempool. '
+    'Expected: $expected. Observed: $last',
+  );
 }
 
 Future<void> tapPaymentLinkText(WidgetTester tester, String text) async {
