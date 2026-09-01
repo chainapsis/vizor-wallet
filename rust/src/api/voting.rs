@@ -419,6 +419,13 @@ fn chain_client(api_server_urls: &[String]) -> Result<zcash_voting::ChainClient,
     ))
 }
 
+fn delegation_recovery_client(
+    api_server_urls: &[String],
+) -> Result<zcash_voting::DelegationRecoveryClient, String> {
+    zcash_voting::DelegationRecoveryClient::new(routed_voting_transport(), api_server_urls)
+        .map_err(|error| error.to_string())
+}
+
 fn open_chain_voting_db(
     db_path: &str,
     account_uuid: &str,
@@ -437,7 +444,7 @@ pub async fn recover_confirmed_delegations(
     operation_epoch: u64,
 ) -> Result<Vec<u32>, String> {
     let (network, _) = delegation_static_inputs(&ctx.network, None)?;
-    let client = chain_client(&api_server_urls)?;
+    let recovery_client = delegation_recovery_client(&api_server_urls)?;
     let recovered_bundle_indices = delegation::recover_confirmed_delegations(
         &ctx.db_path,
         &ctx.account_uuid,
@@ -445,7 +452,7 @@ pub async fn recover_confirmed_delegations(
         &ctx.round_params.vote_round_id,
         ctx.round_params.snapshot_height,
         stored_hotkey_secret,
-        &client,
+        &recovery_client,
         &|| chain_operation_cancelled(operation_epoch),
     )
     .await?;

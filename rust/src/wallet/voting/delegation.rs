@@ -344,7 +344,7 @@ pub async fn recover_confirmed_delegations(
     round_id: &str,
     snapshot_height: u64,
     stored_hotkey_secret: Vec<u8>,
-    chain_client: &zcash_voting::ChainClient,
+    recovery_client: &zcash_voting::DelegationRecoveryClient,
     cancel: &(dyn Fn() -> bool + Send + Sync),
 ) -> Result<Vec<u32>, String> {
     let stored_hotkey_secret = Zeroizing::new(stored_hotkey_secret);
@@ -365,7 +365,7 @@ pub async fn recover_confirmed_delegations(
     let voting_db = open_voting_db(db_path, account_uuid)?;
     zcash_voting::recover_confirmed_delegations(
         &voting_db,
-        chain_client,
+        recovery_client,
         round_id,
         &round_note_infos,
         &voting_hotkey,
