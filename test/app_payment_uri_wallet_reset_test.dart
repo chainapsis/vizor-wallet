@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +12,7 @@ import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
+import 'package:zcash_wallet/src/services/payment_uri_service.dart';
 
 // A `zcash:` link parked while the wallet is locked must disappear quietly
 // when the user resets the wallet from the locked screens — no "Set up or
@@ -112,6 +114,94 @@ void main() {
         reason: 'the reset must not be redirected to /welcome by the link',
       );
     },
+  );
+
+  // Two `zcash:` links delivered back-to-back while the wallet is locked: the
+  // first parks for the unlock screen, the second displaces it. The prefill
+  // holds one link at a time on purpose (latest wins, no queue), so the user
+  // has to be told the earlier link is gone instead of silently getting the
+  // wrong payment on the next unlock.
+  testWidgets(
+    'a second link arriving while the first is parked says so and keeps the '
+    'newer one',
+    (tester) async {
+      const firstUri = 'zcash:u1firstlink?amount=0.5';
+      const secondUri = 'zcash:u1secondlink?amount=0.25';
+
+      final accounts = _ControllableAccountNotifier(walletState);
+      final router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          for (final path in ['/home', '/send', '/welcome', '/unlock'])
+            GoRoute(
+              path: path,
+              builder: (_, _) => Scaffold(body: Text('screen $path')),
+            ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      late ProviderContainer container;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _lockedBootstrapWithWallet(walletState),
+            ),
+            accountProvider.overrideWith(() => accounts),
+          ],
+          child: Consumer(
+            builder: (context, ref, _) {
+              container = ProviderScope.containerOf(context, listen: false);
+              return MaterialApp.router(
+                routerConfig: router,
+                builder: (context, child) => buildPaymentUriLinkListenerForTest(
+                  router: router,
+                  child: child!,
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      // The listener installs the PaymentUriService method-call handler in
+      // initState; initialize() is idempotent and only awaited here so the
+      // handler is guaranteed to be in place before the native push below.
+      await PaymentUriService.initialize();
+      await tester.pumpAndSettle();
+
+      // The native side flushes both links in one batch — the cold-start
+      // shape, and the same code path as two separate pushes.
+      await _pushNativeUris(tester, const [firstUri, secondUri]);
+      await tester.pumpAndSettle();
+
+      final parked = container.read(paymentUriPrefillProvider);
+      expect(
+        parked?.address,
+        'u1secondlink',
+        reason: 'latest wins: the second link must be the parked one',
+      );
+      expect(
+        find.text(kPaymentUriReplacedMessage),
+        findsOneWidget,
+        reason: 'the dropped first link must be visible to the user',
+      );
+      // Locked with a wallet: the drain parks and routes to the unlock screen,
+      // which claims the prefill after a successful unlock.
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/unlock');
+    },
+  );
+}
+
+/// Delivers [uris] the way the native runner does: an `onUris` method call on
+/// the payment-URI channel, which PaymentUriService forwards to its stream.
+Future<void> _pushNativeUris(WidgetTester tester, List<String> uris) async {
+  const codec = StandardMethodCodec();
+  await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    'com.zcash.wallet/payment_uri',
+    codec.encodeMethodCall(MethodCall('onUris', uris)),
+    (_) {},
   );
 }
 

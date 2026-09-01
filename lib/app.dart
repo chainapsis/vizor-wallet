@@ -1297,8 +1297,17 @@ class _PaymentUriLinkListenerState
 
   void _handlePaymentUri(String rawUri) {
     try {
-      ref.read(paymentUriPrefillProvider.notifier).set(_prefillFromUri(rawUri));
+      final replacedParkedPrefill = ref
+          .read(paymentUriPrefillProvider.notifier)
+          .set(_prefillFromUri(rawUri));
       _schedulePendingDrain();
+      if (replacedParkedPrefill) {
+        // A batch of links from native on cold start, or a second link while
+        // the first is still parked (locked wallet, wallet still loading).
+        // Only the newest survives, so say so instead of silently dropping
+        // the earlier one.
+        _showPaymentUriMessage(kPaymentUriReplacedMessage);
+      }
     } on Zip321ParseException catch (e) {
       // Do not clear here: a failed parse of THIS link must not wipe a prefill
       // already parked from an earlier valid link.

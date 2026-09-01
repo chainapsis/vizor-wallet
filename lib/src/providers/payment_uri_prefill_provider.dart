@@ -32,9 +32,18 @@ class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
     return DateTime.now().toUtc().difference(parkedAt);
   }
 
-  void set(SendPrefillArgs prefill) {
+  /// Parks [prefill], replacing whatever was parked before — latest wins,
+  /// there is no queue.
+  ///
+  /// Returns true when it displaced a prefill that was still parked, so the
+  /// caller can tell the user the earlier link was dropped. A duplicate
+  /// delivery of the same link counts as a replacement too; the caller does
+  /// not compare fingerprints.
+  bool set(SendPrefillArgs prefill) {
+    final replacedParkedPrefill = state != null;
     _parkedAtUtc = DateTime.now().toUtc();
     state = prefill;
+    return replacedParkedPrefill;
   }
 
   void clear() {

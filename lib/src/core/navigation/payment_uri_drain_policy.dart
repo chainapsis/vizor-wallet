@@ -22,6 +22,13 @@ const kPaymentUriParkTtl = Duration(minutes: 10);
 /// wallet load error.
 const kPaymentUriUnavailableMessage = 'Payment link could not be opened.';
 
+/// Shown when a second `zcash:` link arrives before the first one has been
+/// delivered or claimed. The prefill holds one link at a time (latest wins,
+/// no queue), so the earlier one is gone and the user is told rather than
+/// left to wonder which link opened.
+const kPaymentUriReplacedMessage =
+    'Only the most recent payment link was kept.';
+
 /// Shown when there is no wallet yet and the user is not already inside a
 /// setup flow.
 const kPaymentUriNoWalletMessage =
