@@ -188,6 +188,35 @@ void main() {
     );
   });
 
+  test('retained claim retries only after every transaction expires', () {
+    final transactions = [
+      _transaction(txid: 'claim-a', txKind: 'sent', expiredUnmined: true),
+      _transaction(txid: 'claim-b', txKind: 'sent'),
+    ];
+
+    expect(
+      paymentLinkClaimTransactionsExpired(
+        claimTxids: 'claim-a,claim-b',
+        transactions: transactions,
+      ),
+      isFalse,
+    );
+    expect(
+      paymentLinkClaimTransactionsExpired(
+        claimTxids: 'claim-a,missing',
+        transactions: transactions,
+      ),
+      isFalse,
+    );
+    expect(
+      paymentLinkClaimTransactionsExpired(
+        claimTxids: 'claim-a',
+        transactions: transactions,
+      ),
+      isTrue,
+    );
+  });
+
   test('claim exposes only the amount promised by the link', () {
     final recipientAmount = BigInt.from(100000000);
 

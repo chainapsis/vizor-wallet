@@ -119,12 +119,33 @@ PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
   );
   if (allConfirmed) return PaymentLinkReceivedStatus.received;
 
-  final allExpired = everyTxidMatches(
-    (transaction) => transaction.expiredUnmined,
+  final allExpired = paymentLinkClaimTransactionsExpired(
+    claimTxids: claimTxids,
+    transactions: transactions,
   );
   return allExpired
       ? PaymentLinkReceivedStatus.readyToClaim
       : PaymentLinkReceivedStatus.receiving;
+}
+
+@visibleForTesting
+bool paymentLinkClaimTransactionsExpired({
+  required String claimTxids,
+  required List<rust_sync.TransactionInfo> transactions,
+}) {
+  final expectedTxids = claimTxids
+      .split(',')
+      .map(_normalizeTxid)
+      .where((txid) => txid.isNotEmpty)
+      .toSet();
+  if (expectedTxids.isEmpty) return false;
+  return expectedTxids.every(
+    (expectedTxid) => transactions.any(
+      (transaction) =>
+          paymentLinkTxidsMatch(expectedTxid, transaction.txidHex) &&
+          transaction.expiredUnmined,
+    ),
+  );
 }
 
 class PaymentLinkFundingQuote {
@@ -704,10 +725,32 @@ class PaymentLinkService implements PaymentLinkOperations {
         .toList();
     if (currentNetworkRecords.isEmpty) return persistedRecords;
 
+    final retryableAddresses = <String>{};
+    for (final record in currentNetworkRecords) {
+      try {
+        if (await _syncRetainedClaimWallet(
+          record: record,
+          network: endpoint.networkName,
+        )) {
+          await _receivedStore.markReadyToClaim(address: record.address);
+          retryableAddresses.add(record.address);
+        }
+      } catch (error, stackTrace) {
+        log(
+          'PaymentLinkService: retained claim wallet sync failed for '
+          '${record.address}: $error\n$stackTrace',
+        );
+      }
+    }
+    final awaitingReceipt = currentNetworkRecords
+        .where((record) => !retryableAddresses.contains(record.address))
+        .toList();
+    if (awaitingReceipt.isEmpty) return _receivedStore.load();
+
     final dbPath = await getWalletDbPath();
     final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
     for (final accountUuid
-        in currentNetworkRecords
+        in awaitingReceipt
             .map((record) => record.destinationAccountUuid!)
             .toSet()) {
       transactionsByAccount[accountUuid] = await rust_sync
@@ -725,7 +768,7 @@ class PaymentLinkService implements PaymentLinkOperations {
               .read(rpcEndpointFailoverProvider.notifier)
               .getLatestBlockHeight();
 
-    for (final record in currentNetworkRecords) {
+    for (final record in awaitingReceipt) {
       final status = paymentLinkReceivedStatusForTransactions(
         claimTxids: record.claimTxids!,
         transactions:
@@ -1215,17 +1258,72 @@ class PaymentLinkService implements PaymentLinkOperations {
         );
   }
 
-  Future<({Directory directory, String dbPath, bool existed})>
-  _createOrOpenTemporaryWalletDb(VizorPaymentLink link) async {
+  Future<bool> _syncRetainedClaimWallet({
+    required PaymentLinkReceivedRecord record,
+    required String network,
+  }) async {
+    final link = record.claimLink;
+    final claimTxids = record.claimTxids;
+    if (link == null || claimTxids == null || claimTxids.trim().isEmpty) {
+      return false;
+    }
+
+    final tempWallet = await _temporaryWalletLocation(link);
+    if (!await File(tempWallet.dbPath).exists()) return false;
+
+    await _runBlockingSync(dbPath: tempWallet.dbPath);
+    final accounts = await rust_wallet.listAccounts(
+      dbPath: tempWallet.dbPath,
+      network: network,
+    );
+    if (shouldRecreatePaymentLinkClaimWallet(
+      accountAddresses: [
+        for (final account in accounts) account.unifiedAddress,
+      ],
+      expectedAddress: link.address,
+    )) {
+      log(
+        'PaymentLinkService: retained claim wallet no longer matches its '
+        'Gift Card identity; leaving it recoverable from the stored link',
+      );
+      return false;
+    }
+    final transactions = await rust_sync.getTransactionHistory(
+      dbPath: tempWallet.dbPath,
+      network: network,
+      accountUuid: accounts.single.uuid,
+      limit: null,
+    );
+    return paymentLinkClaimTransactionsExpired(
+      claimTxids: claimTxids,
+      transactions: transactions,
+    );
+  }
+
+  Future<({Directory directory, String dbPath})> _temporaryWalletLocation(
+    VizorPaymentLink link,
+  ) async {
     final supportDir = await getWalletSupportDirectory();
     final separator = Platform.pathSeparator;
     final directory = Directory(
       '${supportDir.path}$separator${paymentLinkClaimWalletDirectoryName(link)}',
     );
-    final dbPath = '${directory.path}${separator}zcash_wallet.db';
-    final existed = await File(dbPath).exists();
-    await directory.create(recursive: true);
-    return (directory: directory, dbPath: dbPath, existed: existed);
+    return (
+      directory: directory,
+      dbPath: '${directory.path}${separator}zcash_wallet.db',
+    );
+  }
+
+  Future<({Directory directory, String dbPath, bool existed})>
+  _createOrOpenTemporaryWalletDb(VizorPaymentLink link) async {
+    final location = await _temporaryWalletLocation(link);
+    final existed = await File(location.dbPath).exists();
+    await location.directory.create(recursive: true);
+    return (
+      directory: location.directory,
+      dbPath: location.dbPath,
+      existed: existed,
+    );
   }
 
   Future<({String address, String accountUuid})>
