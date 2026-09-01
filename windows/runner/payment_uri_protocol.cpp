@@ -100,15 +100,39 @@ std::wstring QuotedCommandExecutable(const std::wstring& command) {
   return command.substr(open_quote + 1, close_quote - open_quote - 1);
 }
 
-// Returns whether |command| still names an executable that exists. A command
-// we cannot parse is reported as existing, so an unfamiliar handler is never
-// mistaken for a dangling one and stolen.
-bool CommandExecutableExists(const std::wstring& command) {
-  const std::wstring executable = QuotedCommandExecutable(command);
-  if (executable.empty()) {
+// Returns whether |value| is a rooted path -- a drive-qualified path such as
+// C:\Vizor\vizor.exe or a UNC path such as \\server\share\vizor.exe. A bare
+// or relative token (vizor.exe, .\vizor.exe) is resolved against PATH and the
+// working directory, which we cannot reproduce here, so it is not one.
+bool IsAbsoluteWindowsPath(const std::wstring& value) {
+  if (value.size() >= 2u && value[0] == L'\\' && value[1] == L'\\') {
     return true;
   }
-  return ::GetFileAttributesW(executable.c_str()) != INVALID_FILE_ATTRIBUTES;
+  return value.size() >= 3u && value[1] == L':' &&
+         (value[2] == L'\\' || value[2] == L'/');
+}
+
+// Returns whether |command| still names an executable that exists. Only a
+// rooted path that Windows reports as genuinely missing counts as gone:
+// GetFileAttributesW must fail with ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND
+// or ERROR_INVALID_NAME. Anything else -- a command we cannot parse, a
+// PATH-relative token, a removable drive that is unplugged (ERROR_NOT_READY),
+// an ACL-restricted directory (ERROR_ACCESS_DENIED), an unreachable UNC share
+// (ERROR_BAD_NETPATH) -- is reported as existing. A handler that is merely
+// unreachable right now is still the user's chosen handler, and stealing the
+// zcash: scheme from it is not something the user can undo by plugging the
+// drive back in.
+bool CommandExecutableExists(const std::wstring& command) {
+  const std::wstring executable = QuotedCommandExecutable(command);
+  if (executable.empty() || !IsAbsoluteWindowsPath(executable)) {
+    return true;
+  }
+  if (::GetFileAttributesW(executable.c_str()) != INVALID_FILE_ATTRIBUTES) {
+    return true;
+  }
+  const DWORD error = ::GetLastError();
+  return error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND &&
+         error != ERROR_INVALID_NAME;
 }
 
 void NotifyAssociationChanged() {
