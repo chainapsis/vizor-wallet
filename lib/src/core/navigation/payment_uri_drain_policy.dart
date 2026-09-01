@@ -141,6 +141,26 @@ const _blockedExactLocations = <String>{
   '/voting/keystone/scan',
 };
 
+/// Migration locations that carry nothing in flight: the explainer steps a
+/// user reads before choosing anything, and the terminal result screen.
+///
+/// Everything else under `/migration` is blocked by the subtree rule below,
+/// so this allowlist is exact-match on purpose — a new migration route is
+/// blocked until someone reads it and decides otherwise. `/migration` itself
+/// stays out: on desktop it is a redirect resolver that immediately routes on
+/// to `/migration/prepare` or the private status screen, so delivering there
+/// would race its own `go()`.
+const _migrationInformationalLocations = <String>{
+  // Desktop `IronwoodMigrationFlowStep.intro` / mobile `_MobileMigrationIntro`.
+  '/migration/intro',
+  // Desktop howItWorks / mobile `_MobileMigrationHowItWorks`.
+  '/migration/how-it-works',
+  // Desktop whatToExpect (no mobile counterpart).
+  '/migration/what-to-expect',
+  // Mobile terminal result screen (no desktop counterpart).
+  '/migration/complete',
+};
+
 /// The `/voting/poll/<roundId>/<step>` steps that must not be interrupted:
 /// `review` builds the ballot, `status` drives the live submission job and
 /// hosts the Keystone handoff.
@@ -159,9 +179,13 @@ PaymentUriBlockedSurface paymentUriBlockedSurfaceAt(
   if (_isInSubtree(matchedLocation, '/send')) {
     return PaymentUriBlockedSurface.send;
   }
-  // The whole `/migration` subtree: the Ironwood Keystone signing screens
-  // discard their pending Rust request in `dispose()`.
-  if (_isInSubtree(matchedLocation, '/migration') ||
+  // The `/migration` subtree minus its explainer and result screens: the
+  // Ironwood Keystone signing screens discard their pending Rust request in
+  // `dispose()`, and the preparation/status/review screens hold live work.
+  final inMigrationFlow =
+      _isInSubtree(matchedLocation, '/migration') &&
+      !_migrationInformationalLocations.contains(matchedLocation);
+  if (inMigrationFlow ||
       _blockedExactLocations.contains(matchedLocation) ||
       _isBlockedVotingStep(matchedLocation) ||
       _isSwapDepositSigningLocation(matchedLocation, queryParameters)) {

@@ -50,16 +50,15 @@ void main() {
       }
     });
 
-    test('blocks the whole Ironwood migration subtree', () {
+    test('blocks the working Ironwood migration screens', () {
       for (final location in [
+        // A redirect resolver, not a resting place: it routes on to
+        // /migration/prepare or the private status screen.
         '/migration',
         '/migration/prepare',
-        '/migration/intro',
-        '/migration/how-it-works',
-        '/migration/what-to-expect',
+        // Holds an unsubmitted mode choice and launches the plan work.
         '/migration/options',
         '/migration/review',
-        '/migration/complete',
         '/migration/fast/review',
         '/migration/immediate/review',
         '/migration/immediate/keystone/sign',
@@ -72,6 +71,40 @@ void main() {
         '/migration/private/keystone/sign',
         '/migration/private/keystone/denominations/sign',
         '/migration/private/keystone/batch/sign',
+      ]) {
+        expect(
+          app.paymentUriBlockedAtLocation(location),
+          isTrue,
+          reason: location,
+        );
+      }
+    });
+
+    test('allows informational and terminal migration screens', () {
+      for (final location in [
+        '/migration/intro',
+        '/migration/how-it-works',
+        '/migration/what-to-expect',
+        '/migration/complete',
+      ]) {
+        expect(
+          app.paymentUriBlockedAtLocation(location),
+          isFalse,
+          reason: location,
+        );
+        expect(
+          paymentUriBlockedSurfaceAt(location),
+          PaymentUriBlockedSurface.none,
+          reason: location,
+        );
+      }
+    });
+
+    test('the migration allowlist is exact-match', () {
+      for (final location in [
+        '/migration/intro/step',
+        '/migration/complete/details',
+        '/migration/how-it-works-2',
       ]) {
         expect(
           app.paymentUriBlockedAtLocation(location),
