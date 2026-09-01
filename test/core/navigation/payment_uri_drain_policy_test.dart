@@ -136,7 +136,29 @@ void main() {
       expect(decision.action, PaymentUriDrainAction.routeToUnlock);
       expect(decision.message, isNull);
     });
+
+    test('stays put when already on /unlock', () {
+      expect(
+        decide(isUnlocked: false, matchedLocation: '/unlock').action,
+        PaymentUriDrainAction.wait,
+      );
+    });
+
+    test('stays put on /lost-password so the reset is not unmounted', () {
+      expect(
+        decide(isUnlocked: false, matchedLocation: '/lost-password').action,
+        PaymentUriDrainAction.wait,
+      );
+    });
+
+    test('isUnlockFlowLocation covers exactly the unlock and reset routes', () {
+      expect(isUnlockFlowLocation('/unlock'), isTrue);
+      expect(isUnlockFlowLocation('/lost-password'), isTrue);
+      expect(isUnlockFlowLocation('/home'), isFalse);
+      expect(isUnlockFlowLocation('/welcome'), isFalse);
+    });
   });
+
   group('unlocked but still on the unlock screen', () {
     test('waits so the unlock screen keeps ownership of the claim', () {
       expect(

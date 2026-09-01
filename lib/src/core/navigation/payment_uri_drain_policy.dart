@@ -98,6 +98,14 @@ bool isOnboardingLocation(String matchedLocation) =>
     matchedLocation.startsWith('/onboarding/') ||
     matchedLocation.startsWith('/import');
 
+/// Locations that own the locked-wallet reset flow. A payment URI arriving
+/// here must not navigate: `go('/unlock')` from `/lost-password` unmounts the
+/// reset the user is part-way through (including while the Windows CredUI
+/// prompt is up). The mobile forgot-passcode flow is a sheet over `/unlock`,
+/// so it is covered by `/unlock` itself.
+bool isUnlockFlowLocation(String matchedLocation) =>
+    matchedLocation == '/unlock' || matchedLocation == '/lost-password';
+
 /// Exact locations that would lose in-flight state if a payment URI navigated
 /// away from them.
 const _blockedExactLocations = <String>{
@@ -163,7 +171,8 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// | wallet still loading                         | wait                      |
 /// | onboarding / import / add-account location   | drop + onboarding msg     |
 /// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
-/// | locked                                       | `/unlock` (stay parked)   |
+/// | locked, already on `/unlock`/`/lost-password`| wait (stay parked)        |
+/// | locked, anywhere else                        | `/unlock` (stay parked)   |
 /// | unlocked but still on `/unlock`              | wait (unlock screen owns) |
 /// | send flow open                               | drop + send msg           |
 /// | other in-progress surface                    | drop + busy msg           |
@@ -207,6 +216,9 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   }
 
   if (!isUnlocked) {
+    // Already at the unlock/reset flow: leave it alone and keep the prefill
+    // parked for the unlock screen to claim.
+    if (isUnlockFlowLocation(matchedLocation)) return _waitDecision;
     return const PaymentUriDrainDecision(PaymentUriDrainAction.routeToUnlock);
   }
 

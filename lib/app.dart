@@ -351,9 +351,7 @@ String? appRedirect({
   // The uninstall flow ends with hasWallet == false on purpose; keep the
   // route alive so its "done" stage can show instead of onboarding.
   final isUninstall = state.matchedLocation == '/settings/uninstall';
-  final isUnlock = state.matchedLocation == '/unlock';
-  final isLostPassword = state.matchedLocation == '/lost-password';
-  final isUnlockFlow = isUnlock || isLostPassword;
+  final isUnlockFlow = isUnlockFlowLocation(state.matchedLocation);
   final isSwap =
       state.matchedLocation.startsWith('/swap') ||
       state.matchedLocation.startsWith('/pay') ||
