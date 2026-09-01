@@ -41,7 +41,11 @@
                 <data
                     android:scheme="https"
                     android:host="${vizorDeeplinkHost}"
-                    android:pathPrefix="/" />
+                    android:path="/" />
+                <data
+                    android:scheme="https"
+                    android:host="${vizorDeeplinkHost}"
+                    android:path="/payment-links/open" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
