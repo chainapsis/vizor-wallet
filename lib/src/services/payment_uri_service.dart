@@ -26,11 +26,20 @@ class PaymentUriService {
     });
 
     try {
-      final pending = await _channel.invokeMethod<List<dynamic>>(
-        'takePendingUris',
-      );
-      _addUris(pending);
-      await _channel.invokeMethod<void>('ready');
+      try {
+        // Deliberately untyped: a malformed native payload must surface as a
+        // dropped URI, not as a cast error that strands the handshake.
+        final pending = await _channel.invokeMethod<Object?>('takePendingUris');
+        _addUris(pending);
+      } on MissingPluginException {
+        rethrow;
+      } catch (error) {
+        debugPrint('PaymentUriService: pending URI drain failed: $error');
+      } finally {
+        // The native side only starts flushing later URIs once `ready` is
+        // acknowledged, so a failed drain must never skip this.
+        await _channel.invokeMethod<void>('ready');
+      }
     } on MissingPluginException {
       // Platforms whose native runner does not install this channel land
       // here; the payment-URI feature simply stays inert for them.
