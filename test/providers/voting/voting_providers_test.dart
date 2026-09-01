@@ -9676,6 +9676,39 @@ void main() {
     expect(rust.warmPirProofCacheSnapshotHeights, [123, 123]);
   });
 
+  test('destructive drain stops PIR warmup waiting for wallet scan', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = _QuiescenceGatedVotingWalletSyncReadinessChecker();
+    final container = _sessionContainer(
+      rust: rust,
+      http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+      walletSyncReadinessChecker: readiness,
+    );
+    addTearDown(container.dispose);
+
+    final warmup = container
+        .read(votingPirWarmupProvider)
+        .maybeWarmActiveRounds();
+    await readiness.checkStarted.future;
+
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    addTearDown(() => registry.resume(accountUuid: 'account-1'));
+    var drained = false;
+    final drain = registry.quiesceAndDrain(accountUuid: 'account-1').then<void>(
+      (_) {
+        drained = true;
+      },
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(drained, isFalse);
+
+    readiness.releaseCheck();
+    await Future.wait([warmup, drain]).timeout(const Duration(seconds: 1));
+
+    expect(drained, isTrue);
+    expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
+  });
+
   test(
     'background PIR cache warmup skips a second pass within the min interval',
     () async {
@@ -11460,6 +11493,31 @@ class _GatedVotingWalletSyncReadinessChecker
     if (!firstCheck.isCompleted) firstCheck.complete();
     return VotingWalletSyncReadiness(
       scannedHeight: _ready ? snapshotHeight : snapshotHeight - 1,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight,
+    );
+  }
+}
+
+class _QuiescenceGatedVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  final checkStarted = Completer<void>();
+  final _releaseCheck = Completer<void>();
+
+  void releaseCheck() {
+    if (!_releaseCheck.isCompleted) _releaseCheck.complete();
+  }
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    if (!checkStarted.isCompleted) checkStarted.complete();
+    await _releaseCheck.future;
+    return VotingWalletSyncReadiness(
+      scannedHeight: snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
     );
