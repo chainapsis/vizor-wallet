@@ -370,6 +370,12 @@ void main() {
   );
 
   testWidgets(
+    'signs Orchard to Ironwood crossing through Speculos',
+    _runPostIronwoodOrchardSigningScenario,
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  testWidgets(
     'signs sequential Ledger operations in one app lifecycle',
     (tester) async {
       final fixture = _Fixture.load();
@@ -411,6 +417,44 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 4)),
   );
+}
+
+Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
+  final fixture = _Fixture.load();
+  final sandboxDirectory = await Directory.systemTemp.createTemp(
+    'vizor-ledger-orchard-v6-speculos-e2e.',
+  );
+  addTearDown(() => sandboxDirectory.delete(recursive: true));
+  final dbPath = '${sandboxDirectory.path}/wallet.db';
+  await File(
+    dbPath,
+  ).writeAsBytes(gzip.decode(fixture.dbGzipBytes), flush: true);
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _ledgerBootstrap(
+          fixture,
+          'http://127.0.0.1:1',
+          initialLocation: '/home',
+        ),
+      ),
+      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(accountProvider.future);
+
+  final unsigned = fixture.orchardToIronwoodV6Pczt;
+  final approval = _approveNextReview(fixture.signingApiUrl);
+  final signed = container.read(ledgerPcztSignerProvider)(
+    fixture.accountUuid,
+    unsigned,
+  );
+  expect(await approval, isTrue);
+  final signedBytes = await signed;
+  expect(signedBytes, isNotEmpty);
+  expect(signedBytes, isNot(equals(unsigned)));
 }
 
 Future<void> _runLedgerVotingSigningScenario(WidgetTester tester) async {
@@ -1159,6 +1203,7 @@ class _Fixture {
     required this.texStep2PcztBytes,
     required this.votingBundlePczts,
     required this.votingActionIndexes,
+    required this.orchardToIronwoodV6Pczt,
     required this.dbGzipBytes,
   });
 
@@ -1175,6 +1220,7 @@ class _Fixture {
   final List<int> texStep2PcztBytes;
   final List<List<int>> votingBundlePczts;
   final List<int> votingActionIndexes;
+  final List<int> orchardToIronwoodV6Pczt;
   final List<int> dbGzipBytes;
 
   static _Fixture load() {
@@ -1200,6 +1246,9 @@ class _Fixture {
     const votingBundle2PcztBase64 = String.fromEnvironment(
       'VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_PCZT_BASE64',
     );
+    const orchardToIronwoodV6PcztBase64 = String.fromEnvironment(
+      'VIZOR_LEDGER_E2E_ORCHARD_TO_IRONWOOD_V6_PCZT_BASE64',
+    );
     const votingBundle1ActionIndex = int.fromEnvironment(
       'VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_ACTION_INDEX',
       defaultValue: -1,
@@ -1221,6 +1270,7 @@ class _Fixture {
         texStep2PcztBase64.isEmpty ||
         votingBundle1PcztBase64.isEmpty ||
         votingBundle2PcztBase64.isEmpty ||
+        orchardToIronwoodV6PcztBase64.isEmpty ||
         votingBundle1ActionIndex < 0 ||
         votingBundle2ActionIndex < 0 ||
         dbGzipBase64.isEmpty) {
@@ -1247,6 +1297,7 @@ class _Fixture {
         base64Decode(votingBundle2PcztBase64),
       ],
       votingActionIndexes: [votingBundle1ActionIndex, votingBundle2ActionIndex],
+      orchardToIronwoodV6Pczt: base64Decode(orchardToIronwoodV6PcztBase64),
       dbGzipBytes: base64Decode(dbGzipBase64),
     );
   }
