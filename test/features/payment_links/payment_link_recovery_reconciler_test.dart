@@ -1,5 +1,7 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_lifecycle_revision.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -74,6 +76,33 @@ void main() {
     expect(record.fundingTxids, _preparedTxid);
     expect(record.preparedExpiryHeight, 120);
   });
+
+  test('refreshes the cached unshared count after lifecycle writes', () async {
+    final reconciler = _CountingRecoveryReconciler();
+    final container = ProviderContainer(
+      overrides: [
+        paymentLinkRecoveryReconcilerProvider.overrideWithValue(reconciler),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(
+      await container.read(
+        paymentLinkUnsharedFundedCountProvider('source-account').future,
+      ),
+      1,
+    );
+
+    reconciler.count = 0;
+    container.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+
+    expect(
+      await container.read(
+        paymentLinkUnsharedFundedCountProvider('source-account').future,
+      ),
+      0,
+    );
+  });
 }
 
 const _preparedTxid =
@@ -129,4 +158,20 @@ class _MemoryStorage implements PaymentLinkRecoveryStorage {
 
   @override
   Future<void> write(String nextValue) async => value = nextValue;
+}
+
+class _CountingRecoveryReconciler extends PaymentLinkRecoveryReconciler {
+  _CountingRecoveryReconciler()
+    : super(
+        PaymentLinkRecoveryStore(_MemoryStorage()),
+        loadCurrentHeight: () async => BigInt.zero,
+        loadTransactionsByAccount: (_) async => const {},
+      );
+
+  int count = 1;
+
+  @override
+  Future<int> countUnsharedFundedForAccount(String sourceAccountUuid) async {
+    return count;
+  }
 }

@@ -25,6 +25,7 @@ final paymentLinkReceivingCountProvider = FutureProvider.family<int, String>((
   ref,
   destinationAccountUuid,
 ) {
+  ref.watch(paymentLinkLifecycleRevisionProvider);
   return ref
       .watch(paymentLinkReceivedStoreProvider)
       .countReceivingForAccount(destinationAccountUuid);

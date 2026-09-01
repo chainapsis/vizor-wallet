@@ -1,7 +1,9 @@
 import 'dart:convert';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_lifecycle_revision.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 
 void main() {
@@ -87,6 +89,36 @@ void main() {
       await store.markReceived(address: link.address);
       expect(await store.countReceivingForAccount('receiver-account'), 0);
     });
+
+    test(
+      'refreshes the cached receiving count after lifecycle writes',
+      () async {
+        final store = _CountingReceivedStore();
+        final container = ProviderContainer(
+          overrides: [
+            paymentLinkReceivedStoreProvider.overrideWithValue(store),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        expect(
+          await container.read(
+            paymentLinkReceivingCountProvider('receiver-account').future,
+          ),
+          1,
+        );
+
+        store.count = 0;
+        container.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+
+        expect(
+          await container.read(
+            paymentLinkReceivingCountProvider('receiver-account').future,
+          ),
+          0,
+        );
+      },
+    );
 
     test('returns an expired claim to an actionable persisted state', () async {
       final storage = _FakePaymentLinkReceivedStorage();
@@ -211,5 +243,16 @@ class _FakePaymentLinkReceivedStorage implements PaymentLinkReceivedStorage {
   @override
   Future<void> write(String nextValue) async {
     value = nextValue;
+  }
+}
+
+class _CountingReceivedStore extends PaymentLinkReceivedStore {
+  _CountingReceivedStore() : super(_FakePaymentLinkReceivedStorage());
+
+  int count = 1;
+
+  @override
+  Future<int> countReceivingForAccount(String destinationAccountUuid) async {
+    return count;
   }
 }

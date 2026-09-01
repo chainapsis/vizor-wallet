@@ -4,6 +4,7 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import 'payment_link_lifecycle_revision.dart';
 import 'payment_link_recovery_store.dart';
 import 'payment_link_transaction_matching.dart';
 
@@ -40,6 +41,7 @@ final paymentLinkRecoveryReconcilerProvider =
 
 final paymentLinkUnsharedFundedCountProvider =
     FutureProvider.family<int, String>((ref, sourceAccountUuid) async {
+      ref.watch(paymentLinkLifecycleRevisionProvider);
       return ref
           .watch(paymentLinkRecoveryReconcilerProvider)
           .countUnsharedFundedForAccount(sourceAccountUuid);
