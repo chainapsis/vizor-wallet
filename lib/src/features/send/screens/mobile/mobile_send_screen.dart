@@ -536,10 +536,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // widgetbook galleries rendering this screen bare). maybeOf returns null there.
   bool get _canPopRoute => GoRouter.maybeOf(context)?.canPop() ?? false;
 
-  bool get _routePopAllowed =>
-      _phase == _SendPhase.compose &&
-      (widget.useRouteSteps || _step == _SendStep.recipient) &&
-      !_isConfirmingSend;
+  // Drives `PopScope.canPop`, so it decides whether the Android system back /
+  // gesture is handled by the framework or handed to [_handleBack]. It has to
+  // agree with the toolbar arrow: a payment-URI deep link enters through `go`,
+  // which makes `/send` the whole stack, and leaving `canPop` true there lets
+  // the press bubble out of the app (backgrounding it) while the arrow lands
+  // on /home. Reporting `false` when nothing can be popped routes the press
+  // into `onPopInvokedWithResult` → [_handleBack] instead.
+  bool get _routePopAllowed {
+    if (_phase != _SendPhase.compose) return false;
+    if (_isConfirmingSend) return false;
+    if (!widget.useRouteSteps && _step != _SendStep.recipient) return false;
+    // Without a GoRouter in context (bare widgetbook renders) there is no way
+    // to tell whether a pop would go anywhere, so keep the framework default.
+    final router = GoRouter.maybeOf(context);
+    return router == null || router.canPop();
+  }
 
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';

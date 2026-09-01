@@ -418,13 +418,24 @@ Widget _reviewApp({
   );
 }
 
+/// The real mobile send flow: `/send` pushed from home, with `/send/amount`
+/// and `/send/review` as pushed pages.
+///
+/// Pass `initialLocation: '/send'` plus a prefill to model a `zcash:` payment
+/// URI instead: `lib/app.dart` hands those to `router.go('/send', extra:
+/// SendPrefillArgs)`, so `/send` becomes the entire stack and there is nothing
+/// under it to pop.
 Widget _sendFlowRouterApp({
   MobileSendFeeEstimator? estimateFee,
   String? initialMemo,
   bool preserveInitialMemoWhitespace = false,
+  String initialLocation = '/home',
+  String? initialRecipient,
+  String? initialAmount,
+  MobileSendAddressValidator? validateAddress,
 }) {
   final router = GoRouter(
-    initialLocation: '/home',
+    initialLocation: initialLocation,
     routes: [
       GoRoute(
         path: '/home',
@@ -440,8 +451,11 @@ Widget _sendFlowRouterApp({
           useRouteSteps: true,
           loadWalletDbPath: () async => '/tmp/zcash-test',
           openScanner: (_) async => null,
+          initialRecipient: initialRecipient,
+          initialAmount: initialAmount,
           initialMemo: initialMemo,
           preserveInitialMemoWhitespace: preserveInitialMemoWhitespace,
+          validateAddress: validateAddress,
           estimateFee: estimateFee,
         ),
       ),
@@ -461,6 +475,7 @@ Widget _sendFlowRouterApp({
             initialContactPictureId: args.contactPictureId,
             loadWalletDbPath: () async => '/tmp/zcash-test',
             openScanner: (_) async => null,
+            validateAddress: validateAddress,
             estimateFee: estimateFee,
           );
         },
@@ -726,14 +741,18 @@ void main() {
     expect(continueButton.onPressed, isNotNull);
   });
 
-  testWidgets('route pop is allowed only on the first recipient step', (
+  testWidgets('a send route with nothing under it never lets the pop through', (
     tester,
   ) async {
+    // `_app` starts at `/send`, the stack a `zcash:` payment URI produces —
+    // it arrives through `go`, so there is no page underneath. Letting the
+    // framework pop that away backgrounds the app, while the toolbar arrow
+    // runs `_handleBack` and lands on /home; the two must not diverge.
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
     expect(find.text('Select Recipient'), findsOneWidget);
-    expect(_sendRouteCanPop(tester), isTrue);
+    expect(_sendRouteCanPop(tester), isFalse);
 
     await _toAmountStep(tester, _shieldedAddress);
     expect(find.text('Enter Amount'), findsOneWidget);
@@ -745,6 +764,50 @@ void main() {
 
     expect(find.text('Review Send'), findsOneWidget);
     expect(_sendRouteCanPop(tester), isFalse);
+  });
+
+  testWidgets('system back on a rootless send recipient step goes to home', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('home'), findsOneWidget);
+    expect(find.text('Select Recipient'), findsNothing);
+  });
+
+  testWidgets('system back on a deep-linked amount step steps back in place', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter Amount'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isFalse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    // The amount step of a deep-linked /send is the same page, so there is
+    // nothing to pop: it steps back to the recipient in place and stays on
+    // /send instead of exiting the app.
+    expect(find.text('Select Recipient'), findsOneWidget);
+    expect(find.text('home'), findsNothing);
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(continueButton.onPressed, isNotNull);
   });
 
   testWidgets('route-step mode lets amount and review pop as pages', (
@@ -774,6 +837,26 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
     expect(find.text('Select Recipient'), findsOneWidget);
+  });
+
+  testWidgets('a send route pushed from home still pops on system back', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Recipient'), findsOneWidget);
+    // Home is still underneath, so the normal flow keeps the plain pop.
+    expect(_sendRouteCanPop(tester), isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('home'), findsOneWidget);
+    expect(find.text('Select Recipient'), findsNothing);
   });
 
   testWidgets('route-step mode preserves ZIP-321 memo whitespace on propose', (

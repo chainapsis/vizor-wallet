@@ -121,15 +121,14 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
       return super.invokeCallback(defaultValue);
     }
 
-    // The migration flow is a set of flat, top-level routes that replace each
-    // other with `go`, so its screens routinely sit on a stack that cannot
-    // pop. Offering the route layer the back press first is what lets their
-    // `PopScope` handlers run at all; without it a mid-flow back press skips
-    // straight to the exit hint and a second press quits the app. The check is
-    // pinned to `/migration` on purpose: every other screen keeps the existing
-    // "root back means exit" behaviour, which has not been audited for
-    // `PopScope` dependencies.
-    if (_canPop() || _isMigrationLocation(_currentLocation())) {
+    // Some flows are flat, top-level routes that replace each other with `go`,
+    // so their screens routinely sit on a stack that cannot pop. Offering the
+    // route layer the back press first is what lets their `PopScope` handlers
+    // run at all; without it a mid-flow back press skips straight to the exit
+    // hint and a second press quits the app. The list is pinned on purpose:
+    // every other screen keeps the existing "root back means exit" behaviour,
+    // which has not been audited for `PopScope` dependencies.
+    if (_canPop() || _routeLayerHandlesRootBack(_currentLocation())) {
       final handledByRoute = await super.invokeCallback(
         Future<bool>.value(false),
       );
@@ -154,9 +153,21 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
     return true;
   }
 
-  static bool _isMigrationLocation(String location) {
+  /// Flows whose screens own the root back press through their own
+  /// `PopScope`.
+  ///
+  /// `/migration` replaces its steps with `go`. `/send` is normally pushed
+  /// from home (so `_canPop()` already covers it), but a `zcash:` payment URI
+  /// opens it with `go` as well, which makes `/send` the entire stack: the
+  /// send screen's `PopScope` is then the only thing that can send the press
+  /// to its own step fallback instead of exiting the app.
+  static const _rootBackFlowPrefixes = ['/migration', '/send'];
+
+  static bool _routeLayerHandlesRootBack(String location) {
     final path = Uri.tryParse(location)?.path ?? location;
-    return path == '/migration' || path.startsWith('/migration/');
+    return _rootBackFlowPrefixes.any(
+      (prefix) => path == prefix || path.startsWith('$prefix/'),
+    );
   }
 
   void dispose() {

@@ -358,18 +358,22 @@ void main() {
     expect(_systemNavigatorPopCallCount(platformCalls), 1);
   });
 
-  testWidgets('a non-migration route keeps the immediate exit hint', (
+  testWidgets('android root back reaches a deep-linked send that cannot pop', (
     tester,
   ) async {
+    final platformCalls = _capturePlatformCalls(tester);
     var handledBacks = 0;
+    // A `zcash:` payment URI opens /send with `go`, so it is the whole stack.
+    // Skipping the route layer there shows the exit hint while the screen's
+    // toolbar arrow goes to /home — the two back affordances must agree.
     final testRouter = _exitBackRouter(
-      initialLocation: '/settings',
+      initialLocation: '/send',
       routes: [
         _placeholderRoute('/home', 'Home route'),
         GoRoute(
-          path: '/settings',
+          path: '/send',
           builder: (_, _) => _RouteLevelBackHandler(
-            label: 'Settings route',
+            label: 'Send route',
             onBack: () => handledBacks++,
           ),
         ),
@@ -378,15 +382,102 @@ void main() {
     await tester.pumpWidget(_app(testRouter));
     await tester.pumpAndSettle();
 
+    expect(find.text('Send route'), findsOneWidget);
+    expect(testRouter.router.canPop(), isFalse);
+
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
 
-    // The delegate-first path is scoped to `/migration`; everywhere else the
-    // root back press goes straight to the exit hint as before.
-    expect(handledBacks, 0);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
-    _clearExitHint(testRouter);
+    expect(handledBacks, 1);
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(_systemNavigatorPopCallCount(platformCalls), 0);
   });
+
+  testWidgets('a send step that blocks back never shows the exit hint', (
+    tester,
+  ) async {
+    final platformCalls = _capturePlatformCalls(tester);
+    final testRouter = _exitBackRouter(
+      initialLocation: '/send/review',
+      routes: [
+        _placeholderRoute('/home', 'Home route'),
+        GoRoute(
+          path: '/send/review',
+          // No fallback: the screen is holding back while the send is being
+          // prepared.
+          builder: (_, _) =>
+              const _RouteLevelBackHandler(label: 'Send review route'),
+        ),
+      ],
+    );
+    await tester.pumpWidget(_app(testRouter));
+    await tester.pumpAndSettle();
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+
+    expect(find.text('Send review route'), findsOneWidget);
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(_systemNavigatorPopCallCount(platformCalls), 0);
+  });
+
+  testWidgets('a send route without a back handler still exits', (
+    tester,
+  ) async {
+    final platformCalls = _capturePlatformCalls(tester);
+    final testRouter = _exitBackRouter(
+      initialLocation: '/send/status',
+      routes: [
+        _placeholderRoute('/home', 'Home route'),
+        _placeholderRoute('/send/status', 'Send status route'),
+      ],
+    );
+    await tester.pumpWidget(_app(testRouter));
+    await tester.pumpAndSettle();
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(_systemNavigatorPopCallCount(platformCalls), 0);
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+    expect(_systemNavigatorPopCallCount(platformCalls), 1);
+  });
+
+  testWidgets(
+    'a route outside the listed flows keeps the immediate exit hint',
+    (tester) async {
+      var handledBacks = 0;
+      final testRouter = _exitBackRouter(
+        initialLocation: '/settings',
+        routes: [
+          _placeholderRoute('/home', 'Home route'),
+          GoRoute(
+            path: '/settings',
+            builder: (_, _) => _RouteLevelBackHandler(
+              label: 'Settings route',
+              onBack: () => handledBacks++,
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(_app(testRouter));
+      await tester.pumpAndSettle();
+
+      expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+      await tester.pump();
+
+      // The delegate-first path is scoped to `/migration` and `/send`;
+      // everywhere else the root back press goes straight to the exit hint as
+      // before.
+      expect(handledBacks, 0);
+      expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+      _clearExitHint(testRouter);
+    },
+  );
 
   testWidgets('non-Android mobile platforms do not intercept root back', (
     tester,
