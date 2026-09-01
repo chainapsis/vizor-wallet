@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/app_secure_store.dart';
 import '../models/vizor_payment_link.dart';
+import 'payment_link_lifecycle_revision.dart';
 
 const _storageVersion = 1;
 const _fundingMetadataWriteAttempts = 2;
@@ -14,6 +15,9 @@ final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
 ) {
   return PaymentLinkRecoveryStore(
     AppSecureStorePaymentLinkRecoveryStorage(AppSecureStore.instance),
+    onRecordsChanged: () {
+      ref.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+    },
   );
 });
 
@@ -124,9 +128,11 @@ class AppSecureStorePaymentLinkRecoveryStorage
 }
 
 class PaymentLinkRecoveryStore {
-  PaymentLinkRecoveryStore(this._storage);
+  PaymentLinkRecoveryStore(this._storage, {void Function()? onRecordsChanged})
+    : _onRecordsChanged = onRecordsChanged;
 
   final PaymentLinkRecoveryStorage _storage;
+  final void Function()? _onRecordsChanged;
   Future<void> _operationTail = Future<void>.value();
 
   Future<List<PaymentLinkRecoveryRecord>> load() {
@@ -327,6 +333,24 @@ class PaymentLinkRecoveryStore {
     });
   }
 
+  Future<void> removeUnsubmittedDraft({required String address}) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findByAddress(records, address);
+      if (existing == null) return;
+      if (existing.state != PaymentLinkRecoveryState.draft ||
+          (existing.fundingTxids?.trim().isNotEmpty ?? false) ||
+          existing.preparedExpiryHeight != null) {
+        throw StateError(
+          'Only an unsubmitted payment link draft can be removed.',
+        );
+      }
+      await _writeRecords(
+        records.where((record) => record.link.address != address).toList(),
+      );
+    });
+  }
+
   Future<List<PaymentLinkRecoveryRecord>> _loadUnlocked() async {
     final raw = await _storage.read();
     if (raw == null || raw.trim().isEmpty) return const [];
@@ -362,6 +386,7 @@ class PaymentLinkRecoveryStore {
   Future<void> _writeRecords(List<PaymentLinkRecoveryRecord> records) async {
     if (records.isEmpty) {
       await _storage.delete();
+      _onRecordsChanged?.call();
       return;
     }
     await _storage.write(
@@ -370,6 +395,7 @@ class PaymentLinkRecoveryStore {
         'records': [for (final record in records) _recordToJson(record)],
       }),
     );
+    _onRecordsChanged?.call();
   }
 
   Future<T> _runExclusive<T>(Future<T> Function() operation) {
@@ -405,7 +431,13 @@ class PaymentLinkFundingRecovery {
     required String Function(T result) fundingTxids,
   }) async {
     await _store.saveDraft(link: link, sourceAccountUuid: sourceAccountUuid);
-    final result = await createTransaction();
+    late final T result;
+    try {
+      result = await createTransaction();
+    } on PaymentLinkFundingNotSubmittedException catch (failure) {
+      await _store.removeUnsubmittedDraft(address: link.address);
+      Error.throwWithStackTrace(failure.error, failure.stackTrace);
+    }
     return complete(
       transaction: result,
       address: link.address,
@@ -436,6 +468,13 @@ class PaymentLinkFundingRecovery {
       recoveryStackTrace: recoveryStackTrace,
     );
   }
+}
+
+class PaymentLinkFundingNotSubmittedException implements Exception {
+  const PaymentLinkFundingNotSubmittedException(this.error, this.stackTrace);
+
+  final Object error;
+  final StackTrace stackTrace;
 }
 
 PaymentLinkRecoveryRecord? _findByAddress(

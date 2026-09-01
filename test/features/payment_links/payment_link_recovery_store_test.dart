@@ -64,6 +64,43 @@ void main() {
       },
     );
 
+    test('definitive pre-submission failure removes its inert draft', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final link = _link();
+      final failure = StateError('insufficient balance');
+
+      await expectLater(
+        PaymentLinkFundingRecovery(
+          PaymentLinkRecoveryStore(storage),
+        ).fund<String>(
+          link: link,
+          sourceAccountUuid: 'source-account',
+          createTransaction: () =>
+              throw PaymentLinkFundingNotSubmittedException(
+                failure,
+                StackTrace.current,
+              ),
+          fundingTxids: (txid) => txid,
+        ),
+        throwsA(same(failure)),
+      );
+
+      expect(await PaymentLinkRecoveryStore(storage).load(), isEmpty);
+    });
+
+    test('notifies listeners after a lifecycle write', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      var revisions = 0;
+      final store = PaymentLinkRecoveryStore(
+        storage,
+        onRecordsChanged: () => revisions += 1,
+      );
+
+      await store.saveDraft(link: _link(), sourceAccountUuid: 'source-account');
+
+      expect(revisions, 1);
+    });
+
     test('retries a transient funding metadata write failure', () async {
       final storage = _FakePaymentLinkRecoveryStorage(failOnWrites: {2});
       final link = _link();

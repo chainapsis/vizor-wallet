@@ -9,6 +9,36 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test('classifies failures before funding submission starts', () async {
+    final failure = StateError('insufficient balance');
+
+    await expectLater(
+      runPaymentLinkFundingSubmission<String>((_) => throw failure),
+      throwsA(
+        isA<PaymentLinkFundingNotSubmittedException>().having(
+          (error) => error.error,
+          'error',
+          same(failure),
+        ),
+      ),
+    );
+  });
+
+  test(
+    'preserves ambiguous failures after funding submission starts',
+    () async {
+      final failure = StateError('broadcast result unavailable');
+
+      await expectLater(
+        runPaymentLinkFundingSubmission<String>((markSubmissionStarted) {
+          markSubmissionStarted();
+          throw failure;
+        }),
+        throwsA(same(failure)),
+      );
+    },
+  );
+
   test('funding covers the exact recipient amount and claim fee', () {
     final recipientAmount = BigInt.from(100000000);
 

@@ -38,6 +38,21 @@ const kPaymentLinkClaimConfirmationTarget = 6;
 /// shielded claim transaction.
 const kPaymentLinkClaimFeeReserveZatoshi = 10000;
 
+@visibleForTesting
+Future<T> runPaymentLinkFundingSubmission<T>(
+  Future<T> Function(void Function() markSubmissionStarted) operation,
+) async {
+  var submissionStarted = false;
+  try {
+    return await operation(() => submissionStarted = true);
+  } catch (error, stackTrace) {
+    if (!submissionStarted) {
+      throw PaymentLinkFundingNotSubmittedException(error, stackTrace);
+    }
+    rethrow;
+  }
+}
+
 BigInt paymentLinkFundingAmountZatoshi(BigInt recipientAmountZatoshi) {
   if (recipientAmountZatoshi <= BigInt.zero) {
     throw ArgumentError.value(
@@ -563,14 +578,15 @@ class PaymentLinkService implements PaymentLinkOperations {
         .fund<rust_sync.ExecuteProposalResult>(
           link: link,
           sourceAccountUuid: sourceAccountUuid,
-          createTransaction: () {
-            return _sendShielded(
+          createTransaction: () => runPaymentLinkFundingSubmission(
+            (markSubmissionStarted) => _sendShielded(
               fromAccountUuid: sourceAccountUuid,
               toAddress: link.address,
               amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
               memo: null,
-            );
-          },
+              onSubmissionStarted: markSubmissionStarted,
+            ),
+          ),
           fundingTxids: (result) => result.txids,
         );
     final fundingResult = funding.transaction;
@@ -1210,6 +1226,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     String? memo,
     String? mnemonic,
     Future<void> Function()? beforeExecute,
+    void Function()? onSubmissionStarted,
   }) async {
     await _requireShieldedAddress(toAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
@@ -1252,6 +1269,7 @@ class PaymentLinkService implements PaymentLinkOperations {
         needsSaplingParams: proposal.needsSaplingParams,
         mnemonic: mnemonic,
         beforeExecute: beforeExecute,
+        onSubmissionStarted: onSubmissionStarted,
       );
       paymentLinkClaimBroadcastStatusFromWire(result.status);
       return result;
@@ -1277,6 +1295,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     required bool needsSaplingParams,
     String? mnemonic,
     Future<void> Function()? beforeExecute,
+    void Function()? onSubmissionStarted,
   }) async {
     var saplingParams = await loadSaplingParamsStatus();
     if (needsSaplingParams && !saplingParams.complete) {
@@ -1294,6 +1313,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       final password = _ref
           .read(appSecurityProvider.notifier)
           .requireSessionPasswordForNativeSecretUse();
+      onSubmissionStarted?.call();
       return rust_sync.executeProposalWithMacosStoredMnemonic(
         dbPath: dbPath,
         lightwalletdUrl: lightwalletdUrl,
@@ -1315,6 +1335,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
     late final Future<rust_sync.ExecuteProposalResult> result;
     try {
+      onSubmissionStarted?.call();
       result = rust_sync.executeProposal(
         dbPath: dbPath,
         lightwalletdUrl: lightwalletdUrl,

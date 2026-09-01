@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/app_secure_store.dart';
 import '../models/vizor_payment_link.dart';
+import 'payment_link_lifecycle_revision.dart';
 
 const _storageVersion = 1;
 const _fieldNotProvided = Object();
@@ -14,6 +15,9 @@ final paymentLinkReceivedStoreProvider = Provider<PaymentLinkReceivedStore>((
 ) {
   return PaymentLinkReceivedStore(
     AppSecureStorePaymentLinkReceivedStorage(AppSecureStore.instance),
+    onRecordsChanged: () {
+      ref.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+    },
   );
 });
 
@@ -165,9 +169,11 @@ class AppSecureStorePaymentLinkReceivedStorage
 }
 
 class PaymentLinkReceivedStore {
-  PaymentLinkReceivedStore(this._storage);
+  PaymentLinkReceivedStore(this._storage, {void Function()? onRecordsChanged})
+    : _onRecordsChanged = onRecordsChanged;
 
   final PaymentLinkReceivedStorage _storage;
+  final void Function()? _onRecordsChanged;
   Future<void> _operationTail = Future<void>.value();
 
   Future<List<PaymentLinkReceivedRecord>> load() {
@@ -348,6 +354,7 @@ class PaymentLinkReceivedStore {
   Future<void> _writeRecords(List<PaymentLinkReceivedRecord> records) async {
     if (records.isEmpty) {
       await _storage.delete();
+      _onRecordsChanged?.call();
       return;
     }
     await _storage.write(
@@ -356,6 +363,7 @@ class PaymentLinkReceivedStore {
         'records': [for (final record in records) _recordToJson(record)],
       }),
     );
+    _onRecordsChanged?.call();
   }
 
   Future<T> _runExclusive<T>(Future<T> Function() operation) {

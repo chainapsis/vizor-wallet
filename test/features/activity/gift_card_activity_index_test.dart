@@ -1,6 +1,8 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_lifecycle_revision.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -73,6 +75,51 @@ void main() {
     expect(redeemedMetadata?.kind, GiftCardActivityKind.redeemed);
     expect(redeemedMetadata?.amountZatoshi, BigInt.from(100000000));
   });
+
+  test('refreshes its completed future after lifecycle writes', () async {
+    final recoveryStore = PaymentLinkRecoveryStore(_MemoryRecoveryStorage());
+    final receivedStore = PaymentLinkReceivedStore(_MemoryReceivedStorage());
+    final container = ProviderContainer(
+      overrides: [
+        paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
+      ],
+    );
+    addTearDown(container.dispose);
+    final provider = giftCardActivityIndexProvider('account-1');
+    final subscription = container.listen(provider, (_, _) {});
+    addTearDown(subscription.close);
+
+    final initialIndex = await container.read(provider.future);
+    expect(initialIndex.createdTxids, isEmpty);
+    expect(initialIndex.redeemedTxids, isEmpty);
+
+    final createdLink = _link('created-revision-address');
+    await recoveryStore.saveDraft(
+      link: createdLink,
+      sourceAccountUuid: 'account-1',
+    );
+    await recoveryStore.markFunded(
+      address: createdLink.address,
+      fundingTxids: 'created-revision-txid',
+    );
+    container.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+
+    final createdIndex = await container.read(provider.future);
+    expect(createdIndex.createdTxids, {'created-revision-txid'});
+
+    final receivedLink = _link('received-revision-address');
+    await receivedStore.saveReady(receivedLink);
+    await receivedStore.markReceiving(
+      address: receivedLink.address,
+      destinationAccountUuid: 'account-1',
+      claimTxids: 'received-revision-txid',
+    );
+    container.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+
+    final receivedIndex = await container.read(provider.future);
+    expect(receivedIndex.redeemedTxids, {'received-revision-txid'});
+  });
 }
 
 VizorPaymentLink _link(String address) {
@@ -117,4 +164,38 @@ String _reverseHexBytes(String value) {
     reversed.write(value.substring(index - 2, index));
   }
   return reversed.toString();
+}
+
+class _MemoryRecoveryStorage implements PaymentLinkRecoveryStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async {
+    value = null;
+  }
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String value) async {
+    this.value = value;
+  }
+}
+
+class _MemoryReceivedStorage implements PaymentLinkReceivedStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async {
+    value = null;
+  }
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String value) async {
+    this.value = value;
+  }
 }

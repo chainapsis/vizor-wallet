@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../payment_links/services/payment_link_received_store.dart';
 import '../payment_links/services/payment_link_recovery_store.dart';
+import '../payment_links/services/payment_link_lifecycle_revision.dart';
 import '../payment_links/services/payment_link_service.dart';
 import '../payment_links/services/payment_link_transaction_matching.dart'
     as payment_link_matching;
@@ -114,6 +115,7 @@ class GiftCardActivityIndex {
 
 final giftCardActivityIndexProvider = FutureProvider.autoDispose
     .family<GiftCardActivityIndex, String>((ref, accountUuid) async {
+      ref.watch(paymentLinkLifecycleRevisionProvider);
       final operations = ref.watch(paymentLinkOperationsProvider);
       final records = await Future.wait<Object>([
         operations.loadCreatedLinkRecoveries(),

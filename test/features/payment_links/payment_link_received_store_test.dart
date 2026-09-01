@@ -6,6 +6,19 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 
 void main() {
   group('PaymentLinkReceivedStore', () {
+    test('notifies listeners after a lifecycle write', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      var revisions = 0;
+      final store = PaymentLinkReceivedStore(
+        storage,
+        onRecordsChanged: () => revisions += 1,
+      );
+
+      await store.saveReady(_link());
+
+      expect(revisions, 1);
+    });
+
     test(
       'restores a claim secret and in-flight transaction after restart',
       () async {
