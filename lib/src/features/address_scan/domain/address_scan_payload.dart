@@ -25,8 +25,31 @@ String? _zcashAddressFromUri(String raw, Uri uri) {
   try {
     return Zip321PaymentRequest.parse(raw).primaryPayment.address.trim();
   } on Zip321ParseException {
-    return _genericAddressFromUri(uri);
+    // A scan only needs the recipient, so a ZIP-321 request we refuse for an
+    // unrelated reason (an unsupported memo, say) must still surrender its
+    // address. `_genericAddressFromUri` covers the bare `address` form; the
+    // indexed `address.N` form is spec-valid and has no bare key at all.
+    return _genericAddressFromUri(uri) ?? _indexedZcashAddressFromUri(uri);
   }
+}
+
+final _indexedAddressKeyPattern = RegExp(r'^address\.([1-9][0-9]{0,3})$');
+
+String? _indexedZcashAddressFromUri(Uri uri) {
+  int? lowestIndex;
+  String? lowestAddress;
+  for (final entry in uri.queryParameters.entries) {
+    final match = _indexedAddressKeyPattern.firstMatch(entry.key);
+    if (match == null) continue;
+    final address = entry.value.trim();
+    if (address.isEmpty) continue;
+    final index = int.parse(match.group(1)!);
+    if (lowestIndex == null || index < lowestIndex) {
+      lowestIndex = index;
+      lowestAddress = address;
+    }
+  }
+  return lowestAddress;
 }
 
 String? _ethereumAddressFromUri(Uri uri) {

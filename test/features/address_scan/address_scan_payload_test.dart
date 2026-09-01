@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/address_scan/domain/address_scan_payload.dart';
 
@@ -40,6 +42,42 @@ void main() {
       expect(
         normalizeAddressScanPayload(
           'zcash:u1k8h8x9g7f6e5d4c3b2a1?amount=0.01&message=hello',
+        ),
+        'u1k8h8x9g7f6e5d4c3b2a1',
+      );
+    });
+
+    test('extracts bare query address from zcash ZIP-321 URI', () {
+      expect(
+        normalizeAddressScanPayload('zcash:?address=u1k8h8x9g7f6e5d4c3b2a1'),
+        'u1k8h8x9g7f6e5d4c3b2a1',
+      );
+    });
+
+    test('extracts an indexed-only zcash address', () {
+      expect(
+        normalizeAddressScanPayload('zcash:?address.1=u1k8h8x9g7f6e5d4c3b2a1'),
+        'u1k8h8x9g7f6e5d4c3b2a1',
+      );
+    });
+
+    test('prefers the lowest indexed zcash address', () {
+      expect(
+        normalizeAddressScanPayload(
+          'zcash:?address.5=u1fifthaddress&address.2=u1secondaddress',
+        ),
+        'u1secondaddress',
+      );
+    });
+
+    test('recovers an indexed zcash address when the memo is rejected', () {
+      final memo = base64Url
+          .encode(utf8.encode('Pay \u202Eevil\u202C now'))
+          .replaceAll('=', '');
+
+      expect(
+        normalizeAddressScanPayload(
+          'zcash:?address.1=u1k8h8x9g7f6e5d4c3b2a1&memo.1=$memo',
         ),
         'u1k8h8x9g7f6e5d4c3b2a1',
       );
