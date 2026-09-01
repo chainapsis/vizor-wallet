@@ -75,6 +75,15 @@ int paymentLinkConfirmationCount({
 }
 
 @visibleForTesting
+BigInt paymentLinkVerifiedChainHeight({
+  required int scannedHeight,
+  required int chainTipHeight,
+}) {
+  if (scannedHeight <= 0 || chainTipHeight <= 0) return BigInt.zero;
+  return BigInt.from(min(scannedHeight, chainTipHeight));
+}
+
+@visibleForTesting
 int paymentLinkFundingConfirmationCountForClaim({
   required BigInt recipientAmountZatoshi,
   required List<rust_sync.TransactionInfo> transactions,
@@ -813,12 +822,16 @@ class PaymentLinkService implements PaymentLinkOperations {
             limit: null,
           );
     }
-    final cachedTip = _ref.read(syncProvider).value?.chainTipHeight ?? 0;
-    final chainTipHeight = cachedTip > 0
-        ? BigInt.from(cachedTip)
-        : await _ref
-              .read(rpcEndpointFailoverProvider.notifier)
-              .getLatestBlockHeight();
+    final syncState = _ref.read(syncProvider).value;
+    // A polled tip can advance before the main wallet DB has scanned it. In
+    // particular, after a reorg the DB can still expose a transaction's old
+    // mined height while chainTipHeight already describes the replacement
+    // branch. Only confirmations covered by both heights are safe for the
+    // destructive retained-wallet cleanup boundary.
+    final chainTipHeight = paymentLinkVerifiedChainHeight(
+      scannedHeight: syncState?.scannedHeight ?? 0,
+      chainTipHeight: syncState?.chainTipHeight ?? 0,
+    );
 
     for (final record in awaitingReceipt) {
       final status = paymentLinkReceivedStatusForTransactions(

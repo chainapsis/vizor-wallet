@@ -274,6 +274,21 @@ void main() {
     },
   );
 
+  test('claim confirmations never outrun the scanned wallet height', () {
+    expect(
+      paymentLinkVerifiedChainHeight(scannedHeight: 105, chainTipHeight: 106),
+      BigInt.from(105),
+    );
+    expect(
+      paymentLinkVerifiedChainHeight(scannedHeight: 106, chainTipHeight: 105),
+      BigInt.from(105),
+    );
+    expect(
+      paymentLinkVerifiedChainHeight(scannedHeight: 0, chainTipHeight: 106),
+      BigInt.zero,
+    );
+  });
+
   test('expired unmined claim becomes actionable again', () {
     expect(
       paymentLinkReceivedStatusForTransactions(
