@@ -23,7 +23,9 @@ pub use zcash_voting::delegate::DelegationProgress;
 use zcash_voting::delegate::{
     DelegationSigningRequest, PrepareDelegationBundleParams, PreparedDelegationBundle,
 };
-use zcash_voting::selection::{select_notes_with_lwd, select_notes_with_wallet_db};
+use zcash_voting::selection::{
+    select_notes_with_lwd, select_notes_with_wallet_db, select_snapshot_note_infos,
+};
 use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
 
@@ -327,6 +329,50 @@ pub async fn setup_delegation_bundles(
             )
             .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
     })
+}
+
+/// Reconstruct and recover initial delegation VANs already present in the vote tree.
+///
+/// This is the rare recovery path for a wallet whose delegation reached the
+/// chain but whose local voting sidecar no longer contains the confirmed VAN
+/// position. Snapshot note selection comes from the wallet DB; VAN
+/// reconstruction and validated tree scanning remain owned by `zcash_voting`.
+pub async fn recover_confirmed_delegations(
+    db_path: &str,
+    account_uuid: &str,
+    network: zcash_voting::Network,
+    round_id: &str,
+    snapshot_height: u64,
+    stored_hotkey_secret: Vec<u8>,
+    chain_client: &zcash_voting::ChainClient,
+    cancel: &(dyn Fn() -> bool + Send + Sync),
+) -> Result<zcash_voting::DelegationVanRecoveryReport, String> {
+    let stored_hotkey_secret = Zeroizing::new(stored_hotkey_secret);
+    let voting_hotkey =
+        zcash_voting::VotingHotkey::from_stored_secret(stored_hotkey_secret.as_slice(), network)
+            .map_err(|error| format!("Voting hotkey reconstruction failed: {error}"))?;
+
+    let selection_db_path = db_path.to_string();
+    let selection_account_uuid = account_uuid.to_string();
+    let round_note_infos = tokio::task::spawn_blocking(move || {
+        let wallet_db = open_wallet_db_for_read(&selection_db_path, wallet_network(network))?;
+        select_snapshot_note_infos(&wallet_db, &selection_account_uuid, snapshot_height)
+            .map_err(|error| format!("voting snapshot note selection failed: {error}"))
+    })
+    .await
+    .map_err(|error| format!("voting snapshot note selection task failed: {error}"))??;
+
+    let voting_db = open_voting_db(db_path, account_uuid)?;
+    zcash_voting::recover_confirmed_delegations(
+        &voting_db,
+        chain_client,
+        round_id,
+        &round_note_infos,
+        &voting_hotkey,
+        cancel,
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// Persist the snapshot-stable bundle plan and warm PIR for every bundle.

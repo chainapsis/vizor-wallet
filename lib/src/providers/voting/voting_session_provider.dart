@@ -514,6 +514,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             context: context,
             fallbackState: current,
             bundleIndexes: plan.pendingDelegationBundleIndexes,
+            storedHotkeySecret: storedHotkeySecret,
             progress: progress,
             logLabel: 'software',
             prove: (bundleIndex, publishProgress) async {
@@ -893,6 +894,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             context: context,
             fallbackState: current,
             bundleIndexes: plan.pendingDelegationBundleIndexes,
+            storedHotkeySecret: storedHotkeySecret,
             progress: progress,
             logLabel: 'Keystone',
             prove: (bundleIndex, publishProgress) async {
@@ -2393,6 +2395,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required _VotingSessionContext context,
     required VotingSessionState fallbackState,
     required List<int> bundleIndexes,
+    required List<int>? storedHotkeySecret,
     required Map<int, VotingSessionProgress> progress,
     required Future<rust_wire.SignedDelegationPayloadView> Function(
       int bundleIndex,
@@ -2405,6 +2408,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final proofWallTimer = Stopwatch()..start();
     final timers = <int, Stopwatch>{};
     final proofElapsed = <int, Duration>{};
+    final recoveryHotkeySecret = bundleIndexes.isEmpty
+        ? const <int>[]
+        : storedHotkeySecret ??
+              (throw StateError(
+                'A voting hotkey is required for pending delegation bundles.',
+              ));
 
     void publishProgress(VotingSessionProgress update) {
       final bundleIndex = update.bundleIndex;
@@ -2459,10 +2468,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _throwIfContextStale(context, '$logLabel-proof-fan-in');
     final failures = <_DelegationBundleFailure>[];
     final submittedTxHashes = <int, String>{};
+    final completed = <int>{};
 
     // Broadcasts remain serial because the vote server API does not expose an
     // idempotency key. Persist each returned hash before starting the next one.
     for (final bundleIndex in bundleIndexes) {
+      if (completed.contains(bundleIndex)) continue;
       final proof = proofOutcomes[bundleIndex]!;
       if (proof.error != null) {
         publishProgress(
@@ -2483,19 +2494,41 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
       try {
         _throwIfContextStale(context, '$logLabel-delegation-submit');
-        final txHash = await _submitDelegation(
+        final submissionResult = await _submitDelegation(
           context: context,
           bundleIndex: bundleIndex,
+          storedHotkeySecret: recoveryHotkeySecret,
           submission: proof.value!,
         );
-        submittedTxHashes[bundleIndex] = txHash;
-        publishProgress(
-          VotingSessionProgress(
-            phase: 'submitted',
-            bundleIndex: bundleIndex,
-            message: txHash,
-          ),
-        );
+        final txHash = submissionResult.txHash;
+        if (txHash != null) {
+          submittedTxHashes[bundleIndex] = txHash;
+          publishProgress(
+            VotingSessionProgress(
+              phase: 'submitted',
+              bundleIndex: bundleIndex,
+              message: txHash,
+            ),
+          );
+        } else {
+          for (final recoveredIndex
+              in submissionResult.recoveredBundleIndexes) {
+            completed.add(recoveredIndex);
+            if (!bundleIndexes.contains(recoveredIndex)) continue;
+            publishProgress(
+              VotingSessionProgress(
+                phase: 'confirmed',
+                bundleIndex: recoveredIndex,
+                message: 'Recovered from the vote tree',
+              ),
+            );
+            debugPrint(
+              '[zcash] Voting: $logLabel delegation bundle recovered '
+              'round=${context.round.roundId} bundle=$recoveredIndex '
+              'total=${formatElapsedSeconds(timers[recoveredIndex]!.elapsed)}',
+            );
+          }
+        }
       } catch (error) {
         publishProgress(
           VotingSessionProgress(
@@ -2518,8 +2551,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
     }
 
+    final bundlesNeedingConfirmation = submittedTxHashes.keys
+        .where((bundleIndex) => !completed.contains(bundleIndex))
+        .toList(growable: false);
     final confirmationOutcomes = await _runBoundedBundleWork(
-      submittedTxHashes.keys.toList(growable: false),
+      bundlesNeedingConfirmation,
       concurrency: _votingWorkConcurrency,
       work: (bundleIndex) => _confirmDelegation(
         context: context,
@@ -2527,8 +2563,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         txHash: submittedTxHashes[bundleIndex]!,
       ),
     );
-    final completed = <int>{};
-    for (final bundleIndex in submittedTxHashes.keys) {
+    for (final bundleIndex in bundlesNeedingConfirmation) {
       final confirmation = confirmationOutcomes[bundleIndex]!;
       if (confirmation.error != null) {
         publishProgress(
@@ -2564,6 +2599,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
     }
 
+    failures.removeWhere((failure) => completed.contains(failure.bundleIndex));
     for (final failure in failures) {
       if (failure.error is _StaleVotingSessionAction ||
           failure.error is _VotingAlreadyStarted) {
@@ -2581,9 +2617,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return completed;
   }
 
-  Future<String> _submitDelegation({
+  Future<_DelegationSubmissionResult> _submitDelegation({
     required _VotingSessionContext context,
     required int bundleIndex,
+    required List<int> storedHotkeySecret,
     required rust_wire.SignedDelegationPayloadView submission,
   }) async {
     final rust = ref.read(votingRustApiProvider);
@@ -2603,18 +2640,45 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       operationEpoch: rust.beginVotingChainOperation(),
     );
     _throwIfContextStale(context, 'delegation-submit-response');
-    final resolved = await _recoverSpentChainSubmission(
-      context: context,
-      outcome: result,
-      reconcile: () => rust.reconcileChainDelegation(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: bundleIndex,
-        apiServerUrls: context.config.apiServers.endpointUrls,
-        operationEpoch: rust.beginVotingChainOperation(),
-      ),
-    );
+    var resolved = result;
+    if (result.status == 'already_spent_unresolved') {
+      final knownTxHashes = result.knownTxHashes;
+      final reconciled = knownTxHashes.isEmpty
+          ? null
+          : await _awaitChainConfirmation(
+              context: context,
+              txHash: knownTxHashes.first,
+              reconcile: () => rust.reconcileChainDelegation(
+                dbPath: context.dbPath,
+                accountUuid: context.accountUuid,
+                roundId: context.round.roundId,
+                bundleIndex: bundleIndex,
+                apiServerUrls: context.config.apiServers.endpointUrls,
+                operationEpoch: rust.beginVotingChainOperation(),
+              ),
+              maxAttempts: _spentNullifierRecoveryMaxAttempts,
+              maxDelay: _spentNullifierRecoveryMaxDelay,
+              unresolvedRejectedOrSpentIsMissing: true,
+            );
+      if (reconciled != null) {
+        resolved = reconciled;
+      } else {
+        _throwIfContextStale(context, 'delegation-tree-recovery');
+        final recovery = await rust.recoverConfirmedDelegations(
+          ctx: _apiRoundContext(context),
+          storedHotkeySecret: storedHotkeySecret,
+          apiServerUrls: context.config.apiServers.endpointUrls,
+          operationEpoch: rust.beginVotingChainOperation(),
+        );
+        _throwIfContextStale(context, 'delegation-tree-recovery-response');
+        if (!recovery.recoveredBundleIndices.contains(bundleIndex)) {
+          throw const _VotingAlreadyStarted();
+        }
+        return _DelegationSubmissionResult.recovered(
+          recovery.recoveredBundleIndices.toSet(),
+        );
+      }
+    }
     final txHash = _requireChainAccepted(
       resolved,
       rejectionMessage: 'Delegation transaction was rejected.',
@@ -2625,7 +2689,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'txHash=$txHash status=${result.status} '
       'elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
     );
-    return txHash;
+    return _DelegationSubmissionResult.accepted(txHash);
   }
 
   Future<({String txHash, int leafIndex})> _confirmDelegation({
@@ -2661,6 +2725,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Future<rust_api.ApiChainSubmissionOutcome> Function() reconcile,
     int? maxAttempts,
     Duration? maxDelay,
+    bool unresolvedRejectedOrSpentIsMissing = false,
   }) async {
     final settings = ref.read(votingTxConfirmationPollingProvider);
     final attempts = maxAttempts == null
@@ -2687,8 +2752,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         case 'outcome_unknown':
           break;
         case 'already_spent_unresolved':
+          if (unresolvedRejectedOrSpentIsMissing) return null;
           throw const _VotingAlreadyStarted();
         case 'rejected':
+          if (unresolvedRejectedOrSpentIsMissing) return null;
           throw StateError(
             outcome.message?.isNotEmpty == true
                 ? outcome.message!
@@ -4555,6 +4622,17 @@ class _DelegationBundleFailure {
   final int bundleIndex;
   final String stage;
   final Object error;
+}
+
+class _DelegationSubmissionResult {
+  const _DelegationSubmissionResult.accepted(this.txHash)
+    : recoveredBundleIndexes = const <int>{};
+
+  const _DelegationSubmissionResult.recovered(this.recoveredBundleIndexes)
+    : txHash = null;
+
+  final String? txHash;
+  final Set<int> recoveredBundleIndexes;
 }
 
 class _DelegationBundleBatchException implements Exception {

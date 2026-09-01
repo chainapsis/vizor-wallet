@@ -321,6 +321,26 @@ pub struct ApiChainSubmissionOutcome {
     pub vc_tree_position: Option<u64>,
 }
 
+/// FFI-safe result of scanning the vote tree for reconstructed delegation VANs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiDelegationVanRecoveryReport {
+    pub recovered_bundle_indices: Vec<u32>,
+    pub missing_bundle_indices: Vec<u32>,
+}
+
+impl From<zcash_voting::DelegationVanRecoveryReport> for ApiDelegationVanRecoveryReport {
+    fn from(report: zcash_voting::DelegationVanRecoveryReport) -> Self {
+        Self {
+            recovered_bundle_indices: report
+                .recovered
+                .into_iter()
+                .map(|recovered| recovered.bundle_index)
+                .collect(),
+            missing_bundle_indices: report.missing_bundle_indices,
+        }
+    }
+}
+
 impl From<zcash_voting::ChainLifecycleOutcome> for ApiChainSubmissionOutcome {
     fn from(outcome: zcash_voting::ChainLifecycleOutcome) -> Self {
         use zcash_voting::{ChainConfirmation, ChainLifecycleOutcome};
@@ -424,6 +444,40 @@ fn open_chain_voting_db(
     account_uuid: &str,
 ) -> Result<zcash_voting::storage::VotingDb, String> {
     db::with_open_voting_db_write(db_path, account_uuid, |_| Ok(())).map(|(database, ())| database)
+}
+
+/// Recover confirmed initial delegation VANs after local voting-state loss.
+///
+/// Callers should invoke this only after normal submission and transaction-hash
+/// reconciliation cannot identify the delegation that spent the nullifier.
+pub async fn recover_confirmed_delegations(
+    ctx: ApiVotingRoundContext,
+    stored_hotkey_secret: Vec<u8>,
+    api_server_urls: Vec<String>,
+    operation_epoch: u64,
+) -> Result<ApiDelegationVanRecoveryReport, String> {
+    let (network, _) = delegation_static_inputs(&ctx.network, None)?;
+    let client = chain_client(&api_server_urls)?;
+    let report = delegation::recover_confirmed_delegations(
+        &ctx.db_path,
+        &ctx.account_uuid,
+        network,
+        &ctx.round_params.vote_round_id,
+        ctx.round_params.snapshot_height,
+        stored_hotkey_secret,
+        &client,
+        &|| chain_operation_cancelled(operation_epoch),
+    )
+    .await?;
+    log::info!(
+        "voting: recovered delegation VANs from tree (round_id={}, anchor_height={}, scanned_leaves={}, recovered={}, missing={})",
+        ctx.round_params.vote_round_id,
+        report.anchor_height,
+        report.scanned_leaf_count,
+        report.recovered.len(),
+        report.missing_bundle_indices.len()
+    );
+    Ok(report.into())
 }
 
 /// Submit one delegation through the SDK-owned durable chain lifecycle.
@@ -2605,6 +2659,35 @@ mod tests {
             tier1_layers: 7,
             poly_len: 4096,
         }
+    }
+
+    #[test]
+    fn delegation_van_recovery_report_crosses_the_ffi_boundary() {
+        let report = zcash_voting::DelegationVanRecoveryReport {
+            anchor_height: 123,
+            scanned_leaf_count: 456,
+            recovered: vec![
+                zcash_voting::RecoveredDelegationVan {
+                    bundle_index: 1,
+                    van_leaf_position: 9,
+                    block_height: 120,
+                },
+                zcash_voting::RecoveredDelegationVan {
+                    bundle_index: 3,
+                    van_leaf_position: 11,
+                    block_height: 123,
+                },
+            ],
+            missing_bundle_indices: vec![0, 2],
+        };
+
+        assert_eq!(
+            ApiDelegationVanRecoveryReport::from(report),
+            ApiDelegationVanRecoveryReport {
+                recovered_bundle_indices: vec![1, 3],
+                missing_bundle_indices: vec![0, 2],
+            }
+        );
     }
 
     #[test]

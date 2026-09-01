@@ -533,6 +533,13 @@ abstract interface class VotingRustApi {
     required BigInt operationEpoch,
   });
 
+  Future<rust_api.ApiDelegationVanRecoveryReport> recoverConfirmedDelegations({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<int> storedHotkeySecret,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  });
+
   Future<rust_api.ApiChainSubmissionOutcome> reconcileChainVote({
     required String dbPath,
     required String accountUuid,
@@ -1050,6 +1057,19 @@ class FrbVotingRustApi implements VotingRustApi {
     accountUuid: accountUuid,
     roundId: roundId,
     bundleIndex: bundleIndex,
+    apiServerUrls: apiServerUrls,
+    operationEpoch: operationEpoch,
+  );
+
+  @override
+  Future<rust_api.ApiDelegationVanRecoveryReport> recoverConfirmedDelegations({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<int> storedHotkeySecret,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) => rust_api.recoverConfirmedDelegations(
+    ctx: ctx,
+    storedHotkeySecret: storedHotkeySecret,
     apiServerUrls: apiServerUrls,
     operationEpoch: operationEpoch,
   );

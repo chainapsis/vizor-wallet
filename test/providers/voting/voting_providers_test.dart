@@ -1927,6 +1927,7 @@ void main() {
     expect(rust.delegationBundleCalls, [0]);
     expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
     expect(rust.storedVanPositions, ['0:0']);
+    expect(rust.delegationRecoveryCalls, 0);
   });
 
   test(
@@ -2023,6 +2024,7 @@ void main() {
       3,
     );
     expect(rust.storedDelegationTxHashes, isEmpty);
+    expect(rust.delegationRecoveryCalls, 1);
   });
 
   test(
@@ -2051,6 +2053,7 @@ void main() {
       expect(state.error, isNull);
       expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
       expect(rust.storedVanPositions, ['0:0']);
+      expect(rust.delegationRecoveryCalls, 0);
     },
   );
 
@@ -2101,17 +2104,24 @@ void main() {
   });
 
   test(
-    'spent delegation nullifier without a tx hash keeps its diagnostic',
+    'spent delegation without a tx hash recovers the bundle set from the tree',
     () async {
       final responses = votingHttpResponses();
       responses['/shielded-vote/v1/delegate-vote'] = {
         'code': 1,
         'log': 'nullifier already spent: abc123',
       };
-      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(responses: responses);
+      final rust = FakeVotingRustApi(
+        bundleCount: 3,
+        recoveredDelegationBundleIndices: const {0, 1, 2},
+      );
       final container = _sessionContainer(
-        http: FakeVotingHttpClient(responses: responses),
+        http: http,
         rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(bundleCount: 3),
+        ),
       );
       addTearDown(container.dispose);
 
@@ -2121,12 +2131,13 @@ void main() {
           .delegatePendingBundles(mnemonic: kTestMnemonic);
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
-      expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('nullifier already spent: abc123'));
-      expect(
-        state.error?.message,
-        isNot(contains('Voting has already started for these funds')),
-      );
+      expect(state.phase, VotingSessionPhase.delegated);
+      expect(state.error, isNull);
+      expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 1);
+      expect(rust.delegationRecoveryCalls, 1);
+      expect(rust.delegationRecoveryStoredHotkeySecrets, [
+        rust.delegationStoredHotkeySecrets.first,
+      ]);
       expect(rust.storedDelegationTxHashes, isEmpty);
     },
   );
@@ -11531,6 +11542,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.delegationStreamError,
     this.delegationStreamErrorsByBundle = const {},
     this.keystoneDelegationStreamErrorsByBundle = const {},
+    this.recoveredDelegationBundleIndices = const {},
     this.onDelegationConfirmed,
     this.delegationProofGate,
     this.keystoneDelegationProofGate,
@@ -11576,6 +11588,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Object? delegationStreamError;
   final Map<int, Object> delegationStreamErrorsByBundle;
   final Map<int, Object> keystoneDelegationStreamErrorsByBundle;
+  final Set<int> recoveredDelegationBundleIndices;
   final void Function(int bundleIndex, String txHash, int vanLeafPosition)?
   onDelegationConfirmed;
   final Completer<void>? delegationProofGate;
@@ -11653,6 +11666,8 @@ class FakeVotingRustApi implements VotingRustApi {
   Object? warmPirProofCacheError;
   Uint8List? warmPirProofCacheServedRoot;
   final delegationStoredHotkeySecrets = <List<int>>[];
+  final delegationRecoveryStoredHotkeySecrets = <List<int>>[];
+  int delegationRecoveryCalls = 0;
   int warmVotingProvingCachesCalls = 0;
   final setupStarted = Completer<void>();
   final delegationProofStarted = Completer<void>();
@@ -12201,6 +12216,28 @@ class FakeVotingRustApi implements VotingRustApi {
       message: null,
       vanLeafPosition: recorded.vanLeafPosition,
       vcTreePosition: null,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiDelegationVanRecoveryReport> recoverConfirmedDelegations({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<int> storedHotkeySecret,
+    required List<String> apiServerUrls,
+    required BigInt operationEpoch,
+  }) async {
+    delegationRecoveryCalls++;
+    delegationRecoveryStoredHotkeySecrets.add(
+      List<int>.from(storedHotkeySecret),
+    );
+    final recovered = recoveredDelegationBundleIndices.toList()..sort();
+    return rust_api.ApiDelegationVanRecoveryReport(
+      recoveredBundleIndices: Uint32List.fromList(recovered),
+      missingBundleIndices: Uint32List.fromList([
+        for (var bundleIndex = 0; bundleIndex < bundleCount; bundleIndex++)
+          if (!recoveredDelegationBundleIndices.contains(bundleIndex))
+            bundleIndex,
+      ]),
     );
   }
 
