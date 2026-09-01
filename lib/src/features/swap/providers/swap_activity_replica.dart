@@ -58,10 +58,10 @@ final swapActivityReplicaProvider = Provider<SwapActivityReplica>((ref) {
 
 /// Serializes all local history mutations for an account.
 ///
-/// The durable store remains compatible with the legacy v1 envelope. This
-/// layer changes mutation semantics from whole-list replacement to explicit
-/// upsert, update-existing, remove, and remote reconciliation operations so a
-/// stale caller cannot erase records learned from another source.
+/// The layer changes mutation semantics from whole-list replacement to
+/// explicit upsert, update-existing, remove, and remote reconciliation
+/// operations so a stale caller cannot erase records learned from another
+/// source.
 class SwapActivityReplica {
   SwapActivityReplica({
     required SwapActivityStore activityStore,

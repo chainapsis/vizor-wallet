@@ -105,9 +105,6 @@ class FinalizedActivityArchiveSync
         const FinalizedActivityArchiveMetadata(lastSlot: 0);
     var lastSlot = metadata.lastSlot;
     final archivedIds = {...metadata.archivedRecordIds};
-    if (lastSlot > 0 && archivedIds.isEmpty) {
-      lastSlot = 0;
-    }
     final hidden = metadata.hiddenRecordIds;
     var needsDiscovery = discoverRemote;
     var wroteAny = false;

@@ -4,8 +4,8 @@ import 'dart:convert';
 import '../../../core/storage/app_secure_store.dart';
 import 'swap_private_history_document.dart';
 
-const _metadataSchemaVersion = 2;
-const _metadataKeyPrefix = 'zcash_finalized_activity_delta_v1';
+const _metadataSchemaVersion = 1;
+const _metadataKeyPrefix = 'zcash_finalized_activity_archive_v1';
 const _maxLocallyHiddenRecords = 2048;
 const _maxArchivedRecords = 65536;
 
@@ -47,7 +47,8 @@ class FinalizedActivityArchiveMetadata {
       'hidden_record_ids',
       'archived_record_ids',
     };
-    if (raw['schema'] != _metadataSchemaVersion ||
+    if (raw['schema'] is! int ||
+        raw['schema'] != _metadataSchemaVersion ||
         raw.length != expectedKeys.length ||
         raw.keys.any((key) => !expectedKeys.contains(key))) {
       return null;
@@ -69,7 +70,7 @@ class FinalizedActivityArchiveMetadata {
     final archivedIds = archived.cast<String>().toSet();
     if (hiddenIds.length != hidden.length ||
         archivedIds.length != archived.length ||
-        (lastSlot == 0 && archivedIds.isNotEmpty)) {
+        ((lastSlot == 0) != archivedIds.isEmpty)) {
       return null;
     }
     return FinalizedActivityArchiveMetadata(

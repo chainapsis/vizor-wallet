@@ -285,7 +285,7 @@ void main() {
     expect(raw, isNot(contains('"receipt"')));
   });
 
-  test('loads raw-list swap activity records', () async {
+  test('rejects swap activity without the current envelope', () async {
     await secureStore.writeString(
       swapActivityStorageKeyForTest('account-1'),
       jsonEncode([
@@ -307,17 +307,36 @@ void main() {
 
     final restored = await activityStore.loadRecords(accountUuid: 'account-1');
 
-    expect(restored, hasLength(1));
-    expect(restored.single.id, 'legacy-swap');
-    expect(restored.single.providerLabel, 'NEAR Intents');
-    expect(restored.single.accountUuid, 'account-1');
-    expect(restored.single.direction, SwapDirection.zecToExternal);
-    expect(restored.single.payMode, isFalse);
-    expect(restored.single.userExternalContactId, isNull);
+    expect(restored, isEmpty);
     expect(
       await secureStore.readString(swapActivityStorageKeyForTest('account-1')),
       isNotNull,
     );
+  });
+
+  test('rejects swap activity with a missing or different version', () async {
+    for (final version in <Object?>[null, 0, 1.0, '1', 2]) {
+      await secureStore.writeString(
+        swapActivityStorageKeyForTest('account-1'),
+        jsonEncode({
+          'version': ?version,
+          'records': [
+            {
+              'id': 'swap',
+              'provider': 'NEAR Intents',
+              'pair': 'ZEC -> USDC',
+              'sellAmount': '1.0000 ZEC',
+              'receiveEstimate': '100.00 USDC',
+            },
+          ],
+        }),
+      );
+
+      expect(
+        await activityStore.loadRecords(accountUuid: 'account-1'),
+        isEmpty,
+      );
+    }
   });
 
   test('skips malformed swap activity records during restore', () async {

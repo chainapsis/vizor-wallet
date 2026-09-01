@@ -141,20 +141,13 @@ String swapActivityStorageKeyForTest(String accountUuid) =>
     _swapActivityKeyFor(accountUuid);
 
 List<Object?>? _recordItemsFromStorage(Object? decoded) {
-  if (decoded is List) {
-    return decoded;
+  if (decoded is! Map ||
+      decoded[_swapActivityVersionKey] is! int ||
+      decoded[_swapActivityVersionKey] != _swapActivityStorageVersion) {
+    return null;
   }
-  if (decoded is Map) {
-    final version = decoded[_swapActivityVersionKey];
-    if (version is int && version > _swapActivityStorageVersion) {
-      return null;
-    }
-    final records = decoded[_swapActivityRecordsKey];
-    if (records is List) {
-      return records;
-    }
-  }
-  return null;
+  final records = decoded[_swapActivityRecordsKey];
+  return records is List ? records : null;
 }
 
 Map<String, Object?> _recordToJson(SwapIntentRecord record) {

@@ -28,21 +28,42 @@ void main() {
       jsonDecode(jsonEncode(encoded)),
     );
 
-    expect(encoded['schema'], 2);
+    expect(encoded['schema'], 1);
     expect(decoded?.lastSlot, 1);
     expect(decoded?.hiddenRecordIds, {'hidden'});
     expect(decoded?.archivedRecordIds, {'remote'});
   });
 
-  test('metadata rejects the legacy full archive schema', () {
-    final decoded = FinalizedActivityArchiveMetadata.fromJson({
+  test('metadata requires slot progress and archived IDs together', () {
+    Map<String, Object?> metadata({
+      required int lastSlot,
+      required List<String> archivedIds,
+    }) => {
       'schema': 1,
-      'last_slot': 3,
-      'hidden_record_ids': ['hidden'],
-      'archive_state': 'legacy',
-    });
+      'last_slot': lastSlot,
+      'hidden_record_ids': <String>[],
+      'archived_record_ids': archivedIds,
+    };
 
-    expect(decoded, isNull);
+    expect(
+      FinalizedActivityArchiveMetadata.fromJson(
+        metadata(lastSlot: 1, archivedIds: const []),
+      ),
+      isNull,
+    );
+    expect(
+      FinalizedActivityArchiveMetadata.fromJson(
+        metadata(lastSlot: 0, archivedIds: const ['activity']),
+      ),
+      isNull,
+    );
+    expect(
+      FinalizedActivityArchiveMetadata.fromJson({
+        ...metadata(lastSlot: 0, archivedIds: const []),
+        'schema': 1.0,
+      }),
+      isNull,
+    );
   });
 
   test('backfills only complete and refunded activity into slot one', () async {
@@ -330,26 +351,6 @@ void main() {
     expect(repository.createdKeys, isEmpty);
   });
 
-  test('missing archived IDs replay deltas from slot one', () async {
-    final delta = _document(['remote']);
-    final repository = _MemoryRepository()..objects['delta-v1:1'] = delta;
-    final metadata = _MemoryMetadataStore(
-      value: const FinalizedActivityArchiveMetadata(lastSlot: 1),
-    );
-    final sync = _sync(
-      repository: repository,
-      store: _MemoryActivityStore(const []),
-      metadata: metadata,
-    );
-
-    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
-    repository.readKeys.clear();
-    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
-
-    expect(repository.readKeys.map((key) => key.itemKey), ['delta-v1:2']);
-    expect(metadata.value?.archivedRecordIds, {'remote'});
-  });
-
   test(
     'create collision processes winner and advances to the next slot',
     () async {
@@ -481,7 +482,10 @@ void main() {
         ).encode();
       final store = _MemoryActivityStore([remoteRecord]);
       final metadata = _MemoryMetadataStore(
-        value: const FinalizedActivityArchiveMetadata(lastSlot: 1),
+        value: const FinalizedActivityArchiveMetadata(
+          lastSlot: 1,
+          archivedRecordIds: {'remote'},
+        ),
       );
       final sync = _sync(
         repository: repository,
