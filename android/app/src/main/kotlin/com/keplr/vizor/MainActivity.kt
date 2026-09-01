@@ -13,6 +13,7 @@ import io.flutter.plugin.common.MethodChannel
 // FlutterFragmentActivity: BiometricPrompt requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
     private lateinit var deviceOwnerAuthHandler: DeviceOwnerAuthHandler
+    private lateinit var sensitiveClipboardHandler: SensitiveClipboardHandler
     private var incomingUriChannel: MethodChannel? = null
     private val pendingIncomingUris = mutableListOf<String>()
     private var incomingUriDartReady = false
@@ -44,6 +45,13 @@ class MainActivity : FlutterFragmentActivity() {
             DeviceOwnerAuthHandler.CHANNEL
         ).setMethodCallHandler { call, result ->
             deviceOwnerAuthHandler.handle(call, result)
+        }
+        sensitiveClipboardHandler = SensitiveClipboardHandler(this)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SensitiveClipboardHandler.CHANNEL
+        ).setMethodCallHandler { call, result ->
+            sensitiveClipboardHandler.handle(call, result)
         }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -149,6 +157,13 @@ class MainActivity : FlutterFragmentActivity() {
             return
         }
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::sensitiveClipboardHandler.isInitialized) {
+            sensitiveClipboardHandler.retryExpiredClear()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

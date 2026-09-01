@@ -10,7 +10,7 @@ void main() {
   const nativeChannel = MethodChannel('com.zcash.wallet/sensitive_clipboard');
 
   tearDown(() {
-    SensitiveClipboard.debugIsIosOverride = null;
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = null;
     SensitiveClipboard.debugExpirationDelay = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(nativeChannel, null);
@@ -19,10 +19,10 @@ void main() {
   });
 
   test(
-    'iOS copy sends text with the default expiration to native channel',
+    'native copy sends text with the default expiration to its channel',
     () async {
       final calls = <MethodCall>[];
-      SensitiveClipboard.debugIsIosOverride = true;
+      SensitiveClipboard.debugSupportsNativeClipboardOverride = true;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(nativeChannel, (call) async {
             calls.add(call);
@@ -41,11 +41,11 @@ void main() {
   );
 
   test(
-    'non-iOS copy clears the unchanged clipboard after expiration',
+    'fallback copy clears the unchanged clipboard after expiration',
     () async {
       final expiration = Completer<void>();
       String? clipboardText;
-      SensitiveClipboard.debugIsIosOverride = false;
+      SensitiveClipboard.debugSupportsNativeClipboardOverride = false;
       SensitiveClipboard.debugExpirationDelay = (_) => expiration.future;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -68,10 +68,10 @@ void main() {
     },
   );
 
-  test('non-iOS expiry preserves newer clipboard content', () async {
+  test('fallback expiry preserves newer clipboard content', () async {
     final expiration = Completer<void>();
     String? clipboardText;
-    SensitiveClipboard.debugIsIosOverride = false;
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = false;
     SensitiveClipboard.debugExpirationDelay = (_) => expiration.future;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -95,7 +95,7 @@ void main() {
   test('a repeated copy supersedes the earlier expiry', () async {
     final expirations = <Completer<void>>[];
     String? clipboardText;
-    SensitiveClipboard.debugIsIosOverride = false;
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = false;
     SensitiveClipboard.debugExpirationDelay = (_) {
       final completer = Completer<void>();
       expirations.add(completer);
@@ -129,7 +129,7 @@ void main() {
     final expiration = Completer<void>();
     String? clipboardText;
     var denyRead = true;
-    SensitiveClipboard.debugIsIosOverride = false;
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = false;
     SensitiveClipboard.debugExpirationDelay = (_) => expiration.future;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {

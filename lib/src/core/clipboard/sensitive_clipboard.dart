@@ -15,7 +15,7 @@ abstract final class SensitiveClipboard {
   static _PendingClipboardExpiration? _pendingFallbackExpiration;
 
   @visibleForTesting
-  static bool? debugIsIosOverride;
+  static bool? debugSupportsNativeClipboardOverride;
 
   @visibleForTesting
   static Future<void> Function(Duration duration)? debugExpirationDelay;
@@ -25,7 +25,7 @@ abstract final class SensitiveClipboard {
     Duration expiration = sensitiveClipboardDefaultExpiration,
   }) async {
     final copyGeneration = ++_copyGeneration;
-    if (_supportsNativeExpiration) {
+    if (_supportsNativeClipboard) {
       await _channel.invokeMethod<void>('copyText', {
         'text': text,
         'expirationSeconds': expiration.inSeconds,
@@ -97,10 +97,10 @@ abstract final class SensitiveClipboard {
     }
   }
 
-  static bool get _supportsNativeExpiration {
-    final override = debugIsIosOverride;
+  static bool get _supportsNativeClipboard {
+    final override = debugSupportsNativeClipboardOverride;
     if (override != null) return override;
-    return !kIsWeb && Platform.isIOS;
+    return !kIsWeb && (Platform.isIOS || Platform.isAndroid);
   }
 }
 
