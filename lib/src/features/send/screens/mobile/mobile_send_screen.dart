@@ -544,10 +544,26 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _step == _SendStep.recipient &&
       _addressFocus.hasFocus;
 
-  // Null-safe route-pop check: the go_router context.canPop() extension calls
-  // GoRouter.of, which throws when there's no GoRouter in context (e.g.
-  // widgetbook galleries rendering this screen bare). maybeOf returns null there.
-  bool get _canPopRoute => GoRouter.maybeOf(context)?.canPop() ?? false;
+  // Whether this screen's own page has anything under it.
+  //
+  // Asks the route this screen sits in, not the navigator: `GoRouter.canPop()`
+  // answers "is there more than one page on the stack", which a modal bottom
+  // sheet pushed *above* a rootless /send (scanner, memo editor, fee info,
+  // full-address sheet) flips to true — and, because that read happens at
+  // build time, the true survives the sheet closing and sends the system back
+  // out of the app again. `ModalRoute.isFirst` is a fact about this route's
+  // position and no sheet can move it.
+  //
+  // Null means no enclosing route at all (bare widgetbook hosts): the two
+  // callers keep their existing defaults for that case, which differ.
+  ModalRoute<Object?>? get _enclosingRoute => ModalRoute.of(context);
+
+  // Null (no route) keeps today's `?? false`: fall back to /home rather than
+  // calling `context.pop()` where there may be nothing to pop.
+  bool get _canPopRoute {
+    final route = _enclosingRoute;
+    return route != null && !route.isFirst;
+  }
 
   // Drives `PopScope.canPop`, so it decides whether the Android system back /
   // gesture is handled by the framework or handed to [_handleBack]. It has to
@@ -560,10 +576,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (_phase != _SendPhase.compose) return false;
     if (_isConfirmingSend) return false;
     if (!widget.useRouteSteps && _step != _SendStep.recipient) return false;
-    // Without a GoRouter in context (bare widgetbook renders) there is no way
-    // to tell whether a pop would go anywhere, so keep the framework default.
-    final router = GoRouter.maybeOf(context);
-    return router == null || router.canPop();
+    // Without an enclosing route (bare widgetbook renders) there is no way to
+    // tell whether a pop would go anywhere, so keep the framework default.
+    final route = _enclosingRoute;
+    return route == null || !route.isFirst;
   }
 
   bool get _isShieldedAddress =>

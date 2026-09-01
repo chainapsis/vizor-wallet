@@ -187,6 +187,30 @@ class _FakeSyncNotifier extends SyncNotifier {
   );
 }
 
+/// A sync notifier whose state can be pushed mid-test, so a test can force the
+/// send screen to rebuild at a chosen moment — the everyday case in the real
+/// app, where sync progress lands every scanned batch.
+class _RebuildableSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState(
+    accountUuid: 'account-1',
+    hasAccountScopedData: true,
+    spendableBalance: BigInt.from(500000000),
+    totalBalance: BigInt.from(500000000),
+  );
+
+  void publishNewBalance() {
+    state = AsyncData(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        spendableBalance: BigInt.from(400000000),
+        totalBalance: BigInt.from(400000000),
+      ),
+    );
+  }
+}
+
 class _MigrationSyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async => SyncState(
@@ -785,6 +809,59 @@ void main() {
     expect(find.text('home'), findsOneWidget);
     expect(find.text('Select Recipient'), findsNothing);
   });
+
+  testWidgets(
+    'a closed sheet on a rootless send still lands system back on home',
+    (tester) async {
+      // The scanner / memo / fee / full-address sheets push a modal route above
+      // /send, which makes the navigator's canPop() true while they are open.
+      // Any rebuild during that window — sync progress landing, for one — used
+      // to record that true in PopScope.canPop and keep it after the sheet
+      // closed, so the next system back popped /send away and backgrounded the
+      // app instead of routing home.
+      await tester.pumpWidget(
+        _app(
+          syncNotifier: _RebuildableSyncNotifier.new,
+          openScanner: (context) => showModalBottomSheet<String>(
+            context: context,
+            builder: (sheetContext) => TextButton(
+              key: const ValueKey('test_close_scan_sheet'),
+              onPressed: () => Navigator.of(sheetContext).pop(),
+              child: const Text('close sheet'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Select Recipient'), findsOneWidget);
+      expect(_sendRouteCanPop(tester), isFalse);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_scan_row')));
+      await tester.pumpAndSettle();
+      expect(find.text('close sheet'), findsOneWidget);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileSendScreen)),
+      );
+      (container.read(syncProvider.notifier) as _RebuildableSyncNotifier)
+          .publishNewBalance();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('test_close_scan_sheet')));
+      await tester.pumpAndSettle();
+      expect(find.text('close sheet'), findsNothing);
+
+      // The sheet came and went; this route's position never changed.
+      expect(_sendRouteCanPop(tester), isFalse);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(find.text('home'), findsOneWidget);
+      expect(find.text('Select Recipient'), findsNothing);
+    },
+  );
 
   testWidgets('system back on a deep-linked amount step steps back in place', (
     tester,
