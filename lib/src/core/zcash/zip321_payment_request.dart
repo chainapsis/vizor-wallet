@@ -1,5 +1,15 @@
 import 'dart:convert';
 
+/// Upper bound on a `zcash:` payment URI we are willing to parse. Matches
+/// `kMaxZcashUriBytes` in `windows/runner/utils.h` so the native handoff and
+/// the Dart parser refuse the same inputs.
+const kMaxPaymentUriLength = 16384;
+
+/// Longest attacker-controlled fragment we echo back into a user-facing parse
+/// error. Anything longer is truncated so a hostile link cannot fill a
+/// SnackBar with its own text.
+const _maxEchoedNameLength = 32;
+
 class Zip321PaymentRequest {
   const Zip321PaymentRequest({required this.payments, this.unsupportedReason});
 
@@ -11,6 +21,9 @@ class Zip321PaymentRequest {
   Zip321Payment get primaryPayment => payments.first;
 
   static Zip321PaymentRequest parse(String input) {
+    if (input.length > kMaxPaymentUriLength) {
+      throw const Zip321ParseException('Payment link is too long.');
+    }
     final trimmed = input.trim();
     if (trimmed.isEmpty) {
       throw const Zip321ParseException('Paste a zcash: payment URI.');
@@ -61,13 +74,13 @@ class Zip321PaymentRequest {
         if (!_recognizedParamNames.contains(name)) {
           if (name.startsWith('req-')) {
             throw Zip321ParseException(
-              'Required ZIP-321 parameter $name is not supported.',
+              'Required ZIP-321 parameter ${_echoSafe(name)} is not supported.',
             );
           }
           continue;
         }
         if (!seenKeys.add(seenKey)) {
-          throw Zip321ParseException('Duplicate $name parameter.');
+          throw Zip321ParseException('Duplicate ${_echoSafe(name)} parameter.');
         }
 
         final builder = builders.putIfAbsent(
@@ -334,11 +347,17 @@ List<int> _decodeBase64UrlBytes(String value, String label) {
   }
 }
 
+String _echoSafe(String value) => value.length <= _maxEchoedNameLength
+    ? value
+    : '${value.substring(0, _maxEchoedNameLength)}\u2026';
+
 String _decodeQChar(String value, String label) {
   try {
     return Uri.decodeComponent(value);
   } catch (_) {
-    throw Zip321ParseException('Invalid percent encoding in $label.');
+    throw Zip321ParseException(
+      'Invalid percent encoding in ${_echoSafe(label)}.',
+    );
   }
 }
 

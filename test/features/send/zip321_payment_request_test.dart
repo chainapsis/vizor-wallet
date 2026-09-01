@@ -40,6 +40,41 @@ void main() {
     );
   });
 
+  test('rejects payment URIs longer than the shared native bound', () {
+    final oversized =
+        'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?message='
+        '${'a' * kMaxPaymentUriLength}';
+
+    expect(oversized.length, greaterThan(kMaxPaymentUriLength));
+    expect(
+      () => Zip321PaymentRequest.parse(oversized),
+      throwsA(
+        isA<Zip321ParseException>().having(
+          (e) => e.message,
+          'message',
+          'Payment link is too long.',
+        ),
+      ),
+    );
+  });
+
+  test('truncates an over-long echoed parameter name', () {
+    final longName = 'req-${'a' * 60}';
+
+    expect(
+      () => Zip321PaymentRequest.parse(
+        'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?$longName=1',
+      ),
+      throwsA(
+        isA<Zip321ParseException>().having(
+          (e) => e.message,
+          'message',
+          'Required ZIP-321 parameter req-${'a' * 28}… is not supported.',
+        ),
+      ),
+    );
+  });
+
   test('marks multiple-recipient requests as parsed but unsupported', () {
     final request = Zip321PaymentRequest.parse(
       'zcash:?address=u1firstaddress&amount=1'
