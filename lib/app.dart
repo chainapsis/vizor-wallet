@@ -356,9 +356,9 @@ String? appRedirect({
   final isLostPassword = state.matchedLocation == '/lost-password';
   final isUnlockFlow = isUnlock || isLostPassword;
   final isSwap =
-      _matchesRoutePrefix(state.matchedLocation, '/swap') ||
-      _matchesRoutePrefix(state.matchedLocation, '/pay') ||
-      _matchesRoutePrefix(state.matchedLocation, '/activity/swap');
+      _isRouteOrChild(state.matchedLocation, '/swap') ||
+      _isRouteOrChild(state.matchedLocation, '/pay') ||
+      _isRouteOrChild(state.matchedLocation, '/activity/swap');
   final swapFeatureEnabled = ref.read(swapFeatureEnabledProvider);
 
   log(
@@ -388,6 +388,11 @@ String? appRedirect({
   }
   if (!swapFeatureEnabled && isSwap) return '/home';
   return null;
+}
+
+bool _isRouteOrChild(String matchedLocation, String routePath) {
+  return matchedLocation == routePath ||
+      matchedLocation.startsWith('$routePath/');
 }
 
 /// Entry, onboarding, and auth routes shared by the desktop and mobile
