@@ -4,6 +4,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 

@@ -2728,6 +2728,12 @@ pub fn get_pczt_txid(pczt_bytes: Vec<u8>) -> Result<String, String> {
     catch(|| wallet_sync::txid_from_io_finalized_pczt(&pczt_bytes).map(|txid| txid.to_string()))
 }
 
+/// Returns the expiry height committed to by an IO-finalized PCZT.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_pczt_expiry_height(pczt_bytes: Vec<u8>) -> Result<u32, String> {
+    catch(|| wallet_sync::expiry_height_from_io_finalized_pczt(&pczt_bytes))
+}
+
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
 /// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
 /// Returns the txid.

@@ -28,7 +28,7 @@ import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../send/models/send_prefill_args.dart';
 import '../../payment_links/services/payment_link_received_store.dart';
-import '../../payment_links/services/payment_link_recovery_store.dart';
+import '../../payment_links/services/payment_link_recovery_reconciler.dart';
 import '../../swap/providers/swap_activity_store.dart';
 import '../widgets/account_edit_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';

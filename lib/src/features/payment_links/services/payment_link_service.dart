@@ -18,13 +18,16 @@ import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../send/services/sapling_params.dart';
 import '../models/vizor_payment_link.dart';
 import 'payment_link_received_store.dart';
+import 'payment_link_recovery_reconciler.dart';
 import 'payment_link_recovery_store.dart';
+import 'payment_link_transaction_matching.dart';
 
 final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
   return PaymentLinkService(
     ref,
     ref.read(paymentLinkRecoveryStoreProvider),
     ref.read(paymentLinkReceivedStoreProvider),
+    ref.read(paymentLinkRecoveryReconcilerProvider),
   );
 });
 
@@ -102,33 +105,6 @@ bool paymentLinkShouldWaitForFunding({
       kPaymentLinkClaimConfirmationTarget;
 }
 
-/// Rust's broadcast result formats a transaction ID for display, while the
-/// transaction-history API currently exposes the same SQLite txid bytes in
-/// storage order. Accept both byte orders at this boundary so a mined funding
-/// transaction can advance its persisted payment link.
-bool paymentLinkTxidsMatch(String first, String second) {
-  final normalizedFirst = _normalizeTxid(first);
-  final normalizedSecond = _normalizeTxid(second);
-  if (normalizedFirst == normalizedSecond) return true;
-  if (!_isTransactionIdHex(normalizedFirst) ||
-      !_isTransactionIdHex(normalizedSecond)) {
-    return false;
-  }
-  return _reverseHexBytes(normalizedFirst) == normalizedSecond;
-}
-
-@visibleForTesting
-bool paymentLinkFundingTransactionExists({
-  required String fundingTxid,
-  required List<rust_sync.TransactionInfo> transactions,
-}) {
-  return transactions.any(
-    (transaction) =>
-        !transaction.expiredUnmined &&
-        paymentLinkTxidsMatch(fundingTxid, transaction.txidHex),
-  );
-}
-
 @visibleForTesting
 PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
   required String claimTxids,
@@ -137,7 +113,7 @@ PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
 }) {
   final expectedTxids = claimTxids
       .split(',')
-      .map(_normalizeTxid)
+      .map(normalizePaymentLinkTxid)
       .where((txid) => txid.isNotEmpty)
       .toSet();
   if (expectedTxids.isEmpty) return PaymentLinkReceivedStatus.receiving;
@@ -181,7 +157,7 @@ bool paymentLinkClaimTransactionsExpired({
 }) {
   final expectedTxids = claimTxids
       .split(',')
-      .map(_normalizeTxid)
+      .map(normalizePaymentLinkTxid)
       .where((txid) => txid.isNotEmpty)
       .toSet();
   if (expectedTxids.isEmpty) return false;
@@ -512,11 +488,17 @@ class PaymentLinkFundingResult {
 }
 
 class PaymentLinkService implements PaymentLinkOperations {
-  PaymentLinkService(this._ref, this._recoveryStore, this._receivedStore);
+  PaymentLinkService(
+    this._ref,
+    this._recoveryStore,
+    this._receivedStore,
+    this._recoveryReconciler,
+  );
 
   final Ref _ref;
   final PaymentLinkRecoveryStore _recoveryStore;
   final PaymentLinkReceivedStore _receivedStore;
+  final PaymentLinkRecoveryReconciler _recoveryReconciler;
 
   @override
   Future<PaymentLinkFundingQuote> quoteFunding({
@@ -692,64 +674,8 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   @override
-  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() async {
-    final records = await _recoveryStore.load();
-    final preparedDrafts = records
-        .where(
-          (record) =>
-              record.state == PaymentLinkRecoveryState.draft &&
-              (record.fundingTxids?.trim().isNotEmpty ?? false),
-        )
-        .toList();
-    if (preparedDrafts.isEmpty) return records;
-
-    try {
-      final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-      final dbPath = await getWalletDbPath();
-      final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
-      for (final accountUuid
-          in preparedDrafts.map((record) => record.sourceAccountUuid).toSet()) {
-        transactionsByAccount[accountUuid] = await rust_sync
-            .getTransactionHistory(
-              dbPath: dbPath,
-              network: endpoint.networkName,
-              accountUuid: accountUuid,
-              limit: null,
-            );
-      }
-
-      var recoveredAny = false;
-      for (final record in preparedDrafts) {
-        final preparedTxid = record.fundingTxids!.trim();
-        if (!paymentLinkFundingTransactionExists(
-          fundingTxid: preparedTxid,
-          transactions:
-              transactionsByAccount[record.sourceAccountUuid] ?? const [],
-        )) {
-          continue;
-        }
-        try {
-          await _recoveryStore.markFunded(
-            address: record.link.address,
-            fundingTxids: preparedTxid,
-          );
-          recoveredAny = true;
-        } catch (error) {
-          log(
-            'PaymentLinkService: prepared funding reconciliation failed '
-            'address=${record.link.address} error=$error',
-          );
-        }
-      }
-      return recoveredAny ? _recoveryStore.load() : records;
-    } catch (error) {
-      // Loading the preserved bearer secret remains available even if the
-      // main-wallet history is temporarily unavailable. The next foreground
-      // refresh retries reconciliation without constructing a new send.
-      log('PaymentLinkService: prepared funding lookup failed: $error');
-      return records;
-    }
-  }
+  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() =>
+      _recoveryReconciler.load();
 
   @override
   Future<PaymentLinkRecoveryRecord> markCreatedLinkShared(
@@ -919,7 +845,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
     final fundingTxids = rawTxids
         .split(',')
-        .map(_normalizeTxid)
+        .map(normalizePaymentLinkTxid)
         .where((txid) => txid.isNotEmpty)
         .toSet();
     if (fundingTxids.isEmpty) {
@@ -927,7 +853,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
     final minedHeights = <String, BigInt>{};
     for (final transaction in transactions) {
-      final txid = _normalizeTxid(transaction.txidHex);
+      final txid = normalizePaymentLinkTxid(transaction.txidHex);
       if (transaction.minedHeight <= BigInt.zero) continue;
       for (final fundingTxid in fundingTxids) {
         if (paymentLinkTxidsMatch(fundingTxid, txid)) {
@@ -1573,21 +1499,4 @@ class PaymentLinkService implements PaymentLinkOperations {
   void _zeroize(Uint8List bytes) {
     bytes.fillRange(0, bytes.length, 0);
   }
-}
-
-String _normalizeTxid(String txid) {
-  final normalized = txid.trim().toLowerCase();
-  return normalized.startsWith('0x') ? normalized.substring(2) : normalized;
-}
-
-bool _isTransactionIdHex(String value) {
-  return value.length == 64 && RegExp(r'^[0-9a-f]+$').hasMatch(value);
-}
-
-String _reverseHexBytes(String value) {
-  final reversed = StringBuffer();
-  for (var index = value.length; index > 0; index -= 2) {
-    reversed.write(value.substring(index - 2, index));
-  }
-  return reversed.toString();
 }

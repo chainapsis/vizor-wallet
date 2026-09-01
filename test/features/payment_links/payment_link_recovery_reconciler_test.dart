@@ -1,0 +1,132 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
+void main() {
+  test('retains a prepared Gift Card before its transaction expires', () async {
+    final fixture = await _preparedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(119),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.draft);
+    expect(record.fundingTxids, _preparedTxid);
+    expect(record.preparedExpiryHeight, 120);
+    expect(await reconciler.countUnsharedFundedForAccount('source-account'), 1);
+  });
+
+  test(
+    'clears a prepared Gift Card once its absent transaction expires',
+    () async {
+      final fixture = await _preparedFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(120),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.fundingTxids, isNull);
+      expect(record.preparedExpiryHeight, isNull);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        0,
+      );
+    },
+  );
+
+  test('promotes a recorded transaction even at its expiry height', () async {
+    final fixture = await _preparedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(120),
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [_transaction(txid: _preparedTxid)],
+      },
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.funded);
+    expect(record.fundingTxids, _preparedTxid);
+    expect(record.preparedExpiryHeight, isNull);
+  });
+
+  test('retains prepared metadata when chain lookup is unavailable', () async {
+    final fixture = await _preparedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () => throw StateError('offline'),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.draft);
+    expect(record.fundingTxids, _preparedTxid);
+    expect(record.preparedExpiryHeight, 120);
+  });
+}
+
+const _preparedTxid =
+    '9909fe99c789029bf118c88bd9ee33ed35965fd0f3154dd1a8ec6daa4974c7e3';
+
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_preparedFixture() async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: 'u1preparedgiftcardaddress',
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+  await store.markPrepared(
+    address: link.address,
+    fundingTxid: _preparedTxid,
+    expiryHeight: 120,
+  );
+  return (store: store, storage: storage);
+}
+
+rust_sync.TransactionInfo _transaction({required String txid}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txid,
+    minedHeight: BigInt.from(119),
+    expiredUnmined: false,
+    accountBalanceDelta: -110000,
+    fee: BigInt.from(10000),
+    blockTime: BigInt.zero,
+    isTransparent: false,
+    txKind: 'sent',
+    displayAmount: BigInt.from(-110000),
+    displayPool: 'shielded',
+    createdTime: BigInt.zero,
+  );
+}
+
+class _MemoryStorage implements PaymentLinkRecoveryStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async => value = null;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String nextValue) async => value = nextValue;
+}

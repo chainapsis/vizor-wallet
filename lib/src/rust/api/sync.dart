@@ -1041,6 +1041,10 @@ storeAndBroadcastPcztsWithKeystoneSignaturesForProposal({
 String getPcztTxid({required List<int> pcztBytes}) =>
     RustLib.instance.api.crateApiSyncGetPcztTxid(pcztBytes: pcztBytes);
 
+/// Returns the expiry height committed to by an IO-finalized PCZT.
+int getPcztExpiryHeight({required List<int> pcztBytes}) =>
+    RustLib.instance.api.crateApiSyncGetPcztExpiryHeight(pcztBytes: pcztBytes);
+
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
 /// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
 /// Returns the txid.

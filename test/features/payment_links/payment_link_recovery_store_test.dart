@@ -124,11 +124,13 @@ void main() {
       await store.markPrepared(
         address: link.address,
         fundingTxid: 'prepared-hardware-txid',
+        expiryHeight: 3_456_829,
       );
 
       final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
       expect(restartedRecords.single.state, PaymentLinkRecoveryState.draft);
       expect(restartedRecords.single.fundingTxids, 'prepared-hardware-txid');
+      expect(restartedRecords.single.preparedExpiryHeight, 3_456_829);
       expect(await store.countUnsharedFundedForAccount('source-account'), 1);
     });
 
@@ -142,6 +144,7 @@ void main() {
         await store.markPrepared(
           address: link.address,
           fundingTxid: 'prepared-hardware-txid',
+          expiryHeight: 3_456_829,
         );
 
         await store.clearPrepared(address: link.address);
@@ -149,6 +152,7 @@ void main() {
         final record = (await store.load()).single;
         expect(record.state, PaymentLinkRecoveryState.draft);
         expect(record.fundingTxids, isNull);
+        expect(record.preparedExpiryHeight, isNull);
         expect(await store.countUnsharedFundedForAccount('source-account'), 0);
       },
     );
@@ -163,6 +167,7 @@ void main() {
         await store.markPrepared(
           address: link.address,
           fundingTxid: 'prepared-hardware-txid',
+          expiryHeight: 3_456_829,
         );
 
         final funding = await PaymentLinkFundingRecovery(store).complete(
@@ -176,6 +181,7 @@ void main() {
         final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
         expect(restartedRecords.single.state, PaymentLinkRecoveryState.draft);
         expect(restartedRecords.single.fundingTxids, 'prepared-hardware-txid');
+        expect(restartedRecords.single.preparedExpiryHeight, 3_456_829);
         expect(await store.countUnsharedFundedForAccount('source-account'), 1);
       },
     );
@@ -188,6 +194,7 @@ void main() {
       await store.markPrepared(
         address: link.address,
         fundingTxid: 'prepared-hardware-txid',
+        expiryHeight: 3_456_829,
       );
 
       await expectLater(
@@ -289,6 +296,30 @@ void main() {
               'sourceAccountUuid': 'source-account',
               'state': 'unsupported',
               'fundingTxids': 'funding-txid',
+              'archivedAt': null,
+              'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+            },
+          ],
+        });
+
+      await expectLater(
+        PaymentLinkRecoveryStore(storage).load(),
+        throwsA(isA<PaymentLinkRecoveryStoreFormatException>()),
+      );
+    });
+
+    test('rejects prepared metadata without an expiry height', () async {
+      final link = _link();
+      final storage = _FakePaymentLinkRecoveryStorage()
+        ..value = jsonEncode({
+          'version': 1,
+          'records': [
+            {
+              'link': link.toUri().toString(),
+              'sourceAccountUuid': 'source-account',
+              'state': 'draft',
+              'fundingTxids': 'prepared-hardware-txid',
+              'preparedExpiryHeight': null,
               'archivedAt': null,
               'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
             },

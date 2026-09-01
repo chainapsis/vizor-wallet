@@ -17,13 +17,6 @@ final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
   );
 });
 
-final paymentLinkUnsharedFundedCountProvider =
-    FutureProvider.family<int, String>((ref, sourceAccountUuid) {
-      return ref
-          .watch(paymentLinkRecoveryStoreProvider)
-          .countUnsharedFundedForAccount(sourceAccountUuid);
-    });
-
 enum PaymentLinkRecoveryState { draft, funded, shared }
 
 class PaymentLinkUnsharedGiftCardsException implements Exception {
@@ -49,6 +42,7 @@ class PaymentLinkRecoveryRecord {
     required this.state,
     required this.updatedAt,
     this.fundingTxids,
+    this.preparedExpiryHeight,
     this.archivedAt,
   });
 
@@ -57,6 +51,7 @@ class PaymentLinkRecoveryRecord {
   final PaymentLinkRecoveryState state;
   final DateTime updatedAt;
   final String? fundingTxids;
+  final int? preparedExpiryHeight;
   final DateTime? archivedAt;
 
   bool get isArchived => archivedAt != null;
@@ -65,6 +60,7 @@ class PaymentLinkRecoveryRecord {
     required PaymentLinkRecoveryState state,
     required DateTime updatedAt,
     Object? fundingTxids = _fieldNotProvided,
+    Object? preparedExpiryHeight = _fieldNotProvided,
     Object? archivedAt = _fieldNotProvided,
   }) {
     return PaymentLinkRecoveryRecord(
@@ -75,6 +71,9 @@ class PaymentLinkRecoveryRecord {
       fundingTxids: identical(fundingTxids, _fieldNotProvided)
           ? this.fundingTxids
           : fundingTxids as String?,
+      preparedExpiryHeight: identical(preparedExpiryHeight, _fieldNotProvided)
+          ? this.preparedExpiryHeight
+          : preparedExpiryHeight as int?,
       archivedAt: identical(archivedAt, _fieldNotProvided)
           ? this.archivedAt
           : archivedAt as DateTime?,
@@ -136,16 +135,10 @@ class PaymentLinkRecoveryStore {
 
   Future<int> countUnsharedFundedForAccount(String sourceAccountUuid) async {
     if (sourceAccountUuid.isEmpty) return 0;
-    final records = await load();
-    return records
-        .where(
-          (record) =>
-              record.sourceAccountUuid == sourceAccountUuid &&
-              (record.state == PaymentLinkRecoveryState.funded ||
-                  (record.state == PaymentLinkRecoveryState.draft &&
-                      (record.fundingTxids?.trim().isNotEmpty ?? false))),
-        )
-        .length;
+    return countUnsharedFundedPaymentLinks(
+      await load(),
+      sourceAccountUuid: sourceAccountUuid,
+    );
   }
 
   Future<PaymentLinkRecoveryRecord> saveDraft({
@@ -213,6 +206,7 @@ class PaymentLinkRecoveryStore {
         state: PaymentLinkRecoveryState.funded,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
         fundingTxids: submittedTxid,
+        preparedExpiryHeight: null,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -222,6 +216,7 @@ class PaymentLinkRecoveryStore {
   Future<PaymentLinkRecoveryRecord> markPrepared({
     required String address,
     required String fundingTxid,
+    required int expiryHeight,
     DateTime? updatedAt,
   }) {
     return _runExclusive(() async {
@@ -231,6 +226,13 @@ class PaymentLinkRecoveryStore {
           fundingTxid,
           'fundingTxid',
           'A prepared payment link requires a transaction id.',
+        );
+      }
+      if (expiryHeight <= 0) {
+        throw ArgumentError.value(
+          expiryHeight,
+          'expiryHeight',
+          'A prepared payment link requires a positive expiry height.',
         );
       }
       final records = await _loadUnlocked();
@@ -246,10 +248,18 @@ class PaymentLinkRecoveryStore {
           'Payment link funding was prepared with a different transaction.',
         );
       }
+      final existingExpiryHeight = existing.preparedExpiryHeight;
+      if (existingExpiryHeight != null &&
+          existingExpiryHeight != expiryHeight) {
+        throw StateError(
+          'Payment link funding was prepared with a different expiry height.',
+        );
+      }
       final updated = existing.copyWith(
         state: PaymentLinkRecoveryState.draft,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
         fundingTxids: normalizedTxid,
+        preparedExpiryHeight: expiryHeight,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -271,6 +281,7 @@ class PaymentLinkRecoveryStore {
         state: PaymentLinkRecoveryState.draft,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
         fundingTxids: null,
+        preparedExpiryHeight: null,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -472,6 +483,7 @@ Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
     'sourceAccountUuid': record.sourceAccountUuid,
     'state': record.state.name,
     'fundingTxids': record.fundingTxids,
+    'preparedExpiryHeight': record.preparedExpiryHeight,
     'archivedAt': record.archivedAt?.toUtc().toIso8601String(),
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
   };
@@ -487,6 +499,7 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   final sourceAccountUuid = value['sourceAccountUuid'];
   final stateRaw = value['state'];
   final fundingTxids = value['fundingTxids'];
+  final preparedExpiryHeight = value['preparedExpiryHeight'];
   final archivedAtRaw = value['archivedAt'];
   final updatedAtRaw = value['updatedAt'];
   if (linkRaw is! String ||
@@ -494,6 +507,8 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
       sourceAccountUuid.isEmpty ||
       stateRaw is! String ||
       (fundingTxids != null && fundingTxids is! String) ||
+      (preparedExpiryHeight != null &&
+          (preparedExpiryHeight is! int || preparedExpiryHeight <= 0)) ||
       (archivedAtRaw != null && archivedAtRaw is! String) ||
       updatedAtRaw is! String) {
     throw const PaymentLinkRecoveryStoreFormatException(
@@ -523,12 +538,38 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     );
   }
 
+  final hasPreparedTxid =
+      state == PaymentLinkRecoveryState.draft &&
+      (fundingTxids as String?)?.trim().isNotEmpty == true;
+  if (hasPreparedTxid != (preparedExpiryHeight != null)) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Prepared recovery metadata is incomplete.',
+    );
+  }
+
   return PaymentLinkRecoveryRecord(
     link: VizorPaymentLink.parse(linkRaw),
     sourceAccountUuid: sourceAccountUuid,
     state: state,
-    fundingTxids: fundingTxids as String?,
+    fundingTxids: fundingTxids,
+    preparedExpiryHeight: preparedExpiryHeight as int?,
     archivedAt: archivedAt?.toUtc(),
     updatedAt: updatedAt.toUtc(),
   );
+}
+
+int countUnsharedFundedPaymentLinks(
+  Iterable<PaymentLinkRecoveryRecord> records, {
+  required String sourceAccountUuid,
+}) {
+  if (sourceAccountUuid.isEmpty) return 0;
+  return records
+      .where(
+        (record) =>
+            record.sourceAccountUuid == sourceAccountUuid &&
+            (record.state == PaymentLinkRecoveryState.funded ||
+                (record.state == PaymentLinkRecoveryState.draft &&
+                    (record.fundingTxids?.trim().isNotEmpty ?? false))),
+      )
+      .length;
 }

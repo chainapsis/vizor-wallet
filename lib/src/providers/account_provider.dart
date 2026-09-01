@@ -19,6 +19,7 @@ import '../features/swap/providers/swap_activity_store.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
 import '../features/payment_links/services/payment_link_received_store.dart';
+import '../features/payment_links/services/payment_link_recovery_reconciler.dart';
 import '../features/payment_links/services/payment_link_recovery_store.dart';
 import '../features/voting/voting_flow_models.dart';
 import '../rust/api/sync.dart' as rust_sync;
@@ -575,7 +576,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
     }
     final unsharedGiftCardCount = await ref
-        .read(paymentLinkRecoveryStoreProvider)
+        .read(paymentLinkRecoveryReconcilerProvider)
         .countUnsharedFundedForAccount(uuid);
     if (unsharedGiftCardCount > 0) {
       throw PaymentLinkUnsharedGiftCardsException(

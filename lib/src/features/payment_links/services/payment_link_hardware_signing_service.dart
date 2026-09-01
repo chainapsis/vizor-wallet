@@ -218,9 +218,13 @@ class RustPaymentLinkHardwareSigningService
       outputParamsPath: draft.needsSaplingParams ? outputParamsPath : null,
     );
     final preparedTxid = rust_sync.getPcztTxid(pcztBytes: pcztWithProofs);
+    final preparedExpiryHeight = rust_sync.getPcztExpiryHeight(
+      pcztBytes: pcztWithProofs,
+    );
     await _recoveryStore.markPrepared(
       address: draft.link.address,
       fundingTxid: preparedTxid,
+      expiryHeight: preparedExpiryHeight,
     );
     return pcztWithProofs;
   }

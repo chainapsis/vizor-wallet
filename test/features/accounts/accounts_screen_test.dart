@@ -20,7 +20,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';

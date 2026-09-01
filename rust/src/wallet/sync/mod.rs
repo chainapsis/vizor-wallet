@@ -50,13 +50,15 @@ pub(crate) use migration::{
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, create_tex_pczts_from_proposal,
     discard_proposal, extract_and_broadcast_pczt, prepare_pczt_for_keystone_batch,
-    redact_pczt_for_signer, retain_proposal_lock_until_expiry,
-    start_orchard_proving_key_warmup,
+    redact_pczt_for_signer, retain_proposal_lock_until_expiry, start_orchard_proving_key_warmup,
     store_and_broadcast_pczts_with_compact_signatures_for_proposal,
     store_and_broadcast_signed_pczts_for_proposal, ExtractAndBroadcastPcztResult,
     KeystoneBatchPczt, StoreAndBroadcastPcztsResult, TexPcztPair,
 };
-pub(crate) use pczt::{extract_compact_sigs_from_pczt, txid_from_io_finalized_pczt};
+pub(crate) use pczt::{
+    expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_pczt,
+    txid_from_io_finalized_pczt,
+};
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::propose_send;
