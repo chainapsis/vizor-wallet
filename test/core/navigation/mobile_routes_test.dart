@@ -251,6 +251,7 @@ void main() {
           sendFlowId: 'flow-1',
           recipient: 'u1routeraddress',
           addressType: 'unified',
+          amountText: '0.25',
         ),
       ),
     );
@@ -262,6 +263,15 @@ void main() {
       tester.element(find.byType(MobileSendAmountScreen)),
     );
     expect(route, isA<CupertinoRouteTransitionMixin<dynamic>>());
+    // An amount already composed on the recipient step (a ZIP-321 deep link
+    // that stepped back in place) has to reach the pushed amount page.
+    final amountScreen = tester.widget<MobileSendScreen>(
+      find.descendant(
+        of: find.byType(MobileSendAmountScreen),
+        matching: find.byType(MobileSendScreen),
+      ),
+    );
+    expect(amountScreen.initialAmount, '0.25');
 
     unawaited(
       router.push<void>(

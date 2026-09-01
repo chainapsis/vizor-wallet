@@ -459,6 +459,8 @@ Widget _sendFlowRouterApp({
           estimateFee: estimateFee,
         ),
       ),
+      // Mirrors MobileSendAmountScreen in mobile_routes.dart, plus the test
+      // seams that screen does not expose.
       GoRoute(
         path: '/send/amount',
         builder: (_, state) {
@@ -469,6 +471,9 @@ Widget _sendFlowRouterApp({
             initialSendFlowId: args.sendFlowId,
             initialRecipient: args.recipient,
             initialAddressType: args.addressType,
+            initialAmount: args.amountText,
+            initialFiatAmount: args.fiatAmountText,
+            initialAmountInputMode: args.amountInputMode,
             initialMemo: args.memo,
             preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
             initialContactLabel: args.contactLabel,
@@ -808,6 +813,36 @@ void main() {
       find.byKey(const ValueKey('mobile_send_continue')),
     );
     expect(continueButton.onPressed, isNotNull);
+  });
+
+  testWidgets('the payment URI amount survives the in-place step back', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Enter Amount'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+
+    // Continue pushes the real /send/amount page: the payee-requested amount
+    // has to travel in the args, or it is stranded in the hidden root state.
+    expect(find.text('Enter Amount'), findsOneWidget);
+    final amountInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(amountInput.controller?.text, '1.5');
+    expect(find.text('Finish & review'), findsOneWidget);
   });
 
   testWidgets('route-step mode lets amount and review pop as pages', (

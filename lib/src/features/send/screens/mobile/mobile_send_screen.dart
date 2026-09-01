@@ -169,6 +169,9 @@ class MobileSendAmountArgs {
     required this.sendFlowId,
     required this.recipient,
     required this.addressType,
+    this.amountText,
+    this.fiatAmountText,
+    this.amountInputMode = MobileSendAmountInputMode.zec,
     this.memo,
     this.preserveMemoWhitespace = false,
     this.contactLabel,
@@ -178,6 +181,13 @@ class MobileSendAmountArgs {
   final String sendFlowId;
   final String recipient;
   final String addressType;
+
+  /// Any amount already composed on the recipient step — a ZIP-321 payment URI
+  /// prefills one and can step back in place, so the pushed amount page has to
+  /// carry it forward or the payee-requested amount is silently dropped.
+  final String? amountText;
+  final String? fiatAmountText;
+  final MobileSendAmountInputMode amountInputMode;
   final String? memo;
   final bool preserveMemoWhitespace;
   final String? contactLabel;
@@ -223,6 +233,9 @@ class MobileSendAmountScreen extends StatelessWidget {
       initialSendFlowId: args.sendFlowId,
       initialRecipient: args.recipient,
       initialAddressType: args.addressType,
+      initialAmount: args.amountText,
+      initialFiatAmount: args.fiatAmountText,
+      initialAmountInputMode: args.amountInputMode,
       initialMemo: args.memo,
       preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
@@ -676,6 +689,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (!_hasValidAddress) return;
     _addressFocus.unfocus();
     if (widget.useRouteSteps) {
+      final amountText = _amountText.trim();
       unawaited(
         context.push<void>(
           '/send/amount',
@@ -683,6 +697,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             sendFlowId: _sendFlowId,
             recipient: _addressController.text.trim(),
             addressType: _addressType,
+            // A ZIP-321 deep link prefills the amount on this same screen and
+            // can step back to the recipient in place (there is no amount page
+            // to pop). Carrying the amount forward keeps the payee-requested
+            // value instead of stranding it in the hidden root state.
+            amountText: amountText.isEmpty ? null : amountText,
+            fiatAmountText: _fiatAmountText.trim().isEmpty
+                ? null
+                : _fiatAmountText.trim(),
+            amountInputMode: _amountInputMode,
             memo: _memo,
             preserveMemoWhitespace: _preserveMemoWhitespace,
             contactLabel: _contactLabel,
