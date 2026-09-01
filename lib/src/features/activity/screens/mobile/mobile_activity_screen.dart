@@ -118,8 +118,9 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
 
   Future<void> _openTransactionStatus(
     BuildContext context,
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
 
@@ -152,6 +153,28 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
+        giftCardAmountZatoshi: giftCard?.amountZatoshi,
+      ),
+    );
+  }
+
+  ActivityEntry _transactionEntry(
+    BuildContext context,
+    rust_sync.TransactionInfo transaction,
+    GiftCardActivityMetadata? giftCard, {
+    required bool privacyModeEnabled,
+  }) {
+    return ActivityEntry(
+      timestamp: transactionActivityTimestamp(transaction),
+      row: buildTransactionActivityRow(
+        context: context,
+        transaction: transaction,
+        giftCardKind: giftCard?.kind,
+        giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        privacyModeEnabled: privacyModeEnabled,
+        onTap: () => unawaited(
+          _openTransactionStatus(context, transaction, giftCard: giftCard),
+        ),
       ),
     );
   }
@@ -232,15 +255,11 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       if (loadedTransactions != null)
         for (final tx in transactions)
           if (!absorption.absorbs(tx))
-            ActivityEntry(
-              timestamp: transactionActivityTimestamp(tx),
-              row: buildTransactionActivityRow(
-                context: context,
-                transaction: tx,
-                giftCardKind: giftCardActivityIndex.kindFor(tx),
-                privacyModeEnabled: privacyModeEnabled,
-                onTap: () => unawaited(_openTransactionStatus(context, tx)),
-              ),
+            _transactionEntry(
+              context,
+              tx,
+              giftCardActivityIndex.metadataFor(tx),
+              privacyModeEnabled: privacyModeEnabled,
             ),
       for (final item in swapItems)
         ActivityEntry(

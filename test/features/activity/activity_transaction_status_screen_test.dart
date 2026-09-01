@@ -48,8 +48,9 @@ void main() {
           txKind: 'sent',
           fee: BigInt.from(10000),
         ),
-        giftCard: const GiftCardActivityMetadata(
+        giftCard: GiftCardActivityMetadata(
           kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(100000),
           artworkId: 'ruby',
           message: 'Happy birthday!',
         ),
@@ -60,6 +61,8 @@ void main() {
     expect(find.text('Created Gift Card'), findsOneWidget);
     expect(find.text('Happy birthday!'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('0.001'), findsOneWidget);
+    expect(find.text('120'), findsNothing);
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
   });
@@ -71,8 +74,9 @@ void main() {
         txidHex: _txidHex,
         txKind: 'received',
         initialTransaction: _transaction(txKind: 'received'),
-        giftCard: const GiftCardActivityMetadata(
+        giftCard: GiftCardActivityMetadata(
           kind: GiftCardActivityKind.redeemed,
+          amountZatoshi: BigInt.from(100000),
           artworkId: 'crystal',
           message: null,
         ),

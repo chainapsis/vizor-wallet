@@ -494,7 +494,7 @@ class _ActivityTransactionStatusScreenState
         ? ('In progress', AppIcons.loader, colors.text.secondary)
         : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
     final amountText = hideAmountIfPrivacyMode(
-      formatZecAmount(tx.displayAmount.abs()),
+      formatZecAmount(giftCard.amountZatoshi),
       privacyModeEnabled: privacyModeEnabled,
     );
     return GiftCardActivityDetailView(

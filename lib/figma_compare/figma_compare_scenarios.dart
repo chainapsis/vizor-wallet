@@ -423,6 +423,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsMainUseCase,
   ),
   FigmaCompareScenario(
+    id: 'mobile-settings-main',
+    description: 'Mobile settings at the Account group',
+    builder: buildMobileSettingsMainUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-settings-footer',
     description: 'Mobile settings scrolled to the branded version footer',
     builder: buildMobileSettingsFooterUseCase,

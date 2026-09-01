@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -917,6 +918,54 @@ void main() {
     expect(find.text('Received'), findsNWidgets(4));
   });
 
+  testWidgets('home recent activity labels Gift Card transactions', (
+    tester,
+  ) async {
+    final created = _sentZecTx(txidHex: 'gift-created');
+    final redeemed = _receivedZecTx(
+      txidHex: 'gift-redeemed',
+      amountZatoshi: 100000,
+      blockTime: 1800000001,
+    );
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        swapEnabled: false,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          recentTransactions: [redeemed, created],
+        ),
+        giftCardActivityIndex: GiftCardActivityIndex(
+          createdTxids: const {'gift-created'},
+          redeemedTxids: const {'gift-redeemed'},
+          createdMetadataByTxid: {
+            'gift-created': GiftCardActivityMetadata(
+              kind: GiftCardActivityKind.created,
+              amountZatoshi: BigInt.from(100000),
+              artworkId: 'ruby',
+              message: 'Happy birthday!',
+            ),
+          },
+          redeemedMetadataByTxid: {
+            'gift-redeemed': GiftCardActivityMetadata(
+              kind: GiftCardActivityKind.redeemed,
+              amountZatoshi: BigInt.from(100000),
+              artworkId: 'crystal',
+              message: null,
+            ),
+          },
+        ),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Redeemed a Gift Card'));
+
+    expect(find.text('Created a Gift Card'), findsOneWidget);
+    expect(find.text('Redeemed a Gift Card'), findsOneWidget);
+    expect(find.text('Sent'), findsNothing);
+    expect(find.text('Received'), findsNothing);
+  });
+
   testWidgets('home recent activity suppresses the swap-leg Sent duplicate', (
     tester,
   ) async {
@@ -1263,6 +1312,7 @@ Widget _appHarness(
   double? priceChange24hPct,
   SyncState? syncState,
   SwapActivityStore? swapActivityStore,
+  GiftCardActivityIndex? giftCardActivityIndex,
   ThemeMode themeMode = ThemeMode.system,
   IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
       const IronwoodHomeMigrationCtaState.hidden(),
@@ -1300,6 +1350,10 @@ Widget _appHarness(
       swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
+      if (giftCardActivityIndex != null)
+        giftCardActivityIndexProvider.overrideWith(
+          (ref, accountUuid) async => giftCardActivityIndex,
+        ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return ironwoodHomeMigrationCtaState;
       }),

@@ -313,6 +313,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileHomeDefaultUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Gift Cards',
+                      builder: buildMobileHomeGiftCardsUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'No activity',
                       builder: buildMobileHomeNoActivityUseCase,
                     ),
@@ -331,6 +335,15 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Accounts modal',
                       builder: buildMobileHomeAccountsModalUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Gift Cards',
+                      builder: buildDesktopHomeGiftCardsUseCase,
                     ),
                   ],
                 ),

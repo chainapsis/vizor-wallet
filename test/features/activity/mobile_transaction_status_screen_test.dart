@@ -102,6 +102,7 @@ rust_sync.TransactionDetail _detail({
 Widget _app(
   rust_sync.TransactionInfo tx, {
   rust_sync.TransactionDetail? detail,
+  BigInt? giftCardAmountZatoshi,
   List<AddressBookContact> contacts = const [],
   Map<String, AccountInfo> ownAccounts = const {},
 }) {
@@ -128,6 +129,7 @@ Widget _app(
             txKind: tx.txKind,
             initialTransaction: tx,
             initialDetail: resolvedDetail,
+            giftCardAmountZatoshi: giftCardAmountZatoshi,
           ),
           historyLoader: (_) async => [tx],
           detailLoader: (_, _) async => resolvedDetail,
@@ -148,6 +150,18 @@ void main() {
 
     expect(find.text('Amount'), findsOneWidget);
     expect(find.text('To'), findsOneWidget);
+  });
+
+  testWidgets('Gift Card detail shows the promised amount, not its funding', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(_tx(), giftCardAmountZatoshi: BigInt.from(100000)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('0.001 ZEC'), findsOneWidget);
+    expect(find.text('123.12 ZEC'), findsNothing);
   });
 
   testWidgets('mined sent tx shows success title, chip, fee, and address', (

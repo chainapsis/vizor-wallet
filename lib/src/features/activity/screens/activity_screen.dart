@@ -352,6 +352,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               context: context,
               transaction: tx,
               giftCardKind: giftCard?.kind,
+              giftCardAmountZatoshi: giftCard?.amountZatoshi,
               privacyModeEnabled: privacyModeEnabled,
               onTap: () => _openTransactionStatus(tx, giftCard: giftCard),
             ),

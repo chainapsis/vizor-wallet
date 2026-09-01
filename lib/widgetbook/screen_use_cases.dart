@@ -661,6 +661,46 @@ Widget buildSettingsMainUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(const NetworkPrivacyState.off());
 }
 
+/// Real mobile settings pinned to the top of the Account group.
+Widget buildMobileSettingsMainUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+      ),
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      constrainToDesignSize: false,
+      child: IgnorePointer(child: _MobileSettingsMainPreview()),
+    ),
+  );
+}
+
+class _MobileSettingsMainPreview extends StatelessWidget {
+  const _MobileSettingsMainPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppMobileShell(
+      body: const MobileSettingsScreen(),
+      tabBar: AppMobileTabBar(
+        items: _mobileHomeTabItems,
+        currentIndex: 3,
+        onSelect: (_) {},
+      ),
+    );
+  }
+}
+
 /// Real mobile settings and tab bar, pinned to the app footer for visual review.
 /// The version still comes from VIZOR_RELEASE_VERSION, just as in a release.
 Widget buildMobileSettingsFooterUseCase(BuildContext context) {
@@ -1014,6 +1054,18 @@ Widget buildMobileHomeDefaultUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileHomeGiftCardsUseCase(BuildContext context) {
+  final transactions = _previewGiftCardActivityTransactions();
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14312000000),
+      recentTransactions: transactions,
+    ),
+    giftCardActivityIndex: _previewGiftCardActivityIndex(),
+  );
+}
+
 Widget buildMobileActivityDefaultUseCase(BuildContext context) {
   final accountUuid = _accountsDesignState.activeAccountUuid;
   final redeemedGiftCard = _giftCardActivityTx(
@@ -1044,12 +1096,9 @@ Widget buildMobileActivityDefaultUseCase(BuildContext context) {
         ),
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
-      giftCardActivityIndexProvider.overrideWith((ref, accountUuid) async {
-        return const GiftCardActivityIndex(
-          createdTxids: {'preview-gift-card-created'},
-          redeemedTxids: {'preview-gift-card-redeemed'},
-        );
-      }),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => _previewGiftCardActivityIndex(),
+      ),
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
@@ -1063,6 +1112,44 @@ Widget buildMobileActivityDefaultUseCase(BuildContext context) {
         ],
       ),
     ),
+  );
+}
+
+List<rust_sync.TransactionInfo> _previewGiftCardActivityTransactions() {
+  return [
+    _giftCardActivityTx(
+      txidHex: 'preview-gift-card-redeemed',
+      kind: 'received',
+      seconds: 1800000011,
+    ),
+    _giftCardActivityTx(
+      txidHex: 'preview-gift-card-created',
+      kind: 'sent',
+      seconds: 1800000010,
+    ),
+  ];
+}
+
+GiftCardActivityIndex _previewGiftCardActivityIndex() {
+  return GiftCardActivityIndex(
+    createdTxids: const {'preview-gift-card-created'},
+    redeemedTxids: const {'preview-gift-card-redeemed'},
+    createdMetadataByTxid: {
+      'preview-gift-card-created': GiftCardActivityMetadata(
+        kind: GiftCardActivityKind.created,
+        amountZatoshi: BigInt.from(100000000),
+        artworkId: 'ruby',
+        message: 'Happy birthday!',
+      ),
+    },
+    redeemedMetadataByTxid: {
+      'preview-gift-card-redeemed': GiftCardActivityMetadata(
+        kind: GiftCardActivityKind.redeemed,
+        amountZatoshi: BigInt.from(100000000),
+        artworkId: 'crystal',
+        message: null,
+      ),
+    },
   );
 }
 
@@ -1190,6 +1277,18 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
       status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
     ),
     zecUsdPrice: 1200.12 / 143.23,
+  );
+}
+
+Widget buildDesktopHomeGiftCardsUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_323_000_000),
+      recentTransactions: _previewGiftCardActivityTransactions(),
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    giftCardActivityIndex: _previewGiftCardActivityIndex(),
   );
 }
 
@@ -1970,6 +2069,7 @@ Widget _buildMobileHomeUseCase({
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
   bool constrainToPreviewFrame = true,
+  GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
 }) {
   final harness = _MobileHomeHarness(
     openAccountsSheet: openAccountsSheet,
@@ -1998,6 +2098,9 @@ Widget _buildMobileHomeUseCase({
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => giftCardActivityIndex,
+      ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
@@ -2020,6 +2123,7 @@ Widget _buildDesktopHomeUseCase({
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
   double zecUsdPrice = 1.20012,
+  GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
 }) {
   return ProviderScope(
     overrides: [
@@ -2043,6 +2147,9 @@ Widget _buildDesktopHomeUseCase({
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => giftCardActivityIndex,
+      ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),

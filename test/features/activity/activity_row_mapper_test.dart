@@ -13,6 +13,7 @@ void main() {
     WidgetTester tester,
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityKind? giftCardKind,
+    BigInt? giftCardAmountZatoshi,
   }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
@@ -24,6 +25,7 @@ void main() {
               context: context,
               transaction: transaction,
               giftCardKind: giftCardKind,
+              giftCardAmountZatoshi: giftCardAmountZatoshi,
             );
             return const SizedBox.shrink();
           },
@@ -94,20 +96,22 @@ void main() {
       tester,
       _transaction(txKind: 'sent'),
       giftCardKind: GiftCardActivityKind.created,
+      giftCardAmountZatoshi: BigInt.from(100000),
     );
     final redeemed = await mapRow(
       tester,
       _transaction(txKind: 'received'),
       giftCardKind: GiftCardActivityKind.redeemed,
+      giftCardAmountZatoshi: BigInt.from(100000),
     );
 
     expect(created.title, 'Created a Gift Card');
     expect(created.leadingIconName, AppIcons.giftCard);
     expect(created.subtitle, 'Shielded');
-    expect(created.amountText, '-120 ZEC');
+    expect(created.amountText, '-0.001 ZEC');
     expect(redeemed.title, 'Redeemed a Gift Card');
     expect(redeemed.leadingIconName, AppIcons.giftCard);
-    expect(redeemed.amountText, '+120 ZEC');
+    expect(redeemed.amountText, '+0.001 ZEC');
   });
 
   testWidgets('confirmed migration renders as an Ironwood activity row', (

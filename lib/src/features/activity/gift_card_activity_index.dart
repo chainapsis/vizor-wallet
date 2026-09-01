@@ -4,17 +4,21 @@ import '../../rust/api/sync.dart' as rust_sync;
 import '../payment_links/services/payment_link_received_store.dart';
 import '../payment_links/services/payment_link_recovery_store.dart';
 import '../payment_links/services/payment_link_service.dart';
+import '../payment_links/services/payment_link_transaction_matching.dart'
+    as payment_link_matching;
 
 enum GiftCardActivityKind { created, redeemed }
 
 class GiftCardActivityMetadata {
   const GiftCardActivityMetadata({
     required this.kind,
+    required this.amountZatoshi,
     required this.artworkId,
     required this.message,
   });
 
   final GiftCardActivityKind kind;
+  final BigInt amountZatoshi;
   final String? artworkId;
   final String? message;
 }
@@ -41,6 +45,7 @@ class GiftCardActivityIndex {
       for (final txid in _splitTxids(record.fundingTxids)) {
         createdMetadata[txid] = GiftCardActivityMetadata(
           kind: GiftCardActivityKind.created,
+          amountZatoshi: record.link.amountZatoshi,
           artworkId: record.link.presentation?.artworkId,
           message: record.link.presentation?.message,
         );
@@ -51,6 +56,7 @@ class GiftCardActivityIndex {
       for (final txid in _splitTxids(record.claimTxids)) {
         redeemedMetadata[txid] = GiftCardActivityMetadata(
           kind: GiftCardActivityKind.redeemed,
+          amountZatoshi: record.amountZatoshi,
           artworkId: record.artworkId,
           message: record.message,
         );
@@ -90,11 +96,19 @@ class GiftCardActivityIndex {
         ? createdMetadataByTxid
         : redeemedMetadataByTxid;
     for (final entry in metadata.entries) {
-      if (paymentLinkTxidsMatch(entry.key, transaction.txidHex)) {
+      if (payment_link_matching.paymentLinkTxidsMatch(
+        entry.key,
+        transaction.txidHex,
+      )) {
         return entry.value;
       }
     }
-    return GiftCardActivityMetadata(kind: kind, artworkId: null, message: null);
+    return GiftCardActivityMetadata(
+      kind: kind,
+      amountZatoshi: transaction.displayAmount.abs(),
+      artworkId: null,
+      message: null,
+    );
   }
 }
 
@@ -122,6 +136,9 @@ Iterable<String> _splitTxids(String? value) sync* {
 
 bool _matchesAny(Set<String> expectedTxids, String transactionTxid) {
   return expectedTxids.any(
-    (expectedTxid) => paymentLinkTxidsMatch(expectedTxid, transactionTxid),
+    (expectedTxid) => payment_link_matching.paymentLinkTxidsMatch(
+      expectedTxid,
+      transactionTxid,
+    ),
   );
 }

@@ -40,12 +40,14 @@ class MobileTransactionStatusArgs {
     this.txKind,
     this.initialTransaction,
     this.initialDetail,
+    this.giftCardAmountZatoshi,
   });
 
   final String txidHex;
   final String? txKind;
   final rust_sync.TransactionInfo? initialTransaction;
   final rust_sync.TransactionDetail? initialDetail;
+  final BigInt? giftCardAmountZatoshi;
 }
 
 /// Loads the transaction history; injectable so widget tests can avoid
@@ -295,7 +297,11 @@ class _MobileTransactionStatusScreenState
     final detail = _detail;
     final failed = _phase == _TxPhase.failed;
 
-    final amountText = _amountText(tx, privacyModeEnabled: privacyModeEnabled);
+    final amountText = _amountText(
+      tx,
+      giftCardAmountZatoshi: widget.args.giftCardAmountZatoshi,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final primaryAddress = detail?.primaryAddress?.trim();
     final sourceAddress = detail?.sourceAddress?.trim();
     final sourcePool = detail?.sourcePool?.trim().toLowerCase();
@@ -576,14 +582,16 @@ class _MobileTransactionStatusScreenState
 
   String _amountText(
     rust_sync.TransactionInfo? tx, {
+    BigInt? giftCardAmountZatoshi,
     required bool privacyModeEnabled,
   }) {
     if (tx == null) return '--';
     if (privacyModeEnabled) {
       return hideAmountIfPrivacyMode('', privacyModeEnabled: true);
     }
-    if (tx.displayAmount == BigInt.zero) return '--';
-    return ZecAmount.fromZatoshi(tx.displayAmount).activityDetail.toString();
+    final amountZatoshi = giftCardAmountZatoshi ?? tx.displayAmount;
+    if (amountZatoshi == BigInt.zero) return '--';
+    return ZecAmount.fromZatoshi(amountZatoshi).activityDetail.toString();
   }
 
   String _dateText(rust_sync.TransactionInfo? tx) {

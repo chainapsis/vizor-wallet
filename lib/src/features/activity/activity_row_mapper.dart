@@ -25,6 +25,7 @@ ActivityRowData buildTransactionActivityRow({
   required BuildContext context,
   required rust_sync.TransactionInfo transaction,
   GiftCardActivityKind? giftCardKind,
+  BigInt? giftCardAmountZatoshi,
   bool privacyModeEnabled = false,
   bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
@@ -34,7 +35,7 @@ ActivityRowData buildTransactionActivityRow({
       transaction.minedHeight == BigInt.zero && !transaction.expiredUnmined;
   final isFailed = transaction.expiredUnmined;
   final kind = transaction.txKind;
-  final amount = transaction.displayAmount;
+  final amount = giftCardAmountZatoshi ?? transaction.displayAmount;
   final isReceived = kind == 'received';
   final isReceiving = kind == 'receiving';
   final isSent = kind == 'sent';

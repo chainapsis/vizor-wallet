@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/app_version_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -180,6 +181,35 @@ Widget _app({
               ),
             )
           : const MobileSettingsScreen(),
+    ),
+  );
+}
+
+Widget _routedApp() {
+  final router = GoRouter(
+    initialLocation: '/settings',
+    routes: [
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => const MobileSettingsScreen(),
+      ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, _) => const Text('payment links route'),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
+      themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
+      syncKeepAwakeProvider.overrideWith(_FakeSyncKeepAwakeNotifier.new),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, child) =>
+          AppTheme(data: AppThemeData.dark, child: child!),
     ),
   );
 }
@@ -739,6 +769,11 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Account'), findsOneWidget);
     expect(find.text('System'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_settings_gift_cards_row')),
+      findsOneWidget,
+    );
+    expect(find.text('Gift Cards'), findsOneWidget);
     expect(find.text('John'), findsOneWidget);
     expect(find.text('Knight'), findsOneWidget);
     final pfpRow = find.byKey(const ValueKey('mobile_settings_pfp_row'));
@@ -786,6 +821,18 @@ void main() {
       find.text(defaultRpcEndpointConfig('main').hostPort),
       findsOneWidget,
     );
+  });
+
+  testWidgets('Gift Cards settings row opens the feature', (tester) async {
+    await tester.pumpWidget(_routedApp());
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_gift_cards_row'));
+    await tester.scrollUntilVisible(row, 200);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    expect(find.text('payment links route'), findsOneWidget);
   });
 
   testWidgets('theme row opens the sheet and applies the selection', (
