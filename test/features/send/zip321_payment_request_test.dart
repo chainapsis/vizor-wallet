@@ -86,6 +86,45 @@ void main() {
     );
   });
 
+  test('accepts a zero-padded full-width ZIP-302 memo field', () {
+    // ZIP-302 memos are a fixed 512-byte field; producers that transmit the
+    // whole field right-pad the text with NULs.
+    final bytes = List<int>.filled(512, 0);
+    bytes.setRange(0, 10, utf8.encode('Invoice 42'));
+    final memo = base64Url.encode(bytes).replaceAll('=', '');
+
+    final request = Zip321PaymentRequest.parse(
+      'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?memo=$memo',
+    );
+
+    expect(request.isSupported, isTrue);
+    expect(request.primaryPayment.memoText, 'Invoice 42');
+    expect(request.primaryPayment.memoIsBinary, isFalse);
+  });
+
+  test('still rejects a memo with an interior NUL byte', () {
+    final bytes = <int>[
+      ...utf8.encode('Inv'),
+      0x00,
+      ...utf8.encode('42'),
+      0x00,
+    ];
+    final memo = base64Url.encode(bytes).replaceAll('=', '');
+
+    expect(
+      () => Zip321PaymentRequest.parse(
+        'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?memo=$memo',
+      ),
+      throwsA(
+        isA<Zip321ParseException>().having(
+          (e) => e.message,
+          'message',
+          'ZIP-321 memo contains unsupported control characters.',
+        ),
+      ),
+    );
+  });
+
   test('rejects text memo with unsupported control characters', () {
     final rawMemo = 'Pay \u202Eevil\u202C\u0001 now';
     final memo = base64Url.encode(utf8.encode(rawMemo)).replaceAll('=', '');

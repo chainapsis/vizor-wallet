@@ -270,8 +270,13 @@ void _validateBase64Url(String value, String label) {
   if (bytes.length > 512) {
     throw const Zip321ParseException('ZIP-321 memo exceeds 512 bytes.');
   }
+  // ZIP-302 memos are a fixed 512-byte field that producers zero-pad on the
+  // right, so a full-width encoding of "Invoice 42" arrives as the text plus
+  // 502 trailing NULs. Drop that padding before decoding; interior NULs stay
+  // in place and are still rejected as unsupported control characters.
+  final unpadded = _stripTrailingMemoPadding(bytes);
   try {
-    final text = utf8.decode(bytes, allowMalformed: false);
+    final text = utf8.decode(unpadded, allowMalformed: false);
     if (_containsUnsupportedMemoText(text)) {
       throw const Zip321ParseException(
         'ZIP-321 memo contains unsupported control characters.',
@@ -281,6 +286,14 @@ void _validateBase64Url(String value, String label) {
   } on FormatException {
     return (text: null, isBinary: true);
   }
+}
+
+List<int> _stripTrailingMemoPadding(List<int> bytes) {
+  var end = bytes.length;
+  while (end > 0 && bytes[end - 1] == 0x00) {
+    end--;
+  }
+  return end == bytes.length ? bytes : bytes.sublist(0, end);
 }
 
 bool _containsUnsupportedMemoText(String value) =>
