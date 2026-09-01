@@ -147,6 +147,46 @@ void main() {
     expect(rustApi.lastProposeMemo, rawMemo);
   });
 
+  testWidgets('keeps ZIP-321 memo whitespace when the memo field is focused', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const rawMemo = '  Donation note  ';
+    await tester.pumpWidget(
+      _sendHarness(
+        prefill: const SendPrefillArgs(
+          id: 'zip321-whitespace-focus',
+          source: 'zcash-uri',
+          address: _shieldedAddress,
+          amountText: '1.25',
+          memoText: rawMemo,
+          preserveMemoText: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    // Clicking into the memo field moves the caret, which notifies the
+    // controller without changing a single character. That must not count as
+    // the user editing the memo away from the link's exact text.
+    await tester.tap(find.byKey(const ValueKey('send_memo_field')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(rawMemo), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeMemo, rawMemo);
+  });
+
   testWidgets('contacts label fills the send address from zcash contacts', (
     tester,
   ) async {

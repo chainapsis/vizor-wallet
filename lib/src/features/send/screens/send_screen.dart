@@ -232,6 +232,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _programmaticAmountEdit = false;
   bool _programmaticMemoEdit = false;
   bool _preserveMemoWhitespace = false;
+  // Last memo text this widget observed. TextEditingController notifies on
+  // selection-only changes too (focusing the field, moving the caret), which
+  // must not count as the user editing the memo.
+  String _lastMemoText = '';
   _MaxQuote? _maxQuote;
   Timer? _maxDebounceTimer;
   int _addressSeq = 0;
@@ -243,6 +247,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   void initState() {
     super.initState();
     _applyPrefill(widget.prefill);
+    // _applyPrefill may have seeded the memo before the listener existed.
+    _lastMemoText = _memoController.text;
     _memoController.addListener(_handleMemoChanged);
     _addressFocusNode.addListener(_handleFieldVisualStateChanged);
     _amountFocusNode.addListener(_handleFieldVisualStateChanged);
@@ -271,10 +277,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   void _handleMemoChanged() {
+    final text = _memoController.text;
+    // Selection-only notification: tapping into the memo field must not drop
+    // the ZIP-321 whitespace the link asked us to preserve.
+    if (text == _lastMemoText) return;
+    _lastMemoText = text;
     if (!_programmaticMemoEdit) {
       _preserveMemoWhitespace = false;
     }
-    if (_memoController.text.isNotEmpty && !_messageExpanded) {
+    if (text.isNotEmpty && !_messageExpanded) {
       _messageExpanded = true;
     }
     if (_isMaxMode) {
