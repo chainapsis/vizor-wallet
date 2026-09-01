@@ -458,8 +458,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return;
     }
     try {
-      await _waitUntilWalletReadyForVoting(context);
+      await _waitUntilWalletReadyForVoting(
+        context,
+        stopIfVotingBackgroundWorkQuiesced: true,
+      );
     } on _StaleVotingSessionAction {
+      return;
+    } on _VotingBackgroundWorkQuiesced {
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute skipped '
+        'round=${context.round.roundId} reason=wallet-mutation-in-progress',
+      );
       return;
     } on _VotingWalletSyncTimeout catch (e) {
       _setWalletSyncReadinessState(
@@ -4063,13 +4072,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> _waitUntilWalletReadyForVoting(
-    _VotingSessionContext context,
-  ) async {
+    _VotingSessionContext context, {
+    bool stopIfVotingBackgroundWorkQuiesced = false,
+  }) async {
+    void throwIfBackgroundWorkQuiesced() {
+      if (stopIfVotingBackgroundWorkQuiesced &&
+          ref
+              .read(votingShareTrackingRegistryProvider)
+              .isQuiesced(context.accountUuid)) {
+        throw const _VotingBackgroundWorkQuiesced();
+      }
+    }
+
     var loggedWait = false;
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
     final waitTimer = Stopwatch()..start();
     final sessionInvalidated = _sessionInvalidated.future;
     while (true) {
+      throwIfBackgroundWorkQuiesced();
       _throwIfContextStale(context, 'wallet-sync-wait');
       final readiness = await ref
           .read(votingWalletSyncReadinessCheckerProvider)
@@ -4078,6 +4098,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             network: context.network,
             snapshotHeight: context.round.snapshotHeight,
           );
+      throwIfBackgroundWorkQuiesced();
       _throwIfContextStale(context, 'wallet-sync-readiness');
       if (readiness.isReady) {
         _setWalletSyncReadinessState(
@@ -4916,6 +4937,10 @@ class _VotingSessionContext {
 
 class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();
+}
+
+class _VotingBackgroundWorkQuiesced implements Exception {
+  const _VotingBackgroundWorkQuiesced();
 }
 
 class _VotingWalletSyncTimeout implements Exception {

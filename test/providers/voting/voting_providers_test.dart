@@ -9150,6 +9150,58 @@ void main() {
     },
   );
 
+  test(
+    'destructive drain stops waiting precompute before it restarts sync',
+    () async {
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: true);
+      final firstSyncStart = Completer<void>();
+      final syncStartDuringDrain = Completer<void>();
+      var drainStarted = false;
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: const Duration(milliseconds: 20),
+        walletSyncStarter: () {
+          if (!firstSyncStart.isCompleted) {
+            firstSyncStart.complete();
+          } else if (drainStarted && !syncStartDuringDrain.isCompleted) {
+            syncStartDuringDrain.complete();
+          }
+        },
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      readiness.ready = false;
+      final precompute = notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
+      await firstSyncStart.future;
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      drainStarted = true;
+      final drain = registry.quiesceAndDrain(accountUuid: 'account-1');
+
+      try {
+        final firstResult = await Future.any<String>([
+          drain.then((_) => 'drained'),
+          syncStartDuringDrain.future.then((_) => 'sync-restarted'),
+        ]);
+        expect(firstResult, 'drained');
+      } finally {
+        readiness.ready = true;
+        await Future.wait([precompute, drain]);
+        registry.resume(accountUuid: 'account-1');
+      }
+
+      expect(syncStartDuringDrain.isCompleted, isFalse);
+      expect(rust.snapshotBundlePrecomputeAccounts, isEmpty);
+    },
+  );
+
   test('prepareDelegation warms proving caches before bundle setup', () async {
     final rust = FakeVotingRustApi();
     final container = _sessionContainer(rust: rust);
