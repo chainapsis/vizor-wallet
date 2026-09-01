@@ -119,7 +119,7 @@ void main() {
         chainTipHeight: BigInt.from(18),
         transactions: [
           _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
-          _transaction(txid: 'claim-b', txKind: 'sent', minedHeight: 13),
+          _transaction(txid: 'claim-b', txKind: 'received', minedHeight: 13),
         ],
       ),
       PaymentLinkReceivedStatus.received,
@@ -141,6 +141,19 @@ void main() {
       );
     },
   );
+
+  test('temporary sender history cannot finalize claim cleanup', () {
+    expect(
+      paymentLinkReceivedStatusForTransactions(
+        claimTxids: 'claim-a',
+        chainTipHeight: BigInt.from(30),
+        transactions: [
+          _transaction(txid: 'claim-a', txKind: 'sent', minedHeight: 12),
+        ],
+      ),
+      PaymentLinkReceivedStatus.receiving,
+    );
+  });
 
   test('expired unmined claim becomes actionable again', () {
     expect(
@@ -178,6 +191,17 @@ void main() {
         ],
       ),
       PaymentLinkReceivedStatus.receiving,
+    );
+  });
+
+  test('recovers only live sender txids after a broadcast crash', () {
+    expect(
+      recoverablePaymentLinkClaimTxids([
+        _transaction(txid: 'live', txKind: 'sent'),
+        _transaction(txid: 'expired', txKind: 'sent', expiredUnmined: true),
+        _transaction(txid: 'incoming', txKind: 'received'),
+      ]),
+      'live',
     );
   });
 

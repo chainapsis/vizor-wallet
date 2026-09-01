@@ -992,6 +992,36 @@ void main() {
     expect(operations.receivedRecords.single.claimLink, isNull);
   });
 
+  testWidgets('does not discard an active claim database on screen disposal', (
+    tester,
+  ) async {
+    final claimCompleter = Completer<PaymentLinkClaimResult>();
+    final operations = _FakePaymentLinkOperations(
+      claimCompleter: claimCompleter,
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Claim my gift'));
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+
+    expect(operations.discardedClaimAddresses, isEmpty);
+    claimCompleter.complete(_broadcastedClaimResult);
+    await tester.pump();
+  });
+
   testWidgets('restores an in-flight received Card after the screen restarts', (
     tester,
   ) async {

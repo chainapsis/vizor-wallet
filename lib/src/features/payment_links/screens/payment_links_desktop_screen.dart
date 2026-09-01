@@ -175,7 +175,9 @@ class _PaymentLinksDesktopScreenState
   void dispose() {
     _fundingQuoteDebounce?.cancel();
     _fundingProgressTimer?.cancel();
-    for (final claimSession in _receivedClaimSessions.values) {
+    for (final entry in _receivedClaimSessions.entries) {
+      if (_claimSubmissions.contains(entry.key)) continue;
+      final claimSession = entry.value;
       unawaited(_paymentLinkOperations.discardClaimSession(claimSession));
     }
     _amountFocusNode

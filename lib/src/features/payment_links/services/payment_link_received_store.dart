@@ -59,8 +59,8 @@ class PaymentLinkReceivedRecord {
   final PaymentLinkReceivedStatus status;
 
   /// The bearer secret is retained only while the Card can still require a
-  /// retry. It is removed as soon as the receiver's mined history proves the
-  /// claim completed.
+  /// retry. It is removed only after receiver history proves the claim has the
+  /// required confirmation depth.
   final VizorPaymentLink? claimLink;
   final String? destinationAccountUuid;
   final String? claimTxids;
@@ -210,6 +210,38 @@ class PaymentLinkReceivedStore {
         claimLink: existing.claimLink,
         destinationAccountUuid: destinationAccountUuid.trim(),
         claimTxids: claimTxids.trim(),
+        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+      );
+      await _writeRecords(_replaceByAddress(records, updated));
+      return updated;
+    });
+  }
+
+  /// Persists the destination before transaction creation starts. If the app
+  /// exits after Rust stores or broadcasts the transaction but before its txid
+  /// is copied into secure storage, the temporary claim DB can recover it.
+  Future<PaymentLinkReceivedRecord> markClaimStarted({
+    required String address,
+    required String destinationAccountUuid,
+    DateTime? updatedAt,
+  }) {
+    return _runExclusive(() async {
+      if (destinationAccountUuid.trim().isEmpty) {
+        throw ArgumentError.value(
+          destinationAccountUuid,
+          'destinationAccountUuid',
+          'A started payment link claim requires a destination account.',
+        );
+      }
+      final records = await _loadUnlocked();
+      final existing = _findRequired(records, address);
+      if (existing.status == PaymentLinkReceivedStatus.received) {
+        return existing;
+      }
+      final updated = existing.copyWith(
+        status: PaymentLinkReceivedStatus.readyToClaim,
+        destinationAccountUuid: destinationAccountUuid.trim(),
+        claimTxids: null,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
       );
       await _writeRecords(_replaceByAddress(records, updated));

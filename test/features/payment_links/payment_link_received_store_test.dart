@@ -96,6 +96,24 @@ void main() {
       expect(restored.single.status, PaymentLinkReceivedStatus.readyToClaim);
     });
 
+    test('persists the destination before a claim txid exists', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final link = _link();
+      final store = PaymentLinkReceivedStore(storage);
+
+      await store.saveReady(link);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+      );
+
+      final restored = await PaymentLinkReceivedStore(storage).load();
+      expect(restored.single.status, PaymentLinkReceivedStatus.readyToClaim);
+      expect(restored.single.destinationAccountUuid, 'receiver-account');
+      expect(restored.single.claimTxids, isNull);
+      expect(restored.single.claimLink, isNotNull);
+    });
+
     test(
       'does not reintroduce a secret for an already received card',
       () async {

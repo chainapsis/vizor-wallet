@@ -99,11 +99,12 @@ PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
 
   final allConfirmed = everyTxidMatches(
     (transaction) =>
+        transaction.txKind == 'received' &&
         paymentLinkConfirmationCount(
-          minedHeight: transaction.minedHeight,
-          chainTipHeight: chainTipHeight,
-        ) >=
-        kPaymentLinkClaimConfirmationTarget,
+              minedHeight: transaction.minedHeight,
+              chainTipHeight: chainTipHeight,
+            ) >=
+            kPaymentLinkClaimConfirmationTarget,
   );
   if (allConfirmed) return PaymentLinkReceivedStatus.received;
 
@@ -121,6 +122,20 @@ PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
   return !anyMined && allExpired
       ? PaymentLinkReceivedStatus.readyToClaim
       : PaymentLinkReceivedStatus.receiving;
+}
+
+@visibleForTesting
+String recoverablePaymentLinkClaimTxids(
+  List<rust_sync.TransactionInfo> transactions,
+) {
+  return transactions
+      .where(
+        (transaction) =>
+            transaction.txKind == 'sent' && !transaction.expiredUnmined,
+      )
+      .map((transaction) => transaction.txidHex)
+      .toSet()
+      .join(',');
 }
 
 class PaymentLinkFundingQuote {
@@ -611,19 +626,21 @@ class PaymentLinkService implements PaymentLinkOperations {
     // result returns. Always reconcile from the persisted copy, which owns
     // the destination account UUID and claim txids needed for history lookup.
     final persistedRecords = await _receivedStore.load();
-    final receiving = persistedRecords
+    final monitored = persistedRecords
         .where(
           (record) =>
-              record.status == PaymentLinkReceivedStatus.receiving &&
+              record.claimLink != null &&
               record.destinationAccountUuid != null &&
-              record.claimTxids != null &&
-              record.claimTxids!.trim().isNotEmpty,
+              (record.status == PaymentLinkReceivedStatus.receiving ||
+                  (record.status == PaymentLinkReceivedStatus.readyToClaim &&
+                      (record.claimTxids == null ||
+                          record.claimTxids!.trim().isEmpty))),
         )
         .toList();
-    if (receiving.isEmpty) return persistedRecords;
+    if (monitored.isEmpty) return persistedRecords;
 
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    final currentNetworkRecords = receiving
+    final currentNetworkRecords = monitored
         .where((record) => record.network == endpoint.networkName)
         .toList();
     if (currentNetworkRecords.isEmpty) return persistedRecords;
@@ -633,6 +650,11 @@ class PaymentLinkService implements PaymentLinkOperations {
     // refreshes for one card without serializing unrelated cards.
     final claimTransactionsByAddress =
         <String, List<rust_sync.TransactionInfo>>{};
+    final claimTxidsByAddress = <String, String>{
+      for (final record in currentNetworkRecords)
+        if (record.claimTxids != null && record.claimTxids!.trim().isNotEmpty)
+          record.address: record.claimTxids!,
+    };
     await Future.wait(
       currentNetworkRecords.map((record) async {
         final link = record.claimLink;
@@ -654,13 +676,26 @@ class PaymentLinkService implements PaymentLinkOperations {
             network: endpoint.networkName,
           );
           if (accounts.length == 1) {
-            claimTransactionsByAddress[record.address] = await rust_sync
-                .getTransactionHistory(
-                  dbPath: dbPath,
-                  network: endpoint.networkName,
-                  accountUuid: accounts.single.uuid,
-                  limit: null,
+            final transactions = await rust_sync.getTransactionHistory(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: accounts.single.uuid,
+              limit: null,
+            );
+            claimTransactionsByAddress[record.address] = transactions;
+            if (!claimTxidsByAddress.containsKey(record.address)) {
+              final recoverableTxids = recoverablePaymentLinkClaimTxids(
+                transactions,
+              );
+              if (recoverableTxids.isNotEmpty) {
+                claimTxidsByAddress[record.address] = recoverableTxids;
+                await _receivedStore.markReceiving(
+                  address: record.address,
+                  destinationAccountUuid: record.destinationAccountUuid!,
+                  claimTxids: recoverableTxids,
                 );
+              }
+            }
           }
         } catch (error, stackTrace) {
           log(
@@ -693,8 +728,10 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
 
     for (final record in currentNetworkRecords) {
+      final claimTxids = claimTxidsByAddress[record.address];
+      if (claimTxids == null || claimTxids.trim().isEmpty) continue;
       final status = paymentLinkReceivedStatusForTransactions(
-        claimTxids: record.claimTxids!,
+        claimTxids: claimTxids,
         transactions: [
           ...transactionsByAccount[record.destinationAccountUuid!] ?? const [],
           ...claimTransactionsByAddress[record.address] ?? const [],
@@ -708,10 +745,13 @@ class PaymentLinkService implements PaymentLinkOperations {
           break;
         case PaymentLinkReceivedStatus.received:
           final link = record.claimLink;
-          if (link != null) {
-            await _deleteTemporaryWalletDb(
-              await _temporaryWalletDirectory(link),
-            );
+          if (link != null &&
+              !await _deleteTemporaryWalletDb(
+                await _temporaryWalletDirectory(link),
+              )) {
+            // Keep the recovery secret and receiving state so the next
+            // refresh can retry cleanup instead of orphaning the claim DB.
+            break;
           }
           _lastClaimRefreshAt.remove(record.address);
           await _receivedStore.markReceived(address: record.address);
@@ -935,6 +975,10 @@ class PaymentLinkService implements PaymentLinkOperations {
   ) async {
     var didBroadcast = false;
     try {
+      await _receivedStore.markClaimStarted(
+        address: session.link.address,
+        destinationAccountUuid: session.destinationAccountUuid,
+      );
       final result = await _broadcastPreparedSpend(session);
       didBroadcast = true;
       await _receivedStore.markReceiving(
@@ -1261,16 +1305,18 @@ class PaymentLinkService implements PaymentLinkOperations {
     );
   }
 
-  Future<void> _deleteTemporaryWalletDb(Directory directory) async {
+  Future<bool> _deleteTemporaryWalletDb(Directory directory) async {
     try {
       if (await directory.exists()) {
         await directory.delete(recursive: true);
       }
+      return true;
     } catch (e, st) {
       log(
         'PaymentLinkService: failed to delete temporary payment-link DB '
         '${directory.path}: $e\n$st',
       );
+      return false;
     }
   }
 
