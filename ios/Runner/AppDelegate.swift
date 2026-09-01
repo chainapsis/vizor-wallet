@@ -840,6 +840,7 @@ final class IncomingUriChannelBridge {
     for url in urls {
       guard handles(url) else { continue }
       handledDeeplink = true
+      print("[zcash] Incoming URI bridge: \(diagnosticSummary(for: url))")
       let uri = url.absoluteString
       guard
         uri.utf8.count <= Self.maxIncomingUriBytes,
@@ -854,6 +855,27 @@ final class IncomingUriChannelBridge {
       flush()
     }
     return handledDeeplink
+  }
+
+  private func diagnosticSummary(for url: URL) -> String {
+    let route: String
+    switch url.path {
+    case "", "/":
+      route = "home"
+    case "/payment-links/open":
+      route = "payment_link"
+    default:
+      route = "other"
+    }
+    let fragment: String
+    if let value = url.fragment, !value.isEmpty {
+      fragment = value.hasPrefix("v1=") ? "v1" : "other"
+    } else {
+      fragment = "none"
+    }
+    return "origin=trusted route=\(route) "
+      + "query=\(url.query == nil ? "none" : "present") "
+      + "fragment=\(fragment)"
   }
 
   private func flush() {
