@@ -802,11 +802,12 @@ pub async fn warm_pir_proof_cache(
     .map_err(|e| format!("PIR proof cache warm-up task failed: {e}"))?
 }
 
-/// Prepare and persist ZKP1 for one software delegation bundle without signing.
+/// Prepare and persist ZKP1 for one delegation bundle without signing.
 ///
-/// This is safe to retry. A bundle already in the proved, submitted, or
-/// confirmed phase returns `false` without reconnecting to PIR or regenerating
-/// the proof. A newly persisted proof returns `true`.
+/// This is safe for software and Keystone accounts because the SDK persists the
+/// exact PCZT created during setup. A bundle already in the proved, submitted,
+/// or confirmed phase returns `false` without reconnecting to PIR or
+/// regenerating the proof. A newly persisted proof returns `true`.
 ///
 /// # Errors
 ///
