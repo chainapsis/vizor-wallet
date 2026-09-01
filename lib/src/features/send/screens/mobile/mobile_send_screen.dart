@@ -194,6 +194,25 @@ class MobileSendAmountArgs {
   final String? contactPictureId;
 }
 
+/// What the pushed `/send/amount` page hands back when it pops.
+///
+/// The recipient page below it keeps its own copy of the amount so it can seed
+/// the next push (a ZIP-321 link prefills one). That copy goes stale the moment
+/// the pushed page is edited, so the pushed page returns the amount it actually
+/// holds and the recipient page adopts it.
+class MobileSendAmountResult {
+  const MobileSendAmountResult({
+    required this.amountText,
+    required this.fiatAmountText,
+    required this.amountInputMode,
+  });
+
+  /// Canonical ZEC text, whichever input mode composed it.
+  final String amountText;
+  final String fiatAmountText;
+  final MobileSendAmountInputMode amountInputMode;
+}
+
 class MobileSendReviewDraftArgs {
   const MobileSendReviewDraftArgs({
     required this.sendFlowId,
@@ -711,30 +730,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (!_hasValidAddress) return;
     _addressFocus.unfocus();
     if (widget.useRouteSteps) {
-      final amountText = _amountText.trim();
-      unawaited(
-        context.push<void>(
-          '/send/amount',
-          extra: MobileSendAmountArgs(
-            sendFlowId: _sendFlowId,
-            recipient: _addressController.text.trim(),
-            addressType: _addressType,
-            // A ZIP-321 deep link prefills the amount on this same screen and
-            // can step back to the recipient in place (there is no amount page
-            // to pop). Carrying the amount forward keeps the payee-requested
-            // value instead of stranding it in the hidden root state.
-            amountText: amountText.isEmpty ? null : amountText,
-            fiatAmountText: _fiatAmountText.trim().isEmpty
-                ? null
-                : _fiatAmountText.trim(),
-            amountInputMode: _amountInputMode,
-            memo: _memo,
-            preserveMemoWhitespace: _preserveMemoWhitespace,
-            contactLabel: _contactLabel,
-            contactPictureId: _contactPictureId,
-          ),
-        ),
-      );
+      unawaited(_pushAmountStep());
       return;
     }
     setState(() => _step = _SendStep.amount);
@@ -742,6 +738,67 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       if (mounted) _amountFocus.requestFocus();
     });
     unawaited(_validateAmount());
+  }
+
+  Future<void> _pushAmountStep() async {
+    final amountText = _amountText.trim();
+    final fiatAmountText = _fiatAmountText.trim();
+    final result = await context.push<MobileSendAmountResult>(
+      '/send/amount',
+      extra: MobileSendAmountArgs(
+        sendFlowId: _sendFlowId,
+        recipient: _addressController.text.trim(),
+        addressType: _addressType,
+        // A ZIP-321 deep link prefills the amount on this same screen and
+        // can step back to the recipient in place (there is no amount page
+        // to pop). Carrying the amount forward keeps the payee-requested
+        // value instead of stranding it in the hidden root state.
+        amountText: amountText.isEmpty ? null : amountText,
+        fiatAmountText: fiatAmountText.isEmpty ? null : fiatAmountText,
+        amountInputMode: _amountInputMode,
+        memo: _memo,
+        preserveMemoWhitespace: _preserveMemoWhitespace,
+        contactLabel: _contactLabel,
+        contactPictureId: _contactPictureId,
+      ),
+    );
+    if (!mounted) return;
+    _adoptAmountStepResult(result);
+  }
+
+  /// The amount this screen would hand back to the page below if it popped now.
+  MobileSendAmountResult get _amountStepResult => MobileSendAmountResult(
+    amountText: _amountText.trim(),
+    fiatAmountText: _fiatAmountText.trim(),
+    amountInputMode: _amountInputMode,
+  );
+
+  /// Takes over whatever the pushed amount page composed.
+  ///
+  /// A null result means the page popped without one — the Android system back
+  /// and the iOS edge swipe pop through the framework and cannot carry a
+  /// value. Dropping the carried amount there is deliberate: re-seeding the
+  /// next push from this screen's copy would resurrect a number the user has
+  /// already edited past, which is the bug this hand-back exists to remove.
+  void _adoptAmountStepResult(MobileSendAmountResult? result) {
+    final amountText = result?.amountText ?? '';
+    final fiatAmountText = result?.fiatAmountText ?? '';
+    final amountInputMode = result?.amountInputMode ?? _amountInputMode;
+    if (amountText == _amountText &&
+        fiatAmountText == _fiatAmountText &&
+        amountInputMode == _amountInputMode) {
+      return;
+    }
+    setState(() {
+      _amountText = amountText;
+      _fiatAmountText = fiatAmountText;
+      _amountInputMode = amountInputMode;
+    });
+    _setAmountControllerText(
+      amountInputMode == MobileSendAmountInputMode.usd
+          ? fiatAmountText
+          : amountText,
+    );
   }
 
   // ── Amount step ────────────────────────────────────────────────────
@@ -1574,8 +1631,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         if (widget.useRouteSteps) {
           if (_canPopRoute) {
             // Normal flow: amount is a pushed /send/amount page — pop it back
-            // to the recipient page.
-            context.pop();
+            // to the recipient page, handing up the amount composed here so
+            // the page below does not re-push its stale copy.
+            context.pop(_amountStepResult);
           } else {
             // A prefilled-amount deep link landed on the amount step of the
             // root /send route (no page to pop), so popping is a dead end.

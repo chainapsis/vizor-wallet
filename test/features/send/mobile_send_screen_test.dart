@@ -922,6 +922,57 @@ void main() {
     expect(find.text('Finish & review'), findsOneWidget);
   });
 
+  testWidgets('the pushed amount page hands its edit back to the recipient', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Enter Amount'), findsOneWidget);
+
+    // Step back in place, then push the real amount page with the carried 1.5.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('mobile_send_amount_input')),
+          )
+          .controller
+          ?.text,
+      '1.5',
+    );
+
+    // Edit on the pushed page and go back: the recipient page below still
+    // holds 1.5 and would re-push that stale value on the next Continue.
+    await _enterAmount(tester, '2.0');
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter Amount'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('mobile_send_amount_input')),
+          )
+          .controller
+          ?.text,
+      '2.0',
+    );
+  });
+
   testWidgets('a transient address error bounces a deep link to the recipient', (
     tester,
   ) async {
