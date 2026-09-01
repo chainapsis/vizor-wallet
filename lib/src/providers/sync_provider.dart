@@ -28,6 +28,37 @@ bool isSyncPreparationPhase(String phase) =>
     phase == kSyncPhaseActiveUtxo ||
     phase == kSyncPhaseChainPrepare;
 
+class WalletSyncExecutionStarted {
+  const WalletSyncExecutionStarted({
+    required this.executionId,
+    required this.activeAccountUuid,
+  });
+
+  final int executionId;
+  final String? activeAccountUuid;
+}
+
+class WalletSyncExecutionStartedNotifier
+    extends Notifier<WalletSyncExecutionStarted?> {
+  var _nextExecutionId = 0;
+
+  @override
+  WalletSyncExecutionStarted? build() => null;
+
+  void record({required String? activeAccountUuid}) {
+    state = WalletSyncExecutionStarted(
+      executionId: ++_nextExecutionId,
+      activeAccountUuid: activeAccountUuid,
+    );
+  }
+}
+
+final walletSyncExecutionStartedProvider =
+    NotifierProvider<
+      WalletSyncExecutionStartedNotifier,
+      WalletSyncExecutionStarted?
+    >(WalletSyncExecutionStartedNotifier.new);
+
 class SyncProgressEvent {
   final int scannedHeight;
   final int chainTipHeight;
@@ -1160,7 +1191,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           _startMempoolObserver(dbPath, endpoint);
           // Seed the shared priority synchronously before the asynchronous Rust
           // sync task starts. Later account switches update the same target.
-          rust_sync.setActiveSyncAccount(accountUuid: _getActiveAccountUuid());
+          final executionAccountUuid = _getActiveAccountUuid();
+          rust_sync.setActiveSyncAccount(accountUuid: executionAccountUuid);
           final stream = rust_sync.startFullSync(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -1253,6 +1285,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               );
             },
           );
+          ref
+              .read(walletSyncExecutionStartedProvider.notifier)
+              .record(activeAccountUuid: executionAccountUuid);
         })
         .catchError((e, st) {
           if (gen != _syncGen) return;

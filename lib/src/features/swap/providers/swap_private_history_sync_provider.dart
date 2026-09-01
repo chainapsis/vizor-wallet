@@ -15,6 +15,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/private_state_sync_provider.dart'
     show privateStateRemoteStoreProvider;
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../models/swap_models.dart';
 import '../private_state/swap_private_history_document.dart';
 import '../private_state/swap_private_history_sync.dart';
@@ -22,8 +23,7 @@ import '../private_state/swap_private_history_sync_metadata.dart';
 import 'swap_activity_replica.dart';
 import 'swap_activity_store.dart';
 
-typedef FinalizedActivityArchiveAccountUuidLoader =
-    Future<List<String>> Function();
+typedef FinalizedActivityArchiveActiveAccountUuidLoader = String? Function();
 typedef FinalizedActivityArchiveDbPathLoader = Future<String> Function();
 typedef FinalizedActivityArchiveLocalAccountCleaner =
     Future<void> Function(String accountUuid);
@@ -92,14 +92,9 @@ final finalizedActivityArchiveSyncProvider =
 final finalizedActivityArchiveDbPathLoaderProvider =
     Provider<FinalizedActivityArchiveDbPathLoader>((ref) => getWalletDbPath);
 
-final finalizedActivityArchiveAccountUuidLoaderProvider =
-    Provider<FinalizedActivityArchiveAccountUuidLoader>((ref) {
-      return () async {
-        final accountState = await ref.read(accountProvider.future);
-        return accountState.accounts
-            .map((account) => account.uuid)
-            .toList(growable: false);
-      };
+final finalizedActivityArchiveActiveAccountUuidLoaderProvider =
+    Provider<FinalizedActivityArchiveActiveAccountUuidLoader>((ref) {
+      return () => ref.read(accountProvider).value?.activeAccountUuid;
     });
 
 final finalizedActivityArchiveRetryDelayProvider =
@@ -111,7 +106,8 @@ final finalizedActivityArchiveRetryDelayProvider =
 class FinalizedActivityArchiveLifecycleCoordinator {
   FinalizedActivityArchiveLifecycleCoordinator({
     required FinalizedActivityArchiveSynchronizer synchronizer,
-    required FinalizedActivityArchiveAccountUuidLoader accountUuidLoader,
+    required FinalizedActivityArchiveActiveAccountUuidLoader
+    activeAccountUuidLoader,
     required FinalizedActivityArchiveDbPathLoader dbPathLoader,
     required String Function() networkLoader,
     required bool Function() isLocked,
@@ -119,7 +115,7 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     required FinalizedActivityArchiveLocalAccountCleaner localAccountCleaner,
     required FinalizedActivityArchiveRetryDelaySampler retryDelaySampler,
   }) : _synchronizer = synchronizer,
-       _accountUuidLoader = accountUuidLoader,
+       _activeAccountUuidLoader = activeAccountUuidLoader,
        _dbPathLoader = dbPathLoader,
        _networkLoader = networkLoader,
        _isLocked = isLocked,
@@ -128,7 +124,8 @@ class FinalizedActivityArchiveLifecycleCoordinator {
        _retryDelaySampler = retryDelaySampler;
 
   final FinalizedActivityArchiveSynchronizer _synchronizer;
-  final FinalizedActivityArchiveAccountUuidLoader _accountUuidLoader;
+  final FinalizedActivityArchiveActiveAccountUuidLoader
+  _activeAccountUuidLoader;
   final FinalizedActivityArchiveDbPathLoader _dbPathLoader;
   final String Function() _networkLoader;
   final bool Function() _isLocked;
@@ -140,37 +137,18 @@ class FinalizedActivityArchiveLifecycleCoordinator {
   final Set<String> _revokedAccounts = {};
   Future<void>? _drainInFlight;
   Timer? _retryTimer;
-  bool _retryAllRequested = false;
   bool _paused = false;
   bool _disposed = false;
 
-  Future<void> synchronizeAll() async {
-    if (_cannotRun) return;
-    try {
-      final accounts = await _accountUuidLoader();
-      if (_cannotRun) return;
-      for (final accountUuid in accounts) {
-        if (_revokedAccounts.contains(accountUuid)) continue;
-        _queueAccountDiscovery(accountUuid);
-      }
-      await _drain();
-    } catch (error, stackTrace) {
-      _logFailure('account discovery', error, stackTrace);
-      if (!_cannotRun) _scheduleAllRetry();
-    }
-  }
-
-  Future<void> synchronizeAccount(String accountUuid) async {
-    if (_cannotRun ||
-        accountUuid.isEmpty ||
-        _revokedAccounts.contains(accountUuid)) {
+  Future<void> handleWalletSyncStarted(String? accountUuid) async {
+    if (accountUuid == null || !_canRunForAccount(accountUuid)) {
       return;
     }
     _queueAccountDiscovery(accountUuid);
     await _drain();
   }
 
-  Future<void> handleAccountSetChanged({
+  void handleAccountSetChanged({
     required Set<String> previousAccounts,
     required Set<String> currentAccounts,
   }) {
@@ -184,20 +162,25 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     if (currentAccounts.isEmpty) {
       _queuedWork.clear();
       _retryWork.clear();
-      _retryAllRequested = false;
       _retryTimer?.cancel();
       _retryTimer = null;
     } else {
       _cancelRetryTimerIfIdle();
     }
-    return synchronizeAll();
+    handleActiveAccountChanged(_activeAccountUuidLoader());
+  }
+
+  void handleActiveAccountChanged(String? activeAccountUuid) {
+    _queuedWork.removeWhere((work) => work.accountUuid != activeAccountUuid);
+    _retryWork.removeWhere((work) => work.accountUuid != activeAccountUuid);
+    _cancelRetryTimerIfIdle();
   }
 
   Future<void> handleReplicaChange(SwapActivityReplicaChange change) async {
     switch (change.source) {
       case SwapActivityReplicaChangeSource.localMutation:
       case SwapActivityReplicaChangeSource.providerRefresh:
-        if (_cannotRun || _revokedAccounts.contains(change.accountUuid)) {
+        if (!_canRunForAccount(change.accountUuid)) {
           return;
         }
         final kinds = {
@@ -243,15 +226,13 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     _paused = true;
     _queuedWork.clear();
     _retryWork.clear();
-    _retryAllRequested = false;
     _retryTimer?.cancel();
     _retryTimer = null;
   }
 
-  Future<void> resume() {
-    if (_disposed) return Future.value();
+  void resume() {
+    if (_disposed) return;
     _paused = false;
-    return synchronizeAll();
   }
 
   void dispose() {
@@ -278,7 +259,7 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     while (!_cannotRun && _queuedWork.isNotEmpty) {
       final work = _nextQueuedWork();
       _queuedWork.remove(work);
-      if (_revokedAccounts.contains(work.accountUuid)) continue;
+      if (!_canRunForAccount(work.accountUuid)) continue;
       try {
         final dbPath = await _dbPathLoader();
         final account = PrivateStateAccount(
@@ -286,7 +267,7 @@ class FinalizedActivityArchiveLifecycleCoordinator {
           network: _networkLoader(),
           accountUuid: work.accountUuid,
         );
-        if (_cannotRun || _revokedAccounts.contains(work.accountUuid)) {
+        if (!_canRunForAccount(work.accountUuid)) {
           return;
         }
         switch (work.workKind) {
@@ -303,8 +284,10 @@ class FinalizedActivityArchiveLifecycleCoordinator {
         }
         _retryWork.remove(work);
       } catch (error, stackTrace) {
-        if (_revokedAccounts.contains(work.accountUuid)) continue;
-        failed.add(work);
+        if (!_canRunForAccount(work.accountUuid)) continue;
+        if (work.workKind == _FinalizedActivityArchiveWorkKind.publish) {
+          failed.add(work);
+        }
         _logFailure(
           'account=${work.accountUuid} kind=${work.historyKind.wireName} '
           'operation=${work.workKind.name}',
@@ -348,14 +331,9 @@ class FinalizedActivityArchiveLifecycleCoordinator {
   }
 
   void _cancelRetryTimerIfIdle() {
-    if (_retryWork.isNotEmpty || _retryAllRequested) return;
+    if (_retryWork.isNotEmpty) return;
     _retryTimer?.cancel();
     _retryTimer = null;
-  }
-
-  void _scheduleAllRetry() {
-    _retryAllRequested = true;
-    _ensureRetryTimer();
   }
 
   void _ensureRetryTimer() {
@@ -370,18 +348,10 @@ class FinalizedActivityArchiveLifecycleCoordinator {
       _retryTimer = null;
       if (!_cannotRun) {
         _queuedWork.addAll(
-          _retryWork.where(
-            (work) => !_revokedAccounts.contains(work.accountUuid),
-          ),
+          _retryWork.where((work) => _canRunForAccount(work.accountUuid)),
         );
         _retryWork.clear();
-        final retryAll = _retryAllRequested;
-        _retryAllRequested = false;
-        if (retryAll) {
-          unawaited(synchronizeAll());
-        } else {
-          unawaited(_drain());
-        }
+        unawaited(_drain());
       }
     });
   }
@@ -394,6 +364,12 @@ class FinalizedActivityArchiveLifecycleCoordinator {
   }
 
   bool get _cannotRun => _disposed || _paused || _isLocked();
+
+  bool _canRunForAccount(String accountUuid) =>
+      !_cannotRun &&
+      accountUuid.isNotEmpty &&
+      !_revokedAccounts.contains(accountUuid) &&
+      _activeAccountUuidLoader() == accountUuid;
 }
 
 final finalizedActivityArchiveLifecycleProvider =
@@ -402,8 +378,8 @@ final finalizedActivityArchiveLifecycleProvider =
       if (synchronizer == null) return null;
       final coordinator = FinalizedActivityArchiveLifecycleCoordinator(
         synchronizer: synchronizer,
-        accountUuidLoader: ref.read(
-          finalizedActivityArchiveAccountUuidLoaderProvider,
+        activeAccountUuidLoader: ref.read(
+          finalizedActivityArchiveActiveAccountUuidLoaderProvider,
         ),
         dbPathLoader: ref.read(finalizedActivityArchiveDbPathLoaderProvider),
         networkLoader: () => ref.read(rpcEndpointProvider).networkName,
@@ -419,7 +395,7 @@ final finalizedActivityArchiveLifecycleProvider =
         if (next.requiresUnlock) {
           coordinator.pause();
         } else if (previous?.requiresUnlock == true) {
-          unawaited(coordinator.resume());
+          coordinator.resume();
         }
       });
       ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
@@ -431,18 +407,25 @@ final finalizedActivityArchiveLifecycleProvider =
             .toSet();
         final nextActiveAccountUuid = next.value?.activeAccountUuid;
         if (nextIds != null && !_setEquals(previousIds, nextIds)) {
-          unawaited(
-            coordinator.handleAccountSetChanged(
-              previousAccounts: previousIds ?? const {},
-              currentAccounts: nextIds,
-            ),
+          coordinator.handleAccountSetChanged(
+            previousAccounts: previousIds ?? const {},
+            currentAccounts: nextIds,
           );
-        } else if (previous?.value?.activeAccountUuid !=
-                nextActiveAccountUuid &&
-            nextActiveAccountUuid != null) {
-          unawaited(coordinator.synchronizeAccount(nextActiveAccountUuid));
+        }
+        if (previous?.value?.activeAccountUuid != nextActiveAccountUuid) {
+          coordinator.handleActiveAccountChanged(nextActiveAccountUuid);
         }
       });
+      ref.listen<WalletSyncExecutionStarted?>(
+        walletSyncExecutionStartedProvider,
+        (_, next) {
+          if (next != null) {
+            unawaited(
+              coordinator.handleWalletSyncStarted(next.activeAccountUuid),
+            );
+          }
+        },
+      );
       ref.listen<SwapActivityReplicaChange?>(
         swapActivityReplicaChangeProvider,
         (_, next) {
@@ -450,14 +433,13 @@ final finalizedActivityArchiveLifecycleProvider =
         },
       );
       final lifecycle = AppLifecycleListener(
-        onResume: () => unawaited(coordinator.resume()),
+        onResume: coordinator.resume,
         onHide: coordinator.pause,
       );
       ref.onDispose(() {
         lifecycle.dispose();
         coordinator.dispose();
       });
-      unawaited(coordinator.synchronizeAll());
       return coordinator;
     });
 

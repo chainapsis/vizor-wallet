@@ -28,50 +28,51 @@ void main() {
     );
   });
 
-  test(
-    'startup synchronizes both namespaces for every existing account',
-    () async {
-      final synchronizer = _RecordingSynchronizer();
-      final coordinator = _coordinator(
-        synchronizer: synchronizer,
-        accountUuids: ['account-a', 'account-b'],
-      );
-      addTearDown(coordinator.dispose);
+  test('wallet sync discovers only its active account', () async {
+    var activeAccountUuid = 'account-a';
+    final synchronizer = _RecordingSynchronizer();
+    final coordinator = _coordinator(
+      synchronizer: synchronizer,
+      activeAccountUuid: () => activeAccountUuid,
+    );
+    addTearDown(coordinator.dispose);
 
-      await coordinator.synchronizeAll();
+    await coordinator.handleWalletSyncStarted('account-a');
+    await coordinator.handleWalletSyncStarted('account-b');
 
-      expect(
-        synchronizer.calls.map(
-          (call) =>
-              '${call.account.accountUuid}:${call.kind.wireName}:${call.operation}',
-        ),
-        [
-          'account-a:swap:discover',
-          'account-a:pay:discover',
-          'account-b:swap:discover',
-          'account-b:pay:discover',
-        ],
-      );
-      expect(synchronizer.calls.first.account.dbPath, '/wallet.db');
-      expect(synchronizer.calls.first.account.network, 'main');
-    },
-  );
+    expect(
+      synchronizer.calls.map(
+        (call) =>
+            '${call.account.accountUuid}:${call.kind.wireName}:${call.operation}',
+      ),
+      ['account-a:swap:discover', 'account-a:pay:discover'],
+    );
+    expect(synchronizer.calls.first.account.dbPath, '/wallet.db');
+    expect(synchronizer.calls.first.account.network, 'main');
+
+    activeAccountUuid = 'account-b';
+    coordinator.handleActiveAccountChanged(activeAccountUuid);
+    await coordinator.handleWalletSyncStarted('account-b');
+    expect(synchronizer.calls, hasLength(4));
+  });
 
   test('lock pauses work and an explicit unlock pass resumes it', () async {
     var locked = true;
     final synchronizer = _RecordingSynchronizer();
     final coordinator = _coordinator(
       synchronizer: synchronizer,
-      accountUuids: ['account-a'],
+      activeAccountUuid: () => 'account-a',
       isLocked: () => locked,
     );
     addTearDown(coordinator.dispose);
 
-    await coordinator.synchronizeAll();
+    await coordinator.handleWalletSyncStarted('account-a');
     expect(synchronizer.calls, isEmpty);
 
     locked = false;
-    await coordinator.synchronizeAll();
+    coordinator.resume();
+    expect(synchronizer.calls, isEmpty);
+    await coordinator.handleWalletSyncStarted('account-a');
     expect(synchronizer.calls, hasLength(2));
   });
 
@@ -83,7 +84,7 @@ void main() {
       final cleanedAccounts = <String>[];
       final coordinator = _coordinator(
         synchronizer: synchronizer,
-        accountUuids: const [],
+        activeAccountUuid: () => 'account-a',
         metadataStore: metadata,
         localAccountCleaner: (account) async => cleanedAccounts.add(account),
       );
@@ -113,7 +114,7 @@ void main() {
     final synchronizer = _RecordingSynchronizer();
     final coordinator = _coordinator(
       synchronizer: synchronizer,
-      accountUuids: const [],
+      activeAccountUuid: () => 'account-a',
     );
     addTearDown(coordinator.dispose);
 
@@ -157,7 +158,7 @@ void main() {
     final synchronizer = _RecordingSynchronizer();
     final coordinator = _coordinator(
       synchronizer: synchronizer,
-      accountUuids: const [],
+      activeAccountUuid: () => 'account-a',
     );
     addTearDown(coordinator.dispose);
 
@@ -175,6 +176,21 @@ void main() {
     expect(synchronizer.calls.single.operation, 'publish');
   });
 
+  test('an inactive account local change does not publish', () async {
+    final synchronizer = _RecordingSynchronizer();
+    final coordinator = _coordinator(
+      synchronizer: synchronizer,
+      activeAccountUuid: () => 'account-b',
+    );
+    addTearDown(coordinator.dispose);
+
+    await coordinator.handleReplicaChange(
+      _change(SwapActivityReplicaChangeSource.localMutation),
+    );
+
+    expect(synchronizer.calls, isEmpty);
+  });
+
   test('account deletion fences and cleans up an in-flight restore', () async {
     final firstCallStarted = Completer<void>();
     final releaseFirstCall = Completer<void>();
@@ -185,12 +201,12 @@ void main() {
     );
     final coordinator = _coordinator(
       synchronizer: synchronizer,
-      accountUuids: const [],
+      activeAccountUuid: () => 'account-a',
       localAccountCleaner: (account) async => cleanedAccounts.add(account),
     );
     addTearDown(coordinator.dispose);
 
-    final sync = coordinator.synchronizeAccount('account-a');
+    final sync = coordinator.handleWalletSyncStarted('account-a');
     await firstCallStarted.future;
     final deletion = coordinator.handleReplicaChange(
       _change(SwapActivityReplicaChangeSource.localAccountDeletion),
@@ -200,23 +216,23 @@ void main() {
 
     expect(cleanedAccounts, ['account-a']);
     expect(synchronizer.calls, hasLength(1));
-    await coordinator.synchronizeAccount('account-a');
+    await coordinator.handleWalletSyncStarted('account-a');
     expect(synchronizer.calls, hasLength(1));
   });
 
   test('wallet reset cancels retries for the removed account', () async {
-    final accountUuids = <String>['account-a'];
+    String? activeAccountUuid = 'account-a';
     final synchronizer = _RecordingSynchronizer(failFirstCall: true);
     final coordinator = _coordinator(
       synchronizer: synchronizer,
-      accountUuids: accountUuids,
+      activeAccountUuid: () => activeAccountUuid,
       retryDelay: const Duration(milliseconds: 20),
     );
     addTearDown(coordinator.dispose);
 
-    await coordinator.synchronizeAccount('account-a');
-    accountUuids.clear();
-    await coordinator.handleAccountSetChanged(
+    await coordinator.handleWalletSyncStarted('account-a');
+    activeAccountUuid = null;
+    coordinator.handleAccountSetChanged(
       previousAccounts: const {'account-a'},
       currentAccounts: const {},
     );
@@ -230,16 +246,16 @@ void main() {
   });
 
   test('removed accounts ignore stale changes and can be re-added', () async {
-    final accountUuids = <String>['account-a'];
+    String? activeAccountUuid = 'account-a';
     final synchronizer = _RecordingSynchronizer();
     final coordinator = _coordinator(
       synchronizer: synchronizer,
-      accountUuids: accountUuids,
+      activeAccountUuid: () => activeAccountUuid,
     );
     addTearDown(coordinator.dispose);
 
-    accountUuids.clear();
-    await coordinator.handleAccountSetChanged(
+    activeAccountUuid = null;
+    coordinator.handleAccountSetChanged(
       previousAccounts: const {'account-a'},
       currentAccounts: const {},
     );
@@ -248,41 +264,71 @@ void main() {
     );
     expect(synchronizer.calls, isEmpty);
 
-    accountUuids.add('account-a');
-    await coordinator.handleAccountSetChanged(
+    activeAccountUuid = 'account-a';
+    coordinator.handleAccountSetChanged(
       previousAccounts: const {},
       currentAccounts: const {'account-a'},
     );
 
+    expect(synchronizer.calls, isEmpty);
+    await coordinator.handleWalletSyncStarted('account-a');
     expect(synchronizer.calls, hasLength(2));
   });
 
   test('wallet reset fences an in-flight account before retry', () async {
     final firstCallStarted = Completer<void>();
     final releaseFirstCall = Completer<void>();
-    final accountUuids = <String>['account-a'];
+    String? activeAccountUuid = 'account-a';
     final synchronizer = _RecordingSynchronizer(
       firstCallStarted: firstCallStarted,
       releaseFirstCall: releaseFirstCall,
     );
     final coordinator = _coordinator(
       synchronizer: synchronizer,
-      accountUuids: accountUuids,
+      activeAccountUuid: () => activeAccountUuid,
     );
     addTearDown(coordinator.dispose);
 
-    final sync = coordinator.synchronizeAccount('account-a');
+    final sync = coordinator.handleWalletSyncStarted('account-a');
     await firstCallStarted.future;
-    accountUuids.clear();
-    final reset = coordinator.handleAccountSetChanged(
+    activeAccountUuid = null;
+    coordinator.handleAccountSetChanged(
       previousAccounts: const {'account-a'},
       currentAccounts: const {},
     );
     releaseFirstCall.complete();
-    await Future.wait([sync, reset]);
+    await sync;
 
     expect(synchronizer.calls, hasLength(1));
   });
+
+  test(
+    'account switch fences the next namespace without starting a GET',
+    () async {
+      final firstCallStarted = Completer<void>();
+      final releaseFirstCall = Completer<void>();
+      var activeAccountUuid = 'account-a';
+      final synchronizer = _RecordingSynchronizer(
+        firstCallStarted: firstCallStarted,
+        releaseFirstCall: releaseFirstCall,
+      );
+      final coordinator = _coordinator(
+        synchronizer: synchronizer,
+        activeAccountUuid: () => activeAccountUuid,
+      );
+      addTearDown(coordinator.dispose);
+
+      final sync = coordinator.handleWalletSyncStarted('account-a');
+      await firstCallStarted.future;
+      activeAccountUuid = 'account-b';
+      coordinator.handleActiveAccountChanged(activeAccountUuid);
+      releaseFirstCall.complete();
+      await sync;
+
+      expect(synchronizer.calls, hasLength(1));
+      expect(synchronizer.calls.single.account.accountUuid, 'account-a');
+    },
+  );
 
   test(
     'pause prevents an active drain from starting the next namespace',
@@ -295,11 +341,11 @@ void main() {
       );
       final coordinator = _coordinator(
         synchronizer: synchronizer,
-        accountUuids: ['account-a'],
+        activeAccountUuid: () => 'account-a',
       );
       addTearDown(coordinator.dispose);
 
-      final sync = coordinator.synchronizeAll();
+      final sync = coordinator.handleWalletSyncStarted('account-a');
       await firstCallStarted.future;
       coordinator.pause();
       releaseFirstCall.complete();
@@ -309,18 +355,12 @@ void main() {
     },
   );
 
-  test('a failed pass is retried after the configured delay', () async {
-    final completed = Completer<void>();
+  test('failed discovery waits for the next wallet sync', () async {
     var sampledDelays = 0;
-    final synchronizer = _RecordingSynchronizer(
-      failFirstCall: true,
-      onCall: (count) {
-        if (count == 3 && !completed.isCompleted) completed.complete();
-      },
-    );
+    final synchronizer = _RecordingSynchronizer(failFirstCall: true);
     final coordinator = _coordinator(
       synchronizer: synchronizer,
-      accountUuids: const [],
+      activeAccountUuid: () => 'account-a',
       retryDelaySampler: () {
         sampledDelays++;
         return Duration.zero;
@@ -328,21 +368,54 @@ void main() {
     );
     addTearDown(coordinator.dispose);
 
-    await coordinator.synchronizeAccount('account-a');
-    await completed.future.timeout(const Duration(seconds: 1));
+    await coordinator.handleWalletSyncStarted('account-a');
+    await Future<void>.delayed(const Duration(milliseconds: 20));
 
     expect(synchronizer.calls.map((call) => call.kind), [
       SwapPrivateHistoryKind.swap,
       SwapPrivateHistoryKind.pay,
-      SwapPrivateHistoryKind.swap,
     ]);
-    expect(sampledDelays, 1);
+    expect(sampledDelays, 0);
+
+    await coordinator.handleWalletSyncStarted('account-a');
+    expect(synchronizer.calls.map((call) => call.kind), [
+      SwapPrivateHistoryKind.swap,
+      SwapPrivateHistoryKind.pay,
+      SwapPrivateHistoryKind.swap,
+      SwapPrivateHistoryKind.pay,
+    ]);
+  });
+
+  test('failed publish retries while the account remains active', () async {
+    final completed = Completer<void>();
+    final synchronizer = _RecordingSynchronizer(
+      failFirstCall: true,
+      onCall: (count) {
+        if (count == 2 && !completed.isCompleted) completed.complete();
+      },
+    );
+    final coordinator = _coordinator(
+      synchronizer: synchronizer,
+      activeAccountUuid: () => 'account-a',
+      retryDelaySampler: () => Duration.zero,
+    );
+    addTearDown(coordinator.dispose);
+
+    await coordinator.handleReplicaChange(
+      _change(SwapActivityReplicaChangeSource.localMutation),
+    );
+    await completed.future.timeout(const Duration(seconds: 1));
+
+    expect(synchronizer.calls.map((call) => call.operation), [
+      'publish',
+      'publish',
+    ]);
   });
 }
 
 FinalizedActivityArchiveLifecycleCoordinator _coordinator({
   required _RecordingSynchronizer synchronizer,
-  required List<String> accountUuids,
+  required String? Function() activeAccountUuid,
   _MemoryMetadataStore? metadataStore,
   FinalizedActivityArchiveLocalAccountCleaner? localAccountCleaner,
   bool Function()? isLocked,
@@ -351,7 +424,7 @@ FinalizedActivityArchiveLifecycleCoordinator _coordinator({
 }) {
   return FinalizedActivityArchiveLifecycleCoordinator(
     synchronizer: synchronizer,
-    accountUuidLoader: () async => accountUuids,
+    activeAccountUuidLoader: activeAccountUuid,
     dbPathLoader: () async => '/wallet.db',
     networkLoader: () => 'main',
     isLocked: isLocked ?? () => false,

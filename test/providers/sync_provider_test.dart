@@ -10,6 +10,31 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test('wallet sync execution events remain distinct for the same account', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final events = <WalletSyncExecutionStarted>[];
+    final subscription = container.listen<WalletSyncExecutionStarted?>(
+      walletSyncExecutionStartedProvider,
+      (_, next) {
+        if (next != null) events.add(next);
+      },
+    );
+    addTearDown(subscription.close);
+
+    final notifier = container.read(
+      walletSyncExecutionStartedProvider.notifier,
+    );
+    notifier.record(activeAccountUuid: 'account-a');
+    notifier.record(activeAccountUuid: 'account-a');
+
+    expect(events.map((event) => event.executionId), [1, 2]);
+    expect(events.map((event) => event.activeAccountUuid), [
+      'account-a',
+      'account-a',
+    ]);
+  });
+
   test('a busy network only aborts a restart that changes the route', () {
     // Switching to Tor with a direct channel still up would leak.
     expect(
