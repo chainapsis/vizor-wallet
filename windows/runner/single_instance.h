@@ -40,6 +40,16 @@ class SingleInstanceGuard {
 // Result returned by the matching primary window for an activation message.
 constexpr LRESULT kSingleInstanceActivationAcknowledged = 0x56495A4F;
 
+// Retry schedule and per-window timeout used when looking for the primary
+// window. The primary takes the instance lock before it creates its window, so
+// a secondary that loses the race has to keep looking for a while. Payment-URI
+// forwarding reuses the same schedule so a zcash: link is not dropped during
+// that window. single_instance.cpp keeps its own private copies of these
+// values; keep the two in sync.
+constexpr DWORD kSingleInstanceActivationRetryWindowMs = 2000;
+constexpr DWORD kSingleInstanceActivationRetryDelayMs = 50;
+constexpr UINT kSingleInstanceActivationMessageTimeoutMs = 100;
+
 // Tries briefly to find the primary window in the current interactive session
 // and asks it to restore and activate itself. Returns false when the primary is
 // still starting, hung, elevated beyond the caller, or running in another

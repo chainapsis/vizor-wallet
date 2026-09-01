@@ -4,6 +4,7 @@
 #include <cwctype>
 #include <string>
 
+#include "single_instance.h"
 #include "utils.h"
 
 namespace {
@@ -131,8 +132,22 @@ bool ForwardPaymentUrisToRunningInstance(const std::vector<std::string>& uris) {
     return false;
   }
 
-  ::EnumWindows(ForwardToMatchingWindow, reinterpret_cast<LPARAM>(&context));
-  return context.delivered;
+  // The primary claims the single-instance lock before it creates its window,
+  // so a zcash: launch that arrives during startup finds no target on the
+  // first pass. Retry on the same schedule ActivateExistingInstance uses;
+  // otherwise the secondary falls back to a bare activation, the window comes
+  // to the front on someone else's screen, and the payment URI is lost.
+  const ULONGLONG deadline =
+      ::GetTickCount64() + kSingleInstanceActivationRetryWindowMs;
+  do {
+    ::EnumWindows(ForwardToMatchingWindow, reinterpret_cast<LPARAM>(&context));
+    if (context.delivered) {
+      return true;
+    }
+    ::Sleep(kSingleInstanceActivationRetryDelayMs);
+  } while (::GetTickCount64() < deadline);
+
+  return false;
 }
 
 bool TryReadPaymentUriCopyData(LPARAM lparam, std::string* uri) {

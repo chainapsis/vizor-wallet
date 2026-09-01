@@ -36,6 +36,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
           L"Vizor is already running. It may be starting, not responding, or "
           L"running in another Windows session.",
           L"Vizor", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+    } else if (!initial_payment_uris.empty()) {
+      // The running instance answered the activation but never accepted the
+      // payment URI, so its window is now in the foreground showing whatever
+      // it was already showing. Say so instead of dropping the link silently.
+      ::MessageBoxW(
+          nullptr,
+          L"Vizor could not open this payment link. Vizor is now in the "
+          L"foreground, so open the link again.",
+          L"Vizor", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
     }
     return EXIT_SUCCESS;
   }
