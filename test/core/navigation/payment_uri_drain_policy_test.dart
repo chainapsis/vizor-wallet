@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 /// just arrived" baseline so each test only states the row it exercises.
 PaymentUriDrainDecision decide({
   bool hasParkedPrefill = true,
+  Duration? parkedFor = Duration.zero,
   bool hasBlockingFailure = false,
   bool walletIsLoading = false,
   bool walletHasError = false,
@@ -14,6 +15,7 @@ PaymentUriDrainDecision decide({
   bool sendStatusIsTerminal = false,
 }) => decidePaymentUriDrain(
   hasParkedPrefill: hasParkedPrefill,
+  parkedFor: parkedFor,
   hasBlockingFailure: hasBlockingFailure,
   walletIsLoading: walletIsLoading,
   walletHasError: walletHasError,
@@ -27,9 +29,42 @@ void main() {
   group('nothing to deliver', () {
     test('waits when no prefill is parked', () {
       expect(
-        decide(hasParkedPrefill: false).action,
+        decide(hasParkedPrefill: false, parkedFor: null).action,
         PaymentUriDrainAction.wait,
       );
+    });
+  });
+
+  group('stale prefill', () {
+    test('drops a prefill parked longer than the TTL, silently', () {
+      final decision = decide(
+        parkedFor: kPaymentUriParkTtl + const Duration(seconds: 1),
+      );
+      expect(decision.action, PaymentUriDrainAction.dropSilently);
+      expect(decision.message, isNull);
+    });
+
+    test('delivers a prefill parked for exactly the TTL', () {
+      expect(
+        decide(parkedFor: kPaymentUriParkTtl).action,
+        PaymentUriDrainAction.deliver,
+      );
+    });
+
+    test('outranks every other row, including navigation ones', () {
+      final stale = kPaymentUriParkTtl + const Duration(minutes: 5);
+      for (final decision in [
+        decide(parkedFor: stale, hasBlockingFailure: true),
+        decide(parkedFor: stale, hasWallet: false),
+        decide(parkedFor: stale, isUnlocked: false),
+        decide(parkedFor: stale, matchedLocation: '/send/review'),
+      ]) {
+        expect(decision.action, PaymentUriDrainAction.dropSilently);
+      }
+    });
+
+    test('an unknown park age never counts as stale', () {
+      expect(decide(parkedFor: null).action, PaymentUriDrainAction.deliver);
     });
   });
 

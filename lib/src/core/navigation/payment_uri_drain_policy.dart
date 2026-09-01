@@ -7,6 +7,15 @@
 /// widget tree; `app.dart` only executes the returned action.
 library;
 
+/// A parked prefill older than this is stale and is dropped instead of
+/// delivered.
+///
+/// Without it, a link opened and then left parked (the user never unlocks, or
+/// the wallet sits on an error screen) would fire as a payment on a much later,
+/// unrelated wallet emission. `PaymentUriPrefillNotifier.takeIfFresh` enforces
+/// the same age on the unlock-screen claim path.
+const kPaymentUriParkTtl = Duration(minutes: 10);
+
 /// Shown when there is no wallet yet and the user is not already inside a
 /// setup flow.
 const kPaymentUriNoWalletMessage =
@@ -46,6 +55,9 @@ enum PaymentUriDrainAction {
   /// Leave the prefill parked and do nothing. Something else (the unlock
   /// screen, a later wallet emission) still owns it.
   wait,
+
+  /// Drop the prefill without telling the user.
+  dropSilently,
 
   /// Drop the prefill and show [PaymentUriDrainDecision.message].
   dropWithMessage,
@@ -167,6 +179,7 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// | condition                                   | action                    |
 /// |---------------------------------------------|---------------------------|
 /// | nothing parked                              | wait                      |
+/// | parked longer than [kPaymentUriParkTtl]      | drop silently             |
 /// | blocking storage failure / wallet error      | wait                      |
 /// | wallet still loading                         | wait                      |
 /// | onboarding / import / add-account location   | drop + onboarding msg     |
@@ -181,8 +194,12 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// [sendStatusIsTerminal] is true when the app is on `/send/status` and that
 /// send has already succeeded or failed, which makes the status screen safe to
 /// leave.
+///
+/// [parkedFor] is how long the prefill has been parked (null when nothing is
+/// parked, or when the park time is unknown).
 PaymentUriDrainDecision decidePaymentUriDrain({
   required bool hasParkedPrefill,
+  required Duration? parkedFor,
   required bool hasBlockingFailure,
   required bool walletIsLoading,
   required bool walletHasError,
@@ -192,6 +209,12 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   bool sendStatusIsTerminal = false,
 }) {
   if (!hasParkedPrefill) return _waitDecision;
+
+  // Age first: a link that has outlived its park window is dropped without a
+  // message, whatever screen the app happens to be on.
+  if (parkedFor != null && parkedFor > kPaymentUriParkTtl) {
+    return const PaymentUriDrainDecision(PaymentUriDrainAction.dropSilently);
+  }
 
   if (hasBlockingFailure || walletHasError) return _waitDecision;
 

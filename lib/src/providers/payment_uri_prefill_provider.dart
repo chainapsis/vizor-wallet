@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/navigation/payment_uri_drain_policy.dart';
 import '../features/send/models/send_prefill_args.dart';
 
 /// Holds a ZIP-321 payment-URI prefill that has been parsed from a `zcash:`
@@ -15,12 +16,21 @@ class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
   /// A parked prefill older than this is treated as stale and dropped on the
   /// next unlock. Without it, a link opened then left parked (the user never
   /// unlocks) would fire as a payment on a much later, unrelated unlock.
-  static const parkTtl = Duration(minutes: 10);
+  static const parkTtl = kPaymentUriParkTtl;
 
   DateTime? _parkedAtUtc;
 
   @override
   SendPrefillArgs? build() => null;
+
+  /// How long the current prefill has been parked, or null when nothing is
+  /// parked. The drain policy uses this to drop a prefill that outlived
+  /// [parkTtl] before it can navigate anywhere.
+  Duration? get parkedFor {
+    final parkedAt = _parkedAtUtc;
+    if (state == null || parkedAt == null) return null;
+    return DateTime.now().toUtc().difference(parkedAt);
+  }
 
   void set(SendPrefillArgs prefill) {
     _parkedAtUtc = DateTime.now().toUtc();

@@ -1225,6 +1225,11 @@ class _PaymentUriLinkListenerState
   StreamSubscription<String>? _subscription;
   var _paymentSequence = 0;
 
+  /// Last wallet-existence value seen from [walletProvider]. Used to spot the
+  /// true -> false transition of a wallet reset, which must drop a parked link
+  /// instead of draining it onto the freshly wiped wallet.
+  bool? _lastKnownHasWallet;
+
   @override
   void initState() {
     super.initState();
@@ -1240,7 +1245,19 @@ class _PaymentUriLinkListenerState
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<WalletState>>(walletProvider, (_, _) {
+    ref.listen<AsyncValue<WalletState>>(walletProvider, (_, next) {
+      final wallet = next.value;
+      if (wallet != null) {
+        final hadWallet = _lastKnownHasWallet;
+        _lastKnownHasWallet = wallet.hasWallet;
+        if (hadWallet == true && !wallet.hasWallet) {
+          // Wallet reset (uninstall, lost-password reset). Drop the parked
+          // link quietly: draining it here would follow the wipe with a
+          // "Set up or import a wallet" snackbar and a jump to /welcome.
+          ref.read(paymentUriPrefillProvider.notifier).clear();
+          return;
+        }
+      }
       _schedulePendingDrain();
     });
     // No appSecurityProvider listener: the unlock screens own the post-unlock
@@ -1292,6 +1309,7 @@ class _PaymentUriLinkListenerState
 
     final decision = decidePaymentUriDrain(
       hasParkedPrefill: prefill != null,
+      parkedFor: prefillNotifier.parkedFor,
       hasBlockingFailure: bootstrap.hasBlockingFailure,
       walletIsLoading: walletAsync.isLoading && walletAsync.value == null,
       walletHasError: walletAsync.hasError,
@@ -1308,6 +1326,8 @@ class _PaymentUriLinkListenerState
     switch (decision.action) {
       case PaymentUriDrainAction.wait:
         return;
+      case PaymentUriDrainAction.dropSilently:
+        prefillNotifier.clear();
       case PaymentUriDrainAction.dropWithMessage:
         prefillNotifier.clear();
         _showPaymentUriMessage(decision.message!);
