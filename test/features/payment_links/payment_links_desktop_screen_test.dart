@@ -1058,7 +1058,7 @@ void main() {
     container
         .read(paymentLinkIntakeProvider.notifier)
         .receive(_incomingLink.toUri().toString());
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
     expect(find.text('4.45'), findsOneWidget);
@@ -1173,7 +1173,9 @@ void main() {
       }
 
       expect(operations.createdLoadCalls, 1);
-      expect(operations.receivedLoadCalls, 1);
+      // App-level recovery and the route's initial snapshot both begin before
+      // intake is consumed; neither waits for the Created-card load.
+      expect(operations.receivedLoadCalls, 2);
       expect(operations.allowLongSyncCalls, isEmpty);
 
       createdLoadGate.complete();
@@ -1425,6 +1427,85 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(operations.discardedClaimAddresses, isEmpty);
+  });
+
+  testWidgets('prepares a second Gift Card while the first claim broadcasts', (
+    tester,
+  ) async {
+    final firstClaim = Completer<PaymentLinkClaimResult>();
+    final secondClaim = Completer<PaymentLinkClaimResult>();
+    final operations = _FakePaymentLinkOperations(
+      claimCompleters: {
+        _incomingLink.address: firstClaim,
+        _secondIncomingLink.address: secondClaim,
+      },
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Claim the Gift Card'));
+    await tester.pump();
+    expect(operations.claimedLinks.map((link) => link.address), [
+      _incomingLink.address,
+    ]);
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_secondIncomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+    expect(find.text('You’ve received\na gift card!'), findsOneWidget);
+    await tester.tap(find.text('Claim the Gift Card'));
+    await tester.pump();
+
+    expect(operations.claimedLinks.map((link) => link.address), [
+      _incomingLink.address,
+      _secondIncomingLink.address,
+    ]);
+    firstClaim.complete(_broadcastedClaimResult);
+    secondClaim.complete(_broadcastedClaimResult);
+    await tester.pump();
+  });
+
+  testWidgets('does not reopen a Gift Card whose claim is submitting', (
+    tester,
+  ) async {
+    final claim = Completer<PaymentLinkClaimResult>();
+    final operations = _FakePaymentLinkOperations(claimCompleter: claim);
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Claim the Gift Card'));
+    await tester.pump();
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(operations.allowLongSyncCalls, [isFalse]);
+    expect(operations.claimedLinks, hasLength(1));
+    claim.complete(_broadcastedClaimResult);
+    await tester.pump();
   });
 
   testWidgets('returns a failed claim to an actionable Received card', (
@@ -1720,6 +1801,20 @@ final _incomingLink = VizorPaymentLink(
   ),
 );
 
+final _secondIncomingLink = VizorPaymentLink(
+  network: 'main',
+  address: 'u1secondpaymentlinkaddress',
+  amountZatoshi: BigInt.from(225000000),
+  mnemonic: List.filled(24, 'legal').join(' '),
+  birthdayHeight: 3000001,
+  label: 'Second payment link',
+  createdAt: DateTime.utc(2026, 8, 7),
+  presentation: const PaymentLinkPresentation(
+    artworkId: 'gift',
+    message: 'A second gift!',
+  ),
+);
+
 final _sharedRecovery = PaymentLinkRecoveryRecord(
   link: _incomingLink,
   sourceAccountUuid: 'account-1',
@@ -1748,6 +1843,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     List<PaymentLinkRecoveryRecord> records = const [],
     List<PaymentLinkReceivedRecord> receivedRecords = const [],
     this.claimCompleter,
+    this.claimCompleters = const {},
     this.createdLoadGate,
     this.receivedLoadGate,
     this.receivedLoadFailures = 0,
@@ -1762,6 +1858,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
        receivedRecords = List.of(receivedRecords);
 
   final Completer<PaymentLinkClaimResult>? claimCompleter;
+  final Map<String, Completer<PaymentLinkClaimResult>> claimCompleters;
   final Completer<void>? createdLoadGate;
   final Completer<void>? receivedLoadGate;
   int receivedLoadFailures;
@@ -2005,7 +2102,9 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   @override
   Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
     claimedLinks.add(link);
-    return claimCompleter?.future ?? _broadcastedClaimResult;
+    return claimCompleters[link.address]?.future ??
+        claimCompleter?.future ??
+        _broadcastedClaimResult;
   }
 
   void _replaceReceivedRecord(

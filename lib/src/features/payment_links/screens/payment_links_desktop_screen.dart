@@ -19,6 +19,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../models/vizor_payment_link.dart';
 import '../providers/payment_link_cards_provider.dart';
+import '../providers/payment_link_claim_coordinator_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_entry_policy.dart';
@@ -131,7 +132,6 @@ class _PaymentLinksDesktopScreenState
   PaymentLinkFundingQuote? _fundingQuote;
   String? _fundingQuoteRequestedAccountUuid;
   PaymentLinkClaimSession? _receivedClaimSession;
-  PaymentLinkClaimSession? _submittingClaimSession;
   VizorPaymentLink? _readyLink;
   VizorPaymentLink? _receivedLink;
   VizorPaymentLink? _lastDeferredPendingLink;
@@ -192,8 +192,7 @@ class _PaymentLinksDesktopScreenState
     _fundingQuoteDebounce?.cancel();
     _fundingProgressTimer?.cancel();
     final claimSession = _receivedClaimSession;
-    if (claimSession != null &&
-        !identical(claimSession, _submittingClaimSession)) {
+    if (claimSession != null) {
       unawaited(_paymentLinkOperations.discardClaimSession(claimSession));
     }
     _amountFocusNode
@@ -376,8 +375,8 @@ class _PaymentLinksDesktopScreenState
   }) async {
     try {
       final records = await ref
-          .read(paymentLinkOperationsProvider)
-          .loadReceivedLinkRecoveries();
+          .read(paymentLinkClaimCoordinatorProvider)
+          .refresh();
       if (!mounted) return true;
       final sorted = List<PaymentLinkReceivedRecord>.of(records)
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -403,14 +402,14 @@ class _PaymentLinksDesktopScreenState
     final hasReceiving = receivedCards.any(
       (record) => record.status == PaymentLinkReceivedStatus.receiving,
     );
-    if (!hasReceiving || _operationInProgress || _receivedRefreshInProgress) {
+    if (!hasReceiving || _receivedRefreshInProgress) {
       return;
     }
     _receivedRefreshInProgress = true;
     try {
       final updated = await ref
-          .read(paymentLinkOperationsProvider)
-          .inspectReceivedLinkClaims(receivedCards);
+          .read(paymentLinkClaimCoordinatorProvider)
+          .refresh();
       if (!mounted) return;
       final sorted = List<PaymentLinkReceivedRecord>.of(updated)
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -454,7 +453,13 @@ class _PaymentLinksDesktopScreenState
 
   void _openReceivedCard(PaymentLinkReceivedRecord record) {
     final link = record.claimLink;
-    if (link == null || _operationInProgress) return;
+    if (link == null ||
+        _operationInProgress ||
+        ref
+            .read(paymentLinkClaimCoordinatorProvider)
+            .isSubmitting(record.address)) {
+      return;
+    }
     unawaited(_checkPaymentLink(link));
   }
 
@@ -995,6 +1000,21 @@ class _PaymentLinksDesktopScreenState
 
   Future<void> _checkPaymentLink(VizorPaymentLink link) async {
     if (_operationInProgress) return;
+    if (ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .isSubmitting(link.address)) {
+      setState(() {
+        _rememberReceivedLink(link);
+        _setReceivedCardStatus(
+          link.address,
+          PaymentLinkReceivedStatus.receiving,
+        );
+        _activeCardsTab = PaymentLinkCardsTab.received;
+        _page = _PaymentLinksLocalPage.home;
+      });
+      if (kAppFormFactor == AppFormFactor.mobile) context.go('/home');
+      return;
+    }
     setState(() {
       _operationInProgress = true;
       _redeemState = PaymentLinkRedeemVisualState.loading;
@@ -1230,7 +1250,7 @@ class _PaymentLinksDesktopScreenState
   String get _redeemActionLabel =>
       _retryLink == null ? 'Paste card link' : 'Try again';
 
-  Future<void> _claimReceivedLink() async {
+  void _claimReceivedLink() {
     final link = _receivedLink;
     final session = _receivedClaimSession;
     if (link == null ||
@@ -1239,37 +1259,36 @@ class _PaymentLinksDesktopScreenState
         _operationInProgress) {
       return;
     }
-    _submittingClaimSession = session;
     final mobile = kAppFormFactor == AppFormFactor.mobile;
+    final submission = ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .submit(session);
     setState(() {
-      _operationInProgress = true;
       _receivedShowsBack = false;
       _rememberReceivedLink(link);
       _setReceivedCardStatus(link.address, PaymentLinkReceivedStatus.receiving);
       _activeCardsTab = PaymentLinkCardsTab.received;
-      if (!mobile) {
-        _receivedLink = null;
-        _page = _PaymentLinksLocalPage.home;
-      }
+      _receivedClaimSession = null;
+      _receivedLink = null;
+      if (!mobile) _page = _PaymentLinksLocalPage.home;
       _showHelp = false;
     });
+    unawaited(_finishClaimSubmission(link, submission));
+    if (mobile) context.go('/home');
+  }
+
+  Future<void> _finishClaimSubmission(
+    VizorPaymentLink link,
+    Future<PaymentLinkClaimResult> submission,
+  ) async {
     try {
-      await ref.read(paymentLinkOperationsProvider).claimPreparedLink(session);
+      await submission;
       if (!mounted) return;
-      setState(() {
-        // Broadcast acceptance is not receipt. The persisted receiver record
-        // remains Receiving until main-wallet history sees the claim mined.
-        _receivedClaimSession = null;
-        if (mobile) _receivedLink = null;
-      });
       showAppToast(context, 'Gift claim submitted');
       unawaited(_refreshReceivedClaims());
-      if (mobile) context.go('/home');
     } on PaymentLinkClaimDestinationChangedException {
       if (mounted) {
         setState(() {
-          _receivedClaimSession = null;
-          _receivedLink = null;
           _setReceivedCardStatus(
             link.address,
             PaymentLinkReceivedStatus.readyToClaim,
@@ -1294,11 +1313,6 @@ class _PaymentLinksDesktopScreenState
           'or may already be spent.',
         );
       }
-    } finally {
-      if (identical(_submittingClaimSession, session)) {
-        _submittingClaimSession = null;
-      }
-      if (mounted) setState(() => _operationInProgress = false);
     }
   }
 
@@ -1828,13 +1842,19 @@ class _PaymentLinksDesktopScreenState
   }
 
   Widget _buildReceivedRow(PaymentLinkReceivedRecord record) {
-    final statusText = switch (record.status) {
+    final submissionInProgress = ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .isSubmitting(record.address);
+    final effectiveStatus = submissionInProgress
+        ? PaymentLinkReceivedStatus.receiving
+        : record.status;
+    final statusText = switch (effectiveStatus) {
       PaymentLinkReceivedStatus.readyToClaim => 'Claim',
       PaymentLinkReceivedStatus.receiving => 'Receiving...',
       PaymentLinkReceivedStatus.received => 'Received',
     };
     final canClaim =
-        record.status == PaymentLinkReceivedStatus.readyToClaim &&
+        effectiveStatus == PaymentLinkReceivedStatus.readyToClaim &&
         record.claimLink != null &&
         !_operationInProgress;
     return PaymentLinkCardListRow(
@@ -1848,7 +1868,7 @@ class _PaymentLinksDesktopScreenState
       dateText: _formatCardDate(record.createdAt),
       statusText: statusText,
       onAction: canClaim ? () => _openReceivedCard(record) : null,
-      showLoader: record.status == PaymentLinkReceivedStatus.receiving,
+      showLoader: effectiveStatus == PaymentLinkReceivedStatus.receiving,
     );
   }
 

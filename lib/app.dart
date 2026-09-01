@@ -62,6 +62,7 @@ import 'src/features/onboarding/welcome.dart';
 import 'src/features/pay/screens/pay_screen.dart';
 import 'src/features/payment_links/models/vizor_payment_link.dart';
 import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
+import 'src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'src/features/payment_links/screens/payment_links_desktop_screen.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
@@ -1119,6 +1120,7 @@ class ZcashWalletApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(votingShareTrackingRestorerProvider);
+    ref.watch(paymentLinkClaimCoordinatorProvider);
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);
