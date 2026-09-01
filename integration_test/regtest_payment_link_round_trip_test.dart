@@ -32,6 +32,7 @@ const _zcashdRpcUrl = String.fromEnvironment(
 const _zcashdRpcUser = 'zcash';
 const _zcashdRpcPassword = 'zcash';
 const _giftAmountText = '0.1';
+const _walletSpendableConfirmationTarget = 10;
 final _giftAmountZatoshi = BigInt.from(10_000_000);
 final _fundingAmountZatoshi = BigInt.from(10_010_000);
 const _giftMessage = 'Congrats from the payment link E2E!';
@@ -185,7 +186,9 @@ void main() {
       final receiverStartingBalance = await _readAccountBalance(
         receiverAccountUuid,
       );
-      await _openPaymentLink(rawLink);
+      await _openPaymentLinksFromSidebar(tester);
+      await _tapText(tester, 'Redeem a card');
+      await _tapText(tester, 'Paste card link');
       await pumpUntil(
         tester,
         () =>
@@ -230,7 +233,7 @@ void main() {
         link.toUri().toString(),
       );
 
-      await _mineRegtestBlocks(1);
+      await _mineRegtestBlocks(kPaymentLinkClaimConfirmationTarget);
       final minedClaim = await _waitForHistoryTransaction(
         tester,
         accountUuid: receiverAccountUuid,
@@ -261,10 +264,12 @@ void main() {
         total: receiverStartingBalance.total + _giftAmountZatoshi,
       );
 
-      // The claim wallet can spend the funding note after one confirmation.
-      // The receiver's ordinary wallet still requires ten confirmations before
-      // that externally received value becomes spendable.
-      await _mineRegtestBlocks(9);
+      // The Gift Card is received after six confirmations. The receiver's
+      // ordinary wallet still requires ten before that value is spendable.
+      await _mineRegtestBlocks(
+        _walletSpendableConfirmationTarget -
+            kPaymentLinkClaimConfirmationTarget,
+      );
       await _waitForAccountBalance(
         tester,
         accountUuid: receiverAccountUuid,
@@ -321,27 +326,16 @@ Future<String> _readPaymentLinkFromClipboard() async {
   return rawLink;
 }
 
-Future<void> _openPaymentLink(String rawLink) async {
-  final result = await Process.run('/usr/bin/open', [
-    '-a',
-    _currentAppBundlePath(),
-    rawLink,
-  ]);
-  if (result.exitCode != 0) {
-    throw StateError('macOS could not open the payment link: ${result.stderr}');
-  }
-}
-
-String _currentAppBundlePath() {
-  var directory = File(Platform.resolvedExecutable).parent;
-  while (directory.path != directory.parent.path) {
-    if (directory.path.endsWith('.app')) return directory.path;
-    directory = directory.parent;
-  }
-  throw StateError(
-    'Could not find the current app bundle from '
-    '${Platform.resolvedExecutable}.',
+Future<void> _tapText(WidgetTester tester, String text) async {
+  final finder = find.text(text);
+  await pumpUntil(
+    tester,
+    () => tester.any(finder),
+    description: '$text action to render',
   );
+  await tester.ensureVisible(finder);
+  await tester.tap(finder);
+  await tester.pump(const Duration(milliseconds: 250));
 }
 
 Future<void> _mineRegtestBlocks(int blocks) async {
