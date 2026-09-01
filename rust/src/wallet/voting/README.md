@@ -109,7 +109,8 @@ directly. The mapping from FRB functions to crate APIs:
 | --- | --- | --- |
 | Background PIR cache warm-up | `warm_pir_proof_cache` | `selection::select_notes_with_lwd`, `precompute::{cache_pir_proofs, prune_pir_proof_cache}` — bundle-, round-, and hotkey-independent; keyed by `(wallet_id, network, root, nullifier)`, read by the delegation prove path |
 | Bundle setup | `setup_delegation_bundles` | `delegate::ensure_round_context`, `VotingDb::ensure_bundles_with_skipped_suffix_with_policy` |
-| Delegation prove/sign | `build_prove_and_sign_delegation_payload_with_progress`, Keystone variant | `delegate::{prepare_delegation_bundle, setup, prove, signing_request, signed_bundle, keystone_request}` |
+| Background software delegation proof | `precompute_delegation_proof` | `delegate::{prepare_delegation_bundle, setup, prove}` — persists ZKP1 after snapshot PIR warm-up without receiving the mnemonic or signing; Keystone stays on its PCZT-first flow |
+| Delegation sign / fallback prove | `build_prove_and_sign_delegation_payload_with_progress`, Keystone variant | Software reuses a persisted proof or proves on demand, then calls `delegate::{signing_request, signed_bundle}`; Keystone calls `delegate::{keystone_request, prove, signed_bundle}` |
 | Delegation submit/confirm | `mark_delegation_submitted`, `confirm_delegation_submission` | `VotingDb::mark_delegation_submitted`, `confirmation::confirm_delegation_submission` |
 | Vote commit | `build_vote_commitments_with_progress`, `recover_vote_commitment` | `vote::prepare_commit_batch`, `vote::persist_prepared_commit_batch`, `vote::recover_signed_commitments` |
 | Vote submit/confirm | `mark_vote_submitted`, `confirm_vote_submission` | `VotingDb::mark_vote_submitted`, `confirmation::confirm_vote_submission` |

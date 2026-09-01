@@ -325,6 +325,30 @@ Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
   bundleIndex: bundleIndex,
 );
 
+/// Generate and persist ZKP1 for one software delegation bundle without signing.
+///
+/// This is the account-bound continuation of snapshot PIR precompute. It uses
+/// the stored app hotkey to prepare the bundle and persists the proof, but it
+/// never receives the wallet mnemonic and cannot sign or submit a delegation.
+/// Repeated calls reuse an existing proved, submitted, or confirmed bundle and
+/// return `false`; a newly generated proof returns `true`.
+///
+/// # Errors
+///
+/// Returns an error if round inputs, hotkey validation, bundle preparation, PIR
+/// access, or ZKP1 generation fails.
+Future<bool> precomputeDelegationProof({
+  required ApiVotingRoundContext ctx,
+  required List<String> pirServerUrls,
+  required List<int> storedHotkeySecret,
+  required int bundleIndex,
+}) => RustLib.instance.api.crateApiVotingPrecomputeDelegationProof(
+  ctx: ctx,
+  pirServerUrls: pirServerUrls,
+  storedHotkeySecret: storedHotkeySecret,
+  bundleIndex: bundleIndex,
+);
+
 /// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
 ///
 /// Safe to call repeatedly; only the first call starts work. Returns

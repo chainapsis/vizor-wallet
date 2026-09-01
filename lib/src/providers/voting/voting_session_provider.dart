@@ -100,6 +100,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _operation = Future.value();
   final String _roundId;
   final Map<String, Future<void>> _snapshotBundlePrecomputes = {};
+  final Set<String> _completedSnapshotBundlePrecomputes = {};
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
   Future<void>? _activeAutomaticShareTrackingPass;
@@ -220,6 +221,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _isDisposed = true;
       _advanceSessionGeneration();
       _snapshotBundlePrecomputes.clear();
+      _completedSnapshotBundlePrecomputes.clear();
       _hotkeyEnsures.clear();
       _shareTrackingTimer?.cancel();
       for (final passHandle in _activeShareTrackingPassHandles.toList()) {
@@ -310,6 +312,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _sessionIsHardwareAccount = null;
     _currentContext = null;
     _snapshotBundlePrecomputes.clear();
+    _completedSnapshotBundlePrecomputes.clear();
     _hotkeyEnsures.clear();
     _shareTrackingTimer?.cancel();
     if (!hadSessionAccount || _isDisposed) return;
@@ -388,8 +391,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final key = _snapshotBundlePrecomputeKey(accountUuid);
     final existing = _snapshotBundlePrecomputes[key];
     if (existing != null) return existing;
+    if (_completedSnapshotBundlePrecomputes.contains(key)) {
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute skipped '
+        'round=$_roundId reason=already-completed',
+      );
+      return Future<void>.value();
+    }
 
-    final precompute = _runSnapshotBundlePrecomputeForAccount(accountUuid);
+    final precompute = _runSnapshotBundlePrecomputeForAccount(
+      accountUuid,
+      precomputeKey: key,
+    );
     _snapshotBundlePrecomputes[key] = precompute;
     void removeIfCurrent() {
       if (identical(_snapshotBundlePrecomputes[key], precompute)) {
@@ -407,8 +420,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> _runSnapshotBundlePrecomputeForAccount(
-    String accountUuid,
-  ) async {
+    String accountUuid, {
+    required String precomputeKey,
+  }) async {
     final context = await _loadContext(_roundId);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     final current = state.value;
@@ -439,10 +453,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final pirEndpoint = await _resolvePirEndpoint(context);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     if (pirEndpoint == null) return;
-    await _runSnapshotBundlePrecompute(
+    final completed = await _runSnapshotBundlePrecompute(
       context: context,
       pirEndpoint: pirEndpoint,
     );
+    if (completed && _isCurrentPrecomputeContext(context, accountUuid)) {
+      _completedSnapshotBundlePrecomputes.add(precomputeKey);
+    }
   }
 
   Future<void> delegatePendingBundles({String? mnemonic}) {
@@ -3273,7 +3290,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<void> _runSnapshotBundlePrecompute({
+  Future<bool> _runSnapshotBundlePrecompute({
     required _VotingSessionContext context,
     required Uri pirEndpoint,
   }) async {
@@ -3303,6 +3320,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'cached=$cached fetched=$fetched '
         'elapsed=${formatElapsedSeconds(timer.elapsed)}',
       );
+      return await _runBackgroundDelegationProofPrecompute(
+        context: context,
+        pirEndpoint: pirEndpoint,
+        bundleCount: result.bundleCount,
+      );
     } catch (e) {
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute failed '
@@ -3310,7 +3332,81 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
         'reason=cache-miss',
       );
+      return false;
     }
+  }
+
+  Future<bool> _runBackgroundDelegationProofPrecompute({
+    required _VotingSessionContext context,
+    required Uri pirEndpoint,
+    required int bundleCount,
+  }) async {
+    // Keystone must retain the original PCZT bytes for its QR signing request.
+    // The software path can persist ZKP1 now and reconstruct its signed payload
+    // from the stored setup fields later without retaining those bytes in Dart.
+    if (context.isHardwareAccount || bundleCount == 0) return true;
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return false;
+    }
+
+    final rust = ref.read(votingRustApiProvider);
+    late final List<int> storedHotkeySecret;
+    try {
+      storedHotkeySecret = await _ensureHotkey(context);
+    } catch (e) {
+      debugPrint(
+        '[zcash] Voting: background delegation proof skipped '
+        'round=${context.round.roundId} reason=hotkey-unavailable error=$e',
+      );
+      return false;
+    }
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return false;
+    }
+
+    final current = state.value;
+    if (current == null) return false;
+    final pirServerUrls = List<String>.from(
+      _delegationPirTransportUrls(current),
+    );
+    if (pirServerUrls.isEmpty) {
+      pirServerUrls.add(_transportUrl(pirEndpoint));
+    }
+
+    var allProofsReady = true;
+    for (var bundleIndex = 0; bundleIndex < bundleCount; bundleIndex++) {
+      if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+        return false;
+      }
+      final timer = Stopwatch()..start();
+      debugPrint(
+        '[zcash] Voting: background delegation proof start '
+        'round=${context.round.roundId} bundle=$bundleIndex',
+      );
+      try {
+        final generated = await rust.precomputeDelegationProof(
+          ctx: _apiRoundContext(context),
+          pirServerUrls: pirServerUrls,
+          storedHotkeySecret: storedHotkeySecret,
+          bundleIndex: bundleIndex,
+        );
+        debugPrint(
+          '[zcash] Voting: background delegation proof completed '
+          'round=${context.round.roundId} bundle=$bundleIndex '
+          'result=${generated ? 'generated' : 'reused'} '
+          'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+        );
+      } catch (e) {
+        debugPrint(
+          '[zcash] Voting: background delegation proof failed '
+          'round=${context.round.roundId} bundle=$bundleIndex '
+          'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
+          'reason=foreground-fallback',
+        );
+        allProofsReady = false;
+      }
+    }
+    return allProofsReady;
   }
 
   Future<void> _awaitSnapshotBundlePrecomputeIfRunning(
@@ -3354,7 +3450,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   String _snapshotBundlePrecomputeKey(String accountUuid) {
-    return '$_roundId|$accountUuid';
+    return '$_roundId|$accountUuid|$_sessionGeneration';
   }
 
   static void _logPirSnapshotMismatch({

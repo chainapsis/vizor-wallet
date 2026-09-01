@@ -22,7 +22,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
-import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
@@ -79,6 +79,8 @@ void main() {
     expect(find.text('0.00012 ZEC'), findsOneWidget);
     expect(find.text(truncatedAddress(_address)), findsOneWidget);
     expect(rustApi.discardCalls, isEmpty);
+    expect(rustApi.macosExecuteCalls, Platform.isMacOS ? 1 : 0);
+    expect(rustApi.mnemonicExecuteCalls, Platform.isMacOS ? 0 : 1);
   });
 
   testWidgets('tx id row opens the explorer with the display-order txid', (
@@ -692,6 +694,7 @@ Widget _harness(
       addressBookRepositoryProvider.overrideWithValue(
         _FakeAddressBookRepository(),
       ),
+      accountProvider.overrideWith(_FakeAccountNotifier.new),
       appSecurityProvider.overrideWith(_FakeAppSecurityNotifier.new),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
     ],
@@ -780,6 +783,16 @@ class _FakeAppSecurityNotifier extends AppSecurityNotifier {
   String requireSessionPasswordForNativeSecretUse() => 'test-password';
 }
 
+class _FakeAccountNotifier extends AccountNotifier {
+  @override
+  Future<Uint8List?> getMnemonicBytesForAccount(String uuid) async {
+    if (uuid != 'test-account') return null;
+    // The production send path zeroizes this buffer after handing it to Rust,
+    // so each request needs a fresh mutable list.
+    return Uint8List.fromList(const [1, 2, 3]);
+  }
+}
+
 class _FakeSyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async => SyncState(
@@ -806,6 +819,8 @@ class _RustApiFake implements RustLibApi {
   Object? executeError;
   StoreAndBroadcastPcztsResult? storeResult;
   int discardFailuresRemaining = 0;
+  int macosExecuteCalls = 0;
+  int mnemonicExecuteCalls = 0;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
 
@@ -818,6 +833,8 @@ class _RustApiFake implements RustLibApi {
     executeError = null;
     storeResult = null;
     discardFailuresRemaining = 0;
+    macosExecuteCalls = 0;
+    mnemonicExecuteCalls = 0;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
   }
@@ -858,6 +875,7 @@ class _RustApiFake implements RustLibApi {
     String? spendParamsPath,
     String? outputParamsPath,
   }) {
+    mnemonicExecuteCalls++;
     return _execute();
   }
 
@@ -872,6 +890,7 @@ class _RustApiFake implements RustLibApi {
     String? spendParamsPath,
     String? outputParamsPath,
   }) {
+    macosExecuteCalls++;
     return _execute();
   }
 
