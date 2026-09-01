@@ -340,6 +340,65 @@ void main() {
     );
   });
 
+  test(
+    'confirmed claims delete retained state before clearing the link',
+    () async {
+      final storage = _PaymentLinkServiceReceivedStorage();
+      final store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      final record = (await store.load()).single;
+      final events = <String>[];
+
+      final completed = await finalizeConfirmedPaymentLinkClaim(
+        record: record,
+        deleteRetainedWallet: (candidate) async {
+          expect(candidate.claimLink, isNotNull);
+          events.add('delete');
+          return true;
+        },
+        markReceived: (address) async {
+          events.add('mark');
+          await store.markReceived(address: address);
+        },
+      );
+
+      expect(completed, isTrue);
+      expect(events, ['delete', 'mark']);
+      expect((await store.load()).single.claimLink, isNull);
+    },
+  );
+
+  test(
+    'confirmed claims keep their link when retained cleanup fails',
+    () async {
+      final storage = _PaymentLinkServiceReceivedStorage();
+      final store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      final record = (await store.load()).single;
+
+      final completed = await finalizeConfirmedPaymentLinkClaim(
+        record: record,
+        deleteRetainedWallet: (_) async => false,
+        markReceived: (_) async => fail('must not clear the retained link'),
+      );
+
+      expect(completed, isFalse);
+      expect((await store.load()).single.claimLink, isNotNull);
+    },
+  );
+
   test('only reuses a complete claim wallet for the expected address', () {
     expect(
       shouldRecreatePaymentLinkClaimWallet(
@@ -522,6 +581,19 @@ void main() {
       expect(storage.writeCount, 0);
     },
   );
+}
+
+class _PaymentLinkServiceReceivedStorage implements PaymentLinkReceivedStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async => value = null;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String nextValue) async => value = nextValue;
 }
 
 class _HardwareAccountNotifier extends AccountNotifier {

@@ -377,6 +377,18 @@ bool shouldRetainPaymentLinkClaimWallet(
 }
 
 @visibleForTesting
+Future<bool> finalizeConfirmedPaymentLinkClaim({
+  required PaymentLinkReceivedRecord record,
+  required Future<bool> Function(PaymentLinkReceivedRecord record)
+  deleteRetainedWallet,
+  required Future<void> Function(String address) markReceived,
+}) async {
+  if (!await deleteRetainedWallet(record)) return false;
+  await markReceived(record.address);
+  return true;
+}
+
+@visibleForTesting
 bool shouldRecreatePaymentLinkClaimWallet({
   required List<String> accountAddresses,
   required String expectedAddress,
@@ -883,7 +895,12 @@ class PaymentLinkService implements PaymentLinkOperations {
         case PaymentLinkReceivedStatus.receiving:
           break;
         case PaymentLinkReceivedStatus.received:
-          await _receivedStore.markReceived(address: record.address);
+          await finalizeConfirmedPaymentLinkClaim(
+            record: record,
+            deleteRetainedWallet: _deleteRetainedClaimWallet,
+            markReceived: (address) =>
+                _receivedStore.markReceived(address: address),
+          );
       }
     }
     return _receivedStore.load();
@@ -1441,6 +1458,26 @@ class PaymentLinkService implements PaymentLinkOperations {
       claimTxids: claimTxids,
       transactions: transactions,
     );
+  }
+
+  Future<bool> _deleteRetainedClaimWallet(
+    PaymentLinkReceivedRecord record,
+  ) async {
+    final link = record.claimLink;
+    if (link == null) return true;
+
+    final tempWallet = await _temporaryWalletLocation(link);
+    if (!await tempWallet.directory.exists()) return true;
+    try {
+      await tempWallet.directory.delete(recursive: true);
+      return true;
+    } catch (error, stackTrace) {
+      log(
+        'PaymentLinkService: failed to delete confirmed claim wallet: '
+        '$error\n$stackTrace',
+      );
+      return false;
+    }
   }
 
   Future<({Directory directory, String dbPath})> _temporaryWalletLocation(
