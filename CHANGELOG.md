@@ -4,6 +4,13 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- Session cleanup now preserves delegation setup fields for bundles with a
+  successful proof so wallets can resume signing without regenerating ZKP1.
+
 ## v3.1.0-rc.15
 
 ### Fixed

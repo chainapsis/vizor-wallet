@@ -141,15 +141,17 @@ pub fn reset_vote_tree(db: &VotingDb, round_id: &str) -> Result<(), VotingError>
 
 /// Drops cached vote tree state and, for round-scoped resets, clears locally
 /// prepared unsigned delegation setup fields so interrupted Keystone requests
-/// can be rebuilt safely. Imported delegation capabilities are preserved.
+/// can be rebuilt safely. Imported delegation capabilities and bundles with a
+/// successful persisted proof are preserved.
 ///
 /// Round-scoped cleanup is mainly for the restart mid-signing case: if the app
 /// dies after `build_governance_pczt` persisted `pczt_sighash` (and related
 /// setup columns) but before the user finishes signing, the next startup tries
 /// to rebuild the Keystone request and `store_delegation_data` refuses to
 /// overwrite those fields. Clearing unsigned setup for that round lets setup
-/// run again without touching bundles that already have Keystone signatures or
-/// a stored `delegation_tx_hash`.
+/// run again without touching bundles that already have a successful proof,
+/// Keystone signatures, or a stored `delegation_tx_hash`. Proved bundles retain
+/// the setup fields that later signing must reproduce.
 ///
 /// When `round_id` is empty, only the process-local vote tree cache is reset
 /// account-wide; no persisted delegation setup columns are cleared.
@@ -1191,6 +1193,23 @@ mod session_reset_tests {
         reset_voting_session_state(&db, ROUND_ID).unwrap();
 
         assert!(!has_unsigned_setup_fields(&db, ROUND_ID, 0));
+        assert!(!has_unsigned_setup_fields(&db, ROUND_ID, 1));
+    }
+
+    #[test]
+    fn reset_voting_session_state_preserves_proved_bundle_setup_fields() {
+        let db = VotingDb::open_in_memory().unwrap();
+        db.set_wallet_id(WALLET_ID);
+        db.create_round(crate::Network::Testnet, &round_params(ROUND_ID), None)
+            .unwrap();
+        db.ensure_bundles(ROUND_ID, &[note(0), note(1)]).unwrap();
+        seed_unsigned_setup_fields(&db, ROUND_ID, 0);
+        seed_unsigned_setup_fields(&db, ROUND_ID, 1);
+        queries::store_proof(&db.conn(), ROUND_ID, WALLET_ID, 0, &[0xAB; 96]).unwrap();
+
+        reset_voting_session_state(&db, ROUND_ID).unwrap();
+
+        assert!(has_unsigned_setup_fields(&db, ROUND_ID, 0));
         assert!(!has_unsigned_setup_fields(&db, ROUND_ID, 1));
     }
 

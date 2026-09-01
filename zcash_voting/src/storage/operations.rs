@@ -1937,8 +1937,8 @@ impl VotingDb {
     }
 
     /// Clears locally prepared unsigned delegation setup fields for one round
-    /// while preserving submitted bundles, imported capabilities, and bundles
-    /// with persisted Keystone signatures.
+    /// while preserving proved or submitted bundles, imported capabilities,
+    /// and bundles with persisted Keystone signatures.
     pub fn clear_unsigned_delegation_setup_fields(
         &self,
         round_id: &str,

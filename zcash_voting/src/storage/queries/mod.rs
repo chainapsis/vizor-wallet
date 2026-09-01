@@ -3173,6 +3173,8 @@ pub fn get_keystone_signatures(
 ///
 /// Imported capability bundles have no local note selection, so their NULL
 /// `note_positions_blob` keeps their voting fields outside this cleanup.
+/// Bundles with a successful proof retain the setup fields required to sign
+/// that proof after a session restart.
 pub fn clear_unsigned_delegation_setup_fields(
     conn: &Connection,
     round_id: &str,
@@ -3202,6 +3204,13 @@ pub fn clear_unsigned_delegation_setup_fields(
            AND note_positions_blob IS NOT NULL
            AND delegation_tx_hash IS NULL
            AND van_leaf_position IS NULL
+           AND bundle_index NOT IN (
+               SELECT bundle_index
+               FROM proofs
+               WHERE round_id = :round_id
+                 AND wallet_id = :wallet_id
+                 AND success = 1
+           )
            AND bundle_index NOT IN (
                SELECT bundle_index
                FROM keystone_signatures
