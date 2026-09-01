@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/profile_pictures.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../ledger/ledger_capability.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/chain_upgrade_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -242,6 +243,7 @@ class IronwoodMigrationInputs {
     required this.accountUuid,
     required this.accountName,
     required this.profilePictureId,
+    this.isLedgerAccount = false,
     required this.hasAccountScopedData,
     required this.isSyncing,
     required this.isBackgroundMode,
@@ -258,6 +260,7 @@ class IronwoodMigrationInputs {
   final String? accountUuid;
   final String accountName;
   final String profilePictureId;
+  final bool isLedgerAccount;
   final bool hasAccountScopedData;
   final bool isSyncing;
   final bool isBackgroundMode;
@@ -286,6 +289,10 @@ class IronwoodMigrationInputs {
   bool get hasOrchardFunds =>
       orchardBalance >= kIronwoodMigrationMinimumStartableZatoshi;
 
+  LedgerCapability get automaticOrchardMigrationCapability => isLedgerAccount
+      ? ledgerAutomaticOrchardMigrationCapability
+      : const LedgerCapability.supported();
+
   bool get hasIronwoodSpendableFunds => ironwoodBalance > BigInt.zero;
 
   bool get hasIronwoodPendingFunds => ironwoodPendingBalance > BigInt.zero;
@@ -305,6 +312,7 @@ class IronwoodMigrationInputs {
             other.accountUuid == accountUuid &&
             other.accountName == accountName &&
             other.profilePictureId == profilePictureId &&
+            other.isLedgerAccount == isLedgerAccount &&
             other.hasAccountScopedData == hasAccountScopedData &&
             other.isSyncing == isSyncing &&
             other.isBackgroundMode == isBackgroundMode &&
@@ -323,6 +331,7 @@ class IronwoodMigrationInputs {
     accountUuid,
     accountName,
     profilePictureId,
+    isLedgerAccount,
     hasAccountScopedData,
     isSyncing,
     isBackgroundMode,
@@ -340,11 +349,13 @@ class _IronwoodMigrationAccountInputs {
     required this.accountUuid,
     required this.accountName,
     required this.profilePictureId,
+    required this.isLedgerAccount,
   });
 
   final String? accountUuid;
   final String accountName;
   final String profilePictureId;
+  final bool isLedgerAccount;
 
   @override
   bool operator ==(Object other) {
@@ -352,11 +363,13 @@ class _IronwoodMigrationAccountInputs {
         other is _IronwoodMigrationAccountInputs &&
             other.accountUuid == accountUuid &&
             other.accountName == accountName &&
-            other.profilePictureId == profilePictureId;
+            other.profilePictureId == profilePictureId &&
+            other.isLedgerAccount == isLedgerAccount;
   }
 
   @override
-  int get hashCode => Object.hash(accountUuid, accountName, profilePictureId);
+  int get hashCode =>
+      Object.hash(accountUuid, accountName, profilePictureId, isLedgerAccount);
 }
 
 class _IronwoodMigrationSyncInputs {
@@ -615,6 +628,7 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
         accountName: activeAccount?.name ?? 'Username',
         profilePictureId:
             activeAccount?.profilePictureId ?? kDefaultProfilePictureId,
+        isLedgerAccount: activeAccount?.isLedger ?? false,
       );
     }),
   );
@@ -651,6 +665,7 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
     accountUuid: activeAccount.accountUuid,
     accountName: activeAccount.accountName,
     profilePictureId: activeAccount.profilePictureId,
+    isLedgerAccount: activeAccount.isLedgerAccount,
     hasAccountScopedData: sync.hasAccountScopedData,
     isSyncing: sync.isSyncing,
     isBackgroundMode: sync.isBackgroundMode,
@@ -779,7 +794,8 @@ final ironwoodMigrationAnnouncementProvider =
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
-      if (!inputs.hasOrchardFunds) {
+      if (!inputs.automaticOrchardMigrationCapability.supported ||
+          !inputs.hasOrchardFunds) {
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
@@ -812,6 +828,9 @@ final ironwoodMigrationAnnouncementProvider =
 final ironwoodHomeMigrationCtaProvider =
     FutureProvider<IronwoodHomeMigrationCtaState>((ref) async {
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      if (!inputs.automaticOrchardMigrationCapability.supported) {
+        return const IronwoodHomeMigrationCtaState.hidden();
+      }
       final postMigrationState = await _loadIronwoodPostMigrationState(
         ref,
         inputs,
@@ -893,6 +912,11 @@ final ironwoodHomeBalancePresentationProvider =
 final ironwoodHomeMigrationPresentationProvider =
     Provider<IronwoodHomeMigrationCtaState>((ref) {
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      if (!inputs.automaticOrchardMigrationCapability.supported) {
+        ref.watch(_ironwoodHomeMigrationPresentationCacheProvider).lastVisible =
+            null;
+        return const IronwoodHomeMigrationCtaState.hidden();
+      }
       final postMigrationAsync = ref.watch(ironwoodPostMigrationStateProvider);
       final postMigrationState = postMigrationAsync.value;
       final current = postMigrationState == null
@@ -936,7 +960,8 @@ final ironwoodMigrationAwareDisplaySpendableProvider = Provider.autoDispose
 final ironwoodMigrationRouteCtaProvider =
     FutureProvider<IronwoodHomeMigrationCtaState>((ref) async {
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      if (!inputs.ironwoodActiveAtTip) {
+      if (!inputs.ironwoodActiveAtTip ||
+          !inputs.automaticOrchardMigrationCapability.supported) {
         return const IronwoodHomeMigrationCtaState.hidden();
       }
 
@@ -1083,6 +1108,10 @@ Future<IronwoodPostMigrationState> _loadIronwoodPostMigrationState(
 ) async {
   if (!inputs.ironwoodActiveAtTip) {
     return const IronwoodPostMigrationState.inactive();
+  }
+
+  if (!inputs.automaticOrchardMigrationCapability.supported) {
+    return const IronwoodPostMigrationState.unavailable();
   }
 
   final accountUuid = inputs.accountUuid;

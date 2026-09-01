@@ -20,6 +20,11 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final activeAccount = ref.watch(accountProvider).value?.activeAccount;
+    if ((activeAccount?.isLedger ?? false) &&
+        !ledgerAutomaticOrchardMigrationCapability.supported) {
+      return const _RedirectTo('/home');
+    }
     final data =
         previewData ??
         ref.watch(ironwoodMigrationFlowDataProvider) ??
@@ -40,6 +45,10 @@ class IronwoodMigrationEntryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final inputs = ref.watch(ironwoodMigrationInputsProvider);
+    if (!inputs.automaticOrchardMigrationCapability.supported) {
+      return const _RedirectTo('/home');
+    }
     final presentationCta = ref.watch(
       ironwoodHomeMigrationPresentationProvider,
     );
@@ -81,6 +90,12 @@ class _IronwoodMigrationPrepareScreenState
   @override
   Widget build(BuildContext context) {
     final inputs = ref.watch(ironwoodMigrationInputsProvider);
+    if (!inputs.automaticOrchardMigrationCapability.supported) {
+      _go('/home', toast: inputs.automaticOrchardMigrationCapability.reason);
+      return const _IronwoodMigrationLoadingShell(
+        step: IronwoodMigrationFlowStep.prepare,
+      );
+    }
     final request = inputs.statusRequest;
     if (!inputs.ironwoodActiveAtTip || request == null) {
       _go('/home', toast: 'Migration is not available for this account.');
