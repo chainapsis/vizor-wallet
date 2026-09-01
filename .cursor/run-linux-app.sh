@@ -4,7 +4,8 @@
 # flutter_secure_storage_linux talks to the libsecret Secret Service, which
 # otherwise pops a blocking "create keyring" GTK prompt on a fresh headless
 # box. This script brings up a session D-Bus and an unlocked gnome-keyring so
-# the app boots straight to onboarding. It builds the debug bundle on first run.
+# the app boots straight to onboarding. It incrementally rebuilds the debug
+# bundle on every run so source and compile-time configuration changes apply.
 #
 # Requires a display (start one with .cursor/xvfb.sh). Override the network with
 # ZCASH_DEFAULT_NETWORK (default: test).
@@ -30,10 +31,8 @@ export SSH_AUTH_SOCK GNOME_KEYRING_CONTROL
 
 NET="${ZCASH_DEFAULT_NETWORK:-test}"
 BUNDLE="build/linux/x64/debug/bundle/vizor"
-if [ ! -x "$BUNDLE" ]; then
-  echo "Building Linux debug bundle (network=$NET) ..."
-  fvm flutter build linux --debug --dart-define=ZCASH_DEFAULT_NETWORK="$NET"
-fi
+echo "Building/updating Linux debug bundle (network=$NET) ..."
+fvm flutter build linux --debug --dart-define="ZCASH_DEFAULT_NETWORK=$NET"
 
 echo "Launching $BUNDLE on DISPLAY=$DISPLAY (network=$NET) ..."
 exec "$BUNDLE"
