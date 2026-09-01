@@ -84,6 +84,33 @@ std::wstring ReadDefaultCommand() {
   return value;
 }
 
+// Extracts the executable path from a shell open command, that is the first
+// quoted token of a command such as "C:\Vizor\vizor.exe" "%1". Returns an
+// empty string when the command is not in that quoted form.
+std::wstring QuotedCommandExecutable(const std::wstring& command) {
+  const std::wstring::size_type open_quote = command.find(L'"');
+  if (open_quote == std::wstring::npos) {
+    return L"";
+  }
+  const std::wstring::size_type close_quote =
+      command.find(L'"', open_quote + 1);
+  if (close_quote == std::wstring::npos || close_quote <= open_quote + 1) {
+    return L"";
+  }
+  return command.substr(open_quote + 1, close_quote - open_quote - 1);
+}
+
+// Returns whether |command| still names an executable that exists. A command
+// we cannot parse is reported as existing, so an unfamiliar handler is never
+// mistaken for a dangling one and stolen.
+bool CommandExecutableExists(const std::wstring& command) {
+  const std::wstring executable = QuotedCommandExecutable(command);
+  if (executable.empty()) {
+    return true;
+  }
+  return ::GetFileAttributesW(executable.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
 void NotifyAssociationChanged() {
   ::SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
@@ -134,15 +161,27 @@ void RegisterZcashProtocolHandlerIfUnclaimed() {
   if (module_path.empty()) {
     return;
   }
-  // Only (re)register at startup when no handler is set yet, or when the
-  // existing handler already points at this install. Registering on every
-  // launch unconditionally would silently steal the zcash: handler back from
-  // another wallet (or another Vizor channel) the user selected. Install and
-  // update hooks still register unconditionally -- that is the intended moment
-  // to claim the handler.
-  const std::wstring command = ToLower(ReadDefaultCommand());
-  if (!command.empty() && command.find(module_path) == std::wstring::npos) {
-    return;
+  // Only claim the scheme at startup when nobody holds it, or when the handler
+  // that holds it points at an executable that no longer exists. Registering on
+  // every launch unconditionally would silently steal the zcash: handler back
+  // from another wallet (or another Vizor channel) the user selected. Install
+  // and update hooks still register unconditionally -- that is the intended
+  // moment to claim the handler.
+  const std::wstring command = ReadDefaultCommand();
+  if (!command.empty()) {
+    // Already ours: return without writing. Rewriting the same four values and
+    // firing SHChangeNotify on every launch is pure churn for an install that
+    // owns the scheme.
+    if (ToLower(command).find(module_path) != std::wstring::npos) {
+      return;
+    }
+    // Someone else's handler, and it still exists -- leave it alone. A command
+    // pointing at an executable that is gone is a dangling registration (a
+    // moved or portable install), which nothing would ever repair, so treat it
+    // as unclaimed and let this install take the scheme.
+    if (CommandExecutableExists(command)) {
+      return;
+    }
   }
   RegisterZcashProtocolHandler();
 }
