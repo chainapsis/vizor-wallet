@@ -58,6 +58,7 @@ FIXTURE_TEX_STEP_1_PCZT="$(jq -r '.texStep1PcztPath' "$FIXTURE_JSON")"
 FIXTURE_TEX_STEP_2_PCZT="$(jq -r '.texStep2PcztPath' "$FIXTURE_JSON")"
 FIXTURE_VOTING_BUNDLE_1_PCZT="$(jq -r '.votingBundle1PcztPath' "$FIXTURE_JSON")"
 FIXTURE_VOTING_BUNDLE_2_PCZT="$(jq -r '.votingBundle2PcztPath' "$FIXTURE_JSON")"
+FIXTURE_ORCHARD_TO_IRONWOOD_V6_PCZT="$(jq -r '.orchardToIronwoodV6PcztPath' "$FIXTURE_JSON")"
 FIXTURE_VOTING_BUNDLE_1_ACTION_INDEX="$(jq -r '.votingBundle1ActionIndex' "$FIXTURE_JSON")"
 FIXTURE_VOTING_BUNDLE_2_ACTION_INDEX="$(jq -r '.votingBundle2ActionIndex' "$FIXTURE_JSON")"
 FIXTURE_PCZT_BASE64="$(base64 -i "$FIXTURE_PCZT" | tr -d '\n')"
@@ -65,6 +66,7 @@ FIXTURE_TEX_STEP_1_PCZT_BASE64="$(base64 -i "$FIXTURE_TEX_STEP_1_PCZT" | tr -d '
 FIXTURE_TEX_STEP_2_PCZT_BASE64="$(base64 -i "$FIXTURE_TEX_STEP_2_PCZT" | tr -d '\n')"
 FIXTURE_VOTING_BUNDLE_1_PCZT_BASE64="$(base64 -i "$FIXTURE_VOTING_BUNDLE_1_PCZT" | tr -d '\n')"
 FIXTURE_VOTING_BUNDLE_2_PCZT_BASE64="$(base64 -i "$FIXTURE_VOTING_BUNDLE_2_PCZT" | tr -d '\n')"
+FIXTURE_ORCHARD_TO_IRONWOOD_V6_PCZT_BASE64="$(base64 -i "$FIXTURE_ORCHARD_TO_IRONWOOD_V6_PCZT" | tr -d '\n')"
 FIXTURE_DB_GZIP_BASE64="$(gzip -c "$FIXTURE_DB" | base64 | tr -d '\n')"
 
 run_flutter_scenario() {
@@ -87,6 +89,7 @@ run_flutter_scenario() {
     --dart-define=VIZOR_LEDGER_E2E_TEX_STEP_2_PCZT_BASE64="$FIXTURE_TEX_STEP_2_PCZT_BASE64" \
     --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_PCZT_BASE64="$FIXTURE_VOTING_BUNDLE_1_PCZT_BASE64" \
     --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_PCZT_BASE64="$FIXTURE_VOTING_BUNDLE_2_PCZT_BASE64" \
+    --dart-define=VIZOR_LEDGER_E2E_ORCHARD_TO_IRONWOOD_V6_PCZT_BASE64="$FIXTURE_ORCHARD_TO_IRONWOOD_V6_PCZT_BASE64" \
     --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_ACTION_INDEX="$FIXTURE_VOTING_BUNDLE_1_ACTION_INDEX" \
     --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_ACTION_INDEX="$FIXTURE_VOTING_BUNDLE_2_ACTION_INDEX" \
     --dart-define=VIZOR_LEDGER_E2E_DB_GZIP_BASE64="$FIXTURE_DB_GZIP_BASE64" \
@@ -102,6 +105,9 @@ run_flutter_scenario "shields transparent balance with Ledger through Speculos"
 run_flutter_scenario "pays with Ledger through Speculos"
 run_flutter_scenario "swaps with Ledger through Speculos"
 run_flutter_scenario "signs sequential voting bundles with Ledger through Speculos"
+if [[ "${VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY:-false}" == "true" ]]; then
+  run_flutter_scenario "signs Orchard to Ironwood crossing through Speculos"
+fi
 run_flutter_scenario "signs sequential Ledger operations in one app lifecycle"
 
 echo "Ledger Speculos fixture retained at $FIXTURE_DIR"

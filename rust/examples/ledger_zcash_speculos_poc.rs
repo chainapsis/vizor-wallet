@@ -34,6 +34,7 @@ use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder, BundlePadding, PcztResult},
     fees::zip317,
     txid::{to_txid, TxIdDigester},
+    TxVersion,
 };
 use zcash_protocol::{
     consensus::{BlockHeight, NetworkConstants, NetworkType, NetworkUpgrade, Parameters},
@@ -218,6 +219,10 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         .map_err(|error| format!("Write {}: {error}", voting_bundle_1_path.display()))?;
     fs::write(&voting_bundle_2_path, &voting_bundle_2.bytes)
         .map_err(|error| format!("Write {}: {error}", voting_bundle_2_path.display()))?;
+    let orchard_spend = post_ironwood_orchard_spend_pczt(&export.ufvk, &export.seed_fingerprint)?;
+    let orchard_to_ironwood_path = pczt_path.with_extension("orchard-to-ironwood-v6.pczt");
+    fs::write(&orchard_to_ironwood_path, &orchard_spend)
+        .map_err(|error| format!("Write {}: {error}", orchard_to_ironwood_path.display()))?;
     let metadata = json!({
         "accountUuid": account.account_uuid,
         "ufvk": export.ufvk,
@@ -233,6 +238,7 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         "votingBundle2PcztPath": voting_bundle_2_path,
         "votingBundle1ActionIndex": voting_bundle_1.action_index,
         "votingBundle2ActionIndex": voting_bundle_2.action_index,
+        "orchardToIronwoodV6PcztPath": orchard_to_ironwood_path,
     });
     fs::write(&metadata_path, metadata.to_string())
         .map_err(|error| format!("Write {}: {error}", metadata_path.display()))?;
@@ -483,6 +489,125 @@ struct TexSmokePczts {
 struct VotingSmokePczt {
     bytes: Vec<u8>,
     action_index: usize,
+}
+
+/// Builds the post-NU6.3 Ledger Orchard-spend canary: the V6
+/// Orchard-V2-to-Ironwood transaction used by an ordinary Send.
+///
+/// Private-migration Orchard self/intermediate stages are intentionally absent:
+/// that mode is disabled for Ledger accounts and its 16-action padding exceeds
+/// Vizor's 10-action Ledger serialization limit. Ordinary non-Ironwood sends
+/// are either re-proposed as V5 or rejected by the cross-address restriction.
+fn post_ironwood_orchard_spend_pczt(
+    ufvk: &str,
+    seed_fingerprint: &[u8],
+) -> Result<Vec<u8>, String> {
+    use orchard::{
+        keys::Scope,
+        note::{NoteVersion, RandomSeed, Rho},
+        tree::{MerkleHashOrchard, MerklePath},
+        value::NoteValue,
+        Note,
+    };
+
+    let ufvk = UnifiedFullViewingKey::decode(&WalletNetwork::Main, ufvk)
+        .map_err(|error| format!("Decode Speculos UFVK for Orchard fixture: {error}"))?;
+    let fvk = ufvk
+        .orchard()
+        .cloned()
+        .ok_or("Speculos UFVK has no Orchard full viewing key")?;
+    let source_recipient = fvk.address_at(0u32, Scope::Internal);
+    let rho = Rho::from_bytes(&[0x31; 32])
+        .into_option()
+        .ok_or("Build Orchard fixture rho")?;
+    let rseed = (0u8..=255)
+        .find_map(|byte| RandomSeed::from_bytes([byte; 32], &rho).into_option())
+        .ok_or("Build Orchard fixture random seed")?;
+    let note = Note::from_parts(
+        source_recipient,
+        NoteValue::from_raw(1_000_000),
+        rho,
+        rseed,
+        NoteVersion::V2,
+    )
+    .into_option()
+    .ok_or("Build Orchard V2 fixture note")?;
+    let zero = MerkleHashOrchard::from_bytes(&[0; 32])
+        .into_option()
+        .ok_or("Build Orchard fixture empty Merkle node")?;
+    let merkle_path = MerklePath::from_parts(0, [zero; 32]);
+    let anchor = merkle_path.root(note.commitment().into());
+
+    let mut crossing_builder = Builder::new(
+        WalletNetwork::Main,
+        BlockHeight::from_u32(4_000_000),
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: Some(anchor.into()),
+            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::UNPADDED,
+        },
+    );
+    crossing_builder
+        .add_orchard_spend::<zip317::FeeRule>(fvk.clone(), note, merkle_path)
+        .map_err(|error| format!("Add Orchard-to-Ironwood fixture spend: {error:?}"))?;
+    crossing_builder
+        .add_ironwood_output::<zip317::FeeRule>(
+            Some(fvk.to_ovk(Scope::Internal)),
+            source_recipient,
+            Zatoshis::const_from_u64(985_000),
+            MemoBytes::empty(),
+        )
+        .map_err(|error| format!("Add Orchard-to-Ironwood fixture output: {error:?}"))?;
+    let to_ironwood = finalize_orchard_spend_fixture(
+        crossing_builder
+            .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+            .map_err(|error| format!("Build Orchard-to-Ironwood fixture PCZT: {error}"))?,
+        seed_fingerprint,
+        "Orchard-to-Ironwood",
+    )?;
+
+    Ok(to_ironwood)
+}
+
+fn finalize_orchard_spend_fixture<P: Parameters>(
+    build_result: PcztResult<P>,
+    seed_fingerprint: &[u8],
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    if build_result.pczt_parts.version != TxVersion::V6 {
+        return Err(format!("{label} fixture did not build as V6"));
+    }
+    let spend_index = build_result
+        .orchard_meta
+        .spend_action_index(0)
+        .ok_or_else(|| format!("{label} fixture has no Orchard spend action"))?;
+    let fingerprint: [u8; 32] = seed_fingerprint
+        .try_into()
+        .map_err(|_| "Speculos Ledger fingerprint must be 32 bytes")?;
+    let derivation = orchard::pczt::Zip32Derivation::parse(
+        fingerprint,
+        vec![0x8000_0020, 0x8000_0085, 0x8000_0000],
+    )
+    .map_err(|error| format!("Build {label} ZIP-32 derivation: {error:?}"))?;
+    let pczt = IoFinalizer::new(
+        Creator::build_from_parts(build_result.pczt_parts)
+            .ok_or_else(|| format!("Create {label} fixture PCZT"))?,
+    )
+    .finalize_io()
+    .map_err(|error| format!("Finalize {label} fixture PCZT IO: {error:?}"))?;
+    Updater::new(pczt)
+        .update_orchard_with(|mut bundle| {
+            bundle.update_action_with(spend_index, |mut action| {
+                action.set_spend_zip32_derivation(derivation);
+                Ok(())
+            })
+        })
+        .map_err(|error| format!("Attach {label} fixture derivation: {error:?}"))?
+        .finish()
+        .serialize()
+        .map_err(|error| format!("Serialize {label} fixture PCZT: {error:?}"))
 }
 
 fn ironwood_voting_smoke_pczt(
