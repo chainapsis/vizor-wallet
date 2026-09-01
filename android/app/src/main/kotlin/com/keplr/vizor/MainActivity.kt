@@ -3,6 +3,7 @@ package com.keplr.vizor
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
@@ -16,6 +17,22 @@ class MainActivity : FlutterFragmentActivity() {
     private var paymentUriChannel: MethodChannel? = null
     private val pendingPaymentUris = mutableListOf<String>()
     private var paymentUriDartReady = false
+    private var consumedPaymentUri: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // Restored before super.onCreate: on a recreated activity super
+        // re-attaches the Flutter fragment, which already runs
+        // configureFlutterEngine and the capture guard below.
+        consumedPaymentUri = savedInstanceState?.getString(KEY_CONSUMED_PAYMENT_URI)
+        super.onCreate(savedInstanceState)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Survives process death, so the recreated activity knows the task's
+        // stored VIEW intent was already delivered.
+        outState.putString(KEY_CONSUMED_PAYMENT_URI, consumedPaymentUri)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -110,7 +127,13 @@ class MainActivity : FlutterFragmentActivity() {
             }
         }
         // A zcash: link that cold-starts Vizor arrives as the launch intent.
-        capturePaymentUri(intent)
+        // Restoring the task after the process was killed recreates the activity
+        // with that same VIEW intent (NEW_TASK only, no LAUNCHED_FROM_HISTORY),
+        // which replayed the link; saved state says it was already delivered.
+        val restoredPaymentUri = consumedPaymentUri
+        if (restoredPaymentUri == null || restoredPaymentUri != intent?.dataString) {
+            capturePaymentUri(intent)
+        }
     }
 
     /** REJECT is the platform's error haptic; older APIs report
@@ -189,6 +212,11 @@ class MainActivity : FlutterFragmentActivity() {
         // singleTop launchMode: a zcash: link tapped while Vizor is already
         // running is delivered here instead of through a fresh launch intent.
         setIntent(intent)
+        // No consumed-URI check here: tapping the same link again is a
+        // deliberate user action and must be delivered again. capturePaymentUri
+        // still refreshes the fingerprint to the link consumed last; setIntent()
+        // only rewrites this process's copy, so a restore after process death is
+        // assumed to hand back the intent that created the activity record.
         capturePaymentUri(intent)
     }
 
@@ -197,6 +225,7 @@ class MainActivity : FlutterFragmentActivity() {
         if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
         val data = intent.data ?: return
         if (!"zcash".equals(data.scheme, ignoreCase = true)) return
+        consumedPaymentUri = intent.dataString
         pendingPaymentUris.add(intent.dataString ?: data.toString())
         flushPendingPaymentUris()
     }
@@ -215,5 +244,6 @@ class MainActivity : FlutterFragmentActivity() {
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
         private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
         private const val PAYMENT_URI_CHANNEL = "com.zcash.wallet/payment_uri"
+        private const val KEY_CONSUMED_PAYMENT_URI = "vizor.consumedPaymentUri"
     }
 }
