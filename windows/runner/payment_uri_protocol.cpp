@@ -129,20 +129,34 @@ DefaultCommandState ReadDefaultCommand(std::wstring* command) {
   return DefaultCommandState::kUnreadable;
 }
 
-// Extracts the executable path from a shell open command, that is the first
-// quoted token of a command such as "C:\Vizor\vizor.exe" "%1". Returns an
-// empty string when the command is not in that quoted form.
-std::wstring QuotedCommandExecutable(const std::wstring& command) {
-  const std::wstring::size_type open_quote = command.find(L'"');
-  if (open_quote == std::wstring::npos) {
+// Extracts the executable from a shell open command the way the shell reads
+// it: a command whose executable is quoted -- "C:\Vizor\vizor.exe" "%1" --
+// yields the quoted token, and an unquoted one -- C:\Apps\Zashi\zashi.exe
+// "%1" -- yields the token up to the first whitespace. Taking the first quoted
+// token unconditionally used to parse the unquoted form as %1, which is not a
+// rooted path, so an installed competitor read as "cannot tell" instead of
+// "still there". Returns an empty string when neither form yields a token,
+// which callers read as "assume the handler exists".
+std::wstring CommandExecutable(const std::wstring& command) {
+  constexpr wchar_t kWhitespace[] = L" \t";
+  const std::wstring::size_type start = command.find_first_not_of(kWhitespace);
+  if (start == std::wstring::npos) {
     return L"";
   }
-  const std::wstring::size_type close_quote =
-      command.find(L'"', open_quote + 1);
-  if (close_quote == std::wstring::npos || close_quote <= open_quote + 1) {
-    return L"";
+
+  if (command[start] == L'"') {
+    const std::wstring::size_type close_quote = command.find(L'"', start + 1);
+    if (close_quote == std::wstring::npos || close_quote == start + 1) {
+      return L"";
+    }
+    return command.substr(start + 1, close_quote - start - 1);
   }
-  return command.substr(open_quote + 1, close_quote - open_quote - 1);
+
+  const std::wstring::size_type end = command.find_first_of(kWhitespace, start);
+  if (end == std::wstring::npos) {
+    return command.substr(start);
+  }
+  return command.substr(start, end - start);
 }
 
 // Returns whether |value| is a rooted path -- a drive-qualified path such as
@@ -168,7 +182,7 @@ bool IsAbsoluteWindowsPath(const std::wstring& value) {
 // zcash: scheme from it is not something the user can undo by plugging the
 // drive back in.
 bool CommandExecutableExists(const std::wstring& command) {
-  const std::wstring executable = QuotedCommandExecutable(command);
+  const std::wstring executable = CommandExecutable(command);
   if (executable.empty() || !IsAbsoluteWindowsPath(executable)) {
     return true;
   }
