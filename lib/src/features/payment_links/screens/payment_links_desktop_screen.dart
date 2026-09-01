@@ -321,10 +321,13 @@ class _PaymentLinksDesktopScreenState
     List<PaymentLinkReceivedRecord>? records,
   }) async {
     final receivedCards = records ?? _receivedCards;
-    final hasReceiving = receivedCards.any(
-      (record) => record.status == PaymentLinkReceivedStatus.receiving,
+    final hasMonitorableClaim = receivedCards.any(
+      (record) =>
+          record.status == PaymentLinkReceivedStatus.receiving ||
+          (record.status == PaymentLinkReceivedStatus.readyToClaim &&
+              record.destinationAccountUuid != null),
     );
-    if (!hasReceiving ||
+    if (!hasMonitorableClaim ||
         _operationInProgress ||
         _claimSubmissions.isNotEmpty ||
         _receivedRefreshInProgress) {
@@ -379,6 +382,12 @@ class _PaymentLinksDesktopScreenState
   void _openReceivedCard(PaymentLinkReceivedRecord record) {
     final link = record.claimLink;
     if (link == null) return;
+    if (record.status == PaymentLinkReceivedStatus.readyToClaim &&
+        record.destinationAccountUuid != null &&
+        (record.claimTxids == null || record.claimTxids!.trim().isEmpty)) {
+      unawaited(_refreshReceivedClaims(records: [record]));
+      return;
+    }
     final session = _receivedClaimSessions[link.address];
     if (session != null) {
       setState(() {

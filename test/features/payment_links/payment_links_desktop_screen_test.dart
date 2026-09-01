@@ -913,6 +913,23 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('schedules recovery for a claim started before restart', (
+    tester,
+  ) async {
+    final startedRecord = PaymentLinkReceivedRecord.fromLink(
+      _incomingLink,
+    ).copyWith(destinationAccountUuid: 'account-1');
+    final operations = _FakePaymentLinkOperations(
+      receivedRecords: [startedRecord],
+    );
+
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(operations.inspectReceivedCallCount, greaterThan(0));
+    expect(operations.preparedAddresses, isEmpty);
+  });
+
   testWidgets('shows selected artwork and Receiving while claim is pending', (
     tester,
   ) async {
@@ -1388,6 +1405,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<VizorPaymentLink> claimedLinks = [];
   final List<String> discardedClaimAddresses = [];
   final List<String> preparedAddresses = [];
+  int inspectReceivedCallCount = 0;
 
   @override
   Future<PaymentLinkFundingQuote> quoteFunding({
@@ -1481,6 +1499,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
     List<PaymentLinkReceivedRecord> records,
   ) async {
+    inspectReceivedCallCount += 1;
     for (var index = 0; index < receivedRecords.length; index++) {
       final record = receivedRecords[index];
       final status = receivedClaimStatuses[record.address] ?? record.status;

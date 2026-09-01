@@ -662,7 +662,12 @@ class PaymentLinkService implements PaymentLinkOperations {
         final directory = await _temporaryWalletDirectory(link);
         final dbPath =
             '${directory.path}${Platform.pathSeparator}zcash_wallet.db';
-        if (!await File(dbPath).exists()) return;
+        if (!await File(dbPath).exists()) {
+          if (record.status == PaymentLinkReceivedStatus.readyToClaim) {
+            await _receivedStore.markReadyToClaim(address: record.address);
+          }
+          return;
+        }
         try {
           final lastRefresh = _lastClaimRefreshAt[record.address];
           if (lastRefresh == null ||
@@ -694,6 +699,13 @@ class PaymentLinkService implements PaymentLinkOperations {
                   destinationAccountUuid: record.destinationAccountUuid!,
                   claimTxids: recoverableTxids,
                 );
+              } else if (record.status ==
+                  PaymentLinkReceivedStatus.readyToClaim) {
+                // The app stopped after persisting claim intent but before
+                // Rust materialized a live transaction (or the old one has
+                // expired). Clear the intent marker so the Card is actionable
+                // again instead of being trapped in recovery forever.
+                await _receivedStore.markReadyToClaim(address: record.address);
               }
             }
           }
@@ -1229,18 +1241,16 @@ class PaymentLinkService implements PaymentLinkOperations {
                 '${endpoint.networkName}.',
               );
             }
-            var completed = false;
-            await for (final event in rust_sync.startPaymentLinkClaimSync(
+            await for (final _ in rust_sync.startPaymentLinkClaimSync(
               claimId: claimId,
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
               network: network,
-            )) {
-              completed = completed || event.isComplete;
-            }
-            if (!completed) {
-              throw StateError('Gift Card claim sync ended before completion.');
-            }
+            )) {}
+            // Wait for Rust to close the stream so its per-claim registry is
+            // released before Dart drops the coalesced future. Completion and
+            // cancellation both close quietly; actual failures are delivered
+            // as stream errors and remain eligible for endpoint fallback.
           },
         );
   }
