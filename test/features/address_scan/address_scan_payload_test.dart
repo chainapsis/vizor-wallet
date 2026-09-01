@@ -83,6 +83,30 @@ void main() {
       );
     });
 
+    test('refuses to recover an address the parser found ambiguous', () {
+      // `Uri.queryParameters` keeps the last value, so recovering here would
+      // hand the scan the attacker's address instead of the payee's.
+      const raw = 'zcash:?address.1=u1realrecipient&address.1=u1attacker';
+
+      expect(normalizeAddressScanPayload(raw), raw);
+    });
+
+    test('refuses a repeated bare address key too', () {
+      const raw =
+          'zcash:?address=u1realrecipient&address=u1attacker'
+          '&memo=not-base64url!';
+
+      expect(normalizeAddressScanPayload(raw), raw);
+    });
+
+    test('keeps the case of a zcash:// authority address', () {
+      // `uri.host` is lowercased, which corrupts a transparent or TEX address.
+      expect(
+        normalizeAddressScanPayload('zcash://t1KzCK7DjnDLmuFhNBmiZ?amount=1'),
+        't1KzCK7DjnDLmuFhNBmiZ',
+      );
+    });
+
     test('leaves unsupported schemes unchanged', () {
       expect(
         normalizeAddressScanPayload('wc:abc@2?relay-protocol=irn'),
