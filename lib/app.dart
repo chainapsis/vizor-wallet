@@ -1290,56 +1290,49 @@ class _PaymentUriLinkListenerState
   }
 
   void _drainPendingPrefill() {
+    final prefillNotifier = ref.read(paymentUriPrefillProvider.notifier);
     final prefill = ref.read(paymentUriPrefillProvider);
-    if (prefill == null) return;
-
     final bootstrap = ref.read(appBootstrapProvider);
-    if (bootstrap.hasBlockingFailure) return;
-
     final walletAsync = ref.read(walletProvider);
-    if (walletAsync.isLoading && walletAsync.value == null) return;
-    if (walletAsync.hasError) return;
-
-    final wallet = walletAsync.value;
-    final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
-    if (!hasWallet) {
-      ref.read(paymentUriPrefillProvider.notifier).clear();
-      widget.router.go('/welcome');
-      _showPaymentUriMessage(
-        'Set up or import a wallet before opening payment links.',
-      );
-      return;
-    }
-
     final security = ref.read(appSecurityProvider);
-    if (!security.isUnlocked) {
-      // Leave the prefill parked in paymentUriPrefillProvider. The unlock flow
-      // claims it and routes to /send, so the payment intent is not lost when
-      // the link is opened while the wallet is locked.
-      widget.router.go('/unlock');
-      return;
-    }
 
-    // A link that arrives mid-unlock (wallet already unlocked but still on the
-    // unlock screen) is delivered by the unlock flow itself; navigating here
-    // too would clobber it. Defer and let the unlock screen claim it.
-    if (widget.router.state.matchedLocation == '/unlock') return;
-
-    final blockedSurface = paymentUriBlockedSurfaceAt(
-      widget.router.state.matchedLocation,
+    final decision = decidePaymentUriDrain(
+      hasParkedPrefill: prefill != null,
+      hasBlockingFailure: bootstrap.hasBlockingFailure,
+      walletIsLoading: walletAsync.isLoading && walletAsync.value == null,
+      walletHasError: walletAsync.hasError,
+      hasWallet: walletAsync.value?.hasWallet ?? bootstrap.hasWallet,
+      isUnlocked: security.isUnlocked,
+      matchedLocation: widget.router.state.matchedLocation,
+      // The send-status phase lives in the status screen's own widget state and
+      // is not observable from here, so a status screen is always treated as
+      // in-flight. `decidePaymentUriDrain` already implements the terminal case
+      // for when that signal exists.
+      sendStatusIsTerminal: false,
     );
-    if (blockedSurface != PaymentUriBlockedSurface.none) {
-      ref.read(paymentUriPrefillProvider.notifier).clear();
-      _showPaymentUriMessage(
-        blockedSurface == PaymentUriBlockedSurface.send
-            ? kPaymentUriSendInProgressMessage
-            : kPaymentUriBusyMessage,
-      );
-      return;
-    }
 
-    ref.read(paymentUriPrefillProvider.notifier).clear();
-    widget.router.go('/send', extra: prefill);
+    switch (decision.action) {
+      case PaymentUriDrainAction.wait:
+        return;
+      case PaymentUriDrainAction.dropWithMessage:
+        prefillNotifier.clear();
+        _showPaymentUriMessage(decision.message!);
+      case PaymentUriDrainAction.routeToUnlock:
+        // Leave the prefill parked in paymentUriPrefillProvider. The unlock
+        // flow claims it and routes to /send, so the payment intent is not
+        // lost when the link is opened while the wallet is locked.
+        widget.router.go('/unlock');
+      case PaymentUriDrainAction.routeToWelcome:
+        prefillNotifier.clear();
+        widget.router.go('/welcome');
+        _showPaymentUriMessage(decision.message!);
+      case PaymentUriDrainAction.deliver:
+        prefillNotifier.clear();
+        if (decision.clearSendStatusPayload) {
+          ref.read(sendStatusRoutePayloadProvider.notifier).clear();
+        }
+        widget.router.go('/send', extra: prefill);
+    }
   }
 
   void _showPaymentUriMessage(String message) {
