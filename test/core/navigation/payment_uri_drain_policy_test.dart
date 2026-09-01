@@ -69,15 +69,16 @@ void main() {
   });
 
   group('bootstrap and wallet failure', () {
-    test('a blocking storage failure leaves the link parked', () {
-      expect(
-        decide(hasBlockingFailure: true).action,
-        PaymentUriDrainAction.wait,
-      );
+    test('a blocking storage failure drops the link with a message', () {
+      final decision = decide(hasBlockingFailure: true);
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriUnavailableMessage);
     });
 
-    test('a wallet load error leaves the link parked', () {
-      expect(decide(walletHasError: true).action, PaymentUriDrainAction.wait);
+    test('a wallet load error drops the link with a message', () {
+      final decision = decide(walletHasError: true);
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriUnavailableMessage);
     });
 
     test('a still-loading wallet leaves the link parked', () {
@@ -87,6 +88,7 @@ void main() {
       );
     });
   });
+
   group('onboarding locations', () {
     const onboardingLocations = [
       '/welcome',

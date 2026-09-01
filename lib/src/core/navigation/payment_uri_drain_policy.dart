@@ -16,6 +16,10 @@ library;
 /// the same age on the unlock-screen claim path.
 const kPaymentUriParkTtl = Duration(minutes: 10);
 
+/// Shown when the link cannot be opened at all: blocking storage failure or a
+/// wallet load error.
+const kPaymentUriUnavailableMessage = 'Payment link could not be opened.';
+
 /// Shown when there is no wallet yet and the user is not already inside a
 /// setup flow.
 const kPaymentUriNoWalletMessage =
@@ -180,7 +184,7 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// |---------------------------------------------|---------------------------|
 /// | nothing parked                              | wait                      |
 /// | parked longer than [kPaymentUriParkTtl]      | drop silently             |
-/// | blocking storage failure / wallet error      | wait                      |
+/// | blocking storage failure / wallet error      | drop + unavailable msg    |
 /// | wallet still loading                         | wait                      |
 /// | onboarding / import / add-account location   | drop + onboarding msg     |
 /// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
@@ -216,7 +220,15 @@ PaymentUriDrainDecision decidePaymentUriDrain({
     return const PaymentUriDrainDecision(PaymentUriDrainAction.dropSilently);
   }
 
-  if (hasBlockingFailure || walletHasError) return _waitDecision;
+  // A bootstrap retry rebuilds the ProviderScope and takes the parked prefill
+  // with it, so staying silent here means the link disappears without the user
+  // ever being told.
+  if (hasBlockingFailure || walletHasError) {
+    return const PaymentUriDrainDecision(
+      PaymentUriDrainAction.dropWithMessage,
+      message: kPaymentUriUnavailableMessage,
+    );
+  }
 
   // Wallet existence is not known yet; a later emission re-runs the drain.
   if (walletIsLoading) return _waitDecision;
