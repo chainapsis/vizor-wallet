@@ -217,8 +217,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         // Claim the payment-URI prefill (parked while locked) only now, after
         // the post-unlock work has succeeded. Claiming earlier would drop the
         // payment if any of the awaits above threw or this screen unmounted.
-        final pendingPrefill =
-            ref.read(paymentUriPrefillProvider.notifier).takeIfFresh();
+        final pendingPrefill = ref
+            .read(paymentUriPrefillProvider.notifier)
+            .takeIfFresh();
         if (pendingPrefill != null) {
           context.go('/send', extra: pendingPrefill);
         } else {

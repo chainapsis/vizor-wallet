@@ -160,11 +160,7 @@ Future<void> _sendViaLockedPaymentUri(
   // Unlock. The unlock flow must claim the parked prefill and route to the
   // prefilled /send screen instead of the default /home (regression guard for
   // the locked-path fix).
-  await _enterText(
-    tester,
-    const ValueKey('unlock_password_field'),
-    _password,
-  );
+  await _enterText(tester, const ValueKey('unlock_password_field'), _password);
   await _tapAppButton(
     tester,
     const ValueKey('unlock_submit_button'),
@@ -351,7 +347,9 @@ Future<T> _zcashdRpc<T>(
     final response = await request.close();
     final body = await utf8.decoder.bind(response).join();
     if (response.statusCode != HttpStatus.ok) {
-      throw StateError('zcashd RPC $method failed: HTTP ${response.statusCode}');
+      throw StateError(
+        'zcashd RPC $method failed: HTTP ${response.statusCode}',
+      );
     }
 
     final decoded = jsonDecode(body) as Map<String, Object?>;
@@ -374,7 +372,10 @@ Future<void> _switchAccount(WidgetTester tester, int accountOrder) async {
   _log('switching to account order $accountOrder');
   final accountUuid = await _accountUuidAtOrder(accountOrder);
   await _tapWidget(tester, const ValueKey('sidebar_accounts_button'));
-  await _tapWidget(tester, ValueKey('sidebar_account_popover_row_$accountUuid'));
+  await _tapWidget(
+    tester,
+    ValueKey('sidebar_account_popover_row_$accountUuid'),
+  );
   await _waitForHome(tester);
 }
 
@@ -621,10 +622,7 @@ Future<void> _tapReceiveButton(WidgetTester tester) async {
     () => tester.any(find.byKey(regular)) || tester.any(find.byKey(first)),
     description: 'a home receive button to render',
   );
-  await _tapWidget(
-    tester,
-    tester.any(find.byKey(regular)) ? regular : first,
-  );
+  await _tapWidget(tester, tester.any(find.byKey(regular)) ? regular : first);
 }
 
 Future<void> _enterText(WidgetTester tester, Key key, String text) async {

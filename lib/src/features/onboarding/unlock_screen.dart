@@ -76,8 +76,9 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
         // the post-unlock work has succeeded. Claiming earlier would drop the
         // payment if any of the awaits above threw or this screen unmounted —
         // the prefill would already be cleared with no way to recover it.
-        final pendingPrefill =
-            ref.read(paymentUriPrefillProvider.notifier).takeIfFresh();
+        final pendingPrefill = ref
+            .read(paymentUriPrefillProvider.notifier)
+            .takeIfFresh();
         if (pendingPrefill != null) {
           context.go('/send', extra: pendingPrefill);
         } else {
