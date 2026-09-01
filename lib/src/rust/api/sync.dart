@@ -1036,6 +1036,11 @@ storeAndBroadcastPcztsWithKeystoneSignaturesForProposal({
       outputParamsPath: outputParamsPath,
     );
 
+/// Computes the stable transaction ID before a finalized PCZT crosses the
+/// irreversible broadcast boundary.
+String getPcztTxid({required List<int> pcztBytes}) =>
+    RustLib.instance.api.crateApiSyncGetPcztTxid(pcztBytes: pcztBytes);
+
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
 /// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
 /// Returns the txid.

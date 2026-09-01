@@ -64,7 +64,7 @@ class PaymentLinkRecoveryRecord {
   PaymentLinkRecoveryRecord copyWith({
     required PaymentLinkRecoveryState state,
     required DateTime updatedAt,
-    String? fundingTxids,
+    Object? fundingTxids = _fieldNotProvided,
     Object? archivedAt = _fieldNotProvided,
   }) {
     return PaymentLinkRecoveryRecord(
@@ -72,7 +72,9 @@ class PaymentLinkRecoveryRecord {
       sourceAccountUuid: sourceAccountUuid,
       state: state,
       updatedAt: updatedAt,
-      fundingTxids: fundingTxids ?? this.fundingTxids,
+      fundingTxids: identical(fundingTxids, _fieldNotProvided)
+          ? this.fundingTxids
+          : fundingTxids as String?,
       archivedAt: identical(archivedAt, _fieldNotProvided)
           ? this.archivedAt
           : archivedAt as DateTime?,
@@ -139,7 +141,9 @@ class PaymentLinkRecoveryStore {
         .where(
           (record) =>
               record.sourceAccountUuid == sourceAccountUuid &&
-              record.state == PaymentLinkRecoveryState.funded,
+              (record.state == PaymentLinkRecoveryState.funded ||
+                  (record.state == PaymentLinkRecoveryState.draft &&
+                      (record.fundingTxids?.trim().isNotEmpty ?? false))),
         )
         .length;
   }
@@ -195,10 +199,78 @@ class PaymentLinkRecoveryStore {
           existing.state != PaymentLinkRecoveryState.funded) {
         throw StateError('Payment link funding state cannot move backwards.');
       }
+      final preparedTxid = existing.fundingTxids?.trim();
+      final submittedTxid = fundingTxids.trim();
+      if (existing.state == PaymentLinkRecoveryState.draft &&
+          preparedTxid != null &&
+          preparedTxid.isNotEmpty &&
+          preparedTxid.toLowerCase() != submittedTxid.toLowerCase()) {
+        throw StateError(
+          'Payment link funding result does not match the prepared transaction.',
+        );
+      }
       final updated = existing.copyWith(
         state: PaymentLinkRecoveryState.funded,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
-        fundingTxids: fundingTxids.trim(),
+        fundingTxids: submittedTxid,
+      );
+      await _writeRecords(_replaceByAddress(records, updated));
+      return updated;
+    });
+  }
+
+  Future<PaymentLinkRecoveryRecord> markPrepared({
+    required String address,
+    required String fundingTxid,
+    DateTime? updatedAt,
+  }) {
+    return _runExclusive(() async {
+      final normalizedTxid = fundingTxid.trim();
+      if (normalizedTxid.isEmpty) {
+        throw ArgumentError.value(
+          fundingTxid,
+          'fundingTxid',
+          'A prepared payment link requires a transaction id.',
+        );
+      }
+      final records = await _loadUnlocked();
+      final existing = _findRequired(records, address);
+      if (existing.state != PaymentLinkRecoveryState.draft) {
+        throw StateError('Only a draft payment link can be prepared.');
+      }
+      final existingTxid = existing.fundingTxids?.trim();
+      if (existingTxid != null &&
+          existingTxid.isNotEmpty &&
+          existingTxid.toLowerCase() != normalizedTxid.toLowerCase()) {
+        throw StateError(
+          'Payment link funding was prepared with a different transaction.',
+        );
+      }
+      final updated = existing.copyWith(
+        state: PaymentLinkRecoveryState.draft,
+        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        fundingTxids: normalizedTxid,
+      );
+      await _writeRecords(_replaceByAddress(records, updated));
+      return updated;
+    });
+  }
+
+  Future<PaymentLinkRecoveryRecord> clearPrepared({
+    required String address,
+    DateTime? updatedAt,
+  }) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findRequired(records, address);
+      if (existing.state != PaymentLinkRecoveryState.draft ||
+          (existing.fundingTxids?.trim().isEmpty ?? true)) {
+        return existing;
+      }
+      final updated = existing.copyWith(
+        state: PaymentLinkRecoveryState.draft,
+        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        fundingTxids: null,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -323,20 +395,32 @@ class PaymentLinkFundingRecovery {
   }) async {
     await _store.saveDraft(link: link, sourceAccountUuid: sourceAccountUuid);
     final result = await createTransaction();
-    final txids = fundingTxids(result);
+    return complete(
+      transaction: result,
+      address: link.address,
+      fundingTxids: fundingTxids,
+    );
+  }
+
+  Future<PaymentLinkFundingRecoveryResult<T>> complete<T>({
+    required T transaction,
+    required String address,
+    required String Function(T result) fundingTxids,
+  }) async {
+    final txids = fundingTxids(transaction);
     Object? recoveryError;
     StackTrace? recoveryStackTrace;
     for (var attempt = 0; attempt < _fundingMetadataWriteAttempts; attempt++) {
       try {
-        await _store.markFunded(address: link.address, fundingTxids: txids);
-        return PaymentLinkFundingRecoveryResult(transaction: result);
+        await _store.markFunded(address: address, fundingTxids: txids);
+        return PaymentLinkFundingRecoveryResult(transaction: transaction);
       } catch (error, stackTrace) {
         recoveryError = error;
         recoveryStackTrace = stackTrace;
       }
     }
     return PaymentLinkFundingRecoveryResult(
-      transaction: result,
+      transaction: transaction,
       recoveryError: recoveryError,
       recoveryStackTrace: recoveryStackTrace,
     );

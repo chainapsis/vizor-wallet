@@ -115,6 +115,90 @@ void main() {
       },
     );
 
+    test('persists the prepared hardware txid before broadcast', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+
+      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+      await store.markPrepared(
+        address: link.address,
+        fundingTxid: 'prepared-hardware-txid',
+      );
+
+      final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
+      expect(restartedRecords.single.state, PaymentLinkRecoveryState.draft);
+      expect(restartedRecords.single.fundingTxids, 'prepared-hardware-txid');
+      expect(await store.countUnsharedFundedForAccount('source-account'), 1);
+    });
+
+    test(
+      'a definitely discarded hardware draft no longer blocks deletion',
+      () async {
+        final storage = _FakePaymentLinkRecoveryStorage();
+        final store = PaymentLinkRecoveryStore(storage);
+        final link = _link();
+        await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+        await store.markPrepared(
+          address: link.address,
+          fundingTxid: 'prepared-hardware-txid',
+        );
+
+        await store.clearPrepared(address: link.address);
+
+        final record = (await store.load()).single;
+        expect(record.state, PaymentLinkRecoveryState.draft);
+        expect(record.fundingTxids, isNull);
+        expect(await store.countUnsharedFundedForAccount('source-account'), 0);
+      },
+    );
+
+    test(
+      'keeps the prepared txid when post-broadcast metadata retries fail',
+      () async {
+        final storage = _FakePaymentLinkRecoveryStorage(failOnWrites: {3, 4});
+        final store = PaymentLinkRecoveryStore(storage);
+        final link = _link();
+        await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+        await store.markPrepared(
+          address: link.address,
+          fundingTxid: 'prepared-hardware-txid',
+        );
+
+        final funding = await PaymentLinkFundingRecovery(store).complete(
+          transaction: 'accepted-broadcast',
+          address: link.address,
+          fundingTxids: (_) => 'prepared-hardware-txid',
+        );
+
+        expect(funding.transaction, 'accepted-broadcast');
+        expect(funding.fundingMetadataSaved, isFalse);
+        final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
+        expect(restartedRecords.single.state, PaymentLinkRecoveryState.draft);
+        expect(restartedRecords.single.fundingTxids, 'prepared-hardware-txid');
+        expect(await store.countUnsharedFundedForAccount('source-account'), 1);
+      },
+    );
+
+    test('rejects a broadcast result for a different prepared txid', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+      await store.markPrepared(
+        address: link.address,
+        fundingTxid: 'prepared-hardware-txid',
+      );
+
+      await expectLater(
+        store.markFunded(
+          address: link.address,
+          fundingTxids: 'different-hardware-txid',
+        ),
+        throwsStateError,
+      );
+    });
+
     test('records pending transaction ids before status handling', () async {
       final storage = _FakePaymentLinkRecoveryStorage();
       final store = PaymentLinkRecoveryStore(storage);

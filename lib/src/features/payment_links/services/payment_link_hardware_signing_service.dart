@@ -164,18 +164,36 @@ class RustPaymentLinkHardwareSigningService
     required PaymentLinkHardwarePcztDraft draft,
     String? spendParamsPath,
     String? outputParamsPath,
-  }) {
-    return rust_sync.addProofsToPczt(
+  }) async {
+    final pcztWithProofs = await rust_sync.addProofsToPczt(
       pcztBytes: draft.pcztBytes,
       spendParamsPath: draft.needsSaplingParams ? spendParamsPath : null,
       outputParamsPath: draft.needsSaplingParams ? outputParamsPath : null,
     );
+    final preparedTxid = rust_sync.getPcztTxid(pcztBytes: pcztWithProofs);
+    await _recoveryStore.markPrepared(
+      address: draft.link.address,
+      fundingTxid: preparedTxid,
+    );
+    return pcztWithProofs;
   }
 
   @override
   Future<void> discardPcztDraft({
     required PaymentLinkHardwarePcztDraft draft,
   }) async {
+    await _discardProposal(draft);
+    try {
+      await _recoveryStore.clearPrepared(address: draft.link.address);
+    } catch (error) {
+      log(
+        'PaymentLinkHardwareSigning: prepared funding cleanup failed '
+        'address=${draft.link.address} error=$error',
+      );
+    }
+  }
+
+  Future<void> _discardProposal(PaymentLinkHardwarePcztDraft draft) async {
     Object? lastError;
     for (var attempt = 1; attempt <= 3; attempt++) {
       try {
@@ -247,14 +265,24 @@ class RustPaymentLinkHardwareSigningService
         result.status == 'broadcasted_storage_failed') {
       await _retainPcztDraftLockUntilExpiry(draft);
     } else {
-      await discardPcztDraft(draft: draft);
+      // Releasing a consumed proposal after broadcast must not clear the
+      // prepared txid. It is the durable receipt used if markFunded fails.
+      await _discardProposal(draft);
     }
 
     if (fundingAccepted) {
-      await _recoveryStore.markFunded(
+      final funding = await PaymentLinkFundingRecovery(_recoveryStore).complete(
+        transaction: result,
         address: draft.link.address,
-        fundingTxids: result.txid,
+        fundingTxids: (broadcast) => broadcast.txid,
       );
+      if (!funding.fundingMetadataSaved) {
+        log(
+          'PaymentLinkHardwareSigning: funding was submitted but recovery '
+          'metadata could not be saved after retry: '
+          '${funding.recoveryError}\n${funding.recoveryStackTrace}',
+        );
+      }
     }
     try {
       await _ref.read(syncProvider.notifier).refreshAfterSend();

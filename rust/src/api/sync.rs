@@ -2721,6 +2721,13 @@ pub async fn store_and_broadcast_pczts_with_keystone_signatures_for_proposal(
     })
 }
 
+/// Computes the stable transaction ID before a finalized PCZT crosses the
+/// irreversible broadcast boundary.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_pczt_txid(pczt_bytes: Vec<u8>) -> Result<String, String> {
+    catch(|| wallet_sync::txid_from_io_finalized_pczt(&pczt_bytes).map(|txid| txid.to_string()))
+}
+
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
 /// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
 /// Returns the txid.

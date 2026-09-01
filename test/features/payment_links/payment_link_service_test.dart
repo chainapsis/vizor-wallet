@@ -101,6 +101,37 @@ void main() {
     expect(paymentLinkTxidsMatch(broadcastTxid, 'not-a-txid'), isFalse);
   });
 
+  test('prepared funding recovery requires a non-expired history txid', () {
+    const preparedTxid =
+        '9909fe99c789029bf118c88bd9ee33ed35965fd0f3154dd1a8ec6daa4974c7e3';
+    const historyTxid =
+        'e3c77449aa6deca8d14d15f3d05f9635ed33eed98bc818f19b0289c799fe0999';
+
+    expect(
+      paymentLinkFundingTransactionExists(
+        fundingTxid: preparedTxid,
+        transactions: [_transaction(txid: historyTxid, txKind: 'sent')],
+      ),
+      isTrue,
+    );
+    expect(
+      paymentLinkFundingTransactionExists(
+        fundingTxid: preparedTxid,
+        transactions: [
+          _transaction(txid: historyTxid, txKind: 'sent', expiredUnmined: true),
+        ],
+      ),
+      isFalse,
+    );
+    expect(
+      paymentLinkFundingTransactionExists(
+        fundingTxid: preparedTxid,
+        transactions: [_transaction(txid: 'different', txKind: 'sent')],
+      ),
+      isFalse,
+    );
+  });
+
   test(
     'claim remains Receiving until every transaction has six confirmations',
     () {

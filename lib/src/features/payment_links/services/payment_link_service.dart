@@ -72,6 +72,18 @@ bool paymentLinkTxidsMatch(String first, String second) {
 }
 
 @visibleForTesting
+bool paymentLinkFundingTransactionExists({
+  required String fundingTxid,
+  required List<rust_sync.TransactionInfo> transactions,
+}) {
+  return transactions.any(
+    (transaction) =>
+        !transaction.expiredUnmined &&
+        paymentLinkTxidsMatch(fundingTxid, transaction.txidHex),
+  );
+}
+
+@visibleForTesting
 PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
   required String claimTxids,
   required List<rust_sync.TransactionInfo> transactions,
@@ -545,8 +557,63 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   @override
-  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() {
-    return _recoveryStore.load();
+  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() async {
+    final records = await _recoveryStore.load();
+    final preparedDrafts = records
+        .where(
+          (record) =>
+              record.state == PaymentLinkRecoveryState.draft &&
+              (record.fundingTxids?.trim().isNotEmpty ?? false),
+        )
+        .toList();
+    if (preparedDrafts.isEmpty) return records;
+
+    try {
+      final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+      final dbPath = await getWalletDbPath();
+      final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
+      for (final accountUuid
+          in preparedDrafts.map((record) => record.sourceAccountUuid).toSet()) {
+        transactionsByAccount[accountUuid] = await rust_sync
+            .getTransactionHistory(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              limit: null,
+            );
+      }
+
+      var recoveredAny = false;
+      for (final record in preparedDrafts) {
+        final preparedTxid = record.fundingTxids!.trim();
+        if (!paymentLinkFundingTransactionExists(
+          fundingTxid: preparedTxid,
+          transactions:
+              transactionsByAccount[record.sourceAccountUuid] ?? const [],
+        )) {
+          continue;
+        }
+        try {
+          await _recoveryStore.markFunded(
+            address: record.link.address,
+            fundingTxids: preparedTxid,
+          );
+          recoveredAny = true;
+        } catch (error) {
+          log(
+            'PaymentLinkService: prepared funding reconciliation failed '
+            'address=${record.link.address} error=$error',
+          );
+        }
+      }
+      return recoveredAny ? _recoveryStore.load() : records;
+    } catch (error) {
+      // Loading the preserved bearer secret remains available even if the
+      // main-wallet history is temporarily unavailable. The next foreground
+      // refresh retries reconciliation without constructing a new send.
+      log('PaymentLinkService: prepared funding lookup failed: $error');
+      return records;
+    }
   }
 
   @override
