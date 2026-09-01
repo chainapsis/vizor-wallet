@@ -346,24 +346,18 @@ void main() {
     );
   });
 
-  test('pending and partial claim broadcasts retain their wallet DB', () {
+  test('recognizes every accepted claim broadcast status', () {
     expect(
-      shouldRetainPaymentLinkClaimWallet(
-        paymentLinkClaimBroadcastStatusFromWire('pending_broadcast'),
-      ),
-      isTrue,
+      paymentLinkClaimBroadcastStatusFromWire('pending_broadcast'),
+      PaymentLinkClaimBroadcastStatus.pendingBroadcast,
     );
     expect(
-      shouldRetainPaymentLinkClaimWallet(
-        paymentLinkClaimBroadcastStatusFromWire('partial_broadcast'),
-      ),
-      isTrue,
+      paymentLinkClaimBroadcastStatusFromWire('partial_broadcast'),
+      PaymentLinkClaimBroadcastStatus.partialBroadcast,
     );
     expect(
-      shouldRetainPaymentLinkClaimWallet(
-        paymentLinkClaimBroadcastStatusFromWire('broadcasted'),
-      ),
-      isFalse,
+      paymentLinkClaimBroadcastStatusFromWire('broadcasted'),
+      PaymentLinkClaimBroadcastStatus.broadcasted,
     );
     expect(
       () => paymentLinkClaimBroadcastStatusFromWire('unexpected'),

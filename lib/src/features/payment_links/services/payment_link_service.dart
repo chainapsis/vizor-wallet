@@ -361,13 +361,6 @@ PaymentLinkClaimBroadcastStatus paymentLinkClaimBroadcastStatusFromWire(
 }
 
 @visibleForTesting
-bool shouldRetainPaymentLinkClaimWallet(
-  PaymentLinkClaimBroadcastStatus status,
-) {
-  return status != PaymentLinkClaimBroadcastStatus.broadcasted;
-}
-
-@visibleForTesting
 Future<bool> finalizeConfirmedPaymentLinkClaim({
   required PaymentLinkReceivedRecord record,
   required Future<bool> Function(PaymentLinkReceivedRecord record)
@@ -514,6 +507,7 @@ class PaymentLinkService implements PaymentLinkOperations {
   final PaymentLinkRecoveryStore _recoveryStore;
   final PaymentLinkReceivedStore _receivedStore;
   final PaymentLinkRecoveryReconciler _recoveryReconciler;
+  final Map<String, Future<void>> _claimSyncs = {};
 
   @override
   Future<PaymentLinkFundingQuote> quoteFunding({
@@ -782,22 +776,24 @@ class PaymentLinkService implements PaymentLinkOperations {
     if (currentNetworkRecords.isEmpty) return persistedRecords;
 
     final retryableAddresses = <String>{};
-    for (final record in currentNetworkRecords) {
-      try {
-        if (await _syncRetainedClaimWallet(
-          record: record,
-          network: endpoint.networkName,
-        )) {
-          await _receivedStore.markReadyToClaim(address: record.address);
-          retryableAddresses.add(record.address);
+    await Future.wait(
+      currentNetworkRecords.map((record) async {
+        try {
+          if (await _syncRetainedClaimWallet(
+            record: record,
+            network: endpoint.networkName,
+          )) {
+            await _receivedStore.markReadyToClaim(address: record.address);
+            retryableAddresses.add(record.address);
+          }
+        } catch (error, stackTrace) {
+          log(
+            'PaymentLinkService: retained claim wallet sync failed for '
+            '${record.address}: $error\n$stackTrace',
+          );
         }
-      } catch (error, stackTrace) {
-        log(
-          'PaymentLinkService: retained claim wallet sync failed for '
-          '${record.address}: $error\n$stackTrace',
-        );
-      }
-    }
+      }),
+    );
     final awaitingReceipt = currentNetworkRecords
         .where((record) => !retryableAddresses.contains(record.address))
         .toList();
@@ -1021,7 +1017,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       }
       log('PaymentLinkClaim: recovery address validated');
 
-      await _runBlockingSync(dbPath: tempWallet.dbPath);
+      await _runClaimSync(link: link, dbPath: tempWallet.dbPath);
       log('PaymentLinkClaim: temporary wallet sync completed');
       final balance = await rust_sync.getBalance(
         dbPath: tempWallet.dbPath,
@@ -1114,16 +1110,8 @@ class PaymentLinkService implements PaymentLinkOperations {
         destinationAccountUuid: session.destinationAccountUuid,
         claimTxids: result.txids,
       );
-      if (!shouldRetainPaymentLinkClaimWallet(result.status)) {
-        try {
-          await discardClaimSession(session);
-        } catch (error, stackTrace) {
-          log(
-            'PaymentLinkService: failed to delete completed claim wallet: '
-            '$error\n$stackTrace',
-          );
-        }
-      }
+      // Keep the claim database for rebroadcast/reorg recovery. Reconciliation
+      // deletes it only after every claim transaction reaches six confirmations.
       return result;
     } catch (_) {
       if (!didBroadcast) {
@@ -1204,8 +1192,16 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   @override
-  Future<void> discardClaimSession(PaymentLinkClaimSession session) =>
-      _deleteTemporaryWalletDb(session.directory);
+  Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
+    final claimId = paymentLinkClaimWalletDirectoryName(session.link);
+    rust_sync.cancelPaymentLinkClaimSync(claimId: claimId);
+    try {
+      await _claimSyncs[claimId];
+    } catch (_) {
+      // A failed scan does not prevent the user-requested preview cleanup.
+    }
+    await _deleteTemporaryWalletDb(session.directory);
+  }
 
   Future<void> _refreshMainWalletAfterSend() async {
     try {
@@ -1351,17 +1347,49 @@ class PaymentLinkService implements PaymentLinkOperations {
     return result;
   }
 
-  Future<void> _runBlockingSync({required String dbPath}) async {
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    await _ref
-        .read(syncProvider.notifier)
-        .runWithExclusiveRustSync(
-          () => rust_sync.runFullSyncBlocking(
-            dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
-            mode: 1,
-          ),
+  Future<void> _runClaimSync({
+    required VizorPaymentLink link,
+    required String dbPath,
+  }) {
+    final claimId = paymentLinkClaimWalletDirectoryName(link);
+    final existing = _claimSyncs[claimId];
+    if (existing != null) return existing;
+    final future = _runClaimSyncOnce(
+      claimId: claimId,
+      dbPath: dbPath,
+      network: link.network,
+    );
+    _claimSyncs[claimId] = future;
+    return future.whenComplete(() {
+      if (identical(_claimSyncs[claimId], future)) {
+        _claimSyncs.remove(claimId);
+      }
+    });
+  }
+
+  Future<void> _runClaimSyncOnce({
+    required String claimId,
+    required String dbPath,
+    required String network,
+  }) {
+    return _ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .runWithEndpointFallback<void>(
+          operation: 'Gift Card claim sync',
+          action: (endpoint) {
+            if (endpoint.networkName != network) {
+              throw StateError(
+                'Payment link is for $network, but this wallet is using '
+                '${endpoint.networkName}.',
+              );
+            }
+            return rust_sync.runPaymentLinkClaimSync(
+              claimId: claimId,
+              dbPath: dbPath,
+              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              network: network,
+            );
+          },
         );
   }
 
@@ -1378,7 +1406,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     final tempWallet = await _temporaryWalletLocation(link);
     if (!await File(tempWallet.dbPath).exists()) return false;
 
-    await _runBlockingSync(dbPath: tempWallet.dbPath);
+    await _runClaimSync(link: link, dbPath: tempWallet.dbPath);
     final accounts = await rust_wallet.listAccounts(
       dbPath: tempWallet.dbPath,
       network: network,
