@@ -205,6 +205,17 @@ fn spawn_pir_connect(
     Ok(OwnedResultThread::new("PIR connect", handle))
 }
 
+fn start_pir_connect_unless_proof_persisted(
+    proof_persisted: bool,
+    start: impl FnOnce() -> Result<PirConnectThread, String>,
+) -> Result<Option<PirConnectThread>, String> {
+    if proof_persisted {
+        Ok(None)
+    } else {
+        start().map(Some)
+    }
+}
+
 async fn drain_result_thread<T: Send + 'static>(
     handle: OwnedResultThread<T>,
 ) -> Result<(), String> {
@@ -900,11 +911,9 @@ where
     // Overlap independent warm-ups with local preparation/PCZT setup when the
     // proof is still missing. A background-completed proof needs no PIR client.
     start_proving_cache_warmup();
-    let pir_connect = if proof_prechecked {
-        None
-    } else {
-        Some(spawn_pir_connect(&pir_server_urls[0], pir_layout)?)
-    };
+    let pir_connect = start_pir_connect_unless_proof_persisted(proof_prechecked, || {
+        spawn_pir_connect(&pir_server_urls[0], pir_layout)
+    })?;
 
     on_progress(DelegationProgress::SelectingNotes);
     let pczt_progress = on_progress.clone();
@@ -1042,6 +1051,7 @@ pub async fn build_keystone_delegation_request(
 /// This path intentionally does not rebuild the governance PCZT. The signed PCZT
 /// request already persisted the sighash and delegation fields; rebuilding here
 /// would overwrite that state with a fresh PCZT that the device did not sign.
+/// A proof completed by background warmup is reused without connecting to PIR.
 /// Retryable PIR transport failures rotate through `pir_server_urls` without
 /// rebuilding that request.
 ///
@@ -1064,39 +1074,56 @@ where
 {
     let pir_server_urls = normalize_pir_server_urls(pir_server_urls)?;
     let on_progress = Arc::new(on_progress);
+    let round_id = prepare_params.lwd.round_params.vote_round_id.clone();
+    let bundle_index = prepare_params.bundle_index;
+
+    zcash_voting::validate_round_params(&prepare_params.lwd.round_params)
+        .map_err(|e| format!("Invalid voting round params: {e}"))?;
+
+    let proof_prechecked =
+        has_persisted_delegation_proof(db_path, account_uuid, &round_id, bundle_index)?;
 
     start_proving_cache_warmup();
-    let pir_connect = spawn_pir_connect(&pir_server_urls[0], pir_layout)?;
+    let pir_connect = start_pir_connect_unless_proof_persisted(proof_prechecked, || {
+        spawn_pir_connect(&pir_server_urls[0], pir_layout)
+    })?;
 
     on_progress(DelegationProgress::SelectingNotes);
-    let preparation = (|| {
-        let wallet_db = open_wallet_db_for_read(
-            db_path,
-            wallet_network(prepare_params.voting_hotkey.network()),
-        )?;
-        let prepare_params = prepare_params_with_whale_protection(prepare_params);
-        with_open_voting_db_write(db_path, account_uuid, |voting_db| {
-            zcash_voting::delegate::prepare_delegation_bundle(voting_db, &wallet_db, prepare_params)
-                .map_err(|e| e.to_string())
-        })
-    })();
-    let (voting_db, prepared_bundle) = match preparation {
+    let setup_progress = on_progress.clone();
+    let setup_stages = zcash_voting::DelegationProgressBridge::new(move |progress| {
+        setup_progress(progress);
+    });
+    let preparation = prepare_delegation_setup(db_path, prepare_params, &setup_stages);
+    let (voting_db, prepared_bundle, _pczt_bytes, proof_persisted) = match preparation {
         Ok(value) => value,
         Err(error) => {
-            drain_pir_connect_after_error(pir_connect).await;
+            if let Some(pir_connect) = pir_connect {
+                drain_pir_connect_after_error(pir_connect).await;
+            }
             return Err(error);
         }
     };
-    prove_delegation_bundle(
-        db_path,
-        &pir_server_urls,
-        pir_layout,
-        account_uuid,
-        &prepared_bundle,
-        pir_connect,
-        on_progress.clone(),
-    )
-    .await?;
+    if proof_persisted {
+        if let Some(pir_connect) = pir_connect {
+            drain_pir_connect_after_error(pir_connect).await;
+        }
+        on_progress(DelegationProgress::ProofComplete);
+    } else {
+        let pir_connect = match pir_connect {
+            Some(pir_connect) => pir_connect,
+            None => spawn_pir_connect(&pir_server_urls[0], pir_layout)?,
+        };
+        prove_delegation_bundle(
+            db_path,
+            &pir_server_urls,
+            pir_layout,
+            account_uuid,
+            &prepared_bundle,
+            pir_connect,
+            on_progress.clone(),
+        )
+        .await?;
+    }
 
     on_progress(DelegationProgress::SigningPayload);
     let signer = zcash_voting::delegate::PreparedSigner::signature_from_bytes(
@@ -1248,6 +1275,16 @@ mod tests {
         );
         assert!(normalize_pir_server_urls(&[]).is_err());
         assert!(normalize_pir_server_urls(&[" ".to_string()]).is_err());
+    }
+
+    #[test]
+    fn persisted_proof_skips_pir_connection_start() {
+        let pir_connect = start_pir_connect_unless_proof_persisted(true, || {
+            panic!("persisted proof must not start a PIR connection")
+        })
+        .unwrap();
+
+        assert!(pir_connect.is_none());
     }
 
     #[test]
