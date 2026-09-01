@@ -187,12 +187,12 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// | blocking storage failure / wallet error      | drop + unavailable msg    |
 /// | wallet still loading                         | wait                      |
 /// | onboarding / import / add-account location   | drop + onboarding msg     |
+/// | other in-progress surface                    | drop + busy msg           |
 /// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
 /// | locked, already on `/unlock`/`/lost-password`| wait (stay parked)        |
 /// | locked, anywhere else                        | `/unlock` (stay parked)   |
 /// | unlocked but still on `/unlock`              | wait (unlock screen owns) |
 /// | send flow open                               | drop + send msg           |
-/// | other in-progress surface                    | drop + busy msg           |
 /// | otherwise                                    | deliver                   |
 ///
 /// [parkedFor] is how long the prefill has been parked (null when nothing is
@@ -211,6 +211,8 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   bool sendStatusIsTerminal = false,
 }) {
   if (!hasParkedPrefill) return _waitDecision;
+
+  final blockedSurface = paymentUriBlockedSurfaceAt(matchedLocation);
 
   // Age first: a link that has outlived its park window is dropped without a
   // message, whatever screen the app happens to be on.
@@ -241,6 +243,18 @@ PaymentUriDrainDecision decidePaymentUriDrain({
     );
   }
 
+  // A non-send in-progress surface outranks the wallet-existence and lock rows.
+  // The uninstall flow deliberately ends with hasWallet == false, so ordering
+  // this after the no-wallet row would yank its removing/done stage to
+  // /welcome. The send surfaces stay below: `/send*` is unreachable without a
+  // wallet, and the terminal `/send/status` exception needs the delivery path.
+  if (blockedSurface == PaymentUriBlockedSurface.other) {
+    return const PaymentUriDrainDecision(
+      PaymentUriDrainAction.dropWithMessage,
+      message: kPaymentUriBusyMessage,
+    );
+  }
+
   if (!hasWallet) {
     return const PaymentUriDrainDecision(
       PaymentUriDrainAction.routeToWelcome,
@@ -259,26 +273,20 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   // the navigation. Delivering here too would clobber it.
   if (matchedLocation == '/unlock') return _waitDecision;
 
-  switch (paymentUriBlockedSurfaceAt(matchedLocation)) {
-    case PaymentUriBlockedSurface.send:
-      // A finished send status screen has nothing left to lose; release its
-      // retained route payload and deliver.
-      if (matchedLocation == '/send/status' && sendStatusIsTerminal) {
-        return const PaymentUriDrainDecision(
-          PaymentUriDrainAction.deliver,
-          clearSendStatusPayload: true,
-        );
-      }
+  if (blockedSurface == PaymentUriBlockedSurface.send) {
+    // A finished send status screen has nothing left to lose; release its
+    // retained route payload and deliver.
+    if (matchedLocation == '/send/status' && sendStatusIsTerminal) {
       return const PaymentUriDrainDecision(
-        PaymentUriDrainAction.dropWithMessage,
-        message: kPaymentUriSendInProgressMessage,
+        PaymentUriDrainAction.deliver,
+        clearSendStatusPayload: true,
       );
-    case PaymentUriBlockedSurface.other:
-      return const PaymentUriDrainDecision(
-        PaymentUriDrainAction.dropWithMessage,
-        message: kPaymentUriBusyMessage,
-      );
-    case PaymentUriBlockedSurface.none:
-      return const PaymentUriDrainDecision(PaymentUriDrainAction.deliver);
+    }
+    return const PaymentUriDrainDecision(
+      PaymentUriDrainAction.dropWithMessage,
+      message: kPaymentUriSendInProgressMessage,
+    );
   }
+
+  return const PaymentUriDrainDecision(PaymentUriDrainAction.deliver);
 }

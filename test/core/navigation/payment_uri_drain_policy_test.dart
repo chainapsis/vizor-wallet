@@ -165,6 +165,46 @@ void main() {
       expect(decision.action, PaymentUriDrainAction.routeToWelcome);
       expect(decision.message, kPaymentUriNoWalletMessage);
     });
+
+    test('a busy non-send surface outranks the no-wallet redirect', () {
+      // The uninstall flow ends with hasWallet == false on purpose, so the
+      // no-wallet row must not pull its done stage over to /welcome.
+      for (final location in [
+        '/settings/uninstall',
+        '/migration/private/status',
+        '/swap/review',
+        '/voting/poll/round-1/review',
+      ]) {
+        final decision = decide(hasWallet: false, matchedLocation: location);
+        expect(
+          decision.action,
+          PaymentUriDrainAction.dropWithMessage,
+          reason: location,
+        );
+        expect(decision.message, kPaymentUriBusyMessage, reason: location);
+      }
+    });
+
+    test('a busy non-send surface also outranks the locked redirect', () {
+      final decision = decide(
+        isUnlocked: false,
+        matchedLocation: '/settings/uninstall',
+      );
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriBusyMessage);
+    });
+
+    test('send surfaces still fall through to the no-wallet redirect', () {
+      // /send* is unreachable without a wallet, and the terminal /send/status
+      // exception needs the delivery path, so the send rows stay below.
+      for (final location in ['/send', '/send/status']) {
+        expect(
+          decide(hasWallet: false, matchedLocation: location).action,
+          PaymentUriDrainAction.routeToWelcome,
+          reason: location,
+        );
+      }
+    });
   });
 
   group('locked wallet', () {
