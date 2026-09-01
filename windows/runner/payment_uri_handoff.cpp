@@ -1,7 +1,5 @@
 #include "payment_uri_handoff.h"
 
-#include <algorithm>
-#include <cwctype>
 #include <string>
 
 #include "single_instance.h"
@@ -12,56 +10,27 @@ namespace {
 constexpr wchar_t kFlutterWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 constexpr ULONG_PTR kPaymentUriCopyDataId = 0x5A43555249;  // "ZCURI"
 
-std::wstring ToLower(std::wstring value) {
-  std::transform(value.begin(), value.end(), value.begin(),
-                 [](wchar_t ch) { return static_cast<wchar_t>(towlower(ch)); });
-  return value;
-}
-
-std::wstring ModuleFileName() {
-  std::wstring path(MAX_PATH, L'\0');
-  while (true) {
-    const DWORD length = ::GetModuleFileNameW(
-        nullptr, path.data(), static_cast<DWORD>(path.size()));
-    if (length == 0) {
-      return L"";
-    }
-    if (length < path.size() - 1) {
-      path.resize(length);
-      return path;
-    }
-    path.resize(path.size() * 2);
-  }
-}
-
-std::wstring ProcessImagePath(DWORD process_id) {
-  HANDLE process = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
-                                 process_id);
-  if (process == nullptr) {
-    return L"";
-  }
-
-  std::wstring path(MAX_PATH, L'\0');
-  DWORD length = static_cast<DWORD>(path.size());
-  while (true) {
-    if (::QueryFullProcessImageNameW(process, 0, path.data(), &length)) {
-      ::CloseHandle(process);
-      path.resize(length);
-      return path;
-    }
-    if (::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-      ::CloseHandle(process);
-      return L"";
-    }
-    path.resize(path.size() * 2);
-    length = static_cast<DWORD>(path.size());
-  }
-}
-
 bool IsFlutterRunnerWindow(HWND hwnd) {
   wchar_t class_name[256];
   const int length = ::GetClassNameW(hwnd, class_name, 256);
   return length > 0 && std::wstring(class_name, length) == kFlutterWindowClassName;
+}
+
+// Returns true when |hwnd| answers the registered activation message with the
+// single-instance acknowledgement, which only a Vizor primary sharing this
+// process's instance boundary does. Identifying the target this way instead of
+// by comparing executable paths keeps working when the running instance was
+// started through a junction, a subst drive, an 8.3 short path, or a directory
+// an update has since replaced -- cases where the instance lock still matches
+// but the image paths do not, and the payment URI used to be swallowed.
+bool IsVizorPrimaryWindow(HWND hwnd, UINT activation_message) {
+  DWORD_PTR response = 0;
+  return ::SendMessageTimeoutW(hwnd, activation_message, 0, 0,
+                               SMTO_ABORTIFHUNG | SMTO_BLOCK,
+                               kSingleInstanceActivationMessageTimeoutMs,
+                               &response) != 0 &&
+         response ==
+             static_cast<DWORD_PTR>(kSingleInstanceActivationAcknowledged);
 }
 
 bool SendPaymentUri(HWND hwnd, const std::string& uri) {
@@ -91,13 +60,16 @@ bool SendPaymentUris(HWND hwnd, const std::vector<std::string>& uris) {
 }
 
 struct ForwardContext {
-  std::wstring module_path;
-  const std::vector<std::string>* uris;
+  const std::vector<std::string>* uris = nullptr;
+  UINT activation_message = 0;
   bool delivered = false;
 };
 
 BOOL CALLBACK ForwardToMatchingWindow(HWND hwnd, LPARAM lparam) {
   auto* context = reinterpret_cast<ForwardContext*>(lparam);
+  if (context == nullptr) {
+    return FALSE;
+  }
   if (!IsFlutterRunnerWindow(hwnd)) {
     return TRUE;
   }
@@ -108,29 +80,29 @@ BOOL CALLBACK ForwardToMatchingWindow(HWND hwnd, LPARAM lparam) {
     return TRUE;
   }
 
-  const std::wstring process_path = ToLower(ProcessImagePath(process_id));
-  if (process_path.empty() || process_path != context->module_path) {
+  // Grant the candidate the right to take the foreground before probing it:
+  // the probe itself makes a Vizor primary present its window, and without
+  // this grant that first presentation degrades to a taskbar flash.
+  ::AllowSetForegroundWindow(process_id);
+  if (!IsVizorPrimaryWindow(hwnd, context->activation_message)) {
     return TRUE;
   }
 
-  ::AllowSetForegroundWindow(process_id);
   context->delivered = SendPaymentUris(hwnd, *context->uris);
   return context->delivered ? FALSE : TRUE;
 }
 
 }  // namespace
 
-bool ForwardPaymentUrisToRunningInstance(const std::vector<std::string>& uris) {
-  if (uris.empty()) {
+bool ForwardPaymentUrisToRunningInstance(const std::vector<std::string>& uris,
+                                        UINT activation_message) {
+  if (uris.empty() || activation_message == 0) {
     return false;
   }
 
   ForwardContext context;
-  context.module_path = ToLower(ModuleFileName());
   context.uris = &uris;
-  if (context.module_path.empty()) {
-    return false;
-  }
+  context.activation_message = activation_message;
 
   // The primary claims the single-instance lock before it creates its window,
   // so a zcash: launch that arrives during startup finds no target on the
