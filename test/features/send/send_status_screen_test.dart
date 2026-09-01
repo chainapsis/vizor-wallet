@@ -25,7 +25,6 @@ import 'package:zcash_wallet/src/features/donation/widgets/donation_views.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_status_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
-import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
