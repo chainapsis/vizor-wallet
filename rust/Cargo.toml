@@ -173,9 +173,9 @@ default-features = false
 features = ["zakura"]
 
 [patch.crates-io]
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "64252da6d832666f8253c5c188b25bc850691e5f" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "64252da6d832666f8253c5c188b25bc850691e5f" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "64252da6d832666f8253c5c188b25bc850691e5f" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "45d0b9fdecb1ef800f9ab47cf19600cfa6a55138" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "45d0b9fdecb1ef800f9ab47cf19600cfa6a55138" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "45d0b9fdecb1ef800f9ab47cf19600cfa6a55138" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
