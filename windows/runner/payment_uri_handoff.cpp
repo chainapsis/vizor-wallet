@@ -72,12 +72,21 @@ bool SendPaymentUris(HWND hwnd, const std::vector<std::string>& uris) {
 struct ForwardContext {
   const std::vector<std::string>* uris = nullptr;
   UINT activation_message = 0;
+  ULONGLONG deadline = 0;
+  HWND primary = nullptr;
   bool delivered = false;
 };
 
 BOOL CALLBACK ForwardToMatchingWindow(HWND hwnd, LPARAM lparam) {
   auto* context = reinterpret_cast<ForwardContext*>(lparam);
   if (context == nullptr) {
+    return FALSE;
+  }
+  // Stop the pass at the caller's deadline. Every candidate costs an
+  // activation probe with its own timeout, so on a desktop full of windows a
+  // single enumeration can run long past the retry window; checking only
+  // between passes would let one pass overrun the whole 2 s budget.
+  if (::GetTickCount64() >= context->deadline) {
     return FALSE;
   }
   if (!IsFlutterRunnerWindow(hwnd)) {
@@ -90,14 +99,18 @@ BOOL CALLBACK ForwardToMatchingWindow(HWND hwnd, LPARAM lparam) {
     return TRUE;
   }
 
-  // Grant the candidate the right to take the foreground before probing it:
-  // the probe itself makes a Vizor primary present its window, and without
-  // this grant that first presentation degrades to a taskbar flash.
-  ::AllowSetForegroundWindow(process_id);
   if (!IsVizorPrimaryWindow(hwnd, context->activation_message)) {
     return TRUE;
   }
 
+  // Only a window that answered the single-instance acknowledgement gets the
+  // foreground grant. Handing it to every FLUTTER_RUNNER_WIN32_WINDOW would
+  // give an unrelated Flutter app this launch's right to take the foreground.
+  // The cost is that the probe's own presentation may degrade to a taskbar
+  // flash; the primary presents again from its WM_COPYDATA handler, by which
+  // point the grant is in place.
+  ::AllowSetForegroundWindow(process_id);
+  context->primary = hwnd;
   context->delivered = SendPaymentUris(hwnd, *context->uris);
   return context->delivered ? FALSE : TRUE;
 }
@@ -110,24 +123,37 @@ bool ForwardPaymentUrisToRunningInstance(const std::vector<std::string>& uris,
     return false;
   }
 
-  ForwardContext context;
-  context.uris = &uris;
-  context.activation_message = activation_message;
-
   // The primary claims the single-instance lock before it creates its window,
   // so a zcash: launch that arrives during startup finds no target on the
   // first pass. Retry on the same schedule ActivateExistingInstance uses;
   // otherwise the secondary falls back to a bare activation, the window comes
   // to the front on someone else's screen, and the payment URI is lost.
-  const ULONGLONG deadline =
+  ForwardContext context;
+  context.uris = &uris;
+  context.activation_message = activation_message;
+  context.deadline =
       ::GetTickCount64() + kSingleInstanceActivationRetryWindowMs;
+
   do {
-    ::EnumWindows(ForwardToMatchingWindow, reinterpret_cast<LPARAM>(&context));
-    if (context.delivered) {
-      return true;
+    if (context.primary != nullptr) {
+      // The primary is already identified, so retry the delivery alone. Going
+      // back through the enumeration would re-probe it, and every probe makes
+      // it present its window again.
+      if (::IsWindow(context.primary) == 0) {
+        context.primary = nullptr;
+      } else if (SendPaymentUris(context.primary, uris)) {
+        return true;
+      }
+    }
+    if (context.primary == nullptr) {
+      ::EnumWindows(ForwardToMatchingWindow,
+                    reinterpret_cast<LPARAM>(&context));
+      if (context.delivered) {
+        return true;
+      }
     }
     ::Sleep(kSingleInstanceActivationRetryDelayMs);
-  } while (::GetTickCount64() < deadline);
+  } while (::GetTickCount64() < context.deadline);
 
   return false;
 }
