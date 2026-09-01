@@ -7,9 +7,17 @@
 /// widget tree; `app.dart` only executes the returned action.
 library;
 
-/// Shown when there is no wallet yet.
+/// Shown when there is no wallet yet and the user is not already inside a
+/// setup flow.
 const kPaymentUriNoWalletMessage =
     'Set up or import a wallet before opening payment links.';
+
+/// Shown when the link arrives while the user is part-way through onboarding,
+/// import, or adding an account. Navigating away from those screens throws
+/// away a typed seed phrase or a generated mnemonic, so the link is dropped
+/// and the user is left exactly where they were.
+const kPaymentUriOnboardingMessage =
+    'Finish setting up your wallet before opening payment links.';
 
 /// Shown when a send flow is already open.
 const kPaymentUriSendInProgressMessage =
@@ -79,6 +87,17 @@ class PaymentUriDrainDecision {
 
 const _waitDecision = PaymentUriDrainDecision(PaymentUriDrainAction.wait);
 
+/// Whether [matchedLocation] belongs to onboarding, import, or add-account.
+///
+/// Shared with `appRedirect` so the router guard and the payment-URI drain
+/// cannot drift apart. Covers both route trees: the desktop tree in `app.dart`
+/// and `mobileOnboardingRoutes()` use the same paths on purpose.
+bool isOnboardingLocation(String matchedLocation) =>
+    matchedLocation == '/welcome' ||
+    matchedLocation == '/add-account' ||
+    matchedLocation.startsWith('/onboarding/') ||
+    matchedLocation.startsWith('/import');
+
 /// Exact locations that would lose in-flight state if a payment URI navigated
 /// away from them.
 const _blockedExactLocations = <String>{
@@ -142,7 +161,8 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// | nothing parked                              | wait                      |
 /// | blocking storage failure / wallet error      | wait                      |
 /// | wallet still loading                         | wait                      |
-/// | no wallet                                    | `/welcome` + no-wallet msg|
+/// | onboarding / import / add-account location   | drop + onboarding msg     |
+/// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
 /// | locked                                       | `/unlock` (stay parked)   |
 /// | unlocked but still on `/unlock`              | wait (unlock screen owns) |
 /// | send flow open                               | drop + send msg           |
@@ -168,6 +188,16 @@ PaymentUriDrainDecision decidePaymentUriDrain({
 
   // Wallet existence is not known yet; a later emission re-runs the drain.
   if (walletIsLoading) return _waitDecision;
+
+  // Setup flows hold state that only lives in the widget tree (a typed seed
+  // phrase, a freshly generated mnemonic, an in-flight account creation), so
+  // never navigate out of them — with or without an existing wallet.
+  if (isOnboardingLocation(matchedLocation)) {
+    return const PaymentUriDrainDecision(
+      PaymentUriDrainAction.dropWithMessage,
+      message: kPaymentUriOnboardingMessage,
+    );
+  }
 
   if (!hasWallet) {
     return const PaymentUriDrainDecision(

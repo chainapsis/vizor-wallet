@@ -345,11 +345,7 @@ String? appRedirect({
   final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
   final isUnlocked = security.isUnlocked || bootstrap.isUnlocked;
   final requiresUnlock = hasWallet && !isUnlocked;
-  final isOnboarding =
-      state.matchedLocation == '/welcome' ||
-      state.matchedLocation == '/add-account' ||
-      state.matchedLocation.startsWith('/onboarding/') ||
-      state.matchedLocation.startsWith('/import');
+  final isOnboarding = isOnboardingLocation(state.matchedLocation);
   final isPublicLegal =
       state.matchedLocation == '/terms' || state.matchedLocation == '/privacy';
   // The uninstall flow ends with hasWallet == false on purpose; keep the

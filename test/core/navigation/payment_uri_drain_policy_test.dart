@@ -52,7 +52,77 @@ void main() {
       );
     });
   });
-  group('no wallet', () {
+  group('onboarding locations', () {
+    const onboardingLocations = [
+      '/welcome',
+      '/add-account',
+      '/onboarding/intro',
+      '/onboarding/secret-passphrase',
+      '/onboarding/set-password',
+      '/onboarding/set-passcode',
+      '/onboarding/customise-account',
+      '/onboarding/keystone/scan',
+      '/onboarding/link-desktop/accounts',
+      '/import',
+      '/import/manual',
+      '/import/review',
+      '/import/birthday',
+      '/import/set-password',
+      '/import/customise-account',
+      '/import-keystone',
+      '/import-keystone/set-password',
+    ];
+
+    test(
+      'stay put with the onboarding message when there is no wallet yet',
+      () {
+        for (final location in onboardingLocations) {
+          final decision = decide(hasWallet: false, matchedLocation: location);
+          expect(
+            decision.action,
+            PaymentUriDrainAction.dropWithMessage,
+            reason: location,
+          );
+          expect(
+            decision.message,
+            kPaymentUriOnboardingMessage,
+            reason: location,
+          );
+        }
+      },
+    );
+
+    test('stay put with the onboarding message when a wallet exists', () {
+      for (final location in onboardingLocations) {
+        final decision = decide(matchedLocation: location);
+        expect(
+          decision.action,
+          PaymentUriDrainAction.dropWithMessage,
+          reason: location,
+        );
+        expect(
+          decision.message,
+          kPaymentUriOnboardingMessage,
+          reason: location,
+        );
+      }
+    });
+
+    test('isOnboardingLocation excludes ordinary app locations', () {
+      for (final location in [
+        '/home',
+        '/send',
+        '/settings',
+        '/unlock',
+        '/lost-password',
+        '/accounts',
+      ]) {
+        expect(isOnboardingLocation(location), isFalse, reason: location);
+      }
+    });
+  });
+
+  group('no wallet outside onboarding', () {
     test('routes to /welcome with the set-up message', () {
       final decision = decide(hasWallet: false, matchedLocation: '/home');
       expect(decision.action, PaymentUriDrainAction.routeToWelcome);
