@@ -427,6 +427,17 @@ abstract interface class VotingRustApi {
     required String pirServerUrl,
   });
 
+  /// Generate and persist ZKP1 without signing or submitting the delegation.
+  ///
+  /// Returns whether this call generated the proof. A previously persisted
+  /// proof is reused and returns false.
+  Future<bool> precomputeDelegationProof({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<String> pirServerUrls,
+    required List<int> storedHotkeySecret,
+    required int bundleIndex,
+  });
+
   /// Bundle-independent background PIR proof cache warm-up.
   ///
   /// Needs no hotkey, round rows, or bundles — only a wallet scanned to the
@@ -810,6 +821,21 @@ class FrbVotingRustApi implements VotingRustApi {
     return rust_api.precomputeSnapshotBundles(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
+    );
+  }
+
+  @override
+  Future<bool> precomputeDelegationProof({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<String> pirServerUrls,
+    required List<int> storedHotkeySecret,
+    required int bundleIndex,
+  }) {
+    return rust_api.precomputeDelegationProof(
+      ctx: ctx,
+      pirServerUrls: pirServerUrls,
+      storedHotkeySecret: storedHotkeySecret,
+      bundleIndex: bundleIndex,
     );
   }
 

@@ -5019,6 +5019,16 @@ class _NoopVotingRustApi implements VotingRustApi {
   void warmVotingProvingCaches() {}
 
   @override
+  Future<bool> precomputeDelegationProof({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<String> pirServerUrls,
+    required List<int> storedHotkeySecret,
+    required int bundleIndex,
+  }) async {
+    return true;
+  }
+
+  @override
   Future<rust_api.ApiPirCacheWarmupResult> warmPirProofCache({
     required String dbPath,
     required String accountUuid,
