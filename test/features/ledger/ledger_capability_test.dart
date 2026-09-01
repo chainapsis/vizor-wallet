@@ -64,6 +64,14 @@ void main() {
     );
   });
 
+  test('quarantines legacy Orchard migration for Ledger', () {
+    expect(ledgerAutomaticOrchardMigrationCapability.supported, isFalse);
+    expect(
+      ledgerAutomaticOrchardMigrationCapability.reason,
+      contains('not available for Ledger accounts'),
+    );
+  });
+
   test('classifies Bluetooth support from the Ledger model', () {
     for (final model in ['Nano X', 'Ledger Stax', 'Flex', 'Nano Gen5']) {
       expect(

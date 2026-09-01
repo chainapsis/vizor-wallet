@@ -24,6 +24,11 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final activeAccount = ref.watch(accountProvider).value?.activeAccount;
+    if ((activeAccount?.isLedger ?? false) &&
+        !ledgerAutomaticOrchardMigrationCapability.supported) {
+      return const _MobileMigrationRedirectHome();
+    }
     final preview = previewData;
     if (preview != null) {
       final surface = previewSurface;

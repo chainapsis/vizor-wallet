@@ -1259,6 +1259,9 @@ IronwoodMigrationService _migrationService({
   );
 }
 
+// Preserved with the quarantined signer so a future capability enablement can
+// restore the end-to-end widget test without rebuilding its Ledger fixture.
+// ignore: unused_element
 LedgerImmediateMigrationService _ledgerImmediateMigrationService({
   required Future<List<LedgerVotingSignature>> signature,
 }) {
@@ -1295,6 +1298,7 @@ LedgerImmediateMigrationService _ledgerImmediateMigrationService({
   );
 }
 
+// ignore: unused_element
 const _ledgerMigrationSignature = <int>[
   1,
   1,
@@ -1754,6 +1758,7 @@ void main() {
         initialLocation: '/migration/options',
         migrationService: _migrationService(),
         hardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
       ),
     );
     await tester.pumpAndSettle();
@@ -1781,11 +1786,12 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Review Migration Plan'), findsOneWidget);
-    expect(find.widgetWithText(AppButton, 'Back'), findsOneWidget);
     expect(
-      find.textContaining(
-        'Private migration is not available for Ledger accounts.',
-      ),
+      find.widgetWithText(AppButton, 'Consider another option'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Consider choosing a Private Migration option.'),
       findsOneWidget,
     );
 
@@ -8364,49 +8370,22 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
-  testWidgets('Ledger disables Private and completes Immediate migration', (
-    tester,
-  ) async {
-    final signature = Completer<List<LedgerVotingSignature>>();
+  testWidgets('Ledger cannot enter the mobile migration flow', (tester) async {
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/options',
         hardware: true,
         hardwareSignerKind: HardwareSignerKind.ledger,
         migrationService: _migrationService(),
-        extraOverrides: [
-          ledgerImmediateMigrationServiceProvider.overrideWithValue(
-            _ledgerImmediateMigrationService(signature: signature.future),
-          ),
-        ],
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Not available for Ledger accounts.'), findsOneWidget);
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Review Migration Plan'), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_ironwood_immediate_broadcast_button')),
-    );
-    await tester.pump();
+    expect(find.text('home route'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ledger_immediate_migration_signing')),
-      findsOneWidget,
+      findsNothing,
     );
-    signature.complete(const [
-      LedgerVotingSignature(
-        pool: 0,
-        actionIndex: 0,
-        signature: _ledgerMigrationSignature,
-      ),
-    ]);
-    await tester.pumpAndSettle();
-    expect(find.text('Migration submitted'), findsOneWidget);
   });
 
   testWidgets('immediate migration keeps the broadcast result message', (

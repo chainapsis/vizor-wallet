@@ -299,6 +299,56 @@ void main() {
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
   });
 
+  test('shows no migration UI for Ledger with Orchard funds', () async {
+    final migrationStatusCalls = <String>[];
+    final orchardBalance = BigInt.from(100_000_000);
+    final orchardPendingBalance = BigInt.from(10_000_000);
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      isLedgerAccount: true,
+      migrationStatusCalls: migrationStatusCalls,
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+        orchardBalance: orchardBalance,
+        orchardPendingBalance: orchardPendingBalance,
+        spendableBalance: orchardBalance,
+        totalBalance: orchardBalance + orchardPendingBalance,
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    await container.read(ironwoodPostMigrationStateProvider.future);
+
+    expect(
+      (await container.read(
+        ironwoodMigrationAnnouncementProvider.future,
+      )).visible,
+      isFalse,
+    );
+    expect(
+      (await container.read(ironwoodHomeMigrationCtaProvider.future)).visible,
+      isFalse,
+    );
+    expect(
+      (await container.read(ironwoodMigrationRouteCtaProvider.future)).visible,
+      isFalse,
+    );
+    expect(
+      container.read(ironwoodHomeMigrationPresentationProvider).visible,
+      isFalse,
+    );
+    expect(
+      container.read(ironwoodHomeBalancePresentationProvider),
+      IronwoodHomeBalancePresentationMode.allShielded,
+    );
+    expect(migrationStatusCalls, isEmpty);
+  });
+
   test('stays hidden when the migration state is not ready', () async {
     final container = _container(
       ironwoodActiveAtTip: true,
@@ -1100,10 +1150,13 @@ ProviderContainer _container({
   SyncState? syncState,
   Object? migrationStatusError,
   OrchardMigrationStatusGetter? getMigrationStatus,
+  bool isLedgerAccount = false,
 }) {
   return ProviderContainer(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(isLedgerAccount: isLedgerAccount),
+      ),
       ironwoodMigrationCompletionStoreProvider.overrideWithValue(
         completionStore ?? _FakeCompletionStore(),
       ),
@@ -1161,16 +1214,20 @@ Future<void> _settleCoreProviders(ProviderContainer container) async {
   await container.read(syncProvider.future);
 }
 
-AppBootstrapState _bootstrap() {
+AppBootstrapState _bootstrap({bool isLedgerAccount = false}) {
   return AppBootstrapState(
     initialLocation: '/home',
-    initialAccountState: const AccountState(
+    initialAccountState: AccountState(
       accounts: [
         AccountInfo(
           uuid: _accountUuid,
           name: 'Account 1',
           order: 0,
-          isSeedAnchor: true,
+          isSeedAnchor: !isLedgerAccount,
+          isHardware: isLedgerAccount,
+          hardwareSignerKind: isLedgerAccount
+              ? HardwareSignerKind.ledger
+              : null,
         ),
       ],
       activeAccountUuid: _accountUuid,
