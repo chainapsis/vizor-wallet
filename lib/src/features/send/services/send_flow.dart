@@ -616,25 +616,49 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         // The Rust orchestration owns proposal-lock cleanup on every outcome
         // from this point onward, including validation and atomic-store errors.
         proposalReleased = true;
-        final result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          proposalId: args.proposalId,
-          sendFlowId: args.sendFlowId,
-          pcztWithProofs: payload.pcztWithProofs
-              .map(Uint8List.fromList)
-              .toList(),
-          pcztWithSignatures: payload.pcztWithSignatures
-              .map(Uint8List.fromList)
-              .toList(),
-          spendParamsPath: args.needsSaplingParams
-              ? saplingParams.spendPath
-              : null,
-          outputParamsPath: args.needsSaplingParams
-              ? saplingParams.outputPath
-              : null,
-        );
+        final rust_sync.StoreAndBroadcastPcztsResult result;
+        if (args.addressType == 'tex') {
+          result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            proposalId: args.proposalId,
+            sendFlowId: args.sendFlowId,
+            pcztWithProofs: payload.pcztWithProofs
+                .map(Uint8List.fromList)
+                .toList(),
+            pcztWithSignatures: payload.pcztWithSignatures
+                .map(Uint8List.fromList)
+                .toList(),
+            spendParamsPath: args.needsSaplingParams
+                ? saplingParams.spendPath
+                : null,
+            outputParamsPath: args.needsSaplingParams
+                ? saplingParams.outputPath
+                : null,
+          );
+        } else {
+          result = await rust_sync
+              .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
+                dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: endpoint.networkName,
+                proposalId: args.proposalId,
+                sendFlowId: args.sendFlowId,
+                pcztWithProofs: payload.pcztWithProofs
+                    .map(Uint8List.fromList)
+                    .toList(),
+                signatureBlobs: payload.pcztWithSignatures
+                    .map(Uint8List.fromList)
+                    .toList(),
+                spendParamsPath: args.needsSaplingParams
+                    ? saplingParams.spendPath
+                    : null,
+                outputParamsPath: args.needsSaplingParams
+                    ? saplingParams.outputPath
+                    : null,
+              );
+        }
         txids = result.txids;
         broadcastComplete = result.status == 'broadcasted';
         broadcastExpired = result.status == 'expired';
@@ -648,66 +672,6 @@ Future<SendBroadcastOutcome> runSendBroadcast({
             : _pcztBroadcastStatusMessage(result);
         broadcastMessageForFallback = result.message;
       }
-      // The Rust orchestration owns proposal-lock cleanup on every outcome
-      // from this point onward, including validation and atomic-store errors.
-      proposalReleased = true;
-      final rust_sync.StoreAndBroadcastPcztsResult result;
-      if (args.addressType == 'tex') {
-        result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          proposalId: args.proposalId,
-          sendFlowId: args.sendFlowId,
-          pcztWithProofs: keystone.pcztWithProofs
-              .map(Uint8List.fromList)
-              .toList(),
-          pcztWithSignatures: keystone.pcztWithSignatures
-              .map(Uint8List.fromList)
-              .toList(),
-          spendParamsPath: args.needsSaplingParams
-              ? saplingParams.spendPath
-              : null,
-          outputParamsPath: args.needsSaplingParams
-              ? saplingParams.outputPath
-              : null,
-        );
-      } else {
-        result = await rust_sync
-            .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
-              dbPath: dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: endpoint.networkName,
-              proposalId: args.proposalId,
-              sendFlowId: args.sendFlowId,
-              pcztWithProofs: keystone.pcztWithProofs
-                  .map(Uint8List.fromList)
-                  .toList(),
-              signatureBlobs: keystone.pcztWithSignatures
-                  .map(Uint8List.fromList)
-                  .toList(),
-              spendParamsPath: args.needsSaplingParams
-                  ? saplingParams.spendPath
-                  : null,
-              outputParamsPath: args.needsSaplingParams
-                  ? saplingParams.outputPath
-                  : null,
-            );
-      }
-      txids = result.txids;
-      broadcastComplete = result.status == 'broadcasted';
-      broadcastExpired = result.status == 'expired';
-      // A completed TEX send is represented by the dependent final
-      // transaction, not its first-step ephemeral funding transaction.
-      receiptTxid = broadcastExpired
-          ? null
-          : broadcastComplete
-          ? _lastTxid(txids)
-          : _firstTxid(txids);
-      pendingStatusMessage = broadcastComplete || broadcastExpired
-          ? null
-          : _pcztBroadcastStatusMessage(result);
-      broadcastMessageForFallback = result.message;
     } else {
       late final rust_sync.ExecuteProposalResult result;
       if (Platform.isMacOS) {

@@ -246,6 +246,26 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     );
   }
 
+  Future<void> _retainPcztDraftLockUntilExpiry({
+    required SwapHardwarePcztDraft draft,
+  }) async {
+    try {
+      await rust_sync.retainProposalLockUntilExpiry(
+        proposalId: draft.proposalId,
+        sendFlowId: draft.sendFlowId,
+      );
+      log(
+        'SwapHardwareSigning: retained deposit input lock until expiry '
+        'flow=${draft.sendFlowId} proposal=${draft.proposalId}',
+      );
+    } catch (e) {
+      log(
+        'SwapHardwareSigning: retain deposit proposal lock failed '
+        'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$e',
+      );
+    }
+  }
+
   @override
   Future<void> settlePcztDraftAfterLedgerBroadcast({
     required SwapHardwarePcztDraft draft,

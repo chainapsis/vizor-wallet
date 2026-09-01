@@ -190,6 +190,12 @@ class _HardwareSigningService implements SwapHardwareSigningService {
   }) => throw UnimplementedError();
 
   @override
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  }) => throw UnimplementedError();
+
+  @override
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
     required SwapHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
