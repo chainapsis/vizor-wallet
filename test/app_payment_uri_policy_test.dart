@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 // public surface and callers reach it from there.
 import 'package:zcash_wallet/app.dart' as app;
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_activity_navigation.dart';
 
 void main() {
   group('paymentUriBlockedAtLocation', () {
@@ -174,6 +175,52 @@ void main() {
           reason: location,
         );
       }
+    });
+
+    test('blocks a swap activity detail that is signing its ZEC deposit', () {
+      const signing = {
+        swapActivitySignQueryKey: swapActivitySignZecDepositValue,
+      };
+
+      // The signing query is what makes the surface busy; the same path
+      // without it is a receipt the user is merely reading.
+      expect(
+        paymentUriBlockedSurfaceAt(
+          '/activity/swap/abc',
+          queryParameters: signing,
+        ),
+        PaymentUriBlockedSurface.other,
+      );
+      expect(
+        paymentUriBlockedAtLocation(
+          '/activity/swap/abc',
+          queryParameters: signing,
+        ),
+        isTrue,
+      );
+      expect(
+        paymentUriBlockedSurfaceAt('/activity/swap/abc'),
+        PaymentUriBlockedSurface.none,
+      );
+
+      // Not a swap detail at all: an empty id falls back to the activity
+      // list, and /activity never hosts a signature.
+      for (final location in ['/activity/swap/', '/activity']) {
+        expect(
+          paymentUriBlockedSurfaceAt(location, queryParameters: signing),
+          PaymentUriBlockedSurface.none,
+          reason: location,
+        );
+      }
+
+      // Any other value of the query is not the deposit signature.
+      expect(
+        paymentUriBlockedSurfaceAt(
+          '/activity/swap/abc',
+          queryParameters: const {swapActivitySignQueryKey: 'something-else'},
+        ),
+        PaymentUriBlockedSurface.none,
+      );
     });
   });
 }

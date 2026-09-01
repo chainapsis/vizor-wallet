@@ -1346,6 +1346,9 @@ class _PaymentUriLinkListenerState
       hasWallet: walletAsync.value?.hasWallet ?? bootstrap.hasWallet,
       isUnlocked: security.isUnlocked,
       matchedLocation: widget.router.state.matchedLocation,
+      // `matchedLocation` drops the query, but `/activity/swap/<id>` is only
+      // a blocked surface when it carries `?sign=<zecDeposit>`.
+      queryParameters: widget.router.state.uri.queryParameters,
       sendStatusIsTerminal: ref.read(sendStatusTerminalProvider),
     );
 

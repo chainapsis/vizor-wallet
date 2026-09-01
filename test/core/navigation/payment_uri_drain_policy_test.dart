@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_activity_navigation.dart';
 
 /// Calls [decidePaymentUriDrain] with the "healthy, unlocked, on /home, link
 /// just arrived" baseline so each test only states the row it exercises.
@@ -12,6 +13,7 @@ PaymentUriDrainDecision decide({
   bool hasWallet = true,
   bool isUnlocked = true,
   String matchedLocation = '/home',
+  Map<String, String> queryParameters = const {},
   bool sendStatusIsTerminal = false,
 }) => decidePaymentUriDrain(
   hasParkedPrefill: hasParkedPrefill,
@@ -22,6 +24,7 @@ PaymentUriDrainDecision decide({
   hasWallet: hasWallet,
   isUnlocked: isUnlocked,
   matchedLocation: matchedLocation,
+  queryParameters: queryParameters,
   sendStatusIsTerminal: sendStatusIsTerminal,
 );
 
@@ -353,6 +356,41 @@ void main() {
     });
   });
 
+  group('swap deposit signing', () {
+    test('blocks the swap activity detail while it signs a ZEC deposit', () {
+      final decision = decide(
+        matchedLocation: '/activity/swap/swap-1',
+        queryParameters: const {
+          swapActivitySignQueryKey: swapActivitySignZecDepositValue,
+        },
+      );
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriBusyMessage);
+    });
+
+    test('still delivers on the same detail without the signing query', () {
+      expect(
+        decide(
+          matchedLocation: '/activity/swap/swap-1',
+          queryParameters: const {swapActivityReturnQueryKey: 'swap'},
+        ).action,
+        PaymentUriDrainAction.deliver,
+      );
+    });
+
+    test('outranks the no-wallet row, like the other busy surfaces', () {
+      // A reset landing mid-signature must not be yanked to /welcome.
+      final decision = decide(
+        hasWallet: false,
+        matchedLocation: '/activity/swap/swap-1',
+        queryParameters: const {
+          swapActivitySignQueryKey: swapActivitySignZecDepositValue,
+        },
+      );
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriBusyMessage);
+    });
+  });
 
   group('wallet transition', () {
     test('drops only on the true -> false reset edge', () {

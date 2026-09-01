@@ -7,6 +7,8 @@
 /// widget tree; `app.dart` only executes the returned action.
 library;
 
+import '../../features/swap/models/swap_activity_navigation.dart';
+
 /// A parked prefill older than this is stale and is dropped instead of
 /// delivered.
 ///
@@ -144,7 +146,14 @@ const _blockedVotingSteps = <String>{'review', 'status'};
 
 /// Which in-progress surface, if any, blocks payment-URI delivery at
 /// [matchedLocation].
-PaymentUriBlockedSurface paymentUriBlockedSurfaceAt(String matchedLocation) {
+///
+/// [queryParameters] are the current route's query parameters. They matter
+/// because `matchedLocation` alone cannot tell a browsed swap activity detail
+/// apart from the same screen opened to sign a ZEC deposit.
+PaymentUriBlockedSurface paymentUriBlockedSurfaceAt(
+  String matchedLocation, {
+  Map<String, String> queryParameters = const {},
+}) {
   if (_isInSubtree(matchedLocation, '/send')) {
     return PaymentUriBlockedSurface.send;
   }
@@ -152,7 +161,8 @@ PaymentUriBlockedSurface paymentUriBlockedSurfaceAt(String matchedLocation) {
   // discard their pending Rust request in `dispose()`.
   if (_isInSubtree(matchedLocation, '/migration') ||
       _blockedExactLocations.contains(matchedLocation) ||
-      _isBlockedVotingStep(matchedLocation)) {
+      _isBlockedVotingStep(matchedLocation) ||
+      _isSwapDepositSigningLocation(matchedLocation, queryParameters)) {
     return PaymentUriBlockedSurface.other;
   }
   return PaymentUriBlockedSurface.none;
@@ -160,8 +170,14 @@ PaymentUriBlockedSurface paymentUriBlockedSurfaceAt(String matchedLocation) {
 
 /// Whether a payment URI must be dropped rather than delivered at
 /// [matchedLocation].
-bool paymentUriBlockedAtLocation(String matchedLocation) =>
-    paymentUriBlockedSurfaceAt(matchedLocation) !=
+bool paymentUriBlockedAtLocation(
+  String matchedLocation, {
+  Map<String, String> queryParameters = const {},
+}) =>
+    paymentUriBlockedSurfaceAt(
+      matchedLocation,
+      queryParameters: queryParameters,
+    ) !=
     PaymentUriBlockedSurface.none;
 
 /// Whether a wallet emission is the reset transition — the wallet existed a
@@ -183,6 +199,25 @@ bool paymentUriShouldDropOnWalletTransition({
 
 bool _isInSubtree(String matchedLocation, String root) =>
     matchedLocation == root || matchedLocation.startsWith('$root/');
+
+/// `/activity/swap/<id>?sign=<zecDeposit>`: the swap activity detail opened to
+/// auto-sign the ZEC deposit. It drives the Keystone PCZT overlay, and its
+/// `dispose()` throws the pending deposit draft away, so a payment URI must
+/// not navigate off it. The same path without the query is just a receipt.
+bool _isSwapDepositSigningLocation(
+  String matchedLocation,
+  Map<String, String> queryParameters,
+) {
+  if (queryParameters[swapActivitySignQueryKey] !=
+      swapActivitySignZecDepositValue) {
+    return false;
+  }
+  // ['', 'activity', 'swap', '<swapId>']
+  final segments = matchedLocation.split('/');
+  if (segments.length != 4) return false;
+  if (segments[1] != 'activity' || segments[2] != 'swap') return false;
+  return segments[3].isNotEmpty;
+}
 
 bool _isBlockedVotingStep(String matchedLocation) {
   // ['', 'voting', 'poll', '<roundId>', '<step>']
@@ -214,7 +249,9 @@ bool _isBlockedVotingStep(String matchedLocation) {
 /// | otherwise                                    | deliver                   |
 ///
 /// [parkedFor] is how long the prefill has been parked (null when nothing is
-/// parked, or when the park time is unknown). [sendStatusIsTerminal] is true
+/// parked, or when the park time is unknown). [queryParameters] are the
+/// current route's query parameters; they are what distinguishes a swap
+/// activity detail being browsed from the same one signing a ZEC deposit. [sendStatusIsTerminal] is true
 /// when the app is on `/send/status` and that send has already succeeded or
 /// failed, which makes the status screen safe to leave.
 PaymentUriDrainDecision decidePaymentUriDrain({
@@ -226,11 +263,15 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   required bool hasWallet,
   required bool isUnlocked,
   required String matchedLocation,
+  Map<String, String> queryParameters = const {},
   bool sendStatusIsTerminal = false,
 }) {
   if (!hasParkedPrefill) return _waitDecision;
 
-  final blockedSurface = paymentUriBlockedSurfaceAt(matchedLocation);
+  final blockedSurface = paymentUriBlockedSurfaceAt(
+    matchedLocation,
+    queryParameters: queryParameters,
+  );
 
   // Age first: a link that has outlived its park window is dropped without a
   // message, whatever screen the app happens to be on.
