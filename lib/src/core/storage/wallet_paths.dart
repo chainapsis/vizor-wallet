@@ -33,16 +33,31 @@ Future<String> getTorDataDirectoryPath() async {
 Future<void> deletePaymentLinkClaimWalletDirectories({
   Future<Directory> Function() resolveSupportDirectory =
       getWalletSupportDirectory,
+  Future<void> Function(Directory directory)? deleteDirectory,
 }) async {
   final supportDirectory = await resolveSupportDirectory();
   if (!await supportDirectory.exists()) return;
 
+  Object? firstError;
+  StackTrace? firstStackTrace;
   await for (final entity in supportDirectory.list(followLinks: false)) {
     if (entity is! Directory) continue;
     final directoryName = entity.path.split(Platform.pathSeparator).last;
     if (!_paymentLinkClaimWalletDirectoryPattern.hasMatch(directoryName)) {
       continue;
     }
-    await entity.delete(recursive: true);
+    try {
+      if (deleteDirectory == null) {
+        await entity.delete(recursive: true);
+      } else {
+        await deleteDirectory(entity);
+      }
+    } catch (error, stackTrace) {
+      firstError ??= error;
+      firstStackTrace ??= stackTrace;
+    }
+  }
+  if (firstError != null) {
+    Error.throwWithStackTrace(firstError, firstStackTrace!);
   }
 }

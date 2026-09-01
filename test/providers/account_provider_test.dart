@@ -91,22 +91,65 @@ void main() {
     },
   );
 
-  test(
-    'wallet reset treats payment-link claim cleanup as best effort',
-    () async {
-      final loggedMessages = <String>[];
-
-      await clearPaymentLinkClaimWalletsForReset(
+  test('wallet reset surfaces payment-link claim cleanup failure', () async {
+    await expectLater(
+      clearPaymentLinkClaimWalletsForReset(
         deleteDirectories: () async {
           throw StateError('claim cleanup failed');
         },
-        reportError: loggedMessages.add,
-      );
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'claim cleanup failed',
+        ),
+      ),
+    );
+  });
 
-      expect(loggedMessages, hasLength(1));
-      expect(loggedMessages.single, contains('claim cleanup failed'));
-    },
-  );
+  test('wallet reset attempts every matching claim directory', () async {
+    final supportDirectory = Directory.systemTemp.createTempSync(
+      'vizor-payment-link-reset-failures',
+    );
+    addTearDown(() {
+      if (supportDirectory.existsSync()) {
+        supportDirectory.deleteSync(recursive: true);
+      }
+    });
+    final firstName =
+        '$kPaymentLinkClaimWalletDirectoryPrefix${List.filled(64, 'a').join()}';
+    final secondName =
+        '$kPaymentLinkClaimWalletDirectoryPrefix${List.filled(64, 'b').join()}';
+    Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}$firstName',
+    ).createSync();
+    Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}$secondName',
+    ).createSync();
+    final attempted = <String>[];
+
+    await expectLater(
+      deletePaymentLinkClaimWalletDirectories(
+        resolveSupportDirectory: () async => supportDirectory,
+        deleteDirectory: (directory) async {
+          final name = directory.path.split(Platform.pathSeparator).last;
+          attempted.add(name);
+          if (name == firstName) throw StateError('first delete failed');
+          await directory.delete(recursive: true);
+        },
+      ),
+      throwsStateError,
+    );
+
+    expect(attempted, containsAll([firstName, secondName]));
+    expect(
+      Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}$secondName',
+      ).existsSync(),
+      isFalse,
+    );
+  });
 
   test(
     'wallet reset clears the tor data directory and route preference',

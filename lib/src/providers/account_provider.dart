@@ -826,7 +826,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         // and must not prevent the secure-storage wipe from completing.
         log('resetWallet: failed to evict wallet summary cache: $e\n$st');
       }
-      await clearPaymentLinkClaimWalletsForReset();
+      try {
+        await clearPaymentLinkClaimWalletsForReset();
+      } catch (e, st) {
+        // Finish the remaining safe cleanup, but do not report a complete
+        // reset while a privacy-sensitive claim database remains.
+        recordError('payment-link claim db cleanup', e, st);
+      }
       try {
         await _storage.deleteAll();
       } catch (e, st) {
@@ -1417,26 +1423,13 @@ final accountProvider = AsyncNotifierProvider<AccountNotifier, AccountState>(
   AccountNotifier.new,
 );
 
-/// Best-effort cleanup for isolated payment-link claim databases.
-///
-/// A wallet reset that already deleted its primary database must still clear
-/// account/security state and route to onboarding when this ancillary cleanup
-/// fails.
+/// Removes every isolated payment-link claim database or reports the failure
+/// to the reset coordinator.
 @visibleForTesting
 Future<void> clearPaymentLinkClaimWalletsForReset({
   Future<void> Function() deleteDirectories =
       deletePaymentLinkClaimWalletDirectories,
-  void Function(String message) reportError = log,
-}) async {
-  try {
-    await deleteDirectories();
-  } catch (error, stackTrace) {
-    reportError(
-      'resetWallet: payment-link claim db cleanup failed (non-critical): '
-      '$error\n$stackTrace',
-    );
-  }
-}
+}) => deleteDirectories();
 
 @visibleForTesting
 String? resolveNextActiveAccountUuidAfterRemoval({
