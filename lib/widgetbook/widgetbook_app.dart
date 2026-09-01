@@ -953,6 +953,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobilePaymentLinkReceivedUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Received - Waiting for confirmations',
+                      builder: buildMobilePaymentLinkReceivedWaitingUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Interactive simulator',
                       builder: buildMobilePaymentLinkInteractiveUseCase,
                     ),
@@ -1061,12 +1065,12 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentLinkReadyWaitingUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Link available soon',
-                      builder: buildPaymentLinkReadySoonUseCase,
-                    ),
-                    WidgetbookUseCase(
                       name: 'Ready',
                       builder: buildPaymentLinkReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received - Waiting for confirmations',
+                      builder: buildPaymentLinkReceivedWaitingUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Received gift',

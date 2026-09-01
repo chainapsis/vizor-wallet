@@ -552,7 +552,13 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
     this.onCardTap,
     this.onReturnHome,
     this.backLabel = 'Home',
-    this.waitingStatusLabel = 'Wait 7:30 to get the link',
+    this.waitingStatusLabel = 'Wait 1:15 to get the link',
+    this.waitingHeading = 'Gift Card is\nalmost ready!',
+    this.waitingPrimaryText =
+        'The link becomes shareable when funding reaches the network.',
+    this.waitingSecondaryText =
+        'If Vizor cannot confirm that yet, one confirmation is enough.\n'
+        'This usually takes about 1 min 15 sec.',
     this.copyLabel = 'Copy link',
     this.returnLabel = 'Return home',
     super.key,
@@ -567,6 +573,9 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
   final VoidCallback? onReturnHome;
   final String backLabel;
   final String waitingStatusLabel;
+  final String waitingHeading;
+  final String waitingPrimaryText;
+  final String waitingSecondaryText;
   final String copyLabel;
   final String returnLabel;
 
@@ -606,9 +615,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                 left: 0,
                 right: 0,
                 child: Text(
-                  waiting
-                      ? 'Gift Card is\nalmost ready!'
-                      : 'Your Gift Card\nis ready!',
+                  waiting ? waitingHeading : 'Your Gift Card\nis ready!',
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: context.colors.text.accent,
@@ -629,15 +636,14 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                   children: [
                     if (waiting) ...[
                       Text(
-                        'The link becomes shareable after 6 confirmations.',
+                        waitingPrimaryText,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: context.colors.text.accent,
                         ),
                       ),
                       Text(
-                        'This usually takes about 7 min 30 sec. We will let you '
-                        'know\nwhen the card is ready to be shared.',
+                        waitingSecondaryText,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMedium.copyWith(
                           color: context.colors.text.secondary,
@@ -767,9 +773,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                 right: 0,
                 child: Center(
                   child: SizedBox(
-                    key: const ValueKey(
-                      'payment_link_received_message_block',
-                    ),
+                    key: const ValueKey('payment_link_received_message_block'),
                     width: 165,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,

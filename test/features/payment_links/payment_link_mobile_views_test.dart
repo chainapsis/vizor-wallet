@@ -125,7 +125,9 @@ void main() {
     expect(find.text('Clear clipboard'), findsOneWidget);
   });
 
-  testWidgets('ready waiting copy reflects six confirmations', (tester) async {
+  testWidgets('ready waiting copy reflects uncertain broadcast fallback', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(393, 773));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -151,9 +153,44 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('after 6 confirmations.'), findsOneWidget);
-    expect(find.textContaining('about 7 min 30 sec.'), findsOneWidget);
-    expect(find.text('Wait 7:30 to get the link'), findsOneWidget);
+    expect(find.textContaining('reaches the network.'), findsOneWidget);
+    expect(find.textContaining('one confirmation is enough.'), findsOneWidget);
+    expect(find.text('Wait 1:15 to get the link'), findsOneWidget);
+  });
+
+  testWidgets('received waiting copy explains the six-confirmation gate', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 773));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (_, navigator) =>
+            AppTheme(data: AppThemeData.light, child: navigator!),
+        home: const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 393,
+            height: 773,
+            child: PaymentLinkReadyMobileView(
+              state: PaymentLinkReadyMobileState.soon,
+              card: SizedBox(
+                width: kPaymentLinkMobileCardWidth,
+                height: kPaymentLinkMobileCardHeight,
+              ),
+              onHome: _noop,
+              waitingHeading: 'Your Gift Card\nis almost ready!',
+              waitingDescription: 'Waiting for 6 confirmations.',
+              waitingStatusLabel: 'Wait 5:00 to claim',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Waiting for 6 confirmations.'), findsOneWidget);
+    expect(find.text('Wait 5:00 to claim'), findsOneWidget);
+    expect(find.text('Copy link'), findsNothing);
   });
 
   testWidgets('received card exposes Figma claim copy and action', (

@@ -80,8 +80,8 @@ class PaymentLinkHowItWorksMobileSheet extends StatelessWidget {
           const _MobileHelpStep(
             icon: AppIcons.link,
             text:
-                'After 6 confirmations, copy the unique link and send it only '
-                'to the intended recipient.',
+                'Once funding reaches the network, copy the unique link and '
+                'send it only to the intended recipient.',
           ),
           const SizedBox(height: AppSpacing.xs),
           const _MobileHelpStep(
@@ -519,7 +519,12 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
     this.onCopy,
     this.onCardTap,
     this.decoration,
-    this.waitingStatusLabel = 'Wait 7:30 to get the link',
+    this.waitingStatusLabel = 'Wait 1:15 to get the link',
+    this.waitingHeading = 'Gift Card is\nalmost ready!',
+    this.waitingDescription =
+        'The link becomes shareable when funding reaches the network.\n'
+        'If Vizor cannot confirm that yet, one confirmation is enough.',
+    this.waitingIcon,
     this.copyLabel = 'Copy link',
     this.homeLabel = 'Go home',
     super.key,
@@ -532,6 +537,9 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
   final VoidCallback? onCardTap;
   final Widget? decoration;
   final String waitingStatusLabel;
+  final String waitingHeading;
+  final String waitingDescription;
+  final String? waitingIcon;
   final String copyLabel;
   final String homeLabel;
 
@@ -576,9 +584,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
             left: 40,
             right: 40,
             child: Text(
-              ready
-                  ? 'Your Gift Card\nis ready!'
-                  : 'Gift Card is\nalmost ready!',
+              ready ? 'Your Gift Card\nis ready!' : waitingHeading,
               textAlign: TextAlign.center,
               style: AppTypography.displayLarge.copyWith(
                 color: context.colors.text.accent,
@@ -605,9 +611,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
                       ready
                           ? 'Share this link with the intended recipient so '
                                 'they can claim the Card using their Vizor app.'
-                          : 'The link becomes shareable after 6 confirmations.\n'
-                                'This usually takes about 7 min 30 sec. We will let you know '
-                                'when the card is ready to be shared.',
+                          : waitingDescription,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMedium.copyWith(
                         color: context.colors.text.primary,
@@ -625,9 +629,11 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
                     else
                       _MobileDashedStatusPill(
                         label: waitingStatusLabel,
-                        icon: state == PaymentLinkReadyMobileState.soon
-                            ? AppIcons.link
-                            : AppIcons.giftCard,
+                        icon:
+                            waitingIcon ??
+                            (state == PaymentLinkReadyMobileState.soon
+                                ? AppIcons.link
+                                : AppIcons.giftCard),
                       ),
                   ],
                 ),

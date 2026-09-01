@@ -39,7 +39,6 @@ enum PaymentLinkPreviewState {
   review,
   reviewMessage,
   readyWaiting,
-  readySoon,
   ready,
   cardsList,
   cardsReceiving,
@@ -49,6 +48,7 @@ enum PaymentLinkPreviewState {
   redeemLoading,
   redeemInvalid,
   redeemUnavailable,
+  receivedWaiting,
   received,
   receivedMessage,
 }
@@ -136,9 +136,6 @@ Widget buildPaymentLinkReadyWaitingUseCase(BuildContext context) =>
       state: PaymentLinkPreviewState.readyWaiting,
     );
 
-Widget buildPaymentLinkReadySoonUseCase(BuildContext context) =>
-    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.readySoon);
-
 Widget buildPaymentLinkReadyUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.ready);
 
@@ -180,6 +177,11 @@ Widget buildPaymentLinkRedeemUnavailableUseCase(BuildContext context) =>
 
 Widget buildPaymentLinkReceivedUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.received);
+
+Widget buildPaymentLinkReceivedWaitingUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.receivedWaiting,
+    );
 
 Widget buildPaymentLinkReceivedMessageUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(
@@ -331,13 +333,17 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         onBack: _noop,
         onCopy: null,
       ),
-      PaymentLinkPreviewState.readySoon => PaymentLinkReadyDesktopView(
+      PaymentLinkPreviewState.receivedWaiting => PaymentLinkReadyDesktopView(
         state: PaymentLinkReadyVisualState.waiting,
         card: _readyCard(),
-        decoration: const PaymentLinkConfetti(),
         onBack: _noop,
         onCopy: null,
-        waitingStatusLabel: 'Wait 3:45 to get the link',
+        waitingHeading: 'Your Gift Card\nis almost ready!',
+        waitingPrimaryText: 'Waiting for 6 confirmations.',
+        waitingSecondaryText:
+            'Vizor will keep checking. You can claim the card as soon as\n'
+            'the funds are ready.',
+        waitingStatusLabel: 'Wait 5:00 to claim',
       ),
       PaymentLinkPreviewState.ready => const _PaymentLinkReadyPreview(),
       PaymentLinkPreviewState.cardsList => PaymentLinkCardsDesktopView(

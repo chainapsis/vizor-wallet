@@ -48,10 +48,7 @@ void main() {
       ),
     );
 
-    expect(
-      find.text('This Gift Card may take a while'),
-      findsOneWidget,
-    );
+    expect(find.text('This Gift Card may take a while'), findsOneWidget);
     expect(find.text('Check Gift Card'), findsOneWidget);
     expect(find.text('Go back'), findsOneWidget);
     expect(find.textContaining('100000'), findsNothing);
@@ -954,40 +951,44 @@ void main() {
     expect(find.bySemanticsLabel('Reveal gift card message'), findsNothing);
   });
 
-  testWidgets('received message block follows the Figma icon and text metrics', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1080, 720));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pump(
-      tester,
-      const PaymentLinkDesktopPreview(
-        state: PaymentLinkPreviewState.receivedMessage,
-      ),
-    );
+  testWidgets(
+    'received message block follows the Figma icon and text metrics',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(
+        tester,
+        const PaymentLinkDesktopPreview(
+          state: PaymentLinkPreviewState.receivedMessage,
+        ),
+      );
 
-    final block = find.byKey(
-      const ValueKey('payment_link_received_message_block'),
-    );
-    final icon = find.byKey(
-      const ValueKey('payment_link_received_message_icon'),
-    );
-    final title = find.text('Message attached.');
-    final hint = find.text('Click on the card to reveal');
+      final block = find.byKey(
+        const ValueKey('payment_link_received_message_block'),
+      );
+      final icon = find.byKey(
+        const ValueKey('payment_link_received_message_icon'),
+      );
+      final title = find.text('Message attached.');
+      final hint = find.text('Click on the card to reveal');
 
-    expect(tester.getSize(block).width, 165);
-    expect(tester.getSize(icon).width, moreOrLessEquals(20, epsilon: 0.001));
-    expect(tester.getSize(icon).height, moreOrLessEquals(16, epsilon: 0.001));
-    expect(tester.getTopLeft(title).dy - tester.getTopLeft(block).dy, 32);
-    expect(tester.getTopLeft(hint).dy - tester.getBottomLeft(title).dy, 8);
+      expect(tester.getSize(block).width, 165);
+      expect(tester.getSize(icon).width, moreOrLessEquals(20, epsilon: 0.001));
+      expect(tester.getSize(icon).height, moreOrLessEquals(16, epsilon: 0.001));
+      expect(tester.getTopLeft(title).dy - tester.getTopLeft(block).dy, 32);
+      expect(tester.getTopLeft(hint).dy - tester.getBottomLeft(title).dy, 8);
 
-    final titleText = tester.widget<Text>(title);
-    final hintText = tester.widget<Text>(hint);
-    expect(titleText.style?.fontSize, AppTypography.bodyMediumStrong.fontSize);
-    expect(titleText.style?.height, AppTypography.bodyMediumStrong.height);
-    expect(hintText.style?.fontSize, AppTypography.bodyMedium.fontSize);
-    expect(hintText.style?.height, AppTypography.bodyMedium.height);
-  });
+      final titleText = tester.widget<Text>(title);
+      final hintText = tester.widget<Text>(hint);
+      expect(
+        titleText.style?.fontSize,
+        AppTypography.bodyMediumStrong.fontSize,
+      );
+      expect(titleText.style?.height, AppTypography.bodyMediumStrong.height);
+      expect(hintText.style?.fontSize, AppTypography.bodyMedium.fontSize);
+      expect(hintText.style?.height, AppTypography.bodyMedium.height);
+    },
+  );
 
   testWidgets('card flip keeps a visible edge at the face swap', (
     tester,
@@ -1055,21 +1056,23 @@ void main() {
         state: PaymentLinkPreviewState.readyWaiting,
       ),
     );
-    expect(find.text('Wait 7:30 to get the link'), findsOneWidget);
+    expect(find.text('Wait 1:15 to get the link'), findsOneWidget);
     expect(find.byType(PaymentLinkConfetti), findsOneWidget);
     final initialPill = find.ancestor(
-      of: find.text('Wait 7:30 to get the link'),
+      of: find.text('Wait 1:15 to get the link'),
       matching: find.byType(CustomPaint),
     );
     expect(tester.getSize(initialPill.first).height, 36);
 
     await _pump(
       tester,
-      const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.readySoon),
+      const PaymentLinkDesktopPreview(
+        state: PaymentLinkPreviewState.receivedWaiting,
+      ),
     );
-    expect(find.text('Wait 3:45 to get the link'), findsOneWidget);
-    expect(find.byType(PaymentLinkConfetti), findsOneWidget);
-    expect(find.textContaining('about 7 min 30 sec.'), findsOneWidget);
+    expect(find.text('Wait 5:00 to claim'), findsOneWidget);
+    expect(find.byType(PaymentLinkConfetti), findsNothing);
+    expect(find.text('Waiting for 6 confirmations.'), findsOneWidget);
   });
 
   testWidgets('cards list fades only where more content exists', (

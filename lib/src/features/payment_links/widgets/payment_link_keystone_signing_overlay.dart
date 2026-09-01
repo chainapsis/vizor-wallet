@@ -8,6 +8,7 @@ import '../../../../main.dart' show log;
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../send/services/sapling_params.dart';
+import '../../send/screens/keystone_send_scan_screen.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_hardware_signing_service.dart';
@@ -29,8 +30,7 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   final VoidCallback onCancel;
   final Future<void> Function(
     VizorPaymentLink link,
-    String status,
-    String? message,
+    PaymentLinkHardwareFundingResult result,
   )
   onFundingBroadcast;
 
@@ -113,10 +113,12 @@ class _PaymentLinkKeystoneSigningOverlayState
       final urParts = await service.encodeSigningUrParts(draft: draft);
       final pcztWithProofs = await service.addProofsForSigning(
         draft: draft,
-        spendParamsPath:
-            draft.needsSaplingParams ? saplingParams!.spendPath : null,
-        outputParamsPath:
-            draft.needsSaplingParams ? saplingParams!.outputPath : null,
+        spendParamsPath: draft.needsSaplingParams
+            ? saplingParams!.spendPath
+            : null,
+        outputParamsPath: draft.needsSaplingParams
+            ? saplingParams!.outputPath
+            : null,
       );
       if (!mounted) return;
       setState(() {
@@ -163,9 +165,28 @@ class _PaymentLinkKeystoneSigningOverlayState
     if (_phase != _PaymentLinkKeystonePhase.ready || _pcztWithProofs == null) {
       return;
     }
-    final signatures = await context.push<List<int>>('/send/keystone/scan');
-    if (signatures == null || !mounted) return;
-    await _broadcast(signatures);
+    final responseCbor = await context.push<List<int>>(
+      '/send/keystone/scan',
+      extra: const KeystoneSendScanArgs.batch(),
+    );
+    if (responseCbor == null || !mounted) return;
+    final service = _signingService;
+    final draft = _draft;
+    if (service == null || draft == null) return;
+    try {
+      final signatures = await service.decodeSigningResponse(
+        draft: draft,
+        responseCbor: responseCbor,
+      );
+      if (!mounted) return;
+      await _broadcast(signatures);
+    } catch (error, stackTrace) {
+      log('PaymentLinkKeystoneSigning._getSignature: $error\n$stackTrace');
+      if (!mounted) return;
+      setState(() {
+        _error = 'This QR code does not match the current Keystone request.';
+      });
+    }
   }
 
   Future<void> _broadcast(List<int> signatures) async {
@@ -192,14 +213,16 @@ class _PaymentLinkKeystoneSigningOverlayState
         draft: draft,
         pcztWithProofsBytes: pcztWithProofs,
         pcztWithSignaturesBytes: signatures,
-        spendParamsPath:
-            draft.needsSaplingParams ? saplingParams!.spendPath : null,
-        outputParamsPath:
-            draft.needsSaplingParams ? saplingParams!.outputPath : null,
+        spendParamsPath: draft.needsSaplingParams
+            ? saplingParams!.spendPath
+            : null,
+        outputParamsPath: draft.needsSaplingParams
+            ? saplingParams!.outputPath
+            : null,
       );
       final fundingAccepted = isPaymentLinkFundingSubmitted(
         status: result.status,
-        txids: result.txid,
+        txids: result.txids,
       );
       if (!fundingAccepted) {
         if (!mounted) return;
@@ -211,11 +234,7 @@ class _PaymentLinkKeystoneSigningOverlayState
         });
         return;
       }
-      await widget.onFundingBroadcast(
-        draft.link,
-        result.status,
-        result.message,
-      );
+      await widget.onFundingBroadcast(draft.link, result);
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._broadcast: $error\n$stackTrace');
       if (!mounted) return;
@@ -245,8 +264,8 @@ class _PaymentLinkKeystoneSigningOverlayState
       _PaymentLinkKeystonePhase.ready => KeystoneSigningModalPhase.ready,
       _PaymentLinkKeystonePhase.failed => KeystoneSigningModalPhase.failed,
       _PaymentLinkKeystonePhase.preparing ||
-      _PaymentLinkKeystonePhase
-          .broadcasting => KeystoneSigningModalPhase.preparing,
+      _PaymentLinkKeystonePhase.broadcasting =>
+        KeystoneSigningModalPhase.preparing,
     };
     final isBroadcasting = _phase == _PaymentLinkKeystonePhase.broadcasting;
 
@@ -260,33 +279,31 @@ class _PaymentLinkKeystoneSigningOverlayState
             phase: modalPhase,
             urParts: _urParts,
             error: _error,
-            title:
-                isBroadcasting
-                    ? 'Broadcasting Gift Card funding'
-                    : 'Sign Gift Card on Keystone',
-            subtitle:
-                isBroadcasting ? 'Submitting transaction' : 'Scan to sign',
-            instruction:
-                isBroadcasting
-                    ? 'Keep Vizor open while the transaction is sent.'
-                    : _phase == _PaymentLinkKeystonePhase.failed
-                    ? null
-                    : 'After you scanned, click Get signature.',
+            title: isBroadcasting
+                ? 'Broadcasting Gift Card funding'
+                : 'Sign Gift Card on Keystone',
+            subtitle: isBroadcasting
+                ? 'Submitting transaction'
+                : 'Scan to sign',
+            instruction: isBroadcasting
+                ? 'Keep Vizor open while the transaction is sent.'
+                : _phase == _PaymentLinkKeystonePhase.failed
+                ? null
+                : 'After you scanned, click Get signature.',
             primaryLabel:
                 _phase == _PaymentLinkKeystonePhase.failed || isBroadcasting
-                    ? null
-                    : 'Get signature',
+                ? null
+                : 'Get signature',
             onPrimary:
                 _phase == _PaymentLinkKeystonePhase.ready &&
-                        _pcztWithProofs != null
-                    ? () => unawaited(_getSignature())
-                    : null,
-            secondaryLabel:
-                isBroadcasting
-                    ? null
-                    : _phase == _PaymentLinkKeystonePhase.failed
-                    ? 'Back to Gift Card'
-                    : 'Cancel',
+                    _pcztWithProofs != null
+                ? () => unawaited(_getSignature())
+                : null,
+            secondaryLabel: isBroadcasting
+                ? null
+                : _phase == _PaymentLinkKeystonePhase.failed
+                ? 'Back to Gift Card'
+                : 'Cancel',
             onSecondary: _cancel,
           ),
         ),

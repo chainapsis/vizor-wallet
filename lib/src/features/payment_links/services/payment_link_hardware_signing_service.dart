@@ -1,11 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../keystone/services/keystone_batch_signing.dart';
 import '../models/vizor_payment_link.dart';
 import 'payment_link_recovery_store.dart';
 import 'payment_link_service.dart';
@@ -30,6 +32,11 @@ abstract interface class PaymentLinkHardwareSigningService {
     required PaymentLinkHardwarePcztDraft draft,
   });
 
+  Future<List<int>> decodeSigningResponse({
+    required PaymentLinkHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  });
+
   Future<List<int>> addProofsForSigning({
     required PaymentLinkHardwarePcztDraft draft,
     String? spendParamsPath,
@@ -38,7 +45,7 @@ abstract interface class PaymentLinkHardwareSigningService {
 
   Future<void> discardPcztDraft({required PaymentLinkHardwarePcztDraft draft});
 
-  Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+  Future<PaymentLinkHardwareFundingResult> broadcastSignedPczt({
     required PaymentLinkHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
@@ -63,6 +70,20 @@ class PaymentLinkHardwarePcztDraft {
   final BigInt feeZatoshi;
   final BigInt proposalId;
   final String sendFlowId;
+}
+
+class PaymentLinkHardwareFundingResult {
+  const PaymentLinkHardwareFundingResult({
+    required this.txids,
+    required this.status,
+    required this.fundingMetadataSaved,
+    this.message,
+  });
+
+  final String txids;
+  final String status;
+  final String? message;
+  final bool fundingMetadataSaved;
 }
 
 class RustPaymentLinkHardwareSigningService
@@ -150,13 +171,39 @@ class RustPaymentLinkHardwareSigningService
   Future<List<String>> encodeSigningUrParts({
     required PaymentLinkHardwarePcztDraft draft,
   }) async {
-    final redactedPczt = await rust_sync.redactPcztForSigner(
+    final request = await buildKeystoneBatchSigningRequest(
+      requestId: _paymentLinkKeystoneRequestId(draft),
+      pczts: [
+        KeystoneBatchPcztSource(
+          id: _paymentLinkKeystoneMessageId,
+          pcztBytes: draft.pcztBytes,
+        ),
+      ],
+    );
+    return request.urParts;
+  }
+
+  @override
+  Future<List<int>> decodeSigningResponse({
+    required PaymentLinkHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  }) async {
+    final prepared = await rust_sync.preparePcztForKeystoneBatch(
       pcztBytes: draft.pcztBytes,
     );
-    return rust_keystone.encodePcztUrParts(
-      pcztBytes: redactedPczt,
-      maxFragmentLen: BigInt.from(140),
+    final request = KeystoneBatchSigningRequest(
+      requestId: _paymentLinkKeystoneRequestId(draft),
+      messageIds: const [_paymentLinkKeystoneMessageId],
+      expectedSignatureCounts: [prepared.expectedSignatureCount],
+      urParts: const [],
     );
+    final signatureBlobs = await request.decodeResponse(responseCbor);
+    if (signatureBlobs.length != 1) {
+      throw StateError(
+        'Keystone returned an invalid Gift Card signature count.',
+      );
+    }
+    return signatureBlobs.single;
   }
 
   @override
@@ -215,61 +262,42 @@ class RustPaymentLinkHardwareSigningService
     );
   }
 
-  Future<void> _retainPcztDraftLockUntilExpiry(
-    PaymentLinkHardwarePcztDraft draft,
-  ) async {
-    try {
-      await rust_sync.retainProposalLockUntilExpiry(
-        proposalId: draft.proposalId,
-        sendFlowId: draft.sendFlowId,
-      );
-    } catch (error) {
-      log(
-        'PaymentLinkHardwareSigning: retain proposal lock failed '
-        'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$error',
-      );
-    }
-  }
-
   @override
-  Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+  Future<PaymentLinkHardwareFundingResult> broadcastSignedPczt({
     required PaymentLinkHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
-    late final rust_sync.ExtractAndBroadcastPcztResult result;
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-      result = await rust_sync.extractAndBroadcastPczt(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        pcztWithProofsBytes: pcztWithProofsBytes,
-        pcztWithSignaturesBytes: pcztWithSignaturesBytes,
-        spendParamsPath: spendParamsPath,
-        outputParamsPath: outputParamsPath,
-      );
-    } catch (_) {
-      await discardPcztDraft(draft: draft);
-      rethrow;
-    }
+    final dbPath = await getWalletDbPath();
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final stored = await rust_sync
+        .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          proposalId: draft.proposalId,
+          sendFlowId: draft.sendFlowId,
+          pcztWithProofs: [Uint8List.fromList(pcztWithProofsBytes)],
+          signatureBlobs: [Uint8List.fromList(pcztWithSignaturesBytes)],
+          spendParamsPath: spendParamsPath,
+          outputParamsPath: outputParamsPath,
+        );
+    final result = rust_sync.ExtractAndBroadcastPcztResult(
+      txid: stored.txids
+          .split(',')
+          .map((txid) => txid.trim())
+          .firstWhere((txid) => txid.isNotEmpty, orElse: () => ''),
+      status: stored.status,
+      message: stored.message,
+    );
 
     final fundingAccepted = isPaymentLinkFundingSubmitted(
       status: result.status,
       txids: result.txid,
     );
-    if (result.status == 'broadcast_unknown' ||
-        result.status == 'broadcasted_storage_failed') {
-      await _retainPcztDraftLockUntilExpiry(draft);
-    } else {
-      // Releasing a consumed proposal after broadcast must not clear the
-      // prepared txid. It is the durable receipt used if markFunded fails.
-      await _discardProposal(draft);
-    }
-
+    var fundingMetadataSaved = false;
     if (fundingAccepted) {
       final funding = await PaymentLinkFundingRecovery(_recoveryStore).complete(
         transaction: result,
@@ -283,12 +311,23 @@ class RustPaymentLinkHardwareSigningService
           '${funding.recoveryError}\n${funding.recoveryStackTrace}',
         );
       }
+      fundingMetadataSaved = funding.fundingMetadataSaved;
     }
     try {
       await _ref.read(syncProvider.notifier).refreshAfterSend();
     } catch (error) {
       log('PaymentLinkHardwareSigning: refreshAfterSend failed: $error');
     }
-    return result;
+    return PaymentLinkHardwareFundingResult(
+      txids: result.txid,
+      status: result.status,
+      message: result.message,
+      fundingMetadataSaved: fundingMetadataSaved,
+    );
   }
 }
+
+const _paymentLinkKeystoneMessageId = 'gift-card-funding';
+
+String _paymentLinkKeystoneRequestId(PaymentLinkHardwarePcztDraft draft) =>
+    'vizor-${draft.sendFlowId}';

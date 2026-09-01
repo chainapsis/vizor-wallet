@@ -6,7 +6,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_keystone_signing_overlay.dart';
-import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 
 void main() {
   testWidgets('scans a Keystone signature and broadcasts Gift Card funding', (
@@ -15,31 +15,33 @@ void main() {
     final service = _FakeHardwareSigningService();
     VizorPaymentLink? completedLink;
     String? completedStatus;
+    KeystoneSendScanArgs? scanArgs;
     final router = GoRouter(
       routes: [
         GoRoute(
           path: '/',
-          builder:
-              (_, _) => PaymentLinkKeystoneSigningOverlay(
-                amountZatoshi: BigInt.from(10000000),
-                sourceAccountUuid: 'hardware-account',
-                onCancel: () {},
-                onFundingBroadcast: (link, status, _) async {
-                  completedLink = link;
-                  completedStatus = status;
-                },
-              ),
+          builder: (_, _) => PaymentLinkKeystoneSigningOverlay(
+            amountZatoshi: BigInt.from(10000000),
+            sourceAccountUuid: 'hardware-account',
+            onCancel: () {},
+            onFundingBroadcast: (link, result) async {
+              completedLink = link;
+              completedStatus = result.status;
+            },
+          ),
         ),
         GoRoute(
           path: '/send/keystone/scan',
-          builder:
-              (context, _) => Center(
-                child: TextButton(
-                  key: const ValueKey('fake_keystone_signature_done'),
-                  onPressed: () => context.pop<List<int>>(const [4, 5, 6]),
-                  child: const Text('Return signature'),
-                ),
+          builder: (context, state) {
+            scanArgs = state.extra as KeystoneSendScanArgs?;
+            return Center(
+              child: TextButton(
+                key: const ValueKey('fake_keystone_signature_done'),
+                onPressed: () => context.pop<List<int>>(const [4, 5, 6]),
+                child: const Text('Return signature'),
               ),
+            );
+          },
         ),
       ],
     );
@@ -51,8 +53,8 @@ void main() {
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder:
-              (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
         ),
       ),
     );
@@ -79,6 +81,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(service.broadcastSignatures, [
+      const [10, 11],
+    ]);
+    expect(scanArgs?.expectedUrType, 'zcash-batch-sig-result');
+    expect(scanArgs?.decodePcztResponse, isFalse);
+    expect(service.decodedResponses, [
       const [4, 5, 6],
     ]);
     expect(completedLink, _link);
@@ -97,24 +104,22 @@ void main() {
       routes: [
         GoRoute(
           path: '/',
-          builder:
-              (_, _) => PaymentLinkKeystoneSigningOverlay(
-                amountZatoshi: BigInt.from(10000000),
-                sourceAccountUuid: 'hardware-account',
-                onCancel: () {},
-                onFundingBroadcast: (_, _, _) async => completed = true,
-              ),
+          builder: (_, _) => PaymentLinkKeystoneSigningOverlay(
+            amountZatoshi: BigInt.from(10000000),
+            sourceAccountUuid: 'hardware-account',
+            onCancel: () {},
+            onFundingBroadcast: (_, _) async => completed = true,
+          ),
         ),
         GoRoute(
           path: '/send/keystone/scan',
-          builder:
-              (context, _) => Center(
-                child: TextButton(
-                  key: const ValueKey('fake_keystone_signature_done'),
-                  onPressed: () => context.pop<List<int>>(const [4, 5, 6]),
-                  child: const Text('Return signature'),
-                ),
-              ),
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('fake_keystone_signature_done'),
+              onPressed: () => context.pop<List<int>>(const [4, 5, 6]),
+              child: const Text('Return signature'),
+            ),
+          ),
         ),
       ],
     );
@@ -126,8 +131,8 @@ void main() {
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder:
-              (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
         ),
       ),
     );
@@ -172,6 +177,7 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
   final createdAmounts = <BigInt>[];
   final createdFromAccounts = <String>[];
   final proofDrafts = <BigInt>[];
+  final decodedResponses = <List<int>>[];
   final broadcastSignatures = <List<int>>[];
 
   @override
@@ -195,7 +201,16 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
   @override
   Future<List<String>> encodeSigningUrParts({
     required PaymentLinkHardwarePcztDraft draft,
-  }) async => const ['ur:zcash-pczt/test'];
+  }) async => const ['ur:zcash-sign-batch/test'];
+
+  @override
+  Future<List<int>> decodeSigningResponse({
+    required PaymentLinkHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  }) async {
+    decodedResponses.add(responseCbor);
+    return const [10, 11];
+  }
 
   @override
   Future<List<int>> addProofsForSigning({
@@ -213,7 +228,7 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
   }) async {}
 
   @override
-  Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+  Future<PaymentLinkHardwareFundingResult> broadcastSignedPczt({
     required PaymentLinkHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
@@ -221,10 +236,11 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
     String? outputParamsPath,
   }) async {
     broadcastSignatures.add(pcztWithSignaturesBytes);
-    return rust_sync.ExtractAndBroadcastPcztResult(
-      txid: 'hardware-funding-txid',
+    return PaymentLinkHardwareFundingResult(
+      txids: 'hardware-funding-txid',
       status: broadcastStatus,
       message: broadcastMessage,
+      fundingMetadataSaved: true,
     );
   }
 }

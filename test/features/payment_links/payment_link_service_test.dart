@@ -65,7 +65,7 @@ void main() {
     );
   });
 
-  test('share readiness requires six mined confirmations', () {
+  test('share readiness accepts mempool broadcast or one confirmation', () {
     expect(
       paymentLinkConfirmationCount(
         minedHeight: BigInt.from(100),
@@ -74,11 +74,18 @@ void main() {
       5,
     );
     expect(
-      const PaymentLinkFundingProgress(confirmationCount: 5).isReady,
+      const PaymentLinkFundingProgress(confirmationCount: 0).isReady,
       isFalse,
     );
     expect(
-      const PaymentLinkFundingProgress(confirmationCount: 6).isReady,
+      const PaymentLinkFundingProgress(
+        confirmationCount: 0,
+        broadcastAccepted: true,
+      ).isReady,
+      isTrue,
+    );
+    expect(
+      const PaymentLinkFundingProgress(confirmationCount: 1).isReady,
       isTrue,
     );
     expect(
@@ -89,6 +96,71 @@ void main() {
       0,
     );
   });
+
+  test('claim confirmation count follows the matching funding receive', () {
+    final expectedFunding = paymentLinkFundingAmountZatoshi(
+      BigInt.from(100000),
+    );
+    final transactions = [
+      _transaction(
+        txid: 'funding',
+        txKind: 'received',
+        minedHeight: 100,
+        accountBalanceDelta: expectedFunding.toInt(),
+      ),
+      _transaction(
+        txid: 'dust',
+        txKind: 'received',
+        minedHeight: 90,
+        accountBalanceDelta: 1,
+      ),
+    ];
+
+    expect(
+      paymentLinkFundingConfirmationCountForClaim(
+        recipientAmountZatoshi: BigInt.from(100000),
+        transactions: transactions,
+        chainTipHeight: BigInt.from(103),
+      ),
+      4,
+    );
+  });
+
+  test(
+    'claim waits while funding is pending or still in its initial window',
+    () {
+      expect(
+        paymentLinkShouldWaitForFunding(
+          recipientAmountZatoshi: BigInt.from(100000),
+          totalZatoshi: paymentLinkFundingAmountZatoshi(BigInt.from(100000)),
+          fundingConfirmationCount: 4,
+          birthdayHeight: 100,
+          currentTipHeight: 104,
+        ),
+        isTrue,
+      );
+      expect(
+        paymentLinkShouldWaitForFunding(
+          recipientAmountZatoshi: BigInt.from(100000),
+          totalZatoshi: BigInt.zero,
+          fundingConfirmationCount: 0,
+          birthdayHeight: 100,
+          currentTipHeight: 106,
+        ),
+        isFalse,
+      );
+      expect(
+        paymentLinkShouldWaitForFunding(
+          recipientAmountZatoshi: BigInt.from(100000),
+          totalZatoshi: paymentLinkFundingAmountZatoshi(BigInt.from(100000)),
+          fundingConfirmationCount: 6,
+          birthdayHeight: 100,
+          currentTipHeight: 105,
+        ),
+        isFalse,
+      );
+    },
+  );
 
   test('matches broadcast and history txids across byte order', () {
     const broadcastTxid =
@@ -502,12 +574,13 @@ rust_sync.TransactionInfo _transaction({
   required String txKind,
   int minedHeight = 0,
   bool expiredUnmined = false,
+  int accountBalanceDelta = 1,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
     minedHeight: BigInt.from(minedHeight),
     expiredUnmined: expiredUnmined,
-    accountBalanceDelta: 1,
+    accountBalanceDelta: accountBalanceDelta,
     fee: BigInt.zero,
     blockTime: BigInt.zero,
     isTransparent: false,

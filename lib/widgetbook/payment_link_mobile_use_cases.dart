@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/app_icon.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
@@ -128,7 +129,7 @@ Widget buildMobilePaymentLinkReviewUseCase(BuildContext context) {
 Widget buildMobilePaymentLinkReadyCelebratingUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: PaymentLinkReadyMobileView(
-      state: PaymentLinkReadyMobileState.waiting,
+      state: PaymentLinkReadyMobileState.ready,
       card: PaymentLinkGiftCard(
         artwork: PaymentLinkCardArtwork.knightMagic,
         cardWidth: _cardWidth,
@@ -138,6 +139,7 @@ Widget buildMobilePaymentLinkReadyCelebratingUseCase(BuildContext context) {
         showCaret: false,
       ),
       onHome: _noop,
+      onCopy: _noop,
       decoration: PaymentLinkConfetti(),
     ),
   );
@@ -211,6 +213,29 @@ Widget buildMobilePaymentLinkRedeemInvalidUseCase(BuildContext context) {
 
 Widget buildMobilePaymentLinkReceivedUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(child: _MobileReceivedFixture());
+}
+
+Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReadyMobileView(
+      state: PaymentLinkReadyMobileState.soon,
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.knightMagic,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: _fixtureAmount,
+        supportingText: r'$142.23',
+        showCaret: false,
+      ),
+      onHome: _noop,
+      waitingHeading: 'Your Gift Card\nis almost ready!',
+      waitingDescription:
+          'Waiting for 6 confirmations. Vizor will keep checking, and you '
+          'can claim the card as soon as the funds are ready.',
+      waitingIcon: AppIcons.time,
+      waitingStatusLabel: 'Wait 5:00 to claim',
+    ),
+  );
 }
 
 Widget buildMobilePaymentLinkInteractiveUseCase(BuildContext context) {

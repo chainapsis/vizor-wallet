@@ -28,7 +28,7 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
   );
 });
 
-const kPaymentLinkShareConfirmationTarget = 6;
+const kPaymentLinkShareConfirmationTarget = 1;
 const kPaymentLinkClaimConfirmationTarget = 6;
 
 /// The ZIP-317 fee for the payment link's expected one-input, one-output
@@ -54,6 +54,52 @@ int paymentLinkConfirmationCount({
 }) {
   if (minedHeight <= BigInt.zero || chainTipHeight < minedHeight) return 0;
   return (chainTipHeight - minedHeight + BigInt.one).toInt();
+}
+
+@visibleForTesting
+int paymentLinkFundingConfirmationCountForClaim({
+  required BigInt recipientAmountZatoshi,
+  required List<rust_sync.TransactionInfo> transactions,
+  required BigInt chainTipHeight,
+}) {
+  final expectedFunding = paymentLinkFundingAmountZatoshi(
+    recipientAmountZatoshi,
+  );
+  var confirmationCount = 0;
+  for (final transaction in transactions) {
+    if (transaction.expiredUnmined ||
+        transaction.txKind != 'received' ||
+        BigInt.from(transaction.accountBalanceDelta) != expectedFunding) {
+      continue;
+    }
+    confirmationCount = max(
+      confirmationCount,
+      paymentLinkConfirmationCount(
+        minedHeight: transaction.minedHeight,
+        chainTipHeight: chainTipHeight,
+      ),
+    );
+  }
+  return min(confirmationCount, kPaymentLinkClaimConfirmationTarget);
+}
+
+@visibleForTesting
+bool paymentLinkShouldWaitForFunding({
+  required BigInt recipientAmountZatoshi,
+  required BigInt totalZatoshi,
+  required int fundingConfirmationCount,
+  required int birthdayHeight,
+  required int currentTipHeight,
+}) {
+  if (fundingConfirmationCount >= kPaymentLinkClaimConfirmationTarget) {
+    return false;
+  }
+  final expectedFunding = paymentLinkFundingAmountZatoshi(
+    recipientAmountZatoshi,
+  );
+  if (totalZatoshi >= expectedFunding) return true;
+  return currentTipHeight - birthdayHeight <
+      kPaymentLinkClaimConfirmationTarget;
 }
 
 /// Rust's broadcast result formats a transaction ID for display, while the
@@ -182,16 +228,31 @@ bool isPaymentLinkFundingSubmitted({
       _submittedPaymentLinkFundingStatuses.contains(status);
 }
 
+bool isPaymentLinkFundingBroadcastAccepted(String status) {
+  return status == 'broadcasted' || status == 'broadcasted_storage_failed';
+}
+
 class PaymentLinkFundingProgress {
   const PaymentLinkFundingProgress({
     required this.confirmationCount,
     this.confirmationTarget = kPaymentLinkShareConfirmationTarget,
+    this.broadcastAccepted = false,
   });
 
   final int confirmationCount;
   final int confirmationTarget;
+  final bool broadcastAccepted;
 
-  bool get isReady => confirmationCount >= confirmationTarget;
+  bool get isReady =>
+      broadcastAccepted || confirmationCount >= confirmationTarget;
+
+  PaymentLinkFundingProgress copyWith({bool? broadcastAccepted}) {
+    return PaymentLinkFundingProgress(
+      confirmationCount: confirmationCount,
+      confirmationTarget: confirmationTarget,
+      broadcastAccepted: broadcastAccepted ?? this.broadcastAccepted,
+    );
+  }
 }
 
 @visibleForTesting
@@ -218,6 +279,11 @@ abstract interface class PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+  });
+
+  Future<void> retryFundingMetadata({
+    required String address,
+    required String fundingTxids,
   });
 
   Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries();
@@ -265,6 +331,8 @@ class PaymentLinkClaimSession {
     required this.totalZatoshi,
     required this.claimableZatoshi,
     required this.feeZatoshi,
+    this.fundingConfirmationCount = 0,
+    this.waitingForFundingConfirmations = false,
   });
 
   final VizorPaymentLink link;
@@ -276,8 +344,11 @@ class PaymentLinkClaimSession {
   final BigInt totalZatoshi;
   final BigInt claimableZatoshi;
   final BigInt feeZatoshi;
+  final int fundingConfirmationCount;
+  final bool waitingForFundingConfirmations;
 
-  bool get canClaim => claimableZatoshi > BigInt.zero;
+  bool get canClaim =>
+      claimableZatoshi > BigInt.zero && !waitingForFundingConfirmations;
 }
 
 enum PaymentLinkClaimBroadcastStatus {
@@ -413,6 +484,7 @@ class PaymentLinkFundingResult {
     required this.link,
     required this.txids,
     required this.fundingMetadataSaved,
+    required this.broadcastAccepted,
   });
 
   final VizorPaymentLink link;
@@ -421,21 +493,10 @@ class PaymentLinkFundingResult {
   /// Whether the durable recovery record advanced from draft to funded.
   /// The link remains recoverable from its draft when this is false.
   final bool fundingMetadataSaved;
-}
 
-class PaymentLinkBroadcastPendingException implements Exception {
-  const PaymentLinkBroadcastPendingException({
-    required this.txids,
-    required this.status,
-    required this.message,
-  });
-
-  final String txids;
-  final String status;
-  final String message;
-
-  @override
-  String toString() => message;
+  /// Whether the network explicitly accepted the funding broadcast. An
+  /// uncertain hardware response falls back to one mined confirmation.
+  final bool broadcastAccepted;
 }
 
 class PaymentLinkService implements PaymentLinkOperations {
@@ -528,11 +589,31 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
 
     unawaited(_refreshMainWalletAfterSend());
-    _requireFullyBroadcasted(fundingResult);
     return PaymentLinkFundingResult(
       link: link,
       txids: fundingResult.txids,
       fundingMetadataSaved: funding.fundingMetadataSaved,
+      broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(
+        fundingResult.status,
+      ),
+    );
+  }
+
+  @override
+  Future<void> retryFundingMetadata({
+    required String address,
+    required String fundingTxids,
+  }) async {
+    final recovery = await PaymentLinkFundingRecovery(_recoveryStore)
+        .complete<String>(
+          transaction: fundingTxids,
+          address: address,
+          fundingTxids: (txids) => txids,
+        );
+    if (recovery.fundingMetadataSaved) return;
+    Error.throwWithStackTrace(
+      recovery.recoveryError!,
+      recovery.recoveryStackTrace!,
     );
   }
 
@@ -876,20 +957,12 @@ class PaymentLinkService implements PaymentLinkOperations {
         receiverAddress.isEmpty) {
       throw StateError('No active receive account.');
     }
-    final session = await _prepareSpend(
+    return _prepareSpend(
       link: link,
       destinationAddress: receiverAddress,
       destinationAccountUuid: receiverAccountUuid,
       allowLongSync: allowLongSync,
     );
-    if (!session.canClaim) return session;
-    try {
-      await _receivedStore.saveReady(link);
-      return session;
-    } catch (_) {
-      await discardClaimSession(session);
-      rethrow;
-    }
   }
 
   Future<PaymentLinkClaimSession> _prepareSpend({
@@ -898,6 +971,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     required String destinationAccountUuid,
     required bool allowLongSync,
   }) async {
+    log('PaymentLinkClaim: preparation started');
     await _requireShieldedAddress(destinationAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     if (link.network != endpoint.networkName) {
@@ -906,6 +980,7 @@ class PaymentLinkService implements PaymentLinkOperations {
         '${endpoint.networkName}.',
       );
     }
+    log('PaymentLinkClaim: endpoint validated');
 
     final currentTipHeight = await _ref
         .read(rpcEndpointFailoverProvider.notifier)
@@ -914,15 +989,18 @@ class PaymentLinkService implements PaymentLinkOperations {
       advertisedBirthdayHeight: link.birthdayHeight,
       currentTipHeight: currentTipHeight.toInt(),
     );
+    log('PaymentLinkClaim: birthday validated');
     if (!allowLongSync &&
         isLongPaymentLinkSync(
           birthdayHeight: claimBirthdayHeight,
           currentTipHeight: currentTipHeight.toInt(),
         )) {
+      log('PaymentLinkClaim: long sync confirmation required');
       throw const PaymentLinkLongSyncConfirmationRequired();
     }
 
     final tempWallet = await _createOrOpenTemporaryWalletDb(link);
+    log('PaymentLinkClaim: temporary wallet opened');
     var deleteOnError = !tempWallet.existed;
     try {
       final String importedAddress;
@@ -982,8 +1060,10 @@ class PaymentLinkService implements PaymentLinkOperations {
           'Payment link address does not match its recovery phrase.',
         );
       }
+      log('PaymentLinkClaim: recovery address validated');
 
       await _runBlockingSync(dbPath: tempWallet.dbPath);
+      log('PaymentLinkClaim: temporary wallet sync completed');
       final balance = await rust_sync.getBalance(
         dbPath: tempWallet.dbPath,
         network: endpoint.networkName,
@@ -1010,6 +1090,32 @@ class PaymentLinkService implements PaymentLinkOperations {
         }
       }
 
+      final transactions = await rust_sync.getTransactionHistory(
+        dbPath: tempWallet.dbPath,
+        network: endpoint.networkName,
+        accountUuid: importedAccountUuid,
+        limit: null,
+      );
+      final fundingConfirmationCount =
+          paymentLinkFundingConfirmationCountForClaim(
+            recipientAmountZatoshi: link.amountZatoshi,
+            transactions: transactions,
+            chainTipHeight: currentTipHeight,
+          );
+      final waitingForFundingConfirmations = paymentLinkShouldWaitForFunding(
+        recipientAmountZatoshi: link.amountZatoshi,
+        totalZatoshi: balance.total,
+        fundingConfirmationCount: fundingConfirmationCount,
+        birthdayHeight: claimBirthdayHeight,
+        currentTipHeight: currentTipHeight.toInt(),
+      );
+
+      log(
+        'PaymentLinkClaim: balance checked '
+        'claimable=${claimableZatoshi > BigInt.zero} '
+        'confirmations=$fundingConfirmationCount',
+      );
+
       return PaymentLinkClaimSession(
         link: link,
         destinationAddress: destinationAddress,
@@ -1020,6 +1126,8 @@ class PaymentLinkService implements PaymentLinkOperations {
         totalZatoshi: balance.total,
         claimableZatoshi: claimableZatoshi,
         feeZatoshi: feeZatoshi,
+        fundingConfirmationCount: fundingConfirmationCount,
+        waitingForFundingConfirmations: waitingForFundingConfirmations,
       );
     } catch (_) {
       if (deleteOnError) {
@@ -1033,6 +1141,11 @@ class PaymentLinkService implements PaymentLinkOperations {
   Future<PaymentLinkClaimResult> claimPreparedLink(
     PaymentLinkClaimSession session,
   ) async {
+    // Checking a Gift Card is a read-only preview. Persist it only after the
+    // user explicitly starts a claim, before any broadcast can occur, so an
+    // interrupted submission remains recoverable without making previews look
+    // received.
+    await _receivedStore.saveReady(session.link);
     var didBroadcast = false;
     try {
       final result = await _broadcastPreparedSpend(session);
@@ -1100,9 +1213,6 @@ class PaymentLinkService implements PaymentLinkOperations {
       txids: sendResult.txids,
       status: paymentLinkClaimBroadcastStatusFromWire(sendResult.status),
     );
-    if (!shouldRetainPaymentLinkClaimWallet(claimResult.status)) {
-      await discardClaimSession(session);
-    }
     unawaited(_refreshMainWalletAfterSend());
     return claimResult;
   }
@@ -1385,20 +1495,6 @@ class PaymentLinkService implements PaymentLinkOperations {
       await directory.delete(recursive: true);
     }
     await directory.create(recursive: true);
-  }
-
-  void _requireFullyBroadcasted(rust_sync.ExecuteProposalResult result) {
-    if (paymentLinkClaimBroadcastStatusFromWire(result.status) ==
-        PaymentLinkClaimBroadcastStatus.broadcasted) {
-      return;
-    }
-    throw PaymentLinkBroadcastPendingException(
-      txids: result.txids,
-      status: result.status,
-      message:
-          result.message ??
-          'Payment link funding transaction is waiting to be broadcast.',
-    );
   }
 
   Future<void> _deleteTemporaryWalletDb(Directory directory) async {
