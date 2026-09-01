@@ -1136,24 +1136,28 @@ class _ActivityStatusErrorPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.xs),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
-        color: colors.text.destructive.withValues(alpha: 0.08),
-        border: Border.all(
-          color: colors.text.destructive.withValues(alpha: 0.26),
-        ),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppIcon(AppIcons.warning, size: 16, color: colors.icon.destructive),
-          const SizedBox(width: AppSpacing.xs),
+          AppIcon(
+            AppIcons.sync,
+            size: AppIconSize.large,
+            color: colors.icon.muted,
+          ),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
               message,
               style: AppTypography.bodySmall.copyWith(
-                color: colors.text.destructive,
+                color: colors.text.secondary,
               ),
             ),
           ),

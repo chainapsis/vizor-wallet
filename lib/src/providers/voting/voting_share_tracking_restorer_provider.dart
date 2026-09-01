@@ -43,6 +43,8 @@ class VotingShareTrackingRestorer {
   Future<void>? _restoreInFlight;
   Future<void> _pauseInFlight = Future.value();
   Timer? _retryTimer;
+  bool _isPaused = false;
+  int _pauseGeneration = 0;
 
   Future<void> restore() {
     final inFlight = _restoreInFlight;
@@ -57,6 +59,9 @@ class VotingShareTrackingRestorer {
 
   Future<void> pause() {
     _cancelRetry();
+    _pauseGeneration++;
+    if (_isPaused) return _pauseInFlight;
+    _isPaused = true;
     final pause = _ref
         .read(votingShareTrackingRegistryProvider)
         .quiesceAndDrain();
@@ -66,10 +71,17 @@ class VotingShareTrackingRestorer {
   }
 
   Future<void> resume() async {
-    try {
-      await _pauseInFlight;
-    } finally {
-      _ref.read(votingShareTrackingRegistryProvider).resume();
+    final pauseGeneration = _pauseGeneration;
+    if (_isPaused) {
+      try {
+        await _pauseInFlight;
+      } finally {
+        // A newer pause owns the desired state even when it reused this drain.
+        if (_isPaused && pauseGeneration == _pauseGeneration) {
+          _isPaused = false;
+          _ref.read(votingShareTrackingRegistryProvider).resume();
+        }
+      }
     }
     await _restoreInFlight;
     await restore();
@@ -142,7 +154,7 @@ class VotingShareTrackingRestorer {
           if (registry.isQuiesced(round.accountUuid)) continue;
           final notifier = _ref.read(provider.notifier);
           notifier.resumeShareTracking();
-          await notifier.submitPendingShares();
+          await notifier.runShareTrackingPass();
         } catch (error, stackTrace) {
           failed = true;
           debugPrint(

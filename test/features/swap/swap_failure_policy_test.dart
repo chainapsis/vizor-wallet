@@ -310,7 +310,7 @@ void main() {
     );
   });
 
-  test('provider server errors after deposit warn not to resend funds', () {
+  test('provider server errors after deposit explain automatic refresh', () {
     const error = OneClickApiException('server error', statusCode: 500);
 
     expect(
@@ -319,12 +319,12 @@ void main() {
     );
     expect(
       swapFailureMessage(SwapFailureOperation.submitDeposit, error),
-      'Swap service is temporarily unavailable.\n'
-      'Do not resend funds. Try again later.',
+      "We couldn't refresh the latest status.\n"
+      "We'll keep trying and update this screen automatically.",
     );
   });
 
-  test('post-deposit retry-later responses warn not to resend funds', () {
+  test('post-deposit retry-later responses explain automatic refresh', () {
     const error = OneClickApiException('too many requests', statusCode: 429);
 
     expect(
@@ -333,8 +333,8 @@ void main() {
     );
     expect(
       swapFailureMessage(SwapFailureOperation.submitDeposit, error),
-      'Swap service is still processing.\n'
-      'Do not resend funds. Try again later.',
+      "We couldn't refresh the latest status.\n"
+      "We'll keep trying and update this screen automatically.",
     );
   });
 
@@ -361,7 +361,8 @@ void main() {
     );
     expect(
       statusMessage,
-      'Request timed out.\nDo not resend funds. Try again later.',
+      "We couldn't refresh the latest status.\n"
+      "We'll keep trying and update this screen automatically.",
     );
   });
 
