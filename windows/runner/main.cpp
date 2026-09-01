@@ -39,12 +39,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
           L"Vizor", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
     } else if (!initial_payment_uris.empty()) {
       // The running instance answered the activation but never accepted the
-      // payment URI, so its window is now in the foreground showing whatever
-      // it was already showing. Say so instead of dropping the link silently.
+      // payment URI. Say so instead of dropping the link silently -- but do
+      // not promise the window is in front: an activation the shell declines
+      // to honor only flashes the taskbar button, so tell the user to switch
+      // to Vizor themselves.
       ::MessageBoxW(
           nullptr,
-          L"Vizor could not open this payment link. Vizor is now in the "
-          L"foreground, so open the link again.",
+          L"Vizor could not open this payment link because Vizor is already "
+          L"running. Switch to Vizor and open the link again.",
           L"Vizor", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
     }
     return EXIT_SUCCESS;
