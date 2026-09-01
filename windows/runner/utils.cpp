@@ -103,19 +103,29 @@ std::string Utf8FromUtf16(const wchar_t* utf16_string) {
   if (utf16_string == nullptr) {
     return std::string();
   }
-  unsigned int target_length = ::WideCharToMultiByte(
-      CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string,
-      -1, nullptr, 0, nullptr, nullptr)
-    -1; // remove the trailing null character
-  int input_length = (int)wcslen(utf16_string);
+  // WideCharToMultiByte answers 0 on failure, and WC_ERR_INVALID_CHARS makes
+  // it fail on input the shell can genuinely hand us -- an argv element
+  // holding an unpaired surrogate. Check the result before subtracting the
+  // terminator: doing that subtraction first underflowed the unsigned length
+  // to ~4 GB and turned a rejected argument into a bad_alloc or a crash.
+  const int size_with_terminator =
+      ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string, -1,
+                            nullptr, 0, nullptr, nullptr);
   std::string utf8_string;
-  if (target_length == 0 || target_length > utf8_string.max_size()) {
+  if (size_with_terminator <= 1) {
+    // 0 is failure; 1 is an empty string, whose conversion is already done.
     return utf8_string;
   }
+  const size_t target_length =
+      static_cast<size_t>(size_with_terminator) - 1;  // drop the terminator
+  if (target_length > utf8_string.max_size()) {
+    return utf8_string;
+  }
+  const int input_length = static_cast<int>(wcslen(utf16_string));
   utf8_string.resize(target_length);
-  int converted_length = ::WideCharToMultiByte(
-      CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string,
-      input_length, utf8_string.data(), target_length, nullptr, nullptr);
+  const int converted_length = ::WideCharToMultiByte(
+      CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string, input_length,
+      utf8_string.data(), static_cast<int>(target_length), nullptr, nullptr);
   if (converted_length == 0) {
     return std::string();
   }
