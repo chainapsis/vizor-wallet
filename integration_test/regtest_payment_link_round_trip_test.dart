@@ -114,15 +114,28 @@ void main() {
       );
       await pumpUntil(
         tester,
-        () => tester.any(find.text('Gift Card is\nalmost ready!')),
-        description: 'payment-link funding to reach confirmation wait',
+        () => tester.any(
+          find.byKey(const ValueKey('payment_link_copy_link_button')),
+        ),
+        description: 'payment-link copy action after broadcast acceptance',
         timeout: const Duration(minutes: 2),
       );
-      expect(find.text('Gift Card is\nalmost ready!'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('payment_link_copy_link_button')),
-        findsNothing,
+        findsOneWidget,
       );
+
+      await tapAppButton(
+        tester,
+        const ValueKey('payment_link_copy_link_button'),
+      );
+
+      final rawLink = await _readPaymentLinkFromClipboard();
+      final link = VizorPaymentLink.parse(rawLink);
+      expect(link.network, _network);
+      expect(link.amountZatoshi, _giftAmountZatoshi);
+      expect(link.presentation?.artworkId, 'coin');
+      expect(link.presentation?.message, _giftMessage);
 
       final pendingFunding = await _waitForHistoryTransaction(
         tester,
@@ -157,25 +170,6 @@ void main() {
         fundingProgress[fundingRecovery.link.address]?.confirmationCount,
         kPaymentLinkShareConfirmationTarget,
       );
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(const ValueKey('payment_link_copy_link_button')),
-        ),
-        description: 'payment-link copy action after six confirmations',
-        timeout: const Duration(minutes: 2),
-      );
-      await tapAppButton(
-        tester,
-        const ValueKey('payment_link_copy_link_button'),
-      );
-
-      final rawLink = await _readPaymentLinkFromClipboard();
-      final link = VizorPaymentLink.parse(rawLink);
-      expect(link.network, _network);
-      expect(link.amountZatoshi, _giftAmountZatoshi);
-      expect(link.presentation?.artworkId, 'coin');
-      expect(link.presentation?.message, _giftMessage);
 
       await importAdditionalDesktopRegtestWallet(tester);
       final accounts = await desktopRegtestAccounts();
@@ -191,10 +185,13 @@ void main() {
       await _tapText(tester, 'Paste card link');
       await pumpUntil(
         tester,
-        () =>
-            tester.any(find.byKey(const ValueKey('payment_link_claim_button'))),
-        description: 'received payment-link card to render',
+        () => tester.any(find.text('Waiting for 6 confirmations.')),
+        description: 'received payment-link confirmation wait to render',
         timeout: const Duration(minutes: 1),
+      );
+      expect(
+        find.byKey(const ValueKey('payment_link_claim_button')),
+        findsNothing,
       );
       expect(find.text(_giftAmountText), findsOneWidget);
       expect(
@@ -202,6 +199,18 @@ void main() {
             .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
             .artwork,
         PaymentLinkCardArtwork.coin,
+      );
+
+      await _mineRegtestBlocks(
+        kPaymentLinkClaimConfirmationTarget -
+            kPaymentLinkShareConfirmationTarget,
+      );
+      await pumpUntil(
+        tester,
+        () =>
+            tester.any(find.byKey(const ValueKey('payment_link_claim_button'))),
+        description: 'received payment-link claim after six confirmations',
+        timeout: const Duration(minutes: 2),
       );
       await tapAppWidget(
         tester,
