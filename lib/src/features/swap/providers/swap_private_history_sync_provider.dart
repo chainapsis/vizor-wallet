@@ -29,6 +29,30 @@ typedef FinalizedActivityArchiveLocalAccountCleaner =
     Future<void> Function(String accountUuid);
 typedef FinalizedActivityArchiveRetryDelaySampler = Duration Function();
 
+enum _FinalizedActivityArchiveWorkKind { discover, publish }
+
+class _FinalizedActivityArchiveWork {
+  const _FinalizedActivityArchiveWork({
+    required this.accountUuid,
+    required this.historyKind,
+    required this.workKind,
+  });
+
+  final String accountUuid;
+  final SwapPrivateHistoryKind historyKind;
+  final _FinalizedActivityArchiveWorkKind workKind;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _FinalizedActivityArchiveWork &&
+      other.accountUuid == accountUuid &&
+      other.historyKind == historyKind &&
+      other.workKind == workKind;
+
+  @override
+  int get hashCode => Object.hash(accountUuid, historyKind, workKind);
+}
+
 const _finalizedActivityArchiveRetryBaseDelay = Duration(seconds: 30);
 const _finalizedActivityArchiveRetryJitter = Duration(seconds: 15);
 
@@ -111,8 +135,8 @@ class FinalizedActivityArchiveLifecycleCoordinator {
   final FinalizedActivityArchiveMetadataStore _metadataStore;
   final FinalizedActivityArchiveLocalAccountCleaner _localAccountCleaner;
   final FinalizedActivityArchiveRetryDelaySampler _retryDelaySampler;
-  final Set<String> _queuedAccounts = {};
-  final Set<String> _retryAccounts = {};
+  final Set<_FinalizedActivityArchiveWork> _queuedWork = {};
+  final Set<_FinalizedActivityArchiveWork> _retryWork = {};
   final Set<String> _revokedAccounts = {};
   Future<void>? _drainInFlight;
   Timer? _retryTimer;
@@ -125,9 +149,10 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     try {
       final accounts = await _accountUuidLoader();
       if (_cannotRun) return;
-      _queuedAccounts.addAll(
-        accounts.where((account) => !_revokedAccounts.contains(account)),
-      );
+      for (final accountUuid in accounts) {
+        if (_revokedAccounts.contains(accountUuid)) continue;
+        _queueAccountDiscovery(accountUuid);
+      }
       await _drain();
     } catch (error, stackTrace) {
       _logFailure('account discovery', error, stackTrace);
@@ -141,7 +166,7 @@ class FinalizedActivityArchiveLifecycleCoordinator {
         _revokedAccounts.contains(accountUuid)) {
       return;
     }
-    _queuedAccounts.add(accountUuid);
+    _queueAccountDiscovery(accountUuid);
     await _drain();
   }
 
@@ -157,8 +182,8 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     }
 
     if (currentAccounts.isEmpty) {
-      _queuedAccounts.clear();
-      _retryAccounts.clear();
+      _queuedWork.clear();
+      _retryWork.clear();
       _retryAllRequested = false;
       _retryTimer?.cancel();
       _retryTimer = null;
@@ -172,13 +197,27 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     switch (change.source) {
       case SwapActivityReplicaChangeSource.localMutation:
       case SwapActivityReplicaChangeSource.providerRefresh:
-        if (change.changedRecords.any(
-          (record) =>
-              record.status == SwapIntentStatus.complete ||
-              record.status == SwapIntentStatus.refunded,
-        )) {
-          await synchronizeAccount(change.accountUuid);
+        if (_cannotRun || _revokedAccounts.contains(change.accountUuid)) {
+          return;
         }
+        final kinds = {
+          for (final record in change.changedRecords)
+            if (record.status == SwapIntentStatus.complete ||
+                record.status == SwapIntentStatus.refunded)
+              record.payMode
+                  ? SwapPrivateHistoryKind.pay
+                  : SwapPrivateHistoryKind.swap,
+        };
+        for (final kind in kinds) {
+          _queuedWork.add(
+            _FinalizedActivityArchiveWork(
+              accountUuid: change.accountUuid,
+              historyKind: kind,
+              workKind: _FinalizedActivityArchiveWorkKind.publish,
+            ),
+          );
+        }
+        if (kinds.isNotEmpty) await _drain();
       case SwapActivityReplicaChangeSource.remoteReconcile:
         return;
       case SwapActivityReplicaChangeSource.localAccountDeletion:
@@ -202,8 +241,8 @@ class FinalizedActivityArchiveLifecycleCoordinator {
 
   void pause() {
     _paused = true;
-    _queuedAccounts.clear();
-    _retryAccounts.clear();
+    _queuedWork.clear();
+    _retryWork.clear();
     _retryAllRequested = false;
     _retryTimer?.cancel();
     _retryTimer = null;
@@ -226,7 +265,7 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     late final Future<void> run;
     run = _drainQueued().whenComplete(() {
       if (identical(_drainInFlight, run)) _drainInFlight = null;
-      if (!_cannotRun && _queuedAccounts.isNotEmpty) {
+      if (!_cannotRun && _queuedWork.isNotEmpty) {
         unawaited(_drain());
       }
     });
@@ -235,29 +274,43 @@ class FinalizedActivityArchiveLifecycleCoordinator {
   }
 
   Future<void> _drainQueued() async {
-    final failed = <String>{};
-    while (!_cannotRun && _queuedAccounts.isNotEmpty) {
-      final accountUuid = _queuedAccounts.first;
-      _queuedAccounts.remove(accountUuid);
-      if (_revokedAccounts.contains(accountUuid)) continue;
+    final failed = <_FinalizedActivityArchiveWork>{};
+    while (!_cannotRun && _queuedWork.isNotEmpty) {
+      final work = _nextQueuedWork();
+      _queuedWork.remove(work);
+      if (_revokedAccounts.contains(work.accountUuid)) continue;
       try {
         final dbPath = await _dbPathLoader();
         final account = PrivateStateAccount(
           dbPath: dbPath,
           network: _networkLoader(),
-          accountUuid: accountUuid,
+          accountUuid: work.accountUuid,
         );
-        for (final kind in SwapPrivateHistoryKind.values) {
-          if (_cannotRun || _revokedAccounts.contains(accountUuid)) {
-            return;
-          }
-          await _synchronizer.synchronize(account: account, kind: kind);
+        if (_cannotRun || _revokedAccounts.contains(work.accountUuid)) {
+          return;
         }
-        _retryAccounts.remove(accountUuid);
+        switch (work.workKind) {
+          case _FinalizedActivityArchiveWorkKind.discover:
+            await _synchronizer.synchronize(
+              account: account,
+              kind: work.historyKind,
+            );
+          case _FinalizedActivityArchiveWorkKind.publish:
+            await _synchronizer.publishPending(
+              account: account,
+              kind: work.historyKind,
+            );
+        }
+        _retryWork.remove(work);
       } catch (error, stackTrace) {
-        if (_revokedAccounts.contains(accountUuid)) continue;
-        failed.add(accountUuid);
-        _logFailure('account=$accountUuid', error, stackTrace);
+        if (_revokedAccounts.contains(work.accountUuid)) continue;
+        failed.add(work);
+        _logFailure(
+          'account=${work.accountUuid} kind=${work.historyKind.wireName} '
+          'operation=${work.workKind.name}',
+          error,
+          stackTrace,
+        );
       }
     }
     if (failed.isNotEmpty && !_cannotRun) {
@@ -265,20 +318,37 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     }
   }
 
-  void _scheduleRetry(Set<String> accounts) {
-    _retryAccounts.addAll(accounts);
+  _FinalizedActivityArchiveWork _nextQueuedWork() => _queuedWork.firstWhere(
+    (work) => work.workKind == _FinalizedActivityArchiveWorkKind.publish,
+    orElse: () => _queuedWork.first,
+  );
+
+  void _queueAccountDiscovery(String accountUuid) {
+    for (final kind in SwapPrivateHistoryKind.values) {
+      _queuedWork.add(
+        _FinalizedActivityArchiveWork(
+          accountUuid: accountUuid,
+          historyKind: kind,
+          workKind: _FinalizedActivityArchiveWorkKind.discover,
+        ),
+      );
+    }
+  }
+
+  void _scheduleRetry(Set<_FinalizedActivityArchiveWork> work) {
+    _retryWork.addAll(work);
     _ensureRetryTimer();
   }
 
   void _revokeAccount(String accountUuid) {
     _revokedAccounts.add(accountUuid);
-    _queuedAccounts.remove(accountUuid);
-    _retryAccounts.remove(accountUuid);
+    _queuedWork.removeWhere((work) => work.accountUuid == accountUuid);
+    _retryWork.removeWhere((work) => work.accountUuid == accountUuid);
     _cancelRetryTimerIfIdle();
   }
 
   void _cancelRetryTimerIfIdle() {
-    if (_retryAccounts.isNotEmpty || _retryAllRequested) return;
+    if (_retryWork.isNotEmpty || _retryAllRequested) return;
     _retryTimer?.cancel();
     _retryTimer = null;
   }
@@ -299,12 +369,12 @@ class FinalizedActivityArchiveLifecycleCoordinator {
     _retryTimer = Timer(retryDelay, () {
       _retryTimer = null;
       if (!_cannotRun) {
-        _queuedAccounts.addAll(
-          _retryAccounts.where(
-            (account) => !_revokedAccounts.contains(account),
+        _queuedWork.addAll(
+          _retryWork.where(
+            (work) => !_revokedAccounts.contains(work.accountUuid),
           ),
         );
-        _retryAccounts.clear();
+        _retryWork.clear();
         final retryAll = _retryAllRequested;
         _retryAllRequested = false;
         if (retryAll) {

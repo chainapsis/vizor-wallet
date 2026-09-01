@@ -112,9 +112,14 @@ and restores the first record encountered for each ID.
 Recovery processes every contiguous delta through the first absent slot. Local
 secure metadata caches the last processed slot and its Activity ID set so later
 passes start with the following slot instead of rereading successful objects.
-On a create conflict the client returns to the same discovery loop, consumes
-all now-contiguous slots, and derives missing IDs again from current local
-state. It does not maintain or merge a separate conflict snapshot.
+When a local Activity finalizes, publication optimistically creates the next
+slot without a preceding GET. On a create conflict the client reads that
+winning slot, removes its Activity IDs from the local pending set, and tries
+the following slot directly. Thus conflict recovery follows
+`PUT -> conflict -> GET` one slot at a time and never needs a terminal absent
+GET. A normal startup, resume, or import recovery still performs contiguous
+GETs through the first absent slot so it can discover changes from other
+clients.
 
 Consequently each slot has an unrelated public key and object ID at rest, and
 existing slot objects cannot be updated.

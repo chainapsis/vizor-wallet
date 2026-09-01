@@ -42,9 +42,15 @@ void main() {
 
       expect(
         synchronizer.calls.map(
-          (call) => '${call.account.accountUuid}:${call.kind.wireName}',
+          (call) =>
+              '${call.account.accountUuid}:${call.kind.wireName}:${call.operation}',
         ),
-        ['account-a:swap', 'account-a:pay', 'account-b:swap', 'account-b:pay'],
+        [
+          'account-a:swap:discover',
+          'account-a:pay:discover',
+          'account-b:swap:discover',
+          'account-b:pay:discover',
+        ],
       );
       expect(synchronizer.calls.first.account.dbPath, '/wallet.db');
       expect(synchronizer.calls.first.account.network, 'main');
@@ -86,12 +92,14 @@ void main() {
       await coordinator.handleReplicaChange(
         _change(SwapActivityReplicaChangeSource.localMutation),
       );
-      expect(synchronizer.calls, hasLength(2));
+      expect(synchronizer.calls, hasLength(1));
+      expect(synchronizer.calls.single.kind, SwapPrivateHistoryKind.swap);
+      expect(synchronizer.calls.single.operation, 'publish');
 
       await coordinator.handleReplicaChange(
         _change(SwapActivityReplicaChangeSource.remoteReconcile),
       );
-      expect(synchronizer.calls, hasLength(2));
+      expect(synchronizer.calls, hasLength(1));
 
       await coordinator.handleReplicaChange(
         _change(SwapActivityReplicaChangeSource.localAccountDeletion),
@@ -140,7 +148,31 @@ void main() {
         ],
       ),
     );
-    expect(synchronizer.calls, hasLength(2));
+    expect(synchronizer.calls, hasLength(1));
+    expect(synchronizer.calls.single.kind, SwapPrivateHistoryKind.swap);
+    expect(synchronizer.calls.single.operation, 'publish');
+  });
+
+  test('a finalized pay change publishes only the pay namespace', () async {
+    final synchronizer = _RecordingSynchronizer();
+    final coordinator = _coordinator(
+      synchronizer: synchronizer,
+      accountUuids: const [],
+    );
+    addTearDown(coordinator.dispose);
+
+    await coordinator.handleReplicaChange(
+      SwapActivityReplicaChange(
+        accountUuid: 'account-a',
+        source: SwapActivityReplicaChangeSource.providerRefresh,
+        records: const [],
+        changedRecords: [_finalizedRecord().copyWith(payMode: true)],
+      ),
+    );
+
+    expect(synchronizer.calls, hasLength(1));
+    expect(synchronizer.calls.single.kind, SwapPrivateHistoryKind.pay);
+    expect(synchronizer.calls.single.operation, 'publish');
   });
 
   test('account deletion fences and cleans up an in-flight restore', () async {
@@ -190,7 +222,11 @@ void main() {
     );
     await Future<void>.delayed(const Duration(milliseconds: 60));
 
-    expect(synchronizer.calls, hasLength(1));
+    expect(synchronizer.calls, hasLength(2));
+    expect(synchronizer.calls.map((call) => call.kind), [
+      SwapPrivateHistoryKind.swap,
+      SwapPrivateHistoryKind.pay,
+    ]);
   });
 
   test('removed accounts ignore stale changes and can be re-added', () async {
@@ -297,8 +333,8 @@ void main() {
 
     expect(synchronizer.calls.map((call) => call.kind), [
       SwapPrivateHistoryKind.swap,
-      SwapPrivateHistoryKind.swap,
       SwapPrivateHistoryKind.pay,
+      SwapPrivateHistoryKind.swap,
     ]);
     expect(sampledDelays, 1);
   });
@@ -351,10 +387,11 @@ SwapIntentRecord _finalizedRecord() => SwapIntentRecord(
 );
 
 class _SyncCall {
-  const _SyncCall(this.account, this.kind);
+  const _SyncCall(this.account, this.kind, this.operation);
 
   final PrivateStateAccount account;
   final SwapPrivateHistoryKind kind;
+  final String operation;
 }
 
 class _SequenceRandom implements Random {
@@ -407,7 +444,23 @@ class _RecordingSynchronizer implements FinalizedActivityArchiveSynchronizer {
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   }) async {
-    calls.add(_SyncCall(account, kind));
+    await _recordCall(account, kind, 'discover');
+  }
+
+  @override
+  Future<void> publishPending({
+    required PrivateStateAccount account,
+    required SwapPrivateHistoryKind kind,
+  }) async {
+    await _recordCall(account, kind, 'publish');
+  }
+
+  Future<void> _recordCall(
+    PrivateStateAccount account,
+    SwapPrivateHistoryKind kind,
+    String operation,
+  ) async {
+    calls.add(_SyncCall(account, kind, operation));
     onCall?.call(calls.length);
     if (calls.length == 1 && releaseFirstCall != null) {
       firstCallStarted?.complete();

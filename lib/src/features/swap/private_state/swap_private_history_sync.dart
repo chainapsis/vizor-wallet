@@ -11,18 +11,13 @@ import 'swap_private_history_sync_metadata.dart';
 
 const _archiveSlotPrefix = 'delta-v1:';
 
-class FinalizedActivityArchiveConflictException implements Exception {
-  const FinalizedActivityArchiveConflictException(this.attempts);
-
-  final int attempts;
-
-  @override
-  String toString() =>
-      'Finalized activity archive did not converge after $attempts attempts.';
-}
-
 abstract interface class FinalizedActivityArchiveSynchronizer {
   Future<void> synchronize({
+    required PrivateStateAccount account,
+    required SwapPrivateHistoryKind kind,
+  });
+
+  Future<void> publishPending({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
   });
@@ -36,28 +31,22 @@ abstract interface class FinalizedActivityArchiveSynchronizer {
 /// Maintains an immutable delta archive of complete and refunded activities.
 ///
 /// Each Activity ID is published at most once per namespace. Recovery consumes
-/// every contiguous slot and adds remote-only IDs to the local replica. A
-/// create conflict simply restarts discovery because another device advanced
-/// the same immutable archive.
+/// every contiguous slot and adds remote-only IDs to the local replica. Local
+/// publication tries the next slot without a preceding read; a create conflict
+/// reads only the winning slot before advancing.
 class FinalizedActivityArchiveSync
     implements FinalizedActivityArchiveSynchronizer {
   FinalizedActivityArchiveSync({
     required PrivateStateObjectRepository repository,
     required SwapActivityReplica replica,
     required FinalizedActivityArchiveMetadataStore metadataStore,
-    this.maxConflictAttempts = 8,
   }) : _repository = repository,
        _replica = replica,
-       _metadataStore = metadataStore {
-    if (maxConflictAttempts < 1) {
-      throw ArgumentError.value(maxConflictAttempts, 'maxConflictAttempts');
-    }
-  }
+       _metadataStore = metadataStore;
 
   final PrivateStateObjectRepository _repository;
   final SwapActivityReplica _replica;
   final FinalizedActivityArchiveMetadataStore _metadataStore;
-  final int maxConflictAttempts;
   final Map<String, Future<void>> _syncTails = {};
 
   @override
@@ -85,13 +74,28 @@ class FinalizedActivityArchiveSync
     final scope = '${account.accountUuid}\u0000${kind.wireName}';
     return _serialize(scope, () async {
       debugPrint('[private-state] activity sync start kind=${kind.wireName}');
-      return _synchronize(account: account, kind: kind);
+      return _run(account: account, kind: kind, discoverRemote: true);
     });
   }
 
-  Future<void> _synchronize({
+  @override
+  Future<void> publishPending({
     required PrivateStateAccount account,
     required SwapPrivateHistoryKind kind,
+  }) {
+    final scope = '${account.accountUuid}\u0000${kind.wireName}';
+    return _serialize(scope, () async {
+      debugPrint(
+        '[private-state] activity publish start kind=${kind.wireName}',
+      );
+      return _run(account: account, kind: kind, discoverRemote: false);
+    });
+  }
+
+  Future<void> _run({
+    required PrivateStateAccount account,
+    required SwapPrivateHistoryKind kind,
+    required bool discoverRemote,
   }) async {
     final metadata =
         await _metadataStore.load(
@@ -105,24 +109,14 @@ class FinalizedActivityArchiveSync
       lastSlot = 0;
     }
     final hidden = metadata.hiddenRecordIds;
-    var conflictAttempts = 0;
+    var needsDiscovery = discoverRemote;
+    var wroteAny = false;
 
-    while (true) {
-      // Consume the complete contiguous archive before deciding whether this
-      // client has anything to publish. This is also the only conflict path.
+    Future<void> reconcileDiscovered(Iterable<SwapIntentRecord> records) async {
       final discovered = <SwapIntentRecord>[];
-      while (true) {
-        final next = await _readSlot(
-          account: account,
-          kind: kind,
-          slot: lastSlot + 1,
-        );
-        if (next == null) break;
-        lastSlot++;
-        for (final record in next.records) {
-          if (archivedIds.add(record.id)) {
-            discovered.add(record);
-          }
+      for (final record in records) {
+        if (archivedIds.add(record.id)) {
+          discovered.add(record);
         }
       }
       if (discovered.isNotEmpty) {
@@ -132,6 +126,26 @@ class FinalizedActivityArchiveSync
             (record) => !hidden.contains(record.id),
           ),
         );
+      }
+    }
+
+    while (true) {
+      if (needsDiscovery) {
+        // A recovery pass consumes the complete contiguous archive once before
+        // deciding whether this client also has anything to publish.
+        final discovered = <SwapIntentRecord>[];
+        while (true) {
+          final next = await _readSlot(
+            account: account,
+            kind: kind,
+            slot: lastSlot + 1,
+          );
+          if (next == null) break;
+          lastSlot++;
+          discovered.addAll(next.records);
+        }
+        await reconcileDiscovered(discovered);
+        needsDiscovery = false;
       }
 
       final local = await _replica.loadRecords(
@@ -153,7 +167,11 @@ class FinalizedActivityArchiveSync
         );
         return _complete(
           kind: kind,
-          outcome: archivedIds.isEmpty ? 'empty' : 'unchanged',
+          outcome: wroteAny
+              ? 'written'
+              : archivedIds.isEmpty
+              ? 'empty'
+              : 'unchanged',
           slot: lastSlot,
           archiveRecords: archivedIds.length,
         );
@@ -175,6 +193,7 @@ class FinalizedActivityArchiveSync
         plaintext: delta.encode(),
       );
       if (write is PrivateStateCreated) {
+        wroteAny = true;
         lastSlot = nextSlot;
         archivedIds.addAll(delta.records.map((record) => record.id));
         await _saveMetadata(
@@ -184,20 +203,28 @@ class FinalizedActivityArchiveSync
           hidden: hidden,
           archivedIds: archivedIds,
         );
-        return _complete(
-          kind: kind,
-          outcome: 'written',
-          slot: nextSlot,
-          archiveRecords: archivedIds.length,
-        );
+        continue;
       }
 
-      conflictAttempts++;
-      if (conflictAttempts >= maxConflictAttempts) {
-        throw FinalizedActivityArchiveConflictException(maxConflictAttempts);
+      final winner = await _readSlot(
+        account: account,
+        kind: kind,
+        slot: nextSlot,
+      );
+      if (winner == null) {
+        throw const PrivateStateProtocolException(
+          'Conflicting finalized activity slot is absent.',
+        );
       }
-      // The next loop reads the winner and every later contiguous slot before
-      // deriving missing IDs from current local state again.
+      lastSlot = nextSlot;
+      await reconcileDiscovered(winner.records);
+      await _saveMetadata(
+        account: account,
+        kind: kind,
+        lastSlot: lastSlot,
+        hidden: hidden,
+        archivedIds: archivedIds,
+      );
     }
   }
 

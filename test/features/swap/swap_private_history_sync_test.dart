@@ -56,7 +56,10 @@ void main() {
     ]);
     final sync = _sync(repository: repository, store: store);
 
-    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+    await sync.publishPending(
+      account: account,
+      kind: SwapPrivateHistoryKind.swap,
+    );
 
     expect(repository.createdKeys.single.itemKey, 'delta-v1:1');
     final document = SwapPrivateHistoryDocument.decode(
@@ -67,7 +70,7 @@ void main() {
       'complete',
       'refunded',
     });
-    expect(repository.readKeys.map((key) => key.itemKey), ['delta-v1:1']);
+    expect(repository.readKeys, isEmpty);
   });
 
   test('uses the pay namespace and excludes finalized swap records', () async {
@@ -78,7 +81,10 @@ void main() {
     ]);
     final sync = _sync(repository: repository, store: store);
 
-    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.pay);
+    await sync.publishPending(
+      account: account,
+      kind: SwapPrivateHistoryKind.pay,
+    );
 
     expect(
       repository.createdKeys.single.namespace,
@@ -98,9 +104,15 @@ void main() {
     ]);
     final sync = _sync(repository: repository, store: store);
 
-    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+    await sync.publishPending(
+      account: account,
+      kind: SwapPrivateHistoryKind.swap,
+    );
     store.records.add(_record('second', SwapIntentStatus.refunded));
-    await sync.synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+    await sync.publishPending(
+      account: account,
+      kind: SwapPrivateHistoryKind.swap,
+    );
 
     expect(repository.createdKeys.map((key) => key.itemKey), [
       'delta-v1:1',
@@ -117,6 +129,62 @@ void main() {
     expect(first.records.map((record) => record.id), ['first']);
     expect(second.records.map((record) => record.id), ['second']);
   });
+
+  test(
+    'large pending history publishes consecutive slots without GET',
+    () async {
+      final repository = _MemoryRepository();
+      final longMemo = List.filled(4096, 'x').join();
+      final records = [
+        for (var index = 0; index < 60; index++)
+          _record(
+            'activity-$index',
+            SwapIntentStatus.complete,
+          ).copyWith(depositMemo: longMemo),
+      ];
+
+      await _sync(
+        repository: repository,
+        store: _MemoryActivityStore(records),
+      ).publishPending(account: account, kind: SwapPrivateHistoryKind.swap);
+
+      expect(repository.createdKeys.length, greaterThan(1));
+      expect(repository.readKeys, isEmpty);
+      final publishedIds = <String>{};
+      for (final bytes in repository.objects.values) {
+        publishedIds.addAll(
+          SwapPrivateHistoryDocument.decode(
+            bytes,
+            expectedKind: SwapPrivateHistoryKind.swap,
+          ).records.map((record) => record.id),
+        );
+      }
+      expect(publishedIds, records.map((record) => record.id).toSet());
+    },
+  );
+
+  test(
+    'recovery discovers once before publishing consecutive local slots',
+    () async {
+      final repository = _MemoryRepository();
+      final longMemo = List.filled(4096, 'x').join();
+      final records = [
+        for (var index = 0; index < 60; index++)
+          _record(
+            'activity-$index',
+            SwapIntentStatus.complete,
+          ).copyWith(depositMemo: longMemo),
+      ];
+
+      await _sync(
+        repository: repository,
+        store: _MemoryActivityStore(records),
+      ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+
+      expect(repository.createdKeys.length, greaterThan(1));
+      expect(repository.readKeys.map((key) => key.itemKey), ['delta-v1:1']);
+    },
+  );
 
   test(
     'does not reveal an account with no complete or refunded history',
@@ -138,6 +206,25 @@ void main() {
       expect(repository.createdKeys, isEmpty);
     },
   );
+
+  test('publish with no pending Activity makes no remote request', () async {
+    final repository = _MemoryRepository();
+    final sync = _sync(
+      repository: repository,
+      store: _MemoryActivityStore([
+        _record('failed', SwapIntentStatus.failed),
+        _record('expired', SwapIntentStatus.expired),
+      ]),
+    );
+
+    await sync.publishPending(
+      account: account,
+      kind: SwapPrivateHistoryKind.swap,
+    );
+
+    expect(repository.createdKeys, isEmpty);
+    expect(repository.readKeys, isEmpty);
+  });
 
   test('fresh installation processes every contiguous delta', () async {
     final repository = _MemoryRepository()
@@ -274,7 +361,7 @@ void main() {
       ]);
       final sync = _sync(repository: repository, store: store);
 
-      await sync.synchronize(
+      await sync.publishPending(
         account: account,
         kind: SwapPrivateHistoryKind.swap,
       );
@@ -283,6 +370,7 @@ void main() {
         'delta-v1:1',
         'delta-v1:2',
       ]);
+      expect(repository.readKeys.map((key) => key.itemKey), ['delta-v1:1']);
       final latest = SwapPrivateHistoryDocument.decode(
         repository.objects['delta-v1:2']!,
         expectedKind: SwapPrivateHistoryKind.swap,
@@ -307,9 +395,10 @@ void main() {
       await _sync(
         repository: repository,
         store: store,
-      ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+      ).publishPending(account: account, kind: SwapPrivateHistoryKind.swap);
 
       expect(repository.createdKeys.map((key) => key.itemKey), ['delta-v1:1']);
+      expect(repository.readKeys.map((key) => key.itemKey), ['delta-v1:1']);
       expect(repository.objects.keys, ['delta-v1:1']);
       expect(
         store.records.single.destinationChainTxHash,
@@ -319,7 +408,7 @@ void main() {
   );
 
   test(
-    'conflict rediscovery reads all existing slots before another PUT',
+    'conflict walk reads only each winning slot before the next PUT',
     () async {
       final repository = _MemoryRepository()
         ..conflictSlot = 1
@@ -332,11 +421,16 @@ void main() {
       await _sync(
         repository: repository,
         store: store,
-      ).synchronize(account: account, kind: SwapPrivateHistoryKind.swap);
+      ).publishPending(account: account, kind: SwapPrivateHistoryKind.swap);
 
       expect(repository.createdKeys.map((key) => key.itemKey), [
         'delta-v1:1',
+        'delta-v1:2',
         'delta-v1:3',
+      ]);
+      expect(repository.readKeys.map((key) => key.itemKey), [
+        'delta-v1:1',
+        'delta-v1:2',
       ]);
       expect(store.records.map((record) => record.id).toSet(), {
         'local',
