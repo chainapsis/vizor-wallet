@@ -1058,7 +1058,7 @@ void main() {
     container
         .read(paymentLinkIntakeProvider.notifier)
         .receive(_incomingLink.toUri().toString());
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
 
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
     expect(find.text('4.45'), findsOneWidget);
