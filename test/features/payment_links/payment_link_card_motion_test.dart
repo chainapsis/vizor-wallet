@@ -2,8 +2,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_motion.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 
 void main() {
   testWidgets('celebration grows and turns the settled card into view', (
@@ -39,10 +42,10 @@ void main() {
 
     update(() => celebrate = true);
     await tester.pump();
-    await tester.pump(PaymentLinkCardMotion.revealDuration ~/ 2);
+    await tester.pump(const Duration(milliseconds: 200));
     expect(revealMatrix().entry(0, 0).abs(), lessThan(0.99));
 
-    await tester.pump(PaymentLinkCardMotion.revealDuration);
+    await tester.pump(PaymentLinkCardMotion.settleDuration);
     expect(revealMatrix().entry(0, 0), closeTo(1, 1e-6));
   });
 
@@ -161,14 +164,49 @@ void main() {
     expect(tilt.transform, equals(Matrix4.identity()));
     expect(tester.binding.hasScheduledFrame, isFalse);
   });
+
+  testWidgets('Widgetbook motion playground replays and flips the handoff', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      const PaymentLinkMotionDesktopPreview(),
+      disableAnimations: false,
+      surfaceSize: const Size(1080, 720),
+    );
+
+    expect(find.byType(PaymentLinkConfetti), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_front')),
+      findsOneWidget,
+    );
+
+    await tester.pump(PaymentLinkCardMotion.settleDuration);
+    await tester.tap(find.byKey(const ValueKey('payment_link_motion_flip')));
+    await tester.pump();
+    await tester.pump(PaymentLinkCardFlip.settleDuration);
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_back')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('payment_link_motion_replay')));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_front')),
+      findsOneWidget,
+    );
+    expect(tester.binding.hasScheduledFrame, isTrue);
+  });
 }
 
 Future<void> _pump(
   WidgetTester tester,
   Widget child, {
   bool disableAnimations = false,
+  Size surfaceSize = const Size(800, 600),
 }) async {
-  await tester.binding.setSurfaceSize(const Size(800, 600));
+  await tester.binding.setSurfaceSize(surfaceSize);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     MaterialApp(

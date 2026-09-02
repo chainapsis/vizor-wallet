@@ -3,8 +3,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show rootBundle;
+
+const double kPaymentLinkCardMaxTilt = 0.18;
 
 @immutable
 class PaymentLinkCardLight {
@@ -41,22 +44,27 @@ class PaymentLinkCardMotionScope extends InheritedWidget {
   }
 }
 
-/// Designer-provided Gift Card reveal plus the settled desktop pointer motion.
+/// Designer-provided Gift Card reveal plus the settled pointer motion.
 ///
 /// [celebrate] is intentionally edge-triggered. A waiting card stays flat;
-/// changing it to true runs the grow + full-turn reveal once. Cards that mount
-/// with it true (the receive surface) reveal immediately.
+/// changing it to true runs the full-turn reveal once. Cards that mount with it
+/// true (the receive surface) also use the handoff's 0.85-to-1 entry scale.
 class PaymentLinkCardMotion extends StatefulWidget {
   const PaymentLinkCardMotion({
     required this.child,
     this.celebrate = false,
     this.enableTilt = true,
-    this.width = 320,
-    this.height = 200,
+    this.width = defaultWidth,
+    this.height = defaultHeight,
     super.key,
   });
 
-  static const revealDuration = Duration(milliseconds: 950);
+  /// The handoff spring has no fixed duration. This is a conservative budget
+  /// for deterministic tests and preview playback to reach rest.
+  static const settleDuration = Duration(seconds: 2);
+  static const entryDuration = Duration(milliseconds: 400);
+  static const double defaultWidth = 360;
+  static const double defaultHeight = 225;
 
   final Widget child;
   final bool celebrate;
@@ -69,21 +77,25 @@ class PaymentLinkCardMotion extends StatefulWidget {
 }
 
 class _PaymentLinkCardMotionState extends State<PaymentLinkCardMotion>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _revealController = AnimationController(
+    with TickerProviderStateMixin {
+  static const _springResponse = 0.7;
+  static final SpringDescription _revealSpring =
+      SpringDescription.withDampingRatio(
+        mass: 1,
+        stiffness:
+            (2 * math.pi / _springResponse) * (2 * math.pi / _springResponse),
+        ratio: 1,
+      );
+
+  late final AnimationController _revealController =
+      AnimationController.unbounded(
+        vsync: this,
+        value: widget.celebrate ? 0 : 1,
+      );
+  late final AnimationController _entryController = AnimationController(
     vsync: this,
-    duration: PaymentLinkCardMotion.revealDuration,
+    duration: PaymentLinkCardMotion.entryDuration,
     value: widget.celebrate ? 0 : 1,
-  );
-  late final Animation<double> _rotation = Tween<double>(
-    begin: 0,
-    end: 2 * math.pi,
-  ).animate(
-    CurvedAnimation(parent: _revealController, curve: Curves.easeOutCubic),
-  );
-  late final Animation<double> _scale = CurvedAnimation(
-    parent: _revealController,
-    curve: Curves.easeOutBack,
   );
   final ValueNotifier<PaymentLinkCardLight> _light = ValueNotifier(
     PaymentLinkCardLight.rest,
@@ -102,9 +114,12 @@ class _PaymentLinkCardMotionState extends State<PaymentLinkCardMotion>
       _revealController
         ..stop()
         ..value = 1;
+      _entryController
+        ..stop()
+        ..value = 1;
       _light.value = PaymentLinkCardLight.rest;
     } else if (widget.celebrate && !_didRunCelebration) {
-      _runCelebration();
+      _runCelebration(includeEntry: true);
     }
   }
 
@@ -115,21 +130,30 @@ class _PaymentLinkCardMotionState extends State<PaymentLinkCardMotion>
       if (_motionDisabled) {
         _didRunCelebration = true;
         _revealController.value = 1;
+        _entryController.value = 1;
       } else {
-        _runCelebration();
+        _runCelebration(includeEntry: false);
       }
     }
   }
 
-  void _runCelebration() {
+  void _runCelebration({required bool includeEntry}) {
     _didRunCelebration = true;
     _light.value = PaymentLinkCardLight.rest;
-    _revealController.forward(from: 0);
+    _revealController
+      ..value = 0
+      ..animateWith(SpringSimulation(_revealSpring, 0, 1, 0));
+    if (includeEntry) {
+      _entryController.forward(from: 0);
+    } else {
+      _entryController.value = 1;
+    }
   }
 
   @override
   void dispose() {
     _revealController.dispose();
+    _entryController.dispose();
     _light.dispose();
     super.dispose();
   }
@@ -137,16 +161,33 @@ class _PaymentLinkCardMotionState extends State<PaymentLinkCardMotion>
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _revealController,
+      animation: Listenable.merge([
+        _revealController,
+        _entryController,
+        _light,
+      ]),
       child: widget.child,
       builder: (context, child) {
         final disabled = _motionDisabled;
-        final rotation = disabled ? 2 * math.pi : _rotation.value;
-        final scale = disabled ? 1.0 : _scale.value;
+        final revealProgress = disabled
+            ? 1.0
+            : _revealController.value.clamp(0.0, 1.0);
+        final rotation = revealProgress * 2 * math.pi;
+        final entryProgress = disabled
+            ? 1.0
+            : Curves.easeOutCubic.transform(_entryController.value);
+        final entryScale = 0.85 + (0.15 * entryProgress);
         final revealed = disabled || !_revealController.isAnimating;
+        final light = _light.value;
+        final strength = light.strength;
+        final tiltX =
+            -(light.position.dy * 2 - 1) * kPaymentLinkCardMaxTilt * strength;
+        final tiltY =
+            (light.position.dx * 2 - 1) * kPaymentLinkCardMaxTilt * strength;
+        final liftScale = 1 + (0.05 * strength);
         final scopedCard = PaymentLinkCardMotionScope(
           light: _light,
-          rotation: rotation,
+          rotation: rotation + tiltY,
           child: child!,
         );
         return _PaymentLinkPointerTilt(
@@ -157,14 +198,14 @@ class _PaymentLinkCardMotionState extends State<PaymentLinkCardMotion>
           child: Transform(
             key: const ValueKey('payment_link_reveal_transform'),
             alignment: Alignment.center,
-            transform:
-                Matrix4.identity()
-                  ..setEntry(3, 2, 0.001)
-                  ..rotateY(rotation),
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.0012)
+              ..rotateX(tiltX)
+              ..rotateY(rotation + tiltY),
             child: Transform.scale(
-              key: const ValueKey('payment_link_reveal_scale'),
-              scale: scale,
-              child: scopedCard,
+              key: const ValueKey('payment_link_tilt_transform'),
+              scale: entryScale * liftScale,
+              child: RepaintBoundary(child: scopedCard),
             ),
           ),
         );
@@ -198,9 +239,6 @@ class _PaymentLinkPointerTiltState extends State<_PaymentLinkPointerTilt>
   static const _tauFollow = 0.09;
   static const _tauEngage = 0.14;
   static const _tauRelease = 0.35;
-  static const _maxTilt = 0.18;
-  static const _liftScale = 1.05;
-
   late final Ticker _ticker;
   Duration _lastTick = Duration.zero;
   Offset _position = const Offset(0.5, 0.5);
@@ -216,9 +254,11 @@ class _PaymentLinkPointerTiltState extends State<_PaymentLinkPointerTilt>
 
   void _update(Offset localPosition) {
     if (!widget.enabled) return;
+    final size = context.size ?? Size(widget.width, widget.height);
+    if (size.isEmpty) return;
     _goalPosition = Offset(
-      (localPosition.dx / widget.width).clamp(0.0, 1.0),
-      (localPosition.dy / widget.height).clamp(0.0, 1.0),
+      (localPosition.dx / size.width).clamp(0.0, 1.0),
+      (localPosition.dy / size.height).clamp(0.0, 1.0),
     );
     _goalStrength = 1;
     _drive();
@@ -251,19 +291,17 @@ class _PaymentLinkPointerTiltState extends State<_PaymentLinkPointerTilt>
     }
 
     final strengthTau = _goalStrength > _strength ? _tauEngage : _tauRelease;
-    setState(() {
-      _position = Offset(
-        approach(_position.dx, _goalPosition.dx, _tauFollow),
-        approach(_position.dy, _goalPosition.dy, _tauFollow),
-      );
-      _strength = approach(_strength, _goalStrength, strengthTau);
-      if ((_position - _goalPosition).distance < 0.001 &&
-          (_strength - _goalStrength).abs() < 0.002) {
-        _position = _goalPosition;
-        _strength = _goalStrength;
-        _ticker.stop();
-      }
-    });
+    _position = Offset(
+      approach(_position.dx, _goalPosition.dx, _tauFollow),
+      approach(_position.dy, _goalPosition.dy, _tauFollow),
+    );
+    _strength = approach(_strength, _goalStrength, strengthTau);
+    if ((_position - _goalPosition).distance < 0.001 &&
+        (_strength - _goalStrength).abs() < 0.002) {
+      _position = _goalPosition;
+      _strength = _goalStrength;
+      _ticker.stop();
+    }
     widget.onLight(PaymentLinkCardLight(_position, _strength));
   }
 
@@ -281,17 +319,6 @@ class _PaymentLinkPointerTiltState extends State<_PaymentLinkPointerTilt>
 
   @override
   Widget build(BuildContext context) {
-    final x = (_position.dx * 2 - 1) * _strength;
-    final y = (_position.dy * 2 - 1) * _strength;
-    final transform =
-        widget.enabled
-            ? (Matrix4.identity()
-              ..setEntry(3, 2, 0.0015)
-              ..rotateX(-y * _maxTilt)
-              ..rotateY(x * _maxTilt))
-            : Matrix4.identity();
-    final scale = widget.enabled ? 1 + (_liftScale - 1) * _strength : 1.0;
-
     return MouseRegion(
       key: const ValueKey('payment_link_tilt_mouse_region'),
       onHover: (event) => _update(event.localPosition),
@@ -301,12 +328,7 @@ class _PaymentLinkPointerTiltState extends State<_PaymentLinkPointerTilt>
         onPointerMove: (event) => _update(event.localPosition),
         onPointerUp: (_) => _reset(),
         onPointerCancel: (_) => _reset(),
-        child: Transform(
-          key: const ValueKey('payment_link_tilt_transform'),
-          alignment: Alignment.center,
-          transform: transform,
-          child: Transform.scale(scale: scale, child: widget.child),
-        ),
+        child: widget.child,
       ),
     );
   }
@@ -475,8 +497,11 @@ class PaymentLinkCardMetallicShine extends StatelessWidget {
       builder: (context, value, child) {
         final restPosition = math.sin(rotation);
         final hoverPosition = value.position.dx * 2 - 1;
-        final position =
-            ui.lerpDouble(restPosition, hoverPosition, value.strength)!;
+        final position = ui.lerpDouble(
+          restPosition,
+          hoverPosition,
+          value.strength,
+        )!;
         final restGlare = 0.72 + 0.28 * math.cos(rotation).abs();
         final glare = ui.lerpDouble(restGlare, 1, value.strength)!;
         final center = 0.5 + position * 0.5;
@@ -488,17 +513,16 @@ class PaymentLinkCardMetallicShine extends StatelessWidget {
         return ShaderMask(
           key: const ValueKey('payment_link_metallic_shine'),
           blendMode: BlendMode.srcIn,
-          shaderCallback:
-              (bounds) => LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [metal(0.62), metal(1), metal(0.62)],
-                stops: [
-                  (center - 0.38).clamp(0.0, 1.0),
-                  center.clamp(0.0, 1.0),
-                  (center + 0.38).clamp(0.0, 1.0),
-                ],
-              ).createShader(bounds),
+          shaderCallback: (bounds) => LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [metal(0.62), metal(1), metal(0.62)],
+            stops: [
+              (center - 0.38).clamp(0.0, 1.0),
+              center.clamp(0.0, 1.0),
+              (center + 0.38).clamp(0.0, 1.0),
+            ],
+          ).createShader(bounds),
           child: child,
         );
       },

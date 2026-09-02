@@ -36,7 +36,7 @@ void main() {
     );
     await tester.tap(find.bySemanticsLabel('Reveal gift card message'));
     await tester.pump();
-    await tester.pump(PaymentLinkCardFlip.duration);
+    await tester.pump(PaymentLinkCardFlip.settleDuration);
 
     expect(
       find.byKey(const ValueKey('payment_link_flip_back')),
@@ -60,10 +60,7 @@ void main() {
       find.byKey(const ValueKey('payment_link_long_sync_warning_sheet')),
       findsOneWidget,
     );
-    expect(
-      find.text('This Gift Card may take a while'),
-      findsOneWidget,
-    );
+    expect(find.text('This Gift Card may take a while'), findsOneWidget);
     expect(find.text('Check Gift Card'), findsOneWidget);
     expect(find.text('Go back'), findsOneWidget);
     expect(find.textContaining('100000'), findsNothing);
@@ -88,6 +85,10 @@ void main() {
 
     await tester.enterText(amountEditor, '4.45');
     await tester.pump();
+    expect(
+      find.byKey(const ValueKey('payment_link_max_button')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
       findsOneWidget,

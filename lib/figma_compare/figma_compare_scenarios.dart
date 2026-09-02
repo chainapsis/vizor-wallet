@@ -244,9 +244,19 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkReadyUseCase,
   ),
   FigmaCompareScenario(
+    id: 'payment-link-motion-handoff',
+    description: 'Desktop Gift Card motion handoff playground',
+    builder: buildPaymentLinkMotionHandoffUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-cards-list',
     description: 'Desktop created Gift Cards list fixture',
     builder: buildPaymentLinkCardsListUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-share-qr',
+    description: 'Desktop selected-artwork Gift Card QR export',
+    builder: buildPaymentLinkShareQrUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-redeem-paste',

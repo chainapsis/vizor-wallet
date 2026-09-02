@@ -229,6 +229,26 @@ class PaymentLinkFundingQuote {
   BigInt get totalDeductedZatoshi => recipientAmountZatoshi + cardFeeZatoshi;
 }
 
+@visibleForTesting
+PaymentLinkFundingQuote paymentLinkMaxFundingQuote({
+  required String sourceAccountUuid,
+  required BigInt maxSpendAmountZatoshi,
+  required BigInt fundingFeeZatoshi,
+}) {
+  final claimFeeReserve = BigInt.from(kPaymentLinkClaimFeeReserveZatoshi);
+  if (maxSpendAmountZatoshi <= claimFeeReserve) {
+    throw StateError(
+      'Insufficient balance to fund a Gift Card and its claim fee.',
+    );
+  }
+  return PaymentLinkFundingQuote(
+    sourceAccountUuid: sourceAccountUuid,
+    recipientAmountZatoshi: maxSpendAmountZatoshi - claimFeeReserve,
+    fundingFeeZatoshi: fundingFeeZatoshi,
+    claimFeeReserveZatoshi: claimFeeReserve,
+  );
+}
+
 const _submittedPaymentLinkFundingStatuses = {
   'broadcasted',
   'pending_broadcast',
@@ -287,6 +307,10 @@ BigInt paymentLinkClaimableAmountZatoshi({
 /// Keeping the screen on this small surface makes transaction behavior
 /// replaceable in widget tests without weakening the production service.
 abstract interface class PaymentLinkOperations {
+  Future<PaymentLinkFundingQuote> quoteMaxFunding({
+    required String sourceAccountUuid,
+  });
+
   Future<PaymentLinkFundingQuote> quoteFunding({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
@@ -540,6 +564,40 @@ class PaymentLinkService implements PaymentLinkOperations {
   final PaymentLinkReceivedStore _receivedStore;
   final PaymentLinkRecoveryReconciler _recoveryReconciler;
   final Map<String, Future<void>> _claimSyncs = {};
+
+  @override
+  Future<PaymentLinkFundingQuote> quoteMaxFunding({
+    required String sourceAccountUuid,
+  }) async {
+    if (sourceAccountUuid.isEmpty) {
+      throw StateError('No active account.');
+    }
+    return _ref
+        .read(syncProvider.notifier)
+        .runWithAuthoritativeSpendable(
+          accountUuid: sourceAccountUuid,
+          operation: () async {
+            final dbPath = await getWalletDbPath();
+            final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+            final estimateAddress = await rust_wallet.getUnifiedAddress(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: sourceAccountUuid,
+            );
+            final estimate = await rust_sync.estimateSendMax(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: sourceAccountUuid,
+              toAddress: estimateAddress,
+            );
+            return paymentLinkMaxFundingQuote(
+              sourceAccountUuid: sourceAccountUuid,
+              maxSpendAmountZatoshi: estimate.amountZatoshi,
+              fundingFeeZatoshi: estimate.feeZatoshi,
+            );
+          },
+        );
+  }
 
   @override
   Future<PaymentLinkFundingQuote> quoteFunding({

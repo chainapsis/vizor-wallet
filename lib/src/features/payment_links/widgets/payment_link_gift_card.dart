@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
@@ -13,6 +14,9 @@ import 'payment_link_skeleton.dart';
 const _amountCaretWidth = 2.0;
 const _amountCaretHeight = 34.0;
 const _amountElementGap = AppSpacing.xxs;
+const _supportingValueShadows = <Shadow>[
+  Shadow(color: Color(0x8C000000), offset: Offset(0, 1), blurRadius: 1),
+];
 
 /// Artwork choices exported from the Figma `_CARD BG IMAGE` component set.
 enum PaymentLinkCardArtwork {
@@ -66,6 +70,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
     this.onAmountChanged,
     this.maxAmountText,
     this.onUseMax,
+    this.showMaxButton = false,
     this.supportingText,
     this.supportingLoading = false,
     this.currencySymbol = 'ZEC',
@@ -110,8 +115,8 @@ class PaymentLinkGiftCard extends StatefulWidget {
                  messageCharacterCount <= maxMessageLength),
        );
 
-  static const double width = 320;
-  static const double height = 200;
+  static const double width = PaymentLinkCardMotion.defaultWidth;
+  static const double height = PaymentLinkCardMotion.defaultHeight;
 
   final PaymentLinkCardArtwork artwork;
   final double cardWidth;
@@ -126,6 +131,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
   final ValueChanged<String>? onAmountChanged;
   final String? maxAmountText;
   final VoidCallback? onUseMax;
+  final bool showMaxButton;
   final String? supportingText;
   final bool supportingLoading;
   final String currencySymbol;
@@ -158,6 +164,9 @@ class PaymentLinkGiftCard extends StatefulWidget {
 
 class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
   bool _hovered = false;
+  bool _keyboardFocusRequestPending = false;
+  bool _showEditorKeyboardFocusRing = false;
+  bool _listeningForKeyboardTraversal = false;
 
   @override
   void initState() {
@@ -166,11 +175,15 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
     widget.amountController?.addListener(_handleAmountControllerChanged);
     widget.messageFocusNode?.addListener(_handleMessageFocusChanged);
     widget.messageController?.addListener(_handleMessageControllerChanged);
+    _updateKeyboardTraversalListener();
   }
 
   @override
   void didUpdateWidget(covariant PaymentLinkGiftCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final editorFocusNodeChanged =
+        oldWidget.amountFocusNode != widget.amountFocusNode ||
+        oldWidget.messageFocusNode != widget.messageFocusNode;
     if (oldWidget.amountFocusNode != widget.amountFocusNode) {
       oldWidget.amountFocusNode?.removeListener(_handleAmountFocusChanged);
       widget.amountFocusNode?.addListener(_handleAmountFocusChanged);
@@ -191,6 +204,11 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
       );
       widget.messageController?.addListener(_handleMessageControllerChanged);
     }
+    if (editorFocusNodeChanged) {
+      _keyboardFocusRequestPending = false;
+      _showEditorKeyboardFocusRing = false;
+    }
+    _updateKeyboardTraversalListener();
   }
 
   @override
@@ -199,11 +217,16 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
     widget.amountController?.removeListener(_handleAmountControllerChanged);
     widget.messageFocusNode?.removeListener(_handleMessageFocusChanged);
     widget.messageController?.removeListener(_handleMessageControllerChanged);
+    if (_listeningForKeyboardTraversal) {
+      FocusManager.instance.removeEarlyKeyEventHandler(
+        _handleKeyboardTraversal,
+      );
+    }
     super.dispose();
   }
 
   void _handleAmountFocusChanged() {
-    if (mounted) setState(() {});
+    _handleEditorFocusChanged(widget.amountFocusNode);
   }
 
   void _handleAmountControllerChanged() {
@@ -211,7 +234,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
   }
 
   void _handleMessageFocusChanged() {
-    if (mounted) setState(() {});
+    _handleEditorFocusChanged(widget.messageFocusNode);
   }
 
   void _handleMessageControllerChanged() {
@@ -221,6 +244,47 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
   void _setHovered(bool value) {
     if (_hovered == value) return;
     setState(() => _hovered = value);
+  }
+
+  void _handleEditorFocusChanged(FocusNode? focusNode) {
+    if (!mounted || focusNode == null) return;
+    setState(() {
+      if (focusNode.hasFocus) {
+        _showEditorKeyboardFocusRing = _keyboardFocusRequestPending;
+      } else {
+        _showEditorKeyboardFocusRing = false;
+      }
+    });
+  }
+
+  void _handleEditorPointerDown(PointerDownEvent event) {
+    _keyboardFocusRequestPending = false;
+    if (!_showEditorKeyboardFocusRing) return;
+    setState(() => _showEditorKeyboardFocusRing = false);
+  }
+
+  void _updateKeyboardTraversalListener() {
+    final hasEditor = widget.hasAmountEditor || widget.hasMessageEditor;
+    if (hasEditor == _listeningForKeyboardTraversal) return;
+    _listeningForKeyboardTraversal = hasEditor;
+    if (hasEditor) {
+      FocusManager.instance.addEarlyKeyEventHandler(_handleKeyboardTraversal);
+    } else {
+      FocusManager.instance.removeEarlyKeyEventHandler(
+        _handleKeyboardTraversal,
+      );
+    }
+  }
+
+  KeyEventResult _handleKeyboardTraversal(KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.tab) {
+      return KeyEventResult.ignored;
+    }
+    _keyboardFocusRequestPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _keyboardFocusRequestPending = false;
+    });
+    return KeyEventResult.ignored;
   }
 
   void _activateEditor() {
@@ -247,6 +311,15 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
         (widget.showBack
             ? 'Gift card message'
             : 'Gift card, ${widget.artwork.semanticLabel} design');
+    final amount = widget.hasAmountEditor
+        ? widget.amountController!.text
+        : widget.amountText;
+    final showMaxButton =
+        !widget.showBack &&
+        widget.showMaxButton &&
+        amount?.isNotEmpty == true &&
+        widget.maxAmountText != null &&
+        widget.onUseMax != null;
     final card = SizedBox(
       width: widget.cardWidth,
       height: widget.cardHeight,
@@ -286,6 +359,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 onAmountChanged: widget.onAmountChanged,
                 maxAmountText: widget.maxAmountText,
                 onUseMax: widget.onUseMax,
+                showInlineMax: !showMaxButton,
                 supportingText: widget.supportingText,
                 supportingLoading: widget.supportingLoading,
                 currencySymbol: widget.currencySymbol,
@@ -295,7 +369,26 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 motion: motion,
                 cardWidth: widget.cardWidth,
               ),
-            const _PaymentLinkGiftCardBorder(),
+            if (showMaxButton)
+              Positioned(
+                top: AppSpacing.sm,
+                right: AppSpacing.sm,
+                child: Semantics(
+                  label:
+                      'Use max: ${widget.maxAmountText} ${widget.currencySymbol}',
+                  button: true,
+                  child: AppButton(
+                    key: const ValueKey('payment_link_max_button'),
+                    onPressed: widget.onUseMax,
+                    variant: AppButtonVariant.secondary,
+                    size: AppButtonSize.small,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
+                    ),
+                    child: const Text('Max'),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -307,42 +400,47 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
           ? widget.amountFocusNode!
           : widget.messageFocusNode!;
       final focused = focusNode.hasFocus;
+      final showKeyboardFocusRing = focused && _showEditorKeyboardFocusRing;
+      final showHoverRing = _hovered && !focused;
       return MouseRegion(
         key: ValueKey('payment_link_${editorName}_input_mouse_region'),
         cursor: SystemMouseCursors.text,
         onEnter: (_) => _setHovered(true),
         onExit: (_) => _setHovered(false),
-        child: GestureDetector(
-          excludeFromSemantics: true,
-          behavior: HitTestBehavior.opaque,
-          onTap: _activateEditor,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              card,
-              if (_hovered || focused)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      key: ValueKey(
-                        focused
-                            ? 'payment_link_${editorName}_focus_ring'
-                            : 'payment_link_${editorName}_hover_ring',
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(AppRadii.large),
-                        border: Border.all(
-                          color: focused
-                              ? context.colors.state.focusRing
-                              : context.colors.border.strong,
-                          width: focused ? 2 : 1.5,
-                          strokeAlign: BorderSide.strokeAlignOutside,
+        child: Listener(
+          onPointerDown: _handleEditorPointerDown,
+          child: GestureDetector(
+            excludeFromSemantics: true,
+            behavior: HitTestBehavior.opaque,
+            onTap: _activateEditor,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                card,
+                if (showKeyboardFocusRing || showHoverRing)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        key: ValueKey(
+                          showKeyboardFocusRing
+                              ? 'payment_link_${editorName}_focus_ring'
+                              : 'payment_link_${editorName}_hover_ring',
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(AppRadii.large),
+                          border: Border.all(
+                            color: showKeyboardFocusRing
+                                ? context.colors.state.focusRing
+                                : context.colors.border.strong,
+                            width: showKeyboardFocusRing ? 2 : 1.5,
+                            strokeAlign: BorderSide.strokeAlignOutside,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -430,6 +528,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
     required this.onAmountChanged,
     required this.maxAmountText,
     required this.onUseMax,
+    required this.showInlineMax,
     required this.supportingText,
     required this.supportingLoading,
     required this.currencySymbol,
@@ -448,6 +547,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
   final ValueChanged<String>? onAmountChanged;
   final String? maxAmountText;
   final VoidCallback? onUseMax;
+  final bool showInlineMax;
   final String? supportingText;
   final bool supportingLoading;
   final String currencySymbol;
@@ -462,22 +562,8 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
     final cardTextColor = context.colors.text.homeCard;
     final editing = amountController != null && amountFocusNode != null;
     final amount = editing ? amountController!.text : amountText;
-    if (!editing && amount == null) {
-      return Positioned(
-        left: AppSpacing.md,
-        right: AppSpacing.md,
-        bottom: AppSpacing.md,
-        child: Text(
-          emptyAmountLabel,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.headlineLarge.copyWith(
-            color: cardTextColor.withValues(alpha: 0.55),
-          ),
-        ),
-      );
-    }
-
+    final maxAmount = maxAmountText;
+    final visibleSupportingText = amount == null ? null : supportingText;
     return Positioned(
       left: AppSpacing.md,
       right: AppSpacing.md,
@@ -486,22 +572,8 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (editing && amount!.isEmpty && !amountFocusNode!.hasFocus) ...[
-            _PaymentLinkAmountTextField(
-              key: const ValueKey('payment_link_amount_text_field'),
-              editorKey: amountEditorKey,
-              controller: amountController!,
-              focusNode: amountFocusNode!,
-              inputFormatters: amountInputFormatters,
-              onChanged: onAmountChanged,
-              currencySymbol: currencySymbol,
-              emptyAmountLabel: emptyAmountLabel,
-              semanticLabel: semanticLabel,
-              cardTextColor: cardTextColor,
-              availableWidth: cardWidth - (AppSpacing.md * 2),
-            ),
-          ] else ...[
-            if (supportingLoading) ...[
+          if (amount != null || (showInlineMax && maxAmount != null)) ...[
+            if (amount != null && supportingLoading) ...[
               Semantics(
                 label: 'Fiat value loading',
                 child: ExcludeSemantics(
@@ -512,6 +584,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                         r'$',
                         style: AppTypography.labelLarge.copyWith(
                           color: cardTextColor,
+                          shadows: _supportingValueShadows,
                         ),
                       ),
                       const SizedBox(width: 2),
@@ -534,15 +607,18 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
-            ] else if (supportingText case final supporting?) ...[
+            ] else if (visibleSupportingText case final supporting?) ...[
               Text(
                 supporting,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(color: cardTextColor),
+                style: AppTypography.labelLarge.copyWith(
+                  color: cardTextColor,
+                  shadows: _supportingValueShadows,
+                ),
               ),
               const SizedBox(height: AppSpacing.xs),
-            ] else if (maxAmountText case final maxAmount?) ...[
+            ] else if (showInlineMax && maxAmount != null) ...[
               if (onUseMax == null)
                 Text(
                   'Use max: $maxAmount',
@@ -571,29 +647,38 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                 ),
               const SizedBox(height: AppSpacing.xs),
             ],
-            if (editing)
-              _PaymentLinkAmountTextField(
-                key: const ValueKey('payment_link_amount_text_field'),
-                editorKey: amountEditorKey,
-                controller: amountController!,
-                focusNode: amountFocusNode!,
-                inputFormatters: amountInputFormatters,
-                onChanged: onAmountChanged,
-                currencySymbol: currencySymbol,
-                emptyAmountLabel: emptyAmountLabel,
-                semanticLabel: semanticLabel,
-                cardTextColor: cardTextColor,
-                availableWidth: cardWidth - (AppSpacing.md * 2),
-              )
-            else
-              _PaymentLinkStaticAmountRow(
-                amount: amount!,
-                currencySymbol: currencySymbol,
-                showCaret: showCaret,
-                cardTextColor: cardTextColor,
-                motion: motion,
-              ),
           ],
+          if (editing)
+            _PaymentLinkAmountTextField(
+              key: const ValueKey('payment_link_amount_text_field'),
+              editorKey: amountEditorKey,
+              controller: amountController!,
+              focusNode: amountFocusNode!,
+              inputFormatters: amountInputFormatters,
+              onChanged: onAmountChanged,
+              currencySymbol: currencySymbol,
+              emptyAmountLabel: emptyAmountLabel,
+              semanticLabel: semanticLabel,
+              cardTextColor: cardTextColor,
+              availableWidth: cardWidth - (AppSpacing.md * 2),
+            )
+          else if (amount == null)
+            Text(
+              emptyAmountLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.headlineLarge.copyWith(
+                color: cardTextColor.withValues(alpha: 0.55),
+              ),
+            )
+          else
+            _PaymentLinkStaticAmountRow(
+              amount: amount,
+              currencySymbol: currencySymbol,
+              showCaret: showCaret,
+              cardTextColor: cardTextColor,
+              motion: motion,
+            ),
         ],
       ),
     );
@@ -1056,25 +1141,6 @@ class _PaymentLinkMessageTextField extends StatelessWidget {
                 onChanged: onChanged,
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PaymentLinkGiftCardBorder extends StatelessWidget {
-  const _PaymentLinkGiftCardBorder();
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadii.large),
-          border: Border.all(
-            color: context.colors.text.homeCard.withValues(alpha: 0.55),
-            width: 1.5,
           ),
         ),
       ),

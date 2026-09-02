@@ -991,6 +991,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentLinkCardsListUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Share QR code',
+                      builder: buildPaymentLinkShareQrUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Received list — claim pending',
                       builder: buildPaymentLinkCardsReceivingUseCase,
                     ),
@@ -1092,6 +1096,15 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Received gift with message',
                       builder: buildPaymentLinkReceivedMessageUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Motion',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Interactive handoff',
+                      builder: buildPaymentLinkMotionHandoffUseCase,
                     ),
                   ],
                 ),

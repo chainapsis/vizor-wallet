@@ -5,7 +5,7 @@ import '../../../core/widgets/app_icon.dart';
 import 'payment_link_action.dart';
 import 'payment_link_gift_card.dart';
 
-/// Figma `Card Design Select` option (65×51, default/hover/selected).
+/// Figma `Card Design Select` option (64×48, default/hover/selected).
 class PaymentLinkCardSelector extends StatelessWidget {
   const PaymentLinkCardSelector({
     required this.artwork,
@@ -15,7 +15,7 @@ class PaymentLinkCardSelector extends StatelessWidget {
     this.itemHeight = height,
     this.artworkWidth = 60,
     this.artworkHeight = 44,
-    this.selectionInset = const EdgeInsets.fromLTRB(1, 2, 0, 1),
+    this.selectionInset = EdgeInsets.zero,
     this.selectionBorderWidth = 2,
     this.selectionBorderRadius = 10,
     this.selectedCheckSize = 20,
@@ -31,8 +31,8 @@ class PaymentLinkCardSelector extends StatelessWidget {
        assert(selectedCheckSize > 0),
        assert(inactiveOpacity >= 0 && inactiveOpacity <= 1);
 
-  static const double width = 65;
-  static const double height = 51;
+  static const double width = 64;
+  static const double height = 48;
 
   final PaymentLinkCardArtwork artwork;
   final bool selected;
@@ -109,7 +109,7 @@ class PaymentLinkCardSelector extends StatelessWidget {
               if (selected)
                 Positioned(
                   right: 4,
-                  bottom: 5,
+                  bottom: 4,
                   child: Container(
                     key: const ValueKey('payment_link_card_check'),
                     width: selectedCheckSize,

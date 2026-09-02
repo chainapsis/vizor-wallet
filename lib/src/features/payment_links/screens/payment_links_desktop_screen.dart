@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -24,6 +26,7 @@ import '../providers/payment_link_intake_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_entry_policy.dart';
 import '../services/payment_link_hardware_signing_service.dart';
+import '../services/payment_link_qr_image_saver.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
 import '../services/payment_link_service.dart';
@@ -42,6 +45,7 @@ enum _PaymentLinksLocalPage {
   message,
   review,
   ready,
+  shareQr,
   redeem,
   received,
 }
@@ -129,6 +133,9 @@ class _PaymentLinksDesktopScreenState
   List<PaymentLinkRecoveryRecord> _recoveries = const [];
   Map<String, PaymentLinkFundingProgress> _fundingProgressByAddress = const {};
   List<PaymentLinkReceivedRecord> _receivedCards = const [];
+  final GlobalKey _shareQrCardKey = GlobalKey();
+  PaymentLinkRecoveryRecord? _shareQrRecord;
+  PaymentLinkFundingQuote? _maxFundingQuote;
   PaymentLinkFundingQuote? _fundingQuote;
   String? _fundingQuoteRequestedAccountUuid;
   PaymentLinkClaimSession? _receivedClaimSession;
@@ -141,10 +148,12 @@ class _PaymentLinksDesktopScreenState
   _PaymentLinkKeystoneFundingRequest? _keystoneFundingRequest;
   bool _showHelp = false;
   bool _amountFocused = false;
+  bool _maxFundingQuoteInProgress = false;
   bool _fundingQuoteInProgress = false;
   String? _amountSupportingText;
   bool _amountSupportingTextIsError = false;
   int _fundingQuoteGeneration = 0;
+  int _maxFundingQuoteGeneration = 0;
   bool _fundingQuoteRetryScheduled = false;
   bool _reviewShowsBack = false;
   bool _readyShowsBack = false;
@@ -227,6 +236,7 @@ class _PaymentLinksDesktopScreenState
         _reviewShowsBack = false;
       }
       _page = page;
+      if (page != _PaymentLinksLocalPage.shareQr) _shareQrRecord = null;
       _showHelp = false;
       _longSyncLink = null;
     });
@@ -235,15 +245,19 @@ class _PaymentLinksDesktopScreenState
   void _startCreate() {
     _fundingQuoteDebounce?.cancel();
     _fundingQuoteGeneration++;
+    _maxFundingQuoteGeneration++;
     _amountController.clear();
     _messageController.clear();
     setState(() {
       _selectedArtwork = PaymentLinkCardArtwork.gift;
+      _maxFundingQuote = null;
+      _maxFundingQuoteInProgress = false;
       _fundingQuote = null;
       _fundingQuoteInProgress = false;
       _amountSupportingText = null;
       _amountSupportingTextIsError = false;
       _readyLink = null;
+      _shareQrRecord = null;
       _reviewShowsBack = false;
       _readyShowsBack = false;
       _messageEditorRevealed = false;
@@ -251,6 +265,7 @@ class _PaymentLinksDesktopScreenState
       _showHelp = false;
       _longSyncLink = null;
     });
+    unawaited(_loadMaxFundingQuote());
   }
 
   void _showHelpOverlay() => setState(() => _showHelp = true);
@@ -521,14 +536,18 @@ class _PaymentLinksDesktopScreenState
         _fundingQuoteRetryScheduled) {
       return;
     }
-    if (_page != _PaymentLinksLocalPage.amount ||
-        next.accountUuid == null ||
-        _fundingQuoteRequestedAccountUuid != next.accountUuid ||
-        !_hasPositiveAmount ||
-        _fundingQuote != null ||
-        _fundingQuoteInProgress) {
+    if (_page != _PaymentLinksLocalPage.amount || next.accountUuid == null) {
       return;
     }
+    final shouldLoadMax =
+        _maxFundingQuote?.sourceAccountUuid != next.accountUuid &&
+        !_maxFundingQuoteInProgress;
+    final shouldLoadAmount =
+        _fundingQuoteRequestedAccountUuid == next.accountUuid &&
+        _hasPositiveAmount &&
+        _fundingQuote == null &&
+        !_fundingQuoteInProgress;
+    if (!shouldLoadMax && !shouldLoadAmount) return;
 
     _fundingQuoteRetryScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -540,8 +559,48 @@ class _PaymentLinksDesktopScreenState
           !_canEstimateCardFee(sync, next.accountUuid!)) {
         return;
       }
-      _handleAmountChanged(_amountController.text);
+      if (shouldLoadMax) unawaited(_loadMaxFundingQuote());
+      if (shouldLoadAmount) _handleAmountChanged(_amountController.text);
     });
+  }
+
+  Future<void> _loadMaxFundingQuote() async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final sync = ref.read(syncProvider).value;
+    if (accountUuid == null ||
+        accountUuid.isEmpty ||
+        !_canEstimateCardFee(sync, accountUuid) ||
+        _maxFundingQuoteInProgress ||
+        _maxFundingQuote?.sourceAccountUuid == accountUuid) {
+      return;
+    }
+
+    final generation = ++_maxFundingQuoteGeneration;
+    setState(() => _maxFundingQuoteInProgress = true);
+    try {
+      final quote = await ref
+          .read(paymentLinkOperationsProvider)
+          .quoteMaxFunding(sourceAccountUuid: accountUuid);
+      if (!mounted || generation != _maxFundingQuoteGeneration) return;
+      final currentAccountUuid = ref
+          .read(accountProvider)
+          .value
+          ?.activeAccountUuid;
+      if (quote.sourceAccountUuid != accountUuid ||
+          currentAccountUuid != accountUuid) {
+        throw StateError('Gift Card max quote no longer matches the account.');
+      }
+      setState(() {
+        _maxFundingQuote = quote;
+        _maxFundingQuoteInProgress = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _maxFundingQuoteGeneration) return;
+      setState(() {
+        _maxFundingQuote = null;
+        _maxFundingQuoteInProgress = false;
+      });
+    }
   }
 
   void _handleAmountChanged(String value) {
@@ -569,12 +628,20 @@ class _PaymentLinksDesktopScreenState
       return;
     }
     final readySync = sync!;
+    final maxQuote = _maxFundingQuote;
+    if (maxQuote?.sourceAccountUuid == accountUuid &&
+        amount > maxQuote!.recipientAmountZatoshi) {
+      setState(() {
+        _amountSupportingText = 'Above your maximum ZEC';
+        _amountSupportingTextIsError = true;
+      });
+      return;
+    }
     final minimumFunding = paymentLinkFundingAmountZatoshi(amount);
     if (readySync.hasBalanceData &&
         readySync.spendableBalance < minimumFunding) {
       setState(() {
-        _amountSupportingText =
-            'Insufficient balance to cover the Card amount and fees.';
+        _amountSupportingText = 'Above your maximum ZEC';
         _amountSupportingTextIsError = true;
       });
       return;
@@ -608,13 +675,17 @@ class _PaymentLinksDesktopScreenState
     final wasPastAmountStep = _page != _PaymentLinksLocalPage.amount;
     _fundingQuoteDebounce?.cancel();
     _fundingQuoteGeneration += 1;
+    _maxFundingQuoteGeneration += 1;
     setState(() {
+      _maxFundingQuote = null;
+      _maxFundingQuoteInProgress = false;
       _fundingQuote = null;
       _fundingQuoteInProgress = false;
       _amountSupportingText = null;
       _amountSupportingTextIsError = false;
       _page = _PaymentLinksLocalPage.amount;
     });
+    unawaited(_loadMaxFundingQuote());
     _handleAmountChanged(_amountController.text);
     if (wasPastAmountStep) {
       showAppToast(
@@ -649,9 +720,7 @@ class _PaymentLinksDesktopScreenState
       setState(() {
         _fundingQuoteInProgress = false;
         _fundingQuote = insufficient ? null : quote;
-        _amountSupportingText = insufficient
-            ? 'Insufficient balance to cover the Card amount and fees.'
-            : null;
+        _amountSupportingText = insufficient ? 'Above your maximum ZEC' : null;
         _amountSupportingTextIsError = insufficient;
       });
     } catch (_) {
@@ -677,27 +746,17 @@ class _PaymentLinksDesktopScreenState
       );
 
   String? get _maxAmountText {
-    final sync = ref.watch(syncProvider).value;
-    final quote = _fundingQuote;
-    if (sync == null ||
-        !sync.hasBalanceData ||
-        quote == null ||
-        sync.spendableBalance <= quote.cardFeeZatoshi) {
-      return null;
-    }
-    return formatZecAmount(sync.spendableBalance - quote.cardFeeZatoshi);
+    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final quote = _maxFundingQuote;
+    if (quote == null || quote.sourceAccountUuid != accountUuid) return null;
+    return formatZecAmount(quote.recipientAmountZatoshi);
   }
 
   void _useMaxAmount() {
-    final sync = ref.read(syncProvider).value;
-    final quote = _fundingQuote;
-    if (sync == null ||
-        !sync.hasBalanceData ||
-        quote == null ||
-        sync.spendableBalance <= quote.cardFeeZatoshi) {
-      return;
-    }
-    final text = formatZecAmount(sync.spendableBalance - quote.cardFeeZatoshi);
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final quote = _maxFundingQuote;
+    if (quote == null || quote.sourceAccountUuid != accountUuid) return;
+    final text = formatZecAmount(quote.recipientAmountZatoshi);
     _amountController.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
@@ -1416,6 +1475,7 @@ class _PaymentLinksDesktopScreenState
       _PaymentLinksLocalPage.message => _buildMobileMessage(),
       _PaymentLinksLocalPage.review => _buildMobileReview(),
       _PaymentLinksLocalPage.ready => _buildMobileReady(),
+      _PaymentLinksLocalPage.shareQr => _buildMobileHome(),
       _PaymentLinksLocalPage.redeem => PaymentLinkRedeemMobileView(
         state: PaymentLinkRedeemMobileState.values.byName(_redeemState.name),
         card: _buildRedeemCard(mobile: true),
@@ -1481,6 +1541,7 @@ class _PaymentLinksDesktopScreenState
         onAmountChanged: _handleAmountChanged,
         maxAmountText: maxAmountText,
         onUseMax: maxAmountText == null ? null : _useMaxAmount,
+        showMaxButton: true,
         semanticLabel: 'Gift card amount input',
       ),
       cardSelector: PaymentLinkCardSelectorRail(
@@ -1724,6 +1785,7 @@ class _PaymentLinksDesktopScreenState
       _PaymentLinksLocalPage.message => _buildMessage(),
       _PaymentLinksLocalPage.review => _buildReview(),
       _PaymentLinksLocalPage.ready => _buildReady(),
+      _PaymentLinksLocalPage.shareQr => _buildShareQr(),
       _PaymentLinksLocalPage.redeem => PaymentLinkRedeemDesktopView(
         state: _redeemState,
         onBack: () => _showPage(_PaymentLinksLocalPage.home),
@@ -1834,8 +1896,6 @@ class _PaymentLinksDesktopScreenState
     final copyEnabled = canUseLink && !_operationInProgress;
     final statusText = record.state == PaymentLinkRecoveryState.draft
         ? 'Funding incomplete'
-        : canUseLink
-        ? 'Copy link'
         : 'Preparing...';
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_recovery_${record.link.address}'),
@@ -1848,11 +1908,91 @@ class _PaymentLinksDesktopScreenState
       ),
       amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
       dateText: _formatCardDate(record.link.createdAt),
-      statusText: statusText,
-      onAction: copyEnabled ? () => _copyPaymentLink(record.link) : null,
-      showCopyIcon: canUseLink,
+      statusText: canUseLink ? null : statusText,
+      onAction: null,
+      showLinkActions: canUseLink,
+      onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
+      onShowQr: copyEnabled ? () => _openShareQr(record) : null,
       showLoader: !canUseLink && record.state != PaymentLinkRecoveryState.draft,
     );
+  }
+
+  void _openShareQr(PaymentLinkRecoveryRecord record) {
+    if (_operationInProgress) return;
+    setState(() {
+      _shareQrRecord = record;
+      _page = _PaymentLinksLocalPage.shareQr;
+      _showHelp = false;
+      _longSyncLink = null;
+    });
+  }
+
+  Widget _buildShareQr() {
+    final record = _shareQrRecord;
+    if (record == null) return _buildHome();
+    return PaymentLinkShareQrDesktopView(
+      shareCardKey: _shareQrCardKey,
+      artwork: PaymentLinkCardArtwork.fromProtocolId(
+        record.link.presentation?.artworkId,
+      ),
+      qrData: record.link.toUri().toString(),
+      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      onSaveQr: _operationInProgress ? null : () => _savePaymentLinkQr(record),
+      onCopyLink: _operationInProgress
+          ? null
+          : () => _copyPaymentLink(record.link),
+      saveLabel: _operationInProgress ? 'Saving...' : 'Save QR code',
+      copyLabel: _operationInProgress ? 'Copying...' : 'Copy link',
+    );
+  }
+
+  Future<void> _savePaymentLinkQr(PaymentLinkRecoveryRecord record) async {
+    if (_operationInProgress) return;
+    final pixelRatio = max(3.0, View.of(context).devicePixelRatio);
+    setState(() => _operationInProgress = true);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      final boundary = _shareQrCardKey.currentContext?.findRenderObject();
+      if (boundary is! RenderRepaintBoundary || !boundary.hasSize) {
+        throw StateError('Gift Card QR image is not ready.');
+      }
+      final image = await boundary.toImage(pixelRatio: pixelRatio);
+      final ByteData? pngData;
+      try {
+        pngData = await image.toByteData(format: ui.ImageByteFormat.png);
+      } finally {
+        image.dispose();
+      }
+      if (pngData == null) {
+        throw StateError('Gift Card QR image could not be encoded.');
+      }
+      final saved = await ref
+          .read(paymentLinkQrImageSaverProvider)
+          .savePng(
+            pngData.buffer.asUint8List(
+              pngData.offsetInBytes,
+              pngData.lengthInBytes,
+            ),
+          );
+      if (!mounted || !saved) return;
+      try {
+        await ref
+            .read(paymentLinkOperationsProvider)
+            .markCreatedLinkShared(record.link);
+        await _loadRecoveries(showError: false);
+        if (mounted) showAppToast(context, 'Gift Card QR saved');
+      } catch (_) {
+        if (mounted) {
+          _showError(
+            'Gift Card QR saved, but its status could not be updated.',
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) _showError('Gift Card QR could not be saved.');
+    } finally {
+      if (mounted) setState(() => _operationInProgress = false);
+    }
   }
 
   Widget _buildReceivedRow(PaymentLinkReceivedRecord record) {
@@ -1902,6 +2042,7 @@ class _PaymentLinksDesktopScreenState
         onAmountChanged: _handleAmountChanged,
         maxAmountText: maxAmountText,
         onUseMax: maxAmountText == null ? null : _useMaxAmount,
+        showMaxButton: true,
         semanticLabel: 'Gift card amount input',
       ),
       cardSelector: PaymentLinkCardSelectorRail(
@@ -1915,6 +2056,9 @@ class _PaymentLinksDesktopScreenState
           : null,
       supportingText: _amountSupportingText,
       supportingTextIsError: _amountSupportingTextIsError,
+      emptyActionLabel: _amountSupportingTextIsError
+          ? 'Enter amount'
+          : 'Continue',
     );
   }
 

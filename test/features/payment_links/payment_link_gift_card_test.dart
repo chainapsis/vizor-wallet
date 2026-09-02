@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_action.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
@@ -49,6 +50,22 @@ void main() {
       tester.getSize(find.byType(PaymentLinkGiftCard)),
       const Size(PaymentLinkGiftCard.width, PaymentLinkGiftCard.height),
     );
+    expect(
+      tester.getSize(find.byType(PaymentLinkGiftCard)),
+      const Size(360, 225),
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PaymentLinkGiftCard),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).border != null,
+        ),
+      ),
+      findsNothing,
+    );
     expect(find.text('Enter amount'), findsOneWidget);
     expect(find.textContaining('Use max:'), findsNothing);
 
@@ -71,6 +88,29 @@ void main() {
     );
     expect(find.text('4.45'), findsOneWidget);
     expect(find.text('ZEC'), findsOneWidget);
+
+    await _pump(
+      tester,
+      const PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.chestLava,
+        amountText: '4.45',
+        supportingText: r'$150.25',
+      ),
+    );
+    expect(tester.widget<Text>(find.text(r'$150.25')).style?.shadows, const [
+      Shadow(color: Color(0x8C000000), offset: Offset(0, 1), blurRadius: 1),
+    ]);
+
+    final fade = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('payment_link_card_artwork_fade')),
+    );
+    final gradient = (fade.decoration as BoxDecoration).gradient;
+    expect(gradient, isA<LinearGradient>());
+    expect((gradient! as LinearGradient).colors, const [
+      Color(0x00000000),
+      Color(0xB3000000),
+    ]);
+    expect(gradient.stops, const [0.48024, 0.73518]);
   });
 
   testWidgets(
@@ -154,7 +194,7 @@ void main() {
       expect(cardActivations, 1);
       expect(
         find.byKey(const ValueKey('payment_link_message_focus_ring')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         editorSemantics.evaluate().single.getSemanticsData().hasAction(
@@ -212,6 +252,45 @@ void main() {
       semantics.dispose();
     },
   );
+
+  testWidgets('editor card shows its focus ring only for keyboard traversal', (
+    tester,
+  ) async {
+    final controller = TextEditingController(text: '4.45');
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await _pump(
+      tester,
+      PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.chestCave,
+        amountController: controller,
+        amountFocusNode: focusNode,
+      ),
+    );
+
+    final editor = find.byType(EditableText);
+    await tester.tap(editor);
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_focus_ring')),
+      findsNothing,
+    );
+
+    focusNode.unfocus();
+    await tester.pump();
+    await tester.pump();
+    expect(focusNode.hasFocus, isFalse);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_focus_ring')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('use max is an accessible action with Figma amount geometry', (
     tester,
@@ -333,6 +412,45 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('entered amount moves Max into the top-right compact button', (
+    tester,
+  ) async {
+    final controller = TextEditingController(text: '4.45');
+    final focusNode = FocusNode();
+    var useMaxCount = 0;
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await _pump(
+      tester,
+      PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.chestLava,
+        amountController: controller,
+        amountFocusNode: focusNode,
+        maxAmountText: '142.23',
+        onUseMax: () => useMaxCount += 1,
+        showMaxButton: true,
+      ),
+    );
+
+    expect(find.text('Use max: 142.23'), findsNothing);
+    final maxButton = find.byKey(const ValueKey('payment_link_max_button'));
+    expect(maxButton, findsOneWidget);
+    final cardRect = tester.getRect(find.byType(PaymentLinkGiftCard));
+    final maxRect = tester.getRect(maxButton);
+    final maxButtonWidget = tester.widget<AppButton>(maxButton);
+    expect(maxRect.top - cardRect.top, AppSpacing.sm);
+    expect(cardRect.right - maxRect.right, AppSpacing.sm);
+    expect(maxRect.height, 24);
+    expect(
+      maxButtonWidget.contentPadding,
+      const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+    );
+
+    await tester.tap(maxButton);
+    expect(useMaxCount, 1);
+  });
+
   test('message editor is back-only and amount editor stays front-only', () {
     final controller = TextEditingController();
     final focusNode = FocusNode();
@@ -441,7 +559,7 @@ void main() {
     );
     update(() => showBack = true);
     await tester.pump();
-    await tester.pump(PaymentLinkCardFlip.duration ~/ 2);
+    await tester.pump(const Duration(milliseconds: 190));
     final halfway = tester.widget<Transform>(
       find.byKey(const ValueKey('payment_link_flip_transform')),
     );
@@ -449,7 +567,7 @@ void main() {
 
     update(() => showBack = false);
     await tester.pump();
-    await tester.pump(PaymentLinkCardFlip.duration);
+    await tester.pump(PaymentLinkCardFlip.settleDuration);
     expect(
       find.byKey(const ValueKey('payment_link_flip_front')),
       findsOneWidget,
@@ -485,6 +603,7 @@ void main() {
       find.byKey(const ValueKey('payment_link_flip_transform')),
       findsNothing,
     );
+    await tester.pump();
     expect(tester.binding.hasScheduledFrame, isFalse);
   });
 
@@ -590,7 +709,13 @@ void main() {
       find.byKey(const ValueKey('payment_link_card_selector_scroll')),
     );
     final rail = find.byKey(const ValueKey('payment_link_card_selector_rail'));
+    expect(tester.getSize(rail), const Size(396, 50));
+    expect(
+      tester.getSize(find.byType(PaymentLinkCardSelector).first),
+      const Size(64, 48),
+    );
     expect(list.semanticChildCount, PaymentLinkCardArtwork.values.length);
+    expect(list.itemExtent, 72);
     expect(
       find.descendant(of: rail, matching: find.byType(RawScrollbar)),
       findsNothing,
@@ -673,7 +798,8 @@ void main() {
       find.byKey(const ValueKey('payment_link_card_selector_scroll')),
     );
     final controller = list.controller!;
-    expect(controller.offset, 0);
+    final initialOffset = controller.offset;
+    expect(initialOffset, greaterThan(0));
 
     await tester.dragFrom(
       tester.getCenter(
@@ -684,7 +810,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(controller.offset, greaterThan(0));
+    expect(controller.offset, greaterThan(initialOffset));
   });
 }
 

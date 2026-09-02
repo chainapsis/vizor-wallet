@@ -10,10 +10,12 @@ import 'package:flutter/widgets.dart';
 import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_profile_picture.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
+import '../src/features/payment_links/widgets/payment_link_card_motion.dart';
 import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
 import '../src/features/payment_links/widgets/payment_link_desktop_views.dart';
@@ -23,6 +25,20 @@ import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dar
 const _previewWindowSize = Size(1080, 720);
 const _message = 'Hey there! Welcome to the Shielded\nWorld ;)';
 const kPaymentLinkPreviewFiatDelay = Duration(milliseconds: 1200);
+
+final _previewGiftCardLink = VizorPaymentLink(
+  network: 'main',
+  address: 'u1previewgiftcardaddress',
+  amountZatoshi: BigInt.from(445000000),
+  mnemonic: List.filled(24, 'abandon').join(' '),
+  birthdayHeight: 3000000,
+  label: 'Payment link',
+  createdAt: DateTime.utc(2026, 8, 6),
+  presentation: const PaymentLinkPresentation(
+    artworkId: 'diamond',
+    message: 'A Gift Card for you!',
+  ),
+);
 
 enum PaymentLinkPreviewState {
   empty,
@@ -41,6 +57,7 @@ enum PaymentLinkPreviewState {
   readyWaiting,
   ready,
   cardsList,
+  shareQr,
   cardsReceiving,
   cardsReceived,
   redeemPaste,
@@ -139,8 +156,14 @@ Widget buildPaymentLinkReadyWaitingUseCase(BuildContext context) =>
 Widget buildPaymentLinkReadyUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.ready);
 
+Widget buildPaymentLinkMotionHandoffUseCase(BuildContext context) =>
+    const PaymentLinkMotionDesktopPreview();
+
 Widget buildPaymentLinkCardsListUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.cardsList);
+
+Widget buildPaymentLinkShareQrUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.shareQr);
 
 Widget buildPaymentLinkCardsReceivingUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(
@@ -191,8 +214,8 @@ Widget buildPaymentLinkReceivedMessageUseCase(BuildContext context) =>
 /// A deterministic desktop-only surface for Widgetbook and Figma capture.
 ///
 /// This deliberately contains no provider, persistence, network, or Rust
-/// dependency. Unsupported values such as messages, fees, and Redeemed status
-/// exist only in this fixture layer.
+/// dependency. Unsupported values such as messages and fees exist only in
+/// this fixture layer.
 class PaymentLinkDesktopPreview extends StatelessWidget {
   const PaymentLinkDesktopPreview({required this.state, super.key});
 
@@ -234,6 +257,8 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         cardBuilder: (artwork) => PaymentLinkGiftCard(
           artwork: artwork,
           emptyAmountLabel: 'Enter Amount',
+          maxAmountText: '142.23',
+          onUseMax: _noop,
         ),
       ),
       PaymentLinkPreviewState.createFocused => _amount(
@@ -243,6 +268,8 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
           artwork: artwork,
           amountText: '1',
           maxAmountText: '142.23',
+          onUseMax: _noop,
+          showMaxButton: true,
         ),
       ),
       PaymentLinkPreviewState.createAmount => _amount(
@@ -252,6 +279,8 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
           artwork: artwork,
           amountText: '4.45',
           maxAmountText: '142.23',
+          onUseMax: _noop,
+          showMaxButton: true,
         ),
       ),
       PaymentLinkPreviewState.createSyncing => _amount(
@@ -269,13 +298,15 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.createInsufficient => _amount(
         visualState: PaymentLinkAmountVisualState.amount,
         artwork: PaymentLinkCardArtwork.diamond,
-        supportingText:
-            'Insufficient balance to cover the Card amount and fees.',
+        supportingText: 'Above your maximum ZEC',
         supportingTextIsError: true,
         enableContinue: false,
         cardBuilder: (artwork) => PaymentLinkGiftCard(
           artwork: artwork,
           amountText: '4.45',
+          maxAmountText: '142.23',
+          onUseMax: _noop,
+          showMaxButton: true,
           supportingText: r'$1,210.20',
           showCaret: false,
         ),
@@ -286,6 +317,9 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         cardBuilder: (artwork) => PaymentLinkGiftCard(
           artwork: artwork,
           amountText: '4.45',
+          maxAmountText: '142.23',
+          onUseMax: _noop,
+          showMaxButton: true,
           supportingLoading: true,
           showCaret: false,
         ),
@@ -296,6 +330,9 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         cardBuilder: (artwork) => PaymentLinkGiftCard(
           artwork: artwork,
           amountText: '4.45',
+          maxAmountText: '142.23',
+          onUseMax: _noop,
+          showMaxButton: true,
           supportingText: r'$1,201.21',
           showCaret: false,
         ),
@@ -367,30 +404,17 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
                 thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.ruby),
                 amountText: '0.25 ZEC',
                 dateText: 'July 2',
-                statusText: 'New Wallet',
-                onAction: _noop,
-                showCopyIcon: true,
+                showLinkActions: true,
+                onCopyLink: _noop,
+                onShowQr: _noop,
               ),
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.dragon),
                 amountText: '1.10 ZEC',
                 dateText: 'May 20',
-                statusText: 'New Wallet',
-                onAction: _noop,
-                showCopyIcon: true,
-              ),
-            ],
-          ),
-          PaymentLinkCardsSection(
-            label: 'July 2026',
-            cards: [
-              PaymentLinkCardListRow(
-                thumbnail: _PaymentLinkThumbnail(
-                  PaymentLinkCardArtwork.chestLava,
-                ),
-                amountText: '2.5 ZEC',
-                dateText: 'July 20',
-                statusText: 'Redeemed',
+                showLinkActions: true,
+                onCopyLink: _noop,
+                onShowQr: _noop,
               ),
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(
@@ -398,7 +422,9 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
                 ),
                 amountText: '2.5 ZEC',
                 dateText: 'July 20',
-                statusText: 'Redeemed',
+                showLinkActions: true,
+                onCopyLink: _noop,
+                onShowQr: _noop,
               ),
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(
@@ -406,7 +432,9 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
                 ),
                 amountText: '2.5 ZEC',
                 dateText: 'July 20',
-                statusText: 'Redeemed',
+                showLinkActions: true,
+                onCopyLink: _noop,
+                onShowQr: _noop,
               ),
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(
@@ -414,7 +442,19 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
                 ),
                 amountText: '2.5 ZEC',
                 dateText: 'July 20',
-                statusText: 'Redeemed',
+                showLinkActions: true,
+                onCopyLink: _noop,
+                onShowQr: _noop,
+              ),
+              PaymentLinkCardListRow(
+                thumbnail: _PaymentLinkThumbnail(
+                  PaymentLinkCardArtwork.chestLava,
+                ),
+                amountText: '2.5 ZEC',
+                dateText: 'July 20',
+                showLinkActions: true,
+                onCopyLink: _noop,
+                onShowQr: _noop,
               ),
             ],
           ),
@@ -422,6 +462,13 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         onBack: _noop,
         onCreate: _noop,
         onRedeem: _noop,
+      ),
+      PaymentLinkPreviewState.shareQr => PaymentLinkShareQrDesktopView(
+        artwork: PaymentLinkCardArtwork.diamond,
+        qrData: _previewGiftCardLink.toUri().toString(),
+        onBack: _noop,
+        onSaveQr: _noop,
+        onCopyLink: _noop,
       ),
       PaymentLinkPreviewState.cardsReceiving => _receivedCardsList(
         statusText: 'Receiving...',
@@ -653,6 +700,9 @@ class _PaymentLinkStaticAmountPreviewState
       onCreate: widget.enableContinue ? _noop : null,
       supportingText: widget.supportingText,
       supportingTextIsError: widget.supportingTextIsError,
+      emptyActionLabel: widget.supportingTextIsError
+          ? 'Enter amount'
+          : 'Continue',
     );
   }
 }
@@ -693,6 +743,117 @@ class _PaymentLinkReadyPreviewState extends State<_PaymentLinkReadyPreview> {
       onBack: _noop,
       onCopy: _noop,
       onCardTap: _toggleCardSide,
+    );
+  }
+}
+
+/// Local-only motion playground for replaying the designer handoff without
+/// wallet state, network calls, storage, or Rust initialization.
+class PaymentLinkMotionDesktopPreview extends StatefulWidget {
+  const PaymentLinkMotionDesktopPreview({super.key});
+
+  @override
+  State<PaymentLinkMotionDesktopPreview> createState() =>
+      _PaymentLinkMotionDesktopPreviewState();
+}
+
+class _PaymentLinkMotionDesktopPreviewState
+    extends State<PaymentLinkMotionDesktopPreview> {
+  int _playback = 0;
+  bool _showBack = false;
+
+  void _replay() {
+    setState(() {
+      _playback += 1;
+      _showBack = false;
+    });
+  }
+
+  void _flip() => setState(() => _showBack = !_showBack);
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox.fromSize(
+        size: _previewWindowSize,
+        child: ColoredBox(
+          color: context.colors.background.window,
+          child: Column(
+            children: [
+              const SizedBox(height: AppSpacing.xl),
+              Text(
+                'Gift Card motion handoff',
+                style: AppTypography.displayMedium.copyWith(
+                  color: context.colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Replay the reveal, flip the card, or move the pointer over it.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: SizedBox(
+                    width: 680,
+                    height: 505,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        PaymentLinkConfetti(
+                          key: ValueKey('motion-confetti-$_playback'),
+                          alignment: Alignment.center,
+                        ),
+                        PaymentLinkCardMotion(
+                          key: ValueKey('motion-card-$_playback'),
+                          celebrate: true,
+                          child: PaymentLinkCardFlip(
+                            showBack: _showBack,
+                            front: const PaymentLinkGiftCard(
+                              artwork: PaymentLinkCardArtwork.ruby,
+                              amountText: '4.45',
+                              supportingText: r'$1,210.20',
+                              showCaret: false,
+                            ),
+                            back: const PaymentLinkGiftCard(
+                              artwork: PaymentLinkCardArtwork.ruby,
+                              showBack: true,
+                              message: _message,
+                              messageCharacterCount: 72,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppButton(
+                    key: const ValueKey('payment_link_motion_replay'),
+                    onPressed: _replay,
+                    size: AppButtonSize.mediumLarge,
+                    child: const Text('Replay animation'),
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  AppButton(
+                    key: const ValueKey('payment_link_motion_flip'),
+                    onPressed: _flip,
+                    size: AppButtonSize.mediumLarge,
+                    child: Text(_showBack ? 'Show artwork' : 'Show message'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xl),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -994,6 +1155,16 @@ class _PaymentLinkInteractiveDesktopPreviewState
     return amount != null && amount > 0;
   }
 
+  void _useMax() {
+    const value = '142.23';
+    _amountController.value = const TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    _handleAmountChanged(value);
+    _amountFocusNode.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -1015,6 +1186,8 @@ class _PaymentLinkInteractiveDesktopPreviewState
                 amountInputFormatters: [_amountFormatter],
                 onAmountChanged: _handleAmountChanged,
                 maxAmountText: '142.23',
+                onUseMax: _useMax,
+                showMaxButton: true,
                 supportingText: _fiatText,
                 supportingLoading: _fiatLoading,
                 emptyAmountLabel: 'Enter Amount',

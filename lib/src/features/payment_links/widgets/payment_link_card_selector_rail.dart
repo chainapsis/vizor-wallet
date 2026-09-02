@@ -16,26 +16,28 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
     required this.selected,
     required this.onSelected,
     this.width = defaultWidth,
+    this.height = defaultHeight,
     this.itemWidth = PaymentLinkCardSelector.width,
     this.itemHeight = PaymentLinkCardSelector.height,
     this.artworkWidth = 60,
     this.artworkHeight = 44,
-    this.itemGap = AppSpacing.xxs,
-    this.selectionInset = const EdgeInsets.fromLTRB(1, 2, 0, 1),
+    this.itemGap = AppSpacing.xs,
+    this.selectionInset = EdgeInsets.zero,
     this.selectionBorderWidth = 2,
     this.selectionBorderRadius = 10,
     this.selectedCheckSize = 20,
     this.edgeMaskInset = 17,
-    this.edgeFadeFraction = 0.2,
+    this.edgeFadeFraction = 0.15,
     this.inactiveOpacity = 0.5,
     super.key,
   }) : assert(artworks.length > 0),
        assert(
-         width >= itemWidth + (AppSpacing.xxs * 2),
+         width >= itemWidth + (itemGap * 2),
          'width must leave room for the selector edge treatment.',
        ),
        assert(itemWidth > 0),
        assert(itemHeight > 0),
+       assert(height > 0),
        assert(itemGap >= 0),
        assert(selectionBorderWidth > 0),
        assert(selectionBorderRadius >= 0),
@@ -45,6 +47,7 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
        assert(inactiveOpacity >= 0 && inactiveOpacity <= 1);
 
   static const double defaultWidth = 396;
+  static const double defaultHeight = 50;
 
   /// Ordered artwork choices shown in the rail.
   ///
@@ -53,6 +56,7 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
   final PaymentLinkCardArtwork selected;
   final ValueChanged<PaymentLinkCardArtwork> onSelected;
   final double width;
+  final double height;
   final double itemWidth;
   final double itemHeight;
   final double artworkWidth;
@@ -73,17 +77,20 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
 
 class _PaymentLinkCardSelectorRailState
     extends State<PaymentLinkCardSelectorRail> {
-  static const _selectionDuration = Duration(milliseconds: 180);
+  static const _selectionDuration = Duration(milliseconds: 350);
+  static const _cycleCopies = 18001;
 
   late final ScrollController _controller;
+  late int _baseIndex;
 
   double get _itemStride => widget.itemWidth + widget.itemGap;
 
-  double get _sidePadding => (widget.width - widget.itemWidth) / 2;
+  int get _itemCount => widget.artworks.length * _cycleCopies;
 
   @override
   void initState() {
     super.initState();
+    _baseIndex = widget.artworks.length * (_cycleCopies ~/ 2);
     _controller = ScrollController(
       initialScrollOffset: _scrollOffsetFor(widget.selected),
     );
@@ -92,11 +99,20 @@ class _PaymentLinkCardSelectorRailState
   @override
   void didUpdateWidget(covariant PaymentLinkCardSelectorRail oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selected == widget.selected &&
-        _sameArtworks(oldWidget.artworks, widget.artworks)) {
+    final artworksChanged = !_sameArtworks(oldWidget.artworks, widget.artworks);
+    if (!artworksChanged && oldWidget.selected == widget.selected) {
       return;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _recenterSelection());
+    if (artworksChanged) {
+      _baseIndex = widget.artworks.length * (_cycleCopies ~/ 2);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (artworksChanged) {
+        _jumpToSelection();
+      } else {
+        _recenterSelection();
+      }
+    });
   }
 
   bool _sameArtworks(
@@ -113,15 +129,47 @@ class _PaymentLinkCardSelectorRailState
 
   double _scrollOffsetFor(PaymentLinkCardArtwork artwork) {
     final index = widget.artworks.indexOf(artwork);
-    return index < 0 ? 0 : index * _itemStride;
+    return index < 0 ? 0 : _scrollOffsetForIndex(_baseIndex + index);
+  }
+
+  double _scrollOffsetForIndex(int index) {
+    return index * _itemStride + (_itemStride / 2) - (widget.width / 2);
+  }
+
+  int _nearestIndexFor(PaymentLinkCardArtwork artwork) {
+    final logicalIndex = widget.artworks.indexOf(artwork);
+    if (logicalIndex < 0 || !_controller.hasClients) {
+      return logicalIndex < 0 ? _baseIndex : _baseIndex + logicalIndex;
+    }
+    final centerIndex =
+        ((_controller.offset + (widget.width / 2) - (_itemStride / 2)) /
+                _itemStride)
+            .round();
+    final cycleStart =
+        (centerIndex ~/ widget.artworks.length) * widget.artworks.length;
+    final candidates = [
+      cycleStart + logicalIndex - widget.artworks.length,
+      cycleStart + logicalIndex,
+      cycleStart + logicalIndex + widget.artworks.length,
+    ];
+    candidates.sort(
+      (a, b) => (a - centerIndex).abs().compareTo((b - centerIndex).abs()),
+    );
+    return candidates.first;
+  }
+
+  void _jumpToSelection() {
+    if (!mounted || !_controller.hasClients) return;
+    _controller.jumpTo(_scrollOffsetFor(widget.selected));
   }
 
   void _recenterSelection() {
     if (!mounted || !_controller.hasClients) return;
-    final offset = _scrollOffsetFor(widget.selected).clamp(
-      _controller.position.minScrollExtent,
-      _controller.position.maxScrollExtent,
-    );
+    final offset = _scrollOffsetForIndex(_nearestIndexFor(widget.selected))
+        .clamp(
+          _controller.position.minScrollExtent,
+          _controller.position.maxScrollExtent,
+        );
     final disableAnimations =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     if (disableAnimations) {
@@ -152,6 +200,9 @@ class _PaymentLinkCardSelectorRailState
       'artworks must not contain duplicates.',
     );
     final inheritedScrollBehavior = ScrollConfiguration.of(context);
+    final railHeight = widget.height < widget.itemHeight
+        ? widget.itemHeight
+        : widget.height;
     final maskWidth = widget.width - (widget.edgeMaskInset * 2);
     final fadeWidth = maskWidth * widget.edgeFadeFraction;
     final maskStart = widget.edgeMaskInset / widget.width;
@@ -162,7 +213,7 @@ class _PaymentLinkCardSelectorRailState
     return SizedBox(
       key: const ValueKey('payment_link_card_selector_rail'),
       width: widget.width,
-      height: widget.itemHeight,
+      height: railHeight,
       child: ClipRect(
         child: ShaderMask(
           key: const ValueKey('payment_link_card_selector_edge_fade'),
@@ -191,20 +242,34 @@ class _PaymentLinkCardSelectorRailState
               controller: _controller,
               scrollDirection: Axis.horizontal,
               itemExtent: _itemStride,
-              padding: EdgeInsets.only(
-                left: _sidePadding,
-                right: _sidePadding - widget.itemGap,
-              ),
-              itemCount: widget.artworks.length,
+              itemCount: _itemCount,
+              semanticChildCount: widget.artworks.length,
               itemBuilder: (context, index) {
-                final artwork = widget.artworks[index];
-                return Align(
-                  alignment: Alignment.centerLeft,
+                final artwork = widget.artworks[index % widget.artworks.length];
+                return Center(
                   child: PaymentLinkCardSelector(
                     key: ValueKey('payment_link_card_selector_${artwork.name}'),
                     artwork: artwork,
                     selected: artwork == widget.selected,
-                    onSelected: () => widget.onSelected(artwork),
+                    onSelected: () {
+                      widget.onSelected(artwork);
+                      final target = _scrollOffsetForIndex(index).clamp(
+                        _controller.position.minScrollExtent,
+                        _controller.position.maxScrollExtent,
+                      );
+                      final disableAnimations =
+                          MediaQuery.maybeOf(context)?.disableAnimations ??
+                          false;
+                      if (disableAnimations) {
+                        _controller.jumpTo(target);
+                      } else {
+                        _controller.animateTo(
+                          target,
+                          duration: _selectionDuration,
+                          curve: Curves.easeOutCubic,
+                        );
+                      }
+                    },
                     itemWidth: widget.itemWidth,
                     itemHeight: widget.itemHeight,
                     artworkWidth: widget.artworkWidth,

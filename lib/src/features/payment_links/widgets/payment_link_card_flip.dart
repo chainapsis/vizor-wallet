@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 
 import 'payment_link_card_motion.dart';
@@ -10,67 +11,132 @@ import 'payment_link_card_motion.dart';
 /// the opposite value continues from the current animation value, so a second
 /// click can reverse an in-progress flip without snapping. The animation only
 /// changes the transform; both sides are expected to have the same card size.
-class PaymentLinkCardFlip extends StatelessWidget {
+class PaymentLinkCardFlip extends StatefulWidget {
   const PaymentLinkCardFlip({
     required this.showBack,
     required this.front,
     required this.back,
-    this.animationDuration = duration,
     this.onAnimationEnd,
     super.key,
   });
 
-  /// Matches the designer-provided `vizor-card` flip handoff.
-  static const Duration duration = Duration(milliseconds: 500);
+  /// The handoff spring has no fixed duration. This is a conservative budget
+  /// for tests and previews to reach rest.
+  static const Duration settleDuration = Duration(seconds: 2);
   static const double edgeBand = 0.13;
 
   final bool showBack;
   final Widget front;
   final Widget back;
-  final Duration animationDuration;
   final VoidCallback? onAnimationEnd;
+
+  @override
+  State<PaymentLinkCardFlip> createState() => _PaymentLinkCardFlipState();
+}
+
+class _PaymentLinkCardFlipState extends State<PaymentLinkCardFlip>
+    with SingleTickerProviderStateMixin {
+  static const _springResponse = 0.7;
+  static final SpringDescription _spring = SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness:
+        (2 * math.pi / _springResponse) * (2 * math.pi / _springResponse),
+    ratio: 1,
+  );
+
+  late final AnimationController _controller = AnimationController.unbounded(
+    vsync: this,
+    value: widget.showBack ? 1 : 0,
+  );
+  bool? _lastMotionDisabled;
+
+  bool get _motionDisabled =>
+      (MediaQuery.maybeOf(context)?.disableAnimations ?? false) ||
+      !TickerMode.valuesOf(context).enabled;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disabled = _motionDisabled;
+    if (disabled) {
+      _controller
+        ..stop()
+        ..value = widget.showBack ? 1 : 0;
+    } else if (_lastMotionDisabled == true) {
+      _controller.value = widget.showBack ? 1 : 0;
+    }
+    _lastMotionDisabled = disabled;
+  }
+
+  @override
+  void didUpdateWidget(covariant PaymentLinkCardFlip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.showBack == widget.showBack) return;
+    final target = widget.showBack ? 1.0 : 0.0;
+    if (_motionDisabled) {
+      widget.onAnimationEnd?.call();
+      return;
+    }
+    _controller
+        .animateWith(SpringSimulation(_spring, _controller.value, target, 0))
+        .then((_) {
+          if (mounted && widget.showBack == (target == 1)) {
+            widget.onAnimationEnd?.call();
+          }
+        });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final motion = PaymentLinkCardMotionScope.maybeOf(context);
-    final disableAnimations =
-        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (disableAnimations || !TickerMode.valuesOf(context).enabled) {
-      return _side(
-        showBack: showBack,
-        front: front,
-        back: back,
+    if (_motionDisabled) {
+      return _faces(
+        showBack: widget.showBack,
+        front: widget.front,
+        back: widget.back,
         motion: motion,
-        rotation: (motion?.rotation ?? 0) + (showBack ? math.pi : 0),
+        rotation: (motion?.rotation ?? 0) + (widget.showBack ? math.pi : 0),
       );
     }
-
-    return TweenAnimationBuilder<double>(
+    return AnimatedBuilder(
       key: const ValueKey('payment_link_flip_animation'),
-      tween: Tween<double>(end: showBack ? 1 : 0),
-      duration: animationDuration,
-      curve: Curves.easeInOutCubic,
-      onEnd: onAnimationEnd,
-      builder: (context, value, _) {
+      animation: _controller,
+      builder: (context, _) {
+        final value = _controller.value.clamp(0.0, 1.0);
         final showingBack = value >= 0.5;
-        final rawAngle = showingBack
-            ? (value * math.pi) - math.pi
-            : value * math.pi;
+        final rawAngle = value * math.pi;
         // Keep a narrow projected width around the face swap instead of
         // rendering a fully edge-on (and therefore invisible) card frame.
-        final angle = showingBack
-            ? math.max(rawAngle, (-math.pi / 2) + edgeBand)
-            : math.min(rawAngle, (math.pi / 2) - edgeBand);
+        final angle =
+            showingBack
+                ? math.max(
+                  rawAngle,
+                  (math.pi / 2) + PaymentLinkCardFlip.edgeBand,
+                )
+                : math.min(
+                  rawAngle,
+                  (math.pi / 2) - PaymentLinkCardFlip.edgeBand,
+                );
+        final transform = Matrix4.identity();
+        // PaymentLinkCardMotion owns the camera when present. Keeping the
+        // local flip rotation but omitting a second perspective avoids the
+        // wide-angle distortion caused by stacked cameras.
+        if (motion == null) transform.setEntry(3, 2, 0.0012);
+        transform.rotateY(angle);
         return Transform(
           key: const ValueKey('payment_link_flip_transform'),
           alignment: Alignment.center,
-          transform: Matrix4.identity()
-            ..setEntry(3, 2, 0.001)
-            ..rotateY(angle),
-          child: _side(
+          transform: transform,
+          child: _faces(
             showBack: showingBack,
-            front: front,
-            back: back,
+            front: widget.front,
+            back: widget.back,
             motion: motion,
             rotation: (motion?.rotation ?? 0) + (value * math.pi),
           ),
@@ -79,26 +145,36 @@ class PaymentLinkCardFlip extends StatelessWidget {
     );
   }
 
-  static Widget _side({
+  static Widget _faces({
     required bool showBack,
     required Widget front,
     required Widget back,
     required PaymentLinkCardMotionScope? motion,
     required double rotation,
   }) {
-    Widget side = KeyedSubtree(
-      key: ValueKey(
-        showBack ? 'payment_link_flip_back' : 'payment_link_flip_front',
-      ),
-      child: showBack ? back : front,
+    Widget faces = IndexedStack(
+      index: showBack ? 1 : 0,
+      children: [
+        KeyedSubtree(
+          key: const ValueKey('payment_link_flip_front'),
+          child: front,
+        ),
+        Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.rotationY(math.pi),
+          child: KeyedSubtree(
+            key: const ValueKey('payment_link_flip_back'),
+            child: back,
+          ),
+        ),
+      ],
     );
-    if (motion != null) {
-      side = PaymentLinkCardMotionScope(
-        light: motion.light,
-        rotation: rotation,
-        child: side,
-      );
-    }
-    return side;
+    if (motion == null) return faces;
+    faces = PaymentLinkCardMotionScope(
+      light: motion.light,
+      rotation: rotation,
+      child: faces,
+    );
+    return faces;
   }
 }

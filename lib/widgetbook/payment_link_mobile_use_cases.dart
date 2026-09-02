@@ -58,11 +58,14 @@ Widget buildMobilePaymentLinkAmountEmptyUseCase(BuildContext context) {
 Widget buildMobilePaymentLinkAmountFilledUseCase(BuildContext context) {
   return _MobilePaymentLinkFrame(
     child: PaymentLinkAmountMobileView(
-      card: const PaymentLinkGiftCard(
+      card: PaymentLinkGiftCard(
         artwork: _fixtureArtwork,
         cardWidth: _cardWidth,
         cardHeight: _cardHeight,
         amountText: _fixtureAmount,
+        maxAmountText: '142.23',
+        onUseMax: _noop,
+        showMaxButton: true,
         showCaret: false,
         supportingLoading: true,
       ),
@@ -423,6 +426,9 @@ class _FocusedAmountFixtureState extends State<_FocusedAmountFixture> {
               cardWidth: _cardWidth,
               cardHeight: _cardHeight,
               amountText: _fixtureAmount,
+              maxAmountText: '142.23',
+              onUseMax: _noop,
+              showMaxButton: true,
               supportingLoading: true,
             )
           : PaymentLinkGiftCard(
@@ -638,6 +644,7 @@ class _MobilePaymentLinkInteractivePreviewState
             _amountController.text = _fixtureAmount;
             _handleAmountChanged(_fixtureAmount);
           },
+          showMaxButton: true,
           emptyAmountLabel: 'Enter Amount',
           semanticLabel: 'Gift card amount input',
         ),

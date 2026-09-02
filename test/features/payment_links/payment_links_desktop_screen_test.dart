@@ -22,10 +22,13 @@ import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_i
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
@@ -129,6 +132,8 @@ void main() {
     final amountEditor = find.byKey(
       const ValueKey('payment_link_amount_editor'),
     );
+    expect(find.text('Use max: 142.2298'), findsOneWidget);
+    expect(find.byKey(const ValueKey('payment_link_max_button')), findsNothing);
     final amountField = tester.widget<EditableText>(amountEditor);
     expect(amountField.focusNode.hasFocus, isFalse);
     expect(amountField.cursorColor.a, greaterThan(0));
@@ -186,7 +191,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('payment_link_amount_focus_ring')),
-      findsOneWidget,
+      findsNothing,
     );
 
     await tester.enterText(amountEditor, '1.25');
@@ -213,8 +218,9 @@ void main() {
       findsOneWidget,
     );
 
-    expect(find.text('Use max: 142.2298'), findsOneWidget);
-    await tester.tap(find.text('Use max: 142.2298'));
+    expect(find.text('Use max: 142.2298'), findsNothing);
+    expect(find.text('Max'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('payment_link_max_button')));
     await tester.pump();
     expect(
       tester.widget<EditableText>(amountEditor).controller.text,
@@ -447,10 +453,15 @@ void main() {
       );
       await tester.pump();
 
-      expect(
-        find.text('Insufficient balance to cover the Card amount and fees.'),
-        findsOneWidget,
+      expect(find.text('Above your maximum ZEC'), findsOneWidget);
+      final selectorRect = tester.getRect(
+        find.byType(PaymentLinkCardSelectorRail),
       );
+      final errorRect = tester.getRect(
+        find.byKey(const ValueKey('payment_link_amount_supporting_text')),
+      );
+      expect(errorRect.top - selectorRect.bottom, AppSpacing.s);
+      expect(find.text('Enter amount'), findsOneWidget);
       expect(
         tester
             .widget<AppButton>(
@@ -546,14 +557,14 @@ void main() {
     await _pumpPaymentLinksScreen(tester, operations: operations);
 
     expect(find.text('Preparing...'), findsOneWidget);
-    expect(find.text('Copy link'), findsNothing);
+    expect(find.bySemanticsLabel('Copy Gift Card link'), findsNothing);
 
     operations.fundingConfirmationCount = 1;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
     expect(find.text('Preparing...'), findsNothing);
-    expect(find.text('Copy link'), findsOneWidget);
+    expect(find.bySemanticsLabel('Copy Gift Card link'), findsOneWidget);
   });
 
   testWidgets('removes an unshared Card after funding expires', (tester) async {
@@ -1723,11 +1734,51 @@ void main() {
     await _pumpPaymentLinksScreen(tester, operations: operations);
 
     expect(find.text('4.45 ZEC'), findsOneWidget);
-    expect(find.text('Copy link'), findsOneWidget);
+    expect(find.bySemanticsLabel('Copy Gift Card link'), findsOneWidget);
+    expect(find.bySemanticsLabel('Show Gift Card QR code'), findsOneWidget);
     expect(find.text('Reclaim'), findsNothing);
 
-    await tester.tap(find.text('Copy link'));
+    await tester.tap(find.bySemanticsLabel('Copy Gift Card link'));
     await tester.pumpAndSettle();
+    expect(operations.sharedLinks, [_incomingLink]);
+  });
+
+  testWidgets('saves the selected artwork QR image to the chosen path', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(records: [_fundedRecovery]);
+    final imageSaver = _FakePaymentLinkQrImageSaver();
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      qrImageSaver: imageSaver,
+    );
+
+    await tester.tap(find.bySemanticsLabel('Show Gift Card QR code'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Share Gift Card'), findsOneWidget);
+    final shareCard = tester.widget<PaymentLinkQrShareCard>(
+      find.byType(PaymentLinkQrShareCard),
+    );
+    expect(shareCard.artwork, PaymentLinkCardArtwork.ruby);
+    expect(shareCard.qrData, _incomingLink.toUri().toString());
+
+    await tester.tap(find.text('Save QR code'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      for (var attempt = 0; attempt < 50; attempt++) {
+        if (imageSaver.savedImages.isNotEmpty) return;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    await tester.pumpAndSettle();
+
+    expect(imageSaver.savedImages, hasLength(1));
+    expect(
+      imageSaver.savedImages.single.take(8),
+      orderedEquals(const [137, 80, 78, 71, 13, 10, 26, 10]),
+    );
     expect(operations.sharedLinks, [_incomingLink]);
   });
 
@@ -1748,6 +1799,7 @@ Future<void> _pumpPaymentLinksScreen(
   _FakePaymentLinkOperations? operations,
   _FakePaymentLinkClipboard? clipboard,
   PaymentLinkHardwareSigningService? hardwareSigning,
+  PaymentLinkQrImageSaver? qrImageSaver,
   AccountNotifier? accountNotifier,
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
@@ -1769,6 +1821,8 @@ Future<void> _pumpPaymentLinksScreen(
           accountProvider.overrideWith(() => accountNotifier),
         paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
         paymentLinkClipboardProvider.overrideWithValue(paymentLinkClipboard),
+        if (qrImageSaver != null)
+          paymentLinkQrImageSaverProvider.overrideWithValue(qrImageSaver),
         if (hardwareSigning != null)
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(
             hardwareSigning,
@@ -2018,6 +2072,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<String?> createdArtworkIds = [];
   final List<String?> createdMessages = [];
   final List<String> quotedAccounts = [];
+  final List<String> maxQuotedAccounts = [];
   final List<VizorPaymentLink> sharedLinks = [];
   final List<VizorPaymentLink> claimedLinks = [];
   final List<String> discardedClaimAddresses = [];
@@ -2026,6 +2081,19 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   int createdLoadCalls = 0;
   int receivedLoadCalls = 0;
   int fundingMetadataRetries = 0;
+
+  @override
+  Future<PaymentLinkFundingQuote> quoteMaxFunding({
+    required String sourceAccountUuid,
+  }) async {
+    maxQuotedAccounts.add(sourceAccountUuid);
+    return PaymentLinkFundingQuote(
+      sourceAccountUuid: sourceAccountUuid,
+      recipientAmountZatoshi: BigInt.from(14222980000),
+      fundingFeeZatoshi: BigInt.from(10000),
+      claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
+    );
+  }
 
   @override
   Future<PaymentLinkFundingQuote> quoteFunding({
@@ -2322,6 +2390,16 @@ class _FakePaymentLinkClipboard implements PaymentLinkClipboard {
 
   @override
   Future<String?> readText() => readCompleter?.future ?? Future.value(text);
+}
+
+class _FakePaymentLinkQrImageSaver implements PaymentLinkQrImageSaver {
+  final List<Uint8List> savedImages = [];
+
+  @override
+  Future<bool> savePng(Uint8List pngBytes) async {
+    savedImages.add(Uint8List.fromList(pngBytes));
+    return true;
+  }
 }
 
 class _FakePaymentLinkHardwareSigningService

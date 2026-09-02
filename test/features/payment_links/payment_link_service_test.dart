@@ -68,6 +68,31 @@ void main() {
     },
   );
 
+  test('max funding quote reserves deposit and redeem fees', () {
+    final quote = paymentLinkMaxFundingQuote(
+      sourceAccountUuid: 'account-1',
+      maxSpendAmountZatoshi: BigInt.from(100000000),
+      fundingFeeZatoshi: BigInt.from(15000),
+    );
+
+    expect(quote.recipientAmountZatoshi, BigInt.from(99990000));
+    expect(quote.fundingFeeZatoshi, BigInt.from(15000));
+    expect(quote.claimFeeReserveZatoshi, BigInt.from(10000));
+    expect(quote.totalDeductedZatoshi, BigInt.from(100015000));
+    expect(
+      quote.totalDeductedZatoshi,
+      BigInt.from(100000000) + quote.fundingFeeZatoshi,
+    );
+    expect(
+      () => paymentLinkMaxFundingQuote(
+        sourceAccountUuid: 'account-1',
+        maxSpendAmountZatoshi: BigInt.from(10000),
+        fundingFeeZatoshi: BigInt.from(15000),
+      ),
+      throwsStateError,
+    );
+  });
+
   test('a funding result with a known status and txid is submitted', () {
     for (final status in const [
       'broadcasted',

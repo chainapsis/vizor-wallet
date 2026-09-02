@@ -219,6 +219,11 @@ class _OnboardingAccountNotifier extends AccountNotifier {
 
 class _PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
   @override
+  Future<PaymentLinkFundingQuote> quoteMaxFunding({
+    required String sourceAccountUuid,
+  }) => throw UnimplementedError();
+
+  @override
   Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() async =>
       const [];
 

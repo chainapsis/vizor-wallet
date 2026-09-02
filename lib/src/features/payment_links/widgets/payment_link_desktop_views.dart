@@ -1,6 +1,7 @@
 import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
@@ -18,6 +19,7 @@ import 'payment_link_gift_card.dart';
 
 const kPaymentLinkMessageTooLargeText =
     'This message is too large. Try using fewer complex emoji.';
+const _wizardCardTopSpacing = 78.0;
 
 /// Static desktop states represented by the payment-link Figma flow.
 ///
@@ -280,41 +282,34 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
       backLabel: backLabel,
       onBack: onBack,
       onStepSelected: onStepSelected,
-      childSpacing: AppSpacing.lg + AppSpacing.base + AppSpacing.xs,
-      action: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (supportingText case final message?) ...[
-            Text(
-              message,
-              key: const ValueKey('payment_link_amount_supporting_text'),
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: supportingTextIsError
-                    ? context.colors.text.destructive
-                    : context.colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          AppButton(
-            key: const ValueKey('payment_link_amount_continue_button'),
-            onPressed: canContinue ? onCreate : null,
-            minWidth: 196,
-            size: AppButtonSize.large,
-            trailing: canContinue
-                ? const AppIcon(AppIcons.chevronForward)
-                : null,
-            child: Text(_hasAmount ? createLabel : emptyActionLabel),
-          ),
-        ],
+      childSpacing: _wizardCardTopSpacing,
+      action: AppButton(
+        key: const ValueKey('payment_link_amount_continue_button'),
+        onPressed: canContinue ? onCreate : null,
+        minWidth: 196,
+        size: AppButtonSize.large,
+        trailing: canContinue ? const AppIcon(AppIcons.chevronForward) : null,
+        child: Text(canContinue ? createLabel : emptyActionLabel),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           card,
-          const SizedBox(height: AppSpacing.base),
+          const SizedBox(height: AppSpacing.lg),
           cardSelector,
+          if (supportingText case final message?) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              message,
+              key: const ValueKey('payment_link_amount_supporting_text'),
+              textAlign: TextAlign.center,
+              style: AppTypography.labelLarge.copyWith(
+                color: supportingTextIsError
+                    ? context.colors.text.destructive
+                    : context.colors.text.secondary,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -363,8 +358,8 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
       backLabel: backLabel,
       onBack: onBack,
       onStepSelected: onStepSelected,
-      // The amount and message cards share one visual anchor across steps.
-      childSpacing: AppSpacing.lg + AppSpacing.base + AppSpacing.xs,
+      // Every wizard step keeps the card at the same visual anchor.
+      childSpacing: _wizardCardTopSpacing,
       action: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -444,28 +439,44 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
       backLabel: backLabel,
       onBack: onBack,
       onStepSelected: onStepSelected,
-      childSpacing: AppSpacing.lg + AppSpacing.xs,
+      childSpacing: _wizardCardTopSpacing,
       action: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: PaymentLinkGiftCard.width,
-            child: Column(
-              children: [
-                _ReviewAmountRow(label: 'Card amount', value: cardAmountText),
-                const SizedBox(height: AppSpacing.xs),
-                _ReviewAmountRow(
-                  label: 'Card fee (deposit + redeem)',
-                  value: cardFeeText,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                _ReviewAmountRow(
-                  label: 'Total amount deducted',
-                  value: totalAmountText,
-                  emphasized: true,
-                  showHelp: true,
-                ),
-              ],
+            key: const ValueKey('payment_link_review_summary'),
+            width: 320,
+            height: 136,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: AppSpacing.base,
+                    child: _ReviewAmountRow(
+                      label: 'Card amount',
+                      value: cardAmountText,
+                    ),
+                  ),
+                  SizedBox(
+                    height: AppSpacing.base,
+                    child: _ReviewAmountRow(
+                      label: 'Card fee (deposit + redeem)',
+                      value: cardFeeText,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  SizedBox(
+                    height: AppSpacing.base,
+                    child: _ReviewAmountRow(
+                      label: 'Total amount deducted',
+                      value: totalAmountText,
+                      emphasized: true,
+                      showHelp: true,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -504,39 +515,43 @@ class _ReviewAmountRow extends StatelessWidget {
     final style = emphasized
         ? AppTypography.bodyMediumStrong
         : AppTypography.bodyMedium;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: style.copyWith(color: context.colors.text.secondary),
-          ),
-        ),
-        Text(
-          value,
-          key: ValueKey('payment_link_review_value_$label'),
-          style: AppTypography.bodyMediumStrong.copyWith(
-            color: context.colors.text.primary,
-          ),
-        ),
-        if (showHelp) ...[
-          const SizedBox(width: AppSpacing.xxs),
-          AppTooltip(
-            message:
-                'Includes the fee to fund the Gift Card and the fee reserved '
-                'for the recipient to claim it.',
-            preferBelow: true,
-            child: Semantics(
-              label: 'About the total Gift Card amount',
-              child: AppIcon(
-                AppIcons.help,
-                size: 16,
-                color: context.colors.icon.muted,
-              ),
+    return Padding(
+      key: ValueKey('payment_link_review_row_$label'),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: style.copyWith(color: context.colors.text.secondary),
             ),
           ),
+          Text(
+            value,
+            key: ValueKey('payment_link_review_value_$label'),
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: context.colors.text.primary,
+            ),
+          ),
+          if (showHelp) ...[
+            const SizedBox(width: AppSpacing.xxs),
+            AppTooltip(
+              message:
+                  'Includes the fee to fund the Gift Card and the fee reserved '
+                  'for the recipient to claim it.',
+              preferBelow: true,
+              child: Semantics(
+                label: 'About the total Gift Card amount',
+                child: AppIcon(
+                  AppIcons.help,
+                  size: 16,
+                  color: context.colors.icon.muted,
+                ),
+              ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -837,28 +852,248 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
   }
 }
 
+/// Desktop Gift Card QR export screen from Figma node `8290:150634`.
+class PaymentLinkShareQrDesktopView extends StatelessWidget {
+  const PaymentLinkShareQrDesktopView({
+    required this.artwork,
+    required this.qrData,
+    required this.onBack,
+    required this.onSaveQr,
+    required this.onCopyLink,
+    this.shareCardKey,
+    this.saveLabel = 'Save QR code',
+    this.copyLabel = 'Copy link',
+    super.key,
+  });
+
+  final PaymentLinkCardArtwork artwork;
+  final String qrData;
+  final VoidCallback onBack;
+  final VoidCallback? onSaveQr;
+  final VoidCallback? onCopyLink;
+  final Key? shareCardKey;
+  final String saveLabel;
+  final String copyLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PaymentLinkPane(
+      backLabel: 'Gift cards',
+      onBack: onBack,
+      child: Center(
+        child: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Share Gift Card',
+                style: AppTypography.headlineSmall.copyWith(
+                  color: context.colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              RepaintBoundary(
+                key: shareCardKey,
+                child: PaymentLinkQrShareCard(artwork: artwork, qrData: qrData),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppButton(
+                key: const ValueKey('payment_link_save_qr_button'),
+                onPressed: onSaveQr,
+                size: AppButtonSize.mediumLarge,
+                leading: const AppIcon(AppIcons.share),
+                child: Text(saveLabel),
+              ),
+              const SizedBox(height: AppSpacing.s),
+              AppButton(
+                key: const ValueKey('payment_link_share_copy_button'),
+                onPressed: onCopyLink,
+                variant: AppButtonVariant.ghost,
+                size: AppButtonSize.mediumLarge,
+                leading: const AppIcon(AppIcons.copy),
+                child: Text(copyLabel),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The exportable 396×270 Gift Card artwork and QR composite.
+class PaymentLinkQrShareCard extends StatelessWidget {
+  const PaymentLinkQrShareCard({
+    required this.artwork,
+    required this.qrData,
+    super.key,
+  });
+
+  static const size = Size(396, 270);
+  static const _foreground = Color(0xFFFFFFFF);
+  static const _secondary = Color(0xFFA3A4A4);
+  static const brandBadgeAssetPath =
+      'assets/icons/payment_link_share_badge.png';
+
+  final PaymentLinkCardArtwork artwork;
+  final String qrData;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: 'Gift Card QR code',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        child: SizedBox.fromSize(
+          key: const ValueKey('payment_link_qr_share_card'),
+          size: size,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.asset(
+                artwork.assetPath,
+                fit: BoxFit.cover,
+                excludeFromSemantics: true,
+              ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerRight,
+                    end: Alignment.centerLeft,
+                    colors: [Color(0x00000000), Color(0xCC000000)],
+                    stops: [0.03, 0.78],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 25,
+                top: 25,
+                child: Text(
+                  'You’ve\ngot ZEC',
+                  style: AppTypography.headlineLarge.copyWith(
+                    color: _foreground,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 25,
+                top: 107,
+                child: Text(
+                  'Scan to redeem',
+                  style: AppTypography.bodyMedium.copyWith(color: _secondary),
+                ),
+              ),
+              Positioned(
+                right: 18,
+                top: 66,
+                child: Container(
+                  key: const ValueKey('payment_link_qr_code'),
+                  width: 184,
+                  height: 184,
+                  padding: const EdgeInsets.all(AppSpacing.s),
+                  decoration: BoxDecoration(
+                    color: _foreground,
+                    borderRadius: BorderRadius.circular(AppRadii.medium),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xF2000000),
+                        offset: Offset(0, 4),
+                        blurRadius: 54,
+                      ),
+                    ],
+                  ),
+                  child: PrettyQrView.data(
+                    data: qrData,
+                    errorCorrectLevel: QrErrorCorrectLevel.L,
+                    decoration: const PrettyQrDecoration(
+                      quietZone: PrettyQrQuietZone.zero,
+                      shape: PrettyQrSmoothSymbol(roundFactor: 0.5),
+                    ),
+                    errorBuilder: (context, error, stackTrace) => const Center(
+                      child: AppIcon(
+                        AppIcons.warning,
+                        color: Color(0xFF141818),
+                        semanticLabel: 'QR code could not be generated',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const Positioned(
+                left: 20,
+                bottom: 20,
+                child: _PaymentLinkShareBrand(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PaymentLinkShareBrand extends StatelessWidget {
+  const _PaymentLinkShareBrand();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Image.asset(
+          PaymentLinkQrShareCard.brandBadgeAssetPath,
+          key: const ValueKey('payment_link_share_brand_badge'),
+          width: 26,
+          height: 26,
+          excludeFromSemantics: true,
+        ),
+        const SizedBox(width: 9),
+        Text(
+          'vizor.cash',
+          style: AppTypography.labelMedium.copyWith(
+            color: PaymentLinkQrShareCard._foreground,
+            fontSize: 12.5,
+            letterSpacing: -0.375,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// A desktop row used by [PaymentLinkCardsDesktopView].
 class PaymentLinkCardListRow extends StatelessWidget {
   const PaymentLinkCardListRow({
     required this.thumbnail,
     required this.amountText,
     required this.dateText,
-    required this.statusText,
+    this.statusText,
     this.onAction,
     this.showCopyIcon = false,
     this.showLoader = false,
+    this.showLinkActions = false,
+    this.onCopyLink,
+    this.onShowQr,
     this.secondaryActionText,
     this.onSecondaryAction,
     super.key,
-  });
+  }) : assert(
+         statusText != null || showLinkActions,
+         'A status or Gift Card link actions must be provided.',
+       );
 
   final Widget thumbnail;
   final String amountText;
   final String dateText;
-  final String statusText;
+  final String? statusText;
   final VoidCallback? onAction;
   final bool showCopyIcon;
   final bool showLoader;
+  final bool showLinkActions;
+  final VoidCallback? onCopyLink;
+  final VoidCallback? onShowQr;
   final String? secondaryActionText;
   final VoidCallback? onSecondaryAction;
 
@@ -901,27 +1136,94 @@ class PaymentLinkCardListRow extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.s),
           ],
-          _TextAction(
-            label: statusText,
-            onTap: onAction,
-            enabled: onAction != null,
-            trailing: showLoader
-                ? AppIcon(
-                    AppIcons.loader,
-                    size: 16,
-                    color: context.colors.icon.regular,
-                  )
-                : showCopyIcon
-                ? AppIcon(
-                    AppIcons.copy,
-                    size: 16,
-                    color: onAction == null
-                        ? context.colors.icon.disabled
-                        : context.colors.icon.regular,
-                  )
-                : null,
-          ),
+          if (showLinkActions)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _CardListIconAction(
+                  key: const ValueKey('payment_link_card_copy_action'),
+                  icon: AppIcons.copy,
+                  semanticLabel: 'Copy Gift Card link',
+                  onPressed: onCopyLink,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                _CardListIconAction(
+                  key: const ValueKey('payment_link_card_qr_action'),
+                  icon: AppIcons.qr,
+                  semanticLabel: 'Show Gift Card QR code',
+                  onPressed: onShowQr,
+                ),
+              ],
+            )
+          else if (statusText case final label?)
+            _TextAction(
+              label: label,
+              onTap: onAction,
+              enabled: onAction != null,
+              trailing: showLoader
+                  ? AppIcon(
+                      AppIcons.loader,
+                      size: 16,
+                      color: context.colors.icon.regular,
+                    )
+                  : showCopyIcon
+                  ? AppIcon(
+                      AppIcons.copy,
+                      size: 16,
+                      color: onAction == null
+                          ? context.colors.icon.disabled
+                          : context.colors.icon.regular,
+                    )
+                  : null,
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class _CardListIconAction extends StatelessWidget {
+  const _CardListIconAction({
+    required this.icon,
+    required this.semanticLabel,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String icon;
+  final String semanticLabel;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    return PaymentLinkAction(
+      semanticLabel: semanticLabel,
+      onPressed: onPressed,
+      builder: (context, hovered, focused) => _ActionFocusRing(
+        focused: focused,
+        borderRadius: AppRadii.xSmall,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: hovered
+                ? context.colors.button.ghost.bgHover
+                : context.colors.background.ground.withValues(alpha: 0),
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          ),
+          child: Center(
+            child: AppIcon(
+              icon,
+              size: 16,
+              color: enabled
+                  ? context.colors.icon.regular
+                  : context.colors.icon.disabled,
+            ),
+          ),
+        ),
       ),
     );
   }

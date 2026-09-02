@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -18,8 +19,8 @@ import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 void main() {
   setUpAll(_loadAppFonts);
 
-  test('preview inventory covers all 26 desktop states', () {
-    expect(PaymentLinkPreviewState.values, hasLength(26));
+  test('preview inventory covers all 27 desktop states', () {
+    expect(PaymentLinkPreviewState.values, hasLength(27));
   });
 
   for (final state in PaymentLinkPreviewState.values) {
@@ -275,6 +276,16 @@ void main() {
     expect(
       find.byKey(const ValueKey('payment_link_review_divider')),
       findsNothing,
+    );
+    final feeRow = find.byKey(
+      const ValueKey('payment_link_review_row_Card fee (deposit + redeem)'),
+    );
+    final totalRow = find.byKey(
+      const ValueKey('payment_link_review_row_Total amount deducted'),
+    );
+    expect(
+      tester.getTopLeft(totalRow).dy - tester.getBottomRight(feeRow).dy,
+      AppSpacing.sm,
     );
 
     final create = find.widgetWithText(AppButton, 'Create card');
@@ -779,8 +790,8 @@ void main() {
     );
   });
 
-  test('confetti preserves all 165 Figma pieces', () {
-    expect(PaymentLinkConfetti.pieceCount, 165);
+  test('confetti preserves all 72 deterministic handoff pieces', () {
+    expect(PaymentLinkConfetti.pieceCount, 72);
   });
 
   testWidgets('confetti is static under reduced motion', (tester) async {
@@ -870,7 +881,7 @@ void main() {
     );
     await tester.tap(find.bySemanticsLabel('Reveal gift card message'));
     await tester.pump();
-    await tester.pump(PaymentLinkCardFlip.duration);
+    await tester.pump(PaymentLinkCardFlip.settleDuration);
 
     expect(
       find.byKey(const ValueKey('payment_link_flip_back')),
@@ -880,7 +891,7 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('Show gift card artwork'));
     await tester.pump();
-    await tester.pump(PaymentLinkCardFlip.duration);
+    await tester.pump(PaymentLinkCardFlip.settleDuration);
 
     expect(
       find.byKey(const ValueKey('payment_link_flip_front')),
@@ -955,7 +966,7 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('Reveal gift card message'));
     await tester.pump();
-    await tester.pump(PaymentLinkCardFlip.duration * 0.5);
+    await tester.pump(const Duration(milliseconds: 190));
 
     final transform = tester.widget<Transform>(
       find.byKey(const ValueKey('payment_link_flip_transform')),
@@ -986,7 +997,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.tap(find.bySemanticsLabel('Flip gift card'));
     await tester.pump();
-    await tester.pump(PaymentLinkCardFlip.duration);
+    await tester.pump(PaymentLinkCardFlip.settleDuration);
 
     expect(
       find.byKey(const ValueKey('payment_link_flip_front')),
@@ -1066,6 +1077,64 @@ void main() {
     expect(tester.widget<AnimatedOpacity>(bottomFade).opacity, 0);
   });
 
+  testWidgets('created cards expose pending copy and QR actions only', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.cardsList),
+    );
+
+    expect(find.text('Pending'), findsOneWidget);
+    expect(find.text('Redeemed'), findsNothing);
+    expect(find.bySemanticsLabel('Copy Gift Card link'), findsNWidgets(6));
+    expect(find.bySemanticsLabel('Show Gift Card QR code'), findsNWidgets(6));
+  });
+
+  testWidgets('QR export keeps the selected artwork and measured geometry', (
+    tester,
+  ) async {
+    var saved = false;
+    var copied = false;
+    await _pump(
+      tester,
+      PaymentLinkShareQrDesktopView(
+        artwork: PaymentLinkCardArtwork.diamond,
+        qrData: 'https://link.vizor.cash/payment-links/open#v1=test',
+        onBack: () {},
+        onSaveQr: () => saved = true,
+        onCopyLink: () => copied = true,
+      ),
+    );
+
+    expect(find.text('Share Gift Card'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('payment_link_qr_share_card'))),
+      PaymentLinkQrShareCard.size,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('payment_link_qr_code'))),
+      const Size(184, 184),
+    );
+    final brandBadge = tester.widget<Image>(
+      find.byKey(const ValueKey('payment_link_share_brand_badge')),
+    );
+    expect(
+      (brandBadge.image as AssetImage).assetName,
+      PaymentLinkQrShareCard.brandBadgeAssetPath,
+    );
+    final artwork = tester.widget<Image>(find.byType(Image).first);
+    expect(
+      (artwork.image as AssetImage).assetName,
+      PaymentLinkCardArtwork.diamond.assetPath,
+    );
+
+    await tester.tap(find.text('Save QR code'));
+    await tester.tap(find.text('Copy link'));
+    expect(saved, isTrue);
+    expect(copied, isTrue);
+  });
+
   testWidgets('received-list fixtures distinguish pending and mined claims', (
     tester,
   ) async {
@@ -1134,9 +1203,16 @@ void main() {
         state: PaymentLinkPreviewState.createAmount,
       ),
     );
+    final amountCard = find.byType(PaymentLinkGiftCard);
+    expect(tester.getTopLeft(amountCard), const Offset(492, 251));
+    expect(tester.getSize(amountCard), const Size(360, 225));
+    final amountSelector = find.byType(PaymentLinkCardSelectorRail);
+    expect(tester.getTopLeft(amountSelector), const Offset(474, 524));
+    expect(tester.getSize(amountSelector), const Size(396, 50));
     expect(
-      tester.getTopLeft(find.byType(PaymentLinkGiftCard)),
-      const Offset(512, 261),
+      tester.getTopLeft(amountSelector).dy -
+          tester.getBottomLeft(amountCard).dy,
+      AppSpacing.lg,
     );
 
     await _pump(
@@ -1147,7 +1223,7 @@ void main() {
     );
     expect(
       tester.getTopLeft(find.byType(PaymentLinkGiftCard)),
-      const Offset(512, 261),
+      const Offset(492, 251),
     );
 
     await _pump(
@@ -1156,8 +1232,13 @@ void main() {
     );
     expect(
       tester.getTopLeft(find.byType(PaymentLinkGiftCard)),
-      const Offset(512, 229),
+      const Offset(492, 251),
     );
+    final reviewSummary = find.byKey(
+      const ValueKey('payment_link_review_summary'),
+    );
+    expect(tester.getTopLeft(reviewSummary), const Offset(512, 492));
+    expect(tester.getSize(reviewSummary), const Size(320, 136));
 
     await _pump(
       tester,
