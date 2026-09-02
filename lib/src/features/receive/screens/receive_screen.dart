@@ -64,6 +64,12 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   ReceiveAddressType? _infoDialogType;
   ZecRequestDraft? _requestDraft;
   RequestModalStep _requestStep = RequestModalStep.compose;
+
+  /// The request as it was when the user pressed Next. The result step
+  /// renders this snapshot, not the live draft: a USD request converts at the
+  /// live price, and a price tick after the user confirmed must not rewrite
+  /// the QR they are already showing someone.
+  ZecRequestView? _requestResult;
   bool _requestMessageExpanded = false;
   final TextEditingController _requestAmountController =
       TextEditingController();
@@ -313,6 +319,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     setState(() {
       _requestDraft = ZecRequestDraft(address: address);
       _requestStep = RequestModalStep.compose;
+      _requestResult = null;
       _requestMessageExpanded = false;
     });
   }
@@ -322,6 +329,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     setState(() {
       _requestDraft = null;
       _requestStep = RequestModalStep.compose;
+      _requestResult = null;
       _requestMessageExpanded = false;
     });
   }
@@ -333,17 +341,25 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   void _showRequestResult() {
     final draft = _requestDraft;
     if (draft == null) return;
-    final ready = draft
-        .resolve(zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider))
-        .isReady;
-    if (!ready) return;
-    setState(() => _requestStep = RequestModalStep.result);
+    final result = draft.resolve(
+      zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider),
+    );
+    if (!result.isReady) return;
+    setState(() {
+      _requestResult = result;
+      _requestStep = RequestModalStep.result;
+    });
   }
 
-  /// Returns to the form with the composed amount and message intact.
+  /// Returns to the form with the composed amount and message intact. The
+  /// form is live again from here: the next Next takes a fresh snapshot.
   void _editRequestAgain() {
     if (_requestStep == RequestModalStep.compose) return;
-    setState(() => _requestStep = RequestModalStep.compose);
+    setState(() {
+      _requestResult = null;
+      _requestStep = RequestModalStep.compose;
+      _requestResult = null;
+    });
   }
 
   void _handleRequestAmountChanged(String value) {
@@ -462,7 +478,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                 // is composed on top of the address it pays to, not on a
                 // screen that replaced it.
                 background: const SizedBox.expand(),
-                request: requestView,
+                request: _requestStep == RequestModalStep.result
+                    ? (_requestResult ?? requestView)
+                    : requestView,
                 step: _requestStep,
                 messageExpanded: _requestMessageExpanded,
                 amountController: _requestAmountController,

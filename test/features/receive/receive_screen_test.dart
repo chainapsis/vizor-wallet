@@ -25,6 +25,18 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
+/// A price the test can move after the request was created.
+class _PriceNotifier extends Notifier<double?> {
+  @override
+  double? build() => 70;
+
+  void set(double? value) => state = value;
+}
+
+final _priceProvider = NotifierProvider<_PriceNotifier, double?>(
+  _PriceNotifier.new,
+);
+
 void main() {
   testWidgets('shows shielded renew button for software accounts', (
     tester,
@@ -749,6 +761,70 @@ void main() {
       r'$ 35.00',
     );
     expect(_button(tester, 'request_next_button').onPressed, isNotNull);
+  });
+
+  testWidgets('a USD request keeps the ZEC it was created with when the price '
+      'moves', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _receiveHarness(
+        extraOverrides: [
+          zecLiveUsdUnitPriceProvider.overrideWith(
+            (ref) => ref.watch(_priceProvider),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('request_amount_mode_toggle')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '35',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+
+    // $35 at $70/ZEC.
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+
+    // The market moves while the QR is on screen: the artefact the user
+    // confirmed must not change under them.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const ValueKey('receive_request_modal'))),
+    );
+    container.read(_priceProvider.notifier).set(35);
+    await tester.pump();
+    await tester.pump();
+
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+
+    // Back on the form the draft is live again, and the next Next takes a
+    // fresh snapshot at the new price.
+    await tester.tap(find.byKey(const ValueKey('request_modal_back')));
+    await tester.pump();
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('request_amount_conversion_text')),
+          )
+          .data,
+      '1 ZEC',
+    );
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=1');
   });
 
   testWidgets('turns a typed amount into a live request link and copies it', (

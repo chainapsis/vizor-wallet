@@ -47,6 +47,12 @@ class ReceiveRequestSheet extends ConsumerStatefulWidget {
 
 class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
   late ZecRequestDraft _draft = ZecRequestDraft(address: widget.address);
+
+  /// The request as it was when the user pressed Create. The result step
+  /// renders this snapshot, not the live draft: a USD request converts at the
+  /// live price, and a price tick after the user confirmed must not rewrite
+  /// the QR they are already showing someone.
+  ZecRequestView? _result;
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
   bool _showsResult = false;
@@ -87,10 +93,18 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
   }
 
   void _createRequest() {
+    final result = _draft.resolve(
+      zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider),
+    );
+    // Guarded on the same `isReady` the button is disabled by.
+    if (!result.isReady) return;
     // The keypad has nothing left to do on the result step, and the QR needs
     // the room it was taking.
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _showsResult = true);
+    setState(() {
+      _result = result;
+      _showsResult = true;
+    });
   }
 
   Future<void> _copyLink(String uri) async {
@@ -131,8 +145,11 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
     }
 
     return RequestAmountSheetResult(
-      request: request,
-      onBack: () => setState(() => _showsResult = false),
+      request: _result ?? request,
+      onBack: () => setState(() {
+        _result = null;
+        _showsResult = false;
+      }),
       onClose: _close,
       onCopyLink: () {
         final uri = request.requestUri;
