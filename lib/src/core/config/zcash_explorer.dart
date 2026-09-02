@@ -135,9 +135,10 @@ String _decodeTxidPlaceholders(String value) {
 }
 
 Uri _ensureTxidPlaceholder(Uri uri) {
-  final haystack =
-      '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}'
-      '${uri.hasFragment ? '#${uri.fragment}' : ''}';
+  final haystack = _decodeTxidPlaceholders(
+    '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}'
+    '${uri.hasFragment ? '#${uri.fragment}' : ''}',
+  );
   if (_txidPlaceholderPattern.hasMatch(haystack)) {
     return uri;
   }
