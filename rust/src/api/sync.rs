@@ -2788,3 +2788,43 @@ pub async fn extract_and_broadcast_pczt(
         message: result.message,
     })
 }
+
+#[cfg(test)]
+mod validate_address_tests {
+    //! The FRB boundary contract every Dart consumer of `wrongNetwork` relies
+    //! on. Needs no DB or network.
+    use super::validate_address;
+
+    const MAINNET_UA: &str = "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfg\
+                              ram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3ne\
+                              m8wwyen732wemtxcg6lxr4n2agm437m2";
+
+    #[test]
+    fn valid_on_its_own_network() {
+        let result = validate_address(MAINNET_UA.into(), "main".into()).unwrap();
+        assert!(result.is_valid);
+        assert!(!result.wrong_network);
+        assert_eq!(result.address_type, "unified");
+    }
+
+    #[test]
+    fn well_formed_but_for_another_network_is_wrong_network_with_its_type() {
+        let result = validate_address(MAINNET_UA.into(), "test".into()).unwrap();
+        assert!(!result.is_valid);
+        assert!(result.wrong_network);
+        assert_eq!(result.address_type, "unified");
+    }
+
+    #[test]
+    fn garbage_is_invalid_not_wrong_network() {
+        let result = validate_address("not-an-address".into(), "main".into()).unwrap();
+        assert!(!result.is_valid);
+        assert!(!result.wrong_network);
+        assert_eq!(result.address_type, "invalid");
+    }
+
+    #[test]
+    fn unknown_network_name_is_a_programming_error() {
+        assert!(validate_address(MAINNET_UA.into(), "moonnet".into()).is_err());
+    }
+}

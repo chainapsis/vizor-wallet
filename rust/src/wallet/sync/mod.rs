@@ -918,6 +918,32 @@ mod tests {
         );
     }
 
+    /// Sapling addresses are the one shielded kind with no regtest tolerance
+    /// either: the vector is derived, not hard-coded, so it stays valid if the
+    /// encoding crate changes its own test data.
+    #[test]
+    fn validate_address_classifies_sapling_addresses_per_network() {
+        use zcash_address::ToAddress;
+        use zcash_protocol::consensus::NetworkType;
+
+        let esk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[7u8; 32]);
+        let (_, payment_address) = esk.default_address();
+        let raw = payment_address.to_bytes();
+        let mainnet = zcash_address::ZcashAddress::from_sapling(NetworkType::Main, raw).to_string();
+        let testnet = zcash_address::ZcashAddress::from_sapling(NetworkType::Test, raw).to_string();
+        let regtest =
+            zcash_address::ZcashAddress::from_sapling(NetworkType::Regtest, raw).to_string();
+        assert!(mainnet.starts_with("zs1"));
+        assert!(testnet.starts_with("ztestsapling1"));
+
+        assert_valid(&mainnet, WalletNetwork::Main, "sapling");
+        assert_valid(&testnet, WalletNetwork::Test, "sapling");
+        assert_valid(&regtest, WalletNetwork::Regtest, "sapling");
+        assert_wrong_network(&mainnet, WalletNetwork::Test, "sapling");
+        assert_wrong_network(&testnet, WalletNetwork::Main, "sapling");
+        assert_wrong_network(&testnet, WalletNetwork::Regtest, "sapling");
+    }
+
     #[test]
     fn validate_address_accepts_unified_addresses_on_their_own_network() {
         assert_valid(MAINNET_UA, WalletNetwork::Main, "unified");
