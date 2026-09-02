@@ -12,8 +12,13 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../models/ironwood_migration_phases.dart';
+import '../services/ironwood_migration_preferences.dart';
 
 export '../models/ironwood_migration_phases.dart';
+export '../services/ironwood_migration_preferences.dart'
+    show
+        ironwoodMigrationAnnouncementSeenStorageKey,
+        ironwoodMigrationCompletionSeenStorageKey;
 
 /// Smallest value ZIP 318 can migrate, in zatoshi (0.01 ZEC). Anything below is
 /// residual value that no denomination can carry.
@@ -43,22 +48,6 @@ bool isIronwoodMigrationWaitingForConfirmation(
   }
   return status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
       status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
-}
-
-String ironwoodMigrationAnnouncementSeenStorageKey({
-  required String network,
-  required String accountUuid,
-}) {
-  return 'zcash_ironwood_migration_announcement_seen_${network}_$accountUuid';
-}
-
-String ironwoodMigrationCompletionSeenStorageKey({
-  required String network,
-  required String accountUuid,
-  required String completionId,
-}) {
-  return 'zcash_ironwood_migration_completion_seen_'
-      '${network}_${accountUuid}_$completionId';
 }
 
 /// Remembers that a finished migration has already been presented, so the

@@ -510,6 +510,23 @@ import UIKit
       }
     }
 
+    let walletSessionChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/wallet_session",
+      binaryMessenger: messenger
+    )
+    walletSessionChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "resetWalletState":
+        if #available(iOS 26.0, *) {
+          DynamicIslandManager.shared.resetWalletState { result(nil) }
+        } else {
+          result(nil)
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     let cameraPermissionChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/camera_permission",
       binaryMessenger: messenger

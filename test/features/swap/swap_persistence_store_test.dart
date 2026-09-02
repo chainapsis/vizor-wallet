@@ -443,6 +443,50 @@ void main() {
       expect(accountTwo.slippageBps, 200);
     },
   );
+
+  test('old swap stores cannot recreate account data after reset', () async {
+    final oldActivityStore = activityStore;
+    final oldPreferencesStore = preferencesStore;
+    final intent = _minimalIntent(id: 'old-swap', accountUuid: 'account-1');
+    const preferences = SwapComposerPreferences(
+      direction: SwapDirection.externalToZec,
+      externalAsset: SwapAsset.near,
+      slippageBps: 125,
+    );
+    await oldActivityStore.saveRecords(
+      accountUuid: 'account-1',
+      records: [SwapIntentRecord.fromIntent(intent)],
+    );
+    await oldPreferencesStore.savePreferences(
+      accountUuid: 'account-1',
+      preferences: preferences,
+    );
+
+    await secureStore.resetWalletStorage(
+      epoch: secureStore.captureWalletSessionEpoch(),
+    );
+    await oldActivityStore.saveRecords(
+      accountUuid: 'account-1',
+      records: [SwapIntentRecord.fromIntent(intent)],
+    );
+    await oldPreferencesStore.savePreferences(
+      accountUuid: 'account-1',
+      preferences: preferences,
+    );
+
+    final newActivityStore = AppSecureStoreSwapActivityStore(secureStore);
+    final newPreferencesStore = AppSecureStoreSwapComposerPreferencesStore(
+      secureStore,
+    );
+    expect(
+      await newActivityStore.loadRecords(accountUuid: 'account-1'),
+      isEmpty,
+    );
+    expect(
+      await newPreferencesStore.loadPreferences(accountUuid: 'account-1'),
+      isNull,
+    );
+  });
 }
 
 SwapIntent _minimalIntent({required String id, required String accountUuid}) {

@@ -929,6 +929,13 @@ Future<void> discardProposal({
   sendFlowId: sendFlowId,
 );
 
+/// Discard all process-local send proposals associated with a wallet DB after
+/// its destructive reset commits.
+Future<void> discardAllProposalsForWalletReset({required String dbPath}) =>
+    RustLib.instance.api.crateApiSyncDiscardAllProposalsForWalletReset(
+      dbPath: dbPath,
+    );
+
 /// Remove the replayable proposal capability but keep its owner-scoped wallet
 /// input lock until the original expiry height. Use this when broadcast
 /// acceptance is uncertain or the accepted transaction could not be persisted
