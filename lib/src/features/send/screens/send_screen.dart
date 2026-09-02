@@ -219,6 +219,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _contactPickerOpen = false;
   String? _error;
   String _addressType = '';
+
+  /// True when the last validation refused the address only because it belongs
+  /// to another Zcash network. `_addressType` stays `'invalid'` in that case so
+  /// every gate that already refuses bad addresses keeps refusing this one;
+  /// this flag changes nothing but the sentence under the field.
+  bool _addressWrongNetwork = false;
   String?
   _amountError; // null = no error, empty string = silent invalid (empty/dot)
   // Canonical wallet amount used for validation and Rust calls. The controller
@@ -390,16 +396,23 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final addr = _addressController.text.trim();
     if (addr.isEmpty) {
       if (!mounted || seq != _addressSeq) return;
-      setState(() => _addressType = '');
+      setState(() {
+        _addressType = '';
+        _addressWrongNetwork = false;
+      });
       _handleAddressValidationSettled();
       return;
     }
     try {
-      final result = await rust_sync.validateAddress(address: addr);
+      final result = await rust_sync.validateAddress(
+        address: addr,
+        network: kZcashDefaultNetworkName,
+      );
       if (!mounted || seq != _addressSeq) return;
       final nextAddressType = result.isValid ? result.addressType : 'invalid';
       setState(() {
         _addressType = nextAddressType;
+        _addressWrongNetwork = result.wrongNetwork;
         if (_isTransparentLikeType(nextAddressType)) {
           _messageExpanded = false;
           _preserveMemoWhitespace = false;
@@ -413,7 +426,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     } catch (e) {
       log('Send: address validation error: $e');
       if (!mounted || seq != _addressSeq) return;
-      setState(() => _addressType = 'error');
+      setState(() {
+        _addressType = 'error';
+        _addressWrongNetwork = false;
+      });
       _handleAddressValidationSettled();
     }
   }
@@ -431,6 +447,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     _maxDebounceTimer?.cancel();
     setState(() {
       _addressType = '';
+      _addressWrongNetwork = false;
       _error = null;
       if (_isMaxMode) {
         _validateSeq++;
@@ -1110,7 +1127,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
     }
     final addressMessage = switch (_addressType) {
-      'invalid' => 'Invalid address',
+      // A wrong-network address is well-formed, so "Invalid address" would
+      // send the user hunting for a typo that is not there.
+      'invalid' =>
+        _addressWrongNetwork ? kWrongNetworkAddressMessage : 'Invalid address',
       'error' => 'Address validation failed',
       _ => matchedRecipientName,
     };
@@ -1289,6 +1309,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                       _maxDebounceTimer?.cancel();
                                       setState(() {
                                         _addressType = '';
+                                        _addressWrongNetwork = false;
                                         _error = null;
                                         if (_isMaxMode) {
                                           _validateSeq++;

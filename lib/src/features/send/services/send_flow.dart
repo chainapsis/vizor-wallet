@@ -385,6 +385,16 @@ Future<void> retainSendProposalLockUntilExpiry({
   }
 }
 
+/// Shown wherever a recipient address is well-formed but belongs to another
+/// Zcash network — a `utest1…` pasted into a mainnet wallet, say.
+///
+/// It has its own sentence because "Invalid address" reads as a typo, and this
+/// is not one: the address is real, it just is not payable from this build.
+/// Before validation was network-aware the wallet accepted these and only
+/// refused them at proposal time, as an opaque "Bad address: IncorrectNetwork".
+const kWrongNetworkAddressMessage =
+    'This address is for a different Zcash network';
+
 /// Propose-time failures as the payment-request card states them.
 ///
 /// The card is a pre-send consent surface: nothing has been broadcast, it

@@ -77,9 +77,19 @@ void main() {
       final senderAccountUuid = await _accountUuidAtOrder(0);
       final receiverAccountUuid = await _accountUuidAtOrder(1);
 
-      final validation = await rust_sync.validateAddress(address: _texAddress);
+      final validation = await rust_sync.validateAddress(
+        address: _texAddress,
+        network: _network,
+      );
       expect(validation.isValid, isTrue);
       expect(validation.addressType, 'tex');
+      // The same address on the wrong network is well-formed but refused.
+      final mainnetTex = await rust_sync.validateAddress(
+        address: 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte',
+        network: _network,
+      );
+      expect(mainnetTex.isValid, isFalse);
+      expect(mainnetTex.wrongNetwork, isTrue);
       expect(_texAddress, startsWith('texregtest1'));
       _log('validated receiver TEX address $_texAddress');
 

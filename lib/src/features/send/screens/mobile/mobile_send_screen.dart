@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -107,6 +108,7 @@ class _ReviewRecipientPresentation {
 typedef MobileSendAddressValidator =
     Future<rust_sync.AddressValidationResult> Function({
       required String address,
+      required String network,
     });
 
 typedef MobileSendFeeEstimator =
@@ -465,6 +467,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   // Recipient state.
   String _addressType = '';
+
+  /// True when the last validation refused the address only because it belongs
+  /// to another Zcash network. `_addressType` stays `'invalid'` so every gate
+  /// that already refuses bad addresses keeps refusing this one; the flag only
+  /// changes the sentence under the field.
+  bool _addressWrongNetwork = false;
   String? _contactLabel;
   String? _contactPictureId;
   int _addressSeq = 0;
@@ -662,17 +670,24 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final seq = ++_addressSeq;
     final address = _addressController.text.trim();
     if (address.isEmpty) {
-      if (mounted && seq == _addressSeq) setState(() => _addressType = '');
+      if (mounted && seq == _addressSeq) {
+        setState(() {
+          _addressType = '';
+          _addressWrongNetwork = false;
+        });
+      }
       return;
     }
     try {
       final result =
           await (widget.validateAddress ?? rust_sync.validateAddress)(
             address: address,
+            network: kZcashDefaultNetworkName,
           );
       if (!mounted || seq != _addressSeq) return;
       setState(() {
         _addressType = result.isValid ? result.addressType : 'invalid';
+        _addressWrongNetwork = result.wrongNetwork;
         _maybeFallBackToRecipientStep();
       });
     } catch (e) {
@@ -680,6 +695,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       if (!mounted || seq != _addressSeq) return;
       setState(() {
         _addressType = 'error';
+        _addressWrongNetwork = false;
         _maybeFallBackToRecipientStep();
       });
     }
@@ -713,6 +729,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _contactPictureId = null;
       }
       _addressType = '';
+      _addressWrongNetwork = false;
       _invalidateReviewFeeQuote();
       _clearMaxMode();
     });
@@ -2243,7 +2260,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (showError) {
       line = Text(
         _addressType == 'invalid'
-            ? 'Invalid address'
+            // A wrong-network address is well-formed, so "Invalid address"
+            // would send the user hunting for a typo that is not there.
+            ? (_addressWrongNetwork
+                  ? kWrongNetworkAddressMessage
+                  : 'Invalid address')
             : 'Address validation failed',
         style: AppTypography.labelLarge.copyWith(
           color: colors.text.destructive,

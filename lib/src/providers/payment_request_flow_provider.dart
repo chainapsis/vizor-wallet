@@ -248,10 +248,15 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
             proposal: proposal,
           ),
         );
-      case PaymentRequestPrecheckInvalidAddress():
+      case PaymentRequestPrecheckInvalidAddress(:final message):
         _publish(
           live.copyWith(
-            view: live.view.copyWithStatus(PaymentRequestStatus.invalidAddress),
+            view: live.view.copyWithStatus(
+              PaymentRequestStatus.invalidAddress,
+              // Null keeps the status's own default copy; the pre-check only
+              // supplies one when it can say more than "bad address".
+              statusMessage: message,
+            ),
           ),
         );
       case PaymentRequestPrecheckInsufficientFunds(:final spendableText):

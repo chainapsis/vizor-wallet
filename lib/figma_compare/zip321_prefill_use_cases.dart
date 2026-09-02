@@ -228,19 +228,23 @@ class _MobileSendPrefillHarness extends StatelessWidget {
 
 Future<rust_sync.AddressValidationResult> _captureValidateAddress({
   required String address,
+  required String network,
 }) async {
   return const rust_sync.AddressValidationResult(
     isValid: true,
     addressType: 'unified',
+    wrongNetwork: false,
   );
 }
 
 Future<rust_sync.AddressValidationResult> _captureRejectAddress({
   required String address,
+  required String network,
 }) async {
   return const rust_sync.AddressValidationResult(
     isValid: false,
     addressType: '',
+    wrongNetwork: false,
   );
 }
 
@@ -267,10 +271,12 @@ class _CaptureRustApi implements RustLibApi {
   @override
   Future<rust_sync.AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) async {
     return const rust_sync.AddressValidationResult(
       isValid: true,
       addressType: 'unified',
+      wrongNetwork: false,
     );
   }
 

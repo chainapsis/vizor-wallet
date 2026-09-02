@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -975,6 +976,62 @@ void main() {
     expect(rustApi.proposeSendCalls, 0);
   });
 
+  testWidgets('an address for another network says so, and blocks review', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      _editableIn('send_address_field'),
+      _otherNetworkAddress,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      rustApi.lastValidateNetwork,
+      kZcashDefaultNetworkName,
+      reason: 'validation has to be asked about the network we actually pay on',
+    );
+    expect(find.text(kWrongNetworkAddressMessage), findsOneWidget);
+    expect(
+      find.text('Invalid address'),
+      findsNothing,
+      reason: 'the address is well-formed, so "invalid" would misdirect',
+    );
+
+    await tester.enterText(_editableIn('send_amount_field'), '0.5');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      rustApi.proposeSendCalls,
+      0,
+      reason: 'review stays gated exactly as for any unusable address',
+    );
+  });
+
+  testWidgets('a malformed address keeps the plain invalid copy', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      _editableIn('send_address_field'),
+      _malformedAddress,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid address'), findsOneWidget);
+    expect(find.text(kWrongNetworkAddressMessage), findsNothing);
+  });
+
   testWidgets('fee-specific balance error copy is preserved', (tester) async {
     await _setDesktopViewport(tester);
 
@@ -1511,6 +1568,7 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
 
 class _RustApiFake implements RustLibApi {
   int proposeSendCalls = 0;
+  String? lastValidateNetwork;
   int estimateSendMaxCalls = 0;
   String? lastProposeToAddress;
   String? lastProposeMemo;
@@ -1519,6 +1577,7 @@ class _RustApiFake implements RustLibApi {
   String? lastEstimateSendMaxMemo;
 
   void reset() {
+    lastValidateNetwork = null;
     proposeSendCalls = 0;
     estimateSendMaxCalls = 0;
     lastProposeToAddress = null;
@@ -1531,17 +1590,42 @@ class _RustApiFake implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) async {
+    lastValidateNetwork = network;
+    if (address == _otherNetworkAddress) {
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: 'unified',
+        wrongNetwork: true,
+      );
+    }
+    if (address == _malformedAddress) {
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: 'invalid',
+        wrongNetwork: false,
+      );
+    }
     if (address == _texAddress) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex');
+      return const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      );
     }
     if (address == _transparentAddress) {
       return const AddressValidationResult(
         isValid: true,
         addressType: 'transparent',
+        wrongNetwork: false,
       );
     }
-    return const AddressValidationResult(isValid: true, addressType: 'unified');
+    return const AddressValidationResult(
+      isValid: true,
+      addressType: 'unified',
+      wrongNetwork: false,
+    );
   }
 
   @override
@@ -1603,3 +1687,9 @@ const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+
+/// A real address that this build cannot pay because it belongs to another
+/// Zcash network — Rust reports it as not-valid plus `wrongNetwork`.
+const _otherNetworkAddress =
+    'utest1testnetshieldedaddress0000000000000000000000000000000000000000000';
+const _malformedAddress = 'not-an-address';

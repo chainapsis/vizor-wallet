@@ -209,8 +209,18 @@ Future<BigInt> rewindToHeight({
   height: height,
 );
 
-Future<AddressValidationResult> validateAddress({required String address}) =>
-    RustLib.instance.api.crateApiSyncValidateAddress(address: address);
+/// Validate a recipient address against the network this build talks to.
+///
+/// `network` is the usual `"main"` / `"test"` / `"regtest"` name; an unknown
+/// name is a programming error and comes back as an `Err`, not as an invalid
+/// address.
+Future<AddressValidationResult> validateAddress({
+  required String address,
+  required String network,
+}) => RustLib.instance.api.crateApiSyncValidateAddress(
+  address: address,
+  network: network,
+);
 
 /// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
 Future<ProposalResult> proposeSend({
@@ -1065,17 +1075,27 @@ Future<ExtractAndBroadcastPcztResult> extractAndBroadcastPczt({
   outputParamsPath: outputParamsPath,
 );
 
+/// Flat address-validation result for the Dart side.
+///
+/// `wrong_network` marks the one case where `is_valid` is false but the input
+/// is still a real Zcash address: it decoded fine, and `address_type` carries
+/// the kind it decoded to, but its encoding belongs to a network other than
+/// the one this build talks to. For input that is not an address we can send
+/// to at all, `address_type` is `"invalid"` and `wrong_network` is false.
 class AddressValidationResult {
   final bool isValid;
   final String addressType;
+  final bool wrongNetwork;
 
   const AddressValidationResult({
     required this.isValid,
     required this.addressType,
+    required this.wrongNetwork,
   });
 
   @override
-  int get hashCode => isValid.hashCode ^ addressType.hashCode;
+  int get hashCode =>
+      isValid.hashCode ^ addressType.hashCode ^ wrongNetwork.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1083,7 +1103,8 @@ class AddressValidationResult {
       other is AddressValidationResult &&
           runtimeType == other.runtimeType &&
           isValid == other.isValid &&
-          addressType == other.addressType;
+          addressType == other.addressType &&
+          wrongNetwork == other.wrongNetwork;
 }
 
 /// Event emitted by the mempool observer when a wallet-relevant

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
@@ -10,6 +11,7 @@ class FakeSendApi {
   FakeSendApi({
     this.addressType = 'unified',
     this.addressIsValid = true,
+    this.addressWrongNetwork = false,
     this.validateThrows,
     this.proposeThrows,
     this.feeZatoshi,
@@ -18,6 +20,10 @@ class FakeSendApi {
 
   String addressType;
   bool addressIsValid;
+
+  /// Validation refused the address only because it belongs to another
+  /// network. Implies [addressIsValid] false, the way Rust reports it.
+  bool addressWrongNetwork;
   Object? validateThrows;
   Object? proposeThrows;
   BigInt? feeZatoshi;
@@ -28,19 +34,23 @@ class FakeSendApi {
 
   var validateCalls = 0;
   var proposeCalls = 0;
+  String? lastValidatedNetwork;
   final discarded = <BigInt>[];
   String? lastProposedMemo;
   String? lastRequestedBy;
 
   Future<rust_sync.AddressValidationResult> validateAddress({
     required String address,
+    required String network,
   }) async {
     validateCalls++;
+    lastValidatedNetwork = network;
     final failure = validateThrows;
     if (failure != null) throw failure;
     return rust_sync.AddressValidationResult(
-      isValid: addressIsValid,
+      isValid: addressIsValid && !addressWrongNetwork,
       addressType: addressType,
+      wrongNetwork: addressWrongNetwork,
     );
   }
 
@@ -158,8 +168,36 @@ void main() {
 
   test('an unpayable address never reaches the proposal', () async {
     final api = FakeSendApi(addressIsValid: false);
-    expect(await run(api), isA<PaymentRequestPrecheckInvalidAddress>());
+    final result = await run(api);
+    expect(result, isA<PaymentRequestPrecheckInvalidAddress>());
+    expect(
+      (result as PaymentRequestPrecheckInvalidAddress).message,
+      isNull,
+      reason: 'a malformed address keeps the card default copy',
+    );
     expect(api.proposeCalls, 0);
+  });
+
+  test('validation runs against the network this build talks to', () async {
+    final api = FakeSendApi();
+    await run(api);
+    expect(api.lastValidatedNetwork, kZcashDefaultNetworkName);
+  });
+
+  test('an address for another network says so instead of "invalid"', () async {
+    final api = FakeSendApi(addressWrongNetwork: true);
+    final result = await run(api);
+
+    expect(result, isA<PaymentRequestPrecheckInvalidAddress>());
+    expect(
+      (result as PaymentRequestPrecheckInvalidAddress).message,
+      kWrongNetworkAddressMessage,
+    );
+    expect(
+      api.proposeCalls,
+      0,
+      reason: 'the address is unpayable here, so nothing is locked',
+    );
   });
 
   test('a validation call that throws is an invalid address', () async {

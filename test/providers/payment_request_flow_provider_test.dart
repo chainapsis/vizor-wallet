@@ -18,10 +18,18 @@ import '../fakes/fake_sync_notifier.dart';
 /// Rust stand-in whose proposal is held open until the test releases it, so
 /// "checking" is an observable state rather than a race.
 class _FakeSendApi {
-  _FakeSendApi({this.addressIsValid = true, this.addressType = 'unified'});
+  _FakeSendApi({
+    this.addressIsValid = true,
+    this.addressType = 'unified',
+    this.addressWrongNetwork = false,
+  });
 
   bool addressIsValid;
   String addressType;
+
+  /// The address is well-formed but belongs to another Zcash network, which
+  /// Rust reports as not-valid plus a `wrongNetwork` flag.
+  bool addressWrongNetwork;
   Object? proposeThrows;
   Completer<void>? gate;
   var nextProposalId = 1;
@@ -30,11 +38,13 @@ class _FakeSendApi {
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
     spendableIsAuthoritativeNow: () => true,
-    validateAddress: ({required String address}) async =>
-        rust_sync.AddressValidationResult(
-          isValid: addressIsValid,
-          addressType: addressType,
-        ),
+    validateAddress:
+        ({required String address, required String network}) async =>
+            rust_sync.AddressValidationResult(
+              isValid: addressIsValid && !addressWrongNetwork,
+              addressType: addressType,
+              wrongNetwork: addressWrongNetwork,
+            ),
     proposeTransfer:
         ({
           required String accountUuid,
@@ -199,8 +209,31 @@ void main() {
 
     final state = container.read(paymentRequestFlowProvider)!;
     expect(state.view.status, PaymentRequestStatus.invalidAddress);
+    expect(
+      state.view.resolvedStatusMessage,
+      "Recipient address doesn't look right",
+      reason: 'a malformed address keeps the status default copy',
+    );
     expect(state.canReview, isFalse);
   });
+
+  test(
+    'an address for another network publishes its own status message',
+    () async {
+      final api = _FakeSendApi(addressWrongNetwork: true);
+      final container = makeContainer(api);
+
+      container
+          .read(paymentRequestFlowProvider.notifier)
+          .present(request('utest1a'), source: PaymentRequestSource.link);
+      await pumpEventQueue();
+
+      final state = container.read(paymentRequestFlowProvider)!;
+      expect(state.view.status, PaymentRequestStatus.invalidAddress);
+      expect(state.view.resolvedStatusMessage, kWrongNetworkAddressMessage);
+      expect(state.canReview, isFalse);
+    },
+  );
 
   test('a check that could not complete is failed, not invalid '
       'address', () async {

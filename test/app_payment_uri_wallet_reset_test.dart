@@ -285,8 +285,12 @@ void main() {
 /// the card's arrival without a Rust bridge.
 PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
   spendableIsAuthoritativeNow: () => true,
-  validateAddress: ({required String address}) async =>
-      rust_sync.AddressValidationResult(isValid: true, addressType: 'unified'),
+  validateAddress: ({required String address, required String network}) async =>
+      rust_sync.AddressValidationResult(
+        isValid: true,
+        addressType: 'unified',
+        wrongNetwork: false,
+      ),
   proposeTransfer:
       ({
         required String accountUuid,

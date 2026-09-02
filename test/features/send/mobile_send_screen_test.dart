@@ -39,9 +39,15 @@ const _shieldedAddress =
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
+
+/// A real address that this build cannot pay because it belongs to another
+/// Zcash network — Rust reports it as not-valid plus `wrongNetwork`.
+const _otherNetworkAddress =
+    'utest1testnetshieldedaddress00000000000000000000000000000000000000';
 const _otherShieldedAddress =
     'u1othershieldedaddress0000000000000000000000000000000000000000000000';
 
+String? _lastValidateNetwork;
 var _proposeSendSucceeds = false;
 Completer<ProposalResult>? _proposeSendCompleter;
 BigInt _proposalFeeZatoshi = BigInt.from(10000);
@@ -65,20 +71,42 @@ class _RustApiFake implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) async {
+    _lastValidateNetwork = network;
     if (address == _invalidAddress) {
-      return const AddressValidationResult(isValid: false, addressType: '');
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: '',
+        wrongNetwork: false,
+      );
+    }
+    if (address == _otherNetworkAddress) {
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: 'unified',
+        wrongNetwork: true,
+      );
     }
     if (address.startsWith('tex')) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex');
+      return const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      );
     }
     if (address.startsWith('t1')) {
       return const AddressValidationResult(
         isValid: true,
         addressType: 'transparent',
+        wrongNetwork: false,
       );
     }
-    return const AddressValidationResult(isValid: true, addressType: 'unified');
+    return const AddressValidationResult(
+      isValid: true,
+      addressType: 'unified',
+      wrongNetwork: false,
+    );
   }
 
   @override
@@ -754,7 +782,8 @@ void main() {
     await tester.pumpWidget(
       _app(
         initialRecipient: _texAddress,
-        validateAddress: ({required address}) => validation.future,
+        validateAddress: ({required address, required network}) =>
+            validation.future,
         accountState: const AccountState(
           accounts: [
             AccountInfo(
@@ -781,7 +810,11 @@ void main() {
     expect(find.text('Enter Amount'), findsNothing);
 
     validation.complete(
-      const AddressValidationResult(isValid: true, addressType: 'tex'),
+      const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -1019,7 +1052,7 @@ void main() {
       _app(
         initialRecipient: _shieldedAddress,
         initialAmount: '1.5',
-        validateAddress: ({required address}) =>
+        validateAddress: ({required address, required network}) =>
             Future<AddressValidationResult>.error(
               StateError('validation unavailable'),
             ),
@@ -1516,6 +1549,40 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
     await tester.pumpAndSettle();
     expect(find.text('Enter Amount'), findsOneWidget);
+  });
+
+  testWidgets('an address for another network says so and gates continue', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _otherNetworkAddress);
+
+    expect(
+      _lastValidateNetwork,
+      kZcashDefaultNetworkName,
+      reason: 'validation has to be asked about the network we actually pay on',
+    );
+    expect(find.text(kWrongNetworkAddressMessage), findsOneWidget);
+    expect(
+      find.text('Invalid address'),
+      findsNothing,
+      reason: 'the address is well-formed, so "invalid" would misdirect',
+    );
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_send_continue')))
+          .onPressed,
+      isNull,
+      reason: 'continue stays gated exactly as for any unusable address',
+    );
+
+    await _enterAddress(tester, _shieldedAddress);
+    expect(find.text(kWrongNetworkAddressMessage), findsNothing);
   });
 
   testWidgets('recipient step names a matched saved contact', (tester) async {
@@ -2632,7 +2699,8 @@ void main() {
         initialAmountReady: true,
         initialFeeZatoshi: BigInt.from(10000),
         initialMemo: 'shielded memo',
-        validateAddress: ({required address}) => validation.future,
+        validateAddress: ({required address, required network}) =>
+            validation.future,
         // The amount step's price placeholder shimmers forever while the live
         // ZEC/USD price is null, which would hang pumpAndSettle.
         zecUsdPriceProvider:
@@ -2654,7 +2722,11 @@ void main() {
     expect(find.text('Review Send'), findsNothing);
 
     validation.complete(
-      const AddressValidationResult(isValid: true, addressType: 'unified'),
+      const AddressValidationResult(
+        isValid: true,
+        addressType: 'unified',
+        wrongNetwork: false,
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -3086,8 +3158,12 @@ Future<BigInt> _fixedFeeEstimator({
 /// payment request lands on the card's normal state without touching Rust.
 PaymentRequestPrecheck _readyPaymentRequestPrecheck() => PaymentRequestPrecheck(
   spendableIsAuthoritativeNow: () => true,
-  validateAddress: ({required String address}) async =>
-      const AddressValidationResult(isValid: true, addressType: 'unified'),
+  validateAddress: ({required String address, required String network}) async =>
+      const AddressValidationResult(
+        isValid: true,
+        addressType: 'unified',
+        wrongNetwork: false,
+      ),
   proposeTransfer:
       ({
         required String accountUuid,

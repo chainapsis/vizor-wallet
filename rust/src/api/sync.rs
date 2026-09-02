@@ -433,9 +433,17 @@ pub struct BlockMetaInfo {
     pub orchard_actions_count: u32,
 }
 
+/// Flat address-validation result for the Dart side.
+///
+/// `wrong_network` marks the one case where `is_valid` is false but the input
+/// is still a real Zcash address: it decoded fine, and `address_type` carries
+/// the kind it decoded to, but its encoding belongs to a network other than
+/// the one this build talks to. For input that is not an address we can send
+/// to at all, `address_type` is `"invalid"` and `wrong_network` is false.
 pub struct AddressValidationResult {
     pub is_valid: bool,
     pub address_type: String,
+    pub wrong_network: bool,
 }
 
 // ======================== Panic Guard ========================
@@ -671,16 +679,38 @@ pub fn rewind_to_height(db_path: String, network: String, height: u64) -> Result
 
 // ======================== Address Validation ========================
 
-pub fn validate_address(address: String) -> Result<AddressValidationResult, String> {
-    catch(|| match wallet_sync::validate_address(&address) {
-        Ok(addr_type) => Ok(AddressValidationResult {
-            is_valid: true,
-            address_type: addr_type,
-        }),
-        Err(_) => Ok(AddressValidationResult {
-            is_valid: false,
-            address_type: "invalid".into(),
-        }),
+/// Validate a recipient address against the network this build talks to.
+///
+/// `network` is the usual `"main"` / `"test"` / `"regtest"` name; an unknown
+/// name is a programming error and comes back as an `Err`, not as an invalid
+/// address.
+pub fn validate_address(
+    address: String,
+    network: String,
+) -> Result<AddressValidationResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        match wallet_sync::validate_address(&address, network) {
+            Ok(wallet_sync::AddressValidation::Valid { address_type }) => {
+                Ok(AddressValidationResult {
+                    is_valid: true,
+                    address_type,
+                    wrong_network: false,
+                })
+            }
+            Ok(wallet_sync::AddressValidation::WrongNetwork { address_type }) => {
+                Ok(AddressValidationResult {
+                    is_valid: false,
+                    address_type,
+                    wrong_network: true,
+                })
+            }
+            Err(_) => Ok(AddressValidationResult {
+                is_valid: false,
+                address_type: "invalid".into(),
+                wrong_network: false,
+            }),
+        }
     })
 }
 

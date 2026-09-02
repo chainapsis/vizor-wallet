@@ -17,6 +17,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -28,6 +29,7 @@ import 'send_flow.dart';
 typedef PaymentRequestValidateAddress =
     Future<rust_sync.AddressValidationResult> Function({
       required String address,
+      required String network,
     });
 
 /// Creates the proposal. Matches the shape of [proposeSendTransferWith] minus
@@ -131,7 +133,14 @@ final class PaymentRequestPrecheckReady extends PaymentRequestPrecheckResult {
 /// The link carries an address this wallet cannot pay.
 final class PaymentRequestPrecheckInvalidAddress
     extends PaymentRequestPrecheckResult {
-  const PaymentRequestPrecheckInvalidAddress();
+  const PaymentRequestPrecheckInvalidAddress({this.message});
+
+  /// Overrides the card's default "Recipient address doesn't look right".
+  ///
+  /// Set only when the wallet knows something more useful than "bad address" —
+  /// today that is [kWrongNetworkAddressMessage], where the address is real
+  /// but belongs to another network. Null keeps the default copy.
+  final String? message;
 }
 
 /// The requested amount is above what the account can spend.
@@ -201,9 +210,17 @@ class PaymentRequestPrecheck {
 
     final String addressType;
     try {
-      final validation = await validateAddress(address: address);
+      final validation = await validateAddress(
+        address: address,
+        network: kZcashDefaultNetworkName,
+      );
       if (!validation.isValid) {
-        return const PaymentRequestPrecheckInvalidAddress();
+        // A well-formed address for another network is still unpayable, but
+        // it is not a malformed one — say which, so the user is not hunting
+        // for a typo that is not there.
+        return PaymentRequestPrecheckInvalidAddress(
+          message: validation.wrongNetwork ? kWrongNetworkAddressMessage : null,
+        );
       }
       addressType = validation.addressType;
     } catch (e) {
@@ -338,9 +355,9 @@ class PaymentRequestPrecheck {
         memoDropped: memoDropped,
       );
     }
-    // `validate_address` is format-only, so an address that is well-formed
-    // for another network passes the card's own check and is refused first
-    // by the proposal. The card already has a status for that.
+    // Wrong-network addresses are refused up front by the validation above;
+    // this maps the remaining propose-time address failures (an address the
+    // transaction builder rejects) onto the card's invalid-address status.
     if (lower.contains('decoding the address from a payment request') ||
         lower.contains('bad address')) {
       return const PaymentRequestPrecheckInvalidAddress();

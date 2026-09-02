@@ -51,8 +51,7 @@ pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, create_tex_pczts_from_proposal,
     discard_proposal, extract_and_broadcast_pczt, prepare_pczt_for_keystone_batch,
-    redact_pczt_for_signer, retain_proposal_lock_until_expiry,
-    start_orchard_proving_key_warmup,
+    redact_pczt_for_signer, retain_proposal_lock_until_expiry, start_orchard_proving_key_warmup,
     store_and_broadcast_pczts_with_compact_signatures_for_proposal,
     store_and_broadcast_signed_pczts_for_proposal, ExtractAndBroadcastPcztResult,
     KeystoneBatchPczt, StoreAndBroadcastPcztsResult, TexPcztPair,
@@ -467,20 +466,61 @@ pub fn rewind_to_height(db_path: &str, network: WalletNetwork, height: u64) -> R
 
 // ======================== Address Validation ========================
 
-pub fn validate_address(address: &str) -> Result<String, String> {
-    use zcash_address::ZcashAddress;
+/// What checking a user-entered address against the wallet's network found.
+///
+/// The third outcome — the string is not an address this wallet can send to at
+/// all — is the `Err` of [`validate_address`], not a variant here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AddressValidation {
+    /// Parses, is a kind we can send to, and is encoded for this network.
+    Valid { address_type: String },
+    /// Parses and is a kind we can send to, but carries another network's
+    /// encoding — a `utest1…` pasted into a mainnet wallet, say.
+    ///
+    /// `address_type` is the kind the string decodes to, not `"invalid"`: the
+    /// address is well-formed, so the caller can say *why* it is refused.
+    WrongNetwork { address_type: String },
+}
+
+/// Validate a recipient address for `network`.
+///
+/// Network matching is delegated entirely to
+/// [`ZcashAddress::convert_if_network`], including its testnet/regtest
+/// tolerance: transparent (and Sprout) encodings share one prefix across
+/// testnet and regtest, so a `tm…` address is accepted while running on
+/// regtest. Sapling, unified and TEX encodings have distinct per-network
+/// prefixes and must match exactly. Nothing here adds prefix logic of its own.
+pub fn validate_address(
+    address: &str,
+    network: WalletNetwork,
+) -> Result<AddressValidation, String> {
+    use zcash_address::{ConversionError, ZcashAddress};
     use zcash_keys::address::Address;
+    use zcash_protocol::consensus::Parameters;
 
-    let addr: Address = ZcashAddress::try_from_encoded(address)
+    let parsed = ZcashAddress::try_from_encoded(address).map_err(|e| format!("Invalid: {e}"))?;
+
+    // Network-agnostic first. This is the check that says whether the string
+    // is a kind of address we can send to at all (it is what rejects Sprout),
+    // and it produces the label we report even when the network is wrong.
+    let address_type = match parsed
+        .clone()
+        .convert::<Address>()
         .map_err(|e| format!("Invalid: {e}"))?
-        .convert()
-        .map_err(|e| format!("Invalid: {e}"))?;
+    {
+        Address::Unified(_) => "unified",
+        Address::Sapling(_) => "sapling",
+        Address::Transparent(_) => "transparent",
+        Address::Tex(_) => "tex",
+    }
+    .to_string();
 
-    match addr {
-        Address::Unified(_) => Ok("unified".into()),
-        Address::Sapling(_) => Ok("sapling".into()),
-        Address::Transparent(_) => Ok("transparent".into()),
-        Address::Tex(_) => Ok("tex".into()),
+    match parsed.convert_if_network::<Address>(network.network_type()) {
+        Ok(_) => Ok(AddressValidation::Valid { address_type }),
+        Err(ConversionError::IncorrectNetwork { .. }) => {
+            Ok(AddressValidation::WrongNetwork { address_type })
+        }
+        Err(e) => Err(format!("Invalid: {e}")),
     }
 }
 
@@ -819,21 +859,113 @@ mod tests {
         COUNTER.fetch_add(1, Ordering::Relaxed)
     }
 
-    #[test]
-    fn validate_address_classifies_tex_addresses() {
+    /// A real mainnet unified address (same vector the account-derivation
+    /// tests in `api::wallet` use).
+    const MAINNET_UA: &str = "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfg\
+                              ram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3ne\
+                              m8wwyen732wemtxcg6lxr4n2agm437m2";
+
+    /// A real regtest unified address (the vector `tests/regtest_import.rs`
+    /// imports).
+    const REGTEST_UA: &str = "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0\
+                              l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vgl\
+                              m7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn";
+
+    fn assert_valid(address: &str, network: WalletNetwork, expected_type: &str) {
         assert_eq!(
-            validate_address("tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte").unwrap(),
-            "tex"
+            validate_address(address, network).unwrap(),
+            AddressValidation::Valid {
+                address_type: expected_type.to_string()
+            }
         );
+    }
+
+    fn assert_wrong_network(address: &str, network: WalletNetwork, expected_type: &str) {
         assert_eq!(
-            validate_address("textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy").unwrap(),
-            "tex"
+            validate_address(address, network).unwrap(),
+            AddressValidation::WrongNetwork {
+                address_type: expected_type.to_string()
+            }
         );
     }
 
     #[test]
+    fn validate_address_classifies_tex_addresses() {
+        use zcash_address::ToAddress;
+
+        assert_valid(
+            "tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte",
+            WalletNetwork::Main,
+            "tex",
+        );
+        assert_valid(
+            "textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy",
+            WalletNetwork::Test,
+            "tex",
+        );
+        // TEX has its own regtest encoding and no testnet-on-regtest
+        // tolerance, unlike transparent P2PKH/P2SH.
+        let tex_regtest = zcash_address::ZcashAddress::from_tex(
+            zcash_protocol::consensus::NetworkType::Regtest,
+            [0; 20],
+        )
+        .to_string();
+        assert_valid(&tex_regtest, WalletNetwork::Regtest, "tex");
+        assert_wrong_network(
+            "textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy",
+            WalletNetwork::Regtest,
+            "tex",
+        );
+    }
+
+    #[test]
+    fn validate_address_accepts_unified_addresses_on_their_own_network() {
+        assert_valid(MAINNET_UA, WalletNetwork::Main, "unified");
+        assert_valid(REGTEST_UA, WalletNetwork::Regtest, "unified");
+    }
+
+    #[test]
+    fn validate_address_reports_wrong_network_for_other_networks() {
+        // The bug this exists for: a mainnet build used to call these valid,
+        // and the send only failed later, at proposal time.
+        assert_wrong_network(MAINNET_UA, WalletNetwork::Test, "unified");
+        assert_wrong_network(MAINNET_UA, WalletNetwork::Regtest, "unified");
+        assert_wrong_network(REGTEST_UA, WalletNetwork::Main, "unified");
+        assert_wrong_network(
+            "tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte",
+            WalletNetwork::Test,
+            "tex",
+        );
+        assert_wrong_network(
+            "textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy",
+            WalletNetwork::Main,
+            "tex",
+        );
+    }
+
+    /// Testnet and regtest share one transparent prefix, so `convert_if_network`
+    /// deliberately accepts a `tm…` address while running on regtest. We keep
+    /// that tolerance rather than adding prefix rules of our own.
+    #[test]
+    fn validate_address_keeps_transparent_testnet_regtest_tolerance() {
+        use zcash_address::ToAddress;
+
+        let testnet_p2pkh = zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::Test,
+            [0; 20],
+        )
+        .to_string();
+
+        assert_valid(&testnet_p2pkh, WalletNetwork::Test, "transparent");
+        assert_valid(&testnet_p2pkh, WalletNetwork::Regtest, "transparent");
+        assert_wrong_network(&testnet_p2pkh, WalletNetwork::Main, "transparent");
+    }
+
+    #[test]
     fn validate_address_rejects_invalid_address() {
-        assert!(validate_address("not-an-address").is_err());
+        assert!(validate_address("not-an-address", WalletNetwork::Main).is_err());
+        assert!(validate_address("", WalletNetwork::Main).is_err());
+        assert!(validate_address(MAINNET_UA.trim_end_matches('2'), WalletNetwork::Main).is_err());
     }
 
     #[test]
@@ -846,7 +978,9 @@ mod tests {
         )
         .to_string();
 
-        assert!(validate_address(&sprout).is_err());
+        // Sprout is unsupported on every network, including the one it names.
+        assert!(validate_address(&sprout, WalletNetwork::Main).is_err());
+        assert!(validate_address(&sprout, WalletNetwork::Test).is_err());
     }
 
     #[test]
