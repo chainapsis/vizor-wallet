@@ -46,6 +46,14 @@ const kPaymentUriReplacedMessage =
     'Only the newest payment link was kept. Open the earlier one again to '
     'pay it.';
 
+/// Shown when a parked link outlived [kPaymentUriParkTtl] before it could be
+/// delivered — most often a link tapped while locked and unlocked much later.
+///
+/// The user acted on that link deliberately, so the drop is stated rather than
+/// silent, and the link itself is still good: opening it again pays it.
+const kPaymentUriExpiredMessage =
+    'That payment link timed out. Open it again to pay.';
+
 /// Shown when there is no wallet yet and the user is not already inside a
 /// setup flow.
 const kPaymentUriNoWalletMessage =
@@ -94,9 +102,6 @@ enum PaymentUriDrainAction {
   /// Leave the prefill parked and do nothing. Something else (the unlock
   /// screen, a later wallet emission) still owns it.
   wait,
-
-  /// Drop the prefill without telling the user.
-  dropSilently,
 
   /// Drop the prefill and show [PaymentUriDrainDecision.message].
   dropWithMessage,
@@ -170,7 +175,7 @@ bool paymentUriShouldDropOnWalletTransition({
 /// | condition                                   | action                    |
 /// |---------------------------------------------|---------------------------|
 /// | nothing parked                              | wait                      |
-/// | parked longer than [kPaymentUriParkTtl]      | drop silently             |
+/// | parked longer than [kPaymentUriParkTtl]      | drop + expired msg        |
 /// | blocking storage failure / wallet error      | drop + unavailable msg    |
 /// | wallet still loading                         | wait                      |
 /// | `/welcome`, no wallet                        | drop + no-wallet msg      |
@@ -203,10 +208,14 @@ PaymentUriDrainDecision decidePaymentUriDrain({
 }) {
   if (!hasParkedPrefill) return _waitDecision;
 
-  // Age first: a link that has outlived its park window is dropped without a
-  // message, whatever screen the app happens to be on.
+  // Age first, whatever screen the app happens to be on. The user opened this
+  // link on purpose, so the drop is said out loud: without it the link simply
+  // never arrives and nothing ever explains why.
   if (parkedFor != null && parkedFor > kPaymentUriParkTtl) {
-    return const PaymentUriDrainDecision(PaymentUriDrainAction.dropSilently);
+    return const PaymentUriDrainDecision(
+      PaymentUriDrainAction.dropWithMessage,
+      message: kPaymentUriExpiredMessage,
+    );
   }
 
   // A bootstrap retry rebuilds the ProviderScope and takes the parked prefill

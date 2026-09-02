@@ -39,12 +39,19 @@ void main() {
   });
 
   group('stale prefill', () {
-    test('drops a prefill parked longer than the TTL, silently', () {
+    test('drops a prefill parked longer than the TTL, and says so', () {
       final decision = decide(
         parkedFor: kPaymentUriParkTtl + const Duration(seconds: 1),
       );
-      expect(decision.action, PaymentUriDrainAction.dropSilently);
-      expect(decision.message, isNull);
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriExpiredMessage);
+    });
+
+    test('the expired notice says the link can just be opened again', () {
+      expect(
+        kPaymentUriExpiredMessage,
+        'That payment link timed out. Open it again to pay.',
+      );
     });
 
     test('delivers a prefill parked for exactly the TTL', () {
@@ -55,15 +62,31 @@ void main() {
     });
 
     test('age outranks every other row, including a busy surface', () {
-      expect(
-        decide(
-          parkedFor: kPaymentUriParkTtl + const Duration(minutes: 1),
-          hasBusySurface: true,
-          hasWallet: false,
-          isUnlocked: false,
-        ).action,
-        PaymentUriDrainAction.dropSilently,
+      final decision = decide(
+        parkedFor: kPaymentUriParkTtl + const Duration(minutes: 1),
+        hasBusySurface: true,
+        hasWallet: false,
+        isUnlocked: false,
       );
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriExpiredMessage);
+    });
+
+    test('no drop is silent any more', () {
+      // Every drop the policy can decide carries a message. The TTL row was
+      // the last one that did not, and it is the one following a deliberate
+      // user action, so a silent drop there was the worst place for it.
+      for (final decision in [
+        decide(parkedFor: kPaymentUriParkTtl + const Duration(seconds: 1)),
+        decide(hasBlockingFailure: true),
+        decide(walletHasError: true),
+        decide(matchedLocation: '/welcome', hasWallet: false),
+        decide(matchedLocation: '/import'),
+        decide(sendGatedByMigration: true),
+        decide(hasWallet: false),
+      ]) {
+        expect(decision.message, isNotNull, reason: '$decision');
+      }
     });
   });
 

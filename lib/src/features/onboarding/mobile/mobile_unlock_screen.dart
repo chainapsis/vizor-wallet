@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
+import 'package:flutter/material.dart'
+    show Icon, Icons, Scaffold, ScaffoldMessenger;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/navigation/payment_uri_drain_policy.dart';
+import '../../../core/navigation/payment_uri_notice.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -218,16 +221,25 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         // Claim the payment-URI prefill (parked while locked) only now, after
         // the post-unlock work has succeeded. Claiming earlier would drop the
         // payment if any of the awaits above threw or this screen unmounted.
-        final pendingPrefill = ref
+        final claimed = ref
             .read(paymentUriPrefillProvider.notifier)
             .takeIfFresh();
+        // Captured before the go(): this screen is gone by the time a notice's
+        // post-frame callback runs, the app-level messenger is not.
+        final messenger = ScaffoldMessenger.maybeOf(context);
         context.go('/home');
+        final pendingPrefill = claimed.prefill;
         if (pendingPrefill != null) {
           // The link becomes a card over the wallet the user just unlocked,
           // not a jump into the composer.
           ref
               .read(paymentRequestFlowProvider.notifier)
               .present(pendingPrefill, source: PaymentRequestSource.link);
+        } else if (claimed.expired && messenger != null) {
+          // The link outlived its park window while the user was finding their
+          // passcode. Landing on /home with no card and no word is the one
+          // silent loss of something the user deliberately asked for.
+          showPaymentUriNotice(messenger, kPaymentUriExpiredMessage);
         }
       });
     } catch (e, st) {

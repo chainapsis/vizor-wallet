@@ -17,6 +17,7 @@ import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
 import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
+import 'src/core/navigation/payment_uri_notice.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
@@ -1396,8 +1397,6 @@ class _PaymentUriLinkListenerState
     switch (decision.action) {
       case PaymentUriDrainAction.wait:
         return;
-      case PaymentUriDrainAction.dropSilently:
-        prefillNotifier.clear();
       case PaymentUriDrainAction.dropWithMessage:
         prefillNotifier.clear();
         _showPaymentUriMessage(decision.message!);
@@ -1420,18 +1419,9 @@ class _PaymentUriLinkListenerState
   }
 
   void _showPaymentUriMessage(String message) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      if (messenger == null) return;
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
-      );
-    });
-    // See _schedulePendingDrain: the post-frame callback needs a frame to run
-    // in, and an idle app has none pending.
-    WidgetsBinding.instance.scheduleFrame();
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    showPaymentUriNotice(messenger, message);
   }
 }
 

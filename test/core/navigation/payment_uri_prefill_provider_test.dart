@@ -67,8 +67,67 @@ void main() {
       expect(notifier.take(), first);
       expect(notifier.set(second), isFalse);
 
-      expect(notifier.takeIfFresh(), second);
+      expect(notifier.takeIfFresh().prefill, second);
       expect(notifier.set(first), isFalse);
     },
   );
+
+  // The unlock screens are the only claimant, and they have to tell "nothing
+  // was parked" (say nothing) apart from "a link the user opened sat past its
+  // window" (say so). Both used to come back as a bare null, which is why a
+  // link tapped while locked and unlocked ten minutes later vanished without a
+  // word.
+  group('a stale claim is distinguishable from an empty one', () {
+    test('nothing parked is not an expiry', () {
+      final container = makeContainer();
+      final notifier = container.read(paymentUriPrefillProvider.notifier);
+
+      final claimed = notifier.takeIfFresh();
+      expect(claimed.prefill, isNull);
+      expect(claimed.expired, isFalse);
+    });
+
+    test('a fresh park is handed over and is not an expiry', () {
+      final container = makeContainer();
+      final notifier = container.read(paymentUriPrefillProvider.notifier);
+
+      notifier.set(first);
+      final claimed = notifier.takeIfFresh();
+      expect(claimed.prefill, first);
+      expect(claimed.expired, isFalse);
+    });
+
+    test('a park older than the TTL is withheld and reported as expired', () {
+      final container = makeContainer();
+      final notifier = container.read(paymentUriPrefillProvider.notifier);
+
+      notifier.set(first);
+      notifier.debugAgePark(
+        PaymentUriPrefillNotifier.parkTtl + const Duration(seconds: 1),
+      );
+
+      final claimed = notifier.takeIfFresh();
+      expect(claimed.prefill, isNull);
+      expect(claimed.expired, isTrue);
+      expect(
+        container.read(paymentUriPrefillProvider),
+        isNull,
+        reason: 'a withheld link is still cleared',
+      );
+    });
+
+    test('a park still inside the TTL is handed over', () {
+      final container = makeContainer();
+      final notifier = container.read(paymentUriPrefillProvider.notifier);
+
+      notifier.set(first);
+      notifier.debugAgePark(
+        PaymentUriPrefillNotifier.parkTtl - const Duration(minutes: 1),
+      );
+
+      final claimed = notifier.takeIfFresh();
+      expect(claimed.prefill, first);
+      expect(claimed.expired, isFalse);
+    });
+  });
 }

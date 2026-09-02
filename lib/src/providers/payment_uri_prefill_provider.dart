@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/navigation/payment_uri_drain_policy.dart';
@@ -58,17 +59,35 @@ class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
     return prefill;
   }
 
-  /// Like [take], but returns null (while still clearing) when the parked
-  /// prefill is older than [parkTtl]. The unlock flow uses this so a stale
-  /// parked link is dropped rather than delivered as a payment on an unrelated
-  /// later unlock.
-  SendPrefillArgs? takeIfFresh() {
+  /// Like [take], but withholds a prefill older than [parkTtl] (while still
+  /// clearing it), so a stale parked link is dropped rather than delivered as a
+  /// payment on an unrelated later unlock.
+  ///
+  /// `expired` separates the two ways this returns no prefill: nothing was
+  /// parked at all, or a link the user did open sat past its window. Only the
+  /// second is something to tell them about — the unlock flow shows
+  /// `kPaymentUriExpiredMessage` for it, matching what the drain policy does
+  /// with the same age on every other screen.
+  ({SendPrefillArgs? prefill, bool expired}) takeIfFresh() {
     final prefill = state;
     final parkedAt = _parkedAtUtc;
     clear();
-    if (prefill == null || parkedAt == null) return null;
-    if (DateTime.now().toUtc().difference(parkedAt) > parkTtl) return null;
-    return prefill;
+    if (prefill == null || parkedAt == null) {
+      return (prefill: null, expired: false);
+    }
+    if (DateTime.now().toUtc().difference(parkedAt) > parkTtl) {
+      return (prefill: null, expired: true);
+    }
+    return (prefill: prefill, expired: false);
+  }
+
+  /// Test seam: pretends the parked link arrived [age] ago, so the TTL branch
+  /// can be exercised without a ten-minute wait.
+  @visibleForTesting
+  void debugAgePark(Duration age) {
+    final parkedAt = _parkedAtUtc;
+    if (parkedAt == null) return;
+    _parkedAtUtc = parkedAt.subtract(age);
   }
 }
 
