@@ -2,6 +2,7 @@
 /// summary under it, and the PNG export both form factors hand out.
 library;
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show CircularProgressIndicator;
@@ -23,6 +24,15 @@ const _requestQrInk = Color(0xFF000000);
 /// higher and a camera needs the border back.
 const double _requestQrQuietZoneModules = 4;
 
+/// Smallest side, in logical pixels, a single module may be drawn at.
+///
+/// Two is not an aesthetic floor, it is the renderer's: `PrettyQrSquaresSymbol`
+/// clamps its module density into `[1, moduleDimension / 2]`, which is an
+/// empty range — and an assertion — as soon as a module is under 2px. A memo
+/// pushes a ZIP-321 URI into the high symbol versions, so a request QR pinned
+/// to a fixed side hits that long before the code becomes unscannable.
+const double _requestQrMinModuleSize = 2;
+
 /// A request QR: black square modules on white, with a real quiet zone and no
 /// embedded badge.
 ///
@@ -33,6 +43,10 @@ const double _requestQrQuietZoneModules = 4;
 /// up to 512 bytes of memo, so the same treatment would be asking a stranger's
 /// camera to read a dense code through a hole in the middle of it. Scan
 /// reliability wins here, exactly as it does for the Keystone PCZT codes.
+///
+/// [size] is a floor, not a fixed side: a dense request grows the code up to
+/// the width it is given rather than shrinking its modules below
+/// [_requestQrMinModuleSize]. The surface is square either way.
 class RequestQrSurface extends StatelessWidget {
   const RequestQrSurface({
     required this.data,
@@ -45,7 +59,7 @@ class RequestQrSurface extends StatelessWidget {
   /// amount has been entered.
   final String data;
 
-  /// Side length of the code itself, excluding [padding].
+  /// Smallest side length of the code itself, excluding [padding].
   final double size;
 
   /// White margin drawn around the code, on top of its module quiet zone.
@@ -54,40 +68,72 @@ class RequestQrSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      key: const ValueKey('request_qr_surface'),
-      width: size + padding * 2,
-      height: size + padding * 2,
-      padding: EdgeInsets.all(padding),
-      decoration: BoxDecoration(
-        color: colors.surface.qrCode,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        border: Border.all(color: colors.border.subtle),
-      ),
-      child: data.isEmpty
-          ? Center(
-              child: Text(
-                'QR unavailable',
-                style: AppTypography.bodySmall.copyWith(color: _requestQrInk),
-              ),
-            )
-          : PrettyQrView(
-              qrImage: QrImage(
-                QrCode.fromData(
-                  data: data,
-                  // M is the level the rest of the app scans at, and it keeps
-                  // the symbol a version lower than Q would for the same URI.
-                  errorCorrectLevel: QrErrorCorrectLevel.M,
-                ),
-              ),
-              decoration: const PrettyQrDecoration(
-                quietZone: PrettyQrQuietZone.modules(
-                  _requestQrQuietZoneModules,
-                ),
-                shape: PrettyQrSquaresSymbol(color: _requestQrInk),
-              ),
+    final qrImage = data.isEmpty
+        ? null
+        : QrImage(
+            QrCode.fromData(
+              data: data,
+              // M is the level the rest of the app scans at, and it keeps
+              // the symbol a version lower than Q would for the same URI.
+              errorCorrectLevel: QrErrorCorrectLevel.M,
             ),
+          );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final side = _resolveSide(qrImage, constraints);
+        return Container(
+          key: const ValueKey('request_qr_surface'),
+          width: side + padding * 2,
+          height: side + padding * 2,
+          padding: EdgeInsets.all(padding),
+          decoration: BoxDecoration(
+            color: colors.surface.qrCode,
+            borderRadius: BorderRadius.circular(AppRadii.large),
+            border: Border.all(color: colors.border.subtle),
+          ),
+          child: qrImage == null
+              ? Center(
+                  child: Text(
+                    'QR unavailable',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: _requestQrInk,
+                    ),
+                  ),
+                )
+              : PrettyQrView(
+                  qrImage: qrImage,
+                  decoration: const PrettyQrDecoration(
+                    quietZone: PrettyQrQuietZone.modules(
+                      _requestQrQuietZoneModules,
+                    ),
+                    shape: PrettyQrSquaresSymbol(color: _requestQrInk),
+                  ),
+                ),
+        );
+      },
     );
+  }
+
+  /// The side this code is actually drawn at: [size], grown to whatever the
+  /// symbol needs to keep its modules legible, and capped by the space the
+  /// caller has. The cap can only bite in a layout narrower than any symbol
+  /// version needs, which is well under the width both request surfaces give.
+  double _resolveSide(QrImage? qrImage, BoxConstraints constraints) {
+    if (qrImage == null) return size;
+
+    final modules = qrImage.moduleCount + _requestQrQuietZoneModules * 2;
+    final needed = modules * _requestQrMinModuleSize;
+
+    var available = double.infinity;
+    if (constraints.hasBoundedWidth) {
+      available = math.min(available, constraints.maxWidth - padding * 2);
+    }
+    if (constraints.hasBoundedHeight) {
+      available = math.min(available, constraints.maxHeight - padding * 2);
+    }
+    if (!available.isFinite) return math.max(size, needed);
+    return math.max(size, math.min(needed, math.max(size, available)));
   }
 }
 
