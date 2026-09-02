@@ -108,6 +108,7 @@ void main() {
         findsNothing,
       );
       expect(find.byType(RequestSummaryRow), findsNothing);
+      expect(find.text('Create request'), findsOneWidget);
       expect(_button(tester, 'request_next_button').onPressed, isNull);
       expect(find.byKey(const ValueKey('request_modal_back')), findsNothing);
     });
@@ -136,7 +137,7 @@ void main() {
       expect(_button(tester, 'request_next_button').onPressed, isNotNull);
     });
 
-    testWidgets('an amount enables Next', (tester) async {
+    testWidgets('an amount enables Create request', (tester) async {
       var advanced = 0;
       await _pump(
         tester,
@@ -144,7 +145,9 @@ void main() {
       );
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Next'), findsOneWidget);
+      // One label for one commitment, on both form factors.
+      expect(find.text('Create request'), findsOneWidget);
+      expect(find.text('Next'), findsNothing);
       expect(_button(tester, 'request_next_button').onPressed, isNotNull);
 
       await tester.tap(find.byKey(const ValueKey('request_next_button')));

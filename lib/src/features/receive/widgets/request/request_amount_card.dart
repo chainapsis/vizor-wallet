@@ -134,8 +134,11 @@ class RequestAmountCard extends StatelessWidget {
           // the amount is still being typed, so nothing appears to arrive
           // late once the number is valid.
           onPressed: request.isReady ? (onNext ?? _noop) : null,
+          // The same label the mobile sheet uses: one commitment should not
+          // have two names, and this press is the moment the address in the
+          // link is fixed — worth naming rather than pointing at.
           child: const Text(
-            'Next',
+            'Create request',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
