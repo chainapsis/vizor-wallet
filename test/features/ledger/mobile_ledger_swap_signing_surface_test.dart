@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_hardware_broadcast_result.dart';
@@ -113,6 +114,77 @@ void main() {
     expect(operationService.acknowledged, isTrue);
     expect(find.text('Open signing'), findsOneWidget);
   });
+
+  testWidgets(
+    'mobile Ledger swap explains unavailable legacy Orchard recovery',
+    (tester) async {
+      final operationService = _OperationService(
+        Completer<LedgerSignedOperationBroadcastResult>().future,
+      );
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, _) => TextButton(
+              onPressed: () => context.push('/sign'),
+              child: const Text('Open signing'),
+            ),
+          ),
+          GoRoute(
+            path: '/sign',
+            builder: (context, _) => SwapLedgerSigningOverlay(
+              mobile: true,
+              intent: _intent,
+              onCancel: () => context.pop(),
+              onDepositBroadcast: (_) async {},
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(_bootstrap),
+            ledgerPcztSignerProvider.overrideWithValue(
+              (_, _) async => throw StateError(
+                '$kLedgerLegacyOrchardRecoveryErrorCode: test fixture',
+              ),
+            ),
+            ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+            ledgerSignedOperationServiceProvider.overrideWithValue(
+              operationService,
+            ),
+            swapHardwareSigningServiceProvider.overrideWithValue(
+              _HardwareSigningService(),
+            ),
+            syncProvider.overrideWith(
+              () => FakeSyncNotifier(
+                SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+              ),
+            ),
+          ],
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ledger app update required'), findsOneWidget);
+      expect(
+        find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
+        findsOneWidget,
+      );
+      expect(find.text('Try again'), findsNothing);
+      expect(operationService.checkpointCalls, 0);
+      expect(operationService.broadcastCalls, 0);
+    },
+  );
 }
 
 final _intent = SwapIntent(

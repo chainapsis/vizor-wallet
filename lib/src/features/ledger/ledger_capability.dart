@@ -6,7 +6,14 @@ import '../../core/config/network_config.dart';
 
 const kMinimumLedgerZcashAppVersion = '3.9.2';
 
-/// Legacy Orchard funds can only come from unreleased Ledger Zcash app builds.
+const kLedgerLegacyOrchardRecoveryErrorCode =
+    'ledger_legacy_orchard_recovery_unsupported';
+const kLedgerLegacyOrchardRecoveryUnavailableMessage =
+    'This Ledger Zcash app cannot move recovered Orchard funds into Ironwood. '
+    'Update the Ledger Zcash app when a compatible version is available.';
+
+/// A Ledger account can recover legacy Orchard funds when the same seed was
+/// previously used through another wallet or Ledger Zcash app build.
 ///
 /// Keep this as an explicit capability boundary so the preserved migration
 /// signer can be re-enabled deliberately after a future Ledger app is verified
@@ -14,6 +21,11 @@ const kMinimumLedgerZcashAppVersion = '3.9.2';
 const ledgerAutomaticOrchardMigrationCapability = LedgerCapability.unsupported(
   'Automatic Orchard migration is not available for Ledger accounts.',
 );
+
+bool isLedgerLegacyOrchardRecoveryUnsupported(Object error) => error
+    .toString()
+    .toLowerCase()
+    .contains(kLedgerLegacyOrchardRecoveryErrorCode);
 
 enum LedgerBluetoothCapability { supported, unsupported, unknown }
 

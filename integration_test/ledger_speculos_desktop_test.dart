@@ -447,7 +447,7 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
 
   final unsigned = fixture.orchardToIronwoodV6Pczt;
   final approval = _approveNextReview(fixture.signingApiUrl);
-  final signed = container.read(ledgerPcztSignerProvider)(
+  final signed = container.read(ledgerPcztTransportSignerProvider)(
     fixture.accountUuid,
     unsigned,
   );
@@ -1517,6 +1517,14 @@ class _SpeculosSwapHardwareSigningService
     required SwapHardwarePcztDraft draft,
   }) {
     throw StateError('Ledger E2E must not use Keystone UR encoding.');
+  }
+
+  @override
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  }) {
+    throw StateError('Ledger E2E must not decode Keystone responses.');
   }
 
   @override

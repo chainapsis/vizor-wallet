@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
@@ -620,6 +621,36 @@ void main() {
         [4, 5, 6],
       ]);
       expect(statusExtras.single, isA<LedgerBroadcastArgs>());
+    },
+  );
+
+  testWidgets(
+    'Ledger legacy Orchard recovery requires an app update without retrying',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async => throw StateError(
+            '$kLedgerLegacyOrchardRecoveryErrorCode: test fixture',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Ledger app update required'), findsOneWidget);
+      expect(
+        find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
+        findsOneWidget,
+      );
+      expect(find.text('Try again'), findsNothing);
     },
   );
 

@@ -93,6 +93,13 @@ pub fn ledger_cancel_operation() {
     ledger::cancel_operation();
 }
 
+/// Reject a PCZT shape that the currently supported Ledger Zcash app cannot
+/// sign correctly. This release gate intentionally sits above the raw
+/// transport signer so a future app build can still be exercised by canaries.
+pub fn ledger_validate_supported_pczt(pczt_bytes: Vec<u8>) -> Result<(), String> {
+    ledger::validate_pczt_release_support(&pczt_bytes)
+}
+
 /// Export a Unified Full Viewing Key for `m/32'/133'/account'` after the user
 /// approves the request on the Ledger device.
 pub fn ledger_export_ufvk(account_index: u32, network: String) -> Result<String, String> {

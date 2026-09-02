@@ -74,6 +74,12 @@ void main() {
   );
 
   testWidgets(
+    'blocks recovered Orchard send until the Ledger app is compatible',
+    _runMobileRecoveredOrchardBlockScenario,
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  testWidgets(
     'sends to TEX with two Ledger approvals through Speculos',
     _runMobileTexSendScenario,
     timeout: const Timeout(Duration(minutes: 5)),
@@ -130,7 +136,7 @@ Future<void> _runMobilePostIronwoodOrchardSigningScenario(
   await container.read(accountProvider.future);
 
   final unsigned = fixture.orchardToIronwoodV6Pczt;
-  final signed = container.read(ledgerPcztSignerProvider)(
+  final signed = container.read(ledgerPcztTransportSignerProvider)(
     fixture.accountUuid,
     unsigned,
   );
@@ -553,6 +559,88 @@ Future<void> _runMobileSendScenario(WidgetTester tester) async {
   expect(lightwalletd.sendTransactionCount, 1);
   expect(lightwalletd.lastRawTransaction, isNotEmpty);
   expect(await operationService.list(), isEmpty);
+}
+
+Future<void> _runMobileRecoveredOrchardBlockScenario(
+  WidgetTester tester,
+) async {
+  final fixture = _Fixture.load();
+  final dbPath = await _copyFixtureDb(fixture);
+  final operationService = _TrackingLedgerSignedOperationService(
+    RustLedgerSignedOperationService(
+      network: 'main',
+      lightwalletdUrl: 'http://127.0.0.1:1',
+      loadWalletDbPath: () async => dbPath,
+    ),
+  );
+  final ble = _SpeculosLedgerMobileBleService(fixture.signingApiUrl);
+  final args = SendReviewArgs(
+    proposalId: BigInt.one,
+    sendFlowId: 'ledger-mobile-recovered-orchard',
+    proposalAccountUuid: fixture.accountUuid,
+    address: fixture.transparentAddress,
+    addressType: 'transparent',
+    amountZatoshi: BigInt.from(990000),
+    feeZatoshi: BigInt.from(10000),
+    needsSaplingParams: false,
+  );
+  final router = GoRouter(
+    initialLocation: '/send',
+    routes: [
+      GoRoute(
+        path: '/send',
+        builder: (_, _) => _MobileSendLauncher(args: args),
+      ),
+      GoRoute(
+        path: '/send/ledger-sign',
+        builder: (_, state) => MobileLedgerSendSignScreen(
+          args: state.extra! as SendReviewArgs,
+          loadWalletDbPath: () async => dbPath,
+          loadSaplingParams: () async => _completeSaplingParams,
+          createPczt:
+              ({
+                required dbPath,
+                required lightwalletdUrl,
+                required network,
+                required proposalId,
+                required sendFlowId,
+              }) async => fixture.orchardToIronwoodV6Pczt,
+          redactPczt: rust_sync.redactPcztForSigner,
+          addProofs:
+              ({required pcztBytes, spendParamsPath, outputParamsPath}) async =>
+                  pcztBytes,
+          discardProposal: () async {},
+        ),
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+
+  await tester.pumpWidget(
+    _mobileLedgerHarness(
+      fixture: fixture,
+      lightwalletdUrl: 'http://127.0.0.1:1',
+      router: router,
+      ble: ble,
+      operationService: operationService,
+      walletDbPath: dbPath,
+    ),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Ledger app update required')),
+    description: 'mobile recovered Orchard compatibility message',
+    timeout: const Duration(minutes: 2),
+  );
+
+  expect(
+    find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
+    findsOneWidget,
+  );
+  expect(find.text('Try again'), findsNothing);
+  expect(ble.connectedDeviceId, isNull);
+  expect(operationService.checkpointCount, 0);
+  expect(operationService.broadcastCount, 0);
 }
 
 Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
@@ -1459,6 +1547,14 @@ class _SpeculosSwapHardwareSigningService
     required SwapHardwarePcztDraft draft,
   }) {
     throw StateError('Ledger E2E must not use Keystone UR encoding.');
+  }
+
+  @override
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  }) {
+    throw StateError('Ledger E2E must not decode Keystone responses.');
   }
 
   @override
