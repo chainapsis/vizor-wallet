@@ -354,6 +354,27 @@ class RoundPlanView {
   final bool completedForDisplay;
   final CompletedVoteDisplayView? completedVoteDisplay;
   final bool needsDraftSetup;
+
+  /// True when a bundle still needs a signed delegation from the wallet.
+  ///
+  /// Read these derived flags instead of matching `NextStepView::kind`
+  /// strings: the SDK computes them from an exhaustive match, so a new step
+  /// kind cannot silently read as "no work" in a host allowlist.
+  final bool needsDelegationSigning;
+
+  /// True when a delegation is in flight and can be advanced without signing.
+  final bool hasInFlightDelegation;
+
+  /// True when vote or helper-share submission work remains to drive.
+  final bool needsVotePolling;
+
+  /// True when any vote or share work remains, counting share confirmation
+  /// only when it is blocking.
+  final bool hasRemainingVoteOrShareWork;
+
+  /// True when any vote or share work remains, counting share confirmation
+  /// unconditionally.
+  final bool hasRecoverableVoteOrShareWork;
   final String primaryAction;
   final List<NextStepView> nextSteps;
   final List<DelegationStatusView> delegationStatuses;
@@ -376,6 +397,11 @@ class RoundPlanView {
     required this.completedForDisplay,
     this.completedVoteDisplay,
     required this.needsDraftSetup,
+    required this.needsDelegationSigning,
+    required this.hasInFlightDelegation,
+    required this.needsVotePolling,
+    required this.hasRemainingVoteOrShareWork,
+    required this.hasRecoverableVoteOrShareWork,
     required this.primaryAction,
     required this.nextSteps,
     required this.delegationStatuses,
@@ -398,6 +424,11 @@ class RoundPlanView {
       completedForDisplay.hashCode ^
       completedVoteDisplay.hashCode ^
       needsDraftSetup.hashCode ^
+      needsDelegationSigning.hashCode ^
+      hasInFlightDelegation.hashCode ^
+      needsVotePolling.hashCode ^
+      hasRemainingVoteOrShareWork.hashCode ^
+      hasRecoverableVoteOrShareWork.hashCode ^
       primaryAction.hashCode ^
       nextSteps.hashCode ^
       delegationStatuses.hashCode ^
@@ -422,6 +453,12 @@ class RoundPlanView {
           completedForDisplay == other.completedForDisplay &&
           completedVoteDisplay == other.completedVoteDisplay &&
           needsDraftSetup == other.needsDraftSetup &&
+          needsDelegationSigning == other.needsDelegationSigning &&
+          hasInFlightDelegation == other.hasInFlightDelegation &&
+          needsVotePolling == other.needsVotePolling &&
+          hasRemainingVoteOrShareWork == other.hasRemainingVoteOrShareWork &&
+          hasRecoverableVoteOrShareWork ==
+              other.hasRecoverableVoteOrShareWork &&
           primaryAction == other.primaryAction &&
           nextSteps == other.nextSteps &&
           delegationStatuses == other.delegationStatuses &&

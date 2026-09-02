@@ -119,6 +119,17 @@ const PHASE_VOTE_COMMIT_STAGE: &str = "vote_commit_stage";
 /// Prefix for coarse cast-vote stage timings (`log show` subsystem `frb_user`).
 const VOTING_VOTE_LOG: &str = "[VOTING_VOTE]";
 
+/// Stable marker for every path that refuses multi-proposal atomic batches.
+///
+/// This app casts one vote per transaction. The SDK also supports an atomic
+/// batch that carries several proposals in one transaction, but Vizor does not
+/// build, submit, confirm, or resume batches yet. Every boundary that could
+/// encounter one fails loudly with this marker rather than silently treating a
+/// batch as "no work", which would strand a round mid-submission.
+///
+/// Remove these guards together when batch support is implemented.
+const VOTING_BATCH_UNSUPPORTED: &str = "[VOTING_BATCH_UNSUPPORTED]";
+
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 #[flutter_rust_bridge::frb(sync)]
 pub fn last_moment_buffer_seconds(
@@ -2397,6 +2408,22 @@ async fn build_vote_commitments_result<F>(
 where
     F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
+    // Vizor is singleton-only: one cast-vote transaction per proposal.
+    //
+    // Multi-proposal atomic batches are supported by the SDK but not wired up
+    // here, and a batch changes durable state in ways this app does not yet
+    // handle (shared transaction hash, batch-scoped recovery, and
+    // `submit_vote_batch`/`poll_vote_batch` resume steps). Reject more than one
+    // draft up front rather than letting `prepare_commit_batch` fail deeper in
+    // the SDK after the hotkey has been reconstructed. See
+    // `VOTING_BATCH_UNSUPPORTED`.
+    if draft_votes.len() != 1 {
+        return Err(format!(
+            "{VOTING_BATCH_UNSUPPORTED}: expected exactly one draft vote, got {}",
+            draft_votes.len()
+        ));
+    }
+
     // Parse network once and keep hotkey bytes in a secrecy wrapper.
     let network = keys::parse_network(&network)?;
     let stored_hotkey_secret = secrecy::SecretVec::new(stored_hotkey_secret);
@@ -2510,6 +2537,37 @@ pub fn get_round_recovery_state(
     })
 }
 
+/// Refuses a round plan containing work this app cannot perform.
+///
+/// `get_round_plan` is the only place a plan crosses into the app, so it is the
+/// one place that has to notice unsupported work. Dart consumes `next_steps`
+/// through allowlist predicates that return false for any kind they do not
+/// recognise, which makes "a batch is waiting to be submitted" indistinguishable
+/// from "there is nothing to do" and would strand the round with no symptom.
+/// Vizor can neither build nor advance an atomic vote batch, so surface it as a
+/// diagnosable error instead.
+///
+/// This is unreachable today: `build_vote_commitments_result` refuses more than
+/// one draft, and only the SDK's atomic-batch APIs write the batch recovery that
+/// produces these steps. Delete this guard when batch support lands. See
+/// [`VOTING_BATCH_UNSUPPORTED`].
+fn reject_unsupported_batch_steps(
+    next_steps: &[zcash_voting::session::NextStep],
+) -> Result<(), String> {
+    match next_steps.iter().find(|step| {
+        matches!(
+            step,
+            zcash_voting::session::NextStep::AdvanceVoteBatch { .. }
+        )
+    }) {
+        Some(step) => Err(format!(
+            "{VOTING_BATCH_UNSUPPORTED}: round plan contains step '{}', which requires atomic vote batch support",
+            step.kind()
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Compute the resumable voting-session plan for a round. The plan reports the
 /// ordered remaining work (`next_steps`) and which proposals are still open.
 pub fn get_round_plan(
@@ -2523,6 +2581,7 @@ pub fn get_round_plan(
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)
             .map_err(|e| format!("resume_plan failed: {e}"))?;
+        reject_unsupported_batch_steps(&plan.next_steps)?;
         zcash_voting::wire::RoundPlanView::try_from(plan).map_err(|e| e.to_string())
     })
 }
@@ -2685,7 +2744,6 @@ mod tests {
         thread,
     };
     use zcash_client_backend::proto::service::TreeState;
-    use zcash_voting::prelude::{TxEvent, TxEventAttribute};
     use zcash_voting::BundlePolicy;
 
     fn b64(bytes: impl AsRef<[u8]>) -> String {
@@ -2761,38 +2819,6 @@ mod tests {
         let mut effects = vec![0; zcash_voting::tx1::TX1_EFFECTS_LEN];
         effects[0] = zcash_voting::tx1::TX1_EFFECTS_VERSION;
         effects
-    }
-
-    fn delegate_event(round_id: &str, leaf_index: u32) -> TxEvent {
-        TxEvent {
-            event_type: "delegate_vote".to_string(),
-            attributes: vec![
-                TxEventAttribute {
-                    key: "vote_round_id".to_string(),
-                    value: round_id.to_string(),
-                },
-                TxEventAttribute {
-                    key: "leaf_index".to_string(),
-                    value: leaf_index.to_string(),
-                },
-            ],
-        }
-    }
-
-    fn cast_vote_event(round_id: &str, van_position: u32, vc_tree_position: u64) -> TxEvent {
-        TxEvent {
-            event_type: "cast_vote".to_string(),
-            attributes: vec![
-                TxEventAttribute {
-                    key: "vote_round_id".to_string(),
-                    value: round_id.to_string(),
-                },
-                TxEventAttribute {
-                    key: "leaf_index".to_string(),
-                    value: format!("{van_position},{vc_tree_position}"),
-                },
-            ],
-        }
     }
 
     fn test_round_context(
@@ -2964,15 +2990,12 @@ mod tests {
         drop(db);
 
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        zcash_voting::confirmation::confirm_vote_submission(
-            &db,
-            ROUND_ID,
-            0,
-            7,
-            "vote-confirmed-tx",
-            &[cast_vote_event(ROUND_ID, 42, 88)],
-        )
-        .unwrap();
+        // Chain submission is owned by the SDK lifecycle, which has no public
+        // confirmation entry point. This test only needs the durable rows a
+        // confirmation produces, so it seeds them through the SDK's
+        // `test-fixtures` writers.
+        zcash_voting::vote::record_submission(&db, ROUND_ID, 0, 7, "vote-confirmed-tx").unwrap();
+        zcash_voting::vote::record_vc_position(&db, ROUND_ID, 0, 7, 88).unwrap();
 
         let (confirmed_snapshot, synchronized_plan_snapshot): (String, String) = db
             .conn()
@@ -4292,6 +4315,105 @@ mod tests {
         assert_eq!(plan.open_proposals, vec![1, 2]);
     }
 
+    #[tokio::test]
+    async fn building_more_than_one_draft_is_refused_as_unsupported_batch() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+
+        let draft = |proposal_id| zcash_voting::wire::DraftVote {
+            proposal_id,
+            choice: 1,
+            num_options: 2,
+            single_share: false,
+            vc_tree_position: 0,
+        };
+
+        let error = build_vote_commitments_result(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            "regtest".to_string(),
+            ROUND_ID.to_string(),
+            0,
+            vec![0x11; 64],
+            zcash_voting::wire::VanWitness {
+                auth_path: Vec::new(),
+                position: 0,
+                anchor_height: 0,
+            },
+            vec![draft(7), draft(8)],
+            |_| {},
+        )
+        .await
+        .expect_err("two drafts must be refused before any commit work");
+
+        assert!(
+            error.contains(VOTING_BATCH_UNSUPPORTED),
+            "unexpected error: {error}"
+        );
+        // Refused before touching durable state.
+        assert_eq!(
+            zcash_voting::session::resume_plan(&db, ROUND_ID, &[7, 8])
+                .unwrap()
+                .next_steps
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn batch_steps_are_refused_and_singleton_steps_pass_through() {
+        use zcash_voting::session::NextStep;
+
+        for step in [NextStep::AdvanceVoteBatch {
+            bundle_index: 0,
+            proposal_id: 7,
+        }] {
+            let kind = step.kind();
+            let error =
+                reject_unsupported_batch_steps(&[NextStep::Delegate { bundle_index: 0 }, step])
+                    .expect_err("a batch step must not be reported as runnable work");
+            assert!(
+                error.contains(VOTING_BATCH_UNSUPPORTED),
+                "unexpected error: {error}"
+            );
+            assert!(error.contains(kind), "unexpected error: {error}");
+        }
+
+        // Every step this app does support still passes through untouched.
+        reject_unsupported_batch_steps(&[
+            NextStep::Delegate { bundle_index: 0 },
+            NextStep::AdvanceDelegation { bundle_index: 0 },
+            NextStep::CastVote {
+                bundle_index: 0,
+                proposal_id: 7,
+                choice: 1,
+            },
+            NextStep::AdvanceVote {
+                bundle_index: 0,
+                proposal_id: 7,
+            },
+            NextStep::SubmitShares {
+                bundle_index: 0,
+                proposal_id: 7,
+                share_index: 0,
+            },
+            NextStep::ConfirmShare {
+                bundle_index: 0,
+                proposal_id: 7,
+                share_index: 0,
+            },
+        ])
+        .unwrap();
+    }
+
     #[test]
     fn mark_delegation_submitted_updates_recovery_snapshot() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -4319,44 +4441,6 @@ mod tests {
             snapshot.delegation[0].tx_hash.as_deref(),
             Some("delegation-submitted-tx")
         );
-    }
-
-    #[test]
-    fn confirm_submission_apis_record_expected_confirmation_fields() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(
-            zcash_voting::Network::Regtest,
-            &test_api_round_params(),
-            None,
-        )
-        .unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
-
-        let delegation = zcash_voting::confirmation::confirm_delegation_submission(
-            &db,
-            ROUND_ID,
-            0,
-            "delegate-confirmed-tx",
-            &[delegate_event(ROUND_ID, 42)],
-        )
-        .unwrap();
-        assert_eq!(delegation.tx_hash, "delegate-confirmed-tx");
-        assert_eq!(delegation.van_leaf_position, 42);
-
-        let vote = zcash_voting::confirmation::confirm_vote_submission(
-            &db,
-            ROUND_ID,
-            0,
-            7,
-            "vote-confirmed-tx",
-            &[cast_vote_event(ROUND_ID, 42, 88)],
-        )
-        .unwrap();
-        assert_eq!(vote.tx_hash, "vote-confirmed-tx");
-        assert_eq!(vote.vc_tree_position, 88);
     }
 
     #[test]

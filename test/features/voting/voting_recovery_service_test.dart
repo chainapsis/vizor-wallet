@@ -310,7 +310,7 @@ void main() {
       pendingRecovery: true,
       nextSteps: const [
         rust_frb_types.NextStepView(
-          kind: 'poll_vote',
+          kind: 'advance_vote',
           bundleIndex: 0,
           proposalId: 1,
           choice: 0,

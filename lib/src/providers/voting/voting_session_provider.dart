@@ -3206,7 +3206,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   ) {
     if (plan.pendingDelegationBundleIndexes.isNotEmpty) return true;
     if (roundPlan == null) return false;
-    return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
+    return roundPlan.needsDelegationSigning ||
         roundPlanNeedsDraftSetup(roundPlan);
   }
 
@@ -4018,6 +4018,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     };
   }
 
+  /// Vote work whose chain transaction has already been dispatched.
+  ///
+  /// The SDK reports one `advance_vote` kind for a vote's whole chain
+  /// lifecycle, because reserving, submitting, and reconciling are a single
+  /// bounded call. A recorded `txHash` is what distinguishes a generation that
+  /// is already on the wire from one that has not been dispatched yet.
   static List<rust_wire.VoteRecoveryWorkView> _pendingVotePollingWork(
     rust_wire.RoundPlanView? roundPlan,
   ) {
@@ -4025,7 +4031,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       for (final work
           in roundPlan?.recoveredVoteWork ??
               const <rust_wire.VoteRecoveryWorkView>[])
-        if (work.kind == 'poll_vote') work,
+        if (work.kind == 'advance_vote' && work.txHash != null) work,
     ];
   }
 
@@ -4035,9 +4041,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (roundPlan == null) return const [];
     return [
       for (final work in roundPlan.recoveredVoteWork)
-        if (work.kind == 'submit_vote' || work.kind == 'submit_shares')
+        if ((work.kind == 'advance_vote' && work.txHash == null) ||
+            work.kind == 'submit_shares')
           _RecoveredVoteWork(
-            kind: work.kind == 'submit_vote'
+            kind: work.kind == 'advance_vote'
                 ? _RecoveredVoteWorkKind.submitVote
                 : _RecoveredVoteWorkKind.submitShares,
             key: VotingVoteKey(

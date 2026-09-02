@@ -11504,8 +11504,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RoundPlanView dco_decode_round_plan_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 23)
+      throw Exception('unexpected arr length: expect 23 but see ${arr.length}');
     return RoundPlanView(
       roundId: dco_decode_String(arr[0]),
       pendingRecovery: dco_decode_bool(arr[1]),
@@ -11517,19 +11517,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       completedVoteDisplay:
           dco_decode_opt_box_autoadd_completed_vote_display_view(arr[7]),
       needsDraftSetup: dco_decode_bool(arr[8]),
-      primaryAction: dco_decode_String(arr[9]),
-      nextSteps: dco_decode_list_next_step_view(arr[10]),
-      delegationStatuses: dco_decode_list_delegation_status_view(arr[11]),
+      needsDelegationSigning: dco_decode_bool(arr[9]),
+      hasInFlightDelegation: dco_decode_bool(arr[10]),
+      needsVotePolling: dco_decode_bool(arr[11]),
+      hasRemainingVoteOrShareWork: dco_decode_bool(arr[12]),
+      hasRecoverableVoteOrShareWork: dco_decode_bool(arr[13]),
+      primaryAction: dco_decode_String(arr[14]),
+      nextSteps: dco_decode_list_next_step_view(arr[15]),
+      delegationStatuses: dco_decode_list_delegation_status_view(arr[16]),
       recoveredDelegationWork: dco_decode_list_delegation_recovery_work_view(
-        arr[12],
+        arr[17],
       ),
-      recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[13]),
-      openProposals: dco_decode_list_prim_u_32_strict(arr[14]),
+      recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[18]),
+      openProposals: dco_decode_list_prim_u_32_strict(arr[19]),
       immediateShareKey: dco_decode_opt_box_autoadd_immediate_share_key(
-        arr[15],
+        arr[20],
       ),
-      immediateShareConfirmed: dco_decode_bool(arr[16]),
-      allDecided: dco_decode_bool(arr[17]),
+      immediateShareConfirmed: dco_decode_bool(arr[21]),
+      allDecided: dco_decode_bool(arr[22]),
     );
   }
 
@@ -15271,6 +15276,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_completedVoteDisplay =
         sse_decode_opt_box_autoadd_completed_vote_display_view(deserializer);
     var var_needsDraftSetup = sse_decode_bool(deserializer);
+    var var_needsDelegationSigning = sse_decode_bool(deserializer);
+    var var_hasInFlightDelegation = sse_decode_bool(deserializer);
+    var var_needsVotePolling = sse_decode_bool(deserializer);
+    var var_hasRemainingVoteOrShareWork = sse_decode_bool(deserializer);
+    var var_hasRecoverableVoteOrShareWork = sse_decode_bool(deserializer);
     var var_primaryAction = sse_decode_String(deserializer);
     var var_nextSteps = sse_decode_list_next_step_view(deserializer);
     var var_delegationStatuses = sse_decode_list_delegation_status_view(
@@ -15297,6 +15307,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       completedForDisplay: var_completedForDisplay,
       completedVoteDisplay: var_completedVoteDisplay,
       needsDraftSetup: var_needsDraftSetup,
+      needsDelegationSigning: var_needsDelegationSigning,
+      hasInFlightDelegation: var_hasInFlightDelegation,
+      needsVotePolling: var_needsVotePolling,
+      hasRemainingVoteOrShareWork: var_hasRemainingVoteOrShareWork,
+      hasRecoverableVoteOrShareWork: var_hasRecoverableVoteOrShareWork,
       primaryAction: var_primaryAction,
       nextSteps: var_nextSteps,
       delegationStatuses: var_delegationStatuses,
@@ -18674,6 +18689,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       serializer,
     );
     sse_encode_bool(self.needsDraftSetup, serializer);
+    sse_encode_bool(self.needsDelegationSigning, serializer);
+    sse_encode_bool(self.hasInFlightDelegation, serializer);
+    sse_encode_bool(self.needsVotePolling, serializer);
+    sse_encode_bool(self.hasRemainingVoteOrShareWork, serializer);
+    sse_encode_bool(self.hasRecoverableVoteOrShareWork, serializer);
     sse_encode_String(self.primaryAction, serializer);
     sse_encode_list_next_step_view(self.nextSteps, serializer);
     sse_encode_list_delegation_status_view(self.delegationStatuses, serializer);

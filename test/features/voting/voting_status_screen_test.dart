@@ -796,7 +796,7 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'poll_delegation',
+              kind: 'advance_delegation',
               bundleIndex: 0,
               proposalId: 0,
               choice: 0,
@@ -880,7 +880,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'poll_delegation',
+            kind: 'advance_delegation',
             bundleIndex: 0,
             proposalId: 0,
             choice: 0,
@@ -5649,7 +5649,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         .where(
           (step) =>
               step.bundleIndex != bundleIndex ||
-              (step.kind != 'delegate' && step.kind != 'poll_delegation'),
+              (step.kind != 'delegate' && step.kind != 'advance_delegation'),
         )
         .toList(growable: false);
     recoveryApi.roundPlan = apiRoundPlan(

@@ -6157,7 +6157,7 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'submit_vote',
+              kind: 'advance_vote',
               bundleIndex: 1,
               proposalId: 7,
               shareIndex: 0,
@@ -6524,9 +6524,21 @@ void main() {
       final beforeConfirmation = apiRoundPlan(
         roundId: kRoundId,
         pendingRecovery: true,
+        // The vote is already dispatched and awaiting confirmation. One
+        // `advance_vote` kind covers a vote's whole chain lifecycle, so the
+        // recorded transaction hash is what marks it as on the wire.
+        recoveredVoteWork: [
+          rust_wire.VoteRecoveryWorkView(
+            kind: 'advance_vote',
+            bundleIndex: 1,
+            proposalId: 7,
+            txHash: 'submitted-vote-tx',
+            shareIndexes: Uint32List(0),
+          ),
+        ],
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'poll_vote',
+            kind: 'advance_vote',
             bundleIndex: 1,
             proposalId: 7,
             shareIndex: 0,
@@ -11096,6 +11108,11 @@ rust_wire.RoundPlanView _withImmediateShareConfirmed(
     completedForDisplay: plan.completedForDisplay,
     completedVoteDisplay: plan.completedVoteDisplay,
     needsDraftSetup: plan.needsDraftSetup,
+    needsDelegationSigning: plan.needsDelegationSigning,
+    hasInFlightDelegation: plan.hasInFlightDelegation,
+    needsVotePolling: plan.needsVotePolling,
+    hasRemainingVoteOrShareWork: plan.hasRemainingVoteOrShareWork,
+    hasRecoverableVoteOrShareWork: plan.hasRecoverableVoteOrShareWork,
     primaryAction: plan.primaryAction,
     nextSteps: plan.nextSteps,
     delegationStatuses: plan.delegationStatuses,

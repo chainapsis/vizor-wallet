@@ -7823,6 +7823,11 @@ const _: fn() = || {
         let _: Option<zcash_voting::wire::CompletedVoteDisplayView> =
             RoundPlanView.completed_vote_display;
         let _: bool = RoundPlanView.needs_draft_setup;
+        let _: bool = RoundPlanView.needs_delegation_signing;
+        let _: bool = RoundPlanView.has_in_flight_delegation;
+        let _: bool = RoundPlanView.needs_vote_polling;
+        let _: bool = RoundPlanView.has_remaining_vote_or_share_work;
+        let _: bool = RoundPlanView.has_recoverable_vote_or_share_work;
         let _: String = RoundPlanView.primary_action;
         let _: Vec<zcash_voting::wire::NextStepView> = RoundPlanView.next_steps;
         let _: Vec<zcash_voting::wire::DelegationStatusView> = RoundPlanView.delegation_statuses;
@@ -10837,6 +10842,11 @@ impl SseDecode for zcash_voting::wire::RoundPlanView {
         let mut var_completedVoteDisplay =
             <Option<zcash_voting::wire::CompletedVoteDisplayView>>::sse_decode(deserializer);
         let mut var_needsDraftSetup = <bool>::sse_decode(deserializer);
+        let mut var_needsDelegationSigning = <bool>::sse_decode(deserializer);
+        let mut var_hasInFlightDelegation = <bool>::sse_decode(deserializer);
+        let mut var_needsVotePolling = <bool>::sse_decode(deserializer);
+        let mut var_hasRemainingVoteOrShareWork = <bool>::sse_decode(deserializer);
+        let mut var_hasRecoverableVoteOrShareWork = <bool>::sse_decode(deserializer);
         let mut var_primaryAction = <String>::sse_decode(deserializer);
         let mut var_nextSteps = <Vec<zcash_voting::wire::NextStepView>>::sse_decode(deserializer);
         let mut var_delegationStatuses =
@@ -10860,6 +10870,11 @@ impl SseDecode for zcash_voting::wire::RoundPlanView {
             completed_for_display: var_completedForDisplay,
             completed_vote_display: var_completedVoteDisplay,
             needs_draft_setup: var_needsDraftSetup,
+            needs_delegation_signing: var_needsDelegationSigning,
+            has_in_flight_delegation: var_hasInFlightDelegation,
+            needs_vote_polling: var_needsVotePolling,
+            has_remaining_vote_or_share_work: var_hasRemainingVoteOrShareWork,
+            has_recoverable_vote_or_share_work: var_hasRecoverableVoteOrShareWork,
             primary_action: var_primaryAction,
             next_steps: var_nextSteps,
             delegation_statuses: var_delegationStatuses,
@@ -14268,6 +14283,17 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundPlanV
             self.0.completed_for_display.into_into_dart().into_dart(),
             self.0.completed_vote_display.into_into_dart().into_dart(),
             self.0.needs_draft_setup.into_into_dart().into_dart(),
+            self.0.needs_delegation_signing.into_into_dart().into_dart(),
+            self.0.has_in_flight_delegation.into_into_dart().into_dart(),
+            self.0.needs_vote_polling.into_into_dart().into_dart(),
+            self.0
+                .has_remaining_vote_or_share_work
+                .into_into_dart()
+                .into_dart(),
+            self.0
+                .has_recoverable_vote_or_share_work
+                .into_into_dart()
+                .into_dart(),
             self.0.primary_action.into_into_dart().into_dart(),
             self.0.next_steps.into_into_dart().into_dart(),
             self.0.delegation_statuses.into_into_dart().into_dart(),
@@ -17407,6 +17433,11 @@ impl SseEncode for zcash_voting::wire::RoundPlanView {
             serializer,
         );
         <bool>::sse_encode(self.needs_draft_setup, serializer);
+        <bool>::sse_encode(self.needs_delegation_signing, serializer);
+        <bool>::sse_encode(self.has_in_flight_delegation, serializer);
+        <bool>::sse_encode(self.needs_vote_polling, serializer);
+        <bool>::sse_encode(self.has_remaining_vote_or_share_work, serializer);
+        <bool>::sse_encode(self.has_recoverable_vote_or_share_work, serializer);
         <String>::sse_encode(self.primary_action, serializer);
         <Vec<zcash_voting::wire::NextStepView>>::sse_encode(self.next_steps, serializer);
         <Vec<zcash_voting::wire::DelegationStatusView>>::sse_encode(
