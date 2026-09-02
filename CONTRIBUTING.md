@@ -262,7 +262,11 @@ A pull request should:
   cross-platform implications.
 - Link the relevant issue or design when one exists.
 - Include tests for new behavior and exact local validation commands.
-- Include before/after captures for visual changes.
+- Include review screenshots for any design or user-visible UI change.
+  Attach widget-test captures (`scripts/figma-compare.sh widget`) for every
+  form factor the change ships on, covering the entry point and the important
+  new or changed states. Embed the images in the PR description; do not leave
+  the UI described only in prose.
 - Include generated Flutter Rust Bridge files when an exposed Rust API changes.
 - Avoid unrelated dependency, lockfile, formatting, asset, and generated-file
   churn.
