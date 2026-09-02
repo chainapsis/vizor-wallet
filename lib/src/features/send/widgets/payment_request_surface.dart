@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/content_overlay_inset.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_modal_card.dart';
@@ -104,7 +105,14 @@ class PaymentRequestSurface extends StatelessWidget {
         else
           AppPaneModalOverlay(
             onDismiss: onCancel,
-            child: AppModalCard(width: kPaymentRequestCardWidth, child: card),
+            // The card is hosted above the router, so its scrim covers the
+            // whole window — but the request is content, and content belongs
+            // over the content pane. The shell's published pane insets move
+            // the card off the sidebar's half of the window; with no shell
+            // mounted they are zero and this centers on the window as before.
+            child: ContentPaneCenteringPadding(
+              child: AppModalCard(width: kPaymentRequestCardWidth, child: card),
+            ),
           ),
       ],
     );
