@@ -26,6 +26,19 @@ import 'support/desktop_onboarding_flow.dart';
 // request modal, then pushed back in over the `com.zcash.wallet/payment_uri`
 // MethodChannel, the same contract the platform runners implement.
 
+/// Optional per-step pause (ms) so a screen recording of this flow is
+/// watchable at human speed. Zero (the default) keeps CI runs fast.
+const _stepDelayMs = int.fromEnvironment('VIZOR_E2E_STEP_DELAY_MS');
+
+Future<void> _demoPause(WidgetTester tester) async {
+  if (_stepDelayMs <= 0) return;
+  final end = DateTime.now().add(Duration(milliseconds: _stepDelayMs));
+  while (DateTime.now().isBefore(end)) {
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+}
+
 const _network = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
   defaultValue: 'regtest',
@@ -84,6 +97,10 @@ void main() {
 
       final requesterUuid = await _accountUuidAtOrder(1);
 
+      // Marker for screen-recording runners: everything before this line is
+      // wallet setup, the round trip itself starts here.
+      _log('demo recording start');
+
       // The requesting account composes the link the payer will open.
       final requestUri = await _composeRequestLink(tester);
       _log('composed request link: $requestUri');
@@ -128,6 +145,12 @@ void main() {
         memo: _requestMessage,
       );
       _log('received memo matched the requested message');
+
+      // Hold the final screen so a recording capped by duration ends on the
+      // paid state instead of on the teardown.
+      for (var i = 0; i < 25; i++) {
+        await _demoPause(tester);
+      }
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );
@@ -246,6 +269,7 @@ Future<void> _expectReceivedMemo(
   final dbPath = await getWalletDbPath();
   final deadline = DateTime.now().add(const Duration(minutes: 2));
   var lastSeenMemo = '<not read>';
+  var lastHistorySummary = '<not read>';
 
   while (DateTime.now().isBefore(deadline)) {
     final history = await rust_sync.getTransactionHistory(
@@ -254,6 +278,13 @@ Future<void> _expectReceivedMemo(
       limit: 20,
       accountUuid: accountUuid,
     );
+    lastHistorySummary = history
+        .map(
+          (tx) =>
+              '${tx.txidHex}:${tx.txKind}:${tx.displayAmount}:'
+              'mined=${tx.minedHeight}:expired=${tx.expiredUnmined}',
+        )
+        .join(', ');
     final received = history
         .where(
           (tx) =>
@@ -278,7 +309,10 @@ Future<void> _expectReceivedMemo(
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
 
-  fail('Timed out waiting for the received memo "$memo". Saw: $lastSeenMemo.');
+  fail(
+    'Timed out waiting for the received memo "$memo". Saw: $lastSeenMemo. '
+    'Observed history: $lastHistorySummary.',
+  );
 }
 
 Future<void> _importFirstWallet(WidgetTester tester) async {
@@ -600,6 +634,7 @@ Future<void> _tapAppButton(
   await tester.tap(finder);
   await tester.pump(const Duration(milliseconds: 250));
   _log('tapped $key');
+  await _demoPause(tester);
 }
 
 Future<void> _tapWidget(
@@ -619,6 +654,7 @@ Future<void> _tapWidget(
   await tester.tap(finder);
   await tester.pump(const Duration(milliseconds: 250));
   _log('tapped $key');
+  await _demoPause(tester);
 }
 
 Future<void> _tapReceiveButton(WidgetTester tester) async {
@@ -646,6 +682,7 @@ Future<void> _enterText(WidgetTester tester, Key key, String text) async {
   await tester.enterText(editable, text);
   await tester.pump(const Duration(milliseconds: 100));
   _log('entered text into $key');
+  await _demoPause(tester);
 }
 
 bool _keyedTextEquals(WidgetTester tester, Key key, String expected) {
@@ -665,7 +702,10 @@ Future<void> _pumpUntil(
   var polls = 0;
   while (DateTime.now().isBefore(end)) {
     try {
-      if (condition()) return;
+      if (condition()) {
+        await _demoPause(tester);
+        return;
+      }
     } catch (e) {
       lastError = e;
     }
