@@ -2545,12 +2545,6 @@ pub fn discard_proposal(proposal_id: u64, send_flow_id: String) -> Result<(), St
     wallet_sync::discard_proposal(proposal_id, &send_flow_id)
 }
 
-/// Discard all process-local send proposals associated with a wallet DB after
-/// its destructive reset commits.
-pub fn discard_all_proposals_for_wallet_reset(db_path: String) -> Result<(), String> {
-    wallet_sync::discard_all_proposals_for_wallet_reset(&db_path)
-}
-
 /// Remove the replayable proposal capability but keep its owner-scoped wallet
 /// input lock until the original expiry height. Use this when broadcast
 /// acceptance is uncertain or the accepted transaction could not be persisted

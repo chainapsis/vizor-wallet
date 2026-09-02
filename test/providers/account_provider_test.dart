@@ -12,7 +12,6 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
-import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_preferences.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
@@ -406,20 +405,6 @@ void main() {
       final store = AppSecureStore.instance;
       await store.writePlain(kThemeModeKey, 'dark');
       await store.writePlain(kPrivacyModeEnabledKey, 'true');
-      final migrationAnnouncementKey =
-          ironwoodMigrationAnnouncementSeenStorageKey(
-            network: 'main',
-            accountUuid: 'account-1',
-          );
-      final migrationCompletionKey = ironwoodMigrationCompletionSeenStorageKey(
-        network: 'main',
-        accountUuid: 'account-1',
-        completionId: 'old-completion',
-      );
-      final preferences = await SharedPreferences.getInstance();
-      await preferences.setBool(migrationAnnouncementKey, true);
-      await preferences.setBool(migrationCompletionKey, true);
-      await preferences.setString('install_preference', 'keep');
       await store.writePlain(kRpcEndpointUrlKey, 'https://old.example');
       await store.writeString(
         kAddressBookContactsKey,
@@ -495,18 +480,6 @@ void main() {
       expect(await store.readPlain(kRpcEndpointUrlKey), isNull);
       expect(await store.readPlain(kThemeModeKey), 'dark');
       expect(await store.readPlain(kPrivacyModeEnabledKey), 'true');
-      expect(preferences.getBool(migrationAnnouncementKey), isNull);
-      expect(preferences.getBool(migrationCompletionKey), isNull);
-      expect(preferences.getString('install_preference'), 'keep');
-      expect(_rustApi.resetProposalDbPaths, hasLength(1));
-      expect(
-        _rustApi.resetProposalDbPaths.single,
-        startsWith(
-          '${supportDirectory.path}${Platform.pathSeparator}zcash_wallet_',
-        ),
-      );
-      expect(_rustApi.resetProposalDbPaths.single, endsWith('.db'));
-      expect(_rustApi.resetUrSessionCalls, 1);
 
       await oldActivityStore.saveRecords(
         accountUuid: 'account-1',
@@ -689,14 +662,8 @@ class _FakeAnyhowException implements Exception {
 
 class _AccountMutationRustApiFake implements RustLibApi {
   final deletedAccountUuids = <String>[];
-  final resetProposalDbPaths = <String>[];
-  var resetUrSessionCalls = 0;
 
-  void reset() {
-    deletedAccountUuids.clear();
-    resetProposalDbPaths.clear();
-    resetUrSessionCalls = 0;
-  }
+  void reset() => deletedAccountUuids.clear();
 
   @override
   Future<void> crateApiWalletDeleteAccount({
@@ -722,18 +689,6 @@ class _AccountMutationRustApiFake implements RustLibApi {
 
   @override
   Future<void> crateApiSyncDiscardAllKeystoneMigrationRequests() async {}
-
-  @override
-  Future<void> crateApiSyncDiscardAllProposalsForWalletReset({
-    required String dbPath,
-  }) async {
-    resetProposalDbPaths.add(dbPath);
-  }
-
-  @override
-  void crateApiKeystoneResetUrSession() {
-    resetUrSessionCalls++;
-  }
 
   @override
   Future<void> crateApiWalletEvictWalletSummaryCache({

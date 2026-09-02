@@ -3,8 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, visibleForTesting;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,13 +18,10 @@ import '../core/storage/wallet_paths.dart';
 import '../features/swap/providers/swap_activity_store.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
-import '../features/migration/services/ironwood_migration_preferences.dart';
 import '../features/voting/voting_flow_models.dart';
-import '../rust/api/keystone.dart' as rust_keystone;
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
-import '../services/native_wallet_session.dart';
 import 'account_models.dart';
 import 'app_security_provider.dart';
 import 'network_privacy_provider.dart';
@@ -867,23 +863,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // retryable (deleteAll is idempotent and a regenerated DB name only
     // no-ops the next, already-satisfied DB delete).
     if (dbDeleted) {
-      // These are Vizor-owned process/native capabilities rather than durable
-      // wallet records. Clear them only after DB deletion commits: if deletion
-      // fails, the still-valid wallet must keep its active send capabilities.
-      try {
-        await rust_sync.discardAllProposalsForWalletReset(dbPath: dbPath);
-      } catch (e, st) {
-        log('resetWallet: failed to discard send proposals: $e\n$st');
-      }
-      rust_keystone.resetUrSession();
-      if (defaultTargetPlatform == TargetPlatform.iOS) {
-        try {
-          await const NativeWalletSessionBridge().resetWalletState();
-        } catch (e, st) {
-          // Native presentation cleanup must not block the durable wallet wipe.
-          log('resetWallet: native wallet session cleanup failed: $e\n$st');
-        }
-      }
       try {
         await rust_wallet.evictWalletSummaryCache(dbPath: dbPath);
       } catch (e, st) {
@@ -920,13 +899,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ref.read(networkPrivacyProvider.notifier).markRouteDirectAfterReset();
         },
       );
-      try {
-        await clearIronwoodMigrationPreferencesForReset();
-      } catch (e, st) {
-        // Presentation metadata is non-secret and outside the wallet DB. Once
-        // the wallet is gone, failure to remove it is best-effort cleanup.
-        log('resetWallet: migration preference cleanup failed: $e\n$st');
-      }
     }
 
     final error = firstError;

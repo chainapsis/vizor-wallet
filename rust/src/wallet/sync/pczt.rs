@@ -86,7 +86,7 @@ use crate::wallet::network::WalletNetwork;
 
 use super::{
     consume_stored_proposal, discard_stored_proposal, finish_stored_proposal, open_wallet_db,
-    retain_stored_proposal_lock_until_expiry, stored_proposal_lock, PROPOSAL_STORE,
+    retain_stored_proposal_lock_until_expiry, stored_proposal_lock,
 };
 
 pub struct ExtractAndBroadcastPcztResult {
@@ -754,27 +754,6 @@ pub async fn create_tex_pczts_from_proposal(
 /// never existed.
 pub fn discard_proposal(proposal_id: u64, send_flow_id: &str) -> Result<(), String> {
     discard_stored_proposal(proposal_id, send_flow_id)
-}
-
-/// Removes every process-local send capability owned by a wallet being reset.
-///
-/// The wallet DB has already been deleted, so its durable input locks do not
-/// need to be individually released. Filtering by DB path avoids disturbing
-/// another wallet database used by tests or tooling in this process.
-pub fn discard_all_proposals_for_wallet_reset(db_path: &str) -> Result<(), String> {
-    let mut store = PROPOSAL_STORE
-        .lock()
-        .map_err(|e| format!("Lock proposal store for wallet reset: {e}"))?;
-    let proposal_ids = store
-        .locks
-        .iter()
-        .filter_map(|(proposal_id, lock)| (lock.db_path == db_path).then_some(*proposal_id))
-        .collect::<Vec<_>>();
-    for proposal_id in proposal_ids {
-        store.proposals.remove(&proposal_id);
-        store.locks.remove(&proposal_id);
-    }
-    Ok(())
 }
 
 /// Forget the in-memory proposal capability while leaving its wallet input
