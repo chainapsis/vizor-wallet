@@ -1316,8 +1316,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       }
     } catch (e) {
       if (!mounted || seq != _validateSeq) return;
-      final msg = e.toString();
-      if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
+      // Lowercase first, like the max and review estimates in this file: what
+      // Rust actually sends up is "Propose failed: Insufficient balance (have
+      // …, need … including fee)", so a case-sensitive match on either literal
+      // never fired and this warning could not reach the composer at all.
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('insufficientfunds') || msg.contains('insufficient')) {
         setState(() => _amountError = _notEnoughZecText);
       } else {
         log('MobileSend: fee estimation failed (non-blocking): $e');

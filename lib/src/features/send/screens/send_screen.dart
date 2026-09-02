@@ -887,8 +887,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
     } catch (e) {
       if (!mounted || seq != _validateSeq) return;
-      final msg = e.toString();
-      if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
+      // Lowercase first, like the max estimate above: what Rust actually
+      // sends up is "Propose failed: Insufficient balance (have …, need …
+      // including fee)", so a case-sensitive match on either literal never
+      // fired and this warning could not reach the composer at all.
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('insufficientfunds') || msg.contains('insufficient')) {
         setState(() => _amountError = _insufficientBalanceIncludingFeeText);
       } else {
         log('Send: fee estimation failed (non-blocking): $e');

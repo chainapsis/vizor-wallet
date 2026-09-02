@@ -2140,6 +2140,48 @@ void main() {
     expect(find.text('Finish & review'), findsOneWidget);
   });
 
+  // Rust reports this as "Propose failed: Insufficient balance (have …, need …
+  // including fee)" — capital I, and no `InsufficientFunds` token anywhere.
+  // Dart's contains() is case-sensitive, so a match on the raw string sent the
+  // amount that fits but cannot cover its fee straight through to Review.
+  testWidgets('an amount that cannot cover its fee is caught in the composer', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async => throw StateError(
+              'Propose failed: Insufficient balance '
+              '(have 5.0 ZEC, need 5.0001 ZEC including fee)',
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    // 4.9 ZEC is inside the 5 ZEC spendable fixture, so only the fee estimate
+    // can catch it.
+    await _enterAmount(tester, '4.9');
+
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_send_review_button')),
+          )
+          .onPressed,
+      isNull,
+      reason: 'Review must stay closed on an amount that cannot be sent',
+    );
+  });
+
   testWidgets('active migration limits Send to the Ironwood balance', (
     tester,
   ) async {
