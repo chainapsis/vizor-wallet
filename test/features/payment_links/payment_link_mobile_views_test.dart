@@ -6,7 +6,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -108,52 +107,29 @@ void main() {
     tester,
   ) async {
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.paste);
-    expect(find.byType(PaymentLinkGiftCard), findsOneWidget);
+    final pasteZone = find.byKey(
+      const ValueKey('payment_link_mobile_redeem_drop_zone'),
+    );
+    expect(tester.getSize(pasteZone), const Size(361, 225.625));
+    expect(tester.getTopLeft(pasteZone), const Offset(16, 232));
     expect(find.text('Paste card link'), findsOneWidget);
 
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.loading);
-    expect(
-      find.byKey(const ValueKey('payment_link_mobile_loading_card')),
-      findsOneWidget,
+    final loadingCard = find.byKey(
+      const ValueKey('payment_link_mobile_loading_card'),
     );
-    expect(find.text('Checking Gift Card...'), findsOneWidget);
+    expect(tester.getSize(loadingCard), const Size(320, 200));
+    expect(tester.getTopLeft(loadingCard), const Offset(36.5, 232));
+    expect(find.text('Checking ...'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_mobile_paste_button')),
+      findsNothing,
+    );
 
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.invalid);
+    expect(tester.getTopLeft(pasteZone), const Offset(16, 232));
     expect(find.text('The link doesn’t look legit.'), findsOneWidget);
     expect(find.text('Clear clipboard'), findsOneWidget);
-  });
-
-  testWidgets('ready waiting copy reflects uncertain broadcast fallback', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(393, 773));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(
-      MaterialApp(
-        builder: (_, navigator) =>
-            AppTheme(data: AppThemeData.light, child: navigator!),
-        home: Directionality(
-          textDirection: TextDirection.ltr,
-          child: SizedBox(
-            width: 393,
-            height: 773,
-            child: PaymentLinkReadyMobileView(
-              state: PaymentLinkReadyMobileState.waiting,
-              card: const SizedBox(
-                width: kPaymentLinkMobileCardWidth,
-                height: kPaymentLinkMobileCardHeight,
-              ),
-              onHome: _noop,
-              onCopy: null,
-            ),
-          ),
-        ),
-      ),
-    );
-
-    expect(find.textContaining('reaches the network.'), findsOneWidget);
-    expect(find.textContaining('one confirmation is enough.'), findsOneWidget);
-    expect(find.text('Wait 1:15 to get the link'), findsOneWidget);
   });
 
   testWidgets('received waiting copy explains the six-confirmation gate', (
@@ -176,6 +152,7 @@ void main() {
                 width: kPaymentLinkMobileCardWidth,
                 height: kPaymentLinkMobileCardHeight,
               ),
+              cardTop: kPaymentLinkMobileReceivedCardTop,
               onHome: _noop,
               waitingHeading: 'Your Gift Card\nis almost ready!',
               waitingDescription: 'Waiting for 6 confirmations.',
@@ -189,6 +166,14 @@ void main() {
     expect(find.text('Waiting for 6 confirmations.'), findsOneWidget);
     expect(find.text('Wait 5:00 to claim'), findsOneWidget);
     expect(find.text('Copy link'), findsNothing);
+    expect(
+      tester
+          .getTopLeft(
+            find.byKey(const ValueKey('payment_link_mobile_card_slot')),
+          )
+          .dy,
+      kPaymentLinkMobileReceivedCardTop,
+    );
   });
 
   testWidgets('received card exposes Figma claim copy and action', (
@@ -292,14 +277,6 @@ Future<void> _pumpRedeem(
           height: 773,
           child: PaymentLinkRedeemMobileView(
             state: state,
-            card: const PaymentLinkGiftCard(
-              artwork: PaymentLinkCardArtwork.gift,
-              cardWidth: kPaymentLinkMobileCardWidth,
-              cardHeight: kPaymentLinkMobileCardHeight,
-              currencySymbol: '',
-              emptyAmountLabel: 'Gift Card link',
-              showCaret: false,
-            ),
             onBack: _noop,
             onPaste: _noop,
             onClearClipboard: _noop,

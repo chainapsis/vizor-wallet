@@ -937,10 +937,6 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobilePaymentLinkReadyCelebratingUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Ready - Waiting',
-                      builder: buildMobilePaymentLinkReadyWaitingUseCase,
-                    ),
-                    WidgetbookUseCase(
                       name: 'Ready - Shareable',
                       builder: buildMobilePaymentLinkReadyUseCase,
                     ),

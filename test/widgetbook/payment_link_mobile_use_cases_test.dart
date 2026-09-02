@@ -5,10 +5,40 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_mobile_use_cases.dart';
 
 void main() {
+  testWidgets('home matches the mobile device and action geometry', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildMobilePaymentLinkHomeEmptyUseCase);
+
+    expect(
+      tester.getTopLeft(
+        find.byKey(const ValueKey('mobile_payment_link_preview_frame')),
+      ),
+      const Offset(0, 55),
+    );
+
+    final redeem = find.byKey(
+      const ValueKey('payment_links_mobile_redeem_button'),
+    );
+    final create = find.byKey(
+      const ValueKey('payment_links_mobile_create_button'),
+    );
+    expect(tester.getRect(redeem), const Rect.fromLTWH(16, 716, 361, 50));
+    expect(tester.getRect(create), const Rect.fromLTWH(16, 778, 361, 50));
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon && widget.name == AppIcons.giftCardOutline,
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('home help icon opens the Gift Card explanation sheet', (
     tester,
   ) async {

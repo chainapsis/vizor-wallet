@@ -19,6 +19,8 @@ import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 
 const _mobilePreviewSize = Size(393, 773);
+const _mobileDeviceSize = Size(393, 852);
+const _mobileStatusBarHeight = 55.0;
 const _cardWidth = 361.0;
 const _cardHeight = 225.625;
 const _fixtureAmount = '4.45';
@@ -26,14 +28,6 @@ const _fixtureFee = '0.04 ZEC';
 const _fixtureTotal = '4.49 ZEC';
 const _fixtureMessage = 'Hey there! Welcome to the Shielded World ;)';
 const _fixtureArtwork = PaymentLinkCardArtwork.chestLava;
-const _redeemCardFixture = PaymentLinkGiftCard(
-  artwork: PaymentLinkCardArtwork.gift,
-  cardWidth: _cardWidth,
-  cardHeight: _cardHeight,
-  currencySymbol: '',
-  emptyAmountLabel: 'Gift Card link',
-  showCaret: false,
-);
 const kMobilePaymentLinkPreviewFiatDelay = Duration(milliseconds: 1200);
 
 Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
@@ -156,23 +150,6 @@ Widget buildMobilePaymentLinkReadyCelebratingUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobilePaymentLinkReadyWaitingUseCase(BuildContext context) {
-  return const _MobilePaymentLinkFrame(
-    child: PaymentLinkReadyMobileView(
-      state: PaymentLinkReadyMobileState.soon,
-      card: PaymentLinkGiftCard(
-        artwork: PaymentLinkCardArtwork.knightMagic,
-        cardWidth: _cardWidth,
-        cardHeight: _cardHeight,
-        amountText: _fixtureAmount,
-        supportingText: r'$142.23',
-        showCaret: false,
-      ),
-      onHome: _noop,
-    ),
-  );
-}
-
 Widget buildMobilePaymentLinkReadyUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(child: _MobileReadyFixture());
 }
@@ -181,7 +158,6 @@ Widget buildMobilePaymentLinkRedeemPasteUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: PaymentLinkRedeemMobileView(
       state: PaymentLinkRedeemMobileState.paste,
-      card: _redeemCardFixture,
       onBack: _noop,
       onPaste: _noop,
     ),
@@ -195,7 +171,6 @@ Widget buildMobilePaymentLinkRedeemLongSyncWarningUseCase(
     child: MobileModalOverlay(
       background: PaymentLinkRedeemMobileView(
         state: PaymentLinkRedeemMobileState.paste,
-        card: _redeemCardFixture,
         onBack: _noop,
         onPaste: _noop,
       ),
@@ -208,7 +183,6 @@ Widget buildMobilePaymentLinkRedeemLoadingUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: PaymentLinkRedeemMobileView(
       state: PaymentLinkRedeemMobileState.loading,
-      card: _redeemCardFixture,
       onBack: _noop,
     ),
   );
@@ -218,7 +192,6 @@ Widget buildMobilePaymentLinkRedeemInvalidUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: PaymentLinkRedeemMobileView(
       state: PaymentLinkRedeemMobileState.invalid,
-      card: _redeemCardFixture,
       onBack: _noop,
       onPaste: _noop,
       onClearClipboard: _noop,
@@ -242,6 +215,7 @@ Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
         supportingText: r'$142.23',
         showCaret: false,
       ),
+      cardTop: kPaymentLinkMobileReceivedCardTop,
       onHome: _noop,
       waitingHeading: 'Your Gift Card\nis almost ready!',
       waitingDescription:
@@ -518,18 +492,44 @@ class _MobilePaymentLinkFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: SizedBox.fromSize(
-        key: const ValueKey('mobile_payment_link_preview_frame'),
-        size: _mobilePreviewSize,
-        child: MediaQuery(
-          data: MediaQuery.of(context).copyWith(size: _mobilePreviewSize),
-          child: ColoredBox(
-            color: context.colors.background.window,
-            child: child,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showDeviceInsets =
+            constraints.hasBoundedHeight &&
+            constraints.maxHeight >= _mobileDeviceSize.height;
+        final frameSize = showDeviceInsets
+            ? _mobileDeviceSize
+            : _mobilePreviewSize;
+        return Center(
+          child: SizedBox.fromSize(
+            size: frameSize,
+            child: ColoredBox(
+              color: context.colors.background.window,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    top: showDeviceInsets ? _mobileStatusBarHeight : 0,
+                  ),
+                  child: SizedBox.fromSize(
+                    key: const ValueKey('mobile_payment_link_preview_frame'),
+                    size: _mobilePreviewSize,
+                    child: MediaQuery(
+                      data: MediaQuery.of(
+                        context,
+                      ).copyWith(size: _mobilePreviewSize),
+                      child: ColoredBox(
+                        color: context.colors.background.window,
+                        child: child,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

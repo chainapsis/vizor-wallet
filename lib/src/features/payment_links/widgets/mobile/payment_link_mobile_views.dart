@@ -16,7 +16,10 @@ const _navHeight = 74.0;
 const _sideInset = 16.0;
 const _subtitleTop = 102.0;
 const _cardTop = 207.0;
-const _receivedCardTop = 221.0;
+const _redeemSurfaceTop = 232.0;
+const _redeemCheckingCardWidth = 320.0;
+const _redeemCheckingCardHeight = 200.0;
+const kPaymentLinkMobileReceivedCardTop = 221.0;
 const kPaymentLinkMobileCardWidth = 361.0;
 const kPaymentLinkMobileCardHeight = 225.625;
 const _cardWidth = kPaymentLinkMobileCardWidth;
@@ -286,7 +289,7 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
                   height: _buttonHeight,
                   expand: true,
                   leading: const AppIcon(
-                    AppIcons.giftCard,
+                    AppIcons.giftCardOutline,
                     size: AppIconSize.medium,
                   ),
                   child: Text(createLabel),
@@ -524,6 +527,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
         'The link becomes shareable when funding reaches the network.\n'
         'If Vizor cannot confirm that yet, one confirmation is enough.',
     this.waitingIcon,
+    this.cardTop = 190,
     this.copyLabel = 'Copy link',
     this.homeLabel = 'Go home',
     super.key,
@@ -539,6 +543,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
   final String waitingHeading;
   final String waitingDescription;
   final String? waitingIcon;
+  final double cardTop;
   final String copyLabel;
   final String homeLabel;
 
@@ -591,7 +596,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: 190,
+            top: cardTop,
             left: _sideInset,
             right: _sideInset,
             child: _MobileCardSlot(card: cardContent),
@@ -663,7 +668,6 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
 class PaymentLinkRedeemMobileView extends StatelessWidget {
   const PaymentLinkRedeemMobileView({
     required this.state,
-    required this.card,
     required this.onBack,
     this.onPaste,
     this.onClearClipboard,
@@ -679,7 +683,6 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
   });
 
   final PaymentLinkRedeemMobileState state;
-  final Widget card;
   final VoidCallback onBack;
   final VoidCallback? onPaste;
   final VoidCallback? onClearClipboard;
@@ -699,26 +702,21 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
     final unavailable = state == PaymentLinkRedeemMobileState.unavailable;
     final showError = invalid || unavailable;
 
-    return _MobilePaymentLinkWizardFrame(
-      title: title,
-      subtitle: subtitle,
-      onBack: onBack,
-      card: loading ? const _PaymentLinkLoadingMobileCard() : card,
-      action: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (loading) ...[
-            Text(
-              'Checking Gift Card...',
-              key: const ValueKey('payment_link_mobile_redeem_checking'),
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          if (showError) ...[
+    final cardContent = switch (state) {
+      PaymentLinkRedeemMobileState.paste => _MobileRedeemDropZone(
+        child: AppButton(
+          key: const ValueKey('payment_link_mobile_paste_button'),
+          onPressed: onPaste,
+          size: AppButtonSize.mediumLarge,
+          leading: const AppIcon(AppIcons.paste, size: 20),
+          child: Text(pasteLabel),
+        ),
+      ),
+      PaymentLinkRedeemMobileState.invalid ||
+      PaymentLinkRedeemMobileState.unavailable => _MobileRedeemDropZone(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text(
               invalid ? invalidTitle : unavailableTitle,
               textAlign: TextAlign.center,
@@ -726,7 +724,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
                 color: context.colors.text.destructive,
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.xxs),
             Text(
               invalid ? invalidSubtitle : unavailableSubtitle,
               textAlign: TextAlign.center,
@@ -734,28 +732,79 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
                 color: context.colors.text.secondary,
               ),
             ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
-          AppButton(
-            key: const ValueKey('payment_link_mobile_paste_button'),
-            onPressed: loading ? null : onPaste,
-            size: AppButtonSize.large,
-            height: _buttonHeight,
-            expand: true,
-            leading: const AppIcon(AppIcons.paste, size: 20),
-            child: Text(loading ? 'Checking...' : pasteLabel),
-          ),
-          if (showError) ...[
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.base),
             AppButton(
-              key: const ValueKey('payment_link_mobile_clear_clipboard_button'),
-              onPressed: onClearClipboard,
-              variant: AppButtonVariant.ghost,
+              key: const ValueKey('payment_link_mobile_paste_button'),
+              onPressed: onPaste,
               size: AppButtonSize.mediumLarge,
-              leading: const AppIcon(AppIcons.trash, size: 20),
-              child: Text(clearLabel),
+              leading: const AppIcon(AppIcons.paste, size: 20),
+              child: Text(pasteLabel),
             ),
           ],
+        ),
+      ),
+      PaymentLinkRedeemMobileState.loading =>
+        const _PaymentLinkLoadingMobileCard(),
+    };
+
+    return _MobilePaymentLinkFrame(
+      title: title,
+      onBack: onBack,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned(
+            top: _subtitleTop,
+            left: _sideInset,
+            right: _sideInset,
+            child: Text(
+              subtitle,
+              key: const ValueKey('payment_link_mobile_step_subtitle'),
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+          ),
+          Positioned(
+            top: _redeemSurfaceTop,
+            left: _sideInset,
+            right: _sideInset,
+            child: Center(child: cardContent),
+          ),
+          if (loading)
+            Positioned(
+              top:
+                  _redeemSurfaceTop + _redeemCheckingCardHeight + AppSpacing.md,
+              left: 0,
+              right: 0,
+              child: Text(
+                'Checking ...',
+                key: const ValueKey('payment_link_mobile_redeem_checking'),
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+            ),
+          if (showError)
+            Positioned(
+              top: _redeemSurfaceTop + _cardHeight + AppSpacing.md,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: AppButton(
+                  key: const ValueKey(
+                    'payment_link_mobile_clear_clipboard_button',
+                  ),
+                  onPressed: onClearClipboard,
+                  variant: AppButtonVariant.ghost,
+                  size: AppButtonSize.mediumLarge,
+                  leading: const AppIcon(AppIcons.trash, size: 20),
+                  child: Text(clearLabel),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -845,7 +894,7 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
               ),
             ),
           Positioned(
-            top: _receivedCardTop,
+            top: kPaymentLinkMobileReceivedCardTop,
             left: _sideInset,
             right: _sideInset,
             child: _MobileCardSlot(
@@ -961,8 +1010,8 @@ class _PaymentLinkLoadingMobileCard extends StatelessWidget {
     final skeletonColor = context.colors.text.secondary;
     return Container(
       key: const ValueKey('payment_link_mobile_loading_card'),
-      width: _cardWidth,
-      height: _cardHeight,
+      width: _redeemCheckingCardWidth,
+      height: _redeemCheckingCardHeight,
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: context.colors.background.ground,
@@ -1001,6 +1050,28 @@ class _PaymentLinkLoadingMobileCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MobileRedeemDropZone extends StatelessWidget {
+  const _MobileRedeemDropZone({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      key: const ValueKey('payment_link_mobile_redeem_drop_zone'),
+      painter: _MobileDashedBorderPainter(
+        color: context.colors.border.regular,
+        radius: AppRadii.large,
+      ),
+      child: SizedBox(
+        width: _cardWidth,
+        height: _cardHeight,
+        child: Center(child: child),
       ),
     );
   }

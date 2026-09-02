@@ -1478,7 +1478,6 @@ class _PaymentLinksDesktopScreenState
       _PaymentLinksLocalPage.shareQr => _buildMobileHome(),
       _PaymentLinksLocalPage.redeem => PaymentLinkRedeemMobileView(
         state: PaymentLinkRedeemMobileState.values.byName(_redeemState.name),
-        card: _buildRedeemCard(mobile: true),
         onBack: () => _showPage(_PaymentLinksLocalPage.home),
         onPaste: _operationInProgress ? null : _runRedeemAction,
         onClearClipboard: _operationInProgress ? null : _clearClipboard,
@@ -1711,7 +1710,6 @@ class _PaymentLinksDesktopScreenState
     if (link == null) {
       return PaymentLinkRedeemMobileView(
         state: PaymentLinkRedeemMobileState.paste,
-        card: _buildRedeemCard(mobile: true),
         onBack: _leaveMobilePaymentLinks,
         onPaste: _operationInProgress ? null : _runRedeemAction,
         onClearClipboard: _operationInProgress ? null : _clearClipboard,
@@ -1755,6 +1753,7 @@ class _PaymentLinksDesktopScreenState
             ? PaymentLinkReadyMobileState.soon
             : PaymentLinkReadyMobileState.waiting,
         card: card,
+        cardTop: kPaymentLinkMobileReceivedCardTop,
         onHome: _leavePendingClaim,
         waitingHeading: 'Your Gift Card\nis almost ready!',
         waitingDescription:
@@ -1795,23 +1794,6 @@ class _PaymentLinksDesktopScreenState
       ),
       _PaymentLinksLocalPage.received => _buildReceived(),
     };
-  }
-
-  Widget _buildRedeemCard({required bool mobile}) {
-    return PaymentLinkGiftCard(
-      artwork: PaymentLinkCardArtwork.gift,
-      cardWidth: mobile
-          ? kPaymentLinkMobileCardWidth
-          : PaymentLinkGiftCard.width,
-      cardHeight: mobile
-          ? kPaymentLinkMobileCardHeight
-          : PaymentLinkGiftCard.height,
-      currencySymbol: '',
-      emptyAmountLabel: 'Gift Card link',
-      showCaret: false,
-      onTap: _operationInProgress ? null : _runRedeemAction,
-      semanticLabel: 'Paste Gift Card link',
-    );
   }
 
   Widget _buildHome() {
