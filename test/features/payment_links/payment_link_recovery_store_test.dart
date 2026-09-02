@@ -287,6 +287,57 @@ void main() {
       expect(await store.countUnsharedFundedForAccount('other-account'), 0);
     });
 
+    test('removes only matching unshared funding after it expires', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+      await store.markFunded(
+        address: link.address,
+        fundingTxids: 'funding-txid',
+      );
+
+      await expectLater(
+        store.removeUnsharedExpiredFunding(
+          address: link.address,
+          fundingTxids: 'different-txid',
+        ),
+        throwsStateError,
+      );
+      expect(await store.load(), hasLength(1));
+
+      await store.removeUnsharedExpiredFunding(
+        address: link.address,
+        fundingTxids: 'funding-txid',
+      );
+      expect(await store.load(), isEmpty);
+    });
+
+    test('never removes a shared funding recovery', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+      await store.markFunded(
+        address: link.address,
+        fundingTxids: 'funding-txid',
+      );
+      await store.markShared(address: link.address);
+
+      await expectLater(
+        store.removeUnsharedExpiredFunding(
+          address: link.address,
+          fundingTxids: 'funding-txid',
+        ),
+        throwsStateError,
+      );
+
+      expect(
+        (await store.load()).single.state,
+        PaymentLinkRecoveryState.shared,
+      );
+    });
+
     test('archiving a shared record keeps its recovery secret', () async {
       final storage = _FakePaymentLinkRecoveryStorage();
       final store = PaymentLinkRecoveryStore(storage);

@@ -109,20 +109,37 @@ class PaymentLinkRecoveryReconciler {
               (record.fundingTxids?.trim().isNotEmpty ?? false),
         )
         .toList();
-    if (preparedDrafts.isEmpty) return records;
+    final unsharedFundings = records
+        .where(
+          (record) =>
+              record.state == PaymentLinkRecoveryState.funded &&
+              (record.fundingTxids?.trim().isNotEmpty ?? false),
+        )
+        .toList();
+    if (preparedDrafts.isEmpty && unsharedFundings.isEmpty) return records;
 
     try {
-      final lookupResults = await Future.wait<Object>([
-        _loadCurrentHeight(),
-        _loadScannedHeight(),
-        _loadTransactionsByAccount(
-          preparedDrafts.map((record) => record.sourceAccountUuid).toSet(),
-        ),
-      ]);
-      final currentHeight = lookupResults[0] as BigInt;
-      final scannedHeight = lookupResults[1] as BigInt;
-      final transactionsByAccount =
-          lookupResults[2] as Map<String, List<rust_sync.TransactionInfo>>;
+      final accountUuids = {
+        for (final record in [...preparedDrafts, ...unsharedFundings])
+          record.sourceAccountUuid,
+      };
+      late final BigInt currentHeight;
+      late final BigInt scannedHeight;
+      late final Map<String, List<rust_sync.TransactionInfo>>
+      transactionsByAccount;
+      if (preparedDrafts.isEmpty) {
+        transactionsByAccount = await _loadTransactionsByAccount(accountUuids);
+      } else {
+        final lookupResults = await Future.wait<Object>([
+          _loadCurrentHeight(),
+          _loadScannedHeight(),
+          _loadTransactionsByAccount(accountUuids),
+        ]);
+        currentHeight = lookupResults[0] as BigInt;
+        scannedHeight = lookupResults[1] as BigInt;
+        transactionsByAccount =
+            lookupResults[2] as Map<String, List<rust_sync.TransactionInfo>>;
+      }
 
       var changed = false;
       for (final record in preparedDrafts) {
@@ -154,6 +171,28 @@ class PaymentLinkRecoveryReconciler {
         } catch (error) {
           log(
             'PaymentLinkRecoveryReconciler: prepared funding update failed '
+            'address=${record.link.address} error=$error',
+          );
+        }
+      }
+      for (final record in unsharedFundings) {
+        final fundingTxids = record.fundingTxids!.trim();
+        if (!paymentLinkFundingExpired(
+          fundingTxids: fundingTxids,
+          transactions:
+              transactionsByAccount[record.sourceAccountUuid] ?? const [],
+        )) {
+          continue;
+        }
+        try {
+          await _store.removeUnsharedExpiredFunding(
+            address: record.link.address,
+            fundingTxids: fundingTxids,
+          );
+          changed = true;
+        } catch (error) {
+          log(
+            'PaymentLinkRecoveryReconciler: expired funding cleanup failed '
             'address=${record.link.address} error=$error',
           );
         }

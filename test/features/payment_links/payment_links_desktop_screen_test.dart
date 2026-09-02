@@ -556,6 +556,23 @@ void main() {
     expect(find.text('Copy link'), findsOneWidget);
   });
 
+  testWidgets('removes an unshared Card after funding expires', (tester) async {
+    final operations = _FakePaymentLinkOperations(
+      records: [_fundedRecovery],
+      fundingConfirmationCount: 0,
+    );
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+
+    expect(find.text('Preparing...'), findsOneWidget);
+
+    operations.expireFundingOnInspect = true;
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+
+    expect(operations.records, isEmpty);
+    expect(find.text('Preparing...'), findsNothing);
+  });
+
   testWidgets('makes the link available after funding is accepted', (
     tester,
   ) async {
@@ -1953,6 +1970,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final bool fundingMetadataSavedOnCreate;
   final bool fundingBroadcastAcceptedOnCreate;
   int fundingConfirmationCount;
+  bool expireFundingOnInspect = false;
   bool claimable;
   bool waitingForFundingConfirmations;
   final bool longSyncConfirmationRequired;
@@ -2068,11 +2086,22 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   Future<Map<String, PaymentLinkFundingProgress>> inspectCreatedLinkFundings(
     List<PaymentLinkRecoveryRecord> records,
   ) async {
+    final expiredAddresses = expireFundingOnInspect
+        ? {
+            for (final record in records)
+              if (record.state == PaymentLinkRecoveryState.funded)
+                record.link.address,
+          }
+        : const <String>{};
+    this.records.removeWhere(
+      (record) => expiredAddresses.contains(record.link.address),
+    );
     return {
       for (final record in records)
-        record.link.address: PaymentLinkFundingProgress(
-          confirmationCount: fundingConfirmationCount,
-        ),
+        if (!expiredAddresses.contains(record.link.address))
+          record.link.address: PaymentLinkFundingProgress(
+            confirmationCount: fundingConfirmationCount,
+          ),
     };
   }
 

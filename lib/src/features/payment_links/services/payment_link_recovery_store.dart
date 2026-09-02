@@ -345,6 +345,27 @@ class PaymentLinkRecoveryStore {
     });
   }
 
+  Future<void> removeUnsharedExpiredFunding({
+    required String address,
+    required String fundingTxids,
+  }) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findByAddress(records, address);
+      if (existing == null) return;
+      if (existing.state != PaymentLinkRecoveryState.funded ||
+          existing.fundingTxids?.trim().toLowerCase() !=
+              fundingTxids.trim().toLowerCase()) {
+        throw StateError(
+          'Only the matching unshared expired funding can be removed.',
+        );
+      }
+      await _writeRecords(
+        records.where((record) => record.link.address != address).toList(),
+      );
+    });
+  }
+
   Future<List<PaymentLinkRecoveryRecord>> _loadUnlocked() async {
     final raw = await _storage.read();
     if (raw == null || raw.trim().isEmpty) return const [];

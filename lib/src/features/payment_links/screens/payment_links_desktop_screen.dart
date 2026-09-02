@@ -343,6 +343,12 @@ class _PaymentLinksDesktopScreenState
           .read(paymentLinkOperationsProvider)
           .inspectCreatedLinkFundings(pending);
       if (!mounted) return;
+      final expiredAddresses = {
+        for (final record in pending)
+          if (!updates.containsKey(record.link.address)) record.link.address,
+      };
+      final readyFundingExpired =
+          _readyLink != null && expiredAddresses.contains(_readyLink!.address);
       final mergedUpdates = {
         for (final entry in updates.entries)
           entry.key:
@@ -350,12 +356,23 @@ class _PaymentLinksDesktopScreenState
               ? entry.value.copyWith(broadcastAccepted: true)
               : entry.value,
       };
-      setState(
-        () => _fundingProgressByAddress = {
-          ..._fundingProgressByAddress,
+      setState(() {
+        _recoveries.removeWhere(
+          (record) => expiredAddresses.contains(record.link.address),
+        );
+        _fundingProgressByAddress = {
+          for (final entry in _fundingProgressByAddress.entries)
+            if (!expiredAddresses.contains(entry.key)) entry.key: entry.value,
           ...mergedUpdates,
-        },
-      );
+        };
+        if (readyFundingExpired) {
+          _readyLink = null;
+          _page = _PaymentLinksLocalPage.home;
+        }
+      });
+      if (readyFundingExpired) {
+        _showError('Gift Card funding expired. Create it again.');
+      }
     } catch (_) {
       // Keep the last known progress. A later foreground sync or timer tick
       // retries this read without hiding an already-ready link.

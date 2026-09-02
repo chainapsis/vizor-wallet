@@ -235,6 +235,39 @@ void main() {
     );
   });
 
+  test('funding expires only after every transaction expires unmined', () {
+    final expired = _transaction(
+      txid: 'expired',
+      txKind: 'sent',
+      expiredUnmined: true,
+    );
+
+    expect(
+      paymentLinkFundingExpired(
+        fundingTxids: 'expired',
+        transactions: [expired],
+      ),
+      isTrue,
+    );
+    expect(
+      paymentLinkFundingExpired(
+        fundingTxids: 'expired,active',
+        transactions: [
+          expired,
+          _transaction(txid: 'active', txKind: 'sent'),
+        ],
+      ),
+      isFalse,
+    );
+    expect(
+      paymentLinkFundingExpired(
+        fundingTxids: 'expired,missing',
+        transactions: [expired],
+      ),
+      isFalse,
+    );
+  });
+
   test(
     'claim remains Receiving until every transaction has six confirmations',
     () {

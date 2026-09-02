@@ -762,18 +762,37 @@ class PaymentLinkService implements PaymentLinkOperations {
         : await _ref
               .read(rpcEndpointFailoverProvider.notifier)
               .getLatestBlockHeight();
+    final expiredAddresses = <String>{};
+    for (final record in needsHistory) {
+      final fundingTxids = record.fundingTxids;
+      if (fundingTxids == null ||
+          !paymentLinkFundingExpired(
+            fundingTxids: fundingTxids,
+            transactions:
+                transactionsByAccount[record.sourceAccountUuid] ?? const [],
+          )) {
+        continue;
+      }
+      await _recoveryStore.removeUnsharedExpiredFunding(
+        address: record.link.address,
+        fundingTxids: fundingTxids,
+      );
+      expiredAddresses.add(record.link.address);
+    }
     return {
       for (final record in records)
-        record.link.address: record.state == PaymentLinkRecoveryState.shared
-            ? const PaymentLinkFundingProgress(
-                confirmationCount: kPaymentLinkShareConfirmationTarget,
-              )
-            : _fundingProgressForRecord(
-                record: record,
-                transactions:
-                    transactionsByAccount[record.sourceAccountUuid] ?? const [],
-                chainTipHeight: chainTipHeight,
-              ),
+        if (!expiredAddresses.contains(record.link.address))
+          record.link.address: record.state == PaymentLinkRecoveryState.shared
+              ? const PaymentLinkFundingProgress(
+                  confirmationCount: kPaymentLinkShareConfirmationTarget,
+                )
+              : _fundingProgressForRecord(
+                  record: record,
+                  transactions:
+                      transactionsByAccount[record.sourceAccountUuid] ??
+                      const [],
+                  chainTipHeight: chainTipHeight,
+                ),
     };
   }
 

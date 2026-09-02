@@ -25,6 +25,34 @@ bool paymentLinkFundingTransactionExists({
   );
 }
 
+/// Returns true only when every transaction in a funding proposal is known to
+/// have expired without being mined.
+bool paymentLinkFundingExpired({
+  required String fundingTxids,
+  required List<rust_sync.TransactionInfo> transactions,
+}) {
+  final expectedTxids = fundingTxids
+      .split(',')
+      .map(normalizePaymentLinkTxid)
+      .where((txid) => txid.isNotEmpty)
+      .toSet();
+  if (expectedTxids.isEmpty) return false;
+
+  for (final expectedTxid in expectedTxids) {
+    final matching = transactions
+        .where(
+          (transaction) =>
+              paymentLinkTxidsMatch(expectedTxid, transaction.txidHex),
+        )
+        .toList();
+    if (matching.isEmpty ||
+        matching.any((transaction) => !transaction.expiredUnmined)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 String normalizePaymentLinkTxid(String txid) {
   final normalized = txid.trim().toLowerCase();
   return normalized.startsWith('0x') ? normalized.substring(2) : normalized;

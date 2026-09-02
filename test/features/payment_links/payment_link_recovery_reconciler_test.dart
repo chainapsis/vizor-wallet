@@ -95,6 +95,67 @@ void main() {
     },
   );
 
+  test('removes unshared funding when every transaction expires', () async {
+    final fixture = await _fundedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.zero,
+      loadScannedHeight: () async => BigInt.zero,
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [
+          _transaction(txid: _preparedTxid, expiredUnmined: true),
+        ],
+      },
+    );
+
+    expect(await reconciler.load(), isEmpty);
+    expect(await reconciler.countUnsharedFundedForAccount('source-account'), 0);
+  });
+
+  test(
+    'retains unshared funding while any transaction may hold funds',
+    () async {
+      final fixture = await _fundedFixture(
+        fundingTxids: '$_preparedTxid,$_secondTxid',
+      );
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.zero,
+        loadScannedHeight: () async => BigInt.zero,
+        loadTransactionsByAccount: (_) async => {
+          'source-account': [
+            _transaction(txid: _preparedTxid, expiredUnmined: true),
+            _transaction(txid: _secondTxid),
+          ],
+        },
+      );
+
+      expect(await reconciler.load(), hasLength(1));
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    },
+  );
+
+  test('never removes a shared funding recovery', () async {
+    final fixture = await _fundedFixture();
+    await fixture.store.markShared(address: _preparedAddress);
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.zero,
+      loadScannedHeight: () async => BigInt.zero,
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [
+          _transaction(txid: _preparedTxid, expiredUnmined: true),
+        ],
+      },
+    );
+
+    final record = (await reconciler.load()).single;
+    expect(record.state, PaymentLinkRecoveryState.shared);
+  });
+
   test('refreshes the cached unshared count after lifecycle writes', () async {
     final reconciler = _CountingRecoveryReconciler();
     final container = ProviderContainer(
@@ -125,6 +186,9 @@ void main() {
 
 const _preparedTxid =
     '9909fe99c789029bf118c88bd9ee33ed35965fd0f3154dd1a8ec6daa4974c7e3';
+const _secondTxid =
+    '7fe86d43f8a80849899092537e237931551574bd8e0938219d114ac0d06d1151';
+const _preparedAddress = 'u1preparedgiftcardaddress';
 
 Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
 _preparedFixture() async {
@@ -132,7 +196,7 @@ _preparedFixture() async {
   final store = PaymentLinkRecoveryStore(storage);
   final link = VizorPaymentLink(
     network: 'main',
-    address: 'u1preparedgiftcardaddress',
+    address: _preparedAddress,
     amountZatoshi: BigInt.from(100000),
     mnemonic:
         'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
@@ -149,11 +213,33 @@ _preparedFixture() async {
   return (store: store, storage: storage);
 }
 
-rust_sync.TransactionInfo _transaction({required String txid}) {
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_fundedFixture({String fundingTxids = _preparedTxid}) async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: _preparedAddress,
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+  await store.markFunded(address: _preparedAddress, fundingTxids: fundingTxids);
+  return (store: store, storage: storage);
+}
+
+rust_sync.TransactionInfo _transaction({
+  required String txid,
+  bool expiredUnmined = false,
+}) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
-    minedHeight: BigInt.from(119),
-    expiredUnmined: false,
+    minedHeight: expiredUnmined ? BigInt.zero : BigInt.from(119),
+    expiredUnmined: expiredUnmined,
     accountBalanceDelta: -110000,
     fee: BigInt.from(10000),
     blockTime: BigInt.zero,
