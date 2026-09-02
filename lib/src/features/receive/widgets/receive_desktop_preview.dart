@@ -392,12 +392,9 @@ class _ReceivePaneContent extends StatelessWidget {
         ),
         Positioned(
           left: 190,
-          // The second action needs 52px the fixed-coordinate pane does not
-          // have, so the whole content column rises by that much. This is
-          // exactly the constant re-tuning the live screen will need.
-          top: showsRequestEntry ? 8 : 48,
+          top: 48,
           width: 420,
-          height: showsRequestEntry ? 696 : 656,
+          height: 656,
           child: _ReceiveContentArea(
             isShielded: isShielded,
             showsRequestEntry: showsRequestEntry,
@@ -453,19 +450,23 @@ class _ReceiveContentArea extends StatelessWidget {
           ),
         ),
         if (showsRequestEntry)
+          // The request entry shares the copy pill's row as a compact icon
+          // button — the home card's "Pay" shape — so the pane keeps the
+          // single-button height.
           Positioned(
-            left: 95,
-            top: 584,
-            width: 230,
-            height: 96,
-            child: Column(
+            left: (420 - (230 + AppSpacing.xs + 60)) / 2,
+            top: 596,
+            width: 230 + AppSpacing.xs + 60,
+            height: 44,
+            child: Row(
               children: [
                 SizedBox(
+                  width: 230,
                   height: 44,
                   child: _CopyAddressButton(isShielded: isShielded),
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                const SizedBox(height: 44, child: _RequestAmountButton()),
+                const SizedBox(width: AppSpacing.xs),
+                const SizedBox(width: 60, height: 44, child: _RequestButton()),
               ],
             ),
           )
@@ -910,21 +911,22 @@ class _CopyAddressButton extends StatelessWidget {
   }
 }
 
-/// The request entry: secondary, directly under the primary copy action.
+/// The request entry: a compact secondary pill beside the copy action.
 ///
 /// Secondary rather than primary because copying the address is still what
-/// most visits to this screen are for; secondary rather than a text link
-/// because a request is a destination, not an aside.
-class _RequestAmountButton extends StatelessWidget {
-  const _RequestAmountButton();
+/// most visits to this screen are for; icon only because a second labelled
+/// pill under the copy button pushed the pane past its frame.
+class _RequestButton extends StatelessWidget {
+  const _RequestButton();
 
   @override
   Widget build(BuildContext context) {
     return const _FixedPillButton(
-      width: 230,
+      width: 60,
       height: 44,
-      label: 'Request ZEC',
+      label: '',
       iconName: AppIcons.qr,
+      iconSize: 20,
       variant: _FixedPillButtonVariant.secondary,
     );
   }
@@ -938,13 +940,17 @@ class _FixedPillButton extends StatelessWidget {
     required this.height,
     required this.label,
     this.iconName,
+    this.iconSize = 20,
     this.variant = _FixedPillButtonVariant.primary,
   });
 
   final double width;
   final double height;
+
+  /// Empty for an icon-only pill.
   final String label;
   final String? iconName;
+  final double iconSize;
   final _FixedPillButtonVariant variant;
 
   @override
@@ -991,24 +997,27 @@ class _FixedPillButton extends StatelessWidget {
           width: width,
           height: height,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            padding: label.isEmpty
+                ? EdgeInsets.zero
+                : const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (iconName != null) ...[
-                  AppIcon(iconName!, size: 20, color: labelColor),
+                if (iconName != null)
+                  AppIcon(iconName!, size: iconSize, color: labelColor),
+                if (iconName != null && label.isNotEmpty)
                   const SizedBox(width: AppSpacing.xs),
-                ],
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: labelColor,
+                if (label.isNotEmpty)
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: labelColor,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

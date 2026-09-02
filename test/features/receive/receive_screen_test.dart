@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
@@ -617,15 +618,33 @@ void main() {
     );
     final request = find.byKey(const ValueKey('receive_request_button'));
     expect(request, findsOneWidget);
-    expect(find.text('Request ZEC'), findsOneWidget);
-    expect(tester.getSize(request), const Size(230, 44));
+    // Icon only: the label lives in the tooltip, not on the pill.
+    expect(find.text('Request ZEC'), findsNothing);
     expect(
-      tester.getTopLeft(request).dy - tester.getBottomLeft(copy).dy,
+      find.ancestor(of: request, matching: find.byType(AppTooltip)),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppTooltip>(
+            find.ancestor(of: request, matching: find.byType(AppTooltip)).first,
+          )
+          .message,
+      'Request ZEC',
+    );
+    expect(tester.getSize(request), const Size(60, 44));
+    expect(tester.getSize(copy), const Size(230, 44));
+    // Beside the copy pill on one row, not under it.
+    expect(
+      tester.getTopLeft(request).dy,
+      moreOrLessEquals(tester.getTopLeft(copy).dy, epsilon: 0.1),
+    );
+    expect(
+      tester.getTopLeft(request).dx - tester.getTopRight(copy).dx,
       moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
     );
 
-    // The error slot moved down with the taller action column instead of
-    // being overlapped by it.
+    // The error slot still sits below the action row.
     final error = find.textContaining('shielded address is unavailable');
     expect(error, findsOneWidget);
     expect(

@@ -7,6 +7,7 @@ import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/payment_request_use_cases.dart';
+import '../widgetbook/receive_use_cases.dart';
 import '../widgetbook/request_amount_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
@@ -981,6 +982,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildRequestMobileComposeMessageUseCase,
     desktop: false,
     mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-desktop-shielded',
+    description: 'Desktop receive pane with the request entry beside copy',
+    builder: buildReceiveDesktopRequestEntryUseCase,
+    desktop: true,
+    mobile: false,
   ),
   FigmaCompareScenario(
     id: 'receive-request-result',

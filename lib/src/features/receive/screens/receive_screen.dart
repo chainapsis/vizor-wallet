@@ -29,6 +29,7 @@ import '../services/zec_request_draft.dart';
 import '../widgets/receive_address_widgets.dart';
 import '../widgets/request/request_amount_card.dart';
 import '../widgets/request/request_amount_model.dart';
+import '../../../core/widgets/app_tooltip.dart';
 
 const _renewShieldedAddressErrorMessage =
     "We couldn't refresh your shielded address. Try again, or use your current one.";
@@ -573,15 +574,18 @@ class _ReceiveContentLayout extends StatelessWidget {
 
   static const _contentWidth = 420.0;
 
-  /// The action column carries two pills now, so the fixed-coordinate content
-  /// is 40px taller than the single-button screen and its actions start 12px
-  /// higher — the exact re-tune the entry-state preview pinned.
-  static const _contentHeight = 696.0;
-  static const _contentHeightWithError = 764.0;
-  static const _actionsTop = 584.0;
-  static const _actionsHeight = 96.0;
+  /// One action row: the copy pill and, beside it, the compact request
+  /// button — the home card's "Pay" shape — so the fixed-coordinate content
+  /// keeps the single-button screen's height instead of growing a second row.
+  static const _contentHeight = 656.0;
+  static const _contentHeightWithError = 724.0;
+  static const _actionsTop = 596.0;
   static const _actionButtonWidth = 230.0;
   static const _actionButtonHeight = 44.0;
+  static const _requestButtonWidth = 60.0;
+  static const _actionsWidth =
+      _actionButtonWidth + AppSpacing.xs + _requestButtonWidth;
+  static const _actionsLeft = (_contentWidth - _actionsWidth) / 2;
 
   final ReceiveAddressType selectedType;
   final String address;
@@ -673,13 +677,14 @@ class _ReceiveContentLayout extends StatelessWidget {
                       ),
                     ),
                     Positioned(
-                      left: 95,
+                      left: _actionsLeft,
                       top: _actionsTop,
-                      width: _actionButtonWidth,
-                      height: _actionsHeight,
-                      child: Column(
+                      width: _actionsWidth,
+                      height: _actionButtonHeight,
+                      child: Row(
                         children: [
                           SizedBox(
+                            width: _actionButtonWidth,
                             height: _actionButtonHeight,
                             child: ReceiveCopyAddressButton(
                               key: ValueKey(
@@ -695,22 +700,27 @@ class _ReceiveContentLayout extends StatelessWidget {
                               onTap: onCopy,
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.xs),
-                          SizedBox(
-                            height: _actionButtonHeight,
-                            child: AppButton(
-                              key: const ValueKey('receive_request_button'),
-                              variant: AppButtonVariant.secondary,
-                              height: _actionButtonHeight,
-                              minWidth: _actionButtonWidth,
-                              leading: const AppIcon(AppIcons.qr, size: 20),
-                              onPressed: address.isNotEmpty && !isLoading
-                                  ? onRequest
-                                  : null,
-                              child: Text(
-                                'Request $kZcashDefaultCurrencyTicker',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                          const SizedBox(width: AppSpacing.xs),
+                          // Icon only, like the home card's "Pay" button: the
+                          // request is the secondary way to hand out this
+                          // address, and a second labelled pill under the
+                          // copy button pushed the screen past its frame.
+                          AppTooltip(
+                            message: 'Request $kZcashDefaultCurrencyTicker',
+                            child: Semantics(
+                              button: true,
+                              label: 'Request $kZcashDefaultCurrencyTicker',
+                              excludeSemantics: true,
+                              child: AppButton(
+                                key: const ValueKey('receive_request_button'),
+                                variant: AppButtonVariant.secondary,
+                                height: _actionButtonHeight,
+                                minWidth: _requestButtonWidth,
+                                contentPadding: EdgeInsets.zero,
+                                onPressed: address.isNotEmpty && !isLoading
+                                    ? onRequest
+                                    : null,
+                                child: const AppIcon(AppIcons.qr, size: 20),
                               ),
                             ),
                           ),
