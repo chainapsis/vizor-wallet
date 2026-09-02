@@ -18,4 +18,5 @@ cd "$ROOT_DIR"
 echo "running Flutter macOS payment URI prefill integration test"
 fvm flutter test \
   integration_test/payment_uri_prefill_test.dart \
-  -d "$FLUTTER_DEVICE"
+  -d "$FLUTTER_DEVICE" \
+  --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
