@@ -99,6 +99,45 @@ class DynamicIslandManager {
         activityId = nil
     }
 
+    /// Ends wallet UI owned by the previous session and removes the App Group
+    /// values written for its Live Activity.
+    func resetWalletState(completion: @escaping () -> Void) {
+        displayMode = .idle
+        lastSyncPercentage = 0
+        let activity = currentActivity
+        currentActivity = nil
+        activityId = nil
+
+        let activitySuffixes = ["displayMode", "status", "percentage", "txStatus"]
+        let storedKeys = defaults?.dictionaryRepresentation().keys.map { $0 } ?? []
+        for key in storedKeys {
+            for suffix in activitySuffixes {
+                let marker = "_\(suffix)"
+                guard key.hasSuffix(marker) else { continue }
+                let prefix = String(key.dropLast(marker.count))
+                if UUID(uuidString: prefix) != nil {
+                    defaults?.removeObject(forKey: key)
+                }
+                break
+            }
+        }
+
+        guard let activity else {
+            completion()
+            return
+        }
+        let state = LiveActivitiesAppAttributes.ContentState(
+            appGroupId: "group.com.keplr.vizor"
+        )
+        Task {
+            await activity.end(
+                .init(state: state, staleDate: nil),
+                dismissalPolicy: .immediate
+            )
+            await MainActor.run { completion() }
+        }
+    }
+
     // MARK: - Private
 
     private func ensureActivityStarted() {
