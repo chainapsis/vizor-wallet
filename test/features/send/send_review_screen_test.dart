@@ -90,6 +90,71 @@ void main() {
     expect(find.text('Cancel'), findsOneWidget);
   });
 
+  // The three-line args -> view threading at send_review_screen.dart:402-405.
+  // Without a screen-level test, dropping `requestedByLabel` or the
+  // `requestedAmountText` ternary leaves every unit, widget and regtest suite
+  // green while desktop payers lose the consent information the card promised.
+  testWidgets('renders a labelled request whose amount was edited', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(
+          addressType: 'unified',
+          isPaymentRequest: true,
+          requestedBy: 'Acme coffee',
+          requestedAmountZatoshi: BigInt.from(2000000000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review payment request'), findsOneWidget);
+    expect(find.text('Review send'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('send_review_requested_by')),
+      findsOneWidget,
+    );
+    expect(find.text('Requested by'), findsOneWidget);
+    expect(find.text('Acme coffee'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('send_review_requested_amount')),
+      findsOneWidget,
+    );
+    expect(find.text('Requested 20.00 ZEC'), findsOneWidget);
+    expect(
+      find.text('15.12 ZEC'),
+      findsOneWidget,
+      reason: 'the edited amount is still what is being sent',
+    );
+  });
+
+  testWidgets('a request paid at the amount it asked for states it once', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(
+          addressType: 'unified',
+          isPaymentRequest: true,
+          requestedBy: 'Acme coffee',
+          requestedAmountZatoshi: BigInt.from(1512000000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review payment request'), findsOneWidget);
+    expect(find.text('Acme coffee'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('send_review_requested_amount')),
+      findsNothing,
+      reason: 'nothing differs, so there is nothing to restate',
+    );
+  });
+
   testWidgets('renders the contact variant for an address-book match', (
     tester,
   ) async {
@@ -939,6 +1004,9 @@ SendReviewArgs _reviewArgs({
   String? memo,
   String address = _longAddress,
   BigInt? amountZatoshi,
+  bool isPaymentRequest = false,
+  String? requestedBy,
+  BigInt? requestedAmountZatoshi,
 }) {
   return SendReviewArgs(
     proposalId: BigInt.one,
@@ -950,6 +1018,9 @@ SendReviewArgs _reviewArgs({
     feeZatoshi: BigInt.from(12000),
     needsSaplingParams: false,
     memo: memo,
+    isPaymentRequest: isPaymentRequest,
+    requestedBy: requestedBy,
+    requestedAmountZatoshi: requestedAmountZatoshi,
   );
 }
 

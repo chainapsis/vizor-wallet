@@ -1288,6 +1288,106 @@ void main() {
       contains('6 for funds received from others'),
     );
   });
+
+  // The desktop mirror of mobile_send_screen_test's request-framing group.
+  // `_activePaymentRequest` decides whether the review screen says "Requested
+  // by <label>", and the label is attacker-controlled: it must not survive
+  // being pointed at a recipient the request never named.
+  group('payment-request framing on the desktop composer', () {
+    Future<SendReviewArgs?> pumpAndReview(
+      WidgetTester tester, {
+      required SendPrefillArgs prefill,
+      Future<void> Function(WidgetTester tester)? edit,
+    }) async {
+      await _setDesktopViewport(tester);
+      SendReviewArgs? captured;
+
+      await tester.pumpWidget(
+        _sendHarness(prefill: prefill, onReviewArgs: (args) => captured = args),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+
+      if (edit != null) {
+        await edit(tester);
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+
+      return captured;
+    }
+
+    const request = SendPrefillArgs(
+      id: 'payment-uri-framing',
+      source: kPaymentUriPrefillSource,
+      address: _shieldedAddress,
+      amountText: '1.25',
+      label: 'Acme coffee',
+    );
+
+    testWidgets('an accepted request reaches review as a request', (
+      tester,
+    ) async {
+      final args = await pumpAndReview(tester, prefill: request);
+
+      expect(args, isNotNull);
+      expect(args!.isPaymentRequest, isTrue);
+      expect(args.requestedBy, 'Acme coffee');
+      expect(args.requestedAmountZatoshi, BigInt.from(125000000));
+      expect(args.amountZatoshi, BigInt.from(125000000));
+    });
+
+    testWidgets('the framing survives editing the amount', (tester) async {
+      final args = await pumpAndReview(
+        tester,
+        prefill: request,
+        edit: (tester) async {
+          await tester.enterText(_editableIn('send_amount_field'), '0.5');
+        },
+      );
+
+      expect(args, isNotNull);
+      expect(args!.isPaymentRequest, isTrue);
+      expect(args.requestedBy, 'Acme coffee');
+      expect(
+        args.requestedAmountZatoshi,
+        BigInt.from(125000000),
+        reason: 'the review states what was asked for beside what is sent',
+      );
+      expect(args.amountZatoshi, BigInt.from(50000000));
+    });
+
+    testWidgets('retyping the recipient drops the framing', (tester) async {
+      // Otherwise the review says "Requested by Acme coffee" over an address
+      // that merchant never named — an attacker-controlled label attached to
+      // an unrelated recipient.
+      final args = await pumpAndReview(
+        tester,
+        prefill: request,
+        edit: (tester) async {
+          await tester.enterText(
+            _editableIn('send_address_field'),
+            _otherShieldedAddress,
+          );
+        },
+      );
+
+      expect(args, isNotNull);
+      expect(args!.address, _otherShieldedAddress);
+      expect(args.isPaymentRequest, isFalse);
+      expect(args.requestedBy, isNull);
+      expect(args.requestedAmountZatoshi, isNull);
+    });
+  });
 }
 
 const _figmaModalSurfaceShadows = [
@@ -1338,6 +1438,7 @@ Widget _sendHarness({
       const IronwoodHomeMigrationCtaState.hidden(),
   _FakeSyncNotifier? syncNotifier,
   void Function()? warmProvingKey,
+  void Function(SendReviewArgs?)? onReviewArgs,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1346,7 +1447,13 @@ Widget _sendHarness({
         path: '/send',
         builder: (_, _) => SendScreen(prefill: prefill),
       ),
-      GoRoute(path: '/send/review', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(
+        path: '/send/review',
+        builder: (_, state) {
+          onReviewArgs?.call(state.extra as SendReviewArgs?);
+          return const SizedBox.shrink();
+        },
+      ),
     ],
   );
 
@@ -1685,6 +1792,11 @@ class _RustApiFake implements RustLibApi {
 
 const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
+
+/// A second address the fake validates as an ordinary unified recipient, so a
+/// test can retype the recipient away from the one a request named.
+const _otherShieldedAddress =
+    'u1othershieldedaddress00000000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 
