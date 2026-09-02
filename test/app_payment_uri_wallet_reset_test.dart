@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
@@ -279,6 +280,86 @@ void main() {
       reason: 'the card arrives over the current screen, it is not a route',
     );
   });
+
+  testWidgets(
+    'a link on send review waits until the existing proposal is released',
+    (tester) async {
+      final accounts = _ControllableAccountNotifier(walletState);
+      final router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          for (final path in ['/home', '/send/review', '/welcome', '/unlock'])
+            GoRoute(
+              path: path,
+              builder: (_, _) => Scaffold(body: Text('screen $path')),
+            ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _unlockedBootstrapWithWallet(walletState),
+            ),
+            accountProvider.overrideWith(() => accounts),
+            paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
+            syncProvider.overrideWith(FakeSyncNotifier.new),
+          ],
+          child: Consumer(
+            builder: (context, ref, _) {
+              container = ProviderScope.containerOf(context, listen: false);
+              return MaterialApp.router(
+                routerConfig: router,
+                builder: (context, child) => buildPaymentUriLinkListenerForTest(
+                  router: router,
+                  child: child!,
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      router.go(
+        '/send/review',
+        extra: SendReviewArgs(
+          proposalId: BigInt.from(7),
+          sendFlowId: 'existing-flow',
+          proposalAccountUuid: 'account-1',
+          address: 'u1existing',
+          addressType: 'unified',
+          amountZatoshi: BigInt.from(50000000),
+          feeZatoshi: BigInt.from(10000),
+          needsSaplingParams: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await PaymentUriService.initialize();
+      await _pushNativeUris(tester, const ['zcash:u1parked?amount=0.5']);
+      await tester.pumpAndSettle();
+
+      expect(container.read(paymentRequestFlowProvider), isNull);
+      expect(container.read(paymentUriPrefillProvider), isNotNull);
+
+      // The real review screen acquires this hold after its first frame, then
+      // releases it only after discardProposal has completed.
+      final busy = container.read(paymentUriBusySurfaceProvider.notifier);
+      busy.acquire();
+      router.go('/home');
+      await tester.pumpAndSettle();
+      busy.release();
+      await tester.pumpAndSettle();
+
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(container.read(paymentRequestFlowProvider), isNotNull);
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+    },
+  );
 
   // A link that arrives while a broadcast is still running waits for the
   // receipt. The card's Review and Edit both `go(...)`, which unmounts

@@ -11,7 +11,7 @@
 /// Two shapes, because the surfaces come in two shapes:
 ///
 /// * [PaymentUriBusySurfaceHoldMixin] for a screen whose whole lifetime is
-///   the signing session (`/send/keystone/scan`, the mobile signing screens).
+///   the protected session (`/send/keystone/scan`, the mobile signing screens).
 /// * [PaymentUriBusySurfaceHold] for a QR that is only part of a longer-lived
 ///   screen — the desktop send review and the voting status screen show one
 ///   mid-flow, and the hold must last exactly as long as that subtree, not as

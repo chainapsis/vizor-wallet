@@ -14,6 +14,7 @@ PaymentUriDrainDecision decide({
   bool isUnlocked = true,
   String matchedLocation = '/home',
   bool hasBusySurface = false,
+  bool hasActiveSendProposal = false,
   bool sendIsInFlight = false,
   bool sendGatedByMigration = false,
 }) => decidePaymentUriDrain(
@@ -26,6 +27,7 @@ PaymentUriDrainDecision decide({
   isUnlocked: isUnlocked,
   matchedLocation: matchedLocation,
   hasBusySurface: hasBusySurface,
+  hasActiveSendProposal: hasActiveSendProposal,
   sendIsInFlight: sendIsInFlight,
   sendGatedByMigration: sendGatedByMigration,
 );
@@ -174,6 +176,25 @@ void main() {
       expect(
         decide(matchedLocation: '/import/seed', hasBusySurface: true).action,
         PaymentUriDrainAction.dropWithMessage,
+      );
+    });
+  });
+
+  group('an existing send proposal', () {
+    test('waits until the review owner releases its selected inputs', () {
+      expect(
+        decide(
+          matchedLocation: '/send/review',
+          hasActiveSendProposal: true,
+        ).action,
+        PaymentUriDrainAction.wait,
+      );
+    });
+
+    test('the route alone does not block a mobile draft with no proposal', () {
+      expect(
+        decide(matchedLocation: '/send/review').action,
+        PaymentUriDrainAction.deliver,
       );
     });
   });

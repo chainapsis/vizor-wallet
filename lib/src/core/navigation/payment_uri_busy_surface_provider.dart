@@ -1,15 +1,13 @@
-/// Hold count for in-progress surfaces a payment URI must not interrupt but
-/// that a route path cannot name.
+/// Hold count for in-progress surfaces a payment URI must not interrupt.
 ///
 /// A delivered request is now presented as a card over the current screen, so
 /// `decidePaymentUriDrain` no longer refuses to deliver based on where the
 /// user is: nothing gets unmounted. What a hold here still buys is the one
-/// case where even a modal card is destructive — a live animated QR an
-/// external device's camera is reading. The desktop Keystone shield signing
-/// overlay is that case today: it lives on `/home`, holds a prepared PCZT and
-/// drives a device approval, yet `matchedLocation` stays `/home` the whole
-/// time. A holder keeps the link parked (the drain answers `wait`), and
-/// `app.dart` re-runs the drain when the count falls back to zero.
+/// cases where even a modal card is destructive: a live animated QR an
+/// external device's camera is reading, or a send-review proposal whose inputs
+/// must be released before the incoming request can be pre-checked. A holder
+/// keeps the link parked (the drain answers `wait`), and `app.dart` re-runs the
+/// drain when the count falls back to zero.
 library;
 
 import 'dart:async';

@@ -2,6 +2,7 @@
 // flow (wallet DB path + Sapling params status).
 // ignore_for_file: depend_on_referenced_packages
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -552,11 +553,11 @@ void main() {
     expect(rustApi.encodeFullPcztCalls, 0);
   });
 
-  testWidgets('the Keystone signing modal holds the payment-URI busy latch', (
+  testWidgets('review and Keystone signing hold the payment-URI busy latch', (
     tester,
   ) async {
-    // Only the modal is a live QR a device is reading. The plain review
-    // underneath it takes no hold, so a payment request still lands there.
+    // Review owns a proposal whose inputs must be released before another
+    // request can be checked. The nested modal adds its live-QR hold.
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
       _harness(
@@ -569,13 +570,13 @@ void main() {
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
     );
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
 
     await tester.tap(find.text('Confirm with Keystone'));
     await _flushRealAsync(tester);
 
     expect(find.byType(KeystoneSigningModal), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(paymentUriBusySurfaceProvider), 2);
 
     await tester.tap(
       find.descendant(
@@ -587,6 +588,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(KeystoneSigningModal), findsNothing);
+    expect(find.text('send-route'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+  });
+
+  testWidgets('review keeps the latch held until proposal discard completes', (
+    tester,
+  ) async {
+    final discardCompleter = Completer<void>();
+    rustApi.discardCompleter = discardCompleter;
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_harness(_reviewArgs(addressType: 'unified')));
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('send-route'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    discardCompleter.complete();
+    await tester.pump();
     expect(container.read(paymentUriBusySurfaceProvider), 0);
   });
 
@@ -1179,6 +1205,7 @@ class _RustApiFake implements RustLibApi {
   int decodeBatchCalls = 0;
   int previousTransactionCount = 0;
   Object? prepareBatchError;
+  Completer<void>? discardCompleter;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
 
@@ -1191,6 +1218,7 @@ class _RustApiFake implements RustLibApi {
     decodeBatchCalls = 0;
     previousTransactionCount = 0;
     prepareBatchError = null;
+    discardCompleter = null;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
   }
@@ -1201,6 +1229,7 @@ class _RustApiFake implements RustLibApi {
     required String sendFlowId,
   }) async {
     discardCalls.add((proposalId, sendFlowId));
+    await discardCompleter?.future;
   }
 
   @override

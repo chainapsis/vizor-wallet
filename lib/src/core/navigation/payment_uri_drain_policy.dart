@@ -190,6 +190,7 @@ bool paymentUriShouldDropOnWalletTransition({
 /// | `/welcome`, no wallet                        | drop + no-wallet msg      |
 /// | onboarding / import / add-account location   | drop + onboarding msg     |
 /// | a busy overlay is up                         | wait (present when it goes)|
+/// | another send proposal owns inputs            | wait (present when freed)  |
 /// | a broadcast is running on `/send/status`      | wait (present on receipt) |
 /// | migration disables sending                   | drop + migration msg      |
 /// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
@@ -201,7 +202,10 @@ bool paymentUriShouldDropOnWalletTransition({
 /// [parkedFor] is how long the prefill has been parked (null when nothing is
 /// parked, or when the park time is unknown). [hasBusySurface] is true while a
 /// hardware signing session is mounted — see `paymentUriBusySurfaceProvider`.
-/// [sendIsInFlight] is the negation of `sendStatusTerminalProvider`: the send
+/// [hasActiveSendProposal] is true while the current desktop send-review route
+/// owns a proposal and its selected inputs. A second proposal must wait until
+/// that route releases the first one. [sendIsInFlight] is the negation of
+/// `sendStatusTerminalProvider`: the send
 /// on the receipt screen has not finished. It is read only on
 /// [isSendStatusLocation], because the flag is also false when no send has run
 /// at all. [sendGatedByMigration] is true when the product disables sending
@@ -217,6 +221,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   required bool isUnlocked,
   required String matchedLocation,
   bool hasBusySurface = false,
+  bool hasActiveSendProposal = false,
   bool sendIsInFlight = false,
   bool sendGatedByMigration = false,
 }) {
@@ -266,6 +271,13 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   // live animated QR. The listener re-drains when the hold is given back, and
   // the TTL still bounds the wait.
   if (hasBusySurface) return _waitDecision;
+
+  // A proposal locks its selected inputs until its review owner is disposed.
+  // Pre-checking a new request before that release can report insufficient
+  // funds even when the requested payment becomes affordable immediately after
+  // leaving the existing review. Keep the link parked; the review's busy hold
+  // re-runs the drain once disposal has released the proposal.
+  if (hasActiveSendProposal) return _waitDecision;
 
   // A broadcast still running on `/send/status` waits too, and for a harder
   // reason than distraction: the card's Review and Edit both `go(...)`, which

@@ -72,6 +72,7 @@ import 'src/features/send/screens/send_status_screen.dart';
 import 'src/features/send/widgets/payment_request_host.dart';
 import 'src/features/send/services/send_flow.dart'
     show
+        SendReviewArgs,
         resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider,
@@ -1448,6 +1449,13 @@ class _PaymentUriLinkListenerState
       // In-progress surfaces that own no route of their own — today the
       // desktop Keystone shield signing overlay, which sits on `/home`.
       hasBusySurface: ref.read(paymentUriBusySurfaceProvider) > 0,
+      // Desktop review owns a live Rust proposal whose selected inputs stay
+      // locked until the screen is disposed. The review also takes a busy hold
+      // so leaving it schedules another drain; this route-payload check closes
+      // the short mount window before that post-frame hold is acquired.
+      hasActiveSendProposal:
+          widget.router.state.matchedLocation == '/send/review' &&
+          widget.router.state.extra is SendReviewArgs,
       // The receipt screen publishes only the "safe to leave" bit; the policy
       // pairs it with the location, because the flag also reads false when no
       // send has ever run.
