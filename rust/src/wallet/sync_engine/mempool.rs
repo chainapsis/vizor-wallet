@@ -868,6 +868,15 @@ fn lookup_known_pending_tx(db_path: &str, txid_bytes: &[u8]) -> Result<KnownPend
         .map_err(|e| format!("transactions query: {e}"))?
         .is_some();
 
+    // `v_transactions` is derived from `transactions`, so a missing base row cannot have an
+    // account mapping. Avoid materializing the wallet-wide history view for unrelated mempool txs.
+    if !matched {
+        return Ok(KnownPendingTx {
+            matched: false,
+            account_uuids: Vec::new(),
+        });
+    }
+
     let mut stmt = conn
         .prepare(
             "SELECT DISTINCT account_uuid \
@@ -1137,6 +1146,7 @@ mod tests {
         let txid = [0x06u8; 32];
         let first_uuid = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let second_uuid = uuid::Uuid::parse_str("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
+        insert_tx(&db, &txid, None);
         insert_v_transaction(&db, &txid, first_uuid, None);
         insert_v_transaction(&db, &txid, first_uuid, None);
         insert_v_transaction(&db, &txid, second_uuid, None);
@@ -1155,10 +1165,24 @@ mod tests {
     }
 
     #[test]
+    fn lookup_unknown_tx_skips_transaction_history_view() {
+        let db = fresh_db();
+        let txid = [0x0au8; 32];
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute("DROP TABLE v_transactions", []).unwrap();
+
+        let known = lookup_known_pending_tx(db.path().to_str().unwrap(), &txid).unwrap();
+
+        assert!(!known.matched);
+        assert!(known.account_uuids.is_empty());
+    }
+
+    #[test]
     fn lookup_known_pending_tx_ignores_mined_account_rows() {
         let db = fresh_db();
         let txid = [0x08u8; 32];
         let uuid = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        insert_tx(&db, &txid, None);
         insert_v_transaction(&db, &txid, uuid, Some(2_500_000));
 
         let known = lookup_known_pending_tx(db.path().to_str().unwrap(), &txid).unwrap();
