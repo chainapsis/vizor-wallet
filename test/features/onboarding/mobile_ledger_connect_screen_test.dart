@@ -82,7 +82,7 @@ void main() {
       expect(find.text('Connect Ledger'), findsOneWidget);
     });
 
-    testWidgets('hides Ledger for first-run or unconfigured wallets', (
+    testWidgets('shows Ledger for first-run or unconfigured wallets', (
       tester,
     ) async {
       for (final bootstrap in [
@@ -101,7 +101,11 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Connect Ledger'), findsNothing);
+        expect(find.text('Connect Ledger'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('mobile_welcome_ledger')),
+          findsOneWidget,
+        );
       }
     });
 
@@ -138,6 +142,7 @@ void main() {
       containsAll([
         '/onboarding/ledger',
         '/onboarding/ledger/birthday',
+        '/onboarding/ledger/set-passcode',
         '/onboarding/ledger/customise-account',
       ]),
     );

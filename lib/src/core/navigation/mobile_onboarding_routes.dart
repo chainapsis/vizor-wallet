@@ -226,6 +226,17 @@ List<RouteBase> mobileOnboardingRoutes() => [
     ),
   ),
   GoRoute(
+    path: '/onboarding/ledger/set-passcode',
+    redirect: (_, state) =>
+        state.extra is LedgerSetPasswordArgs ? null : '/onboarding/ledger',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: MobilePasscodeScreen.ledger(
+        args: state.extra as LedgerSetPasswordArgs,
+      ),
+    ),
+  ),
+  GoRoute(
     path: '/onboarding/ledger/customise-account',
     redirect: (_, state) =>
         state.extra is LedgerCustomiseAccountArgs ? null : '/onboarding/ledger',
