@@ -17,8 +17,8 @@ pub(crate) use share_delegations::record_share_delegation;
 pub(crate) use share_delegations::record_share_delegation_with_after_read;
 pub use share_delegations::{
     add_ambiguous_servers, add_attempting_server, add_sent_servers_preserving_schedule,
-    clear_stale_share_delegations_for_intent, get_share_delegations, get_unconfirmed_delegations,
-    pending_share_rounds, remove_attempting_server, share_is_confirmed,
+    get_share_delegations, get_unconfirmed_delegations, pending_share_rounds,
+    remove_attempting_server, share_is_confirmed,
 };
 pub(crate) use share_delegations::{
     add_ambiguous_servers_for_generation, add_attempting_server_for_generation,
@@ -3227,53 +3227,6 @@ pub fn clear_unsigned_delegation_setup_fields(
     )
     .map_err(|e| VotingError::Internal {
         message: format!("failed to clear unsigned delegation setup fields: {e}"),
-    })?;
-    Ok(())
-}
-
-// --- Recovery state cleanup ---
-
-/// Clears retryable recovery state without erasing recorded confirmations or
-/// imported delegation capabilities.
-pub fn clear_recovery_state(
-    conn: &Connection,
-    round_id: &str,
-    wallet_id: &str,
-) -> Result<(), VotingError> {
-    conn.execute(
-        "DELETE FROM share_delegations WHERE round_id = :round_id AND wallet_id = :wallet_id",
-        named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to clear share delegations: {}", e),
-    })?;
-    conn.execute(
-        "DELETE FROM keystone_signatures WHERE round_id = :round_id AND wallet_id = :wallet_id",
-        named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to clear keystone signatures: {}", e),
-    })?;
-    conn.execute(
-        "UPDATE bundles SET delegation_tx_hash = NULL
-         WHERE round_id = :round_id
-           AND wallet_id = :wallet_id
-           AND note_positions_blob IS NOT NULL
-           AND van_leaf_position IS NULL",
-        named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to clear delegation tx hashes: {}", e),
-    })?;
-    conn.execute(
-        "UPDATE votes SET tx_hash = NULL, commitment_bundle_json = NULL
-         WHERE round_id = :round_id
-           AND wallet_id = :wallet_id
-           AND vc_tree_position IS NULL",
-        named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to clear vote recovery columns: {}", e),
     })?;
     Ok(())
 }

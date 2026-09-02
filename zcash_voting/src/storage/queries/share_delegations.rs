@@ -39,56 +39,6 @@ pub(super) fn delete_for_replaced_vote(
     Ok(())
 }
 
-pub fn clear_stale_share_delegations_for_intent(
-    conn: &Connection,
-    round_id: &str,
-    wallet_id: &str,
-    proposal_id: u32,
-    skipped: bool,
-    choice: Option<u32>,
-) -> Result<u64, VotingError> {
-    let deleted_row_count = if skipped {
-        conn.execute(
-            "DELETE FROM share_delegations
-             WHERE round_id = :round_id
-               AND wallet_id = :wallet_id
-               AND proposal_id = :proposal_id",
-            named_params! {
-                ":round_id": round_id,
-                ":wallet_id": wallet_id,
-                ":proposal_id": proposal_id as i64,
-            },
-        )
-    } else if let Some(choice) = choice {
-        conn.execute(
-            "DELETE FROM share_delegations
-             WHERE round_id = :round_id
-               AND wallet_id = :wallet_id
-               AND proposal_id = :proposal_id
-               AND NOT EXISTS (
-                   SELECT 1 FROM votes
-                   WHERE votes.round_id = share_delegations.round_id
-                     AND votes.wallet_id = share_delegations.wallet_id
-                     AND votes.bundle_index = share_delegations.bundle_index
-                     AND votes.proposal_id = share_delegations.proposal_id
-                     AND votes.choice = :choice
-               )",
-            named_params! {
-                ":round_id": round_id,
-                ":wallet_id": wallet_id,
-                ":proposal_id": proposal_id as i64,
-                ":choice": choice as i64,
-            },
-        )
-    } else {
-        Ok(0)
-    }
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to clear stale share delegations: {}", e),
-    })?;
-    Ok(deleted_row_count as u64)
-}
-
 /// Splits persisted helper identities into canonical entries and legacy
 /// entries accepted by older schemas that no longer canonicalize. Legacy
 /// entries are never contacted or counted, but rewrites preserve them verbatim

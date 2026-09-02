@@ -117,48 +117,6 @@ mod tests {
     }
 
     #[test]
-    fn recovery_clear_preserves_recorded_vote_tree_state() {
-        let db = VotingDb::open_in_memory().unwrap();
-        db.set_wallet_id(WALLET_ID);
-        db.create_round(crate::Network::Testnet, &round_params(), None)
-            .unwrap();
-        db.ensure_bundles(ROUND_ID, &[note(0)]).unwrap();
-        db.store_van_position(ROUND_ID, 0, 0).unwrap();
-        let conn = db.conn();
-        conn.execute(
-            "UPDATE bundles SET gov_comm = ?1
-             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = 0",
-            rusqlite::params![Fp::from(1).to_repr().as_slice(), ROUND_ID, WALLET_ID],
-        )
-        .unwrap();
-        queries::store_vote(&conn, ROUND_ID, WALLET_ID, 0, 1, 0, &[0xAA; 32]).unwrap();
-        queries::record_vote_submission(&conn, ROUND_ID, WALLET_ID, 0, 1, "confirmed-vote")
-            .unwrap();
-        conn.execute(
-            "UPDATE votes SET commitment_bundle_json = '{}', vc_tree_position = 1
-             WHERE round_id = ?1 AND wallet_id = ?2
-               AND bundle_index = 0 AND proposal_id = 1",
-            rusqlite::params![ROUND_ID, WALLET_ID],
-        )
-        .unwrap();
-        drop(conn);
-        db.store_van_position(ROUND_ID, 0, 1).unwrap();
-
-        db.clear_recovery_state(ROUND_ID).unwrap();
-
-        assert_eq!(
-            db.get_vote_tx_hash(ROUND_ID, 0, 1).unwrap().as_deref(),
-            Some("confirmed-vote")
-        );
-        let sync = VoteTreeSync::new();
-        let height = sync
-            .sync_with_api(&db, ROUND_ID, &server_with_single_leaf_blocks(2))
-            .unwrap();
-        let witness = sync.generate_van_witness(&db, ROUND_ID, 0, height).unwrap();
-        assert_eq!(witness.position, 1);
-    }
-
-    #[test]
     fn sync_rejects_a_confirmed_position_for_a_different_van() {
         let db = VotingDb::open_in_memory().unwrap();
         db.set_wallet_id(WALLET_ID);

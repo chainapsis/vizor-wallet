@@ -214,15 +214,6 @@ pub fn round_snapshot(db: &VotingDb, round_id: &str) -> Result<RoundRecoverySnap
     })
 }
 
-/// Clears unconfirmed recovery artifacts for one round.
-///
-/// Ballot intent, recorded vote confirmations, and imported delegation
-/// capabilities are preserved. Use [`VotingDb::clear_round`] to remove the
-/// entire round.
-pub fn clear(db: &VotingDb, round_id: &str) -> Result<(), VotingError> {
-    db.clear_recovery_state(round_id)
-}
-
 fn build_vote_recovery_rows(
     db: &VotingDb,
     round_id: &str,
@@ -410,63 +401,6 @@ mod tests {
             vec!["https://helper-a.example".to_string()]
         );
         let _ = std::fs::remove_file(db_path);
-    }
-
-    #[test]
-    fn clear_preserves_recorded_positions_and_resets_unconfirmed_votes() {
-        let db = db_with_round(WALLET_ID);
-
-        // Canonical confirmed vote.
-        insert_vote(&db, 0, 1, 0, b"vote-0-1");
-        db.mark_vote_submitted(ROUND_ID, 0, 1, "vote-tx-0-1")
-            .unwrap();
-        store_commitment_bundle(&db, 0, 1, r#"{"bundle":"ok"}"#, Some(11));
-
-        // Submitted but unconfirmed vote.
-        insert_vote(&db, 0, 2, 1, b"vote-0-2");
-        db.mark_vote_submitted(ROUND_ID, 0, 2, "vote-tx-0-2")
-            .unwrap();
-        store_commitment_bundle(&db, 0, 2, r#"{"bundle":"pending"}"#, None);
-
-        // A recorded position is preserved conservatively even if a caller
-        // used the standalone position API without first recording a hash.
-        insert_vote(&db, 0, 3, 0, b"vote-0-3");
-        store_commitment_bundle(&db, 0, 3, r#"{"bundle":"position-only"}"#, Some(12));
-
-        db.record_share_delegation(
-            ROUND_ID,
-            0,
-            1,
-            0,
-            &["https://helper-a.example".to_string()],
-            &[0x44; 32],
-            0,
-        )
-        .unwrap();
-
-        clear(&db, ROUND_ID).unwrap();
-        let snapshot = round_snapshot(&db, ROUND_ID).unwrap();
-
-        assert_eq!(snapshot.votes.len(), 3);
-        assert_eq!(snapshot.commitment_bundles.len(), 2);
-        assert_eq!(snapshot.share_delegations.len(), 0);
-        assert_eq!(snapshot.unconfirmed_share_delegations.len(), 0);
-        assert!(snapshot.votes.iter().any(|vote| vote.bundle_index == 0
-            && vote.proposal_id == 1
-            && vote.phase == VotePhase::Confirmed
-            && vote.tx_hash.as_deref() == Some("vote-tx-0-1")
-            && vote.vc_tree_position == Some(11)
-            && vote.has_commitment_bundle));
-        assert!(snapshot.votes.iter().any(|vote| vote.bundle_index == 0
-            && vote.proposal_id == 2
-            && vote.tx_hash.is_none()
-            && vote.vc_tree_position.is_none()
-            && !vote.has_commitment_bundle));
-        assert!(snapshot.votes.iter().any(|vote| vote.bundle_index == 0
-            && vote.proposal_id == 3
-            && vote.tx_hash.is_none()
-            && vote.vc_tree_position == Some(12)
-            && vote.has_commitment_bundle));
     }
 
     #[test]

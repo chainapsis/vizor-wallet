@@ -1292,7 +1292,6 @@ mod session_reset_tests {
         // position guard when a standalone confirmation write preceded its hash.
         db.store_delegation_tx_hash(ROUND_ID, 0, "confirmed-delegation")
             .unwrap();
-        db.clear_recovery_state(ROUND_ID).unwrap();
         assert_eq!(
             db.get_delegation_tx_hash(ROUND_ID, 0).unwrap().as_deref(),
             Some("confirmed-delegation")

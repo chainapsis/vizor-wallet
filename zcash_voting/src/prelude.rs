@@ -61,8 +61,8 @@ pub use crate::precompute::{
     SnapshotBundlePrecomputeReport,
 };
 pub use crate::recovery::{
-    clear as clear_recovery, recoverable_commitment_bundle, round_snapshot, DelegationRecovery,
-    RecoverableCommitmentBundle, RoundRecoverySnapshot, ShareWorkflow, VoteRecovery,
+    recoverable_commitment_bundle, round_snapshot, DelegationRecovery, RecoverableCommitmentBundle,
+    RoundRecoverySnapshot, ShareWorkflow, VoteRecovery,
 };
 pub use crate::round::{
     bundle_notes_for_index_for_round, bundle_notes_for_index_with_policy, delegation_round_name,

@@ -840,7 +840,9 @@ by `overlapping_initial_fan_outs_share_one_target`,
 `tracking_waits_for_live_initial_fan_out_before_replenishing`, and
 `concurrent_attempt_reservations_share_one_placement_capacity`.
 Cancellation while waiting for that serialization boundary is covered by
-`cancellation_aborts_initial_wait_for_live_share_operation`.
+`cancellation_aborts_initial_wait_for_live_share_operation`. Destructive
+deletion while a stale delivery result is pending is covered by
+`initial_delivery_does_not_recreate_share_after_round_deletion`.
 Typed-boundary coverage is
 provided by
 `committed_vote_submission_keeps_degraded_planned_target_before_healthy_fallback`,
@@ -850,9 +852,8 @@ provided by
 `repeated_partial_committed_submission_sends_original_schedule_to_new_helper`,
 `repeated_committed_submission_does_not_resurrect_zero_schedule`,
 `committed_vote_submission_rejects_mismatched_plan_before_side_effects`, and
-`invalid_candidate_url_does_not_create_a_share_record`. Cleanup concurrency is
-covered by `initial_delivery_does_not_recreate_share_after_recovery_cleanup`.
-Released recovery-format migration and strict plan invalidation are covered by
+`invalid_candidate_url_does_not_create_a_share_record`. Released
+recovery-format migration and strict plan invalidation are covered by
 `migrate_v15_recovery_json_preserves_plan_only_through_confirmation`.
 The high-level boundary regressions in
 [`share_tracking/tests/delivery_plan.rs`](../zcash_voting/src/share_tracking/tests/delivery_plan.rs)
@@ -1218,7 +1219,7 @@ Regression coverage: `test_share_delegation_lifecycle` in
 `confirmation_does_not_apply_to_a_replaced_share_generation`,
 `initial_delivery_stays_bound_to_its_starting_wallet`,
 `initial_delivery_rejects_a_replaced_share_generation`, and
-`initial_delivery_does_not_recreate_share_after_recovery_cleanup`,
+`initial_delivery_does_not_recreate_share_after_round_deletion`,
 `interrupted_retry_does_not_resolve_a_replaced_share_generation` in
 `share_tracking/tests`,
 `public_vote_writers_reserve_before_validation_and_wait_on_contention`
@@ -1307,21 +1308,24 @@ Regression tests: `migrate_from_launch_version_preserves_delegation_state`,
 
 ### Recovery cleanup
 
-Explicit recovery cleanup removes share-delivery rows and retryable,
-unconfirmed vote recovery artifacts. It preserves ballot intent, confirmed
-vote positions, and imported delegation capabilities. Full round deletion is
-a separate operation.
+There is no standalone recovery-cleanup operation or
+`clear_recovery_state` primitive. Ordinary cleanup and reset preserve helper
+plans and delivery history required by unresolved or confirmed chain
+submissions.
+
+Explicit round and account deletion are destructive escape hatches. They delete
+the owning rows, and foreign-key cascades remove the round's helper plans and
+delivery history as part of that deletion. The records are not selectively
+cleared while their round remains live.
 
 Enforcement:
-[`recovery::clear`](../zcash_voting/src/recovery.rs) and
-`clear_recovery_state` in
-[`storage/queries/mod.rs`](../zcash_voting/src/storage/queries/mod.rs).
+[`RoundApi::delete_round`](../zcash_voting/src/round/mod.rs),
+[`VotingDb::clear_wallet_state`](../zcash_voting/src/storage/operations.rs),
+and the `rounds` foreign-key cascades.
 
-Regression tests:
-`clear_preserves_recorded_positions_and_resets_unconfirmed_votes` and
-`test_clear_recovery_state_resets_vote_recovery`, plus
-`initial_delivery_does_not_recreate_share_after_recovery_cleanup` for cleanup
-racing active helper delivery.
+Regression coverage must show that ordinary cleanup and reset preserve delivery
+rows, explicit round or account deletion removes their owning rows, and no
+standalone recovery-clear API or storage primitive remains.
 
 ## Helper identity and payload invariants
 

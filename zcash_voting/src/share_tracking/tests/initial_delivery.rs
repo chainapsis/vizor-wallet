@@ -1911,7 +1911,7 @@ fn wrong_nullifier_generation_cannot_apply_any_delivery_transition() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn initial_delivery_does_not_recreate_share_after_recovery_cleanup() {
+async fn initial_delivery_does_not_recreate_share_after_round_deletion() {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     let configured = helpers(2);
@@ -1932,7 +1932,7 @@ async fn initial_delivery_does_not_recreate_share_after_recovery_cleanup() {
                 .first()
                 .is_some_and(|record| !record.sent_to_urls.is_empty())
         {
-            db.clear_recovery_state(ROUND_ID).unwrap();
+            db.clear_round(ROUND_ID).unwrap();
             cleared.store(true, Ordering::Relaxed);
         }
         false

@@ -144,14 +144,45 @@ impl VotingDb {
         .map_err(|e| VotingError::Internal {
             message: format!("set_ballot_intent failed: {e}"),
         })?;
-        queries::clear_stale_share_delegations_for_intent(
-            &tx,
-            round_id,
-            &wallet_id,
-            proposal_id,
-            skipped_bool,
-            choice_u32,
-        )?;
+        if skipped_bool {
+            tx.execute(
+                "DELETE FROM share_delegations
+                 WHERE round_id = :round_id
+                   AND wallet_id = :wallet_id
+                   AND proposal_id = :proposal_id",
+                named_params! {
+                    ":round_id": round_id,
+                    ":wallet_id": wallet_id,
+                    ":proposal_id": proposal_id as i64,
+                },
+            )
+        } else if let Some(choice) = choice_u32 {
+            tx.execute(
+                "DELETE FROM share_delegations
+                 WHERE round_id = :round_id
+                   AND wallet_id = :wallet_id
+                   AND proposal_id = :proposal_id
+                   AND NOT EXISTS (
+                       SELECT 1 FROM votes
+                       WHERE votes.round_id = share_delegations.round_id
+                         AND votes.wallet_id = share_delegations.wallet_id
+                         AND votes.bundle_index = share_delegations.bundle_index
+                         AND votes.proposal_id = share_delegations.proposal_id
+                         AND votes.choice = :choice
+                   )",
+                named_params! {
+                    ":round_id": round_id,
+                    ":wallet_id": wallet_id,
+                    ":proposal_id": proposal_id as i64,
+                    ":choice": choice as i64,
+                },
+            )
+        } else {
+            Ok(0)
+        }
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to clear stale share delegations: {e}"),
+        })?;
         tx.commit().map_err(|e| VotingError::Internal {
             message: format!("set_ballot_intent commit failed: {e}"),
         })?;

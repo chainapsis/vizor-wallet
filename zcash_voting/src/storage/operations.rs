@@ -1928,16 +1928,6 @@ impl VotingDb {
         queries::get_keystone_signatures(&conn, round_id, &wallet_id)
     }
 
-    /// Clears unconfirmed recovery artifacts while preserving ballot intent,
-    /// recorded vote confirmations, and imported delegation capabilities. Use
-    /// `clear_round`/`delete_round` to remove the whole round, including
-    /// recorded decisions.
-    pub fn clear_recovery_state(&self, round_id: &str) -> Result<(), VotingError> {
-        let conn = self.conn();
-        let wallet_id = self.wallet_id();
-        queries::clear_recovery_state(&conn, round_id, &wallet_id)
-    }
-
     /// Clears locally prepared unsigned delegation setup fields for one round
     /// while preserving proved or submitted bundles, imported capabilities,
     /// and bundles with persisted Keystone signatures.
@@ -6062,30 +6052,6 @@ mod tests {
                 .expect_err("missing proposal row must fail"),
             "no vote found",
         );
-    }
-
-    #[test]
-    fn test_clear_recovery_state_resets_vote_recovery() {
-        let db = test_db();
-        db.init_round(Network::Testnet, &test_params(), None)
-            .unwrap();
-        db.ensure_bundles(ROUND_ID, &[identity_test_note()])
-            .unwrap();
-        db.insert_vote_fixture(ROUND_ID, 0, 1, 0, &[0xAA; 32])
-            .unwrap();
-        db.record_vote_submission(ROUND_ID, 0, 1, "vote-tx")
-            .unwrap();
-
-        db.clear_recovery_state(ROUND_ID).unwrap();
-
-        let vote = db
-            .get_votes(ROUND_ID)
-            .unwrap()
-            .into_iter()
-            .find(|vote| vote.proposal_id == 1)
-            .expect("vote row remains");
-        assert_eq!(vote.choice, 0);
-        assert_eq!(db.get_vote_tx_hash(ROUND_ID, 0, 1).unwrap(), None);
     }
 
     #[test]
