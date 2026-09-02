@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart' show ThemeMode;
@@ -9,6 +10,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
@@ -370,6 +377,137 @@ void main() {
   });
 
   test(
+    'wallet reset invalidates live wallet stores and preserves app prefs',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({});
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-wallet-reset-session',
+      );
+      addTearDown(() {
+        if (supportDirectory.existsSync()) {
+          supportDirectory.deleteSync(recursive: true);
+        }
+      });
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (call) async {
+            if (call.method == 'getApplicationSupportDirectory') {
+              return supportDirectory.path;
+            }
+            throw MissingPluginException('Unexpected path provider call.');
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null);
+      });
+
+      final store = AppSecureStore.instance;
+      await store.writePlain(kThemeModeKey, 'dark');
+      await store.writePlain(kPrivacyModeEnabledKey, 'true');
+      await store.writePlain(kRpcEndpointUrlKey, 'https://old.example');
+      await store.writeString(
+        kAddressBookContactsKey,
+        jsonEncode([
+          {
+            'id': 'old-contact',
+            'label': 'Old contact',
+            'network': 'zec',
+            'address': 'u1old',
+            'createdAtMs': 1,
+            'updatedAtMs': 1,
+          },
+        ]),
+      );
+      final oldActivityStore = AppSecureStoreSwapActivityStore(store);
+      final oldComposerStore = AppSecureStoreSwapComposerPreferencesStore(
+        store,
+      );
+      const liveIntent = SwapIntent(
+        id: 'old-swap',
+        pair: 'ZEC -> USDC',
+        sellAmount: '1 ZEC',
+        receiveEstimate: '100 USDC',
+        provider: 'NEAR Intents',
+        status: SwapIntentStatus.processing,
+        nextAction: 'Processing',
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        accountUuid: 'account-1',
+      );
+      await oldActivityStore.saveRecords(
+        accountUuid: 'account-1',
+        records: const [],
+      );
+      await oldComposerStore.savePreferences(
+        accountUuid: 'account-1',
+        preferences: const SwapComposerPreferences(
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.near,
+          slippageBps: 125,
+        ),
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          networkPrivacyRuntimeProvider.overrideWithValue(
+            const _DirectNetworkPrivacyRuntime(),
+          ),
+          swapIntentProvider.overrideWithValue(const _StaticSwapProvider()),
+          swapInitialIntentsProvider.overrideWithValue(const [liveIntent]),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final loadedContacts = await container.read(addressBookProvider.future);
+      expect(loadedContacts.contacts.single.id, 'old-contact');
+      container.read(swapStateProvider);
+      container
+          .read(swapStateProvider.notifier)
+          .selectDirection(SwapDirection.externalToZec);
+      await pumpEventQueue();
+
+      await container.read(accountProvider.notifier).resetWallet();
+      await pumpEventQueue();
+
+      expect(container.read(accountProvider).value!.accounts, isEmpty);
+      expect(await store.readString(kAddressBookContactsKey), isNull);
+      expect(
+        await store.readString(swapActivityStorageKeyForTest('account-1')),
+        isNull,
+      );
+      expect(await store.readPlain(kRpcEndpointUrlKey), isNull);
+      expect(await store.readPlain(kThemeModeKey), 'dark');
+      expect(await store.readPlain(kPrivacyModeEnabledKey), 'true');
+
+      await oldActivityStore.saveRecords(
+        accountUuid: 'account-1',
+        records: const [],
+      );
+      await oldComposerStore.savePreferences(
+        accountUuid: 'account-1',
+        preferences: const SwapComposerPreferences(
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.near,
+        ),
+      );
+      expect(
+        await AppSecureStoreSwapActivityStore(
+          store,
+        ).loadRecords(accountUuid: 'account-1'),
+        isEmpty,
+      );
+      expect(
+        await AppSecureStoreSwapComposerPreferencesStore(
+          store,
+        ).loadPreferences(accountUuid: 'account-1'),
+        isNull,
+      );
+    },
+  );
+
+  test(
     'account deletion drains live share tracking before the wallet mutation',
     () => _expectAccountDeletionDrainsLiveShareTracking(),
   );
@@ -550,7 +688,68 @@ class _AccountMutationRustApiFake implements RustLibApi {
   }) async => 1;
 
   @override
+  Future<void> crateApiSyncDiscardAllKeystoneMigrationRequests() async {}
+
+  @override
+  Future<void> crateApiWalletEvictWalletSummaryCache({
+    required String dbPath,
+  }) async {}
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _DirectNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
+  const _DirectNetworkPrivacyRuntime();
+
+  @override
+  void beginEnable() {}
+
+  @override
+  Future<NetworkPrivacyConnectionStatus> configure({
+    required bool enabled,
+  }) async => NetworkPrivacyConnectionStatus.off;
+
+  @override
+  bool isTorEnabled() => false;
+
+  @override
+  Future<void> quiesceDirectRequests() async {}
+}
+
+class _StaticSwapProvider implements SwapProvider {
+  const _StaticSwapProvider();
+
+  @override
+  String get providerLabel => 'Test';
+
+  @override
+  Future<List<SwapAsset>> listSupportedExternalAssets() async => const [
+    SwapAsset.usdc,
+    SwapAsset.near,
+  ];
+
+  @override
+  Future<SwapIntentSnapshot> getStatus(
+    String intentId, {
+    String? depositMemo,
+  }) async => throw UnsupportedError('Status is not used in this test.');
+
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) async =>
+      throw UnsupportedError('Quote is not used in this test.');
+
+  @override
+  Future<SwapIntentSnapshot> startSwap(SwapQuote quote) async =>
+      throw UnsupportedError('Start is not used in this test.');
+
+  @override
+  Future<SwapIntentSnapshot> submitDepositTransaction({
+    required String depositAddress,
+    required String txHash,
+    String? depositMemo,
+    String? nearSenderAccount,
+  }) async => throw UnsupportedError('Deposit is not used in this test.');
 }
 
 Future<void> _expectAccountDeletionDrainsLiveShareTracking() async {

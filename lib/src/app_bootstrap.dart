@@ -36,6 +36,17 @@ final appBootstrapRetryProvider = Provider<AppBootstrapRetry>((_) {
   return () async {};
 });
 
+/// Rebuilds the root ProviderScope after a destructive wallet reset.
+///
+/// The callback lives above that scope. Reset callers must invoke it only
+/// after all mutation guards have unwound, and must not use their old WidgetRef
+/// afterwards.
+typedef AppSessionRestart = Future<void> Function();
+
+final appSessionRestartProvider = Provider<AppSessionRestart>((_) {
+  return () async {};
+});
+
 enum AppBootstrapFailureKind {
   secureStorageUnavailable,
   startupFailure,
