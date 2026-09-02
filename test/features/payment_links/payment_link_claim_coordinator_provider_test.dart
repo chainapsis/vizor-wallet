@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -102,6 +103,45 @@ void main() {
     security.unlockForTest();
     await restored.future.timeout(const Duration(seconds: 1));
     expect(recoveryCalls, 1);
+  });
+
+  test('wallet reset lifecycle drains and pauses active claims', () async {
+    final first = Completer<PaymentLinkClaimResult>();
+    final container = ProviderContainer(
+      overrides: [
+        appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+        paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+          () async => const [],
+        ),
+        paymentLinkClaimSubmitterProvider.overrideWithValue((session) {
+          if (session.link.address == 'claim-1') return first.future;
+          return Future.value(_result('tx-2'));
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+    final lifecycle = container.read(paymentLinkClaimLifecycleRegistryProvider);
+    final firstSubmission = coordinator.submit(_session('claim-1'));
+    await Future<void>.delayed(Duration.zero);
+
+    var drained = false;
+    final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(drained, isFalse);
+    await expectLater(
+      coordinator.submit(_session('claim-2')),
+      throwsStateError,
+    );
+
+    first.complete(_result('tx-1'));
+    await firstSubmission;
+    await drain;
+    expect(coordinator.activeSubmissionCount, 0);
+
+    lifecycle.resume();
+    expect((await coordinator.submit(_session('claim-2'))).txids, 'tx-2');
   });
 }
 

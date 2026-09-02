@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
@@ -526,6 +527,54 @@ void main() {
     expect(shareTracking.isQuiesced('account-1'), isFalse);
     expect(restoreRequests, 2);
   });
+
+  test(
+    'wallet reset drains Gift Card claims before resolving the DB',
+    () async {
+      final lifecycle = PaymentLinkClaimLifecycleRegistry();
+      final drainStarted = Completer<void>();
+      final drainGate = Completer<void>();
+      var resumeCalls = 0;
+      lifecycle.register(
+        owner: Object(),
+        quiesceAndDrain: () async {
+          drainStarted.complete();
+          await drainGate.future;
+        },
+        resume: () => resumeCalls++,
+      );
+      final pathRequested = Completer<void>();
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (call) async {
+            if (!pathRequested.isCompleted) pathRequested.complete();
+            throw PlatformException(code: 'db-path-unavailable');
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null);
+      });
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkClaimLifecycleRegistryProvider.overrideWithValue(
+            lifecycle,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      final reset = container.read(accountProvider.notifier).resetWallet();
+      await drainStarted.future;
+
+      expect(pathRequested.isCompleted, isFalse);
+      drainGate.complete();
+      await expectLater(reset, throwsA(isA<PlatformException>()));
+      expect(pathRequested.isCompleted, isTrue);
+      expect(resumeCalls, 1);
+    },
+  );
 
   test(
     'account removal is rejected while it owns an unshared Gift Card',

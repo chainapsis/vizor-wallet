@@ -18,6 +18,7 @@ import '../core/storage/wallet_paths.dart';
 import '../features/swap/providers/swap_activity_store.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
+import '../features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import '../features/payment_links/services/payment_link_received_store.dart';
 import '../features/payment_links/services/payment_link_recovery_reconciler.dart';
 import '../features/payment_links/services/payment_link_recovery_store.dart';
@@ -704,10 +705,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.
   ///
-  /// In-flight voting background work is quiesced and drained first so it
-  /// cannot keep reading or writing voting records or secure storage during
-  /// the wipe. This also clears voting state held in this process for every
-  /// account before the wallet DB and voting sidecar DB are deleted.
+  /// In-flight Gift Card claims and voting background work are quiesced and
+  /// drained first so they cannot keep reading or writing wallet records or
+  /// secure storage during the wipe. This also clears voting state held in
+  /// this process for every account before the wallet DB and voting sidecar DB
+  /// are deleted.
   ///
   /// Migration work must first stop without deleting its credential. After
   /// that fail-closed preflight, the wipe is best-effort: deletion steps remain
@@ -718,15 +720,21 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
+    final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     var restoreAfterFailure = false;
+    var resumeClaimLifecycle = false;
     try {
+      await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
       await _resetWalletWithShareTrackingStopped();
+      resumeClaimLifecycle = true;
     } catch (error) {
       restoreAfterFailure = error is! WalletResetException || !error.dbDeleted;
+      resumeClaimLifecycle = restoreAfterFailure;
       rethrow;
     } finally {
+      if (resumeClaimLifecycle) claimLifecycle.resume();
       shareTracking.resume();
       if (restoreAfterFailure) shareTracking.requestRestore();
     }

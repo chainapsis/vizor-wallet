@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/app_security_provider.dart';
+import 'payment_link_claim_lifecycle_registry_provider.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_service.dart';
 
@@ -52,6 +53,7 @@ class PaymentLinkClaimCoordinator {
   Future<List<PaymentLinkReceivedRecord>>? _recoveryInFlight;
   Timer? _retryTimer;
   bool _enabled = false;
+  bool _resetQuiesced = false;
   bool _disposed = false;
 
   @visibleForTesting
@@ -60,6 +62,11 @@ class PaymentLinkClaimCoordinator {
   bool isSubmitting(String address) => _submissions.containsKey(address);
 
   Future<PaymentLinkClaimResult> submit(PaymentLinkClaimSession session) {
+    if (_resetQuiesced) {
+      return Future.error(
+        StateError('Gift Card claims are paused while the wallet resets.'),
+      );
+    }
     final claimId = session.link.address;
     final existing = _submissions[claimId];
     if (existing != null) return existing;
@@ -79,6 +86,7 @@ class PaymentLinkClaimCoordinator {
   }
 
   Future<List<PaymentLinkReceivedRecord>> refresh() {
+    if (_resetQuiesced) return Future.value(const []);
     final existing = _recoveryInFlight;
     if (existing != null) return existing;
 
@@ -93,7 +101,7 @@ class PaymentLinkClaimCoordinator {
   }
 
   void resume() {
-    if (_disposed) return;
+    if (_disposed || _resetQuiesced) return;
     _enabled = true;
     _refreshInBackground();
   }
@@ -106,7 +114,34 @@ class PaymentLinkClaimCoordinator {
 
   void dispose() {
     _disposed = true;
+    _resetQuiesced = true;
     pause();
+  }
+
+  Future<void> quiesceAndDrain() async {
+    _resetQuiesced = true;
+    pause();
+    while (_submissions.isNotEmpty || _recoveryInFlight != null) {
+      final pending = <Future<Object?>>[
+        ..._submissions.values,
+        ?_recoveryInFlight,
+      ];
+      await Future.wait(pending.map(_ignoreOutcome));
+    }
+  }
+
+  void resumeAfterReset() {
+    if (_disposed) return;
+    _resetQuiesced = false;
+    if (!_ref.read(appSecurityProvider).requiresUnlock) resume();
+  }
+
+  Future<void> _ignoreOutcome(Future<Object?> operation) async {
+    try {
+      await operation;
+    } catch (_) {
+      // A failed operation is settled and no longer blocks destructive reset.
+    }
   }
 
   Future<List<PaymentLinkReceivedRecord>> _refreshOnce() async {
@@ -151,6 +186,12 @@ class PaymentLinkClaimCoordinator {
 
 final paymentLinkClaimCoordinatorProvider = Provider((ref) {
   final coordinator = PaymentLinkClaimCoordinator(ref);
+  final lifecycleRegistry = ref.read(paymentLinkClaimLifecycleRegistryProvider);
+  lifecycleRegistry.register(
+    owner: coordinator,
+    quiesceAndDrain: coordinator.quiesceAndDrain,
+    resume: coordinator.resumeAfterReset,
+  );
   ref.listen<AppSecurityState>(appSecurityProvider, (previous, next) {
     if (next.requiresUnlock) {
       coordinator.pause();
@@ -166,6 +207,7 @@ final paymentLinkClaimCoordinatorProvider = Provider((ref) {
     onResume: coordinator.resume,
   );
   ref.onDispose(() {
+    lifecycleRegistry.unregister(coordinator);
     lifecycleListener.dispose();
     coordinator.dispose();
   });
