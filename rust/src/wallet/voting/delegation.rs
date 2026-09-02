@@ -243,7 +243,6 @@ fn prepare_delegation_setup(
         db_path,
         wallet_network(prepare_params.voting_hotkey.network()),
     )?;
-    let prepare_params = prepare_params_with_whale_protection(prepare_params);
     let (voting_db, (prepared_bundle, delegation_pczt_bytes, proof_persisted)) =
         with_open_voting_db_write(db_path, account_uuid, |voting_db| {
             let prepared_bundle = zcash_voting::delegate::prepare_delegation_bundle(

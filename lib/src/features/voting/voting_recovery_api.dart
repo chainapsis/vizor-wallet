@@ -29,12 +29,6 @@ abstract interface class VotingRecoveryApi {
     required bool skipped,
     int? choice,
   });
-
-  Future<void> clearRecoveryState({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  });
 }
 
 /// Production recovery API implementation backed by generated FRB bindings.
@@ -87,19 +81,6 @@ class RustVotingRecoveryApi implements VotingRecoveryApi {
       numOptions: numOptions,
       skipped: skipped,
       choice: choice,
-    );
-  }
-
-  @override
-  Future<void> clearRecoveryState({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  }) {
-    return rust_voting.clearRecoveryState(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
     );
   }
 }
