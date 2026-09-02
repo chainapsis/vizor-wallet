@@ -19,6 +19,7 @@ import '../../../../providers/account_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../widgets/mobile/receive_address_info_sheet.dart';
+import '../../widgets/mobile/receive_request_sheet.dart';
 import '../../widgets/receive_address_widgets.dart';
 
 const _renewShieldedAddressErrorMessage =
@@ -197,6 +198,14 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     unawaited(SharePlus.instance.share(ShareParams(text: address)));
   }
 
+  void _openRequest() {
+    // Snapshotted here: renewing the shielded address or swiping to the other
+    // pool behind the sheet must not repoint a link being handed out.
+    final address = _selectedAddress;
+    if (address.isEmpty) return;
+    unawaited(showReceiveRequestSheet(context, address: address));
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen(syncProvider, (previous, next) {
@@ -292,9 +301,10 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                     Center(
                       child: SizedBox(
                         width: _MobileReceiveMetrics.buttonStackWidth,
-                        height: _MobileReceiveMetrics.buttonStackHeight,
+                        // Three tiers now, so the column sizes to its own
+                        // content instead of a two-button fixed height.
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             AppButton(
                               key: const ValueKey('mobile_receive_share'),
@@ -313,6 +323,29 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                               ),
                               child: Text(
                                 'Share $poolLabel address',
+                                style: AppTypography.labelMedium.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            AppButton(
+                              key: const ValueKey('mobile_receive_request'),
+                              expand: true,
+                              constrainContent: true,
+                              height: _MobileReceiveMetrics.buttonHeight,
+                              variant: AppButtonVariant.secondary,
+                              onPressed: _selectedAddress.isEmpty
+                                  ? null
+                                  : _openRequest,
+                              leading: const AppIcon(
+                                AppIcons.qr,
+                                size: _MobileReceiveMetrics.buttonIconSize,
+                              ),
+                              child: Text(
+                                'Request $kZcashDefaultCurrencyTicker',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: AppTypography.labelMedium.copyWith(
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -364,7 +397,6 @@ abstract final class _MobileReceiveMetrics {
   static const addressLineHeight = 40.0;
 
   static const buttonStackWidth = 300.0;
-  static const buttonStackHeight = 112.0;
   static const buttonHeight = AppButtonSizing.largeHeight;
   static const buttonIconSize = 20.0;
 }

@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -12,10 +13,13 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
+import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -88,24 +92,29 @@ Future<void> _settle(WidgetTester tester) async {
 
 Future<void> _pumpReceive(
   WidgetTester tester,
-  _FakeReceiveAddressService service,
-) async {
+  _FakeReceiveAddressService service, {
+  List<Override> extraOverrides = const [],
+}) async {
   // The test-only Ahem font renders every glyph as a full-width square,
   // so the longest share label needs ~520px here; real fonts fit a
   // 393pt phone comfortably.
   tester.view.physicalSize = const Size(520, 932);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(_app(service));
+  await tester.pumpWidget(_app(service, extraOverrides: extraOverrides));
   await _settle(tester);
 }
 
-Widget _app(_FakeReceiveAddressService service) {
+Widget _app(
+  _FakeReceiveAddressService service, {
+  List<Override> extraOverrides = const [],
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       receiveAddressServiceProvider.overrideWithValue(service),
+      ...extraOverrides,
     ],
     child: MaterialApp(
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
@@ -516,6 +525,156 @@ void main() {
     expect(
       (shareCalls.single.arguments as Map<Object?, Object?>)['text'],
       _shielded,
+    );
+  });
+
+  testWidgets('stacks request between share and copy', (tester) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    final share = find.byKey(const ValueKey('mobile_receive_share'));
+    final request = find.byKey(const ValueKey('mobile_receive_request'));
+    final copy = find.byKey(const ValueKey('mobile_receive_copy'));
+
+    expect(request, findsOneWidget);
+    expect(find.text('Request ZEC'), findsOneWidget);
+    expect(tester.getSize(request).width, tester.getSize(share).width);
+    expect(
+      tester.getTopLeft(request).dy,
+      greaterThan(tester.getTopLeft(share).dy),
+    );
+    expect(
+      tester.getTopLeft(copy).dy,
+      greaterThan(tester.getTopLeft(request).dy),
+    );
+  });
+
+  testWidgets('composes a request and shares it with its QR image', (
+    tester,
+  ) async {
+    final shares = <({String text, int pngBytes, String fileName})>[];
+    await _pumpReceive(
+      tester,
+      _FakeReceiveAddressService(),
+      extraOverrides: [
+        zecLiveUsdUnitPriceProvider.overrideWithValue(70),
+        requestShareHandlerProvider.overrideWithValue(({
+          required text,
+          required png,
+          required fileName,
+        }) async {
+          shares.add((text: text, pngBytes: png.length, fileName: fileName));
+        }),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_request')));
+    await _settle(tester);
+
+    expect(find.byKey(const ValueKey('request_amount_input')), findsOneWidget);
+    // Shielded requests offer the message step; transparent ones do not.
+    expect(find.byKey(const ValueKey('request_message_row')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_input')),
+      '0.5',
+    );
+    await _settle(tester);
+
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('request_amount_conversion_text')),
+          )
+          .data,
+      r'$ 35.00',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('request_create_button')));
+    await _settle(tester);
+
+    final uri = 'zcash:$_shielded?amount=0.5';
+    expect(
+      tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data,
+      uri,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('request_share_button')));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pump();
+    });
+    await tester.pump();
+
+    expect(shares, hasLength(1));
+    expect(shares.single.text, contains(uri));
+    expect(shares.single.text, contains('0.5 ZEC'));
+    expect(shares.single.fileName, kRequestQrShareFileName);
+    expect(shares.single.pngBytes, greaterThan(0));
+  });
+
+  testWidgets('copies the request link from the result step', (tester) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add(
+            (call.arguments as Map<Object?, Object?>)['text']! as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_request')));
+    await _settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_input')),
+      '0.25',
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('request_create_button')));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('request_copy_link_button')));
+    await _settle(tester);
+
+    expect(copied, ['zcash:$_shielded?amount=0.25']);
+    expect(find.text('Request link copied'), findsOneWidget);
+  });
+
+  testWidgets('requests a transparent address without a message step', (
+    tester,
+  ) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    await tester.tap(find.text('Transparent'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_request')));
+    await _settle(tester);
+
+    expect(find.byKey(const ValueKey('request_amount_input')), findsOneWidget);
+    expect(find.byKey(const ValueKey('request_message_row')), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_input')),
+      '1',
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('request_create_button')));
+    await _settle(tester);
+
+    expect(
+      tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data,
+      'zcash:$_transparent?amount=1',
     );
   });
 }
