@@ -11,6 +11,7 @@ import 'ledger_mobile_ble_service.dart';
 
 typedef LedgerPcztSigner =
     Future<List<int>> Function(String accountUuid, List<int> pcztBytes);
+typedef LedgerPcztSupportValidator = Future<void> Function(List<int> pcztBytes);
 typedef LedgerVotingPcztSigner =
     Future<List<LedgerVotingSignature>> Function(
       String accountUuid,
@@ -136,7 +137,16 @@ final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
   };
 });
 
-final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
+final ledgerPcztSupportValidatorProvider = Provider<LedgerPcztSupportValidator>(
+  (_) =>
+      (pcztBytes) =>
+          rust_ledger.ledgerValidateSupportedPczt(pcztBytes: pcztBytes),
+);
+
+/// Raw transport signer retained for the opt-in Orchard-to-Ironwood canary.
+/// Product flows must use [ledgerPcztSignerProvider], which applies the release
+/// support gate before opening a transport session.
+final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
   final capability = ref.watch(ledgerStaticCapabilityProvider);
   final loadWalletDbPath = ref.watch(ledgerWalletDbPathProvider);
   final networkName = ref.watch(
@@ -177,6 +187,15 @@ final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
             );
           },
         );
+  };
+});
+
+final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
+  final validate = ref.watch(ledgerPcztSupportValidatorProvider);
+  final sign = ref.watch(ledgerPcztTransportSignerProvider);
+  return (accountUuid, pcztBytes) async {
+    await validate(pcztBytes);
+    return sign(accountUuid, pcztBytes);
   };
 });
 

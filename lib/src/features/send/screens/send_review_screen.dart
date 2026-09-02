@@ -25,6 +25,7 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/services/keystone_batch_signing.dart';
 import '../../donation/widgets/donation_views.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
+import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
@@ -383,6 +384,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         actionLabel: 'Create new transaction',
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
+    } else if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
+      failure = const LedgerSigningFailurePresentation(
+        title: 'Ledger app update required',
+        statusLabel: 'Recovery unavailable',
+        message: kLedgerLegacyOrchardRecoveryUnavailableMessage,
+        showDeviceAppPrompt: false,
+      );
+      action = null;
     } else if (lower.contains('sapling')) {
       failure = const LedgerSigningFailurePresentation(
         title: 'Ledger signing unavailable',
