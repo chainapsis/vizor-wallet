@@ -88,6 +88,7 @@ void main() {
 
     expect(find.text('Explorer'), findsOneWidget);
     expect(find.text('CipherScan'), findsOneWidget);
+    expect(find.text('Any explorer you prefer'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_explorer_option_custom')),

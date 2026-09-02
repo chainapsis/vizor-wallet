@@ -16,9 +16,8 @@ import '../../../../providers/zcash_explorer_provider.dart';
 
 enum _ExplorerChoice { cipherscan, custom }
 
-/// Mobile explorer settings — CipherScan by default, or a user-owned
-/// instance so opening a transaction does not reveal the signer's IP
-/// to a public explorer.
+/// Mobile explorer settings — CipherScan by default, or any other
+/// explorer URL the user prefers for transaction links.
 class MobileExplorerScreen extends ConsumerStatefulWidget {
   const MobileExplorerScreen({super.key});
 
@@ -174,7 +173,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                     key: const ValueKey('mobile_explorer_option_custom'),
                     iconName: AppIcons.edit,
                     label: 'Custom',
-                    subtitle: 'Your own instance',
+                    subtitle: 'Any explorer you prefer',
                     selected: _choice == _ExplorerChoice.custom,
                     onTap: _isSubmitting
                         ? null

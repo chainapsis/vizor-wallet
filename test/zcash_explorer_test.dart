@@ -118,9 +118,9 @@ void main() {
         networkName: 'main',
         txidHex: txid,
         txidOrder: ZcashExplorerTxidOrder.display,
-        customTemplate: 'https://self-hosted.example/zcash/{txHash}',
+        customTemplate: 'https://alternate.example/zcash/{txHash}',
       ).toString(),
-      'https://self-hosted.example/zcash/$txid',
+      'https://alternate.example/zcash/$txid',
     );
   });
 

@@ -179,7 +179,7 @@ class _SettingsExplorerScreenState
                       key: const ValueKey('explorer_option_custom'),
                       iconName: AppIcons.edit,
                       label: 'Custom',
-                      subtitle: 'Your own instance',
+                      subtitle: 'Any explorer you prefer',
                       selected: _choice == _ExplorerChoice.custom,
                       onTap: _isSubmitting
                           ? null

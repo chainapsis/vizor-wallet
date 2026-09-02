@@ -99,6 +99,7 @@ void main() {
     expect(find.text('CipherScan'), findsOneWidget);
     expect(find.textContaining('cipherscan.app'), findsWidgets);
     expect(find.text(kZcashExplorerPrivacyCopy), findsOneWidget);
+    expect(find.text('Any explorer you prefer'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('explorer_option_custom')));
     await tester.pump();

@@ -9,8 +9,9 @@ typedef ZcashExplorerLauncher = Future<bool> Function(Uri uri);
 const kDefaultZcashExplorerLabel = 'CipherScan';
 
 const kZcashExplorerPrivacyCopy =
-    'Opening a public explorer after you send can link your IP address to '
-    'that transaction. Use your own instance to keep that off the public site.';
+    'Transaction links open in this explorer. Use CipherScan or another site '
+    'you prefer. Opening a public explorer after you send can link your IP '
+    'address to that transaction.';
 
 const kZcashExplorerTemplateHint =
     'Use {txid} or {txHash} in the path, or enter just the origin.';
