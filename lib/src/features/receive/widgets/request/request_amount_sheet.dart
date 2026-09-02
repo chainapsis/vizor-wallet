@@ -23,6 +23,7 @@ import '../../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../../core/widgets/app_icon.dart';
 import 'request_amount_card.dart'
     show RequestAmountErrorRow, RequestMessageField;
+import 'request_amount_formatters.dart';
 import 'request_amount_model.dart';
 import 'request_qr_surface.dart';
 
@@ -295,6 +296,7 @@ class _SerifAmountDisplay extends StatelessWidget {
                   style: amountStyle,
                   hintStyle: amountStyle.copyWith(color: colors.text.disabled),
                   cursorColor: colors.text.accent,
+                  isUsd: request.amountInputIsUsd,
                 ),
         ),
         if (!request.amountInputIsUsd) ...[
@@ -315,6 +317,7 @@ class _SerifAmountInput extends StatelessWidget {
     required this.style,
     required this.hintStyle,
     required this.cursorColor,
+    required this.isUsd,
   });
 
   final TextEditingController controller;
@@ -322,6 +325,10 @@ class _SerifAmountInput extends StatelessWidget {
   final TextStyle style;
   final TextStyle hintStyle;
   final Color cursorColor;
+
+  /// Which unit the field is collecting, which is all the formatters need:
+  /// dollars stop at cents, ZEC at a zatoshi.
+  final bool isUsd;
 
   @override
   Widget build(BuildContext context) {
@@ -338,6 +345,10 @@ class _SerifAmountInput extends StatelessWidget {
           style: style,
           cursorColor: cursorColor,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          // A comma-decimal keypad emits `,` for the decimal key, which the
+          // ZIP-321 builder refuses; without this the field is a dead end on
+          // every phone set to such a locale.
+          inputFormatters: requestAmountInputFormatters(isUsd: isUsd),
           textInputAction: TextInputAction.done,
           decoration: InputDecoration.collapsed(
             hintText: '0',

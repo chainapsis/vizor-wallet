@@ -27,6 +27,7 @@ import '../../../../core/widgets/app_modal_card.dart';
 import '../../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/zcash/zip321_payment_request_builder.dart';
+import 'request_amount_formatters.dart';
 import 'request_amount_model.dart';
 import 'request_qr_surface.dart';
 
@@ -365,6 +366,12 @@ class RequestAmountField extends StatelessWidget {
           inlineSuffixStyle: affixStyle,
           showClearButton: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          // A desktop keyboard can type — and a paste can deliver — anything
+          // at all, so the field refuses what a ZIP-321 amount cannot be
+          // rather than letting the CTA go dead over it.
+          inputFormatters: requestAmountInputFormatters(
+            isUsd: request.amountInputIsUsd,
+          ),
           onChanged: onChanged,
         ),
         const SizedBox(height: AppSpacing.xxs),

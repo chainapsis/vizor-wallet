@@ -151,20 +151,43 @@ class ZecRequestDraft {
 
   /// Inline amount error, or null.
   ///
-  /// Only the two rejections a person can act on are surfaced. A half-typed
-  /// number ("0.", "") is not an error, it is an amount that is not finished,
-  /// and the flow already refuses to build a URI from it.
+  /// A half-typed number ("0.", "0", "") is not an error, it is an amount
+  /// that is not finished, and the flow already refuses to build a URI from
+  /// it. Anything else the builder refuses is said out loud: without that, an
+  /// amount the conversion line happily prices leaves "Create request"
+  /// disabled with nothing on screen accounting for it.
   String? _amountError(String amountZec) {
-    if (amountZec.isEmpty) return null;
+    final raw = amountZec.trim();
+    if (raw.isEmpty) return null;
     try {
-      normalizeZip321Amount(amountZec);
+      normalizeZip321Amount(raw);
       return null;
     } on Zip321BuildException catch (e) {
       return switch (e.kind) {
         Zip321BuildErrorKind.amountDecimals => kRequestAmountDecimalsError,
         Zip321BuildErrorKind.amountSupply => kRequestAmountSupplyError,
+        // `amountFormat` covers two unrelated rejections: a number still
+        // being typed, and text that is not a number. Only the second is
+        // something the user can be asked to correct.
+        Zip321BuildErrorKind.amountFormat =>
+          _amountIsUnfinished(raw) ? null : kRequestAmountFormatError,
         _ => null,
       };
     }
   }
 }
+
+/// The grammar `normalizeZip321Amount` accepts, so text that matches it can
+/// only have been refused for being zero.
+final _plainDecimal = RegExp(r'^[0-9]+(?:\.[0-9]*)?$');
+
+/// True while [amount] is a number the builder refuses only because it is not
+/// a positive one *yet*: "0", "0.", "0.00", and the lone separator a field
+/// passes through on the way to "0.5".
+///
+/// `.5` is deliberately not on this list. It is a finished number the field's
+/// formatters would have completed to `0.5`, so reaching the draft in that
+/// shape means something bypassed them — and the builder's refusal of it is
+/// exactly what the user needs told.
+bool _amountIsUnfinished(String amount) =>
+    amount.isEmpty || amount == '.' || _plainDecimal.hasMatch(amount);

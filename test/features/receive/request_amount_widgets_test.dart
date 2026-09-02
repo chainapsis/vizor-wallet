@@ -48,6 +48,20 @@ const _withError = ZecRequestView(
   amountError: kRequestAmountDecimalsError,
 );
 
+/// Text the ZIP-321 builder cannot read as a number at all.
+const _withFormatError = ZecRequestView(
+  address: _shielded,
+  amountDisplayText: '0,5',
+  amountError: kRequestAmountFormatError,
+);
+
+/// The field collecting dollars, so its formatters cap at cents.
+const _usdMode = ZecRequestView(
+  address: _shielded,
+  amountInputIsUsd: true,
+  conversionText: '0 ZEC',
+);
+
 void main() {
   group('ZecRequestView', () {
     test('an empty amount encodes the plain address, not a request', () {
@@ -229,6 +243,98 @@ void main() {
       expect(_button(tester, 'request_next_button').onPressed, isNull);
       expect(find.byType(RequestSummaryRow), findsNothing);
     });
+
+    testWidgets('an amount the builder cannot read says what to type', (
+      tester,
+    ) async {
+      await _pump(tester, const RequestAmountCard(request: _withFormatError));
+
+      expect(
+        _text(tester, 'request_amount_error_text'),
+        kRequestAmountFormatError,
+      );
+      expect(_button(tester, 'request_next_button').onPressed, isNull);
+    });
+
+    testWidgets('the amount field normalises a comma to a decimal point', (
+      tester,
+    ) async {
+      final typed = <String>[];
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        RequestAmountCard(
+          request: _empty,
+          amountController: controller,
+          onAmountChanged: typed.add,
+        ),
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_field')),
+        '0,5',
+      );
+      await tester.pump();
+
+      expect(controller.text, '0.5');
+      expect(typed.last, '0.5');
+    });
+
+    testWidgets('the amount field stops at a zatoshi', (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        RequestAmountCard(request: _empty, amountController: controller),
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_field')),
+        '0.123456789',
+      );
+      await tester.pump();
+
+      expect(controller.text, '0.12345678');
+    });
+
+    testWidgets('the amount field refuses what is not part of a number', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        RequestAmountCard(request: _empty, amountController: controller),
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_field')),
+        '.5 ZEC',
+      );
+      await tester.pump();
+
+      // The leading dot is completed rather than dropped, and the letters
+      // that would have made the URI unbuildable never land.
+      expect(controller.text, '0.5');
+    });
+
+    testWidgets('a USD-mode field stops at cents', (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        RequestAmountCard(request: _usdMode, amountController: controller),
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_field')),
+        '35,499',
+      );
+      await tester.pump();
+
+      expect(controller.text, '35.49');
+    });
   });
 
   group('desktop request modal step two', () {
@@ -396,6 +502,74 @@ void main() {
         find.byKey(const ValueKey('request_amount_error_text')),
         findsNothing,
       );
+    });
+
+    testWidgets('the serif field normalises a comma-decimal keypad', (
+      tester,
+    ) async {
+      final typed = <String>[];
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        RequestAmountSheetCompose(
+          request: _empty,
+          amountController: controller,
+          onAmountChanged: typed.add,
+        ),
+        size: _mobileSize,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_input')),
+        '0,5',
+      );
+      await tester.pump();
+
+      expect(controller.text, '0.5');
+      expect(typed.last, '0.5');
+    });
+
+    testWidgets('the serif field stops at a zatoshi', (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        RequestAmountSheetCompose(
+          request: _empty,
+          amountController: controller,
+        ),
+        size: _mobileSize,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_input')),
+        '0.123456789',
+      );
+      await tester.pump();
+
+      expect(controller.text, '0.12345678');
+    });
+
+    testWidgets('a USD-mode serif field stops at cents', (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        RequestAmountSheetCompose(
+          request: _usdMode,
+          amountController: controller,
+        ),
+        size: _mobileSize,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_input')),
+        '35,499',
+      );
+      await tester.pump();
+
+      expect(controller.text, '35.49');
     });
 
     testWidgets('an untakeable unit switch is drawn as disabled', (

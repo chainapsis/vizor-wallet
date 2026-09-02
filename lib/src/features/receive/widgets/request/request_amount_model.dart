@@ -47,10 +47,19 @@ enum RequestModalStep {
 const kRequestMessageHelpText =
     'Shielded addresses only — anyone with this link can read it.';
 
-/// Inline amount errors. Both are phrased as the correction to make, not as a
-/// verdict on what was typed.
+/// Inline amount errors. All three are phrased as the correction to make, not
+/// as a verdict on what was typed.
 const kRequestAmountDecimalsError = 'Enter up to 8 decimals';
 const kRequestAmountSupplyError = 'Amount exceeds the ZEC supply';
+
+/// Shown when the field holds something that is not a decimal number at all.
+///
+/// The field's own formatters make this hard to reach by typing, so it is the
+/// backstop for the paths they do not cover — a controller written to
+/// programmatically, or a platform that slips a character past them. Silence
+/// there would be a permanently disabled "Create request" with nothing on
+/// screen explaining it.
+const kRequestAmountFormatError = 'Enter an amount like 0.5';
 
 /// Body of the share sheet a mobile request opens.
 ///
