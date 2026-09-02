@@ -484,6 +484,9 @@ Widget _sendFlowRouterApp({
   String? initialRecipient,
   String? initialAmount,
   MobileSendAddressValidator? validateAddress,
+  bool isPaymentRequest = false,
+  String? paymentRequestLabel,
+  BigInt? requestedAmountZatoshi,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -508,6 +511,9 @@ Widget _sendFlowRouterApp({
           preserveInitialMemoWhitespace: preserveInitialMemoWhitespace,
           validateAddress: validateAddress,
           estimateFee: estimateFee,
+          isPaymentRequest: isPaymentRequest,
+          paymentRequestLabel: paymentRequestLabel,
+          requestedAmountZatoshi: requestedAmountZatoshi,
         ),
       ),
       // Mirrors MobileSendAmountScreen in mobile_routes.dart, plus the test
@@ -529,6 +535,9 @@ Widget _sendFlowRouterApp({
             preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
+            isPaymentRequest: args.isPaymentRequest,
+            paymentRequestLabel: args.requestedBy,
+            requestedAmountZatoshi: args.requestedAmountZatoshi,
             loadWalletDbPath: () async => '/tmp/zcash-test',
             openScanner: (_) async => null,
             validateAddress: validateAddress,
@@ -555,6 +564,9 @@ Widget _sendFlowRouterApp({
             preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
+            isPaymentRequest: args.isPaymentRequest,
+            paymentRequestLabel: args.requestedBy,
+            requestedAmountZatoshi: args.requestedAmountZatoshi,
             loadWalletDbPath: () async => '/tmp/zcash-test',
             openScanner: (_) async => null,
             estimateFee: estimateFee,
@@ -1095,6 +1107,49 @@ void main() {
 
     expect(_lastProposeToAddress, _shieldedAddress);
     expect(_lastProposeMemo, rawMemo);
+  });
+
+  testWidgets('route-step review keeps the payment request framing', (
+    tester,
+  ) async {
+    // A ZIP-321 request lands on /send with the amount step in place; the
+    // review it pushes must still read as answering that request.
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+        isPaymentRequest: true,
+        paymentRequestLabel: 'Blue Door Coffee',
+        requestedAmountZatoshi: BigInt.from(150000000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review payment request'), findsOneWidget);
+    expect(find.text('Requested by'), findsOneWidget);
+    expect(find.text('Blue Door Coffee'), findsOneWidget);
+
+    // Editing the amount on the way keeps the framing and surfaces what was
+    // asked for; the pushed amount page carries the request forward too.
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    await _enterAmount(tester, '2');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review payment request'), findsOneWidget);
+    expect(find.text('Blue Door Coffee'), findsOneWidget);
+    expect(find.textContaining('1.5'), findsWidgets);
   });
 
   testWidgets('route-step review refreshes the fee on entry', (tester) async {

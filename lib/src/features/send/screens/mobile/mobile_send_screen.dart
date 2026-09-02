@@ -179,6 +179,9 @@ class MobileSendAmountArgs {
     this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
+    this.isPaymentRequest = false,
+    this.requestedBy,
+    this.requestedAmountZatoshi,
   });
 
   final String sendFlowId;
@@ -195,6 +198,14 @@ class MobileSendAmountArgs {
   final bool preserveMemoWhitespace;
   final String? contactLabel;
   final String? contactPictureId;
+
+  /// Payment-request framing carried from the recipient step, already gated
+  /// on the recipient still being the one the request named (see
+  /// `_isAnsweringPaymentRequest`); the amount and review pages cannot change
+  /// the recipient, so passing it on is safe.
+  final bool isPaymentRequest;
+  final String? requestedBy;
+  final BigInt? requestedAmountZatoshi;
 }
 
 /// What the pushed `/send/amount` page hands back when it pops.
@@ -275,6 +286,9 @@ class MobileSendAmountScreen extends StatelessWidget {
       preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
+      isPaymentRequest: args.isPaymentRequest,
+      paymentRequestLabel: args.requestedBy,
+      requestedAmountZatoshi: args.requestedAmountZatoshi,
     );
   }
 }
@@ -806,6 +820,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         preserveMemoWhitespace: _preserveMemoWhitespace,
         contactLabel: _contactLabel,
         contactPictureId: _contactPictureId,
+        isPaymentRequest: _isAnsweringPaymentRequest,
+        requestedBy: _activePaymentRequestLabel,
+        requestedAmountZatoshi: _isAnsweringPaymentRequest
+            ? widget.requestedAmountZatoshi
+            : null,
       ),
     );
     if (!mounted) return;
@@ -1335,6 +1354,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             preserveMemoWhitespace: _preserveMemoWhitespace,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
+            // The pushed review page decides the "Review payment request"
+            // framing from these; without them it reads as an ordinary send.
+            isPaymentRequest: _isAnsweringPaymentRequest,
+            requestedBy: _activePaymentRequestLabel,
+            requestedAmountZatoshi: _isAnsweringPaymentRequest
+                ? widget.requestedAmountZatoshi
+                : null,
           ),
         ),
       );
