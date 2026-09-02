@@ -52,16 +52,14 @@ class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
     state = null;
   }
 
-  /// Returns the pending prefill (if any) and clears it in one step.
-  SendPrefillArgs? take() {
-    final prefill = state;
-    clear();
-    return prefill;
-  }
-
-  /// Like [take], but withholds a prefill older than [parkTtl] (while still
-  /// clearing it), so a stale parked link is dropped rather than delivered as a
-  /// payment on an unrelated later unlock.
+  /// Returns the pending prefill and clears it in one step, withholding a
+  /// prefill older than [parkTtl] (while still clearing it) so a stale parked
+  /// link is dropped rather than delivered as a payment on an unrelated later
+  /// unlock.
+  ///
+  /// The TTL is not optional and there is deliberately no unconditional twin:
+  /// a claim path that skipped the age check is exactly the "link opened
+  /// overnight fires as a payment" case [parkTtl] exists to prevent.
   ///
   /// `expired` separates the two ways this returns no prefill: nothing was
   /// parked at all, or a link the user did open sat past its window. Only the

@@ -57,20 +57,17 @@ void main() {
     },
   );
 
-  test(
-    'take and takeIfFresh clear the park, so the next set is not a replacement',
-    () {
-      final container = makeContainer();
-      final notifier = container.read(paymentUriPrefillProvider.notifier);
+  test('takeIfFresh clears the park, so the next set is not a replacement', () {
+    final container = makeContainer();
+    final notifier = container.read(paymentUriPrefillProvider.notifier);
 
-      notifier.set(first);
-      expect(notifier.take(), first);
-      expect(notifier.set(second), isFalse);
+    notifier.set(first);
+    expect(notifier.takeIfFresh().prefill, first);
+    expect(notifier.set(second), isFalse);
 
-      expect(notifier.takeIfFresh().prefill, second);
-      expect(notifier.set(first), isFalse);
-    },
-  );
+    expect(notifier.takeIfFresh().prefill, second);
+    expect(notifier.set(first), isFalse);
+  });
 
   // The unlock screens are the only claimant, and they have to tell "nothing
   // was parked" (say nothing) apart from "a link the user opened sat past its
