@@ -73,6 +73,56 @@ void main() {
       );
     });
 
+    test('refuses an encoded address key beside a different address key', () {
+      // Two distinct decoded names, so the same-name guard does not fire —
+      // but ZIP-321 forbids an encoded paramname outright, so `%61ddress`
+      // cannot be the paramindex-0 payment and there is no single recipient.
+      const raw = 'zcash:?address.1=u1real000&%61ddress=u1attacker0';
+
+      expect(normalizeAddressScanPayload(raw), raw);
+    });
+
+    test('refuses a query address appended to a positional address', () {
+      // ZIP-321 makes the positional address the address of paramindex 0,
+      // the same slot a bare `address=` names, so this is a repeat: the
+      // victim reads the untampered prefix and the query value would win.
+      const raw = 'zcash:u1real000?amount=0.5&address=u1attacker0';
+
+      expect(normalizeAddressScanPayload(raw), raw);
+    });
+
+    test('refuses a query address appended to a zcash:// authority', () {
+      const raw = 'zcash://u1real000?address=u1attacker0';
+
+      expect(normalizeAddressScanPayload(raw), raw);
+    });
+
+    test('keeps a positional address beside a higher indexed one', () {
+      // paramindex 0 plus paramindex 1 is a legitimate multi-payment
+      // request, not a repeat, so the positional address still recovers.
+      expect(
+        normalizeAddressScanPayload(
+          'zcash:u1real000?address.1=u1second000&memo=not-base64url!',
+        ),
+        'u1real000',
+      );
+    });
+
+    test('refuses a payload whose parameter name cannot be decoded', () {
+      // `Uri.decodeQueryComponent('%FF')` throws `FormatException`, not
+      // `ArgumentError`. A crafted QR must fail closed, never throw out of
+      // the scan callback.
+      const raw = 'zcash:?%FFx=y&address=u1real000&address=u1attacker0';
+
+      expect(normalizeAddressScanPayload(raw), raw);
+    });
+
+    test('refuses a payload whose parameter value cannot be decoded', () {
+      const raw = 'zcash:?address=u1real000&label=%FF';
+
+      expect(normalizeAddressScanPayload(raw), raw);
+    });
+
     test('extracts an indexed-only zcash address', () {
       expect(
         normalizeAddressScanPayload('zcash:?address.1=u1k8h8x9g7f6e5d4c3b2a1'),
