@@ -2058,8 +2058,8 @@ void main() {
     await tester.pumpWidget(
       _app(
         _syncedState(
-          orchardBalance: BigInt.parse('1234512345678'),
-          transparentBalance: BigInt.from(12345678),
+          orchardBalance: BigInt.from(44_291_641),
+          transparentBalance: BigInt.from(12_345_678),
           canShieldTransparentBalance: true,
         ),
       ),
@@ -2067,12 +2067,17 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.textContaining('12345.12', findRichText: true), findsOneWidget);
     expect(
-      find.textContaining('12345.12345678', findRichText: true),
-      findsNothing,
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_home_shielded_balance')),
+          )
+          .textSpan
+          ?.toPlainText(),
+      '0.44291 ZEC',
     );
-    expect(find.text('Transparent: 0.123456 ZEC'), findsOneWidget);
+    expect(find.textContaining('0.44291641', findRichText: true), findsNothing);
+    expect(find.text('Transparent: 0.12345 ZEC'), findsOneWidget);
   });
 
   testWidgets('shows transparent balance tray with shield action', (
