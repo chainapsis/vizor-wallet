@@ -422,6 +422,30 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     String accountUuid, {
     required String precomputeKey,
   }) async {
+    final releaseBackgroundWork = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork(accountUuid: accountUuid);
+    if (releaseBackgroundWork == null) {
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute skipped '
+        'round=$_roundId reason=wallet-mutation-in-progress',
+      );
+      return;
+    }
+    try {
+      await _runRegisteredSnapshotBundlePrecomputeForAccount(
+        accountUuid,
+        precomputeKey: precomputeKey,
+      );
+    } finally {
+      releaseBackgroundWork();
+    }
+  }
+
+  Future<void> _runRegisteredSnapshotBundlePrecomputeForAccount(
+    String accountUuid, {
+    required String precomputeKey,
+  }) async {
     final context = await _loadContext(_roundId);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     final current = state.value;
@@ -433,8 +457,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return;
     }
     try {
-      await _waitUntilWalletReadyForVoting(context);
+      await _waitUntilWalletReadyForVoting(
+        context,
+        stopIfVotingBackgroundWorkQuiesced: true,
+      );
     } on _StaleVotingSessionAction {
+      return;
+    } on _VotingBackgroundWorkQuiesced catch (e) {
+      final readiness = e.readiness;
+      if (readiness != null) {
+        _setWalletSyncReadinessState(
+          context: context,
+          readiness: readiness,
+          waiting: false,
+        );
+      }
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute skipped '
+        'round=${context.round.roundId} reason=wallet-mutation-in-progress',
+      );
       return;
     } on _VotingWalletSyncTimeout catch (e) {
       _setWalletSyncReadinessState(
@@ -4037,13 +4078,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> _waitUntilWalletReadyForVoting(
-    _VotingSessionContext context,
-  ) async {
+    _VotingSessionContext context, {
+    bool stopIfVotingBackgroundWorkQuiesced = false,
+  }) async {
+    VotingWalletSyncReadiness? lastReadiness;
+    void throwIfBackgroundWorkQuiesced() {
+      if (stopIfVotingBackgroundWorkQuiesced &&
+          ref
+              .read(votingShareTrackingRegistryProvider)
+              .isQuiesced(context.accountUuid)) {
+        throw _VotingBackgroundWorkQuiesced(readiness: lastReadiness);
+      }
+    }
+
     var loggedWait = false;
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
     final waitTimer = Stopwatch()..start();
     final sessionInvalidated = _sessionInvalidated.future;
     while (true) {
+      throwIfBackgroundWorkQuiesced();
       _throwIfContextStale(context, 'wallet-sync-wait');
       final readiness = await ref
           .read(votingWalletSyncReadinessCheckerProvider)
@@ -4052,6 +4105,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             network: context.network,
             snapshotHeight: context.round.snapshotHeight,
           );
+      lastReadiness = readiness;
+      throwIfBackgroundWorkQuiesced();
       _throwIfContextStale(context, 'wallet-sync-readiness');
       if (readiness.isReady) {
         _setWalletSyncReadinessState(
@@ -4879,6 +4934,12 @@ class _VotingSessionContext {
 
 class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();
+}
+
+class _VotingBackgroundWorkQuiesced implements Exception {
+  const _VotingBackgroundWorkQuiesced({this.readiness});
+
+  final VotingWalletSyncReadiness? readiness;
 }
 
 class _VotingWalletSyncTimeout implements Exception {

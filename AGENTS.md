@@ -276,6 +276,9 @@ the Accounts UI treats it as a full wallet reset, clearing the wallet DB, secure
 storage, active account state, and routing back to onboarding. Dart
 `AccountNotifier.removeAccount` and Rust `delete_account` still validate the
 target account exists before removing account-scoped wallet rows.
+Voting background work that can write account state or secure storage must
+register with the destructive-operation drain before its first asynchronous
+step, and account deletion/reset must await that work before clearing data.
 
 **Account identification**: `AccountUuid` (UUID string like `"550e8400-e29b-41d4-a716-446655440000"`). Passed as `String` between Dart and Rust via `Uuid::parse_str()` / `Uuid::to_string()`.
 

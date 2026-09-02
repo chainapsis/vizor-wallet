@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_restorer_provider.dart';
 
 const _validPassword = 'Correct123!';
 
@@ -58,6 +59,10 @@ Future<void> _runUninstallFlow(
           accountProvider.overrideWith(() => accountNotifier),
           appSecurityProvider.overrideWith(_TestAppSecurityNotifier.new),
           syncProvider.overrideWith(_TestSyncNotifier.new),
+          // The mutation guard tests cover draining pending voting work.
+          votingShareTrackingRestorerProvider.overrideWith(
+            (ref) => VotingShareTrackingRestorer(ref),
+          ),
           swapPendingIntentCountProvider.overrideWith(
             (ref, accountUuid) async => 0,
           ),

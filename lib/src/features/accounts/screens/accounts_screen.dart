@@ -195,15 +195,20 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       );
     }
 
-    await runWithSyncPausedForAccountMutation(ref, () async {
-      logPauseComplete();
-      final mutationWatch = Stopwatch()..start();
-      await accountNotifier.removeAccount(uuid);
-      log(
-        'removeAccountFlow: account mutation complete in '
-        '${mutationWatch.elapsedMilliseconds}ms uuid=$uuid',
-      );
-    }, onSyncPaused: logPauseComplete);
+    await runWithSyncPausedForAccountMutation(
+      ref,
+      () async {
+        logPauseComplete();
+        final mutationWatch = Stopwatch()..start();
+        await accountNotifier.removeAccount(uuid);
+        log(
+          'removeAccountFlow: account mutation complete in '
+          '${mutationWatch.elapsedMilliseconds}ms uuid=$uuid',
+        );
+      },
+      onSyncPaused: logPauseComplete,
+      quiesceVotingWork: true,
+    );
     if (!mounted) return;
     _closeModal();
     final refreshWatch = Stopwatch()..start();

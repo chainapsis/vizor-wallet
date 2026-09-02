@@ -49,9 +49,22 @@ class VotingShareTrackingRestorer {
   Future<void> restore() {
     final inFlight = _restoreInFlight;
     if (inFlight != null) return inFlight;
+
+    _cancelRetry();
+    if (_ref.read(appSecurityProvider).requiresUnlock) return Future.value();
+    final registry = _ref.read(votingShareTrackingRegistryProvider);
+    final releaseDiscovery = registry.beginDiscovery();
+    // A request rejected by quiescence is not active work. Recording its
+    // already-completed future would swallow a request made just after resume.
+    if (releaseDiscovery == null) return Future.value();
+
     late final Future<void> restore;
-    restore = _restoreOnce().whenComplete(() {
-      if (identical(_restoreInFlight, restore)) _restoreInFlight = null;
+    restore = _restoreTracked(registry).whenComplete(() {
+      try {
+        releaseDiscovery();
+      } finally {
+        if (identical(_restoreInFlight, restore)) _restoreInFlight = null;
+      }
     });
     _restoreInFlight = restore;
     return restore;
@@ -85,19 +98,6 @@ class VotingShareTrackingRestorer {
     }
     await _restoreInFlight;
     await restore();
-  }
-
-  Future<void> _restoreOnce() async {
-    _cancelRetry();
-    if (_ref.read(appSecurityProvider).requiresUnlock) return;
-    final registry = _ref.read(votingShareTrackingRegistryProvider);
-    final releaseDiscovery = registry.beginDiscovery();
-    if (releaseDiscovery == null) return;
-    try {
-      await _restoreTracked(registry);
-    } finally {
-      releaseDiscovery();
-    }
   }
 
   Future<void> _restoreTracked(VotingShareTrackingRegistry registry) async {
