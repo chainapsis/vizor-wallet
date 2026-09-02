@@ -67,12 +67,12 @@ import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
+import 'src/features/send/widgets/payment_request_host.dart';
 import 'src/features/send/services/send_flow.dart'
     show
         resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
-        sendStatusRoutePayloadProvider,
-        sendStatusTerminalProvider;
+        sendStatusRoutePayloadProvider;
 import 'src/features/settings/screens/settings_screen.dart';
 import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
@@ -107,12 +107,8 @@ import 'src/providers/windows_update_provider.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
+import 'src/providers/payment_request_flow_provider.dart';
 import 'src/services/payment_uri_service.dart';
-
-/// The payment-URI blocked-surface predicate lives with the rest of the drain
-/// policy; re-exported here because it is part of `app.dart`'s public surface.
-export 'src/core/navigation/payment_uri_drain_policy.dart'
-    show paymentUriBlockedAtLocation;
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -1154,7 +1150,14 @@ class ZcashWalletApp extends ConsumerWidget {
                                     }
                                   },
                                   behavior: HitTestBehavior.translucent,
-                                  child: child!,
+                                  // Innermost app-level layer: the payment
+                                  // request card sits directly over the
+                                  // router's content, under the privacy lock
+                                  // and the keep-awake hosts above it.
+                                  child: PaymentRequestHost(
+                                    router: router,
+                                    child: child!,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1283,10 +1286,16 @@ class _PaymentUriLinkListenerState
           // link quietly: draining it here would follow the wipe with a
           // "Set up or import a wallet" snackbar and a jump to /welcome.
           ref.read(paymentUriPrefillProvider.notifier).clear();
+          ref.read(paymentRequestFlowProvider.notifier).clear();
           return;
         }
       }
       _schedulePendingDrain();
+    });
+    // A hardware signing session keeps the link parked rather than dropping
+    // it, so the drain has to be re-run when the hold is given back.
+    ref.listen<int>(paymentUriBusySurfaceProvider, (previous, next) {
+      if (next == 0 && (previous ?? 0) > 0) _schedulePendingDrain();
     });
     // No appSecurityProvider listener: the unlock screens own the post-unlock
     // navigation for a parked prefill (claim + go to /send). Draining here on
@@ -1357,10 +1366,6 @@ class _PaymentUriLinkListenerState
       hasWallet: walletAsync.value?.hasWallet ?? bootstrap.hasWallet,
       isUnlocked: security.isUnlocked,
       matchedLocation: widget.router.state.matchedLocation,
-      // `matchedLocation` drops the query, but `/activity/swap/<id>` is only
-      // a blocked surface when it carries `?sign=<zecDeposit>`.
-      queryParameters: widget.router.state.uri.queryParameters,
-      sendStatusIsTerminal: ref.read(sendStatusTerminalProvider),
       // In-progress surfaces that own no route of their own — today the
       // desktop Keystone shield signing overlay, which sits on `/home`.
       hasBusySurface: ref.read(paymentUriBusySurfaceProvider) > 0,
@@ -1386,10 +1391,10 @@ class _PaymentUriLinkListenerState
         _showPaymentUriMessage(decision.message!);
       case PaymentUriDrainAction.deliver:
         prefillNotifier.clear();
-        if (decision.clearSendStatusPayload) {
-          ref.read(sendStatusRoutePayloadProvider.notifier).clear();
-        }
-        widget.router.go('/send', extra: prefill);
+        // The request is presented over the current screen, not navigated to.
+        ref
+            .read(paymentRequestFlowProvider.notifier)
+            .present(prefill!, source: PaymentRequestSource.link);
     }
   }
 

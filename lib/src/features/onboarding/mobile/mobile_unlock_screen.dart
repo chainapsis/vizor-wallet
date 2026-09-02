@@ -15,6 +15,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/device_owner_auth_provider.dart';
+import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/payment_uri_prefill_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -220,10 +221,13 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         final pendingPrefill = ref
             .read(paymentUriPrefillProvider.notifier)
             .takeIfFresh();
+        context.go('/home');
         if (pendingPrefill != null) {
-          context.go('/send', extra: pendingPrefill);
-        } else {
-          context.go('/home');
+          // The link becomes a card over the wallet the user just unlocked,
+          // not a jump into the composer.
+          ref
+              .read(paymentRequestFlowProvider.notifier)
+              .present(pendingPrefill, source: PaymentRequestSource.link);
         }
       });
     } catch (e, st) {

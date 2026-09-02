@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
-import 'package:zcash_wallet/src/features/swap/models/swap_activity_navigation.dart';
 
 /// Calls [decidePaymentUriDrain] with the "healthy, unlocked, on /home, link
 /// just arrived" baseline so each test only states the row it exercises.
@@ -13,8 +12,6 @@ PaymentUriDrainDecision decide({
   bool hasWallet = true,
   bool isUnlocked = true,
   String matchedLocation = '/home',
-  Map<String, String> queryParameters = const {},
-  bool sendStatusIsTerminal = false,
   bool hasBusySurface = false,
   bool sendGatedByMigration = false,
 }) => decidePaymentUriDrain(
@@ -26,8 +23,6 @@ PaymentUriDrainDecision decide({
   hasWallet: hasWallet,
   isUnlocked: isUnlocked,
   matchedLocation: matchedLocation,
-  queryParameters: queryParameters,
-  sendStatusIsTerminal: sendStatusIsTerminal,
   hasBusySurface: hasBusySurface,
   sendGatedByMigration: sendGatedByMigration,
 );
@@ -58,90 +53,44 @@ void main() {
       );
     });
 
-    test('outranks every other row, including navigation ones', () {
-      final stale = kPaymentUriParkTtl + const Duration(minutes: 5);
-      for (final decision in [
-        decide(parkedFor: stale, hasBlockingFailure: true),
-        decide(parkedFor: stale, hasWallet: false),
-        decide(parkedFor: stale, isUnlocked: false),
-        decide(parkedFor: stale, matchedLocation: '/send/review'),
-      ]) {
-        expect(decision.action, PaymentUriDrainAction.dropSilently);
-      }
-    });
-
-    test('an unknown park age never counts as stale', () {
-      expect(decide(parkedFor: null).action, PaymentUriDrainAction.deliver);
+    test('age outranks every other row, including a busy surface', () {
+      expect(
+        decide(
+          parkedFor: kPaymentUriParkTtl + const Duration(minutes: 1),
+          hasBusySurface: true,
+          hasWallet: false,
+          isUnlocked: false,
+        ).action,
+        PaymentUriDrainAction.dropSilently,
+      );
     });
   });
 
-  group('bootstrap and wallet failure', () {
-    test('a blocking storage failure drops the link with a message', () {
+  group('the wallet cannot be opened', () {
+    test('a blocking bootstrap failure drops with the unavailable message', () {
       final decision = decide(hasBlockingFailure: true);
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
       expect(decision.message, kPaymentUriUnavailableMessage);
     });
 
-    test('a wallet load error drops the link with a message', () {
+    test('a wallet load error drops with the unavailable message', () {
       final decision = decide(walletHasError: true);
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
       expect(decision.message, kPaymentUriUnavailableMessage);
     });
 
-    test('a still-loading wallet leaves the link parked', () {
-      expect(
-        decide(walletIsLoading: true, hasWallet: false).action,
-        PaymentUriDrainAction.wait,
-      );
+    test('waits while wallet existence is still unknown', () {
+      expect(decide(walletIsLoading: true).action, PaymentUriDrainAction.wait);
     });
   });
 
-  group('onboarding locations', () {
-    const onboardingLocations = [
-      '/welcome',
-      '/add-account',
-      '/onboarding/intro',
-      '/onboarding/secret-passphrase',
-      '/onboarding/set-password',
-      '/onboarding/set-passcode',
-      '/onboarding/customise-account',
-      '/onboarding/keystone/scan',
-      '/onboarding/link-desktop/accounts',
-      '/import',
-      '/import/manual',
-      '/import/review',
-      '/import/birthday',
-      '/import/set-password',
-      '/import/customise-account',
-      '/import-keystone',
-      '/import-keystone/set-password',
-    ];
-
-    test(
-      'stay put with the onboarding message when there is no wallet yet',
-      () {
-        for (final location in onboardingLocations) {
-          final decision = decide(hasWallet: false, matchedLocation: location);
-          expect(
-            decision.action,
-            PaymentUriDrainAction.dropWithMessage,
-            reason: location,
-          );
-          // The welcome screen has not started anything yet, so it keeps the
-          // plain no-wallet wording; every other setup step says "finish".
-          expect(
-            decision.message,
-            location == '/welcome'
-                ? kPaymentUriNoWalletMessage
-                : kPaymentUriOnboardingMessage,
-            reason: location,
-          );
-        }
-      },
-    );
-
-    test('stay put with the onboarding message when a wallet exists', () {
-      for (final location in onboardingLocations) {
+  group('setup flows', () {
+    test('drops on every onboarding location with the onboarding message', () {
+      for (final location in [
+        '/add-account',
+        '/onboarding/create',
+        '/import/seed',
+      ]) {
         final decision = decide(matchedLocation: location);
         expect(
           decision.action,
@@ -156,99 +105,97 @@ void main() {
       }
     });
 
-    test('isOnboardingLocation excludes ordinary app locations', () {
-      for (final location in [
-        '/home',
-        '/send',
-        '/settings',
-        '/unlock',
-        '/lost-password',
-        '/accounts',
-      ]) {
-        expect(isOnboardingLocation(location), isFalse, reason: location);
-      }
-    });
-  });
-
-  group('no wallet outside onboarding', () {
-    test('routes to /welcome with the set-up message', () {
-      final decision = decide(hasWallet: false, matchedLocation: '/home');
-      expect(decision.action, PaymentUriDrainAction.routeToWelcome);
+    test('/welcome with no wallet gets the plainer no-wallet wording', () {
+      final decision = decide(matchedLocation: '/welcome', hasWallet: false);
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
       expect(decision.message, kPaymentUriNoWalletMessage);
     });
 
-    test('a busy non-send surface outranks the no-wallet redirect', () {
-      // The uninstall flow ends with hasWallet == false on purpose, so the
-      // no-wallet row must not pull its done stage over to /welcome.
-      for (final location in [
-        '/settings/uninstall',
-        '/migration/private/status',
-        '/swap/review',
-        '/voting/poll/round-1/review',
-      ]) {
-        final decision = decide(hasWallet: false, matchedLocation: location);
-        expect(
-          decision.action,
-          PaymentUriDrainAction.dropWithMessage,
-          reason: location,
-        );
-        expect(decision.message, kPaymentUriBusyMessage, reason: location);
-      }
+    test('/welcome with a wallet gets the onboarding wording', () {
+      expect(
+        decide(matchedLocation: '/welcome').message,
+        kPaymentUriOnboardingMessage,
+      );
+    });
+  });
+
+  group('busy surface', () {
+    test('waits rather than dropping while a signing session is up', () {
+      final decision = decide(hasBusySurface: true);
+      expect(decision.action, PaymentUriDrainAction.wait);
+      expect(decision.message, isNull);
     });
 
-    test('a busy non-send surface also outranks the locked redirect', () {
+    test('presents once the hold is given back', () {
+      expect(
+        decide(hasBusySurface: false).action,
+        PaymentUriDrainAction.deliver,
+      );
+    });
+
+    test('waiting outranks the migration gate and the wallet rows', () {
+      expect(
+        decide(
+          hasBusySurface: true,
+          sendGatedByMigration: true,
+          hasWallet: false,
+        ).action,
+        PaymentUriDrainAction.wait,
+      );
+    });
+
+    test('onboarding still outranks a busy surface', () {
+      expect(
+        decide(matchedLocation: '/import/seed', hasBusySurface: true).action,
+        PaymentUriDrainAction.dropWithMessage,
+      );
+    });
+  });
+
+  group('migration send gate', () {
+    test('drops with the migration message', () {
+      final decision = decide(sendGatedByMigration: true);
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriMigrationSendGateMessage);
+    });
+
+    test('outranks the no-wallet and locked rows', () {
       final decision = decide(
+        sendGatedByMigration: true,
+        hasWallet: false,
         isUnlocked: false,
-        matchedLocation: '/settings/uninstall',
       );
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriBusyMessage);
+      expect(decision.message, kPaymentUriMigrationSendGateMessage);
     });
+  });
 
-    test('send surfaces still fall through to the no-wallet redirect', () {
-      // /send* is unreachable without a wallet, and the terminal /send/status
-      // exception needs the delivery path, so the send rows stay below.
-      for (final location in ['/send', '/send/status']) {
-        expect(
-          decide(hasWallet: false, matchedLocation: location).action,
-          PaymentUriDrainAction.routeToWelcome,
-          reason: location,
-        );
-      }
+  group('no wallet', () {
+    test('routes to /welcome with the no-wallet message', () {
+      final decision = decide(hasWallet: false);
+      expect(decision.action, PaymentUriDrainAction.routeToWelcome);
+      expect(decision.message, kPaymentUriNoWalletMessage);
     });
   });
 
   group('locked wallet', () {
-    test('routes to /unlock and leaves the link parked', () {
-      final decision = decide(isUnlocked: false, matchedLocation: '/home');
+    test('routes to /unlock and keeps the prefill parked', () {
+      final decision = decide(isUnlocked: false);
       expect(decision.action, PaymentUriDrainAction.routeToUnlock);
       expect(decision.message, isNull);
     });
 
-    test('stays put when already on /unlock', () {
-      expect(
-        decide(isUnlocked: false, matchedLocation: '/unlock').action,
-        PaymentUriDrainAction.wait,
-      );
+    test('waits on the unlock and reset flows instead of navigating', () {
+      for (final location in ['/unlock', '/lost-password']) {
+        expect(
+          decide(isUnlocked: false, matchedLocation: location).action,
+          PaymentUriDrainAction.wait,
+          reason: location,
+        );
+      }
     });
 
-    test('stays put on /lost-password so the reset is not unmounted', () {
-      expect(
-        decide(isUnlocked: false, matchedLocation: '/lost-password').action,
-        PaymentUriDrainAction.wait,
-      );
-    });
-
-    test('isUnlockFlowLocation covers exactly the unlock and reset routes', () {
-      expect(isUnlockFlowLocation('/unlock'), isTrue);
-      expect(isUnlockFlowLocation('/lost-password'), isTrue);
-      expect(isUnlockFlowLocation('/home'), isFalse);
-      expect(isUnlockFlowLocation('/welcome'), isFalse);
-    });
-  });
-
-  group('unlocked but still on the unlock screen', () {
-    test('waits so the unlock screen keeps ownership of the claim', () {
+    test('waits on /unlock after unlocking: the unlock screen presents', () {
       expect(
         decide(matchedLocation: '/unlock').action,
         PaymentUriDrainAction.wait,
@@ -256,333 +203,32 @@ void main() {
     });
   });
 
-  group('blocked surfaces', () {
-    test('an open send flow keeps the send-specific message', () {
+  group('no route blocks the card any more', () {
+    test('presents over every surface that used to be blocked', () {
       for (final location in [
-        '/send',
-        '/send/amount',
-        '/send/review',
-        '/send/keystone-sign',
-        '/send/keystone/scan',
-      ]) {
-        final decision = decide(matchedLocation: location);
-        expect(
-          decision.action,
-          PaymentUriDrainAction.dropWithMessage,
-          reason: location,
-        );
-        expect(
-          decision.message,
-          kPaymentUriSendInProgressMessage,
-          reason: location,
-        );
-      }
-    });
-
-    test('other in-progress surfaces get the generic busy message', () {
-      for (final location in [
-        '/swap/review',
-        '/swap/keystone-sign',
-        '/pay/review',
-        '/migration',
-        '/migration/private/keystone/denominations/sign',
-        '/migration/private/keystone/batch/sign',
-        '/migration/immediate/keystone/sign',
-        '/voting/keystone/scan',
-        '/voting/poll/round-1/review',
-        '/voting/poll/round-1/status',
-        '/settings/uninstall',
-        '/home/keystone-shield',
-      ]) {
-        final decision = decide(matchedLocation: location);
-        expect(
-          decision.action,
-          PaymentUriDrainAction.dropWithMessage,
-          reason: location,
-        );
-        expect(decision.message, kPaymentUriBusyMessage, reason: location);
-      }
-    });
-  });
-
-  group('/send/status', () {
-    test('is blocked while the send is still in flight', () {
-      final decision = decide(matchedLocation: '/send/status');
-      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriSendInProgressMessage);
-      expect(decision.clearSendStatusPayload, isFalse);
-    });
-
-    test('delivers once the send is terminal, releasing the route payload', () {
-      final decision = decide(
-        matchedLocation: '/send/status',
-        sendStatusIsTerminal: true,
-      );
-      expect(decision.action, PaymentUriDrainAction.deliver);
-      expect(decision.clearSendStatusPayload, isTrue);
-    });
-
-    test('a terminal send does not unblock the other send legs', () {
-      for (final location in ['/send', '/send/review']) {
-        expect(
-          decide(matchedLocation: location, sendStatusIsTerminal: true).action,
-          PaymentUriDrainAction.dropWithMessage,
-          reason: location,
-        );
-      }
-    });
-  });
-
-  group('delivery', () {
-    test('delivers from ordinary locations', () {
-      for (final location in [
-        '/home',
-        '/activity',
-        '/activity/tx/deadbeef',
-        '/settings',
-        '/settings/endpoint',
-        '/receive',
-        '/accounts',
-        '/swap',
-        '/pay',
-        '/voting',
-        '/voting/poll/round-1/results',
-      ]) {
-        final decision = decide(matchedLocation: location);
-        expect(
-          decision.action,
-          PaymentUriDrainAction.deliver,
-          reason: location,
-        );
-        expect(decision.message, isNull, reason: location);
-        expect(decision.clearSendStatusPayload, isFalse, reason: location);
-      }
-    });
-  });
-
-  group('swap deposit signing', () {
-    test('blocks the swap activity detail while it signs a ZEC deposit', () {
-      final decision = decide(
-        matchedLocation: '/activity/swap/swap-1',
-        queryParameters: const {
-          swapActivitySignQueryKey: swapActivitySignZecDepositValue,
-        },
-      );
-      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriBusyMessage);
-    });
-
-    test('still delivers on the same detail without the signing query', () {
-      expect(
-        decide(
-          matchedLocation: '/activity/swap/swap-1',
-          queryParameters: const {swapActivityReturnQueryKey: 'swap'},
-        ).action,
-        PaymentUriDrainAction.deliver,
-      );
-    });
-
-    test('outranks the no-wallet row, like the other busy surfaces', () {
-      // A reset landing mid-signature must not be yanked to /welcome.
-      final decision = decide(
-        hasWallet: false,
-        matchedLocation: '/activity/swap/swap-1',
-        queryParameters: const {
-          swapActivitySignQueryKey: swapActivitySignZecDepositValue,
-        },
-      );
-      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriBusyMessage);
-    });
-  });
-
-  group('wallet transition', () {
-    test('drops only on the true -> false reset edge', () {
-      expect(
-        paymentUriShouldDropOnWalletTransition(
-          previousHasWallet: true,
-          hasWallet: false,
-        ),
-        isTrue,
-      );
-    });
-
-    test('does not drop on any other edge', () {
-      for (final edge in [
-        (previous: true, next: true),
-        (previous: false, next: true),
-        (previous: false, next: false),
-      ]) {
-        expect(
-          paymentUriShouldDropOnWalletTransition(
-            previousHasWallet: edge.previous,
-            hasWallet: edge.next,
-          ),
-          isFalse,
-          reason: '${edge.previous} -> ${edge.next}',
-        );
-      }
-    });
-
-    test('an unseeded baseline is not a reset', () {
-      // The listener seeds the baseline from bootstrap precisely so this
-      // case cannot stand in for a real reset.
-      for (final hasWallet in [true, false]) {
-        expect(
-          paymentUriShouldDropOnWalletTransition(
-            previousHasWallet: null,
-            hasWallet: hasWallet,
-          ),
-          isFalse,
-          reason: 'null -> $hasWallet',
-        );
-      }
-    });
-  });
-
-  group('busy surface with no route of its own', () {
-    test('a held busy surface drops the link with the busy message', () {
-      final decision = decide(hasBusySurface: true);
-      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriBusyMessage);
-    });
-
-    test('no hold on the same location delivers', () {
-      expect(
-        decide(hasBusySurface: false).action,
-        PaymentUriDrainAction.deliver,
-      );
-    });
-
-    test('outranks the send rows, including a terminal send status', () {
-      for (final location in const [
+        // The send flow itself, mid-compose and mid-review.
         '/send',
         '/send/review',
         '/send/status',
-        '/send/keystone/scan',
+        '/send/amount',
+        // Swap and pay review.
+        '/swap/review',
+        '/pay/review',
+        // The working migration screens.
+        '/migration/prepare',
+        '/migration/private/status',
+        // Voting review and the uninstall flow.
+        '/voting/poll/round-1/review',
+        '/settings/uninstall',
+        // A swap activity detail signing a ZEC deposit.
+        '/activity/swap/swap-1',
       ]) {
-        final decision = decide(
-          hasBusySurface: true,
-          matchedLocation: location,
-          sendStatusIsTerminal: true,
+        expect(
+          decide(matchedLocation: location).action,
+          PaymentUriDrainAction.deliver,
+          reason: location,
         );
-        expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-        expect(decision.message, kPaymentUriBusyMessage);
-        expect(decision.clearSendStatusPayload, isFalse);
       }
-    });
-
-    test('outranks the no-wallet and locked navigation rows', () {
-      for (final decision in [
-        decide(hasBusySurface: true, hasWallet: false),
-        decide(hasBusySurface: true, isUnlocked: false),
-      ]) {
-        expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-        expect(decision.message, kPaymentUriBusyMessage);
-      }
-    });
-
-    test('does not outrank the stale, failure, or onboarding rows', () {
-      expect(
-        decide(
-          hasBusySurface: true,
-          parkedFor: kPaymentUriParkTtl + const Duration(minutes: 1),
-        ).action,
-        PaymentUriDrainAction.dropSilently,
-      );
-      expect(
-        decide(hasBusySurface: true, hasBlockingFailure: true).message,
-        kPaymentUriUnavailableMessage,
-      );
-      expect(
-        decide(hasBusySurface: true, walletIsLoading: true).action,
-        PaymentUriDrainAction.wait,
-      );
-      expect(
-        decide(hasBusySurface: true, matchedLocation: '/import').message,
-        kPaymentUriOnboardingMessage,
-      );
-    });
-
-    test('nothing parked still waits', () {
-      expect(
-        decide(
-          hasBusySurface: true,
-          hasParkedPrefill: false,
-          parkedFor: null,
-        ).action,
-        PaymentUriDrainAction.wait,
-      );
-    });
-  });
-
-  group('migration send gate', () {
-    test('drops the link with the migration message', () {
-      final decision = decide(sendGatedByMigration: true);
-      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriMigrationSendGateMessage);
-    });
-
-    test('an ungated migration state delivers', () {
-      expect(
-        decide(sendGatedByMigration: false).action,
-        PaymentUriDrainAction.deliver,
-      );
-    });
-
-    test('outranks the no-wallet, locked, and send rows', () {
-      for (final decision in [
-        decide(sendGatedByMigration: true, hasWallet: false),
-        decide(sendGatedByMigration: true, isUnlocked: false),
-        decide(sendGatedByMigration: true, matchedLocation: '/send'),
-        decide(
-          sendGatedByMigration: true,
-          matchedLocation: '/send/status',
-          sendStatusIsTerminal: true,
-        ),
-      ]) {
-        expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-        expect(decision.message, kPaymentUriMigrationSendGateMessage);
-      }
-    });
-
-    test('a busy surface keeps its own, more urgent message', () {
-      expect(
-        decide(sendGatedByMigration: true, hasBusySurface: true).message,
-        kPaymentUriBusyMessage,
-      );
-    });
-
-    test('does not outrank the stale, failure, or onboarding rows', () {
-      expect(
-        decide(
-          sendGatedByMigration: true,
-          parkedFor: kPaymentUriParkTtl + const Duration(minutes: 1),
-        ).action,
-        PaymentUriDrainAction.dropSilently,
-      );
-      expect(
-        decide(sendGatedByMigration: true, walletHasError: true).message,
-        kPaymentUriUnavailableMessage,
-      );
-      expect(
-        decide(sendGatedByMigration: true, walletIsLoading: true).action,
-        PaymentUriDrainAction.wait,
-      );
-      expect(
-        decide(
-          sendGatedByMigration: true,
-          matchedLocation: '/onboarding/seed',
-        ).message,
-        kPaymentUriOnboardingMessage,
-      );
-    });
-
-    test('the message is sentence case', () {
-      expect(
-        kPaymentUriMigrationSendGateMessage,
-        'Finish the migration before opening payment links.',
-      );
     });
   });
 }

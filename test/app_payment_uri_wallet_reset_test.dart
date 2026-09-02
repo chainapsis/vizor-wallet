@@ -10,9 +10,16 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
+import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/payment_uri_service.dart';
+
+import 'fakes/fake_sync_notifier.dart';
 
 // A `zcash:` link parked while the wallet is locked must disappear quietly
 // when the user resets the wallet from the locked screens — no "Set up or
@@ -26,7 +33,7 @@ import 'package:zcash_wallet/src/services/payment_uri_service.dart';
 void main() {
   const parkedPrefill = SendPrefillArgs(
     id: 'payment-uri-1',
-    source: 'zcash-uri',
+    source: kPaymentUriPrefillSource,
     address: 'u1parked',
     amountText: '0.5',
   );
@@ -71,6 +78,8 @@ void main() {
               _lockedBootstrapWithWallet(walletState),
             ),
             accountProvider.overrideWith(() => accounts),
+            paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
+            syncProvider.overrideWith(FakeSyncNotifier.new),
           ],
           child: Consumer(
             builder: (context, ref, _) {
@@ -88,10 +97,18 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // A link arrives and parks: locked, so nothing is delivered yet.
+      // A link arrives and parks: locked, so nothing is presented yet.
       container.read(paymentUriPrefillProvider.notifier).set(parkedPrefill);
       await tester.pumpAndSettle();
       expect(container.read(paymentUriPrefillProvider), parkedPrefill);
+
+      // And a card left over from before the lock is torn down by the same
+      // reset — a request cannot outlive the wallet it was going to pay from.
+      container
+          .read(paymentRequestFlowProvider.notifier)
+          .present(parkedPrefill, source: PaymentRequestSource.link);
+      await tester.pumpAndSettle();
+      expect(container.read(paymentRequestFlowProvider), isNotNull);
 
       // The user resets the wallet. `resetWallet` ends with an empty
       // AccountState, which is the only wallet emission this session has had.
@@ -102,6 +119,11 @@ void main() {
         container.read(paymentUriPrefillProvider),
         isNull,
         reason: 'the parked link must be dropped by the reset',
+      );
+      expect(
+        container.read(paymentRequestFlowProvider),
+        isNull,
+        reason: 'the card must be dropped by the reset too',
       );
       expect(
         find.text(kPaymentUriNoWalletMessage),
@@ -150,6 +172,8 @@ void main() {
               _lockedBootstrapWithWallet(walletState),
             ),
             accountProvider.overrideWith(() => accounts),
+            paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
+            syncProvider.overrideWith(FakeSyncNotifier.new),
           ],
           child: Consumer(
             builder: (context, ref, _) {
@@ -192,7 +216,105 @@ void main() {
       expect(router.routerDelegate.currentConfiguration.uri.path, '/unlock');
     },
   );
+
+  // The delivered link no longer navigates to /send. It becomes a card over
+  // whatever the user was already looking at.
+  testWidgets('a delivered link presents the card without navigating', (
+    tester,
+  ) async {
+    final accounts = _ControllableAccountNotifier(walletState);
+    final router = GoRouter(
+      initialLocation: '/home',
+      routes: [
+        for (final path in ['/home', '/send', '/welcome', '/unlock'])
+          GoRoute(
+            path: path,
+            builder: (_, _) => Scaffold(body: Text('screen $path')),
+          ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    late ProviderContainer container;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _unlockedBootstrapWithWallet(walletState),
+          ),
+          accountProvider.overrideWith(() => accounts),
+          paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
+          syncProvider.overrideWith(FakeSyncNotifier.new),
+        ],
+        child: Consumer(
+          builder: (context, ref, _) {
+            container = ProviderScope.containerOf(context, listen: false);
+            return MaterialApp.router(
+              routerConfig: router,
+              builder: (context, child) => buildPaymentUriLinkListenerForTest(
+                router: router,
+                child: child!,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await PaymentUriService.initialize();
+    await _pushNativeUris(tester, const ['zcash:u1parked?amount=0.5']);
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(paymentUriPrefillProvider),
+      isNull,
+      reason: 'the park is handed to the card',
+    );
+    expect(container.read(paymentRequestFlowProvider), isNotNull);
+    expect(
+      router.routerDelegate.currentConfiguration.uri.path,
+      '/home',
+      reason: 'the card arrives over the current screen, it is not a route',
+    );
+  });
 }
+
+/// A pre-check that always resolves "ready", so the delivery test can assert
+/// the card's arrival without a Rust bridge.
+PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
+  validateAddress: ({required String address}) async =>
+      rust_sync.AddressValidationResult(isValid: true, addressType: 'unified'),
+  proposeTransfer:
+      ({
+        required String accountUuid,
+        required String sendFlowId,
+        required String address,
+        required String addressType,
+        required BigInt amountZatoshi,
+        String? memo,
+        bool isPaymentRequest = false,
+        String? requestedBy,
+        BigInt? requestedAmountZatoshi,
+      }) async => SendReviewArgs(
+        proposalId: BigInt.one,
+        sendFlowId: sendFlowId,
+        proposalAccountUuid: accountUuid,
+        address: address,
+        addressType: addressType,
+        amountZatoshi: amountZatoshi,
+        feeZatoshi: BigInt.from(10000),
+        needsSaplingParams: false,
+        isPaymentRequest: isPaymentRequest,
+      ),
+  discardProposal:
+      ({
+        required BigInt proposalId,
+        required String sendFlowId,
+        required String logContext,
+      }) async {},
+);
 
 /// Delivers [uris] the way the native runner does: an `onUris` method call on
 /// the payment-URI channel, which PaymentUriService forwards to its stream.
@@ -204,6 +326,20 @@ Future<void> _pushNativeUris(WidgetTester tester, List<String> uris) async {
     (_) {},
   );
 }
+
+AppBootstrapState _unlockedBootstrapWithWallet(AccountState accountState) =>
+    AppBootstrapState(
+      initialLocation: '/home',
+      initialAccountState: accountState,
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.dark,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+    );
 
 AppBootstrapState _lockedBootstrapWithWallet(AccountState accountState) =>
     AppBootstrapState(
