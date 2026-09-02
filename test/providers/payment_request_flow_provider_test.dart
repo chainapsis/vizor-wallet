@@ -18,9 +18,10 @@ import '../fakes/fake_sync_notifier.dart';
 /// Rust stand-in whose proposal is held open until the test releases it, so
 /// "checking" is an observable state rather than a race.
 class _FakeSendApi {
-  _FakeSendApi({this.addressIsValid = true});
+  _FakeSendApi({this.addressIsValid = true, this.addressType = 'unified'});
 
   bool addressIsValid;
+  String addressType;
   Completer<void>? gate;
   var nextProposalId = 1;
   final discarded = <BigInt>[];
@@ -30,7 +31,7 @@ class _FakeSendApi {
     validateAddress: ({required String address}) async =>
         rust_sync.AddressValidationResult(
           isValid: addressIsValid,
-          addressType: 'unified',
+          addressType: addressType,
         ),
     proposeTransfer:
         ({
@@ -97,14 +98,19 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
   );
 }
 
-SendPrefillArgs request(String address, {String? amountText = '0.5'}) =>
-    SendPrefillArgs(
-      id: 'payment-uri-$address',
-      source: kPaymentUriPrefillSource,
-      address: address,
-      amountText: amountText,
-      label: 'Coffee shop',
-    );
+SendPrefillArgs request(
+  String address, {
+  String? amountText = '0.5',
+  String? memoText,
+}) => SendPrefillArgs(
+  id: 'payment-uri-$address',
+  source: kPaymentUriPrefillSource,
+  address: address,
+  amountText: amountText,
+  memoText: memoText,
+  preserveMemoText: memoText != null,
+  label: 'Coffee shop',
+);
 
 /// A sync state whose spendable balance is settled: scanned to a real tip,
 /// nothing running, nothing failed.
@@ -284,6 +290,45 @@ void main() {
 
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(api.discarded, [BigInt.one]);
+  });
+
+  test('a memo a transparent recipient cannot receive leaves the '
+      'card', () async {
+    final api = _FakeSendApi(addressType: 'tex');
+    final container = makeContainer(api);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(
+          request('tex1recipient', memoText: 'invoice 42'),
+          source: PaymentRequestSource.link,
+        );
+    await pumpEventQueue();
+
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(
+      state.view.memo,
+      isNull,
+      reason:
+          'the proposal drops it, so the consent surface must not '
+          'keep promising it',
+    );
+  });
+
+  test('a memo a shielded recipient can receive stays on the card', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(
+          request('u1a', memoText: 'invoice 42'),
+          source: PaymentRequestSource.link,
+        );
+    await pumpEventQueue();
+
+    expect(container.read(paymentRequestFlowProvider)!.view.memo, 'invoice 42');
   });
 
   test('a shortfall read mid-sync never lands on insufficient funds', () async {

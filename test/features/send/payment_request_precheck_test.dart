@@ -86,15 +86,19 @@ class FakeSendApi {
   );
 }
 
-SendPrefillArgs prefill({String? amountText = '0.5', String? memoText}) =>
-    SendPrefillArgs(
-      id: 'payment-uri-1',
-      source: kPaymentUriPrefillSource,
-      address: 'u1recipient',
-      amountText: amountText,
-      memoText: memoText,
-      label: 'Coffee  shop\n',
-    );
+SendPrefillArgs prefill({
+  String? amountText = '0.5',
+  String? memoText,
+  bool preserveMemoText = false,
+}) => SendPrefillArgs(
+  id: 'payment-uri-1',
+  source: kPaymentUriPrefillSource,
+  address: 'u1recipient',
+  amountText: amountText,
+  memoText: memoText,
+  preserveMemoText: preserveMemoText,
+  label: 'Coffee  shop\n',
+);
 
 Future<PaymentRequestPrecheckResult> run(
   FakeSendApi api, {
@@ -242,11 +246,53 @@ void main() {
     expect(api.proposeCalls, 0);
   });
 
+  test('a dropped memo is reported so the card can stop showing it', () async {
+    final api = FakeSendApi(addressType: 'tex');
+    final result = await run(api, request: prefill(memoText: 'invoice 42'));
+
+    expect(result.memoDropped, isTrue);
+    expect(api.lastProposedMemo, isNull);
+  });
+
+  test('a shielded recipient reports no dropped memo', () async {
+    final api = FakeSendApi();
+    final result = await run(api, request: prefill(memoText: 'invoice 42'));
+
+    expect(result.memoDropped, isFalse);
+  });
+
+  test(
+    'a transparent recipient with no memo reports nothing dropped',
+    () async {
+      final api = FakeSendApi(addressType: 'transparent');
+      expect((await run(api)).memoDropped, isFalse);
+    },
+  );
+
   test('a transparent recipient drops the memo the link carried', () async {
     final api = FakeSendApi(addressType: 'transparent');
     await run(api, request: prefill(memoText: 'thanks'));
     expect(api.lastProposedMemo, isNull);
   });
+
+  test(
+    'a memo the link says to preserve reaches the proposal untouched',
+    () async {
+      final api = FakeSendApi();
+      await run(
+        api,
+        request: prefill(memoText: '  order 42\n', preserveMemoText: true),
+      );
+
+      expect(
+        api.lastProposedMemo,
+        '  order 42\n',
+        reason:
+            'the compose form preserves the same bytes through '
+            'preserveMemoText, so both routes must pay the same memo',
+      );
+    },
+  );
 
   test('a shielded recipient keeps the memo', () async {
     final api = FakeSendApi();

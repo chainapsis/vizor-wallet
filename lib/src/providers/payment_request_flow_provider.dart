@@ -232,12 +232,19 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     final live = state;
     if (live == null) return;
 
+    // A memo the recipient's address type cannot carry is not part of the
+    // payment, so the card stops showing one the moment the pre-check knows.
+    final clearMemo = result.memoDropped;
+
     switch (result) {
       case PaymentRequestPrecheckReady(:final proposal):
         _publish(
           PaymentRequestFlowState(
             prefill: live.prefill,
-            view: live.view.copyWithStatus(PaymentRequestStatus.ready),
+            view: live.view.copyWithStatus(
+              PaymentRequestStatus.ready,
+              clearMemo: clearMemo,
+            ),
             proposal: proposal,
           ),
         );
@@ -253,13 +260,17 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
             view: live.view.copyWithStatus(
               PaymentRequestStatus.insufficientFunds,
               spendableText: spendableText,
+              clearMemo: clearMemo,
             ),
           ),
         );
       case PaymentRequestPrecheckSyncing():
         _publish(
           live.copyWith(
-            view: live.view.copyWithStatus(PaymentRequestStatus.syncing),
+            view: live.view.copyWithStatus(
+              PaymentRequestStatus.syncing,
+              clearMemo: clearMemo,
+            ),
           ),
         );
       case PaymentRequestPrecheckFailed(:final message):
@@ -270,6 +281,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
               // own words through `statusMessage`.
               PaymentRequestStatus.invalidAddress,
               statusMessage: message,
+              clearMemo: clearMemo,
             ),
           ),
         );

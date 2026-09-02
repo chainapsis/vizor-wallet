@@ -210,17 +210,22 @@ class PaymentRequestView {
   /// Same request, different verdict. The pre-check fills the amount and the
   /// requester in once, up front; only the status (and the two fields the
   /// status line reads) change as the checks land.
+  ///
+  /// [clearMemo] drops the Message row: a transparent-like recipient cannot
+  /// receive one, so the memo the link carried is not part of the payment the
+  /// user is being asked to approve.
   PaymentRequestView copyWithStatus(
     PaymentRequestStatus status, {
     String? statusMessage,
     String? spendableText,
+    bool clearMemo = false,
   }) => PaymentRequestView(
     source: source,
     address: address,
     amountZecText: amountZecText,
     requesterLabel: requesterLabel,
     fiatText: fiatText,
-    memo: memo,
+    memo: clearMemo ? null : memo,
     note: note,
     spendableText: spendableText ?? this.spendableText,
     status: status,
