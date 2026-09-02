@@ -424,12 +424,10 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
       amountZecText: hasAmount
           ? ZecAmount.fromZatoshi(amountZatoshi).activityDetail.toString()
           : null,
-      fiatText: hasAmount
-          ? fiatTextForZatoshi(
-              amountZatoshi,
-              zecUsdUnitPrice: ref.read(zecHomeUsdUnitPriceProvider),
-            )
-          : null,
+      // No fiat here: the ZEC price providers are autoDispose and fill
+      // asynchronously, so a one-shot read from a card presented over a screen
+      // that does not subscribe to them returns null and stays null. The host
+      // watches the price and applies `withFiatText` on every build instead.
       requesterLabel: sanitisePaymentRequestLabel(prefill.label),
       memo: prefill.memoText,
       note: prefill.message,
@@ -437,6 +435,20 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
       replacedNotice: replacedNotice,
     );
   }
+}
+
+/// The fiat sub-line for a request's amount, or null when the request carried
+/// no amount or the price is not known.
+///
+/// Lives here rather than in the host so the parse of the request's amount
+/// text is the same one [PaymentRequestFlowNotifier] uses for the hero.
+String? paymentRequestFiatText({
+  required SendPrefillArgs prefill,
+  required double? zecUsdUnitPrice,
+}) {
+  final amountZatoshi = parseZecAmount(prefill.amountText?.trim() ?? '');
+  if (amountZatoshi == null) return null;
+  return fiatTextForZatoshi(amountZatoshi, zecUsdUnitPrice: zecUsdUnitPrice);
 }
 
 final paymentRequestFlowProvider =

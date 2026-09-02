@@ -343,6 +343,31 @@ class PaymentRequestView {
     replacedNotice: replacedNotice,
   );
 
+  /// Same request, with the fiat sub-line attached (or removed).
+  ///
+  /// The host re-applies this on every build for the same reason as
+  /// [withRecipientIdentity]: the ZEC price provider is autoDispose and
+  /// resolves asynchronously, so a card presented over a screen that holds no
+  /// subscription to it would otherwise keep the null it read at present time
+  /// for the life of the card.
+  PaymentRequestView withFiatText(String? fiatText) {
+    if (fiatText == this.fiatText) return this;
+    return PaymentRequestView(
+      source: source,
+      address: address,
+      amountZecText: amountZecText,
+      requesterLabel: requesterLabel,
+      fiatText: fiatText,
+      memo: memo,
+      note: note,
+      spendableText: spendableText,
+      recipientIdentity: recipientIdentity,
+      status: status,
+      statusMessage: statusMessage,
+      replacedNotice: replacedNotice,
+    );
+  }
+
   /// Same request, with the recipient's resolved name attached (or removed).
   ///
   /// The host re-applies this on every build, because the address book and

@@ -149,7 +149,12 @@ Future<ProviderContainer> _pumpHost(
           ),
         ),
         migrationSendGateProvider.overrideWithValue(false),
-        zecHomeUsdUnitPriceProvider.overrideWithValue(null),
+        // Backed by a state provider so a test can land the price *after*
+        // the card is already on screen, which is what the real autoDispose
+        // market-data providers do.
+        zecHomeUsdUnitPriceProvider.overrideWith(
+          (ref) => ref.watch(_testZecUsdPriceProvider),
+        ),
         addressBookProvider.overrideWith(
           addressBookPending
               ? _PendingAddressBookNotifier.new
@@ -180,6 +185,18 @@ Future<ProviderContainer> _pumpHost(
 }
 
 final _routers = <ProviderContainer, GoRouter>{};
+
+class _TestZecUsdPriceNotifier extends Notifier<double?> {
+  @override
+  double? build() => null;
+
+  void setPrice(double? price) => state = price;
+}
+
+final _testZecUsdPriceProvider =
+    NotifierProvider<_TestZecUsdPriceNotifier, double?>(
+      _TestZecUsdPriceNotifier.new,
+    );
 
 String _location(ProviderContainer container) =>
     _routers[container]!.routerDelegate.currentConfiguration.uri.path;
@@ -355,6 +372,26 @@ void main() {
       findsNothing,
     );
     expect(find.text('u195091 ... 190591'), findsOneWidget);
+  });
+
+  testWidgets('the fiat line lands when the price arrives after the card', (
+    tester,
+  ) async {
+    // A link that arrives over Settings or Activity finds the autoDispose
+    // price providers with no subscriber, so the value is null at present
+    // time and fills a moment later.
+    final container = await _pumpHost(tester);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    expect(find.text(r'$50.00'), findsNothing);
+
+    container.read(_testZecUsdPriceProvider.notifier).setPrice(100);
+    await tester.pumpAndSettle();
+
+    expect(find.text(r'$50.00'), findsOneWidget);
   });
 
   testWidgets('an address in neither source keeps the plain address', (

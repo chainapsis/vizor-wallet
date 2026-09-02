@@ -18,6 +18,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../providers/account_models.dart';
 import '../../../providers/payment_request_flow_provider.dart';
+import '../../../providers/zec_price_change_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../screens/mobile/mobile_send_screen.dart'
@@ -63,13 +64,27 @@ class PaymentRequestHost extends ConsumerWidget {
     final ownAccounts =
         ref.watch(ownAccountAddressesProvider).value ??
         const <String, AccountInfo>{};
-    final request = flow.view.withRecipientIdentity(
-      paymentRequestRecipientIdentityFor(
-        contacts: contacts,
-        address: flow.view.address,
-        ownAccounts: ownAccounts,
-      ),
-    );
+    // Same story for the price: `zecHomeUsdUnitPriceProvider` is autoDispose
+    // and its market data fills asynchronously, so a request that arrives over
+    // Settings or Activity — screens that subscribe to neither — would read
+    // null once and never show a fiat line, while the same request opened from
+    // Home would. Watching it here both keeps it alive for the card's lifetime
+    // and re-applies the value when it lands.
+    final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
+    final request = flow.view
+        .withRecipientIdentity(
+          paymentRequestRecipientIdentityFor(
+            contacts: contacts,
+            address: flow.view.address,
+            ownAccounts: ownAccounts,
+          ),
+        )
+        .withFiatText(
+          paymentRequestFiatText(
+            prefill: flow.prefill,
+            zecUsdUnitPrice: zecUsdUnitPrice,
+          ),
+        );
 
     void edit() {
       final prefill = notifier.edit();
