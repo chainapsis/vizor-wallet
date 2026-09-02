@@ -157,25 +157,6 @@ void main() {
     },
   );
 
-  test('disposed wallet session cannot restore contacts after reset', () async {
-    FlutterSecureStorage.setMockInitialValues({});
-    final store = AppSecureStore.testing(storage: const FlutterSecureStorage());
-    final oldRepository = SecureStorageAddressBookRepository(store: store);
-    final oldContact = _contact(id: 'old', label: 'Old');
-    await oldRepository.saveContacts([oldContact]);
-
-    await store.resetWalletStorage(epoch: store.captureWalletSessionEpoch());
-    await oldRepository.saveContacts([oldContact]);
-
-    final newRepository = SecureStorageAddressBookRepository(store: store);
-    expect(await newRepository.loadContacts(), isEmpty);
-
-    final newContact = _contact(id: 'new', label: 'New');
-    await newRepository.saveContacts([newContact]);
-    final restored = await newRepository.loadContacts();
-    expect(restored.map((contact) => contact.id), ['new']);
-  });
-
   test('filters by label address and network', () async {
     final repo = _FakeAddressBookRepository([
       _contact(

@@ -4,7 +4,6 @@ import 'dart:developer';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
-import '../app_bootstrap.dart';
 import 'account_provider.dart';
 import 'sync_provider.dart';
 import 'voting/voting_share_tracking_registry_provider.dart';
@@ -138,12 +137,10 @@ Future<void> runWithSyncPausedForWalletReset(
   FutureOr<void> Function()? onStoppingSync,
   FutureOr<void> Function()? onSyncPaused,
   FutureOr<void> Function()? onResetting,
-  bool restartProviderSession = true,
   IronwoodMigrationBackgroundLifecycle? migrationLifecycle,
-}) async {
+}) {
   final syncNotifier = ref.read(syncProvider.notifier);
-  final restartSession = ref.read(appSessionRestartProvider);
-  await runWithSyncPausedForAccountMutation<void>(
+  return runWithSyncPausedForAccountMutation<void>(
     ref,
     () async {
       await onResetting?.call();
@@ -161,8 +158,4 @@ Future<void> runWithSyncPausedForWalletReset(
     quiesceVotingWork: true,
     migrationLifecycle: migrationLifecycle,
   );
-  // This is deliberately outside every mutation guard. Rebuilding the root
-  // ProviderScope disposes this ref and its notifiers, so no cleanup may depend
-  // on them after the callback returns.
-  if (restartProviderSession) await restartSession();
 }

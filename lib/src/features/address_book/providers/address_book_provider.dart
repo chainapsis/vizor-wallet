@@ -17,23 +17,14 @@ abstract class AddressBookRepository {
 }
 
 class SecureStorageAddressBookRepository implements AddressBookRepository {
-  SecureStorageAddressBookRepository({
-    AppSecureStore? store,
-    int? walletSessionEpoch,
-  }) : _store = store ?? AppSecureStore.instance,
-       _walletSessionEpoch =
-           walletSessionEpoch ??
-           (store ?? AppSecureStore.instance).captureWalletSessionEpoch();
+  SecureStorageAddressBookRepository({AppSecureStore? store})
+    : _store = store ?? AppSecureStore.instance;
 
   final AppSecureStore _store;
-  final int _walletSessionEpoch;
 
   @override
   Future<List<AddressBookContact>> loadContacts() async {
-    final raw = await _store.readWalletString(
-      kAddressBookContactsKey,
-      epoch: _walletSessionEpoch,
-    );
+    final raw = await _store.readString(kAddressBookContactsKey);
     if (raw == null || raw.trim().isEmpty) return const [];
 
     return decodeContactsJson(raw);
@@ -61,10 +52,9 @@ class SecureStorageAddressBookRepository implements AddressBookRepository {
 
   @override
   Future<void> saveContacts(List<AddressBookContact> contacts) async {
-    await _store.writeWalletString(
+    await _store.writeString(
       kAddressBookContactsKey,
       jsonEncode([for (final contact in contacts) contact.toJson()]),
-      epoch: _walletSessionEpoch,
     );
   }
 

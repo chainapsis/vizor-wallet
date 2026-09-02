@@ -76,21 +76,15 @@ abstract interface class SwapActivityStore {
 }
 
 class AppSecureStoreSwapActivityStore implements SwapActivityStore {
-  AppSecureStoreSwapActivityStore(this._storage, {int? walletSessionEpoch})
-    : _walletSessionEpoch =
-          walletSessionEpoch ?? _storage.captureWalletSessionEpoch();
+  const AppSecureStoreSwapActivityStore(this._storage);
 
   final AppSecureStore _storage;
-  final int _walletSessionEpoch;
 
   @override
   Future<List<SwapIntentRecord>> loadRecords({
     required String accountUuid,
   }) async {
-    final raw = await _storage.readWalletString(
-      _swapActivityKeyFor(accountUuid),
-      epoch: _walletSessionEpoch,
-    );
+    final raw = await _storage.readString(_swapActivityKeyFor(accountUuid));
     if (raw == null || raw.trim().isEmpty) {
       return const [];
     }
@@ -124,7 +118,7 @@ class AppSecureStoreSwapActivityStore implements SwapActivityStore {
     required String accountUuid,
     required List<SwapIntentRecord> records,
   }) async {
-    await _storage.writeWalletString(
+    await _storage.writeString(
       _swapActivityKeyFor(accountUuid),
       jsonEncode({
         _swapActivityVersionKey: _swapActivityStorageVersion,
@@ -133,16 +127,12 @@ class AppSecureStoreSwapActivityStore implements SwapActivityStore {
             _recordToJson(record.copyWith(accountUuid: accountUuid)),
         ],
       }),
-      epoch: _walletSessionEpoch,
     );
   }
 
   @override
   Future<void> deleteForAccount({required String accountUuid}) async {
-    await _storage.deleteWalletKey(
-      _swapActivityKeyFor(accountUuid),
-      epoch: _walletSessionEpoch,
-    );
+    await _storage.delete(_swapActivityKeyFor(accountUuid));
   }
 }
 

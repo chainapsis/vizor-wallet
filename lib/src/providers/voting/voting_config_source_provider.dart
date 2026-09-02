@@ -121,53 +121,33 @@ final votingConfigSourceStoreProvider = Provider<VotingConfigSourceStore>((
 });
 
 class AppSecureStoreVotingConfigSourceStore implements VotingConfigSourceStore {
-  AppSecureStoreVotingConfigSourceStore(this._store, {int? walletSessionEpoch})
-    : _walletSessionEpoch =
-          walletSessionEpoch ?? _store.captureWalletSessionEpoch();
+  const AppSecureStoreVotingConfigSourceStore(this._store);
 
   final AppSecureStore _store;
-  final int _walletSessionEpoch;
 
   @override
   Future<String?> readSourceUrl() {
-    return _store.readWalletPlain(
-      _votingConfigSourceKey,
-      epoch: _walletSessionEpoch,
-    );
+    return _store.readPlain(_votingConfigSourceKey);
   }
 
   @override
   Future<void> writeSourceUrl(String sourceUrl) {
-    return _store.writeWalletPlain(
-      _votingConfigSourceKey,
-      sourceUrl,
-      epoch: _walletSessionEpoch,
-    );
+    return _store.writePlain(_votingConfigSourceKey, sourceUrl);
   }
 
   @override
   Future<void> resetSourceUrl() {
-    return _store.deleteWalletKey(
-      _votingConfigSourceKey,
-      epoch: _walletSessionEpoch,
-    );
+    return _store.delete(_votingConfigSourceKey);
   }
 
   @override
   Future<String?> readSavedSourcesJson() {
-    return _store.readWalletPlain(
-      _votingConfigSavedSourcesKey,
-      epoch: _walletSessionEpoch,
-    );
+    return _store.readPlain(_votingConfigSavedSourcesKey);
   }
 
   @override
   Future<void> writeSavedSourcesJson(String savedSourcesJson) {
-    return _store.writeWalletPlain(
-      _votingConfigSavedSourcesKey,
-      savedSourcesJson,
-      epoch: _walletSessionEpoch,
-    );
+    return _store.writePlain(_votingConfigSavedSourcesKey, savedSourcesJson);
   }
 }
 

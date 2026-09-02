@@ -244,27 +244,19 @@ abstract interface class VotingDraftPersistence {
 }
 
 final votingDraftPersistenceProvider = Provider<VotingDraftPersistence>(
-  (_) => SecureVotingDraftPersistence(),
+  (_) => const SecureVotingDraftPersistence(),
 );
 
 class SecureVotingDraftPersistence implements VotingDraftPersistence {
-  SecureVotingDraftPersistence([AppSecureStore? store])
-    : _store = store ?? AppSecureStore.instance,
-      _walletSessionEpoch = (store ?? AppSecureStore.instance)
-          .captureWalletSessionEpoch();
+  const SecureVotingDraftPersistence();
 
   static const _keyPrefix = 'zcash_voting_draft_votes_';
   static final _deletedAccountUuids = <String>{};
   static Future<void> _mutationChain = Future.value();
-  final AppSecureStore _store;
-  final int _walletSessionEpoch;
 
   @override
   Future<VotingDraftState> load(VotingSessionKey key) async {
-    final raw = await _store.readWalletPlain(
-      _storageKey(key),
-      epoch: _walletSessionEpoch,
-    );
+    final raw = await AppSecureStore.instance.readPlain(_storageKey(key));
     if (raw == null || raw.isEmpty) return const VotingDraftState();
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) return const VotingDraftState();
@@ -285,17 +277,13 @@ class SecureVotingDraftPersistence implements VotingDraftPersistence {
       if (_deletedAccountUuids.contains(key.accountUuid)) return;
       final storageKey = _storageKey(key);
       if (draft.choices.isEmpty) {
-        await _store.deleteWalletKey(storageKey, epoch: _walletSessionEpoch);
+        await AppSecureStore.instance.delete(storageKey);
         return;
       }
       final encoded = <String, int>{
         for (final entry in draft.choices.entries) '${entry.key}': entry.value,
       };
-      await _store.writeWalletPlain(
-        storageKey,
-        jsonEncode(encoded),
-        epoch: _walletSessionEpoch,
-      );
+      await AppSecureStore.instance.writePlain(storageKey, jsonEncode(encoded));
     });
   }
 
@@ -304,9 +292,8 @@ class SecureVotingDraftPersistence implements VotingDraftPersistence {
     return _runMutation(() async {
       if (accountUuid.isEmpty) return;
       _deletedAccountUuids.add(accountUuid);
-      await _store.deleteWalletPlainKeysWithPrefix(
+      await AppSecureStore.instance.deletePlainKeysWithPrefix(
         '$_keyPrefix$accountUuid|',
-        epoch: _walletSessionEpoch,
       );
     });
   }

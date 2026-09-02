@@ -889,58 +889,6 @@ void main() {
     expect(store.hasSessionPassword, isFalse);
   });
 
-  test('wallet reset drains writes and rejects the disposed session', () async {
-    const walletKey = 'zcash_swap_activities_v1:account-1';
-    final blockingStorage = _BlockingWriteStorage(blockKey: walletKey);
-    store = AppSecureStore.testing(storage: blockingStorage);
-    final epoch = store.captureWalletSessionEpoch();
-
-    blockingStorage.blockNextWrite = true;
-    final lateWrite = store.writeWalletString(
-      walletKey,
-      'old activity',
-      epoch: epoch,
-    );
-    await blockingStorage.writeStarted.future;
-
-    var resetCompleted = false;
-    final reset = store
-        .resetWalletStorage(epoch: epoch)
-        .then((_) => resetCompleted = true);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(resetCompleted, isFalse);
-
-    blockingStorage.release();
-    await lateWrite;
-    await reset;
-    expect(await store.readPlain(walletKey), isNull);
-
-    await store.writeWalletString(walletKey, 'stale', epoch: epoch);
-    expect(await store.readPlain(walletKey), isNull);
-  });
-
-  test('wallet reset preserves only declared install preferences', () async {
-    store = AppSecureStore.testing(storage: _MapStorage('regular'));
-    final epoch = store.captureWalletSessionEpoch();
-    await store.writePlain(kThemeModeKey, 'dark');
-    await store.writePlain(kPrivacyModeEnabledKey, 'true');
-    await store.writePlain(kRpcEndpointUrlKey, 'https://old.example');
-    await store.writeString('zcash_address_book_contacts_v1', '[{}]');
-
-    await store.resetWalletStorage(
-      epoch: epoch,
-      preservedInstallPreferenceKeys: const {
-        kThemeModeKey,
-        kPrivacyModeEnabledKey,
-      },
-    );
-
-    expect(await store.readPlain(kThemeModeKey), 'dark');
-    expect(await store.readPlain(kPrivacyModeEnabledKey), 'true');
-    expect(await store.readPlain(kRpcEndpointUrlKey), isNull);
-    expect(await store.readPlain('zcash_address_book_contacts_v1'), isNull);
-  });
-
   test(
     'clearPasswordConfiguration waits for concurrent mnemonic writes',
     () async {

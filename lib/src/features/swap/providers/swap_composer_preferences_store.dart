@@ -30,22 +30,16 @@ abstract interface class SwapComposerPreferencesStore {
 
 class AppSecureStoreSwapComposerPreferencesStore
     implements SwapComposerPreferencesStore {
-  AppSecureStoreSwapComposerPreferencesStore(
-    this._storage, {
-    int? walletSessionEpoch,
-  }) : _walletSessionEpoch =
-           walletSessionEpoch ?? _storage.captureWalletSessionEpoch();
+  const AppSecureStoreSwapComposerPreferencesStore(this._storage);
 
   final AppSecureStore _storage;
-  final int _walletSessionEpoch;
 
   @override
   Future<SwapComposerPreferences?> loadPreferences({
     required String accountUuid,
   }) async {
-    final raw = await _storage.readWalletString(
+    final raw = await _storage.readString(
       _swapComposerPreferencesKeyFor(accountUuid),
-      epoch: _walletSessionEpoch,
     );
     if (raw == null || raw.trim().isEmpty) {
       return null;
@@ -66,10 +60,9 @@ class AppSecureStoreSwapComposerPreferencesStore
     required String accountUuid,
     required SwapComposerPreferences preferences,
   }) async {
-    await _storage.writeWalletString(
+    await _storage.writeString(
       _swapComposerPreferencesKeyFor(accountUuid),
       jsonEncode(_preferencesToJson(preferences)),
-      epoch: _walletSessionEpoch,
     );
   }
 }

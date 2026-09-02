@@ -225,14 +225,7 @@ class _SettingsUninstallScreenState
     final accountNotifier = ref.read(accountProvider.notifier);
 
     try {
-      await runWithSyncPausedForWalletReset(
-        ref,
-        accountNotifier.resetWallet,
-        // This flow intentionally keeps its terminal confirmation screen alive
-        // until the user closes Vizor. All reusable reset flows restart the
-        // provider session immediately.
-        restartProviderSession: false,
-      );
+      await runWithSyncPausedForWalletReset(ref, accountNotifier.resetWallet);
       if (!mounted) return;
       await _progressController.animateTo(
         1,

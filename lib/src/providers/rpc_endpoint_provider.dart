@@ -7,7 +7,6 @@ import '../rust/api/wallet.dart' as rust_wallet;
 
 class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
   static final _store = AppSecureStore.instance;
-  late final int _walletSessionEpoch = _store.captureWalletSessionEpoch();
 
   @override
   RpcEndpointConfig build() =>
@@ -48,26 +47,14 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
   Future<void> _persist(RpcEndpointConfig next) async {
     final effectivePresetId = next.effectivePresetId;
     if (effectivePresetId == kDefaultRpcEndpointPresetId) {
-      await _store.deleteWalletKey(
-        kRpcEndpointUrlKey,
-        epoch: _walletSessionEpoch,
-      );
-      await _store.writeWalletPlain(
-        kRpcEndpointPresetKey,
-        effectivePresetId,
-        epoch: _walletSessionEpoch,
-      );
+      await _store.delete(kRpcEndpointUrlKey);
+      await _store.writePlain(kRpcEndpointPresetKey, effectivePresetId);
     } else {
-      await _store.writeWalletPlain(
+      await _store.writePlain(
         kRpcEndpointUrlKey,
         next.normalizedLightwalletdUrl,
-        epoch: _walletSessionEpoch,
       );
-      await _store.writeWalletPlain(
-        kRpcEndpointPresetKey,
-        effectivePresetId,
-        epoch: _walletSessionEpoch,
-      );
+      await _store.writePlain(kRpcEndpointPresetKey, effectivePresetId);
     }
     state = next;
   }

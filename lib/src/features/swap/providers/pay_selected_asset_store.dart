@@ -27,19 +27,13 @@ abstract interface class PaySelectedAssetStore {
 }
 
 class AppSecureStorePaySelectedAssetStore implements PaySelectedAssetStore {
-  AppSecureStorePaySelectedAssetStore(this._storage, {int? walletSessionEpoch})
-    : _walletSessionEpoch =
-          walletSessionEpoch ?? _storage.captureWalletSessionEpoch();
+  const AppSecureStorePaySelectedAssetStore(this._storage);
 
   final AppSecureStore _storage;
-  final int _walletSessionEpoch;
 
   @override
   Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
-    final raw = await _storage.readWalletString(
-      _paySelectedAssetKeyFor(accountUuid),
-      epoch: _walletSessionEpoch,
-    );
+    final raw = await _storage.readString(_paySelectedAssetKeyFor(accountUuid));
     if (raw == null || raw.trim().isEmpty) {
       return null;
     }
@@ -57,10 +51,9 @@ class AppSecureStorePaySelectedAssetStore implements PaySelectedAssetStore {
     required String accountUuid,
     required SwapAsset asset,
   }) async {
-    await _storage.writeWalletString(
+    await _storage.writeString(
       _paySelectedAssetKeyFor(accountUuid),
       jsonEncode(asset.toPersistedJson()),
-      epoch: _walletSessionEpoch,
     );
   }
 }

@@ -109,7 +109,6 @@ class LinkedWalletAccountsImportResult {
 
 class AccountNotifier extends AsyncNotifier<AccountState> {
   static final _storage = AppSecureStore.instance;
-  late final int _walletSessionEpoch = _storage.captureWalletSessionEpoch();
 
   @override
   FutureOr<AccountState> build() {
@@ -149,11 +148,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         mnemonic = result.mnemonic;
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
-        await _storage.writeWalletString(
-          _networkKey,
-          network,
-          epoch: _walletSessionEpoch,
-        );
+        await _storage.writeString(_networkKey, network);
       } else {
         // Additional account — generate mnemonic + add to existing DB
         mnemonic = rust_wallet.generateMnemonic();
@@ -170,11 +165,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
 
       // Store mnemonic per-account
-      await _storage.writeWalletAccountMnemonic(
-        accountUuid,
-        mnemonic,
-        epoch: _walletSessionEpoch,
-      );
+      await _storage.writeAccountMnemonic(accountUuid, mnemonic);
 
       // Update account list
       final newAccount = AccountInfo(
@@ -185,11 +176,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
-      await _storage.writeWalletString(
-        _activeAccountKey,
-        accountUuid,
-        epoch: _walletSessionEpoch,
-      );
+      await _storage.writeString(_activeAccountKey, accountUuid);
 
       state = AsyncData(
         AccountState(
@@ -256,11 +243,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         );
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
-        await _storage.writeWalletString(
-          _networkKey,
-          network,
-          epoch: _walletSessionEpoch,
-        );
+        await _storage.writeString(_networkKey, network);
       } else {
         final result = await rust_wallet.addAccount(
           dbPath: dbPath,
@@ -274,11 +257,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         unifiedAddress = result.unifiedAddress;
       }
 
-      await _storage.writeWalletAccountMnemonic(
-        accountUuid,
-        mnemonic,
-        epoch: _walletSessionEpoch,
-      );
+      await _storage.writeAccountMnemonic(accountUuid, mnemonic);
 
       final newAccount = AccountInfo(
         uuid: accountUuid,
@@ -289,11 +268,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
-      await _storage.writeWalletString(
-        _activeAccountKey,
-        accountUuid,
-        epoch: _walletSessionEpoch,
-      );
+      await _storage.writeString(_activeAccountKey, accountUuid);
 
       state = AsyncData(
         AccountState(
@@ -365,18 +340,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         throw StateError('Software wallet import did not return an account.');
       }
       if (isFirstWalletAccount) {
-        await _storage.writeWalletString(
-          _networkKey,
-          network,
-          epoch: _walletSessionEpoch,
-        );
+        await _storage.writeString(_networkKey, network);
       }
 
       for (final account in result.accounts) {
-        await _storage.writeWalletAccountMnemonic(
+        await _storage.writeAccountMnemonic(
           account.accountUuid,
           mnemonic,
-          epoch: _walletSessionEpoch,
           bip39Passphrase: bip39Passphrase,
         );
       }
@@ -402,16 +372,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ? result.accounts.first.unifiedAddress
           : previousActiveAddress;
       if (activeAccountUuid == null) {
-        await _storage.deleteWalletKey(
-          _activeAccountKey,
-          epoch: _walletSessionEpoch,
-        );
+        await _storage.delete(_activeAccountKey);
       } else if (result.didImportPrimaryAccount) {
-        await _storage.writeWalletString(
-          _activeAccountKey,
-          activeAccountUuid,
-          epoch: _walletSessionEpoch,
-        );
+        await _storage.writeString(_activeAccountKey, activeAccountUuid);
       }
 
       state = AsyncData(
@@ -501,11 +464,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         await _resetVotingProcessStateForAccount(previousActiveUuid);
       }
     }
-    await _storage.writeWalletString(
-      _activeAccountKey,
-      uuid,
-      epoch: _walletSessionEpoch,
-    );
+    await _storage.writeString(_activeAccountKey, uuid);
 
     String? address;
     try {
@@ -659,10 +618,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
     }
     try {
-      await _storage.deleteWalletAccountMnemonic(
-        uuid,
-        epoch: _walletSessionEpoch,
-      );
+      await _storage.deleteAccountMnemonic(uuid);
     } catch (e, st) {
       log('removeAccount: failed to delete mnemonic for $uuid: $e\n$st');
     }
@@ -672,10 +628,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           .deleteForAccount(accountUuid: uuid);
     } catch (_) {}
     try {
-      await _storage.deleteWalletVotingHotkeysForAccount(
-        uuid,
-        epoch: _walletSessionEpoch,
-      );
+      await _storage.deleteVotingHotkeysForAccount(uuid);
     } catch (e, st) {
       log('removeAccount: failed to delete voting hotkeys for $uuid: $e\n$st');
     }
@@ -703,16 +656,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
     await _saveAccounts(updated);
     if (nextActiveUuid == null) {
-      await _storage.deleteWalletKey(
-        _activeAccountKey,
-        epoch: _walletSessionEpoch,
-      );
+      await _storage.delete(_activeAccountKey);
     } else {
-      await _storage.writeWalletString(
-        _activeAccountKey,
-        nextActiveUuid,
-        epoch: _walletSessionEpoch,
-      );
+      await _storage.writeString(_activeAccountKey, nextActiveUuid);
     }
 
     state = AsyncData(
@@ -871,17 +817,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         log('resetWallet: failed to evict wallet summary cache: $e\n$st');
       }
       try {
-        await _storage.resetWalletStorage(
-          epoch: _walletSessionEpoch,
-          // These are device/app preferences, not wallet identity. Keeping the
-          // allowlist here makes reset fail-safe: every unknown key is wiped.
-          preservedInstallPreferenceKeys: const {
-            kThemeModeKey,
-            kPrivacyModeEnabledKey,
-            kSyncKeepAwakeEnabledKey,
-            kSyncKeepAwakePromptSeenKey,
-          },
-        );
+        await _storage.deleteAll();
       } catch (e, st) {
         recordError('secure storage wipe', e, st);
       }
@@ -1084,11 +1020,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
       final updated = [...prev.accounts, newAccount];
       await _saveAccounts(updated);
-      await _storage.writeWalletString(
-        _activeAccountKey,
-        accountUuid,
-        epoch: _walletSessionEpoch,
-      );
+      await _storage.writeString(_activeAccountKey, accountUuid);
 
       state = AsyncData(
         AccountState(
@@ -1126,11 +1058,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final dbPath = await _getDbPath();
       if (prev.accounts.isEmpty) {
         await _deleteExistingDb(dbPath);
-        await _storage.writeWalletString(
-          _networkKey,
-          normalizedNetwork,
-          epoch: _walletSessionEpoch,
-        );
+        await _storage.writeString(_networkKey, normalizedNetwork);
       }
 
       final importedAccounts = <AccountInfo>[];
@@ -1186,10 +1114,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           rethrow;
         }
         if (!input.isHardware) {
-          await _storage.writeWalletAccountMnemonic(
+          await _storage.writeAccountMnemonic(
             accountUuid,
             input.mnemonic ?? '',
-            epoch: _walletSessionEpoch,
             bip39Passphrase: input.bip39Passphrase,
           );
         }
@@ -1220,16 +1147,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           : prev.activeAddress;
       await _saveAccounts(updated);
       if (activeAccountUuid == null) {
-        await _storage.deleteWalletKey(
-          _activeAccountKey,
-          epoch: _walletSessionEpoch,
-        );
+        await _storage.delete(_activeAccountKey);
       } else {
-        await _storage.writeWalletString(
-          _activeAccountKey,
-          activeAccountUuid,
-          epoch: _walletSessionEpoch,
-        );
+        await _storage.writeString(_activeAccountKey, activeAccountUuid);
       }
 
       state = AsyncData(
@@ -1362,11 +1282,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   Future<void> _saveAccounts(List<AccountInfo> accounts) async {
     final json = jsonEncode(accounts.map((a) => a.toJson()).toList());
-    await _storage.writeWalletString(
-      _accountsKey,
-      json,
-      epoch: _walletSessionEpoch,
-    );
+    await _storage.writeString(_accountsKey, json);
   }
 
   String? _nextActiveAccountUuid({

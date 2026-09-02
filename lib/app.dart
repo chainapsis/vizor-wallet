@@ -154,7 +154,6 @@ Widget buildZcashWalletApp({
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap),
       appBootstrapRetryProvider.overrideWithValue(() async {}),
-      appSessionRestartProvider.overrideWithValue(() async {}),
       ...overrides,
     ],
     child: const ZcashWalletApp(),
@@ -197,7 +196,6 @@ class _BootstrappedZcashWalletAppState
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap),
         appBootstrapRetryProvider.overrideWithValue(_reloadBootstrap),
-        appSessionRestartProvider.overrideWithValue(_reloadBootstrap),
         ...widget.overrides,
       ],
       child: const _MacOSUpdatePrivacyChoiceHost(child: ZcashWalletApp()),
