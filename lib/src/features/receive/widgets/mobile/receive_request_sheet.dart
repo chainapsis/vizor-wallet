@@ -92,6 +92,19 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
     setState(() => _messageExpanded = true);
   }
 
+  /// Closes the memo editor, which is what its clear button says it does.
+  ///
+  /// The field's own clear already emptied the text and reported it through
+  /// [_handleMessageChanged]; the draft is cleared here as well so the
+  /// collapse never leaves a message the row no longer shows.
+  void _closeMessage() {
+    _messageController.clear();
+    setState(() {
+      _messageExpanded = false;
+      _draft = _draft.copyWith(clearMessage: true);
+    });
+  }
+
   void _createRequest() {
     final result = _draft.resolve(
       zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider),
@@ -137,6 +150,7 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
         messageExpanded: _messageExpanded,
         onAmountChanged: _handleAmountChanged,
         onMessageChanged: _handleMessageChanged,
+        onCloseMessage: _closeMessage,
         onToggleAmountUnit: onToggleUnit,
         onAddMessage: _expandMessage,
         onCreateRequest: _createRequest,

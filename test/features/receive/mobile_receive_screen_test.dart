@@ -638,6 +638,46 @@ void main() {
     expect(shares.single.pngBytes, greaterThan(0));
   });
 
+  testWidgets('closing the request message collapses it and drops the text', (
+    tester,
+  ) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_request')));
+    await _settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_input')),
+      '0.5',
+    );
+    await _settle(tester);
+
+    await tester.tap(find.byKey(const ValueKey('request_message_row')));
+    await _settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('request_message_field')),
+      'Table 4',
+    );
+    await _settle(tester);
+
+    // The control is labelled "Close message", so it has to close it.
+    final close = find.bySemanticsLabel('Close message');
+    expect(close, findsOneWidget);
+    await tester.tap(close);
+    await _settle(tester);
+
+    expect(find.byKey(const ValueKey('request_message_field')), findsNothing);
+    expect(find.byKey(const ValueKey('request_message_row')), findsOneWidget);
+    expect(find.byKey(const ValueKey('request_message_preview')), findsNothing);
+
+    // And the message is gone from the request, not just from the editor.
+    await tester.tap(find.byKey(const ValueKey('request_create_button')));
+    await _settle(tester);
+    expect(
+      tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data,
+      'zcash:$_shielded?amount=0.5',
+    );
+  });
+
   testWidgets('copies the request link from the result step', (tester) async {
     final copied = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(

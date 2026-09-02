@@ -393,6 +393,22 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     setState(() => _requestMessageExpanded = true);
   }
 
+  /// Closes the memo editor, which is what its clear button says it does.
+  ///
+  /// The field's own clear already emptied the text and reported it through
+  /// [_handleRequestMessageChanged]; the draft is cleared here as well so the
+  /// collapse never leaves a message the prompt no longer shows.
+  void _closeRequestMessage() {
+    final draft = _requestDraft;
+    _requestMessageController.clear();
+    setState(() {
+      _requestMessageExpanded = false;
+      if (draft != null) {
+        _requestDraft = draft.copyWith(clearMessage: true);
+      }
+    });
+  }
+
   Future<void> _saveRequestQrImage(Uint8List png, String amountZec) async {
     try {
       final saved = await saveRequestQrPng(
@@ -493,6 +509,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                 onBack: _editRequestAgain,
                 onAmountChanged: _handleRequestAmountChanged,
                 onMessageChanged: _handleRequestMessageChanged,
+                onCloseMessage: _closeRequestMessage,
                 onToggleAmountUnit: requestDraft.canToggleUnit(zecUsdUnitPrice)
                     ? _toggleRequestAmountUnit
                     : null,

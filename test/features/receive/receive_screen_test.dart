@@ -716,6 +716,52 @@ void main() {
     );
   });
 
+  testWidgets('closing the request message collapses it and drops the text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('request_add_message_card')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_message_field')),
+      'Table 4',
+    );
+    await tester.pump();
+
+    // The control is labelled "Close message", so it has to close it.
+    final close = find.bySemanticsLabel('Close message');
+    expect(close, findsOneWidget);
+    await tester.tap(close);
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('request_message_field')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('request_add_message_card')),
+      findsOneWidget,
+    );
+
+    // And the message is gone from the request, not just from the editor.
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+  });
+
   testWidgets('the request steps carry the composed amount both ways', (
     tester,
   ) async {

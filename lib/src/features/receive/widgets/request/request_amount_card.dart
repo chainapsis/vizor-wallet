@@ -66,6 +66,7 @@ class RequestAmountCard extends StatelessWidget {
     this.onToggleAmountUnit,
     this.onAmountChanged,
     this.onMessageChanged,
+    this.onCloseMessage,
     this.amountController,
     this.messageController,
     this.messageExpanded = false,
@@ -82,6 +83,9 @@ class RequestAmountCard extends StatelessWidget {
   final VoidCallback? onToggleAmountUnit;
   final ValueChanged<String>? onAmountChanged;
   final ValueChanged<String>? onMessageChanged;
+
+  /// Collapses the memo editor back to [RequestAddMessageCard].
+  final VoidCallback? onCloseMessage;
 
   /// Owns the amount text when the caller needs to rewrite it — switching
   /// units replaces the number in place, which a field holding its own
@@ -121,6 +125,7 @@ class RequestAmountCard extends StatelessWidget {
               text: request.messageText ?? '',
               controller: messageController,
               onChanged: onMessageChanged,
+              onClose: onCloseMessage,
             )
           else
             RequestAddMessageCard(onTap: onAddMessage),
@@ -553,12 +558,18 @@ class RequestMessageField extends StatelessWidget {
     required this.text,
     this.controller,
     this.onChanged,
+    this.onClose,
     super.key,
   });
 
   final String text;
   final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
+
+  /// Collapses the editor back to the prompt. The clear button announces
+  /// itself as "Close message", so it has to actually close it — emptying the
+  /// text and leaving the editor open is not the action the label names.
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -592,6 +603,7 @@ class RequestMessageField extends StatelessWidget {
       showClearButton: true,
       clearButtonRequiresText: false,
       clearButtonSemanticLabel: 'Close message',
+      onClear: onClose,
       onChanged: onChanged,
     );
   }
@@ -612,6 +624,7 @@ class RequestAmountSurface extends StatelessWidget {
     this.onToggleAmountUnit,
     this.onAmountChanged,
     this.onMessageChanged,
+    this.onCloseMessage,
     this.amountController,
     this.messageController,
     this.messageExpanded = false,
@@ -633,6 +646,7 @@ class RequestAmountSurface extends StatelessWidget {
   final VoidCallback? onToggleAmountUnit;
   final ValueChanged<String>? onAmountChanged;
   final ValueChanged<String>? onMessageChanged;
+  final VoidCallback? onCloseMessage;
   final TextEditingController? amountController;
   final TextEditingController? messageController;
   final bool messageExpanded;
@@ -652,6 +666,7 @@ class RequestAmountSurface extends StatelessWidget {
         onToggleAmountUnit: onToggleAmountUnit,
         onAmountChanged: onAmountChanged,
         onMessageChanged: onMessageChanged,
+        onCloseMessage: onCloseMessage,
         amountController: amountController,
         messageController: messageController,
         messageExpanded: messageExpanded,

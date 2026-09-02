@@ -45,6 +45,7 @@ class RequestAmountSheetCompose extends StatelessWidget {
     this.onCreateRequest,
     this.onAmountChanged,
     this.onMessageChanged,
+    this.onCloseMessage,
     this.amountController,
     this.messageController,
     this.messageExpanded = false,
@@ -58,6 +59,9 @@ class RequestAmountSheetCompose extends StatelessWidget {
   final VoidCallback? onCreateRequest;
   final ValueChanged<String>? onAmountChanged;
   final ValueChanged<String>? onMessageChanged;
+
+  /// Collapses the memo editor back to [RequestMessageRow].
+  final VoidCallback? onCloseMessage;
 
   /// Supplied by the live sheet, which owns the text so a unit switch can
   /// rewrite the number in place. Without one the amount is a static display,
@@ -100,6 +104,7 @@ class RequestAmountSheetCompose extends StatelessWidget {
                 text: request.messageText ?? '',
                 controller: messageController,
                 onChanged: onMessageChanged,
+                onClose: onCloseMessage,
               )
             else
               RequestMessageRow(
