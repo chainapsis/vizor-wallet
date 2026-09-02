@@ -1284,6 +1284,26 @@ pub async fn precompute_delegation_proof(
     .await
 }
 
+/// Return whether one delegation bundle already has a durable ZKP1.
+///
+/// This is a local sidecar query. Wallet orchestration can use it to skip PIR
+/// endpoint resolution when every pending bundle is already proved.
+///
+/// # Errors
+///
+/// Returns an error if the voting sidecar cannot be opened or the bundle state
+/// cannot be read.
+pub fn has_persisted_delegation_proof(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    bundle_index: u32,
+) -> Result<bool, String> {
+    catch(|| {
+        delegation::has_persisted_delegation_proof(&db_path, &account_uuid, &round_id, bundle_index)
+    })
+}
+
 /// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
 ///
 /// Safe to call repeatedly; only the first call starts work. Returns

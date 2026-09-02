@@ -349,6 +349,27 @@ Future<bool> precomputeDelegationProof({
   bundleIndex: bundleIndex,
 );
 
+/// Return whether one delegation bundle already has a durable ZKP1.
+///
+/// This is a local sidecar query. Wallet orchestration can use it to skip PIR
+/// endpoint resolution when every pending bundle is already proved.
+///
+/// # Errors
+///
+/// Returns an error if the voting sidecar cannot be opened or the bundle state
+/// cannot be read.
+Future<bool> hasPersistedDelegationProof({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required int bundleIndex,
+}) => RustLib.instance.api.crateApiVotingHasPersistedDelegationProof(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+);
+
 /// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
 ///
 /// Safe to call repeatedly; only the first call starts work. Returns
@@ -443,8 +464,9 @@ Future<List<KeystoneSigningRequest>> buildKeystoneDelegationRequests({
 ///
 /// # Errors
 ///
-/// Returns an error if signature lengths are invalid, opening the voting DB
-/// fails, or persisting the signature record fails.
+/// Returns an error if signature lengths are invalid, the supplied signing
+/// context does not match the persisted bundle setup, signature verification
+/// fails, opening the voting DB fails, or persisting the record fails.
 Future<void> storeKeystoneSignature({
   required String dbPath,
   required String accountUuid,
@@ -465,10 +487,12 @@ Future<void> storeKeystoneSignature({
 
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
-/// Existing tuples for the same sighash and randomized key are accepted as
-/// idempotent retries, even when randomized signing produced different valid
-/// signature bytes. A tuple for a different signing context is a conflict, and
-/// any validation or database error rolls back the complete batch.
+/// Every tuple must match the bundle's persisted sighash and randomized key and
+/// pass SpendAuth verification. Existing valid tuples for the same context are
+/// accepted as idempotent retries, even when randomized signing produced
+/// different signature bytes. A tuple for a different signing context is a
+/// conflict, and any validation or database error rolls back the complete
+/// batch.
 Future<ApiKeystoneSignatureBatchResult> storeKeystoneSignaturesBatch({
   required String dbPath,
   required String accountUuid,

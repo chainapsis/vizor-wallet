@@ -474,23 +474,30 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
       var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
+      var canReusePersistedProofs = false;
       if (_needsFreshDelegationWork(plan, roundPlan) &&
           _needsDelegationPreparation(current)) {
-        await _prepareDelegationUnlocked();
-        current = await future;
-        if (current.phase == VotingSessionPhase.error ||
-            current.phase == VotingSessionPhase.waitingForWalletSync) {
-          return;
+        canReusePersistedProofs = await _allPendingDelegationProofsPersisted(
+          context,
+          plan,
+        );
+        if (!canReusePersistedProofs) {
+          await _prepareDelegationUnlocked();
+          current = await future;
+          if (current.phase == VotingSessionPhase.error ||
+              current.phase == VotingSessionPhase.waitingForWalletSync) {
+            return;
+          }
+          context = await _loadContext(_roundId);
+          plan = context.resumePlan;
+          roundPlan = context.roundPlan;
         }
-        context = await _loadContext(_roundId);
-        plan = context.resumePlan;
-        roundPlan = context.roundPlan;
       }
 
       final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
       final pirEndpoint = current.pirEndpoint;
       if (hasPendingBundles) {
-        if (pirEndpoint == null) {
+        if (pirEndpoint == null && !canReusePersistedProofs) {
           _setError('PIR endpoint has not been resolved.', context: context);
           return;
         }
@@ -849,17 +856,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
       var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
+      var canReusePersistedProofs = false;
       if (_needsFreshDelegationWork(plan, roundPlan) &&
           _needsDelegationPreparation(current)) {
-        await _prepareDelegationUnlocked();
-        current = await future;
-        if (current.phase == VotingSessionPhase.error ||
-            current.phase == VotingSessionPhase.waitingForWalletSync) {
-          return;
+        canReusePersistedProofs = await _allPendingDelegationProofsPersisted(
+          context,
+          plan,
+        );
+        if (!canReusePersistedProofs) {
+          await _prepareDelegationUnlocked();
+          current = await future;
+          if (current.phase == VotingSessionPhase.error ||
+              current.phase == VotingSessionPhase.waitingForWalletSync) {
+            return;
+          }
+          context = await _loadContext(_roundId);
+          plan = context.resumePlan;
+          roundPlan = context.roundPlan;
         }
-        context = await _loadContext(_roundId);
-        plan = context.resumePlan;
-        roundPlan = context.roundPlan;
       }
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
@@ -886,7 +900,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         storedHotkeySecret = null;
       }
       final pirEndpoint = current.pirEndpoint;
-      if (hasPendingBundles && pirEndpoint == null) {
+      if (hasPendingBundles &&
+          pirEndpoint == null &&
+          !canReusePersistedProofs) {
         _setError('PIR endpoint has not been resolved.', context: context);
         return;
       }
@@ -3595,6 +3611,26 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return state.pirEndpoint == null || state.eligibleWeightZatoshi == null;
   }
 
+  Future<bool> _allPendingDelegationProofsPersisted(
+    _VotingSessionContext context,
+    VotingResumePlan plan,
+  ) async {
+    final bundleIndexes = plan.pendingDelegationBundleIndexes;
+    if (bundleIndexes.isEmpty) return false;
+
+    final rust = ref.read(votingRustApiProvider);
+    for (final bundleIndex in bundleIndexes) {
+      final persisted = await rust.hasPersistedDelegationProof(
+        dbPath: context.dbPath,
+        accountUuid: context.accountUuid,
+        roundId: context.round.roundId,
+        bundleIndex: bundleIndex,
+      );
+      if (!persisted) return false;
+    }
+    return true;
+  }
+
   static bool _needsFreshDelegationWork(
     VotingResumePlan plan,
     rust_wire.RoundPlanView? roundPlan,
@@ -3617,14 +3653,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
     await _waitUntilWalletReadyForVoting(context);
 
-    if (_needsDelegationPreparation(current)) {
+    var plan = current.resumePlan ?? context.resumePlan;
+    final canReusePersistedProofs =
+        _needsDelegationPreparation(current) &&
+        await _allPendingDelegationProofsPersisted(context, plan);
+    if (_needsDelegationPreparation(current) && !canReusePersistedProofs) {
       await _prepareDelegationUnlocked();
       current = await future;
       if (current.phase == VotingSessionPhase.error) return;
       context = await _loadContext(_roundId);
+      plan = current.resumePlan ?? context.resumePlan;
     }
 
-    final plan = current.resumePlan ?? context.resumePlan;
     final roundPlan = current.roundPlan ?? context.roundPlan;
     final signatures = await _loadKeystoneSignatures(context);
     final unsignedBundleIndexes = plan.pendingDelegationBundleIndexes

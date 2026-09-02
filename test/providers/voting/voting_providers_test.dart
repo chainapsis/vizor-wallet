@@ -2395,6 +2395,32 @@ void main() {
   });
 
   test(
+    'hardware voting reloads a warmed request without resolving PIR',
+    () async {
+      final rust = FakeVotingRustApi();
+      rust.persistedDelegationProofBundleIndexes.add(0);
+      final container = _sessionContainer(
+        rust: rust,
+        accountIsHardware: true,
+        pirResolver: FakePirResolver(error: StateError('unexpected PIR')),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareKeystoneSigning();
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.keystoneSigning);
+      expect(state.keystoneSigningRequest?.bundleIndex, 0);
+      expect(rust.persistedDelegationProofChecks, [0]);
+      expect(rust.setupCalls, 0);
+      expect(rust.keystoneDelegationRequestCalls, [0]);
+    },
+  );
+
+  test(
     'hardware voting surfaces SDK setup errors without resetting state',
     () async {
       final rust = FakeVotingRustApi(
@@ -3097,6 +3123,38 @@ void main() {
       expect(rust.keystoneProofBundleCalls, [0]);
       expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
       expect(rust.storedVanPositions, ['0:0']);
+    },
+  );
+
+  test(
+    'hardware voting submits a warmed proof without resolving PIR',
+    () async {
+      final rust = FakeVotingRustApi();
+      rust.persistedDelegationProofBundleIndexes.add(0);
+      rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
+        bundleIndex: 0,
+        sig: Uint8List.fromList(const [3, 0]),
+        sighash: Uint8List.fromList(const [10, 0]),
+        rk: Uint8List.fromList(const [2, 0]),
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        accountIsHardware: true,
+        pirResolver: FakePirResolver(error: StateError('unexpected PIR')),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundlesWithKeystoneSignatures();
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.delegated);
+      expect(rust.persistedDelegationProofChecks, [0]);
+      expect(rust.setupCalls, 0);
+      expect(rust.keystonePirServerUrlBatches, [<String>[]]);
+      expect(rust.keystoneProofBundleCalls, [0]);
     },
   );
 
@@ -11783,6 +11841,8 @@ class FakeVotingRustApi implements VotingRustApi {
   final syncedVoteTrees = <String>[];
   final syncedVoteTreeNodeUrls = <String>[];
   final snapshotBundlePrecomputeAccounts = <String>[];
+  final persistedDelegationProofBundleIndexes = <int>{};
+  final persistedDelegationProofChecks = <int>[];
   final backgroundDelegationProofCalls = <int>[];
   final backgroundDelegationProofPirServerUrlBatches = <List<String>>[];
   final backgroundDelegationProofHotkeys = <List<int>>[];
@@ -12300,7 +12360,19 @@ class FakeVotingRustApi implements VotingRustApi {
     await backgroundDelegationProofGate?.future;
     final error = backgroundDelegationProofErrorsByBundle[bundleIndex];
     if (error != null) throw error;
+    persistedDelegationProofBundleIndexes.add(bundleIndex);
     return true;
+  }
+
+  @override
+  Future<bool> hasPersistedDelegationProof({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+  }) async {
+    persistedDelegationProofChecks.add(bundleIndex);
+    return persistedDelegationProofBundleIndexes.contains(bundleIndex);
   }
 
   @override

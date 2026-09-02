@@ -5029,6 +5029,16 @@ class _NoopVotingRustApi implements VotingRustApi {
   }
 
   @override
+  Future<bool> hasPersistedDelegationProof({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+  }) async {
+    return false;
+  }
+
+  @override
   Future<rust_api.ApiPirCacheWarmupResult> warmPirProofCache({
     required String dbPath,
     required String accountUuid,

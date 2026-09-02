@@ -438,6 +438,14 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
   });
 
+  /// Whether one bundle already has a durable ZKP1 in the voting sidecar.
+  Future<bool> hasPersistedDelegationProof({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+  });
+
   /// Bundle-independent background PIR proof cache warm-up.
   ///
   /// Needs no hotkey, round rows, or bundles — only a wallet scanned to the
@@ -835,6 +843,21 @@ class FrbVotingRustApi implements VotingRustApi {
       ctx: ctx,
       pirServerUrls: pirServerUrls,
       storedHotkeySecret: storedHotkeySecret,
+      bundleIndex: bundleIndex,
+    );
+  }
+
+  @override
+  Future<bool> hasPersistedDelegationProof({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+  }) {
+    return rust_api.hasPersistedDelegationProof(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
       bundleIndex: bundleIndex,
     );
   }

@@ -67,6 +67,24 @@ fn normalize_pir_server_urls(pir_server_urls: &[String]) -> Result<Vec<String>, 
     Ok(normalized)
 }
 
+fn normalize_pir_server_urls_for_proof_state(
+    pir_server_urls: &[String],
+    proof_persisted: bool,
+) -> Result<Vec<String>, String> {
+    if proof_persisted && pir_server_urls.is_empty() {
+        Ok(Vec::new())
+    } else {
+        normalize_pir_server_urls(pir_server_urls)
+    }
+}
+
+fn first_pir_server_url(pir_server_urls: &[String]) -> Result<&str, String> {
+    pir_server_urls
+        .first()
+        .map(String::as_str)
+        .ok_or_else(|| "delegation proof is no longer persisted; resolve PIR and retry".to_string())
+}
+
 fn is_retryable_pir_query_error(error: &str) -> bool {
     let message = error.to_ascii_lowercase();
     let has_pir_context = message.contains("pir parallel fetch failed")
@@ -231,7 +249,7 @@ async fn drain_pir_connect_after_error(handle: PirConnectThread) {
     }
 }
 
-fn has_persisted_delegation_proof(
+pub(crate) fn has_persisted_delegation_proof(
     db_path: &str,
     account_uuid: &str,
     round_id: &str,
@@ -882,7 +900,9 @@ pub async fn precompute_delegation_proof(
 ///
 /// Returns an error if note/bundle validation, witness
 /// generation, PCZT construction, PIR proof generation, or delegation signing
-/// fails.
+/// fails. `pir_server_urls` may be empty only when this bundle already has a
+/// durable proof; if that proof changes concurrently, the caller must resolve
+/// PIR and retry.
 pub async fn build_prove_and_sign_delegation_payload<F>(
     db_path: &str,
     pir_server_urls: &[String],
@@ -894,7 +914,6 @@ pub async fn build_prove_and_sign_delegation_payload<F>(
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
-    let pir_server_urls = normalize_pir_server_urls(pir_server_urls)?;
     let on_progress = Arc::new(on_progress);
     let account_uuid = prepare_params.account_uuid;
 
@@ -907,12 +926,14 @@ where
         &prepare_params.lwd.round_params.vote_round_id,
         prepare_params.bundle_index,
     )?;
+    let pir_server_urls =
+        normalize_pir_server_urls_for_proof_state(pir_server_urls, proof_prechecked)?;
 
     // Overlap independent warm-ups with local preparation/PCZT setup when the
     // proof is still missing. A background-completed proof needs no PIR client.
     start_proving_cache_warmup();
     let pir_connect = start_pir_connect_unless_proof_persisted(proof_prechecked, || {
-        spawn_pir_connect(&pir_server_urls[0], pir_layout)
+        spawn_pir_connect(first_pir_server_url(&pir_server_urls)?, pir_layout)
     })?;
 
     on_progress(DelegationProgress::SelectingNotes);
@@ -939,7 +960,7 @@ where
     } else {
         let pir_connect = match pir_connect {
             Some(pir_connect) => pir_connect,
-            None => spawn_pir_connect(&pir_server_urls[0], pir_layout)?,
+            None => spawn_pir_connect(first_pir_server_url(&pir_server_urls)?, pir_layout)?,
         };
         let proof_outcome = prove_delegation_bundle(
             db_path,
@@ -1059,6 +1080,9 @@ pub async fn build_keystone_delegation_request(
 ///
 /// Returns an error if proof generation fails, the Keystone signature does not
 /// match the stored PCZT sighash, or submission payload reconstruction fails.
+/// `pir_server_urls` may be empty only when this bundle already has a durable
+/// proof; if that proof changes concurrently, the caller must resolve PIR and
+/// retry.
 pub async fn build_prove_delegation_payload_with_keystone_signature<F>(
     db_path: &str,
     pir_server_urls: &[String],
@@ -1072,7 +1096,6 @@ pub async fn build_prove_delegation_payload_with_keystone_signature<F>(
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
-    let pir_server_urls = normalize_pir_server_urls(pir_server_urls)?;
     let on_progress = Arc::new(on_progress);
     let round_id = prepare_params.lwd.round_params.vote_round_id.clone();
     let bundle_index = prepare_params.bundle_index;
@@ -1082,10 +1105,12 @@ where
 
     let proof_prechecked =
         has_persisted_delegation_proof(db_path, account_uuid, &round_id, bundle_index)?;
+    let pir_server_urls =
+        normalize_pir_server_urls_for_proof_state(pir_server_urls, proof_prechecked)?;
 
     start_proving_cache_warmup();
     let pir_connect = start_pir_connect_unless_proof_persisted(proof_prechecked, || {
-        spawn_pir_connect(&pir_server_urls[0], pir_layout)
+        spawn_pir_connect(first_pir_server_url(&pir_server_urls)?, pir_layout)
     })?;
 
     on_progress(DelegationProgress::SelectingNotes);
@@ -1111,7 +1136,7 @@ where
     } else {
         let pir_connect = match pir_connect {
             Some(pir_connect) => pir_connect,
-            None => spawn_pir_connect(&pir_server_urls[0], pir_layout)?,
+            None => spawn_pir_connect(first_pir_server_url(&pir_server_urls)?, pir_layout)?,
         };
         prove_delegation_bundle(
             db_path,
@@ -1275,6 +1300,17 @@ mod tests {
         );
         assert!(normalize_pir_server_urls(&[]).is_err());
         assert!(normalize_pir_server_urls(&[" ".to_string()]).is_err());
+    }
+
+    #[test]
+    fn persisted_proof_allows_no_pir_server_url() {
+        assert_eq!(
+            normalize_pir_server_urls_for_proof_state(&[], true).unwrap(),
+            Vec::<String>::new()
+        );
+        assert!(normalize_pir_server_urls_for_proof_state(&[], false).is_err());
+        assert!(normalize_pir_server_urls_for_proof_state(&[" ".to_string()], true).is_err());
+        assert!(first_pir_server_url(&[]).is_err());
     }
 
     #[test]
