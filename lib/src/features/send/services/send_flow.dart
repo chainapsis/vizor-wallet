@@ -409,7 +409,9 @@ String friendlyPaymentRequestCheckError(String raw) {
 String friendlyProposeSendError(String raw) {
   final lower = raw.toLowerCase();
   if (lower.contains('wallet sync is still finishing') ||
-      lower.contains('wallet sync failed before balance refresh')) {
+      lower.contains('wallet sync failed before balance refresh') ||
+      // Rust's own wording when the wallet has no scanned tip yet.
+      lower.contains('wallet must sync')) {
     return 'Finishing wallet sync. Try again shortly.';
   }
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
