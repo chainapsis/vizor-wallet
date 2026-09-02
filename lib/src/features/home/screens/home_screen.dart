@@ -87,7 +87,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   String _formatZec(BigInt zatoshi) {
-    return ZecAmount.fromZatoshi(zatoshi).balance.amountText;
+    return ZecAmount.fromZatoshi(zatoshi).compactBalance.amountText;
   }
 
   String? _formatFiatBalance(

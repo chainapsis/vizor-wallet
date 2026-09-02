@@ -732,6 +732,37 @@ void main() {
     expect(find.text('0'), findsNothing);
   });
 
+  testWidgets('home desktop uses compact balance precision for long decimals', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(44_291_641),
+          transparentBalance: BigInt.from(12_345_678),
+          canShieldTransparentBalance: true,
+          spendableBalance: BigInt.from(44_291_641),
+          totalBalance: BigInt.from(56_637_319),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+          )
+          .data,
+      '0.44291',
+    );
+    expect(find.text('0.44291641'), findsNothing);
+    expect(find.text('Transparent: 0.12345 ZEC'), findsOneWidget);
+  });
+
   testWidgets(
     'home desktop completed Ironwood mode labels and shows only Ironwood',
     (tester) async {
