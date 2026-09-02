@@ -37,14 +37,14 @@ void main() {
       // U+202E is not whitespace, so the collapse alone left an unterminated
       // right-to-left override running through the "Requested by" row on the
       // surface whose whole job is stating what the user is consenting to.
-      final label = sanitisePaymentRequestLabel('Alice‮gnidnep');
+      final label = sanitisePaymentRequestLabel('Alice\u202Egnidnep');
 
       expect(label, 'Alicegnidnep');
-      expect(label, isNot(contains('‮')));
+      expect(label, isNot(contains('\u202E')));
     });
 
     test('an invisible-only label is nothing to show', () {
-      expect(sanitisePaymentRequestLabel('‮‏ '), isNull);
+      expect(sanitisePaymentRequestLabel('\u202E\u200F '), isNull);
     });
 
     test('still collapses whitespace and clamps the length', () {

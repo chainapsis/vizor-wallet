@@ -34,7 +34,7 @@ void main() {
       payment: request.primaryPayment,
     );
 
-    expect(request.primaryPayment.message, contains('‮'));
+    expect(request.primaryPayment.message, contains('\u202E'));
     expect(prefill.message, 'Invoice 42');
   });
 }

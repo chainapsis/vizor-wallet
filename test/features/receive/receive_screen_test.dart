@@ -790,7 +790,7 @@ void main() {
     // silent, unrecoverable edit.
     await tester.enterText(
       find.byKey(const ValueKey('request_message_field')),
-      'Table‮ 4',
+      'Table\u202E 4',
     );
     await tester.pump();
 
