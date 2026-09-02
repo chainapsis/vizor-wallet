@@ -79,25 +79,20 @@ class PaymentRequestHost extends ConsumerWidget {
       router.go('/send/review', extra: args);
     }
 
-    final surface = PaymentRequestSurface(
+    // The Android system back press is answered by
+    // `MobileExitBackDispatcher.handleBackAboveRouter`, not by a `PopScope`
+    // here: this host is mounted from `MaterialApp.router`'s builder, above
+    // the `Router`, and a `PopScope` with no `ModalRoute` ancestor never runs.
+    // Pointer-driven dismissal (the scrim, the ⨯, and — because the scrim is
+    // an opaque hit-test target over the whole app — the iOS edge swipe) is
+    // owned by `PaymentRequestSurface`.
+    return PaymentRequestSurface(
       key: const ValueKey('payment_request_host_surface'),
       request: flow.view,
       onContinue: review,
       onEdit: edit,
       onCancel: notifier.dismiss,
       background: child,
-    );
-
-    if (!_isMobile) return surface;
-
-    // The card is not a route, so Android back would otherwise reach whatever
-    // is underneath it. While a request is up, back answers the request.
-    return PopScope<void>(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) notifier.dismiss();
-      },
-      child: surface,
     );
   }
 

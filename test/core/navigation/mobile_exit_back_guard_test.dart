@@ -12,6 +12,7 @@ _ExitBackTestRouter _exitBackRouter({
   MobileExitBackGuard? exitBackGuard,
   String initialLocation = '/home',
   List<RouteBase> routes = const [],
+  bool Function()? handleBackAboveRouter,
 }) {
   final navigatorKey = GlobalKey<NavigatorState>();
   final guard =
@@ -23,6 +24,7 @@ _ExitBackTestRouter _exitBackRouter({
     canPop: () => router.canPop(),
     currentLocation: () =>
         router.routerDelegate.currentConfiguration.uri.toString(),
+    handleBackAboveRouter: handleBackAboveRouter,
   );
   addTearDown(dispatcher.dispose);
   router = GoRouter(
@@ -118,6 +120,44 @@ void _clearExitHint(_ExitBackTestRouter testRouter) {
 
 void main() {
   tearDown(MobileExitBackGuard.dismissVisibleHint);
+
+  testWidgets('an above-router modal answers root back before the exit hint', (
+    tester,
+  ) async {
+    final platformCalls = _capturePlatformCalls(tester);
+    var modalIsUp = true;
+    final testRouter = _exitBackRouter(
+      handleBackAboveRouter: () {
+        if (!modalIsUp) return false;
+        modalIsUp = false;
+        return true;
+      },
+    );
+    await tester.pumpWidget(_app(testRouter));
+    await tester.pumpAndSettle();
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+
+    expect(
+      modalIsUp,
+      isFalse,
+      reason: 'the press dismissed the card, not the screen under it',
+    );
+    expect(
+      find.text(MobileExitBackGuard.exitHintMessage),
+      findsNothing,
+      reason: 'a press the card consumed must not arm the exit hint',
+    );
+    expect(_systemNavigatorPopCallCount(platformCalls), 0);
+
+    // With the card gone the next press behaves exactly as before.
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(_systemNavigatorPopCallCount(platformCalls), 0);
+    _clearExitHint(testRouter);
+  });
 
   testWidgets('android root back shows a lower exit hint before exiting', (
     tester,

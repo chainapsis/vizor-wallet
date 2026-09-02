@@ -247,6 +247,15 @@ final _routerProvider = Provider<_AppRouter>((ref) {
     canPop: () => router.canPop(),
     currentLocation: () =>
         router.routerDelegate.currentConfiguration.uri.toString(),
+    // `PaymentRequestHost` is mounted above the `Router`, where a `PopScope`
+    // finds no `ModalRoute` to register with and is therefore inert. Back has
+    // to reach the card here or it would navigate — and on the second press
+    // exit the app — underneath a modal the user is still looking at.
+    handleBackAboveRouter: () {
+      if (ref.read(paymentRequestFlowProvider) == null) return false;
+      ref.read(paymentRequestFlowProvider.notifier).dismiss();
+      return true;
+    },
   );
   ref.onDispose(mobileExitBackDispatcher.dispose);
   final useMobileExitBackGuard = mobileExitBackGuard.enabled;

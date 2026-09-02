@@ -82,10 +82,12 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
     required GlobalKey<NavigatorState> navigatorKey,
     required bool Function() canPop,
     required String Function() currentLocation,
+    bool Function()? handleBackAboveRouter,
   }) : _exitBackGuard = exitBackGuard,
        _navigatorKey = navigatorKey,
        _canPop = canPop,
-       _currentLocation = currentLocation {
+       _currentLocation = currentLocation,
+       _handleBackAboveRouter = handleBackAboveRouter {
     if (_exitBackGuard.enabled) {
       _lifecycleListener = AppLifecycleListener(
         onInactive: _clearExitBackGuard,
@@ -101,6 +103,16 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
   final GlobalKey<NavigatorState> _navigatorKey;
   final bool Function() _canPop;
   final String Function() _currentLocation;
+
+  /// Modal layers mounted *above* the `Router`, given the back press first.
+  ///
+  /// A `PopScope` only works below a `ModalRoute`, so anything hosted from
+  /// `MaterialApp.router`'s `builder` — the payment-request card — is
+  /// invisible to the route layer and would otherwise let a back press
+  /// navigate, or exit the app, underneath itself. Returns true when the
+  /// layer consumed the press.
+  final bool Function()? _handleBackAboveRouter;
+
   AppLifecycleListener? _lifecycleListener;
 
   bool handleNavigationNotification(NavigationNotification notification) {
@@ -117,6 +129,14 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
 
   @override
   Future<bool> invokeCallback(Future<bool> defaultValue) async {
+    // Above-router modals answer first, on every platform this dispatcher
+    // runs on: they are drawn over the whole route stack, so a press that
+    // reached anything underneath them would act on a screen the user cannot
+    // even see.
+    if (_handleBackAboveRouter?.call() ?? false) {
+      _clearExitBackGuard();
+      return true;
+    }
     if (!_exitBackGuard.enabled) {
       return super.invokeCallback(defaultValue);
     }
