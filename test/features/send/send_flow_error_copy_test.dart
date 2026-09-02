@@ -1,3 +1,4 @@
+import 'package:characters/characters.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 
@@ -52,6 +53,31 @@ void main() {
       final long = sanitisePaymentRequestLabel('a' * 100)!;
       expect(long.length, kPaymentRequestLabelMaxLength);
       expect(long.endsWith('…'), isTrue);
+    });
+
+    test('never splits a surrogate pair at the clamp boundary', () {
+      // 100 astral-plane code points is 200 UTF-16 code units, so a
+      // `substring` clamp lands mid-pair and leaves an unpaired surrogate
+      // rendering as U+FFFD in the "Requested by" row.
+      const emoji = '\u{1F600}';
+      final clamped = sanitisePaymentRequestLabel(emoji * 100)!;
+
+      expect(clamped.endsWith('…'), isTrue);
+      expect(clamped.characters.length, kPaymentRequestLabelMaxLength);
+      expect(clamped, '${emoji * (kPaymentRequestLabelMaxLength - 1)}…');
+      expect(
+        clamped.runes.any((rune) => rune >= 0xD800 && rune <= 0xDFFF),
+        isFalse,
+      );
+    });
+
+    test('counts a label the way the payer reads it', () {
+      // Exactly at the limit in grapheme clusters, twice it in code units:
+      // nothing to clamp, so nothing is cut and no ellipsis is invented.
+      const emoji = '\u{1F600}';
+      final atLimit = emoji * kPaymentRequestLabelMaxLength;
+
+      expect(sanitisePaymentRequestLabel(atLimit), atLimit);
     });
   });
 }

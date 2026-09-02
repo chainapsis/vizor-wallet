@@ -10,6 +10,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:characters/characters.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -42,12 +43,20 @@ const int kPaymentRequestLabelMaxLength = 64;
 /// every untrusted ZIP-321 string the wallet renders. Then collapses every run
 /// of whitespace (newlines included) to a single space so the label cannot
 /// grow the row it sits in, and clamps the length.
+///
+/// The clamp counts grapheme clusters, not UTF-16 code units. `substring`
+/// would cut between a surrogate pair or off a combining mark \u2014 40 emoji is
+/// 80 code units, so index 63 lands mid-pair \u2014 and the row would render a
+/// replacement glyph before the ellipsis. It also makes the limit mean what
+/// it reads as: 64 characters the way the payer counts them.
 String? sanitisePaymentRequestLabel(String? raw) {
   final stripped = raw == null ? null : stripUnsupportedZip321MemoText(raw);
   final collapsed = stripped?.replaceAll(RegExp(r'\s+'), ' ').trim();
   if (collapsed == null || collapsed.isEmpty) return null;
-  if (collapsed.length <= kPaymentRequestLabelMaxLength) return collapsed;
-  return '${collapsed.substring(0, kPaymentRequestLabelMaxLength - 1)}\u2026';
+  final graphemes = collapsed.characters;
+  if (graphemes.length <= kPaymentRequestLabelMaxLength) return collapsed;
+  final kept = graphemes.take(kPaymentRequestLabelMaxLength - 1).string;
+  return '$kept\u2026';
 }
 
 /// Route-extra payload for the review/status legs of the send flow.
