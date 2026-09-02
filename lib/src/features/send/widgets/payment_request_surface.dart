@@ -138,7 +138,7 @@ class PaymentRequestSurface extends StatelessWidget {
 /// off — the shared reservation for the pinned close lives in the card's
 /// header instead ([kPaymentRequestMobileCloseClearance]).
 ///
-/// [bottomPadding] is 16, the inset the card's action stack sits on; the
+/// [bottomPadding] is the Figma modal base's 32 under the action stack; the
 /// bottom safe area itself stays with `MobileModalCard`, so it is never
 /// applied twice.
 Widget paymentRequestSheetBody(Widget card, {required VoidCallback onClose}) {
@@ -146,7 +146,9 @@ Widget paymentRequestSheetBody(Widget card, {required VoidCallback onClose}) {
     title: '',
     showTitle: false,
     onClose: onClose,
-    bottomPadding: AppSpacing.sm,
+    // Figma `_Modal Type` (4638:74505): 32 between the button stack and
+    // the sheet's bottom edge.
+    bottomPadding: AppSpacing.base,
     // The scaffold lays its body out in a min-size Column, which hands a
     // plain child unbounded height. The card needs a bounded one — that is
     // what makes its details region scroll instead of overflowing the sheet.

@@ -35,6 +35,14 @@ const double kPaymentRequestTouchRingInset = 10;
 /// ellipsizes instead of sliding under that button.
 const double kPaymentRequestMobileCloseClearance = 40;
 
+/// The one horizontal content inset every group on this card uses.
+///
+/// Sheet/modal chrome (title, actions, status line) sits on the outer
+/// edge; everything inside a card — the requester summary, the
+/// transaction label and amount, the To and memo rows — sits exactly this
+/// far in from that card's edge. One gutter, two left edges.
+const double kPaymentRequestGutter = AppSpacing.sm;
+
 /// The scroll region's overlay scrollbar, for tests.
 const kPaymentRequestScrollbarKey = ValueKey('payment_request_scrollbar');
 
@@ -630,16 +638,17 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
   List<Widget> _detailRows() {
     final request = _request;
     final memo = request.displayMemo;
+    final addressRow = _AddressRow(
+      key: const ValueKey('payment_request_to_row'),
+      address: request.address,
+      identity: request.displayRecipientIdentity,
+      isMobileLayout: _isMobile,
+      expanded: _addressExpanded,
+      onToggle: _toggleAddress,
+    );
 
     return [
-      _AddressRow(
-        key: const ValueKey('payment_request_to_row'),
-        address: request.address,
-        identity: request.displayRecipientIdentity,
-        isMobileLayout: _isMobile,
-        expanded: _addressExpanded,
-        onToggle: _toggleAddress,
-      ),
+      addressRow,
       if (memo != null) ...[
         const ReviewWrapDivider(),
         _ProseRows(
@@ -677,15 +686,17 @@ class _RequesterDetailsCard extends StatelessWidget {
     final colors = context.colors;
     final summary = requester ?? 'Note from requester';
     final scaler = MediaQuery.textScalerOf(context);
-    final labelStyle = AppTypography.bodyMedium;
-    final valueStyle = AppTypography.headlineSmall;
-    final naturalSummaryHeight =
-        scaler.scale(labelStyle.fontSize! * labelStyle.height!) +
-        AppSpacing.xxs +
-        scaler.scale(valueStyle.fontSize! * valueStyle.height!);
-    final summaryHeight = naturalSummaryHeight < 56
-        ? 56.0
-        : naturalSummaryHeight.ceilToDouble() + 1;
+    // Label over value, both at body size: the requester is text the link
+    // supplied, not an identity the wallet verified, so it does not take
+    // the headline the address-book name gets in the To row.
+    final labelStyle = AppTypography.bodyMediumStrong;
+    final valueStyle = AppTypography.bodyMediumStrong;
+    final summaryHeight =
+        (scaler.scale(labelStyle.fontSize! * labelStyle.height!) +
+                AppSpacing.xxs +
+                scaler.scale(valueStyle.fontSize! * valueStyle.height!))
+            .ceilToDouble() +
+        1;
     final summaryRow = Row(
       children: [
         Expanded(
@@ -695,9 +706,9 @@ class _RequesterDetailsCard extends StatelessWidget {
             children: [
               Text(
                 'Requester',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: labelStyle.copyWith(color: colors.text.secondary),
               ),
               const SizedBox(height: AppSpacing.xxs),
               Text(
@@ -705,9 +716,7 @@ class _RequesterDetailsCard extends StatelessWidget {
                 key: const ValueKey('payment_request_requester'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppTypography.headlineSmall.copyWith(
-                  color: colors.text.accent,
-                ),
+                style: valueStyle.copyWith(color: colors.text.accent),
               ),
             ],
           ),
@@ -724,10 +733,7 @@ class _RequesterDetailsCard extends StatelessWidget {
 
     final toggle = onToggle;
     final summaryControl = toggle == null
-        ? Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-            child: summaryRow,
-          )
+        ? summaryRow
         : Semantics(
             button: true,
             expanded: expanded,
@@ -751,32 +757,30 @@ class _RequesterDetailsCard extends StatelessWidget {
     return ReviewWrapCard(
       key: const ValueKey('payment_request_requester_group'),
       mainAxisSize: MainAxisSize.min,
-      padding: const EdgeInsets.all(AppSpacing.xs),
+      // The card's content gutter: the same 16 every group on this card
+      // uses, so the label here, the transaction label, and the rows in
+      // the details card all share one left edge.
+      padding: const EdgeInsets.all(kPaymentRequestGutter),
       children: [
         summaryControl,
         if (expanded && note != null) ...[
           const ReviewWrapDivider(),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Note from requester',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Note from requester',
+                style: labelStyle.copyWith(color: colors.text.secondary),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                note!,
+                key: const ValueKey('payment_request_requester_note'),
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.accent,
                 ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  note!,
-                  key: const ValueKey('payment_request_requester_note'),
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ],
@@ -806,34 +810,52 @@ class _TransactionContentFrame extends StatelessWidget {
     final colors = context.colors;
     final details = bounded
         ? Flexible(child: _DetailsFrame(rows: rows))
-        : ReviewWrapCard(children: rows);
+        : ReviewWrapCard(
+            padding: const EdgeInsets.all(kPaymentRequestGutter),
+            children: rows,
+          );
 
+    final radius = BorderRadius.circular(AppRadii.large);
     return Container(
       key: const ValueKey('payment_request_transaction_content'),
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: AppSpacing.sm,
-      ),
-      decoration: BoxDecoration(
+      padding: const EdgeInsets.only(top: kPaymentRequestGutter),
+      decoration: BoxDecoration(borderRadius: radius),
+      // Painted over the content rather than as part of the box so the 1px
+      // stroke does not shift the gutter: content sits exactly 16 in from
+      // the frame edge, the same as inside every other card here.
+      foregroundDecoration: BoxDecoration(
         border: Border.all(color: colors.border.regular),
-        borderRadius: BorderRadius.circular(AppRadii.large),
+        borderRadius: radius,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Transaction content',
-            style: AppTypography.bodyMediumStrong.copyWith(
-              color: colors.text.secondary,
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: kPaymentRequestGutter,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Transaction content',
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+                if (amountText != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  _AmountHero(amountText: amountText!, fiatText: fiatText),
+                ],
+              ],
             ),
           ),
-          if (amountText != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            _AmountHero(amountText: amountText!, fiatText: fiatText),
-          ],
           const SizedBox(height: AppSpacing.sm),
+          // Flush with the frame: same radius at zero inset keeps the two
+          // corners concentric, and the card's own 16 inset lands its rows
+          // on the frame label's left edge.
           details,
         ],
       ),
@@ -889,29 +911,9 @@ class _AddressRow extends StatelessWidget {
       address: address,
     );
 
-    return Column(
+    final recipient = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xxs,
-          children: [
-            Text(
-              'To',
-              maxLines: 1,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            // Paying a transparent address is the one detail on this card
-            // with a privacy consequence the review step cannot undo.
-            PoolBadge(
-              key: const ValueKey('payment_request_pool_badge'),
-              isShielded: isShielded,
-            ),
-          ],
-        ),
         if (identity != null) ...[
           const SizedBox(height: AppSpacing.xs),
           _RecipientIdentityBlock(identity: identity),
@@ -935,7 +937,7 @@ class _AddressRow extends StatelessWidget {
                     ? null
                     : const ValueKey('payment_request_recipient_address'),
                 maxLines: 1,
-                style: AppTypography.codeSmall.copyWith(
+                style: AppTypography.codeMedium.copyWith(
                   color: identity == null
                       ? colors.text.accent
                       : colors.text.secondary,
@@ -946,41 +948,76 @@ class _AddressRow extends StatelessWidget {
           ),
       ],
     );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xxs,
+          children: [
+            Text(
+              'To',
+              maxLines: 1,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            // Paying a transparent address is the one detail on this card
+            // with a privacy consequence the review step cannot undo.
+            PoolBadge(
+              key: const ValueKey('payment_request_pool_badge'),
+              isShielded: isShielded,
+            ),
+          ],
+        ),
+        // On touch the whole recipient block toggles the full address —
+        // address line plus pill is 45px, above the 44px floor — so the
+        // pill keeps its 24px Figma height and no transparent ring has
+        // to be padded into the row rhythm. Translucent: the pill's own
+        // detector still wins inside its bounds.
+        if (isMobileLayout)
+          GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: onToggle,
+            child: recipient,
+          )
+        else
+          recipient,
+      ],
+    );
   }
 
   Widget _addressAction(BuildContext context, String label) {
     final colors = context.colors;
     final usesLargeText = MediaQuery.textScalerOf(context).scale(1) >= 1.5;
     final visibleLabel = usesLargeText ? (expanded ? 'Hide' : 'Show') : label;
-    return _TouchTargetRing(
-      apply: isMobileLayout,
+    return Semantics(
+      button: true,
+      label: label,
       onTap: onToggle,
-      child: Semantics(
-        button: true,
-        label: label,
-        onTap: onToggle,
-        excludeSemantics: true,
-        child: MediaQuery.withClampedTextScaling(
-          maxScaleFactor: 1.5,
-          child: AppButton(
-            key: const ValueKey('payment_request_show_full_address'),
-            onPressed: onToggle,
-            variant: AppButtonVariant.ghost,
-            size: AppButtonSize.small,
-            iconGap: 0,
-            leading: usesLargeText
-                ? null
-                : AppIcon(
-                    expanded ? AppIcons.eyeClosed : AppIcons.eye,
-                    color: colors.button.ghost.label,
-                  ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-              child: Text(
-                visibleLabel,
-                maxLines: 1,
-                style: AppTypography.labelSmall,
-              ),
+      excludeSemantics: true,
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.5,
+        child: AppButton(
+          key: const ValueKey('payment_request_show_full_address'),
+          onPressed: onToggle,
+          variant: AppButtonVariant.ghost,
+          size: AppButtonSize.small,
+          iconGap: 0,
+          leading: usesLargeText
+              ? null
+              : AppIcon(
+                  expanded ? AppIcons.eyeClosed : AppIcons.eye,
+                  color: colors.button.ghost.label,
+                ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: Text(
+              visibleLabel,
+              maxLines: 1,
+              style: AppTypography.labelSmall,
             ),
           ),
         ),
@@ -1292,21 +1329,19 @@ class _ProseRows extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final valueStyle = AppTypography.bodyMediumStrong;
-    final scaledLineHeight = MediaQuery.textScalerOf(
-      context,
-    ).scale(valueStyle.fontSize! * valueStyle.height!);
-    final controlHeight = scaledLineHeight < 32 ? 32.0 : scaledLineHeight;
+    final scaler = MediaQuery.textScalerOf(context);
+    // The control is the whole label-over-value block: 54px on mobile,
+    // 46 on desktop, so it clears the 44px touch floor by itself instead
+    // of padding an oversized box around the value line.
+    final controlHeight =
+        (scaler.scale(valueStyle.fontSize! * valueStyle.height!) * 2 +
+                AppSpacing.xxs)
+            .ceilToDouble() +
+        1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          label,
-          style: AppTypography.bodyMediumStrong.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xxs),
         Semantics(
           button: true,
           expanded: expanded,
@@ -1323,20 +1358,33 @@ class _ProseRows extends StatelessWidget {
             expand: true,
             constrainContent: true,
             contentPadding: EdgeInsets.zero,
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    expanded ? 'Collapse' : text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: valueStyle.copyWith(color: colors.text.accent),
-                  ),
+                Text(
+                  label,
+                  // Inside a fixed-height control a label must not wrap.
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: valueStyle.copyWith(color: colors.text.secondary),
                 ),
-                const SizedBox(width: AppSpacing.xxs),
-                AppIcon(
-                  expanded ? AppIcons.collapsed : AppIcons.expand,
-                  color: colors.icon.regular,
+                const SizedBox(height: AppSpacing.xxs),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        expanded ? 'Collapse' : text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: valueStyle.copyWith(color: colors.text.accent),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    AppIcon(
+                      expanded ? AppIcons.collapsed : AppIcons.expand,
+                      color: colors.icon.regular,
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1493,7 +1541,7 @@ class _Actions extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _primaryFill(),
-        if (hasAmount) ...[const SizedBox(height: AppSpacing.xxs), _editText()],
+        if (hasAmount) ...[const SizedBox(height: AppSpacing.xs), _editText()],
       ],
     );
 
@@ -1665,9 +1713,11 @@ class _FadingScrollRegion extends StatefulWidget {
 
   static const _fadeHeight = AppSpacing.md;
 
-  /// The wrap card's own inset, moved inside the viewport so the content
-  /// scrolls the full height of the card.
-  static const contentPadding = kReviewWrapCardPadding;
+  /// The card's inset, moved inside the viewport so the content scrolls
+  /// the full height of the card. The card gutter on every side, not the
+  /// review screen's 24/16 pair: this card sits inside a frame that uses
+  /// 16, and two vertical rhythms one level apart read as a mistake.
+  static const contentPadding = EdgeInsets.all(kPaymentRequestGutter);
 
   /// Overlay scrollbar geometry: the pane scrollbar's 6px capsule, centered
   /// in the card's 16px inner gutter so it never rides over text.
