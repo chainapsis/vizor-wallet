@@ -7,11 +7,14 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:zcash_wallet/app.dart'
+    show buildDesktopSendPage, buildDesktopSendReviewPage;
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
@@ -255,6 +258,78 @@ void main() {
 
     expect(rustApi.discardCalls, hasLength(1));
   });
+
+  testWidgets(
+    'a second request answered onto /send/review replaces the page and '
+    'discards the first proposal',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final first = _reviewArgs(addressType: 'unified');
+      final second = SendReviewArgs(
+        proposalId: BigInt.two,
+        sendFlowId: 'second-send-flow',
+        proposalAccountUuid: 'test-account',
+        address: _longAddress,
+        addressType: 'unified',
+        amountZatoshi: BigInt.from(2512000000),
+        feeZatoshi: BigInt.from(12000),
+        needsSaplingParams: false,
+      );
+      final router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+          GoRoute(path: '/send', pageBuilder: buildDesktopSendPage),
+          GoRoute(
+            path: '/send/review',
+            pageBuilder: buildDesktopSendReviewPage,
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_routerHarness(router));
+      await tester.pumpAndSettle();
+
+      router.go('/send/review', extra: first);
+      await tester.pumpAndSettle();
+      final firstPageKey =
+          (ModalRoute.of(
+                    tester.element(find.byType(SendReviewScreen)),
+                  )!.settings
+                  as Page<dynamic>)
+              .key;
+
+      // What the payment-request card's Review does when a review is already
+      // on screen: a `go` to the location the user is standing on.
+      router.go('/send/review', extra: second);
+      await tester.pumpAndSettle();
+
+      final secondPageKey =
+          (ModalRoute.of(
+                    tester.element(find.byType(SendReviewScreen)),
+                  )!.settings
+                  as Page<dynamic>)
+              .key;
+      // A shared page key would have updated the page in place, leaving the
+      // first proposal alive: `dispose` is the only thing that releases it.
+      expect(secondPageKey, isNot(firstPageKey));
+      expect(
+        rustApi.discardCalls,
+        contains((first.proposalId, first.sendFlowId)),
+      );
+      expect(
+        rustApi.discardCalls,
+        isNot(contains((second.proposalId, second.sendFlowId))),
+      );
+      expect(
+        tester
+            .widget<SendReviewScreen>(find.byType(SendReviewScreen))
+            .args
+            .sendFlowId,
+        second.sendFlowId,
+      );
+    },
+  );
 
   testWidgets('verify modal shows the full address grid for unknown address', (
     tester,
@@ -873,6 +948,33 @@ Future<void> _flushRealAsync(WidgetTester tester) async {
   }
 }
 
+/// Everything a `SendReviewScreen` needs from providers, shared by the fixed
+/// harness below and by the router harness that drives the real `/send/review`
+/// page builder.
+List<Override> _harnessOverrides({
+  AppBootstrapState? bootstrap,
+  AddressBookRepository? addressBookRepository,
+}) => [
+  appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap()),
+  zecMarketDataSourceProvider.overrideWithValue(const _FakeMarketDataSource()),
+  zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
+  addressBookRepositoryProvider.overrideWithValue(
+    addressBookRepository ?? _FakeAddressBookRepository(),
+  ),
+  syncProvider.overrideWith(_FakeSyncNotifier.new),
+];
+
+/// Drives [router] — built from the app's own `/send/review` page builder — so
+/// a test can navigate onto the route twice the way the payment-request card
+/// does.
+Widget _routerHarness(GoRouter router) => ProviderScope(
+  overrides: _harnessOverrides(),
+  child: MaterialApp.router(
+    routerConfig: router,
+    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+  ),
+);
+
 Widget _harness(
   SendReviewArgs args, {
   AppBootstrapState? bootstrap,
@@ -922,17 +1024,10 @@ Widget _harness(
   );
 
   return ProviderScope(
-    overrides: [
-      appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap()),
-      zecMarketDataSourceProvider.overrideWithValue(
-        const _FakeMarketDataSource(),
-      ),
-      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
-      addressBookRepositoryProvider.overrideWithValue(
-        addressBookRepository ?? _FakeAddressBookRepository(),
-      ),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
-    ],
+    overrides: _harnessOverrides(
+      bootstrap: bootstrap,
+      addressBookRepository: addressBookRepository,
+    ),
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),

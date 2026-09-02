@@ -97,6 +97,11 @@ Widget _app(
   ),
 );
 
+LocalKey? _sendPageKey(WidgetTester tester) =>
+    (ModalRoute.of(tester.element(find.byType(MobileSendScreen)))!.settings
+            as Page<dynamic>)
+        .key;
+
 void main() {
   test('does not register the removed private review route', () {
     final paths = buildMobileRoutes(
@@ -234,6 +239,50 @@ void main() {
       expect(sendScreen.initialAmount, '0.25');
       expect(sendScreen.initialMemo, '  coffee  ');
       expect(sendScreen.preserveInitialMemoWhitespace, isTrue);
+    },
+  );
+
+  testWidgets(
+    'a second payment request answered onto /send re-seeds the composer',
+    (tester) async {
+      final router = _router();
+      await tester.pumpWidget(
+        _app(
+          router,
+          overrides: [zecLiveUsdUnitPriceProvider.overrideWithValue(210)],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      router.go(
+        '/send',
+        extra: const SendPrefillArgs(
+          id: 'payment-uri-1',
+          source: kPaymentUriPrefillSource,
+          address: 'u1firstrequestaddress',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final firstPageKey = _sendPageKey(tester);
+      expect(find.text('u1firstrequestaddress'), findsOneWidget);
+
+      // What the payment-request card's Edit does when the user is already
+      // standing on /send. A shared page key would update the page in place,
+      // and `_MobileSendScreenState` only reads the prefill in `initState`.
+      router.go(
+        '/send',
+        extra: const SendPrefillArgs(
+          id: 'payment-uri-2',
+          source: kPaymentUriPrefillSource,
+          address: 'u1secondrequestaddress',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(_sendPageKey(tester), isNot(firstPageKey));
+      expect(find.text('u1secondrequestaddress'), findsOneWidget);
+      expect(find.text('u1firstrequestaddress'), findsNothing);
     },
   );
 

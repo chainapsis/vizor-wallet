@@ -18,6 +18,7 @@ import 'src/core/navigation/mobile_routes.dart';
 import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/navigation/payment_uri_notice.dart';
+import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
@@ -782,6 +783,69 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
   ),
 ];
 
+/// A desktop page whose identity carries its payload, not just its path.
+///
+/// Mirrors what go_router builds for a `builder:` route under a `MaterialApp`
+/// (`pageBuilderForMaterialApp`) in everything but the key — see
+/// [payloadScopedPageKey] for why the key has to widen.
+MaterialPage<void> _payloadKeyedDesktopPage(
+  GoRouterState state, {
+  required String? payloadId,
+  required Widget child,
+}) {
+  final key = payloadScopedPageKey(state, payloadId);
+  return MaterialPage<void>(
+    key: key,
+    name: state.name ?? state.path,
+    arguments: <String, String>{
+      ...state.pathParameters,
+      ...state.uri.queryParameters,
+    },
+    restorationId: key.value,
+    child: child,
+  );
+}
+
+/// The desktop `/send` page.
+///
+/// Exposed so a router test can drive the real page identity without
+/// rebuilding the whole desktop tree.
+@visibleForTesting
+Page<dynamic> buildDesktopSendPage(BuildContext context, GoRouterState state) {
+  final extra = state.extra;
+  final prefill = extra is SendPrefillArgs ? extra : null;
+  return _payloadKeyedDesktopPage(
+    state,
+    payloadId: prefill?.id,
+    child: SendScreen(prefill: prefill),
+  );
+}
+
+/// The desktop `/send/review` page.
+///
+/// Keyed by `sendFlowId` so answering a second payment request while a review
+/// is already on screen replaces the page: `_SendReviewScreenState.dispose` is
+/// the only thing that hands the outgoing proposal back.
+@visibleForTesting
+Page<dynamic> buildDesktopSendReviewPage(
+  BuildContext context,
+  GoRouterState state,
+) {
+  final args = state.extra;
+  if (args is! SendReviewArgs) {
+    return _payloadKeyedDesktopPage(
+      state,
+      payloadId: null,
+      child: const SendScreen(),
+    );
+  }
+  return _payloadKeyedDesktopPage(
+    state,
+    payloadId: args.sendFlowId,
+    child: SendReviewScreen(args: args),
+  );
+}
+
 /// Main application routes for the desktop (large-form-factor) tree.
 List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
@@ -931,13 +995,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
       );
     },
   ),
-  GoRoute(
-    path: '/send',
-    builder: (_, state) {
-      final extra = state.extra;
-      return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
-    },
-  ),
+  GoRoute(path: '/send', pageBuilder: buildDesktopSendPage),
   GoRoute(
     path: '/pay',
     builder: (_, state) {
@@ -954,14 +1012,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   ),
   GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
   GoRoute(path: '/swap/review', builder: (_, _) => const SwapReviewScreen()),
-  GoRoute(
-    path: '/send/review',
-    builder: (_, state) {
-      final args = state.extra;
-      if (args is! SendReviewArgs) return const SendScreen();
-      return SendReviewScreen(args: args);
-    },
-  ),
+  GoRoute(path: '/send/review', pageBuilder: buildDesktopSendReviewPage),
   GoRoute(
     path: '/send/keystone/scan',
     builder: (_, state) => KeystoneSendScanScreen(
