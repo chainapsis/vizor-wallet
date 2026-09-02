@@ -406,6 +406,27 @@ void main() {
       expect(_exportButton(tester, 'request_save_qr_button').onPressed, isNull);
       expect(_button(tester, 'request_copy_link_button').onPressed, isNull);
     });
+
+    testWidgets('a failed save encode is reported, not swallowed', (
+      tester,
+    ) async {
+      var reported = 0;
+      await _pump(
+        tester,
+        RequestResultCard(
+          request: _withAmount,
+          onSaveQrImage: (_) {},
+          onSaveQrImageError: () => reported++,
+        ),
+      );
+
+      final export = tester.widget<RequestQrExportButton>(
+        find.byKey(const ValueKey('request_save_qr_button')),
+      );
+      expect(export.onError, isNotNull);
+      export.onError!();
+      expect(reported, 1);
+    });
   });
 
   group('mobile request sheet', () {
@@ -675,6 +696,28 @@ void main() {
       expect(sharedPng!.sublist(0, 8), _pngSignature);
     }, timeout: _encodeTimeout);
 
+    testWidgets('a failed share encode is reported, not swallowed', (
+      tester,
+    ) async {
+      var reported = 0;
+      await _pump(
+        tester,
+        RequestAmountSheetResult(
+          request: _withMessage,
+          onShareRequest: (_, _) {},
+          onShareError: () => reported++,
+        ),
+        size: _mobileSize,
+      );
+
+      final export = tester.widget<RequestQrExportButton>(
+        find.byKey(const ValueKey('request_share_button')),
+      );
+      expect(export.onError, isNotNull);
+      export.onError!();
+      expect(reported, 1);
+    });
+
     testWidgets('step two reports a transparent request as transparent', (
       tester,
     ) async {
@@ -715,6 +758,41 @@ void main() {
     ) async {
       await expectLater(renderRequestQrPng(''), throwsArgumentError);
     });
+  });
+
+  group('RequestQrExportButton', () {
+    testWidgets(
+      'an encode that fails calls onError and frees the button',
+      (tester) async {
+        final delivered = <Uint8List>[];
+        var errors = 0;
+        await _pump(
+          tester,
+          RequestQrExportButton(
+            key: const ValueKey('export_button'),
+            // Past the byte capacity of every symbol version, so the encoder
+            // refuses it. Before this the press was a silent no-op: the future
+            // is unawaited, so the throw escaped as a zone error and the user
+            // saw the spinner blink and nothing else.
+            uri: 'zcash:${'u' * 4000}',
+            label: 'Save QR image',
+            onBytes: delivered.add,
+            onError: () => errors++,
+          ),
+        );
+
+        await tester.tap(find.byKey(const ValueKey('export_button')));
+        await tester.pump();
+        await _settleEncode(tester);
+
+        expect(delivered, isEmpty);
+        expect(errors, 1);
+        expect(tester.takeException(), isNull);
+        // Still pressable: the failure is reported, not terminal.
+        expect(_exportButton(tester, 'export_button').onPressed, isNotNull);
+      },
+      timeout: _encodeTimeout,
+    );
   });
 }
 

@@ -168,6 +168,7 @@ class RequestResultCard extends StatelessWidget {
     this.onClose,
     this.onCopyLink,
     this.onSaveQrImage,
+    this.onSaveQrImageError,
     super.key,
   });
 
@@ -179,6 +180,10 @@ class RequestResultCard extends StatelessWidget {
   /// Receives the request QR as PNG bytes. Presentation only: writing the
   /// file is the caller's job.
   final ValueChanged<Uint8List>? onSaveQrImage;
+
+  /// Called when the QR could not be encoded at all, so the press is
+  /// reported rather than swallowed.
+  final VoidCallback? onSaveQrImageError;
 
   @override
   Widget build(BuildContext context) {
@@ -229,6 +234,7 @@ class RequestResultCard extends StatelessWidget {
           icon: AppIcons.arrowDownCircle,
           variant: AppButtonVariant.secondary,
           onBytes: onSaveQrImage,
+          onError: onSaveQrImageError,
         ),
       ],
     );
@@ -632,6 +638,7 @@ class RequestAmountSurface extends StatelessWidget {
     this.onBack,
     this.onCopyLink,
     this.onSaveQrImage,
+    this.onSaveQrImageError,
     this.onAddMessage,
     this.onToggleAmountUnit,
     this.onAmountChanged,
@@ -654,6 +661,7 @@ class RequestAmountSurface extends StatelessWidget {
   final VoidCallback? onBack;
   final VoidCallback? onCopyLink;
   final ValueChanged<Uint8List>? onSaveQrImage;
+  final VoidCallback? onSaveQrImageError;
   final VoidCallback? onAddMessage;
   final VoidCallback? onToggleAmountUnit;
   final ValueChanged<String>? onAmountChanged;
@@ -689,6 +697,7 @@ class RequestAmountSurface extends StatelessWidget {
         onClose: onClose,
         onCopyLink: onCopyLink,
         onSaveQrImage: onSaveQrImage,
+        onSaveQrImageError: onSaveQrImageError,
       ),
     };
 

@@ -447,18 +447,25 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     } catch (e) {
       log('Receive: ERROR saving request QR image: $e');
       if (!mounted) return;
-      // The exception stays in the log: a FileSystemException with a path and
-      // an errno pushes the one actionable sentence off the toast. Two lines
-      // need longer than the two-second default to read.
-      showAppToast(
-        context,
-        "We couldn't save the QR image. Try another folder, or copy the "
-        'request link instead.',
-        iconName: AppIcons.cancel,
-        tone: AppToastTone.destructive,
-        duration: const Duration(seconds: 4),
-      );
+      _reportRequestQrSaveFailed();
     }
+  }
+
+  /// The one thing there is to say when the QR does not reach a file, whether
+  /// the encode or the write is what failed.
+  ///
+  /// The exception stays in the log: a FileSystemException with a path and an
+  /// errno pushes the one actionable sentence off the toast. Two lines need
+  /// longer than the two-second default to read.
+  void _reportRequestQrSaveFailed() {
+    showAppToast(
+      context,
+      "We couldn't save the QR image. Try another folder, or copy the "
+      'request link instead.',
+      iconName: AppIcons.cancel,
+      tone: AppToastTone.destructive,
+      duration: const Duration(seconds: 4),
+    );
   }
 
   void _showAddressInfo(ReceiveAddressType type) {
@@ -559,6 +566,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                 },
                 onSaveQrImage: (png) =>
                     unawaited(_saveRequestQrImage(png, shownRequest.amountZec)),
+                onSaveQrImageError: _reportRequestQrSaveFailed,
               ),
             if (infoDialogType != null)
               AppPaneModalOverlay(

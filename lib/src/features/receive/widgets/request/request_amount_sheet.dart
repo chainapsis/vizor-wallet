@@ -150,6 +150,7 @@ class RequestAmountSheetResult extends StatelessWidget {
     this.onBack,
     this.onClose,
     this.onShareRequest,
+    this.onShareError,
     this.onCopyLink,
     super.key,
   });
@@ -162,6 +163,11 @@ class RequestAmountSheetResult extends StatelessWidget {
   /// caller can hand a payer both at once — some apps show the picture, some
   /// only carry the link, and a request should survive either.
   final void Function(String text, Uint8List png)? onShareRequest;
+
+  /// Called when the QR could not be encoded, so the share that never
+  /// happened says so instead of looking like one that did.
+  final VoidCallback? onShareError;
+
   final VoidCallback? onCopyLink;
 
   @override
@@ -202,6 +208,7 @@ class RequestAmountSheetResult extends StatelessWidget {
             onBytes: onShare == null
                 ? null
                 : (png) => onShare(request.shareText ?? uri!, png),
+            onError: onShareError,
           ),
           const SizedBox(height: AppSpacing.s),
           Semantics(

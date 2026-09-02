@@ -177,14 +177,21 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
       );
     } catch (e) {
       log('ReceiveRequest: ERROR sharing request: $e');
-      if (!mounted) return;
-      showAppToast(
-        context,
-        "Couldn't share this request. Copy the link instead.",
-        iconName: AppIcons.cancel,
-        tone: AppToastTone.destructive,
-      );
+      _reportShareFailed();
     }
+  }
+
+  /// The same sentence whether the share sheet refused the request or the QR
+  /// never encoded: from where the user is standing they pressed Share and
+  /// nothing left the app, and the link is still one tap away.
+  void _reportShareFailed() {
+    if (!mounted) return;
+    showAppToast(
+      context,
+      "Couldn't share this request. Copy the link instead.",
+      iconName: AppIcons.cancel,
+      tone: AppToastTone.destructive,
+    );
   }
 
   @override
@@ -227,6 +234,7 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
         unawaited(_copyLink(uri));
       },
       onShareRequest: (text, png) => unawaited(_share(text, png)),
+      onShareError: _reportShareFailed,
     );
   }
 }

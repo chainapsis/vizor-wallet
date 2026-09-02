@@ -9,6 +9,7 @@ import 'package:flutter/material.dart' show CircularProgressIndicator;
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import '../../../../../main.dart' show log;
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -239,6 +240,7 @@ class RequestQrExportButton extends StatefulWidget {
     required this.uri,
     required this.label,
     required this.onBytes,
+    this.onError,
     this.variant = AppButtonVariant.primary,
     this.icon,
     super.key,
@@ -252,6 +254,14 @@ class RequestQrExportButton extends StatefulWidget {
 
   /// Receives the encoded PNG. Nothing is written or shared here.
   final ValueChanged<Uint8List>? onBytes;
+
+  /// Called instead of [onBytes] when the encode fails.
+  ///
+  /// Without it the press is a silent no-op: the spinner blinks, the future
+  /// this button is invoked as is never awaited, and the user is left looking
+  /// at a share they have every reason to think they made. The caller says
+  /// what failed and names the hand-off still available.
+  final VoidCallback? onError;
 
   final AppButtonVariant variant;
 
@@ -275,6 +285,11 @@ class _RequestQrExportButtonState extends State<RequestQrExportButton> {
       final png = await renderRequestQrPng(uri);
       if (!mounted) return;
       onBytes(png);
+    } catch (e) {
+      // The exception stays in the log; the callback is what the user sees.
+      log('RequestQr: ERROR rendering the request QR: $e');
+      if (!mounted) return;
+      widget.onError?.call();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
