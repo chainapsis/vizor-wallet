@@ -369,7 +369,7 @@ class RequestAmountField extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xxs),
         if (isError) ...[
-          _RequestAmountErrorRow(text: error),
+          RequestAmountErrorRow(text: error),
           const SizedBox(height: AppSpacing.xxs),
         ],
         _RequestAmountConversionRow(
@@ -382,8 +382,13 @@ class RequestAmountField extends StatelessWidget {
   }
 }
 
-class _RequestAmountErrorRow extends StatelessWidget {
-  const _RequestAmountErrorRow({required this.text});
+/// The inline amount error: the warning glyph and the correction to make.
+///
+/// Public because the mobile sheet renders the same pair under its serif
+/// amount — the two lanes read the identical draft, so they should say the
+/// identical thing when it cannot be turned into a request.
+class RequestAmountErrorRow extends StatelessWidget {
+  const RequestAmountErrorRow({required this.text, super.key});
 
   final String text;
 

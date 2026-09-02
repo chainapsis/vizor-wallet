@@ -21,7 +21,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../../core/widgets/app_icon.dart';
-import 'request_amount_card.dart' show RequestMessageField;
+import 'request_amount_card.dart'
+    show RequestAmountErrorRow, RequestMessageField;
 import 'request_amount_model.dart';
 import 'request_qr_surface.dart';
 
@@ -74,6 +75,8 @@ class RequestAmountSheetCompose extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final amountError = request.amountError?.trim();
+
     return MobileModalScaffold(
       title: kRequestFlowTitle,
       onClose: onClose ?? _noop,
@@ -88,6 +91,13 @@ class RequestAmountSheetCompose extends StatelessWidget {
             controller: amountController,
             onChanged: onAmountChanged,
           ),
+          // Said next to where it broke, in the desktop card's words: red
+          // digits and a dead CTA state that something is wrong without
+          // saying what, and the two causes need opposite corrections.
+          if (amountError != null && amountError.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Center(child: RequestAmountErrorRow(text: amountError)),
+          ],
           const SizedBox(height: AppSpacing.s),
           _AmountUnitToggle(
             text: request.conversionText,
@@ -358,10 +368,15 @@ class _AmountUnitToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final text = this.text;
+    // Without a live price the switch cannot be taken, so it is drawn as the
+    // inert control it is — the desktop row already does this, and a
+    // full-strength arrow invites a tap that does nothing and says nothing.
+    final enabled = onTap != null;
+    final labelColor = enabled ? colors.text.secondary : colors.text.disabled;
     return Center(
       child: Semantics(
         button: true,
-        enabled: onTap != null,
+        enabled: enabled,
         label: enterUsdMode ? 'Enter amount in USD' : 'Enter amount in ZEC',
         child: GestureDetector(
           key: const ValueKey('request_amount_mode_toggle'),
@@ -373,7 +388,7 @@ class _AmountUnitToggle extends StatelessWidget {
               AppIcon(
                 AppIcons.doubleArrowVertical,
                 size: 20,
-                color: colors.text.secondary,
+                color: enabled ? colors.text.secondary : colors.icon.disabled,
               ),
               const SizedBox(width: AppSpacing.xxs),
               // No price for the typed amount yet: the same placeholder the
@@ -381,9 +396,7 @@ class _AmountUnitToggle extends StatelessWidget {
               if (text == null) ...[
                 Text(
                   r'$',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.secondary,
-                  ),
+                  style: AppTypography.labelLarge.copyWith(color: labelColor),
                 ),
                 const SizedBox(width: AppSpacing.xxs),
                 const AmountPriceLoadingBar(
@@ -394,9 +407,7 @@ class _AmountUnitToggle extends StatelessWidget {
                 Text(
                   text,
                   key: const ValueKey('request_amount_conversion_text'),
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.secondary,
-                  ),
+                  style: AppTypography.labelLarge.copyWith(color: labelColor),
                 ),
             ],
           ),

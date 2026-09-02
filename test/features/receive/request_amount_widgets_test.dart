@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/pool_badge.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/receive_request_entry.dart';
@@ -367,6 +368,98 @@ void main() {
       expect(find.byKey(const ValueKey('request_message_row')), findsNothing);
     });
 
+    testWidgets('an invalid amount states the correction to make', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const RequestAmountSheetCompose(request: _withError),
+        size: _mobileSize,
+      );
+
+      expect(tester.takeException(), isNull);
+      // Red digits alone say something is wrong without saying what, and the
+      // two causes need opposite fixes.
+      expect(
+        _text(tester, 'request_amount_error_text'),
+        kRequestAmountDecimalsError,
+      );
+      expect(_button(tester, 'request_create_button').onPressed, isNull);
+    });
+
+    testWidgets('a valid amount shows no error row', (tester) async {
+      await _pump(
+        tester,
+        const RequestAmountSheetCompose(request: _withAmount),
+        size: _mobileSize,
+      );
+
+      expect(
+        find.byKey(const ValueKey('request_amount_error_text')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('an untakeable unit switch is drawn as disabled', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const RequestAmountSheetCompose(
+          request: _priceUnavailable,
+          onToggleAmountUnit: null,
+        ),
+        size: _mobileSize,
+      );
+
+      final colors = AppThemeData.dark.colors;
+      final icon = tester.widget<AppIcon>(
+        find.descendant(
+          of: find.byKey(const ValueKey('request_amount_mode_toggle')),
+          matching: find.byType(AppIcon),
+        ),
+      );
+      expect(icon.color, colors.icon.disabled);
+      expect(
+        tester
+            .widget<Text>(
+              find.descendant(
+                of: find.byKey(const ValueKey('request_amount_mode_toggle')),
+                matching: find.text(r'$'),
+              ),
+            )
+            .style
+            ?.color,
+        colors.text.disabled,
+      );
+    });
+
+    testWidgets('a takeable unit switch keeps its live colours', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        RequestAmountSheetCompose(
+          request: _withAmount,
+          onToggleAmountUnit: () {},
+        ),
+        size: _mobileSize,
+      );
+
+      final colors = AppThemeData.dark.colors;
+      final icon = tester.widget<AppIcon>(
+        find.descendant(
+          of: find.byKey(const ValueKey('request_amount_mode_toggle')),
+          matching: find.byType(AppIcon),
+        ),
+      );
+      expect(icon.color, colors.text.secondary);
+      expect(
+        _textStyle(tester, 'request_amount_conversion_text').color,
+        colors.text.secondary,
+      );
+    });
+
     testWidgets('step two offers share, copy and a way back', (tester) async {
       await _pump(
         tester,
@@ -525,6 +618,9 @@ Future<void> _settleEncode(WidgetTester tester) async {
 
 String _text(WidgetTester tester, String key) =>
     tester.widget<Text>(find.byKey(ValueKey(key))).data!;
+
+TextStyle _textStyle(WidgetTester tester, String key) =>
+    tester.widget<Text>(find.byKey(ValueKey(key))).style!;
 
 Future<void> _pump(
   WidgetTester tester,

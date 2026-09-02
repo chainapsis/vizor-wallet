@@ -124,6 +124,9 @@ Widget buildRequestMobileComposePriceUnavailableUseCase(BuildContext context) =>
 Widget buildRequestMobileComposeMessageUseCase(BuildContext context) =>
     _mobileCompose(_amountWithMessageRequest);
 
+Widget buildRequestMobileComposeAmountErrorUseCase(BuildContext context) =>
+    _mobileCompose(_amountErrorRequest);
+
 Widget buildRequestMobileResultShieldedUseCase(BuildContext context) =>
     _mobileResult(_amountWithMessageRequest);
 

@@ -1041,6 +1041,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-receive-request-compose-error',
+    description: 'Mobile request sheet step one with an invalid amount',
+    builder: buildRequestMobileComposeAmountErrorUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'receive-desktop-shielded',
     description: 'Desktop receive pane with the request entry beside copy',
     builder: buildReceiveDesktopRequestEntryUseCase,

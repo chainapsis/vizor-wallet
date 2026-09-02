@@ -829,6 +829,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildRequestMobileComposeMessageUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Request step 1 - amount error',
+                      builder: buildRequestMobileComposeAmountErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Request step 2 - shielded QR',
                       builder: buildRequestMobileResultShieldedUseCase,
                     ),
