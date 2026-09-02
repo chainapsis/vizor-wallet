@@ -87,6 +87,21 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// still settled, and would immediately ask for another one.
   var _syncWasSettled = false;
 
+  /// How many times this card may re-check itself against a wallet that is
+  /// *already* settled, before it goes back to waiting for a crossing.
+  ///
+  /// The edge trigger alone cannot answer a `syncing` verdict published while
+  /// the sync state is settled: there is no crossing left to wait for, so the
+  /// card would sit on "this will update when it finishes" forever. That is
+  /// not a corner case — it is what this feature's own re-check loop produces
+  /// whenever Rust's view lags the sync state's. The budget is what keeps the
+  /// answer bounded: a re-check that lands on `syncing` again may ask once
+  /// more, and then the card waits for a real sync cycle rather than spinning.
+  var _immediateRecheckBudget = 0;
+
+  /// How many immediate re-checks one card gets.
+  static const _kImmediateRecheckBudget = 2;
+
   @override
   PaymentRequestFlowState? build() {
     // The card is consent given by one unlocked account, and it holds that
@@ -139,13 +154,24 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   }
 
   void _watchSyncForRecheck() {
-    if (_syncWatch != null) return;
-    _syncWasSettled = _spendableIsSettled(ref.read(syncProvider).value);
-    _syncWatch = ref.listen<AsyncValue<SyncState>>(syncProvider, (_, next) {
-      final wasSettled = _syncWasSettled;
-      final isSettled = _spendableIsSettled(next.value);
-      _syncWasSettled = isSettled;
-      if (wasSettled || !isSettled) return;
+    final settled = _spendableIsSettled(ref.read(syncProvider).value);
+    if (_syncWatch == null) {
+      _syncWasSettled = settled;
+      _syncWatch = ref.listen<AsyncValue<SyncState>>(syncProvider, (_, next) {
+        final wasSettled = _syncWasSettled;
+        final isSettled = _spendableIsSettled(next.value);
+        _syncWasSettled = isSettled;
+        if (wasSettled || !isSettled) return;
+        _recheckAfterSync();
+      });
+    }
+    // Already settled: no crossing is coming, so the wait the copy promises
+    // has to be answered now instead of never.
+    if (!settled || _immediateRecheckBudget <= 0) return;
+    _immediateRecheckBudget--;
+    final generation = _generation;
+    scheduleMicrotask(() {
+      if (generation != _generation) return;
       _recheckAfterSync();
     });
   }
@@ -197,6 +223,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     }
 
     final generation = ++_generation;
+    _immediateRecheckBudget = _kImmediateRecheckBudget;
     _publish(
       PaymentRequestFlowState(
         prefill: prefill,

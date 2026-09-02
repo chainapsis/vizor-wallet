@@ -602,27 +602,34 @@ void main() {
     expect(api.discarded, isEmpty);
   });
 
-  test('a re-check that is still syncing keeps waiting for the next '
-      'sync', () async {
+  test('a re-check that is still syncing spends its budget, then waits for '
+      'the next sync', () async {
     final api = _FakeSendApi();
     final container = makeContainer(api, sync: scanningState());
     final sync = syncNotifier(container);
     await _presentSyncingCard(container, api);
 
     // First completion: the wallet reports settled, but the propose path has
-    // not caught up, so the card lands back on syncing.
+    // not caught up, so the card lands back on syncing — with the sync state
+    // still settled, so no further crossing is coming. The card answers that
+    // itself for as long as its budget lasts (2), and then stops: the first
+    // look, the crossing's re-check, and the two immediate ones.
     sync.emit(syncedState(spendable: BigInt.from(100000000)));
     await pumpEventQueue();
     expect(flowState(container)!.view.status, PaymentRequestStatus.syncing);
-    expect(api.proposeAttempts, 2);
+    expect(api.proposeAttempts, 4);
 
-    // A settled state that was already settled is not a new completion.
+    // A settled state that was already settled is not a new completion, and
+    // the immediate budget is spent — this is where the spin would show.
     sync.emit(syncedState(spendable: BigInt.from(100000001)));
+    await pumpEventQueue();
     await pumpEventQueue();
     expect(
       api.proposeAttempts,
-      2,
-      reason: 'at most one re-check per sync completion',
+      4,
+      reason:
+          'at most one re-check per sync completion, and the immediate '
+          'budget is bounded',
     );
 
     // A real second cycle: back to scanning, then settled again.
@@ -634,8 +641,54 @@ void main() {
 
     final state = flowState(container)!;
     expect(state.view.status, PaymentRequestStatus.ready);
-    expect(api.proposeAttempts, 3);
+    expect(api.proposeAttempts, 5);
     expect(state.reviewArgs!.proposalId, BigInt.one);
+  });
+
+  test('a syncing verdict on an already-settled wallet re-checks itself '
+      'rather than waiting for a crossing that cannot come', () async {
+    final api = _FakeSendApi()..proposeThrows = walletMustSync;
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(100000000)),
+    );
+    final sync = syncNotifier(container);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    // The wallet was settled before the link arrived, so the watch has no
+    // false→true crossing left to fire on. The card says it will update
+    // itself when the sync finishes, so it has to ask again now.
+    expect(flowState(container)!.view.status, PaymentRequestStatus.syncing);
+    expect(
+      api.proposeAttempts,
+      3,
+      reason:
+          'the first look, plus one immediate re-check, plus one more '
+          'because that landed on syncing again',
+    );
+
+    // Budget spent. Further already-settled states are not a crossing, so
+    // nothing else runs: the card waits instead of spinning.
+    sync.emit(syncedState(spendable: BigInt.from(100000001)));
+    await pumpEventQueue();
+    await pumpEventQueue();
+    expect(api.proposeAttempts, 3);
+
+    // A real sync cycle still re-checks it.
+    sync.emit(scanningState());
+    await pumpEventQueue();
+    api.proposeThrows = null;
+    sync.emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    final state = flowState(container)!;
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(state.canReview, isTrue);
+    expect(api.proposeAttempts, 4);
   });
 
   test('a settled state carrying no balance for the account is not a '
