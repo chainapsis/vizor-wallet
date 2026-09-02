@@ -73,6 +73,20 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// prevent, so the handle is tracked here as well.
   PaymentRequestProposalHandle? _liveProposal;
 
+  /// Open only while the card is sitting on [PaymentRequestStatus.syncing].
+  ///
+  /// That status is the one verdict that is not about the request at all: it
+  /// says the wallet could not answer yet. Leaving the user to re-open the
+  /// link is asking them to retry a condition the wallet already knows how to
+  /// notice, so the card watches for it instead.
+  ProviderSubscription<AsyncValue<SyncState>>? _syncWatch;
+
+  /// Edge state for [_syncWatch]: the re-check fires on the false→true
+  /// crossing only. Firing on the level would spin the card — a re-check whose
+  /// answer is `syncing` again republishes `syncing` while the sync state is
+  /// still settled, and would immediately ask for another one.
+  var _syncWasSettled = false;
+
   @override
   PaymentRequestFlowState? build() {
     // The card is consent given by one unlocked account, and it holds that
@@ -100,6 +114,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
       }
     });
     ref.onDispose(() {
+      _stopWatchingSync();
       final proposal = _liveProposal;
       _liveProposal = null;
       if (proposal != null) {
@@ -110,8 +125,59 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   }
 
   void _publish(PaymentRequestFlowState? next) {
+    // The watch is bound to the one status it exists for, and this is the
+    // single choke point every card change goes through: presenting a newer
+    // link, every verdict the pre-check publishes, and every teardown
+    // (dismiss, edit, review, lock, sign-out, account switch) land here.
+    if (next?.view.status == PaymentRequestStatus.syncing) {
+      _watchSyncForRecheck();
+    } else {
+      _stopWatchingSync();
+    }
     _liveProposal = next?.proposal;
     state = next;
+  }
+
+  void _watchSyncForRecheck() {
+    if (_syncWatch != null) return;
+    _syncWasSettled = _spendableIsSettled(ref.read(syncProvider).value);
+    _syncWatch = ref.listen<AsyncValue<SyncState>>(syncProvider, (_, next) {
+      final wasSettled = _syncWasSettled;
+      final isSettled = _spendableIsSettled(next.value);
+      _syncWasSettled = isSettled;
+      if (wasSettled || !isSettled) return;
+      _recheckAfterSync();
+    });
+  }
+
+  void _stopWatchingSync() {
+    _syncWatch?.close();
+    _syncWatch = null;
+    _syncWasSettled = false;
+  }
+
+  /// Re-runs the same pre-check on the same request now that the wallet can
+  /// answer it.
+  void _recheckAfterSync() {
+    final current = state;
+    // Only the status this watch was installed for. A card that has since
+    // moved on — to a verdict, or to a re-check already in flight, which
+    // renders as `checking` — is not waiting on the sync any more.
+    if (current == null ||
+        current.view.status != PaymentRequestStatus.syncing) {
+      _stopWatchingSync();
+      return;
+    }
+    // Back to the same first-look state `present` publishes: the primary
+    // shows its spinner and the status line clears, so the card says it is
+    // working rather than leaving the old blocked message under a new answer.
+    _publish(
+      current.copyWith(
+        view: current.view.copyWithStatus(PaymentRequestStatus.checking),
+      ),
+    );
+    // No proposal to release first: a `syncing` verdict never holds one.
+    unawaited(_runPrecheck(_generation));
   }
 
   /// Shows [prefill] as a payment request and starts the pre-check.
@@ -205,8 +271,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     // A restored last-completed snapshot is stale by construction, and a sync
     // still short of the tip has not seen every note yet, so both hand the
     // verdict to the proposal instead.
-    final spendableIsAuthoritative =
-        sync.isSyncedToTip && !sync.isUsingCompletedSpendableSnapshot;
+    final spendableIsAuthoritative = _isSettled(sync);
 
     final result = await ref
         .read(paymentRequestPrecheckProvider)
@@ -292,6 +357,21 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
           ),
         );
     }
+  }
+
+  /// Whether an account-scoped sync state's spendable balance is settled.
+  ///
+  /// The one condition the whole `syncing` status hangs off, so the pre-check's
+  /// own read and the watch that decides when to re-run it share it rather than
+  /// drifting into two nearly-identical predicates.
+  static bool _isSettled(SyncState scoped) =>
+      scoped.isSyncedToTip && !scoped.isUsingCompletedSpendableSnapshot;
+
+  /// [_isSettled] for the active account, from an unscoped state.
+  bool _spendableIsSettled(SyncState? sync) {
+    if (sync == null) return false;
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    return _isSettled(sync.scopedToAccount(accountUuid));
   }
 
   Future<SyncState> _readSyncState() async {

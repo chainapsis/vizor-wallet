@@ -33,6 +33,11 @@ class _FakeSendApi {
   Object? proposeThrows;
   Completer<void>? gate;
   var nextProposalId = 1;
+
+  /// Every entry into the propose path, including the ones that throw. What
+  /// the re-check tests count: a card that re-checked itself is one that
+  /// asked again.
+  var proposeAttempts = 0;
   final discarded = <BigInt>[];
   final proposed = <BigInt>[];
 
@@ -57,6 +62,7 @@ class _FakeSendApi {
           String? requestedBy,
           BigInt? requestedAmountZatoshi,
         }) async {
+          proposeAttempts++;
           final pending = gate;
           if (pending != null) await pending.future;
           final failure = proposeThrows;
@@ -136,6 +142,46 @@ SyncState syncedState({required BigInt spendable}) => SyncState(
   scannedHeight: 3000000,
   spendableBalance: spendable,
 );
+
+/// Mid-scan: nothing about the balance can be trusted yet.
+SyncState scanningState() => SyncState(
+  accountUuid: 'account-1',
+  hasAccountScopedData: true,
+  isSyncing: true,
+  chainTipHeight: 3000000,
+  scannedHeight: 12000,
+);
+
+/// What Rust says when it has no anchor heights yet — the error the pre-check
+/// maps onto [PaymentRequestStatus.syncing].
+Exception get walletMustSync => Exception('Wallet must sync before sending');
+
+FakeSyncNotifier syncNotifier(ProviderContainer container) =>
+    container.read(syncProvider.notifier) as FakeSyncNotifier;
+
+_FakeAccountNotifier _accountNotifier(ProviderContainer container) =>
+    container.read(accountProvider.notifier) as _FakeAccountNotifier;
+
+_FakeSecurityNotifier _securityNotifier(ProviderContainer container) =>
+    container.read(appSecurityProvider.notifier) as _FakeSecurityNotifier;
+
+PaymentRequestFlowState? flowState(ProviderContainer container) =>
+    container.read(paymentRequestFlowProvider);
+
+/// Presents [address] and settles on the `syncing` status: the wallet could
+/// not answer, so the card is left waiting on the sync.
+Future<void> _presentSyncingCard(
+  ProviderContainer container,
+  _FakeSendApi api, {
+  String address = 'u1a',
+}) async {
+  api.proposeThrows = walletMustSync;
+  container
+      .read(paymentRequestFlowProvider.notifier)
+      .present(request(address), source: PaymentRequestSource.link);
+  await pumpEventQueue();
+  expect(flowState(container)!.view.status, PaymentRequestStatus.syncing);
+}
 
 // ignore: library_private_types_in_public_api
 ProviderContainer makeContainer(_FakeSendApi api, {SyncState? sync}) {
@@ -505,5 +551,208 @@ void main() {
 
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(api.discarded, [BigInt.one]);
+  });
+
+  test('a syncing card re-checks itself once the wallet finishes '
+      'syncing', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api, sync: scanningState());
+    await _presentSyncingCard(container, api);
+    expect(api.proposeAttempts, 1);
+
+    // The wallet settles, and the request that could not be answered can be.
+    api.proposeThrows = null;
+    api.gate = Completer<void>();
+    syncNotifier(
+      container,
+    ).emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    var state = flowState(container)!;
+    expect(
+      state.view.status,
+      PaymentRequestStatus.checking,
+      reason: 'the card says it is working again, not that it is blocked',
+    );
+    expect(state.view.resolvedStatusMessage, isNull);
+    expect(api.proposeAttempts, 2);
+
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    state = flowState(container)!;
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(state.canReview, isTrue);
+    expect(state.reviewArgs!.proposalId, BigInt.one);
+    expect(api.discarded, isEmpty);
+  });
+
+  test('a re-check that is still syncing keeps waiting for the next '
+      'sync', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api, sync: scanningState());
+    final sync = syncNotifier(container);
+    await _presentSyncingCard(container, api);
+
+    // First completion: the wallet reports settled, but the propose path has
+    // not caught up, so the card lands back on syncing.
+    sync.emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+    expect(flowState(container)!.view.status, PaymentRequestStatus.syncing);
+    expect(api.proposeAttempts, 2);
+
+    // A settled state that was already settled is not a new completion.
+    sync.emit(syncedState(spendable: BigInt.from(100000001)));
+    await pumpEventQueue();
+    expect(
+      api.proposeAttempts,
+      2,
+      reason: 'at most one re-check per sync completion',
+    );
+
+    // A real second cycle: back to scanning, then settled again.
+    sync.emit(scanningState());
+    await pumpEventQueue();
+    api.proposeThrows = null;
+    sync.emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    final state = flowState(container)!;
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(api.proposeAttempts, 3);
+    expect(state.reviewArgs!.proposalId, BigInt.one);
+  });
+
+  test('a card that is not syncing never re-checks on sync '
+      'completion', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(21000000)),
+    );
+    final sync = syncNotifier(container);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(
+      flowState(container)!.view.status,
+      PaymentRequestStatus.insufficientFunds,
+    );
+    expect(api.proposeAttempts, 0);
+
+    // A full sync cycle underneath a settled verdict.
+    sync.emit(scanningState());
+    await pumpEventQueue();
+    sync.emit(syncedState(spendable: BigInt.from(21000000)));
+    await pumpEventQueue();
+
+    expect(
+      flowState(container)!.view.status,
+      PaymentRequestStatus.insufficientFunds,
+      reason: 'only the syncing status is waiting on the sync',
+    );
+    expect(api.proposeAttempts, 0);
+  });
+
+  test('dismissing during a re-check publishes nothing and frees the late '
+      'proposal', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api, sync: scanningState());
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+    await _presentSyncingCard(container, api);
+
+    api.proposeThrows = null;
+    api.gate = Completer<void>();
+    syncNotifier(
+      container,
+    ).emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+    expect(flowState(container)!.view.status, PaymentRequestStatus.checking);
+
+    notifier.dismiss();
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    expect(flowState(container), isNull);
+    expect(
+      api.discarded,
+      [BigInt.one],
+      reason:
+          'the re-check made a proposal for a card that no longer exists, '
+          'so nothing would ever consume it',
+    );
+  });
+
+  test('switching accounts while syncing stops the re-check '
+      'listener', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api, sync: scanningState());
+    await _presentSyncingCard(container, api);
+
+    _accountNotifier(container).switchToForTest('account-2');
+    await pumpEventQueue();
+    expect(flowState(container), isNull);
+
+    api.proposeThrows = null;
+    syncNotifier(
+      container,
+    ).emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    expect(flowState(container), isNull);
+    expect(
+      api.proposeAttempts,
+      1,
+      reason: 'the request belonged to the account that is no longer active',
+    );
+  });
+
+  test('locking while syncing clears the card without re-checking', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api, sync: scanningState());
+    await _presentSyncingCard(container, api);
+
+    _securityNotifier(container).lockForTest();
+    await pumpEventQueue();
+    expect(flowState(container), isNull);
+
+    api.proposeThrows = null;
+    syncNotifier(
+      container,
+    ).emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    expect(flowState(container), isNull);
+    expect(
+      api.proposeAttempts,
+      1,
+      reason: 'a locked wallet must not run a payment check of its own',
+    );
+  });
+
+  test('a newer link replaces a syncing card and takes over the '
+      'watch', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api, sync: scanningState());
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+    await _presentSyncingCard(container, api);
+
+    api.proposeThrows = null;
+    notifier.present(request('u1second'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    final state = flowState(container)!;
+    expect(state.prefill.address, 'u1second');
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(api.proposeAttempts, 2);
+
+    // The replaced card's watch must be gone with it.
+    syncNotifier(
+      container,
+    ).emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+    expect(api.proposeAttempts, 2);
   });
 }
