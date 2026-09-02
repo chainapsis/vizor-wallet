@@ -14,6 +14,11 @@ enum ReceiveDesktopPreviewState {
   transparent,
   shieldedModal,
   transparentModal,
+
+  /// Shielded receive with the "Request ZEC" entry under the copy
+  /// button. Mock only — the live screen has one CTA today, and the fixed
+  /// coordinates below shift up to make room for the second pill.
+  shieldedRequestEntry,
 }
 
 class ReceiveDesktopPreview extends StatelessWidget {
@@ -25,7 +30,11 @@ class ReceiveDesktopPreview extends StatelessWidget {
 
   bool get _isShielded =>
       state == ReceiveDesktopPreviewState.shielded ||
-      state == ReceiveDesktopPreviewState.shieldedModal;
+      state == ReceiveDesktopPreviewState.shieldedModal ||
+      state == ReceiveDesktopPreviewState.shieldedRequestEntry;
+
+  bool get _showsRequestEntry =>
+      state == ReceiveDesktopPreviewState.shieldedRequestEntry;
 
   bool get _showsModal =>
       state == ReceiveDesktopPreviewState.shieldedModal ||
@@ -41,6 +50,7 @@ class ReceiveDesktopPreview extends StatelessWidget {
         isDark: isDark,
         isShielded: _isShielded,
         showsModal: _showsModal,
+        showsRequestEntry: _showsRequestEntry,
       ),
     );
   }
@@ -51,11 +61,13 @@ class _ReceiveWindow extends StatelessWidget {
     required this.isDark,
     required this.isShielded,
     required this.showsModal,
+    this.showsRequestEntry = false,
   });
 
   final bool isDark;
   final bool isShielded;
   final bool showsModal;
+  final bool showsRequestEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +106,7 @@ class _ReceiveWindow extends StatelessWidget {
                         child: _ReceiveTrailingPane(
                           isShielded: isShielded,
                           showsModal: showsModal,
+                          showsRequestEntry: showsRequestEntry,
                         ),
                       ),
                     ],
@@ -326,17 +339,24 @@ class _ReceiveTrailingPane extends StatelessWidget {
   const _ReceiveTrailingPane({
     required this.isShielded,
     required this.showsModal,
+    this.showsRequestEntry = false,
   });
 
   final bool isShielded;
   final bool showsModal;
+  final bool showsRequestEntry;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       clipBehavior: Clip.antiAlias,
       children: [
-        Positioned.fill(child: _ReceivePaneContent(isShielded: isShielded)),
+        Positioned.fill(
+          child: _ReceivePaneContent(
+            isShielded: isShielded,
+            showsRequestEntry: showsRequestEntry,
+          ),
+        ),
         if (showsModal)
           Positioned.fill(child: _ReceiveInfoOverlay(isShielded: isShielded)),
       ],
@@ -345,9 +365,13 @@ class _ReceiveTrailingPane extends StatelessWidget {
 }
 
 class _ReceivePaneContent extends StatelessWidget {
-  const _ReceivePaneContent({required this.isShielded});
+  const _ReceivePaneContent({
+    required this.isShielded,
+    this.showsRequestEntry = false,
+  });
 
   final bool isShielded;
+  final bool showsRequestEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -368,10 +392,16 @@ class _ReceivePaneContent extends StatelessWidget {
         ),
         Positioned(
           left: 190,
-          top: 48,
+          // The second action needs 52px the fixed-coordinate pane does not
+          // have, so the whole content column rises by that much. This is
+          // exactly the constant re-tuning the live screen will need.
+          top: showsRequestEntry ? 8 : 48,
           width: 420,
-          height: 656,
-          child: _ReceiveContentArea(isShielded: isShielded),
+          height: showsRequestEntry ? 696 : 656,
+          child: _ReceiveContentArea(
+            isShielded: isShielded,
+            showsRequestEntry: showsRequestEntry,
+          ),
         ),
       ],
     );
@@ -379,9 +409,13 @@ class _ReceivePaneContent extends StatelessWidget {
 }
 
 class _ReceiveContentArea extends StatelessWidget {
-  const _ReceiveContentArea({required this.isShielded});
+  const _ReceiveContentArea({
+    required this.isShielded,
+    this.showsRequestEntry = false,
+  });
 
   final bool isShielded;
+  final bool showsRequestEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -418,13 +452,31 @@ class _ReceiveContentArea extends StatelessWidget {
             ],
           ),
         ),
-        Positioned(
-          left: 95,
-          top: 596,
-          width: 230,
-          height: 44,
-          child: _CopyAddressButton(isShielded: isShielded),
-        ),
+        if (showsRequestEntry)
+          Positioned(
+            left: 95,
+            top: 584,
+            width: 230,
+            height: 96,
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 44,
+                  child: _CopyAddressButton(isShielded: isShielded),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                const SizedBox(height: 44, child: _RequestAmountButton()),
+              ],
+            ),
+          )
+        else
+          Positioned(
+            left: 95,
+            top: 596,
+            width: 230,
+            height: 44,
+            child: _CopyAddressButton(isShielded: isShielded),
+          ),
       ],
     );
   }
@@ -854,6 +906,26 @@ class _CopyAddressButton extends StatelessWidget {
       variant: isShielded
           ? _FixedPillButtonVariant.primary
           : _FixedPillButtonVariant.secondary,
+    );
+  }
+}
+
+/// The request entry: secondary, directly under the primary copy action.
+///
+/// Secondary rather than primary because copying the address is still what
+/// most visits to this screen are for; secondary rather than a text link
+/// because a request is a destination, not an aside.
+class _RequestAmountButton extends StatelessWidget {
+  const _RequestAmountButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _FixedPillButton(
+      width: 230,
+      height: 44,
+      label: 'Request ZEC',
+      iconName: AppIcons.qr,
+      variant: _FixedPillButtonVariant.secondary,
     );
   }
 }
