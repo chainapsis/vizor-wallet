@@ -15,6 +15,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -409,6 +410,44 @@ void main() {
     expect(rustApi.prepareBatchCalls, 1);
     expect(rustApi.encodeBatchCalls, 1);
     expect(rustApi.encodeFullPcztCalls, 0);
+  });
+
+  testWidgets('the Keystone signing modal holds the payment-URI busy latch', (
+    tester,
+  ) async {
+    // Only the modal is a live QR a device is reading. The plain review
+    // underneath it takes no hold, so a payment request still lands there.
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(isHardware: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+
+    expect(find.byType(KeystoneSigningModal), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(KeystoneSigningModal),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await _flushRealAsync(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
   });
 
   testWidgets('Keystone signature limit fails before showing a QR', (

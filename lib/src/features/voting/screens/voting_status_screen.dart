@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -841,17 +842,22 @@ class _StatusContent extends StatelessWidget {
               if (isHardwareAccount &&
                   phase == VotingSessionPhase.keystoneSigning &&
                   keystoneSigningBundleIndex != null) ...[
-                _KeystoneSigningPanel(
-                  bundleIndex: keystoneSigningBundleIndex!,
-                  urParts: keystoneUrParts,
-                  batchMemos: keystoneBatchMemos,
-                  batchMessageCount: keystoneBatchMessageCount,
-                  batchTotalCount: keystoneBatchTotalCount,
-                  qrError: keystoneQrError,
-                  scanError: keystoneScanError,
-                  canSkipRemainingBundles: canSkipRemainingKeystoneBundles,
-                  onScan: onScanKeystone,
-                  onSkipRemainingBundles: onSkipKeystoneBundles,
+                // Only the signing panel is a live QR the device is reading.
+                // The hold sits above it rather than on the status screen, so
+                // a request still lands while the vote is merely submitting.
+                PaymentUriBusySurfaceHold(
+                  child: _KeystoneSigningPanel(
+                    bundleIndex: keystoneSigningBundleIndex!,
+                    urParts: keystoneUrParts,
+                    batchMemos: keystoneBatchMemos,
+                    batchMessageCount: keystoneBatchMessageCount,
+                    batchTotalCount: keystoneBatchTotalCount,
+                    qrError: keystoneQrError,
+                    scanError: keystoneScanError,
+                    canSkipRemainingBundles: canSkipRemainingKeystoneBundles,
+                    onScan: onScanKeystone,
+                    onSkipRemainingBundles: onSkipKeystoneBundles,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],

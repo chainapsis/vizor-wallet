@@ -17,6 +17,7 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
@@ -434,32 +435,37 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 isShieldedAddress: widget.args.isShielded,
                 onClose: () => setState(() => _showVerifyAddress = false),
               ),
+            // Only the signing modal is a live QR the device is reading; the
+            // review underneath it is not. The hold is scoped to the modal so
+            // a payment request still lands normally on a plain review.
             if (keystonePhase != null)
-              AppPaneModalOverlay(
-                onDismiss: () => unawaited(_cancelKeystoneSigning()),
-                child: KeystoneSigningModal(
-                  phase: keystonePhase,
-                  urParts: _keystoneUrParts,
-                  error: _keystoneError,
-                  title: 'Confirm with Keystone',
-                  subtitle: _keystoneUrPartsByRound.length == 2
-                      ? 'Transaction ${_keystoneRound + 1} of 2'
-                      : 'Scan with your Keystone',
-                  instruction:
-                      _keystoneError ??
-                      (_keystonePcztsWithProofs.isEmpty
-                          ? 'Scan now. Signature import unlocks after proofs are ready.'
-                          : 'After you scanned, click Get signature.'),
-                  primaryLabel: _keystonePcztsWithProofs.isEmpty
-                      ? 'Preparing'
-                      : 'Get signature',
-                  onPrimary:
-                      keystonePhase == KeystoneSigningModalPhase.ready &&
-                          _keystonePcztsWithProofs.isNotEmpty
-                      ? () => unawaited(_getKeystoneSignature())
-                      : null,
-                  secondaryLabel: 'Cancel',
-                  onSecondary: () => unawaited(_cancelKeystoneSigning()),
+              PaymentUriBusySurfaceHold(
+                child: AppPaneModalOverlay(
+                  onDismiss: () => unawaited(_cancelKeystoneSigning()),
+                  child: KeystoneSigningModal(
+                    phase: keystonePhase,
+                    urParts: _keystoneUrParts,
+                    error: _keystoneError,
+                    title: 'Confirm with Keystone',
+                    subtitle: _keystoneUrPartsByRound.length == 2
+                        ? 'Transaction ${_keystoneRound + 1} of 2'
+                        : 'Scan with your Keystone',
+                    instruction:
+                        _keystoneError ??
+                        (_keystonePcztsWithProofs.isEmpty
+                            ? 'Scan now. Signature import unlocks after proofs are ready.'
+                            : 'After you scanned, click Get signature.'),
+                    primaryLabel: _keystonePcztsWithProofs.isEmpty
+                        ? 'Preparing'
+                        : 'Get signature',
+                    onPrimary:
+                        keystonePhase == KeystoneSigningModalPhase.ready &&
+                            _keystonePcztsWithProofs.isNotEmpty
+                        ? () => unawaited(_getKeystoneSignature())
+                        : null,
+                    secondaryLabel: 'Cancel',
+                    onSecondary: () => unawaited(_cancelKeystoneSigning()),
+                  ),
                 ),
               ),
             if (_showSaplingParamsPrompt)
