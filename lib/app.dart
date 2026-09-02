@@ -1338,8 +1338,11 @@ class _PaymentUriLinkListenerState
       log('Payment URI: rejected: ${e.message}');
       _showPaymentUriMessage(paymentUriRejectionMessage(e));
     } catch (e) {
+      // Defensive: no current parse path reaches this. It shares the drain
+      // policy's constant rather than a literal of its own so the two cannot
+      // drift into two different sentences for the same "the link is gone".
       log('Payment URI: failed to parse: $e');
-      _showPaymentUriMessage('Payment link could not be opened.');
+      _showPaymentUriMessage(kPaymentUriUnavailableMessage);
     }
   }
 

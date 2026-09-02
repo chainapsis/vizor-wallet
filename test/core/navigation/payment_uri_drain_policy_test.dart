@@ -233,6 +233,34 @@ void main() {
     });
   });
 
+  // These four sentences are the whole of what a user is told when a `zcash:`
+  // link does not arrive. Each names what happened to the link and what to do
+  // about it, so the text is pinned here rather than left to drift.
+  group('notice copy', () {
+    test('the unavailable notice states the recovery, not the cause', () {
+      expect(
+        kPaymentUriUnavailableMessage,
+        "Vizor couldn't open this payment link. "
+        'Open it again once your wallet has loaded.',
+      );
+    });
+
+    test('the replaced notice says how to get the earlier link back', () {
+      expect(
+        kPaymentUriReplacedMessage,
+        'Only the newest payment link was kept. Open the earlier one again to '
+        'pay it.',
+      );
+    });
+
+    test('the migration notice names the migration the user is in', () {
+      expect(
+        kPaymentUriMigrationSendGateMessage,
+        'Finish your Ironwood migration before opening payment links.',
+      );
+    });
+  });
+
   // A refused `zcash:` link gets one of two sentences, never the parser's own
   // spec wording: that text is written for us, and it echoes fragments of the
   // link's own string back at the payer.

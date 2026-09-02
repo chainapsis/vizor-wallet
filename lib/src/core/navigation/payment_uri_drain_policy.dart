@@ -28,14 +28,23 @@ const kPaymentUriParkTtl = Duration(minutes: 10);
 
 /// Shown when the link cannot be opened at all: blocking storage failure or a
 /// wallet load error.
-const kPaymentUriUnavailableMessage = 'Payment link could not be opened.';
+///
+/// It does not name a cause. A blocking failure is one of several things (a
+/// locked keyring, a failed DB migration), and `/storage-unavailable` already
+/// states the one that happened and offers Retry. What the payer needs here is
+/// the one thing that is always true: the link is gone, and re-opening it once
+/// the wallet is up recovers it.
+const kPaymentUriUnavailableMessage =
+    "Vizor couldn't open this payment link. "
+    'Open it again once your wallet has loaded.';
 
 /// Shown when a second `zcash:` link arrives before the first one has been
 /// delivered or claimed. The prefill holds one link at a time (latest wins,
 /// no queue), so the earlier one is gone and the user is told rather than
 /// left to wonder which link opened.
 const kPaymentUriReplacedMessage =
-    'Only the most recent payment link was kept.';
+    'Only the newest payment link was kept. Open the earlier one again to '
+    'pay it.';
 
 /// Shown when there is no wallet yet and the user is not already inside a
 /// setup flow.
@@ -53,7 +62,7 @@ const kPaymentUriOnboardingMessage =
 /// spendable balance in flight, so the product disables sending entirely.
 /// Delivering the link would open a send form that cannot be submitted.
 const kPaymentUriMigrationSendGateMessage =
-    'Finish the migration before opening payment links.';
+    'Finish your Ironwood migration before opening payment links.';
 
 /// Shown when a `zcash:` link parses but asks for a ZIP-321 feature Vizor does
 /// not implement yet: more than one recipient, a binary memo, a custom asset.
