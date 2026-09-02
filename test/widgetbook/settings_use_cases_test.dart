@@ -74,6 +74,23 @@ void main() {
     expect(find.text('CipherScan'), findsOneWidget);
   });
 
+  testWidgets('settings explorer custom use case shows the URL field', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsExplorerCustomUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Explorer'), findsOneWidget);
+    expect(find.text('Custom'), findsOneWidget);
+    expect(
+      find.text('https://zcashblockexplorer.com/tx/{txid}'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('settings secret passphrase gate use case renders the gate', (
     tester,
   ) async {

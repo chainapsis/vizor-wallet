@@ -64,6 +64,7 @@ import '../src/features/wallet_link/models/wallet_link_models.dart';
 import '../src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
+import '../src/features/settings/screens/mobile/mobile_explorer_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
@@ -734,6 +735,67 @@ class _MobileSettingsFooterPreviewState
   }
 }
 
+class _MobileSettingsExplorerPreview extends StatefulWidget {
+  const _MobileSettingsExplorerPreview();
+
+  @override
+  State<_MobileSettingsExplorerPreview> createState() =>
+      _MobileSettingsExplorerPreviewState();
+}
+
+class _MobileSettingsExplorerPreviewState
+    extends State<_MobileSettingsExplorerPreview> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _scrollExplorerRowIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Element? found;
+      void visitor(Element element) {
+        if (found != null) return;
+        if (element.widget.key ==
+            const ValueKey('mobile_settings_explorer_row')) {
+          found = element;
+          return;
+        }
+        element.visitChildren(visitor);
+      }
+
+      context.visitChildElements(visitor);
+      final rowContext = found;
+      if (rowContext == null) return;
+      Scrollable.ensureVisible(rowContext, alignment: 0.4);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppMobileShell(
+      body: NotificationListener<ScrollMetricsNotification>(
+        onNotification: (_) {
+          _scrollExplorerRowIntoView();
+          return false;
+        },
+        child: PrimaryScrollController(
+          controller: _controller,
+          child: const MobileSettingsScreen(),
+        ),
+      ),
+      tabBar: AppMobileTabBar(
+        items: _mobileHomeTabItems,
+        currentIndex: 3,
+        onSelect: (_) {},
+      ),
+    );
+  }
+}
+
 Widget buildSettingsTorConnectingUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(
     const NetworkPrivacyState(
@@ -813,6 +875,70 @@ Widget buildSettingsExplorerUseCase(BuildContext context) {
   return _buildSettingsSubScreenUseCase(
     '/settings/explorer',
     const SettingsExplorerScreen(),
+  );
+}
+
+Widget buildSettingsExplorerCustomUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/explorer',
+    const SettingsExplorerScreen(),
+    explorerUrlTemplate: 'https://zcashblockexplorer.com/tx/{txid}',
+  );
+}
+
+Widget buildMobileExplorerUseCase(BuildContext context) {
+  return _buildMobileExplorerUseCase();
+}
+
+Widget buildMobileExplorerCustomUseCase(BuildContext context) {
+  return _buildMobileExplorerUseCase(
+    explorerUrlTemplate: 'https://zcashblockexplorer.com/tx/{txid}',
+  );
+}
+
+Widget buildMobileSettingsExplorerUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+      ),
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      constrainToDesignSize: false,
+      child: IgnorePointer(child: _MobileSettingsExplorerPreview()),
+    ),
+  );
+}
+
+Widget _buildMobileExplorerUseCase({String explorerUrlTemplate = ''}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(
+          _accountsDesignState,
+          initialLocation: '/settings/explorer',
+          explorerUrlTemplate: explorerUrlTemplate,
+        ),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(_accountsDesignState.activeAccountUuid),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      child: IgnorePointer(child: MobileExplorerScreen()),
+    ),
   );
 }
 
@@ -933,11 +1059,19 @@ Widget _buildSettingsWalletLinkUseCase(WalletLinkState state) {
   );
 }
 
-Widget _buildSettingsSubScreenUseCase(String path, Widget screen) {
+Widget _buildSettingsSubScreenUseCase(
+  String path,
+  Widget screen, {
+  String explorerUrlTemplate = '',
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
-        _accountsBootstrap(_accountsDesignState, initialLocation: path),
+        _accountsBootstrap(
+          _accountsDesignState,
+          initialLocation: path,
+          explorerUrlTemplate: explorerUrlTemplate,
+        ),
       ),
       accountProvider.overrideWith(
         () => _PreviewAccountNotifier(_accountsDesignState),
@@ -3585,6 +3719,7 @@ const _mobileHomeTabItems = [
 AppBootstrapState _accountsBootstrap(
   AccountState accountState, {
   String initialLocation = '/accounts',
+  String explorerUrlTemplate = '',
 }) {
   return AppBootstrapState(
     initialLocation: initialLocation,
@@ -3592,6 +3727,7 @@ AppBootstrapState _accountsBootstrap(
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: 'main',
     rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+    explorerUrlTemplate: explorerUrlTemplate,
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,
