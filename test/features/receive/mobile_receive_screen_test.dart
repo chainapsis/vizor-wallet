@@ -123,6 +123,18 @@ Widget _app(
   );
 }
 
+/// A price the test can move after the request was created.
+class _PriceNotifier extends Notifier<double?> {
+  @override
+  double? build() => 70;
+
+  void set(double? value) => state = value;
+}
+
+final _priceProvider = NotifierProvider<_PriceNotifier, double?>(
+  _PriceNotifier.new,
+);
+
 void main() {
   testWidgets('shows the shielded pool by default with share and copy', (
     tester,
@@ -157,9 +169,14 @@ void main() {
       const Size(292, 308),
     );
     expect(tester.getSize(find.byType(ReceiveRenewButton)), const Size(48, 48));
+    // Share shares its row with the square request button: 300 - 8 - 50.
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
-      const Size(300, 50),
+      const Size(242, 50),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
+      const Size(50, 50),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
@@ -528,7 +545,9 @@ void main() {
     );
   });
 
-  testWidgets('stacks request between share and copy', (tester) async {
+  testWidgets('puts the request entry beside share, above copy', (
+    tester,
+  ) async {
     await _pumpReceive(tester, _FakeReceiveAddressService());
 
     final share = find.byKey(const ValueKey('mobile_receive_share'));
@@ -536,15 +555,21 @@ void main() {
     final copy = find.byKey(const ValueKey('mobile_receive_copy'));
 
     expect(request, findsOneWidget);
-    expect(find.text('Request ZEC'), findsOneWidget);
-    expect(tester.getSize(request).width, tester.getSize(share).width);
+    // Icon only, like the home card's "Pay": the label is the semantics.
+    expect(find.text('Request ZEC'), findsNothing);
+    expect(find.bySemanticsLabel('Request ZEC'), findsOneWidget);
+    expect(tester.getSize(request), const Size(50, 50));
     expect(
       tester.getTopLeft(request).dy,
-      greaterThan(tester.getTopLeft(share).dy),
+      moreOrLessEquals(tester.getTopLeft(share).dy, epsilon: 0.1),
+    );
+    expect(
+      tester.getTopLeft(request).dx - tester.getTopRight(share).dx,
+      moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
     );
     expect(
       tester.getTopLeft(copy).dy,
-      greaterThan(tester.getTopLeft(request).dy),
+      greaterThan(tester.getBottomLeft(request).dy),
     );
   });
 
@@ -649,6 +674,48 @@ void main() {
 
     expect(copied, ['zcash:$_shielded?amount=0.25']);
     expect(find.text('Request link copied'), findsOneWidget);
+  });
+
+  testWidgets('a USD request keeps the ZEC it was created with when the price '
+      'moves', (tester) async {
+    await _pumpReceive(
+      tester,
+      _FakeReceiveAddressService(),
+      extraOverrides: [
+        zecLiveUsdUnitPriceProvider.overrideWith(
+          (ref) => ref.watch(_priceProvider),
+        ),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_request')));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('request_amount_mode_toggle')));
+    await _settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_input')),
+      '35',
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('request_create_button')));
+    await _settle(tester);
+
+    // $35 at $70/ZEC.
+    expect(
+      tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data,
+      'zcash:$_shielded?amount=0.5',
+    );
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const ValueKey('request_copy_link_button'))),
+    );
+    container.read(_priceProvider.notifier).set(35);
+    await _settle(tester);
+
+    expect(
+      tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data,
+      'zcash:$_shielded?amount=0.5',
+    );
   });
 
   testWidgets('requests a transparent address without a message step', (

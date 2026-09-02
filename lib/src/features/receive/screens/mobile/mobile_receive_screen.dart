@@ -301,55 +301,71 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                     Center(
                       child: SizedBox(
                         width: _MobileReceiveMetrics.buttonStackWidth,
-                        // Three tiers now, so the column sizes to its own
-                        // content instead of a two-button fixed height.
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            AppButton(
-                              key: const ValueKey('mobile_receive_share'),
-                              expand: true,
-                              constrainContent: true,
-                              height: _MobileReceiveMetrics.buttonHeight,
-                              variant: _isShielded
-                                  ? AppButtonVariant.primary
-                                  : AppButtonVariant.secondary,
-                              onPressed: _selectedAddress.isEmpty
-                                  ? null
-                                  : _shareAddress,
-                              leading: const AppIcon(
-                                AppIcons.share,
-                                size: _MobileReceiveMetrics.buttonIconSize,
-                              ),
-                              child: Text(
-                                'Share $poolLabel address',
-                                style: AppTypography.labelMedium.copyWith(
-                                  fontWeight: FontWeight.w500,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: AppButton(
+                                    key: const ValueKey('mobile_receive_share'),
+                                    expand: true,
+                                    constrainContent: true,
+                                    height: _MobileReceiveMetrics.buttonHeight,
+                                    variant: _isShielded
+                                        ? AppButtonVariant.primary
+                                        : AppButtonVariant.secondary,
+                                    onPressed: _selectedAddress.isEmpty
+                                        ? null
+                                        : _shareAddress,
+                                    leading: const AppIcon(
+                                      AppIcons.share,
+                                      size:
+                                          _MobileReceiveMetrics.buttonIconSize,
+                                    ),
+                                    child: Text(
+                                      'Share $poolLabel address',
+                                      style: AppTypography.labelMedium.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.s),
-                            AppButton(
-                              key: const ValueKey('mobile_receive_request'),
-                              expand: true,
-                              constrainContent: true,
-                              height: _MobileReceiveMetrics.buttonHeight,
-                              variant: AppButtonVariant.secondary,
-                              onPressed: _selectedAddress.isEmpty
-                                  ? null
-                                  : _openRequest,
-                              leading: const AppIcon(
-                                AppIcons.qr,
-                                size: _MobileReceiveMetrics.buttonIconSize,
-                              ),
-                              child: Text(
-                                'Request $kZcashDefaultCurrencyTicker',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.labelMedium.copyWith(
-                                  fontWeight: FontWeight.w500,
+                                const SizedBox(width: AppSpacing.xs),
+                                // Icon only, beside the share pill — the home
+                                // card's "Pay" shape and the desktop receive
+                                // pane's request entry. A third labelled tier
+                                // under Share made the stack taller than the
+                                // pane it sits in.
+                                SizedBox(
+                                  width: _MobileReceiveMetrics.buttonHeight,
+                                  height: _MobileReceiveMetrics.buttonHeight,
+                                  child: Semantics(
+                                    button: true,
+                                    label:
+                                        'Request $kZcashDefaultCurrencyTicker',
+                                    child: AppButton(
+                                      key: const ValueKey(
+                                        'mobile_receive_request',
+                                      ),
+                                      minWidth:
+                                          _MobileReceiveMetrics.buttonHeight,
+                                      height:
+                                          _MobileReceiveMetrics.buttonHeight,
+                                      contentPadding: EdgeInsets.zero,
+                                      variant: AppButtonVariant.secondary,
+                                      onPressed: _selectedAddress.isEmpty
+                                          ? null
+                                          : _openRequest,
+                                      child: const AppIcon(
+                                        AppIcons.qr,
+                                        size: _MobileReceiveMetrics
+                                            .buttonIconSize,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                             const SizedBox(height: AppSpacing.s),
                             _CopyAddressTextButton(
