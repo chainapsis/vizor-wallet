@@ -12,12 +12,15 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart' show InputDecoration, TextField;
+import 'package:flutter/services.dart' show TextInputAction, TextInputType;
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import 'request_amount_card.dart' show RequestMessageField;
 import 'request_amount_model.dart';
 import 'request_qr_surface.dart';
 
@@ -39,6 +42,11 @@ class RequestAmountSheetCompose extends StatelessWidget {
     this.onToggleAmountUnit,
     this.onAddMessage,
     this.onCreateRequest,
+    this.onAmountChanged,
+    this.onMessageChanged,
+    this.amountController,
+    this.messageController,
+    this.messageExpanded = false,
     super.key,
   });
 
@@ -47,6 +55,17 @@ class RequestAmountSheetCompose extends StatelessWidget {
   final VoidCallback? onToggleAmountUnit;
   final VoidCallback? onAddMessage;
   final VoidCallback? onCreateRequest;
+  final ValueChanged<String>? onAmountChanged;
+  final ValueChanged<String>? onMessageChanged;
+
+  /// Supplied by the live sheet, which owns the text so a unit switch can
+  /// rewrite the number in place. Without one the amount is a static display,
+  /// which is what the previews want.
+  final TextEditingController? amountController;
+  final TextEditingController? messageController;
+
+  /// Renders the memo editor in place of the collapsed row.
+  final bool messageExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +78,11 @@ class RequestAmountSheetCompose extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: AppSpacing.sm),
-          _SerifAmountDisplay(request: request),
+          _SerifAmountDisplay(
+            request: request,
+            controller: amountController,
+            onChanged: onAmountChanged,
+          ),
           const SizedBox(height: AppSpacing.s),
           _AmountUnitToggle(
             text: request.conversionText,
@@ -71,10 +94,17 @@ class RequestAmountSheetCompose extends StatelessWidget {
           // absent rather than disabled: an inert control invites a tap that
           // can never do anything.
           if (request.isShielded) ...[
-            RequestMessageRow(
-              message: request.effectiveMessage,
-              onTap: onAddMessage,
-            ),
+            if (messageExpanded)
+              RequestMessageField(
+                text: request.messageText ?? '',
+                controller: messageController,
+                onChanged: onMessageChanged,
+              )
+            else
+              RequestMessageRow(
+                message: request.effectiveMessage,
+                onTap: onAddMessage,
+              ),
             const SizedBox(height: AppSpacing.md),
           ],
           AppButton(
@@ -184,9 +214,17 @@ class RequestAmountSheetResult extends StatelessWidget {
 
 /// The big serif amount, in the mobile send step's exact type.
 class _SerifAmountDisplay extends StatelessWidget {
-  const _SerifAmountDisplay({required this.request});
+  const _SerifAmountDisplay({
+    required this.request,
+    this.controller,
+    this.onChanged,
+  });
 
   final ZecRequestView request;
+
+  /// When present the number is a live field; when absent it is text.
+  final TextEditingController? controller;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -226,12 +264,22 @@ class _SerifAmountDisplay extends StatelessWidget {
           const SizedBox(width: AppSpacing.xs),
         ],
         // A long amount shrinks rather than truncating: half a number is
-        // worse than a small one.
+        // worse than a small one. The editable form sizes itself to its text
+        // instead, so the unit stays beside the number rather than being
+        // pushed to the far edge of the sheet.
         Flexible(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(display, maxLines: 1, style: amountStyle),
-          ),
+          child: controller == null
+              ? FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(display, maxLines: 1, style: amountStyle),
+                )
+              : _SerifAmountInput(
+                  controller: controller!,
+                  onChanged: onChanged,
+                  style: amountStyle,
+                  hintStyle: amountStyle.copyWith(color: colors.text.disabled),
+                  cursorColor: colors.text.accent,
+                ),
         ),
         if (!request.amountInputIsUsd) ...[
           const SizedBox(width: AppSpacing.xs),
@@ -241,6 +289,53 @@ class _SerifAmountDisplay extends StatelessWidget {
     );
   }
 }
+
+/// The amount field behind the serif display: the same type, sized to its own
+/// text so the `ZEC` suffix stays attached to the number.
+class _SerifAmountInput extends StatelessWidget {
+  const _SerifAmountInput({
+    required this.controller,
+    required this.onChanged,
+    required this.style,
+    required this.hintStyle,
+    required this.cursorColor,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String>? onChanged;
+  final TextStyle style;
+  final TextStyle hintStyle;
+  final Color cursorColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return IntrinsicWidth(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: _kRequestAmountMinWidth),
+        child: TextField(
+          key: const ValueKey('request_amount_input'),
+          controller: controller,
+          onChanged: onChanged,
+          autofocus: true,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          style: style,
+          cursorColor: cursorColor,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration.collapsed(
+            hintText: '0',
+            hintStyle: hintStyle,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Enough width for a single digit plus its caret, so an empty field is still
+/// a place to type rather than a hairline.
+const double _kRequestAmountMinWidth = 40;
 
 class _AmountUnitToggle extends StatelessWidget {
   const _AmountUnitToggle({

@@ -47,6 +47,8 @@ class RequestAmountCard extends StatelessWidget {
     this.onToggleAmountUnit,
     this.onAmountChanged,
     this.onMessageChanged,
+    this.amountController,
+    this.messageController,
     this.messageExpanded = false,
     this.amountFocused = false,
     super.key,
@@ -63,6 +65,14 @@ class RequestAmountCard extends StatelessWidget {
   final VoidCallback? onToggleAmountUnit;
   final ValueChanged<String>? onAmountChanged;
   final ValueChanged<String>? onMessageChanged;
+
+  /// Owns the amount text when the caller needs to rewrite it — switching
+  /// units replaces the number in place, which a field holding its own
+  /// initial value cannot do.
+  final TextEditingController? amountController;
+
+  /// Owns the message text, for the same reason.
+  final TextEditingController? messageController;
 
   /// Renders the memo editor instead of the collapsed prompt.
   final bool messageExpanded;
@@ -113,6 +123,7 @@ class RequestAmountCard extends StatelessWidget {
         RequestAmountField(
           request: request,
           focused: amountFocused,
+          controller: amountController,
           onChanged: onAmountChanged,
           onToggleUnit: onToggleAmountUnit,
         ),
@@ -121,6 +132,7 @@ class RequestAmountCard extends StatelessWidget {
           if (messageExpanded)
             RequestMessageField(
               text: request.messageText ?? '',
+              controller: messageController,
               onChanged: onMessageChanged,
             )
           else
@@ -184,6 +196,7 @@ class RequestAmountField extends StatelessWidget {
   const RequestAmountField({
     required this.request,
     this.focused = false,
+    this.controller,
     this.onChanged,
     this.onToggleUnit,
     super.key,
@@ -191,6 +204,7 @@ class RequestAmountField extends StatelessWidget {
 
   final ZecRequestView request;
   final bool focused;
+  final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
   final VoidCallback? onToggleUnit;
 
@@ -223,7 +237,8 @@ class RequestAmountField extends StatelessWidget {
           labelStyle: AppTypography.labelLarge.copyWith(
             color: colors.text.secondary,
           ),
-          initialValue: text,
+          controller: controller,
+          initialValue: controller == null ? text : null,
           hintText: '0.00',
           autofocus: focused,
           tone: isError
@@ -421,9 +436,15 @@ class RequestAddMessageCard extends StatelessWidget {
 /// The counter is bytes, not characters, because that is the limit the memo
 /// field actually has — a message that fits on screen can still be over.
 class RequestMessageField extends StatelessWidget {
-  const RequestMessageField({required this.text, this.onChanged, super.key});
+  const RequestMessageField({
+    required this.text,
+    this.controller,
+    this.onChanged,
+    super.key,
+  });
 
   final String text;
+  final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
 
   @override
@@ -445,7 +466,8 @@ class RequestMessageField extends StatelessWidget {
           color: overLimit ? colors.text.destructive : colors.text.secondary,
         ),
       ),
-      initialValue: text,
+      controller: controller,
+      initialValue: controller == null ? text : null,
       hintText: 'Only the recipient can read this',
       tone: overLimit ? AppTextFieldTone.destructive : AppTextFieldTone.neutral,
       borderColor: overLimit ? colors.border.utilityDestructive : null,
@@ -472,6 +494,10 @@ class RequestAmountSurface extends StatelessWidget {
     this.onSaveQrImage,
     this.onAddMessage,
     this.onToggleAmountUnit,
+    this.onAmountChanged,
+    this.onMessageChanged,
+    this.amountController,
+    this.messageController,
     this.messageExpanded = false,
     this.background,
     super.key,
@@ -483,6 +509,10 @@ class RequestAmountSurface extends StatelessWidget {
   final ValueChanged<Uint8List>? onSaveQrImage;
   final VoidCallback? onAddMessage;
   final VoidCallback? onToggleAmountUnit;
+  final ValueChanged<String>? onAmountChanged;
+  final ValueChanged<String>? onMessageChanged;
+  final TextEditingController? amountController;
+  final TextEditingController? messageController;
   final bool messageExpanded;
 
   /// What the modal sits on. Defaults to the flat window colour.
@@ -519,6 +549,10 @@ class RequestAmountSurface extends StatelessWidget {
                       onSaveQrImage: onSaveQrImage,
                       onAddMessage: onAddMessage,
                       onToggleAmountUnit: onToggleAmountUnit,
+                      onAmountChanged: onAmountChanged,
+                      onMessageChanged: onMessageChanged,
+                      amountController: amountController,
+                      messageController: messageController,
                       messageExpanded: messageExpanded,
                     ),
                   ),
