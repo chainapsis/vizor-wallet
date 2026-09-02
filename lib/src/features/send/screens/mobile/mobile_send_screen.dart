@@ -1500,10 +1500,27 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Future<void> _showFeeInfo() => showMobileTxFeeInfoSheet(context);
 
+  /// Whether this send is still answering the payment request it opened from.
+  ///
+  /// The request's framing is a claim about who the money is going to, so it
+  /// only holds while the recipient is the one the request named. Retype the
+  /// address and this is an ordinary send again — the same rule
+  /// `_activePaymentRequest` applies on desktop, and the reason an
+  /// attacker-supplied label can never be shown over an address the request
+  /// did not ask for.
+  bool get _isAnsweringPaymentRequest =>
+      widget.isPaymentRequest &&
+      (widget.initialRecipient?.trim() ?? '') == _addressController.text.trim();
+
+  /// The request's label, or null once the recipient no longer matches.
+  String? get _activePaymentRequestLabel =>
+      _isAnsweringPaymentRequest ? widget.paymentRequestLabel : null;
+
   /// The requested amount, but only while the reviewed amount is a different
   /// number. The info block above already states what is being sent; repeating
   /// the same figure as "Requested" would be noise.
   String? get _requestedAmountNotice {
+    if (!_isAnsweringPaymentRequest) return null;
     final requested = widget.requestedAmountZatoshi;
     if (requested == null) return null;
     if (requested == parseZecAmount(_amountText.trim())) return null;
@@ -1818,7 +1835,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _SendStep.recipient => 'Select Recipient',
         _SendStep.amount => 'Enter Amount',
         _SendStep.review =>
-          widget.isPaymentRequest ? 'Review payment request' : 'Review Send',
+          _isAnsweringPaymentRequest ? 'Review payment request' : 'Review Send',
       },
       _SendPhase.failed => 'Send failed',
     };
@@ -2803,11 +2820,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           const SizedBox(height: AppSpacing.xs),
                           _ReviewInfoRow(
                             leading: recipient.buildReviewLeading(),
-                            title: widget.paymentRequestLabel == null
+                            title: _activePaymentRequestLabel == null
                                 ? 'To'
                                 : 'Requested by',
                             headline:
-                                widget.paymentRequestLabel ??
+                                _activePaymentRequestLabel ??
                                 recipient.headline,
                             bottom: _ReviewAddressLine(
                               address: _compactReviewAddress(address),

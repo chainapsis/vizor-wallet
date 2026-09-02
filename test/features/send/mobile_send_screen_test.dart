@@ -34,6 +34,8 @@ const _shieldedAddress =
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
+const _otherShieldedAddress =
+    'u1othershieldedaddress0000000000000000000000000000000000000000000000';
 
 var _proposeSendSucceeds = false;
 Completer<ProposalResult>? _proposeSendCompleter;
@@ -317,6 +319,9 @@ Widget _app({
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
   void Function()? warmProvingKey,
+  bool isPaymentRequest = false,
+  String? paymentRequestLabel,
+  BigInt? requestedAmountZatoshi,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -333,6 +338,9 @@ Widget _app({
           initialMemo: initialMemo,
           validateAddress: validateAddress,
           estimateFee: estimateFee,
+          isPaymentRequest: isPaymentRequest,
+          paymentRequestLabel: paymentRequestLabel,
+          requestedAmountZatoshi: requestedAmountZatoshi,
         ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
@@ -2783,6 +2791,56 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      expect(find.textContaining('Requested'), findsNothing);
+    });
+
+    testWidgets('survives editing the amount but not the recipient', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          initialRecipient: _shieldedAddress,
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coffee shop',
+          requestedAmountZatoshi: BigInt.from(50000000),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _toReviewStep(tester, address: _shieldedAddress, amount: '0.75');
+
+      expect(find.text('Review payment request'), findsOneWidget);
+      expect(find.text('Requested by'), findsOneWidget);
+      expect(find.text('Requested 0.50 ZEC'), findsOneWidget);
+    });
+
+    testWidgets('drops the framing once the recipient is retyped', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          initialRecipient: _shieldedAddress,
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coffee shop',
+          requestedAmountZatoshi: BigInt.from(50000000),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _toReviewStep(
+        tester,
+        address: _otherShieldedAddress,
+        amount: '0.75',
+      );
+
+      expect(
+        find.text('Requested by'),
+        findsNothing,
+        reason:
+            'an untrusted label must never head an address the request '
+            'did not name',
+      );
+      expect(find.text('Coffee shop'), findsNothing);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.text('Review Send'), findsOneWidget);
       expect(find.textContaining('Requested'), findsNothing);
     });
 
