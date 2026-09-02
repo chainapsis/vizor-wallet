@@ -351,11 +351,11 @@ void main() {
       ),
       (
         buildPaymentRequestInsufficientUseCase,
-        'Not enough ZEC (0.21 available)',
+        'Not enough ZEC for this amount and the network fee (0.21 available)',
       ),
       (
         buildPaymentRequestSyncingUseCase,
-        'Wallet is still syncing — try again soon',
+        'Wallet is still syncing — try again once it finishes',
       ),
       (
         buildPaymentRequestFailedUseCase,
@@ -435,11 +435,11 @@ void main() {
       ),
       (
         buildPaymentRequestInsufficientUseCase,
-        'Not enough ZEC (0.21 available)',
+        'Not enough ZEC for this amount and the network fee (0.21 available)',
       ),
       (
         buildPaymentRequestSyncingUseCase,
-        'Wallet is still syncing — try again soon',
+        'Wallet is still syncing — try again once it finishes',
       ),
       (
         buildPaymentRequestFailedUseCase,
@@ -474,7 +474,7 @@ void main() {
       defaultPaymentRequestStatusMessage(
         PaymentRequestStatus.insufficientFunds,
       ),
-      'Not enough ZEC',
+      'Not enough ZEC for this amount and the network fee',
     );
   });
 
@@ -520,7 +520,8 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(
       find.bySemanticsLabel(
-        'Review, unavailable. Not enough ZEC (0.21 available)',
+        'Review, unavailable. Not enough ZEC for this amount and the '
+        'network fee (0.21 available)',
       ),
       findsOneWidget,
     );

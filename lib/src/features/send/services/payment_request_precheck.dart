@@ -256,7 +256,7 @@ class PaymentRequestPrecheck {
 
     if (accountUuid == null) {
       return PaymentRequestPrecheckFailed(
-        'No account is open',
+        'No active account — choose one, then open this link again',
         memoDropped: memoDropped,
       );
     }

@@ -113,7 +113,11 @@ extension PaymentRequestStatusX on PaymentRequestStatus {
 /// [spendableText] is the preformatted spendable balance (`0.21 ZEC`). When
 /// the caller supplies it, the insufficient-funds message states the amount
 /// the user can actually send, which is the single fact that makes that
-/// error actionable without leaving the card.
+/// error actionable without leaving the card. It names the fee alongside it,
+/// because the shortfall can be the fee alone: a request for exactly the
+/// spendable balance passes the card's own comparison and is refused by the
+/// proposal, and "Not enough ZEC (0.5 available)" beside a 0.5 request reads
+/// as a bug in the balance rather than an instruction.
 String? defaultPaymentRequestStatusMessage(
   PaymentRequestStatus status, {
   String? spendableText,
@@ -128,9 +132,13 @@ String? defaultPaymentRequestStatusMessage(
       "Recipient address doesn't look right",
     PaymentRequestStatus.insufficientFunds =>
       spendable == null
-          ? 'Not enough ZEC'
-          : 'Not enough ZEC ($spendable available)',
-    PaymentRequestStatus.syncing => 'Wallet is still syncing — try again soon',
+          ? 'Not enough ZEC for this amount and the network fee'
+          : 'Not enough ZEC for this amount and the network fee '
+                '($spendable available)',
+    // The card runs its checks once and never re-runs them, so "try again"
+    // has to name the wait, not promise this card will change.
+    PaymentRequestStatus.syncing =>
+      'Wallet is still syncing — try again once it finishes',
     // Always overridden in practice: every failure the pre-check publishes
     // carries its own reason. This is the floor, not the message.
     PaymentRequestStatus.failed => "Couldn't check this request",

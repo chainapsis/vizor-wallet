@@ -265,6 +265,19 @@ void main() {
     );
   });
 
+  test('a request with no active account names the fix', () async {
+    final api = FakeSendApi();
+    final result = await run(api, accountUuid: null);
+
+    expect(result, isA<PaymentRequestPrecheckFailed>());
+    expect(
+      (result as PaymentRequestPrecheckFailed).message,
+      'No active account — choose one, then open this link again',
+      reason: 'the same term the composer and Receive already use',
+    );
+    expect(api.proposeCalls, 0);
+  });
+
   test('a network failure says so in the card\'s own words', () async {
     final api = FakeSendApi(proposeThrows: Exception('grpc connect failed'));
     final result = await run(api);
