@@ -43,7 +43,10 @@ String? _zcashAddressFromUri(String raw, Uri uri) {
     final queryAddress = query['address']?.trim();
     if (queryAddress != null && queryAddress.isNotEmpty) return queryAddress;
     final path = _tryDecodeComponent(uri.path).trim();
-    if (path.isNotEmpty) return path;
+    // `zcash://<address>/…` parses with a path of `/`, which is non-empty but
+    // names no recipient. A path made only of separators has to read as empty
+    // so the authority below still gets consulted.
+    if (path.replaceAll('/', '').trim().isNotEmpty) return path;
     // `zcash://<address>` is not valid ZIP-321 (the parser rejects `//`), but
     // it is a shape scanners produce. Recover the authority from the raw
     // string: `uri.host` is lowercased, which corrupts the mixed case of a
@@ -53,6 +56,14 @@ String? _zcashAddressFromUri(String raw, Uri uri) {
 }
 
 final _indexedAddressKeyPattern = RegExp(r'^address\.([1-9][0-9]{0,3})$');
+
+/// Every name that reads as an address slot, well formed or not.
+///
+/// Classification is by prefix on purpose: `address.0`, `address.01`,
+/// `address.10000` and `address.1x` all plainly *say* address, so they have to
+/// be counted even though [_indexedAddressKeyPattern] — and the parser — refuse
+/// them.
+final _addressKeyPattern = RegExp(r'^address(\..*)?$');
 
 /// Whether the payload names an `address` or `address.N` slot more than once.
 ///
@@ -64,7 +75,7 @@ final _indexedAddressKeyPattern = RegExp(r'^address\.([1-9][0-9]{0,3})$');
 /// name that cannot be decoded is compared as written; it cannot alias
 /// `address`.
 ///
-/// Two shapes beyond the plain repeat count as ambiguous:
+/// Three shapes beyond the plain repeat count as ambiguous:
 ///
 ///  * The *positional* address (`zcash:<addr>…`, or the `zcash://<addr>`
 ///    authority scanners produce) is the address of paramindex 0 — the same
@@ -74,6 +85,12 @@ final _indexedAddressKeyPattern = RegExp(r'^address\.([1-9][0-9]{0,3})$');
 ///  * A percent-encoded address key beside *any* other address key. The
 ///    encoded name can never be a legitimate paramindex-0 payment, so
 ///    `%61ddress` next to `address.1` has no single recipient either.
+///  * An address key whose paramindex the parser can never accept —
+///    `address.0`, `address.01`, `address.10000`, `address.1x`. Such a key owns
+///    no slot at all, so it can only add a competing recipient to whichever
+///    well-formed key recovery would otherwise read. Classifying address keys
+///    by validity instead of by prefix would let it slip past both the repeat
+///    check and the encoded-key flag.
 bool _hasRepeatedAddressKey(String raw, Uri uri) {
   final seen = <String>{};
   final positional = uri.path.trim().isNotEmpty
@@ -95,11 +112,12 @@ bool _hasRepeatedAddressKey(String raw, Uri uri) {
     final separator = param.indexOf('=');
     final rawName = separator == -1 ? param : param.substring(0, separator);
     final name = _decodedQueryName(rawName);
+    if (!_addressKeyPattern.hasMatch(name)) continue;
+    if (rawName != name) sawEncodedAddressKey = true;
     if (name != 'address' && !_indexedAddressKeyPattern.hasMatch(name)) {
-      continue;
+      return true;
     }
     if (!seen.add(name)) return true;
-    if (rawName != name) sawEncodedAddressKey = true;
   }
   return sawEncodedAddressKey && seen.length > 1;
 }

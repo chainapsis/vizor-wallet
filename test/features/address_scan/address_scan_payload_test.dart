@@ -97,6 +97,33 @@ void main() {
       expect(normalizeAddressScanPayload(raw), raw);
     });
 
+    test('refuses an address key whose paramindex the parser rejects', () {
+      // A paramindex the parser can never accept owns no slot, so beside a
+      // well-formed key it is a second recipient with nothing to anchor it.
+      // Classifying by validity used to let these skip the repeat check
+      // entirely, and `_indexedZcashAddressFromUri` then recovered the one
+      // remaining well-formed key — the appended attacker address.
+      for (final malformed in [
+        'address.0',
+        'address.01',
+        'address.10000',
+        'address.1x',
+        'addr%65ss.01',
+      ]) {
+        final raw = 'zcash:?$malformed=u1real000&address.1=u1attacker0';
+
+        expect(normalizeAddressScanPayload(raw), raw, reason: malformed);
+      }
+    });
+
+    test('refuses a lone address key with a rejected paramindex', () {
+      // Nothing else in the payload names a recipient, so recovery has no
+      // well-formed slot to fall back to either.
+      const raw = 'zcash:u1real000?address.0=u1attacker0';
+
+      expect(normalizeAddressScanPayload(raw), raw);
+    });
+
     test('keeps a positional address beside a higher indexed one', () {
       // paramindex 0 plus paramindex 1 is a legitimate multi-payment
       // request, not a repeat, so the positional address still recovers.
@@ -173,6 +200,20 @@ void main() {
       expect(
         normalizeAddressScanPayload('zcash://t1KzCK7DjnDLmuFhNBmiZ?amount=1'),
         't1KzCK7DjnDLmuFhNBmiZ',
+      );
+    });
+
+    test('keeps a zcash:// authority address followed by a slash', () {
+      // Dart parses `zcash://<addr>/` with `path == '/'`. A path of only
+      // separators names no recipient, so the authority still has to win —
+      // returning `/` filled the recipient field with a slash.
+      expect(
+        normalizeAddressScanPayload('zcash://t1KzCK7DjnDLmuFhNBmiZ/'),
+        't1KzCK7DjnDLmuFhNBmiZ',
+      );
+      expect(
+        normalizeAddressScanPayload('zcash://u1real000/?amount=1'),
+        'u1real000',
       );
     });
 
