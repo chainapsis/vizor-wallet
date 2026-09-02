@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
+import 'package:zcash_wallet/src/core/zcash/zip321_payment_request.dart';
 import 'package:zcash_wallet/src/features/receive/services/zec_request_draft.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
 
@@ -87,6 +88,21 @@ void main() {
         inputIsUsd: true,
       );
       expect(usdDraft.canToggleUnit(null), isTrue);
+    });
+
+    test('a pasted bidi override never reaches the request link', () {
+      final view = const ZecRequestDraft(
+        address: _shielded,
+        input: '0.5',
+      ).copyWith(message: 'Table\u202E 4').resolve(zecUsdUnitPrice: null);
+
+      final uri = view.requestUri;
+
+      expect(uri, isNotNull);
+
+      final parsed = Zip321PaymentRequest.parse(uri!);
+
+      expect(parsed.primaryPayment.memoText, 'Table 4');
     });
 
     test('a transparent request drops the message it cannot carry', () {

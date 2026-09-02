@@ -16,6 +16,8 @@ import '../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/zcash/zip321_payment_request_builder.dart';
+import '../../../core/zcash/zip321_payment_request.dart'
+    show stripUnsupportedZip321MemoText;
 import '../../send/services/send_amount_conversion.dart';
 import '../widgets/request/request_amount_model.dart';
 
@@ -57,7 +59,14 @@ class ZecRequestDraft {
       address: address ?? this.address,
       input: input ?? this.input,
       inputIsUsd: inputIsUsd ?? this.inputIsUsd,
-      message: clearMessage ? null : (message ?? this.message),
+      // Invisible bidi/control characters cannot travel in a ZIP-321 memo,
+      // so they are dropped at the input boundary; the visible text is
+      // unchanged and the request the composer hands out always parses.
+      message: clearMessage
+          ? null
+          : (message == null
+                ? this.message
+                : stripUnsupportedZip321MemoText(message)),
     );
   }
 

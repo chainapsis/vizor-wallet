@@ -99,6 +99,23 @@ void main() {
       );
     });
 
+    test('rejects a memo the parser would refuse', () {
+      expect(
+        () => buildZip321PaymentUri(
+          address: _shielded,
+          amountZec: '0.5',
+          memoText: 'Table\u202E4',
+        ),
+        throwsA(
+          isA<Zip321BuildException>().having(
+            (e) => e.kind,
+            'kind',
+            Zip321BuildErrorKind.memoCharacters,
+          ),
+        ),
+      );
+    });
+
     test('accepts a memo of exactly 512 bytes', () {
       final memo = 'a' * kZip321MaxMemoBytes;
       expect(

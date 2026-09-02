@@ -335,6 +335,24 @@ List<int> _stripTrailingMemoPadding(List<int> bytes) {
 bool _containsUnsupportedMemoText(String value) =>
     value.runes.any(_isUnsupportedMemoCodePoint);
 
+/// Whether [text] can travel as a ZIP-321 memo this parser will accept:
+/// no bidi controls, no C0/C1 control characters other than tab, LF and CR.
+///
+/// Producers (the request composer) call this so every artefact the wallet
+/// hands out round-trips through its own parser.
+bool zip321MemoTextIsSupported(String text) =>
+    !_containsUnsupportedMemoText(text);
+
+/// [text] with every code point the parser refuses removed. The characters
+/// dropped are invisible (bidi overrides, control characters), so the visible
+/// message is unchanged.
+String stripUnsupportedZip321MemoText(String text) {
+  if (!_containsUnsupportedMemoText(text)) return text;
+  return String.fromCharCodes(
+    text.runes.where((codePoint) => !_isUnsupportedMemoCodePoint(codePoint)),
+  );
+}
+
 bool _isUnsupportedMemoCodePoint(int codePoint) {
   if (_bidiControlCodePoints.contains(codePoint)) return true;
   if (codePoint < 0x20) {

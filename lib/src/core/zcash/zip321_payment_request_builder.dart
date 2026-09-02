@@ -13,6 +13,7 @@
 library;
 
 import 'dart:convert';
+import 'zip321_payment_request.dart' show zip321MemoTextIsSupported;
 
 /// ZIP-302 memo field size. A memo is rejected above this, not truncated:
 /// silently cutting a message in half is worse than refusing it.
@@ -47,6 +48,9 @@ enum Zip321BuildErrorKind {
 
   /// Memo is longer than [kZip321MaxMemoBytes] when UTF-8 encoded.
   memoTooLong,
+
+  /// Memo carries a control or bidi character the ZIP-321 parser refuses.
+  memoCharacters,
 
   /// A memo was supplied for a transparent address, which cannot carry one.
   memoTransparent,
@@ -171,6 +175,14 @@ String normalizeZip321Amount(String amountZec) {
 /// The limit is measured in bytes, not characters: one emoji is four bytes,
 /// so a 512-character message can be four times over the protocol maximum.
 String encodeZip321Memo(String memoText) {
+  // The parser on the other end of this URI is our own: a memo it would
+  // refuse must not be handed out as a request in the first place.
+  if (!zip321MemoTextIsSupported(memoText)) {
+    throw const Zip321BuildException(
+      Zip321BuildErrorKind.memoCharacters,
+      'Message contains characters a memo cannot carry.',
+    );
+  }
   final bytes = utf8.encode(memoText);
   if (bytes.length > kZip321MaxMemoBytes) {
     throw const Zip321BuildException(
