@@ -16,12 +16,16 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_form_factor.dart';
+import '../../../providers/account_models.dart';
 import '../../../providers/payment_request_flow_provider.dart';
+import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../screens/mobile/mobile_send_screen.dart'
     show MobileSendReviewDraftArgs;
 import '../services/payment_request_precheck.dart';
 import '../services/send_flow.dart';
 import 'payment_request_surface.dart';
+import 'send_recipient_resolver.dart';
 
 class PaymentRequestHost extends ConsumerWidget {
   const PaymentRequestHost({
@@ -45,6 +49,27 @@ class PaymentRequestHost extends ConsumerWidget {
     if (flow == null) return child;
 
     final notifier = ref.read(paymentRequestFlowProvider.notifier);
+
+    // Who the request is actually addressed to, when the wallet can say. Both
+    // sources load asynchronously and are read for their settled value only:
+    // an address book still reading from secure storage, or an own-account
+    // lookup still asking Rust for each account's addresses, leaves the card
+    // showing the plain address until it lands rather than holding the card
+    // back. These are watched below the early return above, so a wallet with
+    // no request on screen never pays for the lookup.
+    final contacts =
+        ref.watch(addressBookProvider).value?.contacts ??
+        const <AddressBookContact>[];
+    final ownAccounts =
+        ref.watch(ownAccountAddressesProvider).value ??
+        const <String, AccountInfo>{};
+    final request = flow.view.withRecipientIdentity(
+      paymentRequestRecipientIdentityFor(
+        contacts: contacts,
+        address: flow.view.address,
+        ownAccounts: ownAccounts,
+      ),
+    );
 
     void edit() {
       final prefill = notifier.edit();
@@ -88,7 +113,7 @@ class PaymentRequestHost extends ConsumerWidget {
     // owned by `PaymentRequestSurface`.
     return PaymentRequestSurface(
       key: const ValueKey('payment_request_host_surface'),
-      request: flow.view,
+      request: request,
       onContinue: review,
       onEdit: edit,
       onCancel: notifier.dismiss,

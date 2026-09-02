@@ -119,6 +119,36 @@ const _transparentRequest = PaymentRequestView(
   note: 'Transparent payout address from the supplier portal.',
 );
 
+/// The recipient is saved in the address book: the contact's name and avatar
+/// take the "To" headline and the address drops to the sub-line.
+const _contactRequest = PaymentRequestView(
+  source: PaymentRequestSource.link,
+  requesterLabel: 'Blue Door Coffee',
+  amountZecText: '0.5 ZEC',
+  fiatText: r'$35.00',
+  address: _sampleAddress,
+  memo: _sampleMemo,
+  recipientIdentity: PaymentRequestRecipientIdentity.contact(
+    name: 'Blue Door Coffee',
+    profilePictureId: 'pfp-03',
+  ),
+);
+
+/// The link is asking the user to pay one of their own accounts. Same shape
+/// as the contact case plus the one muted line that says which relationship
+/// this is — the card's only way to tell the user that.
+const _ownAccountRequest = PaymentRequestView(
+  source: PaymentRequestSource.qrCode,
+  amountZecText: '1.25 ZEC',
+  fiatText: r'$87.50',
+  address: _sampleAddress,
+  note: 'Moving funds between your own accounts.',
+  recipientIdentity: PaymentRequestRecipientIdentity.ownAccount(
+    name: 'Savings',
+    profilePictureId: 'pfp-07',
+  ),
+);
+
 /// Note without a message — the pair is otherwise only ever seen together.
 const _noteOnlyRequest = PaymentRequestView(
   source: PaymentRequestSource.link,
@@ -163,6 +193,15 @@ Widget buildPaymentRequestReplacedUseCase(BuildContext context) =>
 
 Widget buildPaymentRequestTransparentUseCase(BuildContext context) =>
     _desktop(_transparentRequest);
+
+Widget buildPaymentRequestContactUseCase(BuildContext context) =>
+    _desktop(_contactRequest);
+
+Widget buildPaymentRequestOwnAccountUseCase(BuildContext context) =>
+    _desktop(_ownAccountRequest);
+
+Widget buildPaymentRequestOwnAccountExpandedUseCase(BuildContext context) =>
+    _desktop(_ownAccountRequest, addressExpanded: true);
 
 Widget buildPaymentRequestNoteOnlyUseCase(BuildContext context) =>
     _desktop(_noteOnlyRequest);
@@ -211,6 +250,16 @@ Widget buildMobilePaymentRequestReplacedUseCase(BuildContext context) =>
 
 Widget buildMobilePaymentRequestTransparentUseCase(BuildContext context) =>
     _mobile(_transparentRequest);
+
+Widget buildMobilePaymentRequestContactUseCase(BuildContext context) =>
+    _mobile(_contactRequest);
+
+Widget buildMobilePaymentRequestOwnAccountUseCase(BuildContext context) =>
+    _mobile(_ownAccountRequest);
+
+Widget buildMobilePaymentRequestOwnAccountExpandedUseCase(
+  BuildContext context,
+) => _mobile(_ownAccountRequest, addressExpanded: true);
 
 Widget buildMobilePaymentRequestNoteOnlyUseCase(BuildContext context) =>
     _mobile(_noteOnlyRequest);

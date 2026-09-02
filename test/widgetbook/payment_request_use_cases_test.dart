@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
@@ -533,6 +534,9 @@ void main() {
       buildPaymentRequestSyncingUseCase,
       buildPaymentRequestReplacedUseCase,
       buildPaymentRequestTransparentUseCase,
+      buildPaymentRequestContactUseCase,
+      buildPaymentRequestOwnAccountUseCase,
+      buildPaymentRequestOwnAccountExpandedUseCase,
       buildPaymentRequestNoteOnlyUseCase,
       buildPaymentRequestNoAmountUseCase,
     ]) {
@@ -553,6 +557,9 @@ void main() {
       buildMobilePaymentRequestSyncingUseCase,
       buildMobilePaymentRequestReplacedUseCase,
       buildMobilePaymentRequestTransparentUseCase,
+      buildMobilePaymentRequestContactUseCase,
+      buildMobilePaymentRequestOwnAccountUseCase,
+      buildMobilePaymentRequestOwnAccountExpandedUseCase,
       buildMobilePaymentRequestNoteOnlyUseCase,
       buildMobilePaymentRequestNoAmountUseCase,
     ]) {
@@ -629,6 +636,136 @@ void main() {
       moreOrLessEquals(actions.right - wrap.right, epsilon: 0.5),
     );
     expect(wrap.width, moreOrLessEquals(actions.width, epsilon: 0.5));
+  });
+
+  // ─── A recipient the wallet can name ───────────────────────────────
+
+  testWidgets('a saved contact takes the To headline, the address drops', (
+    tester,
+  ) async {
+    for (final (builder, size) in <(WidgetBuilder, Size)>[
+      (buildPaymentRequestContactUseCase, _desktopSize),
+      (buildMobilePaymentRequestContactUseCase, _mobileSize),
+    ]) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _pumpUseCase(tester, builder, size: size);
+
+      expect(tester.takeException(), isNull);
+      // The name is the headline, in the accent colour the address used to
+      // take; the address is still on screen underneath it.
+      final name = tester.widget<Text>(_key('payment_request_recipient_name'));
+      expect(name.data, 'Blue Door Coffee');
+      expect(name.style!.fontSize, AppTypography.headlineSmall.fontSize);
+      expect(name.style!.color, AppThemeData.light.colors.text.accent);
+      expect(find.text('u195091 ... 190591'), findsOneWidget);
+      // The avatar is the contact's, not a generic wallet glyph.
+      expect(
+        tester
+            .widget<AppProfilePicture>(_key('payment_request_recipient_avatar'))
+            .profilePictureId,
+        'pfp-03',
+      );
+      // A contact is not the user's own account, so nothing claims it is.
+      expect(_key('payment_request_own_account_label'), findsNothing);
+      expect(find.text('Your account'), findsNothing);
+      // Everything the unmapped row carried is still there.
+      expect(_key('payment_request_to_row'), findsOneWidget);
+      expect(_key('payment_request_pool_badge'), findsOneWidget);
+      expect(find.text('Shielded'), findsOneWidget);
+      expect(find.text('Show full address'), findsOneWidget);
+    }
+  });
+
+  testWidgets('an own-account recipient says whose account it is', (
+    tester,
+  ) async {
+    for (final (builder, size) in <(WidgetBuilder, Size)>[
+      (buildPaymentRequestOwnAccountUseCase, _desktopSize),
+      (buildMobilePaymentRequestOwnAccountUseCase, _mobileSize),
+    ]) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _pumpUseCase(tester, builder, size: size);
+
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.widget<Text>(_key('payment_request_recipient_name')).data,
+        'Savings',
+      );
+      expect(
+        tester
+            .widget<AppProfilePicture>(_key('payment_request_recipient_avatar'))
+            .profilePictureId,
+        'pfp-07',
+      );
+      // Sentence case, muted, one line — the card's own label treatment.
+      final label = tester.widget<Text>(
+        _key('payment_request_own_account_label'),
+      );
+      expect(label.data, 'Your account');
+      expect(label.style!.color, AppThemeData.light.colors.text.secondary);
+      expect(find.text('u195091 ... 190591'), findsOneWidget);
+      expect(_key('payment_request_pool_badge'), findsOneWidget);
+    }
+  });
+
+  testWidgets('a named recipient still expands to the full address', (
+    tester,
+  ) async {
+    for (final (builder, size) in <(WidgetBuilder, Size)>[
+      (buildPaymentRequestOwnAccountUseCase, _desktopSize),
+      (buildMobilePaymentRequestOwnAccountUseCase, _mobileSize),
+    ]) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _pumpUseCase(tester, builder, size: size);
+
+      await tester.tap(find.text('Show full address'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(_key('payment_request_address_chunks'), findsOneWidget);
+      expect(find.text('u1950'), findsOneWidget);
+      // The name and its sub-label stay; the truncated sub-line does not
+      // repeat the address the grid is already showing.
+      expect(_key('payment_request_recipient_name'), findsOneWidget);
+      expect(_key('payment_request_own_account_label'), findsOneWidget);
+      expect(_key('payment_request_recipient_address'), findsNothing);
+      // Nothing left the card.
+      expect(find.text('Review'), findsOneWidget);
+
+      await tester.tap(find.text('Hide full address'));
+      await tester.pumpAndSettle();
+      expect(_key('payment_request_recipient_address'), findsOneWidget);
+    }
+  });
+
+  testWidgets('the expanded own-account use cases render both lanes', (
+    tester,
+  ) async {
+    for (final (builder, size) in <(WidgetBuilder, Size)>[
+      (buildPaymentRequestOwnAccountExpandedUseCase, _desktopSize),
+      (buildMobilePaymentRequestOwnAccountExpandedUseCase, _mobileSize),
+    ]) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _pumpUseCase(tester, builder, size: size);
+      expect(tester.takeException(), isNull);
+      expect(find.text('Hide full address'), findsOneWidget);
+      expect(find.text('u1950'), findsOneWidget);
+      expect(find.text('Your account'), findsOneWidget);
+    }
+  });
+
+  testWidgets('an unmapped recipient keeps the plain address layout', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
+
+    expect(tester.takeException(), isNull);
+    expect(_key('payment_request_recipient_name'), findsNothing);
+    expect(_key('payment_request_recipient_avatar'), findsNothing);
+    expect(find.byType(AppProfilePicture), findsNothing);
+    // The address itself is the value, in the accent colour.
+    final address = tester.widget<Text>(find.text('u195091 ... 190591'));
+    expect(address.style!.color, AppThemeData.light.colors.text.accent);
   });
 
   // ─── No amount ─────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
+import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/pool_badge.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
@@ -141,6 +142,81 @@ String? _bareAmount(String? text) {
   return trimmed;
 }
 
+/// Whose name the "To" block is showing.
+///
+/// The two are rendered the same way — avatar, name, truncated address — but
+/// they mean different things to the person reading the card, so the own-account
+/// case says so in its own sub-label. Nothing else on the card can tell a user
+/// that the address a stranger's link asked them to pay is one of their own.
+enum PaymentRequestRecipientKind {
+  /// The recipient address is saved in the address book.
+  contact,
+
+  /// The recipient address belongs to one of this wallet's own accounts.
+  ownAccount,
+}
+
+/// A recipient address the wallet could put a name to.
+///
+/// Resolved outside the card (see `paymentRequestRecipientIdentityFor`), so
+/// the widget stays a pure presentation surface that Widgetbook can drive
+/// with literals.
+@immutable
+class PaymentRequestRecipientIdentity {
+  const PaymentRequestRecipientIdentity({
+    required this.kind,
+    required this.name,
+    required this.profilePictureId,
+  });
+
+  const PaymentRequestRecipientIdentity.contact({
+    required String name,
+    required String profilePictureId,
+  }) : this(
+         kind: PaymentRequestRecipientKind.contact,
+         name: name,
+         profilePictureId: profilePictureId,
+       );
+
+  const PaymentRequestRecipientIdentity.ownAccount({
+    required String name,
+    required String profilePictureId,
+  }) : this(
+         kind: PaymentRequestRecipientKind.ownAccount,
+         name: name,
+         profilePictureId: profilePictureId,
+       );
+
+  final PaymentRequestRecipientKind kind;
+
+  /// Contact label or account name. Rendered as the "To" headline, clamped to
+  /// one line — a contact label is user-authored and can be any length.
+  final String name;
+
+  /// Avatar id resolved through [AppProfilePicture].
+  final String profilePictureId;
+
+  bool get isOwnAccount => kind == PaymentRequestRecipientKind.ownAccount;
+
+  /// One-line, whitespace-collapsed name, or null when there is nothing to
+  /// show — a nameless identity is worse than the raw address, so the card
+  /// falls back to the unmapped layout in that case.
+  String? get displayName {
+    final collapsed = name.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return collapsed.isEmpty ? null : collapsed;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is PaymentRequestRecipientIdentity &&
+      other.kind == kind &&
+      other.name == name &&
+      other.profilePictureId == profilePictureId;
+
+  @override
+  int get hashCode => Object.hash(kind, name, profilePictureId);
+}
+
 /// Everything [PaymentRequestCard] renders.
 ///
 /// Immutable and free of providers, routing and parsing. The caller
@@ -158,6 +234,7 @@ class PaymentRequestView {
     this.memo,
     this.note,
     this.spendableText,
+    this.recipientIdentity,
     this.status = PaymentRequestStatus.ready,
     this.statusMessage,
     this.replacedNotice = false,
@@ -199,6 +276,15 @@ class PaymentRequestView {
   /// Preformatted spendable balance used by the insufficient-funds message.
   final String? spendableText;
 
+  /// The name this wallet can put to [address] — a saved contact or one of
+  /// the user's own accounts — or null when the address maps to neither.
+  ///
+  /// Resolved by the host from the address book and the account list, which
+  /// both load asynchronously, so null is also the honest "not looked up
+  /// yet" value: the card renders the plain address until the lookup lands
+  /// rather than blocking on it.
+  final PaymentRequestRecipientIdentity? recipientIdentity;
+
   final PaymentRequestStatus status;
 
   /// Overrides [defaultPaymentRequestStatusMessage] for [status].
@@ -228,10 +314,35 @@ class PaymentRequestView {
     memo: clearMemo ? null : memo,
     note: note,
     spendableText: spendableText ?? this.spendableText,
+    recipientIdentity: recipientIdentity,
     status: status,
     statusMessage: statusMessage,
     replacedNotice: replacedNotice,
   );
+
+  /// Same request, with the recipient's resolved name attached (or removed).
+  ///
+  /// The host re-applies this on every build, because the address book and
+  /// the account addresses resolve after the card is already on screen.
+  PaymentRequestView withRecipientIdentity(
+    PaymentRequestRecipientIdentity? identity,
+  ) {
+    if (identity == recipientIdentity) return this;
+    return PaymentRequestView(
+      source: source,
+      address: address,
+      amountZecText: amountZecText,
+      requesterLabel: requesterLabel,
+      fiatText: fiatText,
+      memo: memo,
+      note: note,
+      spendableText: spendableText,
+      recipientIdentity: identity,
+      status: status,
+      statusMessage: statusMessage,
+      replacedNotice: replacedNotice,
+    );
+  }
 
   String? get resolvedStatusMessage =>
       statusMessage ??
@@ -260,6 +371,14 @@ class PaymentRequestView {
   String? get displayNote {
     final raw = note?.trim();
     return (raw == null || raw.isEmpty) ? null : raw;
+  }
+
+  /// The recipient identity the card should actually render, or null when
+  /// the address maps to nothing this wallet can name — which includes an
+  /// identity whose name turned out to be blank.
+  PaymentRequestRecipientIdentity? get displayRecipientIdentity {
+    final identity = recipientIdentity;
+    return identity?.displayName == null ? null : identity;
   }
 
   /// Pool of [address], for the Shielded / Transparent badge.
@@ -469,6 +588,7 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
       _AddressRow(
         key: const ValueKey('payment_request_to_row'),
         address: request.address,
+        identity: request.displayRecipientIdentity,
         isMobileLayout: _isMobile,
         expanded: _addressExpanded,
         onToggle: _toggleAddress,
@@ -507,9 +627,17 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
 /// groups with the same head/tail emphasis the verify-address modal uses —
 /// so the user can compare characters without losing the request behind a
 /// second modal.
+///
+/// When the wallet can put a name to the address ([identity]) the block leads
+/// with that name and an avatar instead, the way the pay and send reviews
+/// render a known recipient, and the address drops to the sub-line. The pool
+/// badge and the expand control are unchanged in both shapes: a name is not a
+/// reason to stop stating the pool, and the full address still has to be
+/// verifiable from inside the card.
 class _AddressRow extends StatelessWidget {
   const _AddressRow({
     required this.address,
+    required this.identity,
     required this.isMobileLayout,
     required this.expanded,
     required this.onToggle,
@@ -517,6 +645,11 @@ class _AddressRow extends StatelessWidget {
   });
 
   final String address;
+
+  /// The name behind [address], or null for an address this wallet does not
+  /// recognize — which is also the state while the lookup is still running.
+  final PaymentRequestRecipientIdentity? identity;
+
   final bool isMobileLayout;
   final bool expanded;
   final VoidCallback onToggle;
@@ -539,6 +672,11 @@ class _AddressRow extends StatelessWidget {
     final isShielded =
         zcashAddressDisplayKind(address) == ZcashAddressDisplayKind.shielded;
     final actionLabel = expanded ? 'Hide full address' : 'Show full address';
+    final identity = this.identity;
+    final chunks = _AddressChunks(
+      key: const ValueKey('payment_request_address_chunks'),
+      address: address,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -553,11 +691,20 @@ class _AddressRow extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.xxs),
-        if (expanded)
-          _AddressChunks(
-            key: const ValueKey('payment_request_address_chunks'),
+        if (identity != null) ...[
+          // The name takes the row's value slot; the address stays visible
+          // underneath it, because that is the fact being consented to.
+          _RecipientIdentityBlock(
+            identity: identity,
             address: address,
-          )
+            showAddress: !expanded,
+          ),
+          // Expanded, the grid takes the row's full width rather than the
+          // column beside the avatar, which would squeeze it to a fraction
+          // of the size a user needs to compare characters.
+          if (expanded) ...[const SizedBox(height: AppSpacing.xs), chunks],
+        ] else if (expanded)
+          chunks
         else
           Text(
             truncatedAddress(address),
@@ -621,6 +768,101 @@ class _AddressRow extends StatelessWidget {
                   ),
                 ),
               ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Avatar + name for a recipient the wallet recognizes, with the truncated
+/// address underneath.
+///
+/// The composition is the pay/send review's contact recipient
+/// (`AppProfilePicture` leading, name headline, address sub-line) fitted to
+/// this card's tighter scale: the name takes the sans headline step rather
+/// than the review's serif, because the serif belongs to the amount and the
+/// card title above it and a third serif line would flatten that hierarchy.
+///
+/// An own-account recipient adds one muted line saying so. Paying yourself is
+/// a legitimate thing to do from a link, but it is also exactly what a
+/// swapped-address attack looks like from the other direction, so the card
+/// states the relationship instead of leaving the user to recognize a name.
+class _RecipientIdentityBlock extends StatelessWidget {
+  const _RecipientIdentityBlock({
+    required this.identity,
+    required this.address,
+    required this.showAddress,
+  });
+
+  final PaymentRequestRecipientIdentity identity;
+  final String address;
+
+  /// False while the full address is expanded below, which would otherwise
+  /// state the same address twice.
+  final bool showAddress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return Row(
+      // Centered against the whole text block, the way `ReviewInfoRow` seats
+      // its own leading avatar: top-aligning it against the name alone left
+      // the 32px circle visibly high beside a three-line own-account block.
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        AppProfilePicture(
+          key: const ValueKey('payment_request_recipient_avatar'),
+          profilePictureId: identity.profilePictureId,
+          size: AppProfilePictureSize.large,
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                // Non-null: the card only builds this block for an identity
+                // that survived `displayRecipientIdentity`.
+                identity.displayName!,
+                key: const ValueKey('payment_request_recipient_name'),
+                // A contact label is user-authored and unbounded; it is cut,
+                // never wrapped, the same way the requester line is.
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.headlineSmall.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+              if (identity.isOwnAccount) ...[
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  'Your account',
+                  key: const ValueKey('payment_request_own_account_label'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+              if (showAddress) ...[
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  truncatedAddress(address),
+                  key: const ValueKey('payment_request_recipient_address'),
+                  // Same monospace token the unmapped row uses; one colour
+                  // step down, because the name is the headline now.
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.codeMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

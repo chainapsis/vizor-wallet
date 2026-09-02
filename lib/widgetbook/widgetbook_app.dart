@@ -1270,6 +1270,18 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentRequestTransparentUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Saved contact recipient',
+                      builder: buildPaymentRequestContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account recipient',
+                      builder: buildPaymentRequestOwnAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account, address expanded',
+                      builder: buildPaymentRequestOwnAccountExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Note without message',
                       builder: buildPaymentRequestNoteOnlyUseCase,
                     ),
@@ -1334,6 +1346,19 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Transparent recipient',
                       builder: buildMobilePaymentRequestTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Saved contact recipient',
+                      builder: buildMobilePaymentRequestContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account recipient',
+                      builder: buildMobilePaymentRequestOwnAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account, address expanded',
+                      builder:
+                          buildMobilePaymentRequestOwnAccountExpandedUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Note without message',
