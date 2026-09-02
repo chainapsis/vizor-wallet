@@ -110,31 +110,67 @@ void main() {
       expect(requestQrFileName('1 ZEC'), 'vizor-request-1.png');
     });
 
-    test('writes the PNG and never overwrites an earlier one', () async {
+    test('writes the PNG where the save dialog pointed it', () async {
       final directory = await Directory.systemTemp.createTemp('vizor-request');
       addTearDown(() async {
         if (directory.existsSync()) await directory.delete(recursive: true);
       });
 
       final bytes = Uint8List.fromList([1, 2, 3]);
-      final first = await saveRequestQrPng(
+      final suggested = <String>[];
+      final saved = await saveRequestQrPng(
         png: bytes,
         amountZec: '0.5',
-        resolveDirectory: () async => directory,
-      );
-      final second = await saveRequestQrPng(
-        png: bytes,
-        amountZec: '0.5',
-        resolveDirectory: () async => directory,
+        pickSaveLocation: ({required String suggestedName}) async {
+          suggested.add(suggestedName);
+          return '${directory.path}${Platform.pathSeparator}chosen.png';
+        },
       );
 
-      expect(first.path, endsWith('vizor-request-0.5.png'));
-      expect(second.path, endsWith('vizor-request-0.5-2.png'));
+      expect(suggested, ['vizor-request-0.5.png']);
+      expect(saved, isNotNull);
+      expect(saved!.path, endsWith('chosen.png'));
       expect(
-        first.folderName,
+        saved.folderName,
         directory.path.split(Platform.pathSeparator).last,
       );
-      expect(File(first.path).readAsBytesSync(), bytes);
+      expect(File(saved.path).readAsBytesSync(), bytes);
+    });
+
+    test('replaces a file the user chose to overwrite', () async {
+      final directory = await Directory.systemTemp.createTemp('vizor-request');
+      addTearDown(() async {
+        if (directory.existsSync()) await directory.delete(recursive: true);
+      });
+
+      final path = '${directory.path}${Platform.pathSeparator}chosen.png';
+      File(path).writeAsBytesSync(Uint8List.fromList([9, 9, 9]));
+
+      final bytes = Uint8List.fromList([1, 2, 3]);
+      final saved = await saveRequestQrPng(
+        png: bytes,
+        amountZec: '0.5',
+        pickSaveLocation: ({required String suggestedName}) async => path,
+      );
+
+      expect(saved?.path, path);
+      expect(File(path).readAsBytesSync(), bytes);
+    });
+
+    test('writes nothing when the save dialog was cancelled', () async {
+      final directory = await Directory.systemTemp.createTemp('vizor-request');
+      addTearDown(() async {
+        if (directory.existsSync()) await directory.delete(recursive: true);
+      });
+
+      final saved = await saveRequestQrPng(
+        png: Uint8List.fromList([1, 2, 3]),
+        amountZec: '0.5',
+        pickSaveLocation: ({required String suggestedName}) async => null,
+      );
+
+      expect(saved, isNull);
+      expect(directory.listSync(), isEmpty);
     });
   });
 }

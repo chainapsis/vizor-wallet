@@ -381,8 +381,10 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       final saved = await saveRequestQrPng(
         png: png,
         amountZec: amountZec,
-        resolveDirectory: ref.read(requestQrDirectoryResolverProvider),
+        pickSaveLocation: ref.read(requestQrSaveLocationPickerProvider),
       );
+      // Cancelling the save dialog is not an outcome worth a toast.
+      if (saved == null) return;
       if (!mounted) return;
       showAppToast(context, 'QR image saved to ${saved.folderName}');
     } catch (e) {

@@ -798,55 +798,29 @@ void main() {
     expect(find.text('Request link copied'), findsOneWidget);
   });
 
-  testWidgets('writes the request QR into the resolved directory', (
+  testWidgets('writes the request QR where the save dialog pointed it', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(1512, 982));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-
     // Synchronous file APIs throughout: a real async I/O future created
     // inside the test zone never completes outside runAsync.
     final directory = Directory.systemTemp.createTempSync('vizor-request');
     addTearDown(() {
       if (directory.existsSync()) directory.deleteSync(recursive: true);
     });
+    final target =
+        '${directory.path}${Platform.pathSeparator}picked-request.png';
+    final suggested = <String>[];
 
-    await tester.pumpWidget(
-      _receiveHarness(
-        extraOverrides: [
-          zecLiveUsdUnitPriceProvider.overrideWithValue(70),
-          requestQrDirectoryResolverProvider.overrideWithValue(
-            () async => directory,
-          ),
-        ],
-      ),
+    await _saveRequestQr(
+      tester,
+      picker: ({required String suggestedName}) async {
+        suggested.add(suggestedName);
+        return target;
+      },
     );
-    await tester.pump();
-    await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
-    await tester.pump();
-    await tester.enterText(
-      find.byKey(const ValueKey('request_amount_field')),
-      '0.5',
-    );
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('request_next_button')));
-    await tester.pump();
-
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey('request_save_qr_button')));
-      await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      await tester.pump();
-    });
-    await tester.pump();
-
-    final saved = File(
-      '${directory.path}${Platform.pathSeparator}vizor-request-0.5.png',
-    );
+    expect(suggested, ['vizor-request-0.5.png']);
+    final saved = File(target);
     expect(saved.existsSync(), isTrue);
     expect(saved.readAsBytesSync().take(4), [
       0x89,
@@ -859,6 +833,77 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('says nothing when the save dialog is cancelled', (tester) async {
+    final directory = Directory.systemTemp.createTempSync('vizor-request');
+    addTearDown(() {
+      if (directory.existsSync()) directory.deleteSync(recursive: true);
+    });
+
+    await _saveRequestQr(
+      tester,
+      picker: ({required String suggestedName}) async => null,
+    );
+
+    expect(directory.listSync(), isEmpty);
+    expect(find.textContaining('QR image saved to'), findsNothing);
+    expect(find.textContaining("We couldn't save the QR image"), findsNothing);
+  });
+
+  testWidgets('reports a failing save dialog', (tester) async {
+    await _saveRequestQr(
+      tester,
+      picker: ({required String suggestedName}) async =>
+          throw StateError('no panel'),
+    );
+
+    expect(
+      find.textContaining("We couldn't save the QR image"),
+      findsOneWidget,
+    );
+    expect(find.textContaining('QR image saved to'), findsNothing);
+  });
+}
+
+/// Drives the request modal to its result step and taps "Save QR image" with
+/// [picker] standing in for the platform save dialog.
+Future<void> _saveRequestQr(
+  WidgetTester tester, {
+  required RequestQrSaveLocationPicker picker,
+}) async {
+  await tester.binding.setSurfaceSize(const Size(1512, 982));
+  addTearDown(() async {
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  await tester.pumpWidget(
+    _receiveHarness(
+      extraOverrides: [
+        zecLiveUsdUnitPriceProvider.overrideWithValue(70),
+        requestQrSaveLocationPickerProvider.overrideWithValue(picker),
+      ],
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+
+  await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+  await tester.pump();
+  await tester.enterText(
+    find.byKey(const ValueKey('request_amount_field')),
+    '0.5',
+  );
+  await tester.pump();
+  await tester.tap(find.byKey(const ValueKey('request_next_button')));
+  await tester.pump();
+
+  await tester.runAsync(() async {
+    await tester.tap(find.byKey(const ValueKey('request_save_qr_button')));
+    await tester.pump();
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await tester.pump();
+  });
+  await tester.pump();
 }
 
 String _requestQrData(WidgetTester tester) {
