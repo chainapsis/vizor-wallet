@@ -45,6 +45,13 @@ typedef PaymentRequestProposeTransfer =
       BigInt? requestedAmountZatoshi,
     });
 
+/// Whether the wallet's spendable balance is settled *right now*.
+///
+/// Read after the proposal comes back, not before it goes out: the propose
+/// path waits for an authoritative spendable of its own, so the only way to
+/// tell a real shortfall from a mid-scan one is to ask again afterwards.
+typedef PaymentRequestSpendableIsAuthoritativeNow = bool Function();
+
 /// Releases a proposal. Matches [discardSendProposal].
 typedef PaymentRequestDiscardProposal =
     Future<void> Function({
@@ -160,11 +167,17 @@ class PaymentRequestPrecheck {
     required this.validateAddress,
     required this.proposeTransfer,
     required this.discardProposal,
+    required this.spendableIsAuthoritativeNow,
   });
 
   final PaymentRequestValidateAddress validateAddress;
   final PaymentRequestProposeTransfer proposeTransfer;
   final PaymentRequestDiscardProposal discardProposal;
+
+  /// Live re-read of the VZR-42 condition, for the answers that only come
+  /// back after the proposal has run. Like [run]'s `spendableIsAuthoritative`
+  /// it has no default: getting it wrong is the bug this guards.
+  final PaymentRequestSpendableIsAuthoritativeNow spendableIsAuthoritativeNow;
 
   /// Address types the compose form refuses to attach a memo to; the request's
   /// memo is dropped rather than carried into a proposal that would reject it.
@@ -306,6 +319,14 @@ class PaymentRequestPrecheck {
     if (lower.contains('insufficientfunds') ||
         lower.contains('insufficient_funds') ||
         lower.contains('insufficient')) {
+      // VZR-42, on the far side of the proposal: a shortfall computed while
+      // the wallet is still short of the tip is not an answer, wherever it
+      // was computed. The propose path waits for a settled spendable before
+      // it decides, so a balance that is still unsettled *now* means the
+      // scan moved under it and the figure the card would quote is stale.
+      if (!spendableIsAuthoritativeNow()) {
+        return PaymentRequestPrecheckSyncing(memoDropped: memoDropped);
+      }
       return PaymentRequestPrecheckInsufficientFunds(
         spendableText: _formatZec(spendableBalance),
         memoDropped: memoDropped,
@@ -333,6 +354,12 @@ final paymentRequestPrecheckProvider = Provider<PaymentRequestPrecheck>((ref) {
   return PaymentRequestPrecheck(
     validateAddress: rust_sync.validateAddress,
     discardProposal: discardSendProposal,
+    spendableIsAuthoritativeNow: () {
+      final sync = ref.read(syncProvider).value;
+      return sync != null &&
+          sync.isSyncedToTip &&
+          !sync.isUsingCompletedSpendableSnapshot;
+    },
     proposeTransfer:
         ({
           required String accountUuid,

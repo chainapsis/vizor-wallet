@@ -175,6 +175,7 @@ class _FakeAccountNotifier extends AccountNotifier {
 }
 
 PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
+  spendableIsAuthoritativeNow: () => true,
   validateAddress: ({required String address}) async =>
       rust_sync.AddressValidationResult(isValid: true, addressType: 'unified'),
   proposeTransfer:

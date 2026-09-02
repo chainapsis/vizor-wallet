@@ -28,6 +28,7 @@ class _FakeSendApi {
   final proposed = <BigInt>[];
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
+    spendableIsAuthoritativeNow: () => true,
     validateAddress: ({required String address}) async =>
         rust_sync.AddressValidationResult(
           isValid: addressIsValid,

@@ -2990,6 +2990,7 @@ Future<BigInt> _fixedFeeEstimator({
 /// A pre-check that always reaches "ready" with a proposal, so a scanned
 /// payment request lands on the card's normal state without touching Rust.
 PaymentRequestPrecheck _readyPaymentRequestPrecheck() => PaymentRequestPrecheck(
+  spendableIsAuthoritativeNow: () => true,
   validateAddress: ({required String address}) async =>
       const AddressValidationResult(isValid: true, addressType: 'unified'),
   proposeTransfer:

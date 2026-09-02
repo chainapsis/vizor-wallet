@@ -13,6 +13,7 @@ class FakeSendApi {
     this.validateThrows,
     this.proposeThrows,
     this.feeZatoshi,
+    this.spendableIsAuthoritativeNow = true,
   });
 
   String addressType;
@@ -20,6 +21,10 @@ class FakeSendApi {
   Object? validateThrows;
   Object? proposeThrows;
   BigInt? feeZatoshi;
+
+  /// What the wallet's spendable balance looks like *after* the proposal has
+  /// run — the VZR-42 gate the card re-reads before quoting a shortfall.
+  bool spendableIsAuthoritativeNow;
 
   var validateCalls = 0;
   var proposeCalls = 0;
@@ -80,6 +85,7 @@ class FakeSendApi {
   }
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
+    spendableIsAuthoritativeNow: () => spendableIsAuthoritativeNow,
     validateAddress: validateAddress,
     proposeTransfer: proposeTransfer,
     discardProposal: discardProposal,
@@ -206,7 +212,37 @@ void main() {
       spendableIsAuthoritative: false,
     );
 
-    expect(result, isA<PaymentRequestPrecheckInsufficientFunds>());
+    expect(
+      result,
+      isA<PaymentRequestPrecheckInsufficientFunds>(),
+      reason:
+          'the proposal waited for a settled spendable, and the balance is '
+          'still settled when its answer comes back',
+    );
+    expect(api.proposeCalls, 1);
+  });
+
+  test('a shortfall Rust reports while the balance is still moving is '
+      'syncing', () async {
+    final api = FakeSendApi(
+      proposeThrows: StateError(
+        'Insufficient balance (have 0, need 0.5 including fee)',
+      ),
+      spendableIsAuthoritativeNow: false,
+    );
+    final result = await run(
+      api,
+      spendable: BigInt.zero,
+      spendableIsAuthoritative: false,
+    );
+
+    expect(
+      result,
+      isA<PaymentRequestPrecheckSyncing>(),
+      reason:
+          'VZR-42: a shortfall computed against a partly-scanned wallet is '
+          'not an answer, wherever it was computed',
+    );
     expect(api.proposeCalls, 1);
   });
 
