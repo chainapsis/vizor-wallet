@@ -968,6 +968,42 @@ void main() {
     expect(find.text('Congratulations!'), findsOneWidget);
   });
 
+  testWidgets('pastes the clipboard Card without consuming a queued link', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations();
+    final clipboardRead = Completer<String?>();
+    final clipboard = _FakePaymentLinkClipboard(readCompleter: clipboardRead);
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pump();
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    clipboardRead.complete(_secondIncomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+
+    expect(
+      operations.preparedLinks.single.address,
+      _secondIncomingLink.address,
+    );
+    expect(
+      container.read(paymentLinkIntakeProvider).pendingLink?.address,
+      _incomingLink.address,
+    );
+  });
+
   testWidgets('confirms before checking a Gift Card with a long scan', (
     tester,
   ) async {
@@ -1986,6 +2022,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<VizorPaymentLink> claimedLinks = [];
   final List<String> discardedClaimAddresses = [];
   final List<bool> allowLongSyncCalls = [];
+  final List<VizorPaymentLink> preparedLinks = [];
   int createdLoadCalls = 0;
   int receivedLoadCalls = 0;
   int fundingMetadataRetries = 0;
@@ -2152,6 +2189,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
+    preparedLinks.add(link);
     allowLongSyncCalls.add(allowLongSync);
     final configuredError = prepareClaimError;
     if (configuredError != null) throw configuredError;
@@ -2263,9 +2301,10 @@ const _broadcastedClaimResult = PaymentLinkClaimResult(
 );
 
 class _FakePaymentLinkClipboard implements PaymentLinkClipboard {
-  _FakePaymentLinkClipboard({this.text});
+  _FakePaymentLinkClipboard({this.text, this.readCompleter});
 
   String? text;
+  final Completer<String?>? readCompleter;
   final List<String> copiedSecrets = [];
   int clearCalls = 0;
 
@@ -2282,7 +2321,7 @@ class _FakePaymentLinkClipboard implements PaymentLinkClipboard {
   }
 
   @override
-  Future<String?> readText() async => text;
+  Future<String?> readText() => readCompleter?.future ?? Future.value(text);
 }
 
 class _FakePaymentLinkHardwareSigningService

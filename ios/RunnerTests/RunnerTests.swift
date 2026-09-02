@@ -8,7 +8,7 @@ import XCTest
 
 class RunnerTests: XCTestCase {
 
-  func testIncomingDeeplinkAcceptsOnlyVerifiedHTTPSHost() {
+  func testIncomingDeeplinkAcceptsOnlySupportedHTTPSRoutes() {
     let bridge = IncomingUriChannelBridge.shared
     let host = IncomingUriChannelBridge.deeplinkHost
 
@@ -22,12 +22,16 @@ class RunnerTests: XCTestCase {
     XCTAssertFalse(
       bridge.handles(URL(string: "vizor://payment-link?p=test")!)
     )
-    XCTAssertTrue(
+    XCTAssertFalse(
       bridge.handles(
         URL(
           string: "https://\(host)/payment-links/other#v1=test"
         )!
       )
+    )
+    XCTAssertTrue(bridge.handles(URL(string: "https://\(host)/")!))
+    XCTAssertFalse(
+      bridge.handles(URL(string: "https://\(host)/?source=test")!)
     )
     XCTAssertFalse(
       bridge.handles(

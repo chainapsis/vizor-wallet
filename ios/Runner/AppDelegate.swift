@@ -788,6 +788,7 @@ final class IncomingUriChannelBridge {
   static let deeplinkHost =
     (Bundle.main.object(forInfoDictionaryKey: "VizorDeeplinkHost") as? String)?
     .lowercased() ?? "link.vizor.cash"
+  private static let paymentLinkPath = "/payment-links/open"
   private static let maxIncomingUriBytes = 16 * 1024
   private static let maxPendingUris = 16
   private init() {}
@@ -828,10 +829,18 @@ final class IncomingUriChannelBridge {
   }
 
   func handles(_ url: URL) -> Bool {
-    url.scheme?.lowercased() == "https"
-      && url.host?.lowercased() == Self.deeplinkHost
-      && url.user == nil
-      && url.port == nil
+    guard
+      url.scheme?.lowercased() == "https",
+      url.host?.lowercased() == Self.deeplinkHost,
+      url.user == nil,
+      url.port == nil
+    else {
+      return false
+    }
+    let isHome = (url.path.isEmpty || url.path == "/")
+      && url.query == nil
+      && url.fragment == nil
+    return isHome || url.path == Self.paymentLinkPath
   }
 
   @discardableResult

@@ -993,16 +993,8 @@ class _PaymentLinksDesktopScreenState
         }
         return;
       }
-      final notifier = ref.read(paymentLinkIntakeProvider.notifier);
-      final result = notifier.receive(rawLink);
-      if (result != PaymentLinkIntakeResult.accepted) {
-        if (mounted) {
-          setState(() => _redeemState = PaymentLinkRedeemVisualState.invalid);
-        }
-        return;
-      }
-      final link = notifier.takePending();
-      if (link == null || !mounted) return;
+      final link = VizorPaymentLink.parse(rawLink);
+      if (!mounted) return;
       await _prepareDecodedPaymentLink(link);
     } catch (_) {
       if (mounted) {
