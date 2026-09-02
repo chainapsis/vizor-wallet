@@ -18,8 +18,13 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
+import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
+import 'package:zcash_wallet/src/features/send/widgets/payment_request_host.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -322,6 +327,7 @@ Widget _app({
   bool isPaymentRequest = false,
   String? paymentRequestLabel,
   BigInt? requestedAmountZatoshi,
+  PaymentRequestPrecheck? precheck,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -366,6 +372,8 @@ Widget _app({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      if (precheck != null)
+        paymentRequestPrecheckProvider.overrideWithValue(precheck),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -375,7 +383,12 @@ Widget _app({
         ).copyWith(padding: viewPadding, viewPadding: viewPadding);
         return AppTheme(
           data: AppThemeData.light,
-          child: MediaQuery(data: mediaQuery, child: c!),
+          child: MediaQuery(
+            data: mediaQuery,
+            // The scanner can hand back a payment request, which is answered
+            // on the app-level card rather than in the composer.
+            child: PaymentRequestHost(router: router, child: c!),
+          ),
         );
       },
     ),
@@ -836,7 +849,7 @@ void main() {
       await tester.pumpWidget(
         _app(
           syncNotifier: _RebuildableSyncNotifier.new,
-          openScanner: (context) => showModalBottomSheet<String>(
+          openScanner: (context) => showModalBottomSheet<SendScanResult>(
             context: context,
             builder: (sheetContext) => TextButton(
               key: const ValueKey('test_close_scan_sheet'),
@@ -1498,7 +1511,7 @@ void main() {
       _app(
         openScanner: (_) async {
           scannerOpenCount++;
-          return _shieldedAddress;
+          return const SendScanAddress(_shieldedAddress);
         },
       ),
     );
@@ -1519,6 +1532,53 @@ void main() {
     expect(editable.controller.text, _shieldedAddress);
     expect(find.text('Continue'), findsOneWidget);
   });
+
+  testWidgets(
+    'scanning a payment request opens the card instead of the composer',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          precheck: _readyPaymentRequestPrecheck(),
+          openScanner: (_) async => SendScanPaymentRequest(
+            const SendPrefillArgs(
+              id: 'payment-qr-1',
+              source: kPaymentUriPrefillSource,
+              address: _shieldedAddress,
+              amountText: '0.25',
+              label: 'Coffee shop',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Scan a QR Code'));
+      await tester.pumpAndSettle();
+
+      // The request is answered on the card, over the send screen.
+      expect(
+        find.byKey(const ValueKey('payment_request_continue')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('payment_request_requester')),
+            )
+            .data,
+        contains('Coffee shop'),
+      );
+
+      // Nothing leaked into the composer behind it.
+      final editable = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_send_address_field')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(editable.controller.text, isEmpty);
+    },
+  );
 
   testWidgets(
     'recipient focus keeps the address field mounted and stationary',
@@ -2871,3 +2931,40 @@ Future<BigInt> _fixedFeeEstimator({
   required BigInt amountZatoshi,
   String? memo,
 }) async => BigInt.from(10000);
+
+/// A pre-check that always reaches "ready" with a proposal, so a scanned
+/// payment request lands on the card's normal state without touching Rust.
+PaymentRequestPrecheck _readyPaymentRequestPrecheck() => PaymentRequestPrecheck(
+  validateAddress: ({required String address}) async =>
+      const AddressValidationResult(isValid: true, addressType: 'unified'),
+  proposeTransfer:
+      ({
+        required String accountUuid,
+        required String sendFlowId,
+        required String address,
+        required String addressType,
+        required BigInt amountZatoshi,
+        String? memo,
+        bool isPaymentRequest = false,
+        String? requestedBy,
+        BigInt? requestedAmountZatoshi,
+      }) async => SendReviewArgs(
+        proposalId: BigInt.from(77),
+        sendFlowId: sendFlowId,
+        proposalAccountUuid: accountUuid,
+        address: address,
+        addressType: addressType,
+        amountZatoshi: amountZatoshi,
+        feeZatoshi: BigInt.from(10000),
+        needsSaplingParams: false,
+        isPaymentRequest: isPaymentRequest,
+        requestedBy: requestedBy,
+        requestedAmountZatoshi: requestedAmountZatoshi,
+      ),
+  discardProposal:
+      ({
+        required BigInt proposalId,
+        required String sendFlowId,
+        required String logContext,
+      }) async {},
+);

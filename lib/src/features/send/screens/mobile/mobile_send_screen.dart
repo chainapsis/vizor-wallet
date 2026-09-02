@@ -33,7 +33,9 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
+import '../../../../providers/payment_request_flow_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../models/send_scan_result.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
 import '../../services/send_proving_key_warmup.dart';
@@ -116,7 +118,8 @@ typedef MobileSendFeeEstimator =
       String? memo,
     });
 
-typedef MobileSendScanner = Future<String?> Function(BuildContext context);
+typedef MobileSendScanner =
+    Future<SendScanResult?> Function(BuildContext context);
 
 class _MobileSendMaxQuote {
   const _MobileSendMaxQuote({
@@ -721,12 +724,24 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Future<void> _openScanner() async {
     final scanned = await widget.openScanner(context);
-    if (scanned == null || scanned.trim().isEmpty || !mounted) return;
-    _addressController.value = TextEditingValue(
-      text: scanned.trim(),
-      selection: TextSelection.collapsed(offset: scanned.trim().length),
-    );
-    _handleAddressChanged();
+    if (scanned == null || !mounted) return;
+    switch (scanned) {
+      case SendScanPaymentRequest(:final prefill):
+        // A QR that already names an amount is the same object a `zcash:`
+        // link is, so it gets the same answer: the card, over whatever is on
+        // screen — not a half-filled composer.
+        ref
+            .read(paymentRequestFlowProvider.notifier)
+            .present(prefill, source: PaymentRequestSource.qrCode);
+      case SendScanAddress(:final address):
+        final recipient = address.trim();
+        if (recipient.isEmpty) return;
+        _addressController.value = TextEditingValue(
+          text: recipient,
+          selection: TextSelection.collapsed(offset: recipient.length),
+        );
+        _handleAddressChanged();
+    }
   }
 
   Future<void> _pasteAddress() async {
