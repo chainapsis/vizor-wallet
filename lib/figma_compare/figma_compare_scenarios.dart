@@ -1013,6 +1013,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildRequestModalStepTwoShieldedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'receive-request-modal-step-2-dense',
+    description: 'Desktop request modal step two with a 512-byte message',
+    builder: buildRequestModalStepTwoDenseUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-receive-shielded',
     description: 'Mobile receive screen with the request entry beside share',
     builder: buildReceiveMobileShieldedUseCase,

@@ -787,6 +787,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Request modal - step 2 - transparent',
                       builder: buildRequestModalStepTwoTransparentUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 2 - 512-byte message',
+                      builder: buildRequestModalStepTwoDenseUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(

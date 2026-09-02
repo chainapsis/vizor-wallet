@@ -38,7 +38,7 @@ import 'request_qr_surface.dart';
 /// differently sized frames.
 const double kRequestModalCardWidth = 396;
 
-/// Width of the result step.
+/// Narrowest the result step goes.
 ///
 /// The result is a QR with two actions under it. At the compose width the
 /// buttons stretched far past the code and the frame read as empty, so the
@@ -51,6 +51,32 @@ const double kRequestModalResultCardWidth = 288;
 /// so the surface spans the full content width.
 const double kRequestModalQrSize =
     kRequestModalResultCardWidth - AppSpacing.sm * 2 - AppSpacing.sm * 2;
+
+/// What the frame adds around the code's own side: the modal card's
+/// horizontal inset plus the surface's white margin.
+const double _kRequestResultCardInsets = AppSpacing.sm * 4;
+
+/// Width the result step needs to draw [qrData] legibly, never under
+/// [kRequestModalResultCardWidth] and never over [maxWidth].
+///
+/// A bare address and a short amount fit the fixed frame with room to spare;
+/// a 512-byte message pushes the symbol to version 24 and 113 modules, which
+/// at the two-pixel floor needs more width than that frame has.
+/// [RequestQrSurface] can only grow into the width it is given, so a fixed
+/// frame answers a dense symbol by squeezing its modules under the floor —
+/// which in debug is `pretty_qr_code`'s own assertion and in release is a
+/// code a stranger's camera has to work for. The frame grows for the codes
+/// that need it and stays put for the ones that do not.
+double requestModalResultCardWidth(
+  String qrData, {
+  double maxWidth = double.infinity,
+}) {
+  final needed = requestQrSideFor(qrData) + _kRequestResultCardInsets;
+  return math.min(
+    math.max(kRequestModalResultCardWidth, needed),
+    math.max(kRequestModalResultCardWidth, maxWidth),
+  );
+}
 
 /// Step one: what you are asking for.
 ///
@@ -722,7 +748,10 @@ class RequestAmountSurface extends StatelessWidget {
                 child: Center(
                   child: AppModalCard(
                     width: step == RequestModalStep.result
-                        ? kRequestModalResultCardWidth
+                        ? requestModalResultCardWidth(
+                            request.qrData,
+                            maxWidth: constraints.maxWidth,
+                          )
                         : kRequestModalCardWidth,
                     child: card,
                   ),

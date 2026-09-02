@@ -34,6 +34,29 @@ const double _requestQrQuietZoneModules = 4;
 /// to a fixed side hits that long before the code becomes unscannable.
 const double _requestQrMinModuleSize = 2;
 
+/// The side, in logical pixels, the code for [data] needs before its modules
+/// fall under [minModulePx] — quiet zone included, [RequestQrSurface]'s own
+/// white padding excluded.
+///
+/// Public because a fixed-width container has to ask *before* it lays the
+/// surface out: [RequestQrSurface] can only grow into the width it is given,
+/// so a caller that hands it too little turns the floor this file exists to
+/// enforce into a clamp against it. Zero for an empty request, which draws no
+/// code at all.
+double requestQrSideFor(
+  String data, {
+  double minModulePx = _requestQrMinModuleSize,
+}) {
+  if (data.isEmpty) return 0;
+  final qrImage = QrImage(
+    QrCode.fromData(data: data, errorCorrectLevel: QrErrorCorrectLevel.M),
+  );
+  return _requestQrSide(qrImage, minModulePx);
+}
+
+double _requestQrSide(QrImage qrImage, double minModulePx) =>
+    (qrImage.moduleCount + _requestQrQuietZoneModules * 2) * minModulePx;
+
 /// A request QR: black square modules on white, with a real quiet zone and no
 /// embedded badge.
 ///
@@ -123,8 +146,7 @@ class RequestQrSurface extends StatelessWidget {
   double _resolveSide(QrImage? qrImage, BoxConstraints constraints) {
     if (qrImage == null) return size;
 
-    final modules = qrImage.moduleCount + _requestQrQuietZoneModules * 2;
-    final needed = modules * _requestQrMinModuleSize;
+    final needed = _requestQrSide(qrImage, _requestQrMinModuleSize);
 
     var available = double.infinity;
     if (constraints.hasBoundedWidth) {

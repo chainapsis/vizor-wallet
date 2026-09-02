@@ -68,6 +68,21 @@ const _usdRequest = ZecRequestView(
   conversionText: '$_amountZec ZEC',
 );
 
+/// The densest request the flow can produce: a real software account's UA
+/// (178 characters) with the 512-byte message ZIP-321 allows, which pushes
+/// the symbol to 113 modules. The result step has to widen for it rather
+/// than draw its modules under the scan-reliability floor.
+final _denseRequest = ZecRequestView(
+  address: 'u1${'q' * 176}',
+  amountZec: _amountZec,
+  conversionText: _fiatText,
+  messageText:
+      'A table booking that runs to the full five hundred and twelve bytes '
+      'a ZIP-321 memo is allowed to carry, because that is exactly the '
+      'request the fixed result frame could not draw. '
+      '${'m' * 333}',
+);
+
 /// ZEC typed but no live price to convert it: the readout is the same
 /// placeholder the send composer shows, and the unit switch is inert.
 const _priceUnavailableRequest = ZecRequestView(
@@ -99,6 +114,9 @@ Widget buildRequestModalStepTwoShieldedUseCase(BuildContext context) =>
 
 Widget buildRequestModalStepTwoTransparentUseCase(BuildContext context) =>
     _desktop(_transparentRequest, step: RequestModalStep.result);
+
+Widget buildRequestModalStepTwoDenseUseCase(BuildContext context) =>
+    _desktop(_denseRequest, step: RequestModalStep.result);
 
 // ─── Mobile ──────────────────────────────────────────────────────────
 

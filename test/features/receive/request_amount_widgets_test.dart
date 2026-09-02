@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/core/widgets/pool_badge.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_card.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
@@ -53,6 +54,15 @@ const _withFormatError = ZecRequestView(
   address: _shielded,
   amountDisplayText: '0,5',
   amountError: kRequestAmountFormatError,
+);
+
+/// A real software account's UA length (178) with the longest memo ZIP-321
+/// allows: 113 modules, the densest code the flow can produce.
+final _denseRequest = ZecRequestView(
+  address: 'u1${'q' * 176}',
+  amountZec: '0.5',
+  conversionText: r'$35.00',
+  messageText: 'm' * 512,
 );
 
 /// The field collecting dollars, so its formatters cap at cents.
@@ -407,6 +417,50 @@ void main() {
       expect(_button(tester, 'request_copy_link_button').onPressed, isNull);
     });
 
+    testWidgets('a dense request widens the frame instead of the modules', (
+      tester,
+    ) async {
+      final width = requestModalResultCardWidth(_denseRequest.qrData);
+      expect(width, greaterThan(kRequestModalResultCardWidth));
+
+      await _pump(
+        tester,
+        Center(
+          child: AppModalCard(
+            width: width,
+            child: RequestResultCard(request: _denseRequest),
+          ),
+        ),
+      );
+
+      // A 288 frame squeezes this symbol under the two-pixel module floor,
+      // which is an assertion in debug and a hard-to-scan code in release.
+      expect(tester.takeException(), isNull);
+      final qr = tester.getRect(
+        find.byKey(const ValueKey('request_qr_surface')),
+      );
+      expect(
+        qr.width - AppSpacing.sm * 2,
+        greaterThanOrEqualTo(requestQrSideFor(_denseRequest.qrData) - 0.01),
+      );
+    });
+
+    testWidgets('an ordinary request keeps the fixed frame', (tester) async {
+      expect(
+        requestModalResultCardWidth(_withAmount.qrData),
+        kRequestModalResultCardWidth,
+      );
+      expect(
+        requestModalResultCardWidth(_empty.qrData),
+        kRequestModalResultCardWidth,
+      );
+      // A pane too narrow for the code it holds caps rather than overflows.
+      expect(
+        requestModalResultCardWidth(_denseRequest.qrData, maxWidth: 300),
+        300,
+      );
+    });
+
     testWidgets('a failed save encode is reported, not swallowed', (
       tester,
     ) async {
@@ -695,6 +749,25 @@ void main() {
       expect(sharedPng, isNotNull);
       expect(sharedPng!.sublist(0, 8), _pngSignature);
     }, timeout: _encodeTimeout);
+
+    testWidgets('the sheet draws the densest request without squeezing it', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        RequestAmountSheetResult(request: _denseRequest),
+        size: _mobileSize,
+      );
+
+      expect(tester.takeException(), isNull);
+      final qr = tester.getRect(
+        find.byKey(const ValueKey('request_qr_surface')),
+      );
+      expect(
+        qr.width - AppSpacing.sm * 2,
+        greaterThanOrEqualTo(requestQrSideFor(_denseRequest.qrData) - 0.01),
+      );
+    });
 
     testWidgets('a failed share encode is reported, not swallowed', (
       tester,

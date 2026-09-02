@@ -22,8 +22,11 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
+import 'package:zcash_wallet/src/core/zcash/zip321_payment_request_builder.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_card.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -43,6 +46,10 @@ const _longAmount = '123456.12345678';
 
 /// A memo at the ZIP-321 limit: the tallest step one can be.
 final _longMessage = 'a memo that keeps going and going. ' * 14;
+
+/// Exactly the 512 bytes ZIP-321 allows, which is the densest QR the result
+/// step can be asked to draw.
+final _maxMessage = 'm' * kZip321MaxMemoBytes;
 
 void main() {
   for (final size in const [_defaultWindow, _minimumWindow]) {
@@ -87,6 +94,41 @@ void main() {
       _expectFits(tester, 'step two, long request');
     });
 
+    testWidgets('the request modal fits at $size with the densest request', (
+      tester,
+    ) async {
+      // A real software account's UA plus the longest memo the protocol
+      // allows: 113 modules, which needs more than the fixed 288 frame can
+      // give at the two-pixel floor.
+      await _pumpReceive(tester, size, shieldedAddress: _longShieldedAddress);
+
+      await _openRequest(tester);
+      await _enterAmount(tester, '0.5');
+      await tester.tap(find.byKey(const ValueKey('request_add_message_card')));
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('request_message_field')),
+        _maxMessage,
+      );
+      await tester.pump();
+      _expectFits(tester, 'dense, step one');
+
+      await tester.tap(find.byKey(const ValueKey('request_next_button')));
+      await tester.pump();
+      _expectFits(tester, 'dense, step two');
+
+      // The frame grew rather than squeezing the modules under the floor.
+      final card = tester.getRect(find.byType(AppModalCard));
+      expect(card.width, greaterThan(kRequestModalResultCardWidth));
+      final qr = tester.getRect(
+        find.byKey(const ValueKey('request_qr_surface')),
+      );
+      expect(
+        qr.width - AppSpacing.sm * 2,
+        greaterThanOrEqualTo(requestQrSideFor(_denseQrData) - 0.01),
+      );
+    });
+
     testWidgets('the request modal fits at $size for a transparent address', (
       tester,
     ) async {
@@ -119,6 +161,11 @@ void _expectFits(WidgetTester tester, String state) {
     reason: 'the card outgrew its pane at: $state',
   );
   expect(
+    card.width,
+    lessThanOrEqualTo(surface.width),
+    reason: 'the card outgrew its pane sideways at: $state',
+  );
+  expect(
     card.top,
     greaterThanOrEqualTo(surface.top - 0.01),
     reason: 'the card is clipped at the top at: $state',
@@ -149,26 +196,44 @@ Future<void> _enterAmount(WidgetTester tester, String amount) async {
   await tester.pump();
 }
 
-Future<void> _pumpReceive(WidgetTester tester, Size size) async {
+Future<void> _pumpReceive(
+  WidgetTester tester,
+  Size size, {
+  String shieldedAddress = _shieldedAddress,
+}) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
-  await tester.pumpWidget(_receiveHarness());
+  await tester.pumpWidget(_receiveHarness(shieldedAddress: shieldedAddress));
   await tester.pump();
   await tester.pump();
 }
 
 const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
+
+/// The length a real software account's Orchard+Sapling UA actually is (178
+/// characters), so the URI the QR encodes is the one the app hands out.
+final _longShieldedAddress = 'u1${'q' * 176}';
+
 const _transparentAddress =
     't1testtransparentaddress111111111111111111111111111111111111';
 
-final _bootstrap = AppBootstrapState(
+/// What the densest request's QR encodes, for the module-pitch assertion.
+final _denseQrData = ZecRequestView(
+  address: _longShieldedAddress,
+  amountZec: '0.5',
+  messageText: _maxMessage,
+).qrData;
+
+AppBootstrapState _bootstrapFor(String shieldedAddress) => AppBootstrapState(
   initialLocation: '/receive',
-  initialAccountState: const AccountState(
-    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+  initialAccountState: AccountState(
+    accounts: const [
+      AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0),
+    ],
     activeAccountUuid: 'account-1',
-    activeAddress: _shieldedAddress,
+    activeAddress: shieldedAddress,
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
@@ -180,7 +245,10 @@ final _bootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-Widget _receiveHarness({List<Override> extraOverrides = const []}) {
+Widget _receiveHarness({
+  String shieldedAddress = _shieldedAddress,
+  List<Override> extraOverrides = const [],
+}) {
   final router = GoRouter(
     initialLocation: '/receive',
     routes: [
@@ -194,7 +262,7 @@ Widget _receiveHarness({List<Override> extraOverrides = const []}) {
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(_bootstrapFor(shieldedAddress)),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
           SyncState(
@@ -205,7 +273,7 @@ Widget _receiveHarness({List<Override> extraOverrides = const []}) {
         ),
       ),
       receiveAddressServiceProvider.overrideWith(
-        _FakeReceiveAddressService.new,
+        (ref) => _FakeReceiveAddressService(ref, shieldedAddress),
       ),
       zecLiveUsdUnitPriceProvider.overrideWithValue(70),
       ...extraOverrides,
@@ -218,13 +286,15 @@ Widget _receiveHarness({List<Override> extraOverrides = const []}) {
 }
 
 class _FakeReceiveAddressService extends ReceiveAddressService {
-  _FakeReceiveAddressService(super.ref);
+  _FakeReceiveAddressService(super.ref, this.shieldedAddress);
+
+  final String shieldedAddress;
 
   @override
   Future<String> loadShieldedAddress({
     required String accountUuid,
     String? currentShieldedAddress,
-  }) async => currentShieldedAddress ?? _shieldedAddress;
+  }) async => currentShieldedAddress ?? shieldedAddress;
 
   @override
   String? getCachedTransparentAddress(String accountUuid) =>
@@ -237,5 +307,5 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
 
   @override
   Future<String> renewShieldedAddress({required String accountUuid}) async =>
-      _shieldedAddress;
+      shieldedAddress;
 }
