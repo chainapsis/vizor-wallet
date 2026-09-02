@@ -52,7 +52,11 @@ final _indexedAddressKeyPattern = RegExp(r'^address\.([1-9][0-9]{0,3})$');
 /// Whether the raw query repeats an `address` or `address.N` key.
 ///
 /// Read off the raw string rather than `Uri.queryParameters`, which has
-/// already collapsed the repeats this looks for.
+/// already collapsed the repeats this looks for — but compare the names
+/// *decoded*, the way `Uri.queryParameters` will read them: ZIP-321 forbids
+/// percent-encoded names, so `%61ddress` is refused by the parser and lands
+/// here, where it must count as a second `address`, not a stranger. A name
+/// that cannot be decoded is compared as written; it cannot alias `address`.
 bool _hasRepeatedAddressKey(String raw) {
   final queryStart = raw.indexOf('?');
   if (queryStart == -1) return false;
@@ -64,13 +68,22 @@ bool _hasRepeatedAddressKey(String raw) {
   for (final param in query.split('&')) {
     if (param.isEmpty) continue;
     final separator = param.indexOf('=');
-    final name = separator == -1 ? param : param.substring(0, separator);
+    final rawName = separator == -1 ? param : param.substring(0, separator);
+    final name = _decodedQueryName(rawName);
     if (name != 'address' && !_indexedAddressKeyPattern.hasMatch(name)) {
       continue;
     }
     if (!seen.add(name)) return true;
   }
   return false;
+}
+
+String _decodedQueryName(String rawName) {
+  try {
+    return Uri.decodeQueryComponent(rawName);
+  } on ArgumentError {
+    return rawName;
+  }
 }
 
 /// The authority of a `zcash://<authority>...` string, exactly as written.

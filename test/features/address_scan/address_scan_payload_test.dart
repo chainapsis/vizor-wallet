@@ -54,6 +54,25 @@ void main() {
       );
     });
 
+    test('refuses a percent-encoded alias of a repeated address key', () {
+      // The parser refuses the encoded name, and the recovery path must not
+      // let `Uri.queryParameters` decode it into a second `address` that
+      // wins by being last.
+      // Refusal hands the raw payload back unchanged, exactly like the
+      // plainly repeated key below, so nothing downstream sees an address.
+      const encodedAlias = 'zcash:?address=u1real000&%61ddress=u1attacker0';
+      expect(normalizeAddressScanPayload(encodedAlias), encodedAlias);
+      const encodedIndex = 'zcash:?address.1=u1real000&address.%31=u1attacker0';
+      expect(normalizeAddressScanPayload(encodedIndex), encodedIndex);
+    });
+
+    test('a single encoded address key is not a repeat', () {
+      expect(
+        normalizeAddressScanPayload('zcash:?%61ddress=u1real000'),
+        'u1real000',
+      );
+    });
+
     test('extracts an indexed-only zcash address', () {
       expect(
         normalizeAddressScanPayload('zcash:?address.1=u1k8h8x9g7f6e5d4c3b2a1'),
