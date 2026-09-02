@@ -1500,8 +1500,9 @@ pub async fn build_keystone_delegation_requests(
 ///
 /// # Errors
 ///
-/// Returns an error if signature lengths are invalid, opening the voting DB
-/// fails, or persisting the signature record fails.
+/// Returns an error if signature lengths are invalid, the supplied signing
+/// context does not match the persisted bundle setup, signature verification
+/// fails, opening the voting DB fails, or persisting the record fails.
 pub fn store_keystone_signature(
     db_path: String,
     account_uuid: String,
@@ -1532,10 +1533,12 @@ pub fn store_keystone_signature(
 
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
-/// Existing tuples for the same sighash and randomized key are accepted as
-/// idempotent retries, even when randomized signing produced different valid
-/// signature bytes. A tuple for a different signing context is a conflict, and
-/// any validation or database error rolls back the complete batch.
+/// Every tuple must match the bundle's persisted sighash and randomized key and
+/// pass SpendAuth verification. Existing valid tuples for the same context are
+/// accepted as idempotent retries, even when randomized signing produced
+/// different signature bytes. A tuple for a different signing context is a
+/// conflict, and any validation or database error rolls back the complete
+/// batch.
 pub fn store_keystone_signatures_batch(
     db_path: String,
     account_uuid: String,
@@ -2368,6 +2371,58 @@ mod tests {
         (0..16)
             .map(|index| pasta_curves::pallas::Base::from(index + 10).to_repr())
             .collect()
+    }
+
+    fn keystone_signature_fixture(
+        db: &zcash_voting::storage::VotingDb,
+        bundle_index: u32,
+        seed_byte: u8,
+        sighash_byte: u8,
+    ) -> ApiKeystoneSignatureInput {
+        use orchard::{
+            keys::SpendAuthorizingKey,
+            primitives::redpallas::{SpendAuth, VerificationKey},
+        };
+        use zcash_keys::keys::UnifiedSpendingKey;
+        use zip32::AccountId;
+
+        let sighash = [sighash_byte; KEYSTONE_SIGHASH_LEN];
+        let usk = UnifiedSpendingKey::from_seed(
+            &zcash_voting::Network::Regtest,
+            &[seed_byte; 64],
+            AccountId::try_from(0).unwrap(),
+        )
+        .unwrap();
+        let ask = SpendAuthorizingKey::from(usk.orchard());
+        let randomized_signing_key = ask.randomize(&pasta_curves::pallas::Scalar::from(
+            u64::from(bundle_index) + 1,
+        ));
+        let rk: [u8; KEYSTONE_RK_LEN] =
+            (&VerificationKey::<SpendAuth>::from(&randomized_signing_key)).into();
+        let signature =
+            randomized_signing_key.sign(voting_crypto_deps::rand::rngs::OsRng, &sighash);
+        let updated = db
+            .conn()
+            .execute(
+                "UPDATE bundles SET pczt_sighash = ?1, rk = ?2
+                 WHERE round_id = ?3 AND wallet_id = ?4 AND bundle_index = ?5",
+                rusqlite::params![
+                    sighash.as_slice(),
+                    rk.as_slice(),
+                    ROUND_ID,
+                    db.wallet_id(),
+                    i64::from(bundle_index),
+                ],
+            )
+            .unwrap();
+        assert_eq!(updated, 1);
+
+        ApiKeystoneSignatureInput {
+            bundle_index,
+            sig: <[u8; KEYSTONE_SIG_LEN]>::from(&signature).to_vec(),
+            sighash: sighash.to_vec(),
+            rk: rk.to_vec(),
+        }
     }
 
     fn test_tx1_effects() -> Vec<u8> {
@@ -3706,15 +3761,16 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        let signature = keystone_signature_fixture(&db, 0, 0x41, 0x21);
 
         store_keystone_signature(
             db_path.to_str().unwrap().to_string(),
             TEST_ACCOUNT_UUID.to_string(),
             ROUND_ID.to_string(),
             0,
-            vec![7; KEYSTONE_SIG_LEN],
-            vec![8; KEYSTONE_SIGHASH_LEN],
-            vec![9; KEYSTONE_RK_LEN],
+            signature.sig.clone(),
+            signature.sighash.clone(),
+            signature.rk.clone(),
         )
         .unwrap();
         let records = get_keystone_signatures(
@@ -3726,7 +3782,7 @@ mod tests {
 
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].bundle_index, 0);
-        assert_eq!(records[0].sig, vec![7; KEYSTONE_SIG_LEN]);
+        assert_eq!(records[0].sig, signature.sig);
 
         let err = store_keystone_signature(
             db_path.to_str().unwrap().to_string(),
@@ -3734,8 +3790,8 @@ mod tests {
             ROUND_ID.to_string(),
             0,
             vec![7; KEYSTONE_SIG_LEN - 1],
-            vec![8; KEYSTONE_SIGHASH_LEN],
-            vec![9; KEYSTONE_RK_LEN],
+            signature.sighash,
+            signature.rk,
         )
         .unwrap_err();
         assert!(err.contains("sig must be exactly"));
@@ -3753,14 +3809,12 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        let signature = keystone_signature_fixture(&db, 0, 0x41, 0x21);
+        let alternate_valid_signature = keystone_signature_fixture(&db, 0, 0x41, 0x21);
+        assert_ne!(signature.sig, alternate_valid_signature.sig);
+        let expected_stored_sig = signature.sig.clone();
         drop(db);
 
-        let signature = ApiKeystoneSignatureInput {
-            bundle_index: 0,
-            sig: vec![7; KEYSTONE_SIG_LEN],
-            sighash: vec![8; KEYSTONE_SIGHASH_LEN],
-            rk: vec![9; KEYSTONE_RK_LEN],
-        };
         let first = store_keystone_signatures_batch(
             db_path.to_str().unwrap().to_string(),
             TEST_ACCOUNT_UUID.to_string(),
@@ -3785,10 +3839,7 @@ mod tests {
             db_path.to_str().unwrap().to_string(),
             TEST_ACCOUNT_UUID.to_string(),
             ROUND_ID.to_string(),
-            vec![ApiKeystoneSignatureInput {
-                sig: vec![10; KEYSTONE_SIG_LEN],
-                ..signature.clone()
-            }],
+            vec![alternate_valid_signature],
         )
         .unwrap();
         assert_eq!(resigned.inserted, 0);
@@ -3800,7 +3851,7 @@ mod tests {
             ROUND_ID.to_string(),
         )
         .unwrap();
-        assert_eq!(records[0].sig, vec![7; KEYSTONE_SIG_LEN]);
+        assert_eq!(records[0].sig, expected_stored_sig);
 
         let conflict = store_keystone_signatures_batch(
             db_path.to_str().unwrap().to_string(),
@@ -3820,7 +3871,7 @@ mod tests {
             ROUND_ID.to_string(),
         )
         .unwrap();
-        assert_eq!(records[0].sig, vec![7; KEYSTONE_SIG_LEN]);
+        assert_eq!(records[0].sig, expected_stored_sig);
     }
 
     #[test]
@@ -3835,22 +3886,23 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        let input = keystone_signature_fixture(&db, 0, 0x41, 0x21);
         drop(db);
 
-        let input = |bundle_index| ApiKeystoneSignatureInput {
-            bundle_index,
-            sig: vec![7; KEYSTONE_SIG_LEN],
-            sighash: vec![8; KEYSTONE_SIGHASH_LEN],
-            rk: vec![9; KEYSTONE_RK_LEN],
-        };
         let err = store_keystone_signatures_batch(
             db_path.to_str().unwrap().to_string(),
             TEST_ACCOUNT_UUID.to_string(),
             ROUND_ID.to_string(),
-            vec![input(0), input(99)],
+            vec![
+                input.clone(),
+                ApiKeystoneSignatureInput {
+                    bundle_index: 99,
+                    ..input
+                },
+            ],
         )
         .unwrap_err();
-        assert!(err.contains("bundle 99"));
+        assert!(err.contains("bundle=99"));
 
         let records = get_keystone_signatures(
             db_path.to_str().unwrap().to_string(),
