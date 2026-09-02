@@ -12,7 +12,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../services/request_qr_export.dart';
@@ -120,18 +122,45 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
     });
   }
 
+  /// Both hand-offs are fired with `unawaited`, so a throw would otherwise be
+  /// an unhandled zone error: the user presses the button and nothing at all
+  /// happens, which reads exactly like a share they have not made yet. Each
+  /// failure names the other hand-off, which is still one tap away.
   Future<void> _copyLink(String uri) async {
-    await Clipboard.setData(ClipboardData(text: uri));
+    try {
+      await Clipboard.setData(ClipboardData(text: uri));
+    } catch (e) {
+      log('ReceiveRequest: ERROR copying request link: $e');
+      if (!mounted) return;
+      showAppToast(
+        context,
+        "Couldn't copy the request link. Try sharing it instead.",
+        iconName: AppIcons.cancel,
+        tone: AppToastTone.destructive,
+      );
+      return;
+    }
     if (!mounted) return;
     showAppToast(context, kRequestLinkCopiedToast);
   }
 
   Future<void> _share(String text, Uint8List png) async {
-    await ref.read(requestShareHandlerProvider)(
-      text: text,
-      png: png,
-      fileName: kRequestQrShareFileName,
-    );
+    try {
+      await ref.read(requestShareHandlerProvider)(
+        text: text,
+        png: png,
+        fileName: kRequestQrShareFileName,
+      );
+    } catch (e) {
+      log('ReceiveRequest: ERROR sharing request: $e');
+      if (!mounted) return;
+      showAppToast(
+        context,
+        "Couldn't share this request. Copy the link instead.",
+        iconName: AppIcons.cancel,
+        tone: AppToastTone.destructive,
+      );
+    }
   }
 
   @override

@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
@@ -1013,17 +1014,27 @@ void main() {
     expect(find.textContaining("We couldn't save the QR image"), findsNothing);
   });
 
-  testWidgets('reports a failing save dialog', (tester) async {
+  testWidgets('reports a failing save dialog without the raw exception', (
+    tester,
+  ) async {
     await _saveRequestQr(
       tester,
       picker: ({required String suggestedName}) async =>
           throw StateError('no panel'),
     );
 
+    final toast = tester.widget<AppToast>(find.byType(AppToast));
     expect(
-      find.textContaining("We couldn't save the QR image"),
-      findsOneWidget,
+      toast.message,
+      "We couldn't save the QR image. Try another folder, or copy the request "
+      'link instead.',
     );
+    // The diagnostic belongs in the log, not on a two-line toast.
+    expect(toast.message, isNot(contains('no panel')));
+    expect(toast.message, isNot(contains('StateError')));
+    // A failure must not arrive under the success check.
+    expect(toast.tone, AppToastTone.destructive);
+    expect(toast.iconName, AppIcons.cancel);
     expect(find.textContaining('QR image saved to'), findsNothing);
   });
 }

@@ -12,9 +12,11 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
@@ -714,6 +716,89 @@ void main() {
 
     expect(copied, ['zcash:$_shielded?amount=0.25']);
     expect(find.text('Request link copied'), findsOneWidget);
+  });
+
+  testWidgets('a failing share offers the link instead', (tester) async {
+    await _pumpReceive(
+      tester,
+      _FakeReceiveAddressService(),
+      extraOverrides: [
+        requestShareHandlerProvider.overrideWithValue(({
+          required text,
+          required png,
+          required fileName,
+        }) async {
+          throw StateError('no share sheet');
+        }),
+      ],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_request')));
+    await _settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_input')),
+      '0.5',
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('request_create_button')));
+    await _settle(tester);
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('request_share_button')));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pump();
+    });
+    await tester.pump();
+
+    final toast = tester.widget<AppToast>(find.byType(AppToast));
+    expect(
+      toast.message,
+      "Couldn't share this request. Copy the link instead.",
+    );
+    expect(toast.tone, AppToastTone.destructive);
+    expect(toast.iconName, AppIcons.cancel);
+  });
+
+  testWidgets('a failing copy offers the share sheet instead', (tester) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          throw PlatformException(code: 'clipboard_unavailable');
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_request')));
+    await _settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_input')),
+      '0.5',
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('request_create_button')));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('request_copy_link_button')));
+    await _settle(tester);
+
+    final toast = tester.widget<AppToast>(find.byType(AppToast));
+    expect(
+      toast.message,
+      "Couldn't copy the request link. Try sharing it instead.",
+    );
+    expect(toast.tone, AppToastTone.destructive);
+    expect(toast.iconName, AppIcons.cancel);
+    expect(find.text(kRequestLinkCopiedToast), findsNothing);
   });
 
   testWidgets('a USD request keeps the ZEC it was created with when the price '
