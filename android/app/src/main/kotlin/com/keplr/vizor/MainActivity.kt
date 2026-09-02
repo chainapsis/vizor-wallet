@@ -19,6 +19,18 @@ class MainActivity : FlutterFragmentActivity() {
     private var paymentUriDartReady = false
     private val consumedPaymentUris = ArrayList<String>()
 
+    /**
+     * The link this activity record was created with, kept outside
+     * [consumedPaymentUris] so the bound can never evict it.
+     *
+     * A task restore recreates the activity from its creating intent, so the
+     * cold-start link is exactly the one most likely to be replayed — and, once
+     * the user has opened enough later links, it is also the oldest entry in an
+     * LRU that evicts from the front. Pinning it separately keeps the bound for
+     * the onNewIntent links, which are re-deliverable by design.
+     */
+    private var launchPaymentUri: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Restored before super.onCreate: on a recreated activity super
         // re-attaches the Flutter fragment, which already runs
@@ -27,6 +39,7 @@ class MainActivity : FlutterFragmentActivity() {
         savedInstanceState?.getStringArrayList(KEY_CONSUMED_PAYMENT_URIS)?.let {
             consumedPaymentUris.addAll(it)
         }
+        launchPaymentUri = savedInstanceState?.getString(KEY_LAUNCH_PAYMENT_URI)
         super.onCreate(savedInstanceState)
     }
 
@@ -35,6 +48,7 @@ class MainActivity : FlutterFragmentActivity() {
         // Survives process death, so the recreated activity knows which of the
         // task's VIEW intents were already delivered.
         outState.putStringArrayList(KEY_CONSUMED_PAYMENT_URIS, ArrayList(consumedPaymentUris))
+        outState.putString(KEY_LAUNCH_PAYMENT_URI, launchPaymentUri)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -135,10 +149,14 @@ class MainActivity : FlutterFragmentActivity() {
         // replayed the link. Saved state keeps every consumed URI, not just the
         // last one, because after cold-starting on link A and receiving link B
         // through onNewIntent the restore may hand back either A or B, and both
-        // were already delivered.
-        val launchPaymentUri = intent?.dataString
-        if (launchPaymentUri == null || !consumedPaymentUris.contains(launchPaymentUri)) {
-            capturePaymentUri(intent)
+        // were already delivered. The launch link is checked against its own
+        // pinned field as well, because the bounded set can evict it.
+        val incomingLaunchUri = intent?.dataString
+        if (incomingLaunchUri == null ||
+            (incomingLaunchUri != launchPaymentUri &&
+                !consumedPaymentUris.contains(incomingLaunchUri))
+        ) {
+            capturePaymentUri(intent, isLaunchIntent = true)
         }
     }
 
@@ -226,17 +244,31 @@ class MainActivity : FlutterFragmentActivity() {
         capturePaymentUri(intent)
     }
 
-    private fun capturePaymentUri(intent: Intent?) {
+    private fun capturePaymentUri(intent: Intent?, isLaunchIntent: Boolean = false) {
         if (intent == null || intent.action != Intent.ACTION_VIEW) return
         if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
         val data = intent.data ?: return
         if (!"zcash".equals(data.scheme, ignoreCase = true)) return
-        intent.dataString?.let(::rememberConsumedPaymentUri)
-        pendingPaymentUris.add(intent.dataString ?: data.toString())
+        val uri = intent.dataString
+        if (uri != null) {
+            // The creating intent is what a restore hands back, so it is pinned
+            // rather than added to the set the bound trims.
+            if (isLaunchIntent) {
+                launchPaymentUri = uri
+            } else {
+                rememberConsumedPaymentUri(uri)
+            }
+        }
+        pendingPaymentUris.add(uri ?: data.toString())
         flushPendingPaymentUris()
     }
 
-    /** Newest last, deduped, bounded so a long-lived task's saved state stays small. */
+    /**
+     * Newest last, deduped, bounded so a long-lived task's saved state stays
+     * small. Only onNewIntent links live here; the launch link is pinned in
+     * [launchPaymentUri], because it is the oldest entry and the one a restore
+     * replays, so trimming from the front would drop exactly the wrong one.
+     */
     private fun rememberConsumedPaymentUri(uri: String) {
         consumedPaymentUris.remove(uri)
         consumedPaymentUris.add(uri)
@@ -260,6 +292,7 @@ class MainActivity : FlutterFragmentActivity() {
         private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
         private const val PAYMENT_URI_CHANNEL = "com.zcash.wallet/payment_uri"
         private const val KEY_CONSUMED_PAYMENT_URIS = "vizor.consumedPaymentUris"
+        private const val KEY_LAUNCH_PAYMENT_URI = "vizor.launchPaymentUri"
         private const val MAX_CONSUMED_PAYMENT_URIS = 8
     }
 }
