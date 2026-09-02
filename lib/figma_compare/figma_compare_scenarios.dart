@@ -983,6 +983,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'receive-request-result',
+    description: 'Desktop request modal step two with the shielded request QR',
+    builder: buildRequestModalStepTwoShieldedUseCase,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-receive-request-result',
     description: 'Mobile request sheet step two with the shielded request QR',
     builder: buildRequestMobileResultShieldedUseCase,

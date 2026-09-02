@@ -36,8 +36,19 @@ import 'request_qr_surface.dart';
 /// differently sized frames.
 const double kRequestModalCardWidth = 396;
 
-/// Side of the QR inside the desktop modal.
-const double kRequestModalQrSize = 160;
+/// Width of the result step.
+///
+/// The result is a QR with two actions under it. At the compose width the
+/// buttons stretched far past the code and the frame read as empty, so the
+/// step takes the narrowest frame the header (back, title, close) and the
+/// action labels fit in, and the code fills that frame edge to edge.
+const double kRequestModalResultCardWidth = 288;
+
+/// Side of the QR code itself inside the desktop modal: the result frame
+/// minus the modal card's horizontal inset and the code's own white margin,
+/// so the surface spans the full content width.
+const double kRequestModalQrSize =
+    kRequestModalResultCardWidth - AppSpacing.sm * 2 - AppSpacing.sm * 2;
 
 /// Step one: what you are asking for.
 ///
@@ -174,6 +185,7 @@ class RequestResultCard extends StatelessWidget {
           child: RequestQrSurface(
             data: request.qrData,
             size: kRequestModalQrSize,
+            padding: AppSpacing.sm,
           ),
         ),
         if (summary != null) ...[
@@ -654,7 +666,9 @@ class RequestAmountSurface extends StatelessWidget {
                 ),
                 child: Center(
                   child: AppModalCard(
-                    width: kRequestModalCardWidth,
+                    width: step == RequestModalStep.result
+                        ? kRequestModalResultCardWidth
+                        : kRequestModalCardWidth,
                     child: card,
                   ),
                 ),
