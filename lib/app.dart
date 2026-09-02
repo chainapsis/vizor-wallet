@@ -1284,10 +1284,30 @@ class _IncomingDeepLinkHostState extends ConsumerState<_IncomingDeepLinkHost> {
           widget.router.go('/home');
         }
       case VizorDeepLinkRoute.paymentLink:
-        ref.read(paymentLinkIntakeProvider.notifier).receive(rawUri);
+        final result = ref
+            .read(paymentLinkIntakeProvider.notifier)
+            .receive(rawUri);
+        if (result == PaymentLinkIntakeResult.rejected) {
+          _showRejectedPaymentLinkMessage();
+        }
       case null:
         return;
     }
+  }
+
+  void _showRejectedPaymentLinkMessage() {
+    final message = ref.read(paymentLinkIntakeProvider).errorMessage;
+    if (message == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        message,
+        iconName: AppIcons.warning,
+        tone: AppToastTone.destructive,
+      );
+      ref.read(paymentLinkIntakeProvider.notifier).clearError();
+    });
   }
 
   @override

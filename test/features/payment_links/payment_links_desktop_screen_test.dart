@@ -941,6 +941,51 @@ void main() {
     expect(hardwareSigning.discardedDrafts, [BigInt.one]);
   });
 
+  testWidgets('account switch cancels an open Keystone Gift Card request', (
+    tester,
+  ) async {
+    final accountNotifier = _SwitchablePaymentLinkAccountNotifier(
+      _twoAccountHardwareState,
+    );
+    final hardwareSigning = _FakePaymentLinkHardwareSigningService();
+    await _pumpPaymentLinksScreen(
+      tester,
+      accountNotifier: accountNotifier,
+      bootstrap: _twoAccountHardwareBootstrap,
+      hardwareSigning: hardwareSigning,
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create card'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(KeystoneSigningModal), findsOneWidget);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+    expect(hardwareSigning.discardedDrafts, [BigInt.one]);
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('enables manual redeem intake', (tester) async {
     final operations = _FakePaymentLinkOperations();
     final clipboard = _FakePaymentLinkClipboard(
@@ -1947,6 +1992,39 @@ final _hardwareBootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+const _twoAccountHardwareState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'hardware-account',
+      name: 'Keystone',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+      isHardware: true,
+    ),
+    AccountInfo(
+      uuid: 'account-2',
+      name: 'Savings',
+      order: 1,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'hardware-account',
+  activeAddress: 'u1hardwareaddress',
+);
+
+final _twoAccountHardwareBootstrap = AppBootstrapState(
+  initialLocation: '/payment-links',
+  initialAccountState: _twoAccountHardwareState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
 const _twoAccountState = AccountState(
   accounts: [
     AccountInfo(
@@ -2349,11 +2427,15 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
 }
 
 class _SwitchablePaymentLinkAccountNotifier extends AccountNotifier {
+  _SwitchablePaymentLinkAccountNotifier([this.initialState = _twoAccountState]);
+
+  final AccountState initialState;
+
   @override
-  AccountState build() => _twoAccountState;
+  AccountState build() => initialState;
 
   void setActiveAccount(String uuid) {
-    final current = state.value ?? _twoAccountState;
+    final current = state.value ?? initialState;
     state = AsyncData(
       current.copyWith(
         activeAccountUuid: uuid,

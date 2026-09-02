@@ -237,6 +237,14 @@ class _PaymentLinkKeystoneSigningOverlayState
       await widget.onFundingBroadcast(draft.link, result);
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._broadcast: $error\n$stackTrace');
+      try {
+        await _signingService?.discardPcztDraft(draft: draft);
+      } catch (cleanupError, cleanupStackTrace) {
+        log(
+          'PaymentLinkKeystoneSigning._broadcast cleanup failed: '
+          '$cleanupError\n$cleanupStackTrace',
+        );
+      }
       if (!mounted) return;
       setState(() {
         _phase = _PaymentLinkKeystonePhase.failed;

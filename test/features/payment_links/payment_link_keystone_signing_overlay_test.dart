@@ -154,6 +154,70 @@ void main() {
     expect(find.text('Broadcast timed out before confirmation.'), findsNothing);
     expect(find.text('Back to Gift Card'), findsNothing);
   });
+
+  testWidgets('discards the prepared draft when broadcast fails', (
+    tester,
+  ) async {
+    final service = _FakeHardwareSigningService(
+      broadcastError: StateError('Keystone signature preflight failed'),
+    );
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => PaymentLinkKeystoneSigningOverlay(
+            amountZatoshi: BigInt.from(10000000),
+            sourceAccountUuid: 'hardware-account',
+            onCancel: () {},
+            onFundingBroadcast: (_, _) async {},
+          ),
+        ),
+        GoRoute(
+          path: '/send/keystone/scan',
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('fake_keystone_signature_done'),
+              onPressed: () => context.pop<List<int>>(const [4, 5, 6]),
+              child: const Text('Return signature'),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
+        ),
+      ),
+    );
+    addTearDown(router.dispose);
+
+    for (var i = 0; i < 20 && service.proofDrafts.isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('Get signature'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('fake_keystone_signature_done')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(service.discardedDrafts, [BigInt.one]);
+    expect(
+      find.text('Keystone signature could not be applied.'),
+      findsOneWidget,
+    );
+    expect(find.text('Back to Gift Card'), findsOneWidget);
+  });
 }
 
 final _link = VizorPaymentLink(
@@ -170,13 +234,16 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
   _FakeHardwareSigningService({
     this.broadcastStatus = 'broadcasted',
     this.broadcastMessage,
+    this.broadcastError,
   });
 
   final String broadcastStatus;
   final String? broadcastMessage;
+  final Object? broadcastError;
   final createdAmounts = <BigInt>[];
   final createdFromAccounts = <String>[];
   final proofDrafts = <BigInt>[];
+  final discardedDrafts = <BigInt>[];
   final decodedResponses = <List<int>>[];
   final broadcastSignatures = <List<int>>[];
 
@@ -225,7 +292,9 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
   @override
   Future<void> discardPcztDraft({
     required PaymentLinkHardwarePcztDraft draft,
-  }) async {}
+  }) async {
+    discardedDrafts.add(draft.proposalId);
+  }
 
   @override
   Future<PaymentLinkHardwareFundingResult> broadcastSignedPczt({
@@ -236,6 +305,8 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
     String? outputParamsPath,
   }) async {
     broadcastSignatures.add(pcztWithSignaturesBytes);
+    final error = broadcastError;
+    if (error != null) throw error;
     return PaymentLinkHardwareFundingResult(
       txids: 'hardware-funding-txid',
       status: broadcastStatus,

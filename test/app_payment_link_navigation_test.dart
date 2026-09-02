@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 
@@ -58,6 +60,48 @@ void main() {
         reason: location,
       );
     }
+  });
+
+  testWidgets('shows an error for a rejected Gift Card deep link', (
+    tester,
+  ) async {
+    final incomingUris = _FakeIncomingUriService();
+    addTearDown(incomingUris.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_readyBootstrap),
+          incomingUriServiceProvider.overrideWithValue(incomingUris),
+          syncProvider.overrideWith(
+            () => FakeSyncNotifier(
+              SyncState(
+                accountUuid: 'account-1',
+                hasAccountScopedData: true,
+                isSyncComplete: true,
+                percentage: 1,
+                displayTargetPercentage: 1,
+                spendableBalance: BigInt.from(1000000),
+                displaySpendableBalance: BigInt.from(1000000),
+              ),
+            ),
+          ),
+        ],
+        child: const ZcashWalletApp(),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.byType(SendScreen));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+    );
+
+    incomingUris.emit('https://link.vizor.cash/payment-links/open#malformed');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+
+    expect(container.read(paymentLinkIntakeProvider).errorMessage, isNull);
+    expect(find.text('Payment link could not be opened.'), findsOneWidget);
   });
 
   testWidgets('opens a queued Gift Card after wallet onboarding reaches Home', (
@@ -215,6 +259,21 @@ class _OnboardingAccountNotifier extends AccountNotifier {
       ),
     );
   }
+}
+
+class _FakeIncomingUriService extends IncomingUriService {
+  final StreamController<String> _uris = StreamController<String>.broadcast();
+
+  @override
+  Stream<String> get uriStream => _uris.stream;
+
+  @override
+  Future<void> initialize() async {}
+
+  void emit(String uri) => _uris.add(uri);
+
+  @override
+  Future<void> dispose() => _uris.close();
 }
 
 class _PendingClaimPaymentLinkOperations implements PaymentLinkOperations {

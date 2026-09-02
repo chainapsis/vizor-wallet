@@ -673,6 +673,7 @@ class _PaymentLinksDesktopScreenState
     }
 
     final wasPastAmountStep = _page != _PaymentLinksLocalPage.amount;
+    final hadKeystoneRequest = _keystoneFundingRequest != null;
     _fundingQuoteDebounce?.cancel();
     _fundingQuoteGeneration += 1;
     _maxFundingQuoteGeneration += 1;
@@ -681,6 +682,10 @@ class _PaymentLinksDesktopScreenState
       _maxFundingQuoteInProgress = false;
       _fundingQuote = null;
       _fundingQuoteInProgress = false;
+      if (hadKeystoneRequest) {
+        _keystoneFundingRequest = null;
+        _operationInProgress = false;
+      }
       _amountSupportingText = null;
       _amountSupportingTextIsError = false;
       _page = _PaymentLinksLocalPage.amount;
