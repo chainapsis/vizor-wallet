@@ -152,6 +152,21 @@ SyncState scanningState() => SyncState(
   scannedHeight: 12000,
 );
 
+/// Scanned to the tip, nothing running — and no balance for the account.
+///
+/// What `withoutAccountScopedData` leaves behind, and what a sync-progress
+/// event whose balance fetch failed publishes for an account that never had
+/// one: the wallet-wide sync fields say "settled" while `displaySpendable` is
+/// a zero nobody read.
+SyncState settledWithoutBalanceState() => SyncState(
+  accountUuid: 'account-1',
+  hasBalanceData: false,
+  hasRecentTransactionsData: false,
+  isSyncComplete: true,
+  chainTipHeight: 3000000,
+  scannedHeight: 3000000,
+);
+
 /// What Rust says when it has no anchor heights yet — the error the pre-check
 /// maps onto [PaymentRequestStatus.syncing].
 Exception get walletMustSync => Exception('Wallet must sync before sending');
@@ -621,6 +636,37 @@ void main() {
     expect(state.view.status, PaymentRequestStatus.ready);
     expect(api.proposeAttempts, 3);
     expect(state.reviewArgs!.proposalId, BigInt.one);
+  });
+
+  test('a settled state carrying no balance for the account is not a '
+      'sync completion', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api, sync: scanningState());
+    final sync = syncNotifier(container);
+    await _presentSyncingCard(container, api);
+    expect(api.proposeAttempts, 1);
+
+    // Scanned to the tip with no balance read for this account. The
+    // wallet-wide fields alone would call this settled, and the re-check
+    // would then hand the card a shortfall computed against a zero.
+    sync.emit(settledWithoutBalanceState());
+    await pumpEventQueue();
+
+    expect(
+      flowState(container)!.view.status,
+      PaymentRequestStatus.syncing,
+      reason: 'a balance nobody fetched cannot answer the request',
+    );
+    expect(api.proposeAttempts, 1);
+
+    // The same tip, now with the account's balance actually in hand.
+    api.proposeThrows = null;
+    sync.emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    final state = flowState(container)!;
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(api.proposeAttempts, 2);
   });
 
   test('a card that is not syncing never re-checks on sync '

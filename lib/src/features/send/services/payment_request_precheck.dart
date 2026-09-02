@@ -377,12 +377,10 @@ final paymentRequestPrecheckProvider = Provider<PaymentRequestPrecheck>((ref) {
   return PaymentRequestPrecheck(
     validateAddress: rust_sync.validateAddress,
     discardProposal: discardSendProposal,
-    spendableIsAuthoritativeNow: () {
-      final sync = ref.read(syncProvider).value;
-      return sync != null &&
-          sync.isSyncedToTip &&
-          !sync.isUsingCompletedSpendableSnapshot;
-    },
+    // The same predicate the card's own read and its sync watch use, scoped
+    // to the active account: an unscoped read answers with the wallet-wide
+    // sync fields of a state that may hold no balance for this account.
+    spendableIsAuthoritativeNow: () => activeAccountSpendableIsSettled(ref),
     proposeTransfer:
         ({
           required String accountUuid,

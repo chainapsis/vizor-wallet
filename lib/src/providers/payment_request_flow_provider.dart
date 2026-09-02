@@ -271,7 +271,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     // A restored last-completed snapshot is stale by construction, and a sync
     // still short of the tip has not seen every note yet, so both hand the
     // verdict to the proposal instead.
-    final spendableIsAuthoritative = _isSettled(sync);
+    final spendableIsAuthoritative = sync.hasSettledSpendableBalance;
 
     final result = await ref
         .read(paymentRequestPrecheckProvider)
@@ -359,20 +359,17 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     }
   }
 
-  /// Whether an account-scoped sync state's spendable balance is settled.
+  /// [SyncState.hasSettledSpendableBalance] for the active account, from an
+  /// unscoped state.
   ///
-  /// The one condition the whole `syncing` status hangs off, so the pre-check's
-  /// own read and the watch that decides when to re-run it share it rather than
-  /// drifting into two nearly-identical predicates.
-  static bool _isSettled(SyncState scoped) =>
-      scoped.isSyncedToTip && !scoped.isUsingCompletedSpendableSnapshot;
-
-  /// [_isSettled] for the active account, from an unscoped state.
-  bool _spendableIsSettled(SyncState? sync) {
-    if (sync == null) return false;
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    return _isSettled(sync.scopedToAccount(accountUuid));
-  }
+  /// The one condition the whole `syncing` status hangs off. The pre-check's
+  /// own read, this watch, and the precheck provider's live re-read all go
+  /// through the same predicate rather than drifting into three nearly
+  /// identical ones.
+  bool _spendableIsSettled(SyncState? sync) => spendableIsSettledForAccount(
+    sync,
+    ref.read(accountProvider).value?.activeAccountUuid,
+  );
 
   Future<SyncState> _readSyncState() async {
     final current = ref.read(syncProvider);
