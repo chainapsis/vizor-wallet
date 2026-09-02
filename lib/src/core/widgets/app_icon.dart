@@ -108,6 +108,7 @@ abstract final class AppIcons {
   static const users = 'users';
   static const uturnUp = 'uturn_up';
   static const vizor = 'vizor';
+  static const vote = 'vote';
   static const wallet = 'wallet';
   static const warning = 'warning';
   static const warningCircle = 'warning_circle';
