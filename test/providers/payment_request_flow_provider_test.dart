@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/migration_send_gate_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -73,8 +74,26 @@ class _FakeSendApi {
 class _FakeAccountNotifier extends AccountNotifier {
   @override
   FutureOr<AccountState> build() => const AccountState(
-    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    accounts: [
+      AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0),
+      AccountInfo(uuid: 'account-2', name: 'Account 2', order: 1),
+    ],
     activeAccountUuid: 'account-1',
+  );
+
+  void switchToForTest(String uuid) {
+    state = AsyncData(state.value!.copyWith(activeAccountUuid: uuid));
+  }
+}
+
+class _FakeSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+
+  void lockForTest() => state = const AppSecurityState(
+    isPasswordConfigured: true,
+    isUnlocked: false,
   );
 }
 
@@ -93,6 +112,7 @@ ProviderContainer makeContainer(_FakeSendApi api) {
     overrides: [
       paymentRequestPrecheckProvider.overrideWithValue(api.precheck),
       accountProvider.overrideWith(_FakeAccountNotifier.new),
+      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
           SyncState(
@@ -256,6 +276,67 @@ void main() {
     await pumpEventQueue();
 
     expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(api.discarded, [BigInt.one]);
+  });
+
+  test('locking the wallet takes the card down and frees the '
+      'proposal', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    (container.read(appSecurityProvider.notifier) as _FakeSecurityNotifier)
+        .lockForTest();
+    await pumpEventQueue();
+
+    expect(
+      container.read(paymentRequestFlowProvider),
+      isNull,
+      reason:
+          'the host renders above the router, so a card left standing '
+          'would sit on the unlock screen with the request still on it',
+    );
+    expect(api.discarded, [BigInt.one]);
+  });
+
+  test('a lock during the pre-check frees the proposal it was still '
+      'making', () async {
+    final api = _FakeSendApi()..gate = Completer<void>();
+    final container = makeContainer(api);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+
+    (container.read(appSecurityProvider.notifier) as _FakeSecurityNotifier)
+        .lockForTest();
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(api.discarded, [BigInt.one]);
+  });
+
+  test('switching accounts takes the card down and frees the '
+      'proposal', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    (container.read(accountProvider.notifier) as _FakeAccountNotifier)
+        .switchToForTest('account-2');
+    await pumpEventQueue();
+
+    expect(
+      container.read(paymentRequestFlowProvider),
+      isNull,
+      reason: 'the proposal belongs to the account that made it',
+    );
     expect(api.discarded, [BigInt.one]);
   });
 

@@ -18,6 +18,7 @@ import '../features/send/services/payment_request_precheck.dart';
 import '../features/send/services/send_flow.dart';
 import '../features/send/widgets/payment_request_card.dart';
 import 'account_provider.dart';
+import 'app_security_provider.dart';
 import 'migration_send_gate_provider.dart' show migrationSendGateProvider;
 import 'sync_provider.dart';
 import 'zec_price_change_provider.dart';
@@ -74,6 +75,30 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
 
   @override
   PaymentRequestFlowState? build() {
+    // The card is consent given by one unlocked account, and it holds that
+    // account's live proposal. Locking, signing out, and switching accounts
+    // all take that consent away without going through any of the card's own
+    // exits, so the flow has to notice them itself: the host renders above the
+    // router, which means a card left standing would sit on top of the unlock
+    // screen with the request's address, amount and memo still on it.
+    ref.listen(appSecurityProvider, (previous, next) {
+      final wasUnlocked = previous?.isUnlocked ?? true;
+      if (wasUnlocked && !next.isUnlocked) {
+        clear(logContext: 'PaymentRequest(locked)');
+      }
+    });
+    ref.listen(accountProvider, (previous, next) {
+      final previousUuid = previous?.value?.activeAccountUuid;
+      final nextUuid = next.value?.activeAccountUuid;
+      // Only a switch between two real accounts. A wallet reset drops the
+      // active account to null and is already handled by the link listener in
+      // `app.dart`, which also clears the parked prefill.
+      if (previousUuid != null &&
+          nextUuid != null &&
+          previousUuid != nextUuid) {
+        clear(logContext: 'PaymentRequest(account switched)');
+      }
+    });
     ref.onDispose(() {
       final proposal = _liveProposal;
       _liveProposal = null;
@@ -145,8 +170,10 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// Cancel, the ⨯, the scrim, and the Android back gesture.
   void dismiss() => _clear(logContext: 'PaymentRequest(dismissed)');
 
-  /// Drops the card without a user answer — wallet lock, wallet reset.
-  void clear() => _clear(logContext: 'PaymentRequest(cleared)');
+  /// Drops the card without a user answer — wallet lock, account switch,
+  /// wallet reset.
+  void clear({String logContext = 'PaymentRequest(cleared)'}) =>
+      _clear(logContext: logContext);
 
   void _clear({required String logContext}) {
     final current = state;
