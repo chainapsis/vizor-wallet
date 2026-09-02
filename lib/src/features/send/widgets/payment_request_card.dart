@@ -84,6 +84,10 @@ enum PaymentRequestStatus {
 
   /// Balances are not trustworthy yet because the wallet is syncing.
   syncing,
+
+  /// The check itself could not complete; the reason always comes through
+  /// [PaymentRequestView.statusMessage].
+  failed,
 }
 
 extension PaymentRequestStatusX on PaymentRequestStatus {
@@ -95,7 +99,8 @@ extension PaymentRequestStatusX on PaymentRequestStatus {
   bool get isError =>
       this == PaymentRequestStatus.invalidAddress ||
       this == PaymentRequestStatus.insufficientFunds ||
-      this == PaymentRequestStatus.syncing;
+      this == PaymentRequestStatus.syncing ||
+      this == PaymentRequestStatus.failed;
 }
 
 /// Default copy for each [PaymentRequestStatus].
@@ -116,7 +121,7 @@ String? defaultPaymentRequestStatusMessage(
   final spendable = _bareAmount(spendableText);
   return switch (status) {
     // Checking is stated by the primary button (a spinner and its own
-    // label), so the status slot stays reserved for the three errors.
+    // label), so the status slot stays reserved for the errors.
     PaymentRequestStatus.ready => null,
     PaymentRequestStatus.checking => null,
     PaymentRequestStatus.invalidAddress =>
@@ -126,6 +131,9 @@ String? defaultPaymentRequestStatusMessage(
           ? 'Not enough ZEC'
           : 'Not enough ZEC ($spendable available)',
     PaymentRequestStatus.syncing => 'Wallet is still syncing — try again soon',
+    // Always overridden in practice: every failure the pre-check publishes
+    // carries its own reason. This is the floor, not the message.
+    PaymentRequestStatus.failed => "Couldn't check this request",
   };
 }
 
@@ -1157,10 +1165,10 @@ class _ProseRows extends StatelessWidget {
   }
 }
 
-/// The card's one status line, which now only ever carries one of the three
-/// request errors: they take the destructive tone and the warning glyph the
-/// text fields already use. "Checking" says itself inside the primary
-/// button, so nothing neutral competes for this slot.
+/// The card's one status line, which only ever carries one of the request
+/// errors: they take the destructive tone and the warning glyph the text
+/// fields already use. "Checking" says itself inside the primary button, so
+/// nothing neutral competes for this slot.
 class _StatusMessage extends StatelessWidget {
   const _StatusMessage({
     required this.status,
@@ -1180,7 +1188,8 @@ class _StatusMessage extends StatelessWidget {
     final (Color color, String? iconName, bool animatedIcon) = switch (status) {
       PaymentRequestStatus.invalidAddress ||
       PaymentRequestStatus.insufficientFunds ||
-      PaymentRequestStatus.syncing => (
+      PaymentRequestStatus.syncing ||
+      PaymentRequestStatus.failed => (
         colors.text.destructive,
         AppIcons.warning,
         false,

@@ -357,6 +357,10 @@ void main() {
         buildPaymentRequestSyncingUseCase,
         'Wallet is still syncing — try again soon',
       ),
+      (
+        buildPaymentRequestFailedUseCase,
+        "Couldn't check this request — open Edit to review the details",
+      ),
     ]) {
       await _pumpUseCase(tester, builder);
 
@@ -437,6 +441,10 @@ void main() {
         buildPaymentRequestSyncingUseCase,
         'Wallet is still syncing — try again soon',
       ),
+      (
+        buildPaymentRequestFailedUseCase,
+        "Couldn't check this request — open Edit to review the details",
+      ),
     ]) {
       await _pumpUseCase(tester, builder);
       expect(
@@ -445,6 +453,18 @@ void main() {
         reason: message,
       );
     }
+  });
+
+  testWidgets('a failed check is its own status, not a bad address', (
+    tester,
+  ) async {
+    expect(
+      defaultPaymentRequestStatusMessage(PaymentRequestStatus.failed),
+      "Couldn't check this request",
+      reason: 'the floor under a reason the pre-check always supplies',
+    );
+    expect(PaymentRequestStatus.failed.blocksContinue, isTrue);
+    expect(PaymentRequestStatus.failed.isError, isTrue);
   });
 
   testWidgets('an insufficient-funds message without a balance stays short', (
@@ -532,6 +552,7 @@ void main() {
       buildPaymentRequestInvalidAddressUseCase,
       buildPaymentRequestInsufficientUseCase,
       buildPaymentRequestSyncingUseCase,
+      buildPaymentRequestFailedUseCase,
       buildPaymentRequestReplacedUseCase,
       buildPaymentRequestTransparentUseCase,
       buildPaymentRequestContactUseCase,
@@ -555,6 +576,7 @@ void main() {
       buildMobilePaymentRequestInvalidAddressUseCase,
       buildMobilePaymentRequestInsufficientUseCase,
       buildMobilePaymentRequestSyncingUseCase,
+      buildMobilePaymentRequestFailedUseCase,
       buildMobilePaymentRequestReplacedUseCase,
       buildMobilePaymentRequestTransparentUseCase,
       buildMobilePaymentRequestContactUseCase,

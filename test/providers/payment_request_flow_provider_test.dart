@@ -22,6 +22,7 @@ class _FakeSendApi {
 
   bool addressIsValid;
   String addressType;
+  Object? proposeThrows;
   Completer<void>? gate;
   var nextProposalId = 1;
   final discarded = <BigInt>[];
@@ -48,6 +49,8 @@ class _FakeSendApi {
         }) async {
           final pending = gate;
           if (pending != null) await pending.future;
+          final failure = proposeThrows;
+          if (failure != null) throw failure;
           final id = BigInt.from(nextProposalId++);
           proposed.add(id);
           return SendReviewArgs(
@@ -196,6 +199,25 @@ void main() {
 
     final state = container.read(paymentRequestFlowProvider)!;
     expect(state.view.status, PaymentRequestStatus.invalidAddress);
+    expect(state.canReview, isFalse);
+  });
+
+  test('a check that could not complete is failed, not invalid '
+      'address', () async {
+    final api = _FakeSendApi()..proposeThrows = Exception('something unmapped');
+    final container = makeContainer(api);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.view.status, PaymentRequestStatus.failed);
+    expect(
+      state.view.resolvedStatusMessage,
+      "Couldn't check this request — open Edit to review the details",
+    );
     expect(state.canReview, isFalse);
   });
 

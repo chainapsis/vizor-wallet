@@ -75,7 +75,10 @@ final _longValuesRequest = PaymentRequestView(
   note: _longNote,
 );
 
-PaymentRequestView _statusRequest(PaymentRequestStatus status) {
+PaymentRequestView _statusRequest(
+  PaymentRequestStatus status, {
+  String? statusMessage,
+}) {
   return PaymentRequestView(
     source: _fullRequest.source,
     requesterLabel: _fullRequest.requesterLabel,
@@ -86,8 +89,14 @@ PaymentRequestView _statusRequest(PaymentRequestStatus status) {
     note: _fullRequest.note,
     spendableText: _fullRequest.spendableText,
     status: status,
+    statusMessage: statusMessage,
   );
 }
+
+/// A check that could not complete. Every real failure overrides the default
+/// message with its own reason, so the gallery shows one that does.
+const _failedStatusMessage =
+    "Couldn't check this request — open Edit to review the details";
 
 const _replacedRequest = PaymentRequestView(
   source: PaymentRequestSource.link,
@@ -188,6 +197,13 @@ Widget buildPaymentRequestInsufficientUseCase(BuildContext context) =>
 Widget buildPaymentRequestSyncingUseCase(BuildContext context) =>
     _desktop(_statusRequest(PaymentRequestStatus.syncing));
 
+Widget buildPaymentRequestFailedUseCase(BuildContext context) => _desktop(
+  _statusRequest(
+    PaymentRequestStatus.failed,
+    statusMessage: _failedStatusMessage,
+  ),
+);
+
 Widget buildPaymentRequestReplacedUseCase(BuildContext context) =>
     _desktop(_replacedRequest);
 
@@ -244,6 +260,13 @@ Widget buildMobilePaymentRequestInsufficientUseCase(BuildContext context) =>
 
 Widget buildMobilePaymentRequestSyncingUseCase(BuildContext context) =>
     _mobile(_statusRequest(PaymentRequestStatus.syncing));
+
+Widget buildMobilePaymentRequestFailedUseCase(BuildContext context) => _mobile(
+  _statusRequest(
+    PaymentRequestStatus.failed,
+    statusMessage: _failedStatusMessage,
+  ),
+);
 
 Widget buildMobilePaymentRequestReplacedUseCase(BuildContext context) =>
     _mobile(_replacedRequest);

@@ -277,9 +277,10 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
         _publish(
           live.copyWith(
             view: live.view.copyWithStatus(
-              // The card has one error tone; a failed check is stated in its
-              // own words through `statusMessage`.
-              PaymentRequestStatus.invalidAddress,
+              // Not `invalidAddress`: the check could not complete, which is
+              // a different condition from a bad recipient. The reason is
+              // always stated in its own words through `statusMessage`.
+              PaymentRequestStatus.failed,
               statusMessage: message,
               clearMemo: clearMemo,
             ),

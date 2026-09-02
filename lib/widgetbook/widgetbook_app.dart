@@ -1270,6 +1270,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentRequestSyncingUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Error - check failed',
+                      builder: buildPaymentRequestFailedUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Replaced notice',
                       builder: buildPaymentRequestReplacedUseCase,
                     ),
@@ -1346,6 +1350,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Error - syncing',
                       builder: buildMobilePaymentRequestSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - check failed',
+                      builder: buildMobilePaymentRequestFailedUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Replaced notice',
