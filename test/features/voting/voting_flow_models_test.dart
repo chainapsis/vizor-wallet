@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 
 void main() {
@@ -271,7 +272,7 @@ void main() {
   });
 
   test('secure draft persistence deletes matching account drafts', () async {
-    const persistence = SecureVotingDraftPersistence();
+    final persistence = SecureVotingDraftPersistence();
     const removedAccountRoundOne = VotingSessionKey(
       accountUuid: 'account-1',
       roundId: 'round-1',
@@ -307,6 +308,28 @@ void main() {
     expect((await persistence.load(removedAccountRoundOne)).isEmpty, true);
     expect((await persistence.load(removedAccountRoundTwo)).isEmpty, true);
     expect((await persistence.load(retainedAccountRound)).choices, {3: 0});
+  });
+
+  test('old wallet session cannot restore voting drafts after reset', () async {
+    final store = AppSecureStore.instance;
+    final oldPersistence = SecureVotingDraftPersistence(store);
+    const oldSession = VotingSessionKey(
+      accountUuid: 'reset-account',
+      roundId: 'round-1',
+    );
+    await oldPersistence.save(
+      oldSession,
+      const VotingDraftState(choices: {1: 0}),
+    );
+
+    await store.resetWalletStorage(epoch: store.captureWalletSessionEpoch());
+    await oldPersistence.save(
+      oldSession,
+      const VotingDraftState(choices: {2: 1}),
+    );
+
+    final newPersistence = SecureVotingDraftPersistence(store);
+    expect((await newPersistence.load(oldSession)).isEmpty, true);
   });
 
   test('draft notifier merges early edits with persisted choices', () async {

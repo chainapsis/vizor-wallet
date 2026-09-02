@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -421,6 +422,9 @@ void main() {
           accountProvider.overrideWith(_ExistingAccountNotifier.new),
           syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
           votingShareTrackingRegistryProvider.overrideWithValue(votingRegistry),
+          appSessionRestartProvider.overrideWithValue(
+            () async => events.add('restartSession'),
+          ),
         ],
         child: Consumer(
           builder: (context, ref, child) {
@@ -444,6 +448,7 @@ void main() {
       'resetWallet',
       'clearCachedWalletDbPath',
       'migration-resume',
+      'restartSession',
     ]);
     expect(votingRegistry.isQuiesced('account-1'), isFalse);
     expect(restoreRequests, 0);
