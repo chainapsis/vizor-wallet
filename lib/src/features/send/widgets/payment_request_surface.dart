@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show Material, MaterialType;
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_form_factor.dart';
@@ -56,17 +57,23 @@ class PaymentRequestSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final card = PaymentRequestCard(
-      request: request,
-      onContinue: onContinue,
-      onEdit: onEdit,
-      onCancel: onCancel,
-      layout: layout,
-      initialAddressExpanded: initialAddressExpanded,
-      initialMessageExpanded: initialMessageExpanded,
-      // The surrounding modal frame owns the bottom edge in both form
-      // factors.
-      bottomSafeArea: false,
+    // Hosted above the router there is no Material ancestor, so without this
+    // the card's text falls back to the framework default style (and the
+    // debug yellow underline). Transparent, so nothing else changes.
+    final card = Material(
+      type: MaterialType.transparency,
+      child: PaymentRequestCard(
+        request: request,
+        onContinue: onContinue,
+        onEdit: onEdit,
+        onCancel: onCancel,
+        layout: layout,
+        initialAddressExpanded: initialAddressExpanded,
+        initialMessageExpanded: initialMessageExpanded,
+        // The surrounding modal frame owns the bottom edge in both form
+        // factors.
+        bottomSafeArea: false,
+      ),
     );
 
     return Stack(
@@ -96,7 +103,10 @@ class PaymentRequestSurface extends StatelessWidget {
                 child: Align(
                   alignment: Alignment.bottomCenter,
                   child: MobileModalCard(
-                    child: paymentRequestSheetBody(card, onClose: onCancel),
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: paymentRequestSheetBody(card, onClose: onCancel),
+                    ),
                   ),
                 ),
               ),
