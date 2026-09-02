@@ -15,9 +15,10 @@ enum ReceiveDesktopPreviewState {
   shieldedModal,
   transparentModal,
 
-  /// Shielded receive with the "Request ZEC" entry under the copy
-  /// button. Mock only — the live screen has one CTA today, and the fixed
-  /// coordinates below shift up to make room for the second pill.
+  /// Shielded receive with the "Request ZEC" entry beside the copy button,
+  /// which is where the live pane puts it. The plain [shielded] state keeps
+  /// the single-CTA row the pane had before the request flow landed, so the
+  /// two can still be compared.
   shieldedRequestEntry,
 }
 
