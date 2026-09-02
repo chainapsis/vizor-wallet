@@ -14,6 +14,7 @@ PaymentUriDrainDecision decide({
   bool isUnlocked = true,
   String matchedLocation = '/home',
   bool hasBusySurface = false,
+  bool sendIsInFlight = false,
   bool sendGatedByMigration = false,
 }) => decidePaymentUriDrain(
   hasParkedPrefill: hasParkedPrefill,
@@ -25,6 +26,7 @@ PaymentUriDrainDecision decide({
   isUnlocked: isUnlocked,
   matchedLocation: matchedLocation,
   hasBusySurface: hasBusySurface,
+  sendIsInFlight: sendIsInFlight,
   sendGatedByMigration: sendGatedByMigration,
 );
 
@@ -173,6 +175,70 @@ void main() {
         decide(matchedLocation: '/import/seed', hasBusySurface: true).action,
         PaymentUriDrainAction.dropWithMessage,
       );
+    });
+  });
+
+  // The card's Review and Edit both `go(...)`, which unmounts the status
+  // screen; `runSendBroadcast` then discards the outcome at its
+  // post-`executeProposal` checkpoint, so the transaction is on the network
+  // with no txid and no receipt for the user. The link waits instead.
+  group('a send mid-broadcast', () {
+    test('waits while the broadcast is still running on /send/status', () {
+      final decision = decide(
+        matchedLocation: '/send/status',
+        sendIsInFlight: true,
+      );
+      expect(decision.action, PaymentUriDrainAction.wait);
+      expect(decision.message, isNull);
+    });
+
+    test('presents once the receipt is on screen', () {
+      expect(
+        decide(matchedLocation: '/send/status', sendIsInFlight: false).action,
+        PaymentUriDrainAction.deliver,
+      );
+    });
+
+    test('the flag alone holds nothing off the receipt route', () {
+      // `sendStatusTerminalProvider` also reads false when no send has ever
+      // run, so the flag is only meaningful paired with the location. Without
+      // the pairing every link in a fresh session would park forever.
+      for (final location in ['/home', '/send', '/send/review', '/swap']) {
+        expect(
+          decide(matchedLocation: location, sendIsInFlight: true).action,
+          PaymentUriDrainAction.deliver,
+          reason: location,
+        );
+      }
+    });
+
+    test('the TTL still outranks it, so the wait is bounded', () {
+      final decision = decide(
+        matchedLocation: '/send/status',
+        sendIsInFlight: true,
+        parkedFor: kPaymentUriParkTtl + const Duration(seconds: 1),
+      );
+      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
+      expect(decision.message, kPaymentUriExpiredMessage);
+    });
+
+    test('waiting outranks the migration gate and the wallet rows', () {
+      expect(
+        decide(
+          matchedLocation: '/send/status',
+          sendIsInFlight: true,
+          sendGatedByMigration: true,
+          hasWallet: false,
+          isUnlocked: false,
+        ).action,
+        PaymentUriDrainAction.wait,
+      );
+    });
+
+    test('isSendStatusLocation matches the route both shells register', () {
+      expect(isSendStatusLocation('/send/status'), isTrue);
+      expect(isSendStatusLocation('/send/review'), isFalse);
+      expect(isSendStatusLocation('/send'), isFalse);
     });
   });
 

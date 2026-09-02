@@ -166,9 +166,14 @@ final sendStatusRoutePayloadProvider =
 /// succeeded or failed — so nothing is lost by leaving that screen.
 ///
 /// The status screens keep owning their own presentation phase; this publishes
-/// only the "safe to leave" bit, which surfaces outside the send flow need. The
-/// payment-URI drain uses it to deliver a `zcash:` link that arrives on a
-/// finished receipt instead of dropping it as an interrupted send.
+/// only the "safe to leave" bit, which surfaces outside the send flow need.
+/// `decidePaymentUriDrain` reads it as `sendIsInFlight` and holds a `zcash:`
+/// link that arrives mid-broadcast until the receipt is on screen — the card's
+/// Review and Edit unmount the status screen, which aborts the outcome after
+/// the transaction has already gone out.
+///
+/// False is also what a session that has never sent reads, so the drain pairs
+/// it with the `/send/status` location rather than trusting it alone.
 ///
 /// A pending-broadcast outcome is deliberately NOT terminal: both status
 /// screens still render it as in progress.

@@ -73,7 +73,8 @@ import 'src/features/send/services/send_flow.dart'
     show
         resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
-        sendStatusRoutePayloadProvider;
+        sendStatusRoutePayloadProvider,
+        sendStatusTerminalProvider;
 import 'src/features/settings/screens/settings_screen.dart';
 import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
@@ -1307,6 +1308,11 @@ class _PaymentUriLinkListenerState
     ref.listen<int>(paymentUriBusySurfaceProvider, (previous, next) {
       if (next == 0 && (previous ?? 0) > 0) _schedulePendingDrain();
     });
+    // Same shape for a send mid-broadcast: the link stays parked until the
+    // receipt is on screen, so the drain has to be re-run when it gets there.
+    ref.listen<bool>(sendStatusTerminalProvider, (previous, next) {
+      if (next && !(previous ?? false)) _schedulePendingDrain();
+    });
     // No appSecurityProvider listener: the unlock screens own the post-unlock
     // navigation for a parked prefill (claim + go to /send). Draining here on
     // unlock too would race and clobber that navigation. The wallet listener
@@ -1391,6 +1397,10 @@ class _PaymentUriLinkListenerState
       // In-progress surfaces that own no route of their own — today the
       // desktop Keystone shield signing overlay, which sits on `/home`.
       hasBusySurface: ref.read(paymentUriBusySurfaceProvider) > 0,
+      // The receipt screen publishes only the "safe to leave" bit; the policy
+      // pairs it with the location, because the flag also reads false when no
+      // send has ever run.
+      sendIsInFlight: !ref.read(sendStatusTerminalProvider),
       sendGatedByMigration: ref.read(migrationSendGateProvider),
     );
 

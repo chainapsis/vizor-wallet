@@ -279,6 +279,93 @@ void main() {
       reason: 'the card arrives over the current screen, it is not a route',
     );
   });
+
+  // A link that arrives while a broadcast is still running waits for the
+  // receipt. The card's Review and Edit both `go(...)`, which unmounts
+  // `/send/status`; `runSendBroadcast`'s `shouldAbort: () async => !mounted`
+  // then discards the outcome at its post-`executeProposal` checkpoint, so the
+  // transaction is on the network with no txid and no receipt for the user.
+  testWidgets('a link arriving mid-broadcast waits for the receipt', (
+    tester,
+  ) async {
+    final accounts = _ControllableAccountNotifier(walletState);
+    final router = GoRouter(
+      initialLocation: '/send/status',
+      routes: [
+        for (final path in [
+          '/home',
+          '/send',
+          '/send/status',
+          '/welcome',
+          '/unlock',
+        ])
+          GoRoute(
+            path: path,
+            builder: (_, _) => Scaffold(body: Text('screen $path')),
+          ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    late ProviderContainer container;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _unlockedBootstrapWithWallet(walletState),
+          ),
+          accountProvider.overrideWith(() => accounts),
+          paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
+          syncProvider.overrideWith(FakeSyncNotifier.new),
+        ],
+        child: Consumer(
+          builder: (context, ref, _) {
+            container = ProviderScope.containerOf(context, listen: false);
+            return MaterialApp.router(
+              routerConfig: router,
+              builder: (context, child) => buildPaymentUriLinkListenerForTest(
+                router: router,
+                child: child!,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // `sendStatusTerminalProvider` starts false, which is what a broadcast in
+    // progress reads as.
+    expect(container.read(sendStatusTerminalProvider), isFalse);
+
+    await PaymentUriService.initialize();
+    await _pushNativeUris(tester, const ['zcash:u1parked?amount=0.5']);
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(paymentRequestFlowProvider),
+      isNull,
+      reason: 'no card over a send that has not finished broadcasting',
+    );
+    expect(
+      container.read(paymentUriPrefillProvider),
+      isNotNull,
+      reason: 'the link waits rather than being dropped',
+    );
+
+    // The send reaches a terminal phase. The listener on the flag re-drains.
+    container.read(sendStatusTerminalProvider.notifier).markTerminal();
+    await tester.pumpAndSettle();
+
+    expect(container.read(paymentRequestFlowProvider), isNotNull);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    expect(
+      router.routerDelegate.currentConfiguration.uri.path,
+      '/send/status',
+      reason: 'the card arrives over the receipt, it does not navigate',
+    );
+  });
 }
 
 /// A pre-check that always resolves "ready", so the delivery test can assert

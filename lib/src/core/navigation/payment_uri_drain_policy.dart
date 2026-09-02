@@ -8,11 +8,13 @@
 ///
 /// The policy no longer blocks on where the user happens to be. A delivered
 /// request is presented as a card over the current screen rather than a jump
-/// to `/send`, so there is nothing to interrupt: the swap review, the migration
-/// steps and a send already in progress all stay exactly where they were until
-/// the user answers the card. The rows that remain are the ones about whether
-/// the request can be shown at all — no wallet, mid-onboarding, locked, stale,
-/// or a wallet that failed to load.
+/// to `/send`, so there is nothing to interrupt: the swap review and the
+/// migration steps stay exactly where they were until the user answers the
+/// card. The rows that remain are the ones about whether the request can be
+/// shown at all — no wallet, mid-onboarding, locked, stale, or a wallet that
+/// failed to load — plus the two surfaces that would lose something if a card
+/// went over them: a hardware signing session, and a broadcast still running
+/// on `/send/status`.
 library;
 
 import '../zcash/zip321_payment_request.dart';
@@ -151,6 +153,13 @@ bool isOnboardingLocation(String matchedLocation) =>
 bool isUnlockFlowLocation(String matchedLocation) =>
     matchedLocation == '/unlock' || matchedLocation == '/lost-password';
 
+/// The send receipt route, desktop and mobile — both register `/send/status`.
+///
+/// `sendStatusLocation()` appends a `flow` query parameter, which
+/// `matchedLocation` does not carry, so the comparison is on the path alone.
+bool isSendStatusLocation(String matchedLocation) =>
+    matchedLocation == '/send/status';
+
 /// Whether a wallet emission is the reset transition — the wallet existed a
 /// moment ago and does not any more (uninstall, lost-password reset).
 ///
@@ -181,6 +190,7 @@ bool paymentUriShouldDropOnWalletTransition({
 /// | `/welcome`, no wallet                        | drop + no-wallet msg      |
 /// | onboarding / import / add-account location   | drop + onboarding msg     |
 /// | a busy overlay is up                         | wait (present when it goes)|
+/// | a broadcast is running on `/send/status`      | wait (present on receipt) |
 /// | migration disables sending                   | drop + migration msg      |
 /// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
 /// | locked, already on `/unlock`/`/lost-password`| wait (stay parked)        |
@@ -191,8 +201,11 @@ bool paymentUriShouldDropOnWalletTransition({
 /// [parkedFor] is how long the prefill has been parked (null when nothing is
 /// parked, or when the park time is unknown). [hasBusySurface] is true while a
 /// hardware signing session is mounted — see `paymentUriBusySurfaceProvider`.
-/// [sendGatedByMigration] is true when the product disables sending because a
-/// Private migration holds the whole spendable balance — see
+/// [sendIsInFlight] is the negation of `sendStatusTerminalProvider`: the send
+/// on the receipt screen has not finished. It is read only on
+/// [isSendStatusLocation], because the flag is also false when no send has run
+/// at all. [sendGatedByMigration] is true when the product disables sending
+/// because a Private migration holds the whole spendable balance — see
 /// `migrationSendGateProvider`.
 PaymentUriDrainDecision decidePaymentUriDrain({
   required bool hasParkedPrefill,
@@ -204,6 +217,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   required bool isUnlocked,
   required String matchedLocation,
   bool hasBusySurface = false,
+  bool sendIsInFlight = false,
   bool sendGatedByMigration = false,
 }) {
   if (!hasParkedPrefill) return _waitDecision;
@@ -252,6 +266,18 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   // live animated QR. The listener re-drains when the hold is given back, and
   // the TTL still bounds the wait.
   if (hasBusySurface) return _waitDecision;
+
+  // A broadcast still running on `/send/status` waits too, and for a harder
+  // reason than distraction: the card's Review and Edit both `go(...)`, which
+  // unmounts the status screen, and `runSendBroadcast`'s
+  // `shouldAbort: () async => !mounted` then discards the outcome at the
+  // post-`executeProposal` checkpoint. The transaction is already on the
+  // network but the user never sees a txid or a receipt. Holding until the
+  // send reaches a terminal phase costs nothing — the listener re-drains when
+  // the flag flips, and the TTL still bounds the wait.
+  if (sendIsInFlight && isSendStatusLocation(matchedLocation)) {
+    return _waitDecision;
+  }
 
   // The send the card offers is one the product has already taken away, so
   // the user needs the migration explanation rather than a card whose Review
