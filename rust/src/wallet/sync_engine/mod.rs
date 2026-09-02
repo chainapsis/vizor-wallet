@@ -48,6 +48,7 @@ mod block_source;
 mod enhance;
 mod error;
 mod lwd;
+mod memo_pir;
 pub(crate) mod mempool;
 
 use enhance::run_enhancement;
@@ -62,6 +63,7 @@ pub(crate) use lwd::{
     open_background_direct_lwd_channel, open_isolated_lwd_channel, open_lwd_channel,
     send_transaction, send_transaction_with_status,
 };
+use memo_pir::MemoPirSync;
 
 /// Progress event sent to caller (Dart or Swift).
 #[derive(Clone, Debug)]
@@ -2306,6 +2308,7 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
+    let mut memo_pir = MemoPirSync::new(network);
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -2644,6 +2647,10 @@ async fn run_sync_impl(
     // was the last in its range (so there's nothing to prefetch until
     // `suggest_scan_ranges` runs again).
     let mut prefetch: Option<Prefetch<ScanBatch>> = None;
+
+    // Retry memo work left by an interrupted/older sync even when the wallet
+    // is already at the chain tip and no compact-block batch will run.
+    Box::pin(memo_pir.run(&mut db)).await?;
 
     // 5. Sync loop
     loop {
@@ -3377,8 +3384,23 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
-        // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
+        // Complete Ironwood memos without disclosing transaction IDs. The
+        // independent position queue is populated atomically by compact scan.
+        // Box this transport-heavy future so its Hyper/Tor connector state does
+        // not inflate the already-large sync future exported through FRB.
+        Box::pin(memo_pir.run(&mut db)).await?;
+
+        // Legacy enhancement remains available for status and transparent
+        // history. On mainnet, transaction enhancement itself is deliberately
+        // inert: Ironwood memos must never fall back to GetTransaction(txid).
+        run_enhancement(
+            &mut client,
+            &mut db,
+            db_data_path,
+            network,
+            memo_pir.suppresses_tx_enhancement(),
+        )
+        .await?;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
@@ -3785,7 +3807,15 @@ async fn run_sync_impl(
             ),
         }
         if deferred_received_outputs && !should_exit() {
-            if let Err(error) = run_enhancement(&mut client, &mut db, db_data_path, network).await {
+            if let Err(error) = run_enhancement(
+                &mut client,
+                &mut db,
+                db_data_path,
+                network,
+                memo_pir.suppresses_tx_enhancement(),
+            )
+            .await
+            {
                 log::warn!(
                     "[{}] sync: deferred transparent transaction enhancement failed; it will retry on a later sync: {}",
                     elapsed(),

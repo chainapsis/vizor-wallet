@@ -14,8 +14,8 @@
 //!     backfill its activity).
 //!
 //! Librustzcash signals these gaps by populating
-//! `db.transaction_data_requests()`. This module services the queue
-//! against lightwalletd via three gRPC calls (`GetTransaction`,
+//! `db.transaction_data_requests()`. This module services the non-private
+//! portions of the queue against lightwalletd via gRPC (`GetTransaction`,
 //! `TransactionsInvolvingAddress`) and writes the results back into
 //! `db` using `decrypt_and_store_transaction` and
 //! `set_transaction_status`. The loop retries up to three times
@@ -56,6 +56,7 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    suppress_tx_enhancement: bool,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
 
@@ -68,18 +69,40 @@ pub(super) async fn run_enhancement(
         if requests.is_empty() {
             break;
         }
+        if suppress_tx_enhancement {
+            let suppressed = requests
+                .iter()
+                .filter(|request| matches!(request, TransactionDataRequest::Enhancement(_)))
+                .count();
+            if suppressed > 0 {
+                // Do not include the identifiers themselves in logs: the count
+                // is sufficient to demonstrate that the privacy gate fired.
+                log::info!(
+                    "sync: suppressed {suppressed} legacy transaction enhancement request(s); no transaction IDs were sent"
+                );
+            }
+        }
 
         // If nothing in the queue is actionable (e.g. address-scoped
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests.iter().any(request_is_actionable);
+        let actionable = requests
+            .iter()
+            .any(|request| request_is_actionable(request, suppress_tx_enhancement));
         if !actionable {
             break;
         }
 
         for req in &requests {
             match req {
+                TransactionDataRequest::Enhancement(_) if suppress_tx_enhancement => {
+                    // Deliberately leave the legacy request queued. Removing it
+                    // without a full transaction would lie about completion;
+                    // servicing it would disclose the wallet's txid. Ironwood
+                    // memo completion is handled by the position-keyed PIR queue.
+                    continue;
+                }
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
@@ -292,11 +315,13 @@ fn stored_transaction_ids_missing_fee(db_path: &str) -> Result<Vec<TxId>, SyncEr
         .map_err(|e| SyncError::db(format!("read missing fee transaction: {e}")))
 }
 
-/// Whether servicing `request` can make progress right now. Transaction
-/// requests always can; address-scoped requests need a bounded block range.
-fn request_is_actionable(request: &TransactionDataRequest) -> bool {
+/// Whether servicing `request` can make progress under the active privacy
+/// policy. Status requests always can; enhancement is policy-gated, and
+/// address-scoped requests need a bounded block range.
+fn request_is_actionable(request: &TransactionDataRequest, suppress_tx_enhancement: bool) -> bool {
     match request {
-        TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
+        TransactionDataRequest::Enhancement(_) => !suppress_tx_enhancement,
+        TransactionDataRequest::GetStatus(_) => true,
         TransactionDataRequest::TransactionsInvolvingAddress(req) => {
             req.block_range_end().is_some()
         }
@@ -647,6 +672,24 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[test]
+    fn privacy_gate_makes_enhancement_inert_but_keeps_status_actionable() {
+        let txid = TxId::from_bytes([7; 32]);
+
+        assert!(!request_is_actionable(
+            &TransactionDataRequest::Enhancement(txid),
+            true,
+        ));
+        assert!(request_is_actionable(
+            &TransactionDataRequest::GetStatus(txid),
+            true,
+        ));
+        assert!(request_is_actionable(
+            &TransactionDataRequest::Enhancement(txid),
+            false,
+        ));
     }
 
     #[test]
