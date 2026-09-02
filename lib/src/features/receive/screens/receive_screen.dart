@@ -365,7 +365,15 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   void _handleRequestAmountChanged(String value) {
     final draft = _requestDraft;
     if (draft == null) return;
-    setState(() => _requestDraft = draft.copyWith(input: value));
+    // Through the draft's own setter, not `copyWith`: in USD mode it also
+    // records the ZEC the dollars currently mean, so a price that expires
+    // before the user switches back does not take the amount with it.
+    setState(
+      () => _requestDraft = draft.withInput(
+        value,
+        zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider),
+      ),
+    );
   }
 
   void _handleRequestMessageChanged(String value) {

@@ -70,7 +70,15 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
   void _close() => Navigator.of(context).pop();
 
   void _handleAmountChanged(String value) {
-    setState(() => _draft = _draft.copyWith(input: value));
+    // Through the draft's own setter, not `copyWith`: in USD mode it also
+    // records the ZEC the dollars currently mean, so a price that expires
+    // before the user switches back does not take the amount with it.
+    setState(
+      () => _draft = _draft.withInput(
+        value,
+        zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider),
+      ),
+    );
   }
 
   void _handleMessageChanged(String value) {

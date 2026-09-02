@@ -32,6 +32,7 @@ class ZecRequestDraft {
     this.input = '',
     this.inputIsUsd = false,
     this.message,
+    this.usdModeZecInput = '',
   });
 
   /// The address the request pays to, snapshotted when the flow opened: a
@@ -48,17 +49,30 @@ class ZecRequestDraft {
   /// The optional encrypted memo, shielded addresses only.
   final String? message;
 
+  /// The canonical ZEC text behind a USD-mode field.
+  ///
+  /// In ZEC mode the field itself is canonical and this is ignored; in USD
+  /// mode it is the last ZEC value the typed dollars converted to. It exists
+  /// so leaving USD mode does not need a price: the live price can expire
+  /// while the composer is open, and a unit switch that answers that by
+  /// erasing the number the user typed is worse than the stale unit was.
+  /// The desktop send composer keeps `_amountText` alive across the same
+  /// switch for the same reason.
+  final String usdModeZecInput;
+
   ZecRequestDraft copyWith({
     String? address,
     String? input,
     bool? inputIsUsd,
     String? message,
+    String? usdModeZecInput,
     bool clearMessage = false,
   }) {
     return ZecRequestDraft(
       address: address ?? this.address,
       input: input ?? this.input,
       inputIsUsd: inputIsUsd ?? this.inputIsUsd,
+      usdModeZecInput: usdModeZecInput ?? this.usdModeZecInput,
       // Invisible bidi/control characters cannot travel in a ZIP-321 memo,
       // so they are dropped at the input boundary; the visible text is
       // unchanged and the request the composer hands out always parses.
@@ -71,6 +85,34 @@ class ZecRequestDraft {
   }
 
   bool get isShielded => !zip321AddressIsTransparent(address);
+
+  /// The ZEC value a switch back to ZEC mode would restore.
+  String get zecInput => inputIsUsd ? usdModeZecInput : input.trim();
+
+  /// The same draft with [value] in the field and the canonical ZEC value
+  /// kept in step with it.
+  ///
+  /// Every keystroke goes through here rather than through `copyWith` so USD
+  /// mode always carries the ZEC it last meant. A keystroke typed while the
+  /// price is missing cannot be converted, so it leaves the previous
+  /// canonical value standing — clearing the field is the one thing that
+  /// clears it too.
+  ZecRequestDraft withInput(String value, {required double? zecUsdUnitPrice}) {
+    if (!inputIsUsd) {
+      return copyWith(input: value, usdModeZecInput: '');
+    }
+    final zatoshi = sendZatoshiFromUsdText(value, zecUsdUnitPrice);
+    if (zatoshi != null) {
+      return copyWith(
+        input: value,
+        usdModeZecInput: ZecAmount.fromZatoshi(zatoshi).pretty().amountText,
+      );
+    }
+    return copyWith(
+      input: value,
+      usdModeZecInput: value.trim().isEmpty ? '' : usdModeZecInput,
+    );
+  }
 
   /// Whether the unit switch can be taken. USD mode needs a live price; ZEC
   /// mode always works, so a price that disappears never traps the field in a
@@ -85,12 +127,12 @@ class ZecRequestDraft {
 
     if (inputIsUsd) {
       final zatoshi = sendZatoshiFromUsdText(input, zecUsdUnitPrice);
-      return copyWith(
-        inputIsUsd: false,
-        input: zatoshi == null
-            ? ''
-            : ZecAmount.fromZatoshi(zatoshi).pretty().amountText,
-      );
+      // Without a price there is nothing to convert, so the switch restores
+      // the ZEC the draft has been carrying rather than emptying the field.
+      final next = zatoshi == null
+          ? usdModeZecInput
+          : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+      return copyWith(inputIsUsd: false, input: next, usdModeZecInput: '');
     }
 
     final zatoshi = parseZecAmount(input.trim());
@@ -99,6 +141,7 @@ class ZecRequestDraft {
       input: zatoshi == null || zatoshi <= BigInt.zero
           ? ''
           : sendSendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!),
+      usdModeZecInput: input.trim(),
     );
   }
 

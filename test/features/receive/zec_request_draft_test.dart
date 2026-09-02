@@ -108,6 +108,52 @@ void main() {
       expect(usdDraft.canToggleUnit(null), isTrue);
     });
 
+    test('a price that expires mid-compose does not erase the amount', () {
+      const zecDraft = ZecRequestDraft(address: _shielded, input: '0.5');
+      final usdDraft = zecDraft.toggledUnit(zecUsdUnitPrice: 70);
+      expect(usdDraft.input, '35.00');
+
+      // The price goes away while the sheet is open: the switch is still
+      // offered, and taking it hands back the ZEC that was typed.
+      final backToZec = usdDraft.toggledUnit(zecUsdUnitPrice: null);
+      expect(backToZec.inputIsUsd, isFalse);
+      expect(backToZec.input, '0.5');
+      expect(backToZec.resolve(zecUsdUnitPrice: null).isReady, isTrue);
+    });
+
+    test('USD keystrokes keep the canonical ZEC in step', () {
+      final usdDraft = const ZecRequestDraft(
+        address: _shielded,
+        input: '0.5',
+      ).toggledUnit(zecUsdUnitPrice: 70).withInput('70', zecUsdUnitPrice: 70);
+
+      expect(usdDraft.input, '70');
+      expect(usdDraft.zecInput, '1');
+
+      // Edited at the live price, switched back without one: the restored
+      // value is what the dollars last meant, not what they meant on entry.
+      expect(usdDraft.toggledUnit(zecUsdUnitPrice: null).input, '1');
+    });
+
+    test('clearing a USD field clears what a switch back would restore', () {
+      final cleared = const ZecRequestDraft(
+        address: _shielded,
+        input: '0.5',
+      ).toggledUnit(zecUsdUnitPrice: 70).withInput('', zecUsdUnitPrice: 70);
+
+      expect(cleared.zecInput, '');
+      expect(cleared.toggledUnit(zecUsdUnitPrice: null).input, '');
+    });
+
+    test('a ZEC keystroke is its own canonical value', () {
+      final draft = const ZecRequestDraft(
+        address: _shielded,
+      ).withInput('0.25', zecUsdUnitPrice: null);
+
+      expect(draft.zecInput, '0.25');
+      expect(draft.resolve(zecUsdUnitPrice: null).amountZec, '0.25');
+    });
+
     test('a pasted bidi override never reaches the request link', () {
       final view = const ZecRequestDraft(
         address: _shielded,
