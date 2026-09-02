@@ -745,7 +745,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ref
             .read(paymentRequestFlowProvider.notifier)
             .present(prefill, source: PaymentRequestSource.qrCode);
-      case SendScanAddress(:final address):
+      case SendScanAddress(:final address, :final downgrade):
         final recipient = address.trim();
         if (recipient.isEmpty) return;
         _addressController.value = TextEditingValue(
@@ -753,6 +753,18 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           selection: TextSelection.collapsed(offset: recipient.length),
         );
         _handleAddressChanged();
+        // A request the scan refused still surrendered its address, and the
+        // composer just took it. Say what was left behind — otherwise the
+        // payer answers a request they never saw the terms of.
+        final downgradeMessage = sendScanDowngradeMessage(downgrade);
+        if (downgradeMessage != null) {
+          showAppToast(
+            context,
+            downgradeMessage,
+            iconName: AppIcons.warning,
+            tone: AppToastTone.destructive,
+          );
+        }
     }
   }
 

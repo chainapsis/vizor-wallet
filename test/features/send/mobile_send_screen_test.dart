@@ -1588,6 +1588,59 @@ void main() {
     expect(find.text('Continue'), findsOneWidget);
   });
 
+  // A QR the parser refuses still surrenders its address, and the composer
+  // takes it. The payer scanned a request whose terms are now gone, so the
+  // scan says what was left behind instead of pretending it was a plain
+  // address QR all along.
+  testWidgets('a downgraded scan fills the recipient and says what was lost', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        openScanner: (_) async => const SendScanAddress(
+          _shieldedAddress,
+          downgrade: SendScanDowngrade.multipleRecipients,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Scan a QR Code'));
+    await tester.pumpAndSettle();
+
+    final editable = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_address_field')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(editable.controller.text, _shieldedAddress);
+    expect(
+      find.text(
+        sendScanDowngradeMessage(SendScanDowngrade.multipleRecipients)!,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a plain address scan says nothing', (tester) async {
+    await tester.pumpWidget(
+      _app(openScanner: (_) async => const SendScanAddress(_shieldedAddress)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Scan a QR Code'));
+    await tester.pumpAndSettle();
+
+    for (final downgrade in SendScanDowngrade.values) {
+      expect(
+        find.text(sendScanDowngradeMessage(downgrade)!),
+        findsNothing,
+        reason: '$downgrade',
+      );
+    }
+  });
+
   testWidgets(
     'scanning a payment request opens the card instead of the composer',
     (tester) async {
