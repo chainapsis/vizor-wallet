@@ -1443,6 +1443,12 @@ class _PreviewSwapSidebar extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
+                    label: 'Vote',
+                    iconName: AppIcons.vote,
+                    onTap: () {},
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
                     label: 'Activity',
                     iconName: AppIcons.history,
                     onTap: () {},

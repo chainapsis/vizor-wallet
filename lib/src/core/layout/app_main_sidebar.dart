@@ -550,7 +550,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     AppSidebarItem(
                       key: const ValueKey('sidebar_voting_button'),
                       label: 'Vote',
-                      iconName: AppIcons.scroll,
+                      iconName: AppIcons.vote,
                       active: _matches('/voting'),
                       // Stays tappable while active: _navigateTo requests a
                       // poll-list refresh when re-tapped on /voting.

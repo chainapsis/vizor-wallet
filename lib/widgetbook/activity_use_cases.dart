@@ -229,6 +229,12 @@ class _ActivityUseCaseSidebar extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             AppSidebarItem(label: 'Pay', iconName: AppIcons.paid, onTap: () {}),
             const SizedBox(height: AppSpacing.xs),
+            AppSidebarItem(
+              label: 'Vote',
+              iconName: AppIcons.vote,
+              onTap: () {},
+            ),
+            const SizedBox(height: AppSpacing.xs),
             const AppSidebarItem(
               label: 'Activity',
               iconName: AppIcons.history,
