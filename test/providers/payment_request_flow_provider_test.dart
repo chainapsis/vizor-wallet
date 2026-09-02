@@ -106,8 +106,19 @@ SendPrefillArgs request(String address, {String? amountText = '0.5'}) =>
       label: 'Coffee shop',
     );
 
+/// A sync state whose spendable balance is settled: scanned to a real tip,
+/// nothing running, nothing failed.
+SyncState syncedState({required BigInt spendable}) => SyncState(
+  accountUuid: 'account-1',
+  hasAccountScopedData: true,
+  isSyncComplete: true,
+  chainTipHeight: 3000000,
+  scannedHeight: 3000000,
+  spendableBalance: spendable,
+);
+
 // ignore: library_private_types_in_public_api
-ProviderContainer makeContainer(_FakeSendApi api) {
+ProviderContainer makeContainer(_FakeSendApi api, {SyncState? sync}) {
   final container = ProviderContainer(
     overrides: [
       paymentRequestPrecheckProvider.overrideWithValue(api.precheck),
@@ -115,11 +126,7 @@ ProviderContainer makeContainer(_FakeSendApi api) {
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
-          SyncState(
-            accountUuid: 'account-1',
-            hasAccountScopedData: true,
-            spendableBalance: BigInt.from(100000000),
-          ),
+          sync ?? syncedState(spendable: BigInt.from(100000000)),
         ),
       ),
       migrationSendGateProvider.overrideWithValue(false),
@@ -277,6 +284,51 @@ void main() {
 
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(api.discarded, [BigInt.one]);
+  });
+
+  test('a shortfall read mid-sync never lands on insufficient funds', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(
+      api,
+      sync: SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+        chainTipHeight: 3000000,
+        scannedHeight: 12000,
+      ),
+    );
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(
+      state.view.status,
+      PaymentRequestStatus.ready,
+      reason: 'VZR-42: a balance still being scanned cannot say "not enough"',
+    );
+    expect(api.proposed, [BigInt.one]);
+  });
+
+  test('a shortfall on a settled balance is insufficient funds', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(21000000)),
+    );
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.view.status, PaymentRequestStatus.insufficientFunds);
+    expect(state.view.spendableText, '0.21 ZEC');
+    expect(api.proposed, isEmpty);
   });
 
   test('locking the wallet takes the card down and frees the '

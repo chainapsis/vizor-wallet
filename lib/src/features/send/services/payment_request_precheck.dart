@@ -160,11 +160,15 @@ class PaymentRequestPrecheck {
   static bool isTransparentLikeType(String addressType) =>
       addressType == 'transparent' || addressType == 'tex';
 
+  /// [spendableIsAuthoritative] says whether [spendableBalance] is a settled
+  /// post-sync figure. It has no default on purpose: getting it wrong is the
+  /// VZR-42 bug, and the one production caller has to state which it holds.
   Future<PaymentRequestPrecheckResult> run({
     required SendPrefillArgs prefill,
     required String sendFlowId,
     required String? accountUuid,
     required BigInt spendableBalance,
+    required bool spendableIsAuthoritative,
   }) async {
     final address = prefill.address.trim();
     if (address.isEmpty) {
@@ -211,7 +215,11 @@ class PaymentRequestPrecheck {
       return const PaymentRequestPrecheckFailed('No account is open');
     }
 
-    if (amountZatoshi > spendableBalance) {
+    // VZR-42: a shortfall read off a balance that is still being scanned is
+    // not an answer. Only a settled balance may end the check here; otherwise
+    // the proposal decides, and it waits for the authoritative spendable
+    // before Rust reports back through `_mapProposalError`.
+    if (spendableIsAuthoritative && amountZatoshi > spendableBalance) {
       return PaymentRequestPrecheckInsufficientFunds(
         spendableText: _formatZec(spendableBalance),
       );

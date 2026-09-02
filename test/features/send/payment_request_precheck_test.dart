@@ -101,11 +101,13 @@ Future<PaymentRequestPrecheckResult> run(
   SendPrefillArgs? request,
   String? accountUuid = 'account-1',
   BigInt? spendable,
+  bool spendableIsAuthoritative = true,
 }) => api.precheck.run(
   prefill: request ?? prefill(),
   sendFlowId: 'flow-1',
   accountUuid: accountUuid,
   spendableBalance: spendable ?? BigInt.from(100000000),
+  spendableIsAuthoritative: spendableIsAuthoritative,
 );
 
 void main() {
@@ -166,6 +168,42 @@ void main() {
       '0.21 ZEC',
     );
     expect(api.proposeCalls, 0);
+  });
+
+  test('a shortfall on a balance that is not settled yet defers to the '
+      'proposal', () async {
+    final api = FakeSendApi();
+    final result = await run(
+      api,
+      spendable: BigInt.zero,
+      spendableIsAuthoritative: false,
+    );
+
+    expect(
+      result,
+      isA<PaymentRequestPrecheckReady>(),
+      reason: 'VZR-42: a mid-scan zero is not an answer about affordability',
+    );
+    expect(
+      api.proposeCalls,
+      1,
+      reason: 'the proposal waits for the authoritative spendable and decides',
+    );
+  });
+
+  test('an unsettled balance still reports the insufficiency Rust '
+      'confirms', () async {
+    final api = FakeSendApi(
+      proposeThrows: StateError('InsufficientFunds: not enough'),
+    );
+    final result = await run(
+      api,
+      spendable: BigInt.from(21000000),
+      spendableIsAuthoritative: false,
+    );
+
+    expect(result, isA<PaymentRequestPrecheckInsufficientFunds>());
+    expect(api.proposeCalls, 1);
   });
 
   test('a mid-sync proposal failure is syncing, never insufficient', () async {

@@ -201,6 +201,12 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     final spendable = ref.read(migrationSendGateProvider)
         ? sync.displayIronwoodBalance
         : sync.displaySpendableBalance;
+    // Only a balance from a finished scan may end the check as "not enough".
+    // A restored last-completed snapshot is stale by construction, and a sync
+    // still short of the tip has not seen every note yet, so both hand the
+    // verdict to the proposal instead.
+    final spendableIsAuthoritative =
+        sync.isSyncedToTip && !sync.isUsingCompletedSpendableSnapshot;
 
     final result = await ref
         .read(paymentRequestPrecheckProvider)
@@ -209,6 +215,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
           sendFlowId: newSendFlowId(),
           accountUuid: accountUuid,
           spendableBalance: spendable,
+          spendableIsAuthoritative: spendableIsAuthoritative,
         );
 
     if (generation != _generation) {
