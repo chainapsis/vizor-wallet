@@ -124,9 +124,11 @@ class ZecAmount {
 
   ZecAmountPretty get balance => pretty(minFractionDigits: 2);
 
+  /// Headline wallet balances. Caps typical amounts at 4–5 fraction
+  /// digits so home totals do not show full zatoshi precision.
   ZecAmountPretty compactBalancePretty({
     int minFractionDigits = 2,
-    int maxFractionDigits = 6,
+    int maxFractionDigits = 5,
     bool hideZeroFraction = true,
   }) {
     assert(minFractionDigits >= 0 && minFractionDigits <= 8);

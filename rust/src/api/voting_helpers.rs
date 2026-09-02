@@ -4,11 +4,22 @@ use zeroize::Zeroizing;
 use crate::wallet::{keys, voting::network::voting_network};
 
 /// Convert API bundle-size input into a validated voting bundle policy.
+///
+/// The normal `None` path selects the frozen policy used to reconstruct v1
+/// bundles after voting sidecar loss. Explicit test or development overrides
+/// select a custom policy outside that recovery contract.
 pub(super) fn bundle_policy(
     max_real_notes_per_bundle: Option<u32>,
 ) -> Result<zcash_voting::BundlePolicy, String> {
-    zcash_voting::BundlePolicy::from_optional_max_real_notes_per_bundle(max_real_notes_per_bundle)
-        .map_err(|e| e.to_string())
+    match max_real_notes_per_bundle {
+        None => Ok(zcash_voting::recoverable_bundle_policy_v1()),
+        Some(max_real_notes_per_bundle) => {
+            zcash_voting::BundlePolicy::from_optional_max_real_notes_per_bundle(Some(
+                max_real_notes_per_bundle,
+            ))
+            .map_err(|e| e.to_string())
+        }
+    }
 }
 
 /// Derive a wallet seed from a BIP-39 mnemonic while zeroizing mnemonic bytes.

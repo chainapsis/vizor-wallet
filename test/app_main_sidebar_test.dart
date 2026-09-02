@@ -86,6 +86,10 @@ void main() {
       find.byKey(const ValueKey('sidebar_pay_button')),
     );
     expect(payItem.iconName, AppIcons.paid);
+    final voteItem = tester.widget<AppSidebarItem>(
+      find.byKey(const ValueKey('sidebar_voting_button')),
+    );
+    expect(voteItem.iconName, AppIcons.vote);
     expect(find.text('Wallet'), findsNothing);
     expect(find.text('Send'), findsNothing);
     expect(find.text('Receive'), findsNothing);

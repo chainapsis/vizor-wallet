@@ -8384,6 +8384,21 @@ void main() {
     releaseDiscovery!();
   });
 
+  test('account quiescence blocks matching background work only', () async {
+    final registry = VotingShareTrackingRegistry();
+
+    await registry.quiesceAndDrain(accountUuid: 'account-1');
+
+    expect(registry.beginBackgroundWork(accountUuid: 'account-1'), isNull);
+    final otherAccountWork = registry.beginBackgroundWork(
+      accountUuid: 'account-2',
+    );
+    expect(otherAccountWork, isNotNull);
+
+    otherAccountWork!();
+    registry.resume(accountUuid: 'account-1');
+  });
+
   test('repeated lifecycle pause acquires one quiescence owner', () async {
     final container = _sessionContainer(
       pendingShareRoundLoader:
@@ -8468,6 +8483,34 @@ void main() {
 
     expect(loadCount, 2);
   });
+
+  test(
+    'blocked restore request does not swallow post-resume discovery',
+    () async {
+      var loadCount = 0;
+      final container = _sessionContainer(
+        pendingShareRoundLoader:
+            ({required dbPath, required accountUuids}) async {
+              loadCount++;
+              return const [];
+            },
+      );
+      addTearDown(container.dispose);
+
+      final restorer = container.read(votingShareTrackingRestorerProvider);
+      await restorer.restore();
+      expect(loadCount, 1);
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      await registry.quiesceAndDrain(accountUuid: 'account-1');
+      registry.requestRestore();
+      registry.resume(accountUuid: 'account-1');
+      registry.requestRestore();
+      await restorer.restore();
+
+      expect(loadCount, 2);
+    },
+  );
 
   test('unlock resumes discovery after a tracking drain fails', () async {
     final container = _sessionContainer(
@@ -9092,6 +9135,106 @@ void main() {
     await precomputeFuture;
   });
 
+  test(
+    'destructive drain waits for precompute before secure hotkey wipe',
+    () async {
+      final hotkeyGenerationGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        hotkeyGenerationGate: hotkeyGenerationGate,
+      );
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final container = _sessionContainer(rust: rust, hotkeyStore: hotkeyStore);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      final precompute = notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
+      await rust.hotkeyGenerationStarted.future;
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      var secureStorageWiped = false;
+      final drainAndWipe = registry.quiesceAndDrain().then((_) {
+        hotkeyStore.hotkey = null;
+        secureStorageWiped = true;
+      });
+
+      try {
+        await Future<void>.delayed(Duration.zero);
+        expect(secureStorageWiped, isFalse);
+      } finally {
+        if (!hotkeyGenerationGate.isCompleted) {
+          hotkeyGenerationGate.complete();
+        }
+        await Future.wait([precompute, drainAndWipe]);
+        registry.resume();
+      }
+
+      expect(rust.backgroundDelegationProofCalls, [0]);
+      expect(secureStorageWiped, isTrue);
+      expect(hotkeyStore.hotkey, isNull);
+    },
+  );
+
+  test(
+    'destructive drain stops waiting precompute before it restarts sync',
+    () async {
+      final readiness = _VotingWalletSyncDrainRaceReadinessChecker();
+      final firstSyncStart = Completer<void>();
+      final syncStartDuringDrain = Completer<void>();
+      var drainStarted = false;
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: const Duration(milliseconds: 20),
+        walletSyncStarter: () {
+          if (!firstSyncStart.isCompleted) {
+            firstSyncStart.complete();
+          } else if (drainStarted && !syncStartDuringDrain.isCompleted) {
+            syncStartDuringDrain.complete();
+          }
+        },
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      final precompute = notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
+      await firstSyncStart.future;
+      await readiness.racedCheckStarted.future;
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      drainStarted = true;
+      final drain = registry.quiesceAndDrain(accountUuid: 'account-1');
+      readiness.releaseRacedCheck();
+
+      try {
+        final firstResult = await Future.any<String>([
+          drain.then((_) => 'drained'),
+          syncStartDuringDrain.future.then((_) => 'sync-restarted'),
+        ]);
+        expect(firstResult, 'drained');
+      } finally {
+        readiness.releaseRacedCheck();
+        await Future.wait([precompute, drain]);
+        registry.resume(accountUuid: 'account-1');
+      }
+
+      expect(syncStartDuringDrain.isCompleted, isFalse);
+      expect(rust.snapshotBundlePrecomputeAccounts, isEmpty);
+      expect(
+        container.read(votingSessionProvider(kRoundId)).value!.phase,
+        VotingSessionPhase.idle,
+      );
+    },
+  );
+
   test('prepareDelegation warms proving caches before bundle setup', () async {
     final rust = FakeVotingRustApi();
     final container = _sessionContainer(rust: rust);
@@ -9518,6 +9661,81 @@ void main() {
       expect(rust.warmPirProofCacheSnapshotHeights, [123]);
     },
   );
+
+  test('background PIR cache warmup drains and stays blocked during account '
+      'mutation', () async {
+    final rust = FakeVotingRustApi()
+      ..warmPirProofCacheGate = Completer()
+      ..warmPirProofCacheError = StateError('expected warmup failure');
+    final container = _sessionContainer(
+      rust: rust,
+      http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+    );
+    addTearDown(container.dispose);
+
+    final coordinator = container.read(votingPirWarmupProvider);
+    final warmup = coordinator.maybeWarmActiveRounds();
+    await rust.warmPirProofCacheStarted.future;
+
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    addTearDown(() => registry.resume(accountUuid: 'account-1'));
+    var drained = false;
+    final drain = registry
+        .quiesceAndDrain(accountUuid: 'account-1')
+        .then<void>((_) {
+          drained = true;
+        });
+    await Future<void>.delayed(Duration.zero);
+    expect(drained, isFalse);
+
+    rust.warmPirProofCacheGate!.complete();
+    await Future.wait([warmup, drain]);
+    expect(drained, isTrue);
+    expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+
+    // The failed pass is retryable, but no retry may start while the
+    // destructive account boundary still owns quiescence.
+    await coordinator.maybeWarmActiveRounds();
+    expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+
+    registry.resume(accountUuid: 'account-1');
+    rust.warmPirProofCacheError = null;
+    await coordinator.maybeWarmActiveRounds();
+    expect(rust.warmPirProofCacheSnapshotHeights, [123, 123]);
+  });
+
+  test('destructive drain stops PIR warmup waiting for wallet scan', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = _QuiescenceGatedVotingWalletSyncReadinessChecker();
+    final container = _sessionContainer(
+      rust: rust,
+      http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+      walletSyncReadinessChecker: readiness,
+    );
+    addTearDown(container.dispose);
+
+    final warmup = container
+        .read(votingPirWarmupProvider)
+        .maybeWarmActiveRounds();
+    await readiness.checkStarted.future;
+
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    addTearDown(() => registry.resume(accountUuid: 'account-1'));
+    var drained = false;
+    final drain = registry.quiesceAndDrain(accountUuid: 'account-1').then<void>(
+      (_) {
+        drained = true;
+      },
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(drained, isFalse);
+
+    readiness.releaseCheck();
+    await Future.wait([warmup, drain]).timeout(const Duration(seconds: 1));
+
+    expect(drained, isTrue);
+    expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
+  });
 
   test(
     'background PIR cache warmup skips a second pass within the min interval',
@@ -10938,13 +11156,6 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   }
 
   @override
-  Future<void> clearRecoveryState({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  }) async {}
-
-  @override
   Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
     required String dbPath,
     required String accountUuid,
@@ -11309,6 +11520,31 @@ class _GatedVotingWalletSyncReadinessChecker
   }
 }
 
+class _QuiescenceGatedVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  final checkStarted = Completer<void>();
+  final _releaseCheck = Completer<void>();
+
+  void releaseCheck() {
+    if (!_releaseCheck.isCompleted) _releaseCheck.complete();
+  }
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    if (!checkStarted.isCompleted) checkStarted.complete();
+    await _releaseCheck.future;
+    return VotingWalletSyncReadiness(
+      scannedHeight: snapshotHeight - 1,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight,
+    );
+  }
+}
+
 class _MutableVotingWalletSyncReadinessChecker
     implements VotingWalletSyncReadinessChecker {
   _MutableVotingWalletSyncReadinessChecker({required this.ready});
@@ -11321,6 +11557,36 @@ class _MutableVotingWalletSyncReadinessChecker
     required String network,
     required int snapshotHeight,
   }) async {
+    return VotingWalletSyncReadiness(
+      scannedHeight: ready ? snapshotHeight : snapshotHeight - 1,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight,
+    );
+  }
+}
+
+class _VotingWalletSyncDrainRaceReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  final racedCheckStarted = Completer<void>();
+  final _releaseRacedCheck = Completer<void>();
+  var _calls = 0;
+
+  void releaseRacedCheck() {
+    if (!_releaseRacedCheck.isCompleted) _releaseRacedCheck.complete();
+  }
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    _calls++;
+    if (_calls == 3) {
+      racedCheckStarted.complete();
+      await _releaseRacedCheck.future;
+    }
+    final ready = _calls == 1 || _calls >= 4;
     return VotingWalletSyncReadiness(
       scannedHeight: ready ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,

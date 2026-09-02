@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_mutation_guard.dart';
 
 void main() {
@@ -65,6 +66,57 @@ void main() {
     }, resumeAfterMutation: false);
 
     expect(events, ['pause', 'action']);
+  });
+
+  testWidgets('destructive voting drain precedes the sync pause', (
+    tester,
+  ) async {
+    final events = <String>[];
+    final votingRegistry = VotingShareTrackingRegistry();
+    var restoreRequests = 0;
+    votingRegistry.addRestoreRequestListener(() {
+      expect(votingRegistry.isQuiesced('account-1'), isFalse);
+      restoreRequests++;
+    });
+    final releaseVotingWork = votingRegistry.beginBackgroundWork(
+      accountUuid: 'account-1',
+    );
+    expect(releaseVotingWork, isNotNull);
+    late WidgetRef capturedRef;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(() => _QueuedPreflightSyncNotifier(events)),
+          votingShareTrackingRegistryProvider.overrideWithValue(votingRegistry),
+        ],
+        child: Consumer(
+          builder: (context, ref, child) {
+            capturedRef = ref;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final mutation = runWithSyncPausedForAccountMutation(
+      capturedRef,
+      () async => events.add('action'),
+      quiesceMigrationWork: false,
+      quiesceVotingWork: true,
+    );
+
+    expect(votingRegistry.isQuiesced('account-1'), isTrue);
+    expect(events, isEmpty);
+    capturedRef.read(syncProvider.notifier).startSync();
+    releaseVotingWork!();
+    await mutation;
+
+    expect(events, ['queued-sync-start', 'pause', 'action', 'resume']);
+    expect(votingRegistry.isQuiesced('account-1'), isFalse);
+    expect(restoreRequests, 1);
   });
 
   testWidgets('resumes after failed non-destructive mutation by default', (
@@ -358,6 +410,9 @@ void main() {
     tester,
   ) async {
     final events = <String>[];
+    final votingRegistry = VotingShareTrackingRegistry();
+    var restoreRequests = 0;
+    votingRegistry.addRestoreRequestListener(() => restoreRequests++);
     late WidgetRef capturedRef;
 
     await tester.pumpWidget(
@@ -365,6 +420,7 @@ void main() {
         overrides: [
           accountProvider.overrideWith(_ExistingAccountNotifier.new),
           syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+          votingShareTrackingRegistryProvider.overrideWithValue(votingRegistry),
         ],
         child: Consumer(
           builder: (context, ref, child) {
@@ -389,10 +445,15 @@ void main() {
       'clearCachedWalletDbPath',
       'migration-resume',
     ]);
+    expect(votingRegistry.isQuiesced('account-1'), isFalse);
+    expect(restoreRequests, 0);
   });
 
   testWidgets('wallet reset resumes after pre-delete failure', (tester) async {
     final events = <String>[];
+    final votingRegistry = VotingShareTrackingRegistry();
+    var restoreRequests = 0;
+    votingRegistry.addRestoreRequestListener(() => restoreRequests++);
     late WidgetRef capturedRef;
 
     await tester.pumpWidget(
@@ -400,6 +461,7 @@ void main() {
         overrides: [
           accountProvider.overrideWith(_EmptyAccountNotifier.new),
           syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+          votingShareTrackingRegistryProvider.overrideWithValue(votingRegistry),
         ],
         child: Consumer(
           builder: (context, ref, child) {
@@ -425,12 +487,17 @@ void main() {
       'clearCachedWalletDbPath',
       'resume',
     ]);
+    expect(votingRegistry.isQuiesced('account-1'), isFalse);
+    expect(restoreRequests, 1);
   });
 
   testWidgets('wallet reset stays paused after post-delete failure', (
     tester,
   ) async {
     final events = <String>[];
+    final votingRegistry = VotingShareTrackingRegistry();
+    var restoreRequests = 0;
+    votingRegistry.addRestoreRequestListener(() => restoreRequests++);
     late WidgetRef capturedRef;
 
     await tester.pumpWidget(
@@ -438,6 +505,7 @@ void main() {
         overrides: [
           accountProvider.overrideWith(_EmptyAccountNotifier.new),
           syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+          votingShareTrackingRegistryProvider.overrideWithValue(votingRegistry),
         ],
         child: Consumer(
           builder: (context, ref, child) {
@@ -461,6 +529,8 @@ void main() {
     );
 
     expect(events, ['pause', 'resetWallet', 'clearCachedWalletDbPath']);
+    expect(votingRegistry.isQuiesced('account-1'), isFalse);
+    expect(restoreRequests, 0);
   });
 }
 
@@ -542,5 +612,14 @@ class _StaleSyncNotifier extends SyncNotifier {
   @override
   void clearCachedWalletDbPath() {
     events.add('clearCachedWalletDbPath');
+  }
+}
+
+class _QueuedPreflightSyncNotifier extends _StaleSyncNotifier {
+  _QueuedPreflightSyncNotifier(super.events);
+
+  @override
+  void startSync({int? latestTipHeight}) {
+    events.add('queued-sync-start');
   }
 }

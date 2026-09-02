@@ -535,11 +535,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Remove an account from the wallet.
   ///
   /// Destructive account changes are blocked while any vote submission is in
-  /// progress. Once removal is allowed, in-flight helper-share tracking is
+  /// progress. Once removal is allowed, in-flight voting background work is
   /// quiesced and drained so it cannot keep reading or writing this account's
-  /// voting records. Process-local voting state is then cleared before the
-  /// wallet delete. Durable voting rows, hotkeys, and other account-scoped
-  /// sidecars are cleared after the wallet account is deleted.
+  /// records or secure storage. Process-local voting state is then cleared
+  /// before the wallet delete. Durable voting rows, hotkeys, and other
+  /// account-scoped sidecars are cleared after the wallet account is deleted.
   Future<void> removeAccount(String uuid) async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
     final prev = state.value ?? const AccountState();
@@ -704,10 +704,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.
   ///
-  /// In-flight helper-share tracking is quiesced and drained first so it
-  /// cannot keep reading or writing voting records during the wipe. This also
-  /// clears voting state held in this process for every account before the
-  /// wallet DB and voting sidecar DB are deleted.
+  /// In-flight voting background work is quiesced and drained first so it
+  /// cannot keep reading or writing voting records or secure storage during
+  /// the wipe. This also clears voting state held in this process for every
+  /// account before the wallet DB and voting sidecar DB are deleted.
   ///
   /// Migration work must first stop without deleting its credential. After
   /// that fail-closed preflight, the wipe is best-effort: deletion steps remain

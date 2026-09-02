@@ -1300,7 +1300,7 @@ class _MobileVotingEntryCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 AppIcon(
-                  AppIcons.coinholderVoting,
+                  AppIcons.vote,
                   size: 20,
                   color: colors.icon.accent,
                 ),
