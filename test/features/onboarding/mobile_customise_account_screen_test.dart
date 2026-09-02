@@ -443,6 +443,70 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
+  testWidgets('commits initial Ledger passcode before biometrics', (
+    tester,
+  ) async {
+    const account = LedgerDeviceAccount(
+      ufvk: 'uview-ledger',
+      seedFingerprint: [1, 2, 3],
+      accountIndex: 7,
+      appVersion: '3.9.2',
+    );
+    final securityNotifier = _RecordingSecurityNotifier();
+    var importCount = 0;
+    final router = GoRouter(
+      initialLocation: '/customise',
+      routes: [
+        GoRoute(
+          path: '/customise',
+          builder: (_, _) => const MobileLedgerCustomiseAccountScreen(
+            args: LedgerCustomiseAccountArgs(
+              account: account,
+              birthdayHeight: 2500000,
+              pendingPassword: '123456',
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/onboarding/biometrics',
+          builder: (_, _) => const Text('biometrics route'),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appSecurityProvider.overrideWith(() => securityNotifier),
+          ledgerAccountImporterProvider.overrideWithValue(({
+            required name,
+            required account,
+            required birthdayHeight,
+            required profilePictureId,
+          }) async {
+            importCount++;
+          }),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(importCount, 1);
+    expect(securityNotifier.preparedPassword, '123456');
+    expect(securityNotifier.committed, isTrue);
+    expect(find.text('biometrics route'), findsOneWidget);
+  });
+
   testWidgets('creates the initial account with the selected persona', (
     tester,
   ) async {

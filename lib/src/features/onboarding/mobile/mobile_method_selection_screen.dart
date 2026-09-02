@@ -3,7 +3,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app_bootstrap.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -28,11 +27,7 @@ class MobileMethodSelectionScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    final bootstrap = ref.watch(appBootstrapProvider);
-    final showLedger =
-        ref.watch(ledgerStaticCapabilityProvider).supported &&
-        bootstrap.hasWallet &&
-        bootstrap.isPasswordConfigured;
+    final showLedger = ref.watch(ledgerStaticCapabilityProvider).supported;
     return Scaffold(
       backgroundColor: colors.background.window,
       body: SafeArea(

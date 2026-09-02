@@ -305,13 +305,48 @@ class MobileLedgerCustomiseAccountScreen extends ConsumerWidget {
       progress: 0.75,
       onBack: () => context.pop(),
       onFinish: (name, profilePictureId) async {
-        await ref.read(ledgerAccountImporterProvider)(
+        final router = GoRouter.of(context);
+        final importer = ref.read(ledgerAccountImporterProvider);
+        Future<void> importAccount() => importer(
           name: name,
           account: args.account,
           birthdayHeight: args.birthdayHeight,
           profilePictureId: profilePictureId,
         );
-        if (context.mounted) context.go('/home');
+
+        final pendingPassword = args.pendingPassword;
+        if (pendingPassword == null) {
+          await importAccount();
+          router.go('/home');
+          return;
+        }
+
+        final securityNotifier = ref.read(appSecurityProvider.notifier);
+        final routerRefresh = ref.read(routerRefreshProvider);
+        var passwordPrepared = false;
+        var passwordCommitted = false;
+        try {
+          await routerRefresh.pauseWhile(() async {
+            await securityNotifier.preparePasswordSetup(pendingPassword);
+            passwordPrepared = true;
+            await importAccount();
+            securityNotifier.commitPasswordSetup();
+            passwordCommitted = true;
+            router.go('/onboarding/biometrics');
+          });
+        } catch (_) {
+          if (passwordPrepared && !passwordCommitted) {
+            try {
+              await securityNotifier.rollbackPasswordSetup();
+            } catch (rollbackError, rollbackStack) {
+              log(
+                'MobileLedgerCustomiseAccount: password rollback failed: '
+                '$rollbackError\n$rollbackStack',
+              );
+            }
+          }
+          rethrow;
+        }
       },
     );
   }
