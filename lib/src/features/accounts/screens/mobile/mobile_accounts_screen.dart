@@ -478,6 +478,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         await runWithSyncPausedForAccountMutation(
           ref,
           () => accountNotifier.removeAccount(account.uuid),
+          quiesceVotingWork: true,
         );
         final activeAccountAfterRemoval = ref
             .read(accountProvider)

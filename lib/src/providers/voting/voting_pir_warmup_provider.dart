@@ -9,6 +9,7 @@ import '../../services/voting/resolved_voting_config_extensions.dart';
 import 'voting_config_provider.dart';
 import 'voting_round_visibility_provider.dart';
 import 'voting_service_providers.dart';
+import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 
 /// Upper bound for waiting on wallet scan readiness before giving up on one
@@ -91,12 +92,23 @@ class VotingPirWarmupCoordinator {
     final inFlight = _passInFlight;
     if (inFlight != null) return inFlight;
 
-    final pass = _startPass();
+    final releaseBackgroundWork = _ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork();
+    if (releaseBackgroundWork == null) {
+      debugPrint(
+        '[zcash] Voting: PIR cache warmup skipped '
+        'reason=wallet-mutation-in-progress',
+      );
+      return Future.value();
+    }
+
+    final pass = _startPass(releaseBackgroundWork);
     _passInFlight = pass;
     return pass;
   }
 
-  Future<void> _startPass() async {
+  Future<void> _startPass(VoidCallback releaseBackgroundWork) async {
     try {
       final accountUuid = await _ref
           .read(votingActiveAccountUuidProvider)
@@ -122,6 +134,7 @@ class VotingPirWarmupCoordinator {
       debugPrint('[zcash] Voting: PIR cache warmup pass failed: $error');
     } finally {
       _passInFlight = null;
+      releaseBackgroundWork();
     }
   }
 
@@ -223,14 +236,18 @@ class VotingPirWarmupCoordinator {
 
       final ready = await _waitForWalletScannedToSnapshot(
         dbPath: dbPath,
+        accountUuid: accountUuid,
         network: endpoint.networkName,
         snapshotHeight: round.snapshotHeight,
       );
       if (!ready) {
+        final reason = _isWalletMutationInProgress(accountUuid)
+            ? 'wallet-mutation-in-progress'
+            : 'wallet-sync-timeout';
         debugPrint(
           '[zcash] Voting: PIR cache warmup skipped '
           'round=${round.roundId} snapshot=${round.snapshotHeight} '
-          'reason=wallet-sync-timeout',
+          'reason=$reason',
         );
         return false;
       }
@@ -238,6 +255,13 @@ class VotingPirWarmupCoordinator {
       // The account may have switched while waiting; warming the old
       // account's sidecar would be wasted (though harmless) work.
       final activeNow = await _ref.read(votingActiveAccountUuidProvider).call();
+      if (_isWalletMutationInProgress(accountUuid)) {
+        debugPrint(
+          '[zcash] Voting: PIR cache warmup skipped '
+          'round=${round.roundId} reason=wallet-mutation-in-progress',
+        );
+        return false;
+      }
       if (activeNow != accountUuid) {
         debugPrint(
           '[zcash] Voting: PIR cache warmup skipped '
@@ -301,6 +325,7 @@ class VotingPirWarmupCoordinator {
 
   Future<bool> _waitForWalletScannedToSnapshot({
     required String dbPath,
+    required String accountUuid,
     required String network,
     required int snapshotHeight,
   }) async {
@@ -309,14 +334,22 @@ class VotingPirWarmupCoordinator {
     final maxWait = _ref.read(votingPirWarmupSyncMaxWaitProvider);
     final deadline = Stopwatch()..start();
     while (true) {
+      if (_isWalletMutationInProgress(accountUuid)) return false;
       final readiness = await checker.check(
         dbPath: dbPath,
         network: network,
         snapshotHeight: snapshotHeight,
       );
+      if (_isWalletMutationInProgress(accountUuid)) return false;
       if (readiness.isReady) return true;
       if (deadline.elapsed >= maxWait) return false;
       await Future<void>.delayed(pollInterval);
     }
+  }
+
+  bool _isWalletMutationInProgress(String accountUuid) {
+    return _ref
+        .read(votingShareTrackingRegistryProvider)
+        .isQuiesced(accountUuid);
   }
 }
