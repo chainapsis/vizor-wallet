@@ -15,12 +15,12 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 // End-to-end regtest coverage for the ZIP-321 payment-URI LOCKED path — the
-// regression guard for delivering a parked prefill to /send after unlock
-// instead of the default /home. Imports a faucet-funded wallet, signs out to
-// lock it, injects a `zcash:<address>?amount=...` link over the
-// `com.zcash.wallet/payment_uri` MethodChannel while locked, then unlocks and
-// asserts the wallet lands on the prefilled send screen (address + amount) and
-// that the resulting shielded send mines on the live regtest network.
+// regression guard for delivering a parked request after unlock instead of
+// dropping it. Imports a faucet-funded wallet, signs out to lock it, injects a
+// `zcash:<address>?amount=...` link over the `com.zcash.wallet/payment_uri`
+// MethodChannel while locked, then unlocks and asserts the payment-request card
+// is raised over the unlocked wallet and that the send it drives mines on the
+// live regtest network.
 
 const _network = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
@@ -86,8 +86,8 @@ void main() {
       await _waitForMempoolObserver();
 
       // The heart of this test: a zcash: URI opened while the wallet is locked
-      // must survive the unlock screen and land on a prefilled send screen
-      // (regression guard for the locked-path fix), then send for real.
+      // must survive the unlock screen and come back as the payment-request
+      // card over the unlocked wallet, then send for real.
       await _sendViaLockedPaymentUri(tester, secondAddress, '0.25');
 
       await _openWallet(tester);
@@ -127,8 +127,8 @@ void main() {
 }
 
 /// Locks the wallet, opens a `zcash:` link while locked, unlocks, and asserts
-/// the parked prefill is delivered to the prefilled send screen (not the
-/// default /home) before driving the send to completion.
+/// the parked request comes back as the payment-request card over the wallet
+/// before driving Review -> Confirm to completion.
 Future<void> _sendViaLockedPaymentUri(
   WidgetTester tester,
   String address,
@@ -157,8 +157,8 @@ Future<void> _sendViaLockedPaymentUri(
         'a payment URI opened while locked must keep the unlock screen showing',
   );
 
-  // Unlock. The unlock flow must claim the parked prefill and route to the
-  // prefilled /send screen instead of the default /home (regression guard for
+  // Unlock. The unlock flow must claim the parked prefill and raise it as the
+  // payment-request card over the wallet it just opened (regression guard for
   // the locked-path fix).
   await _enterText(tester, const ValueKey('unlock_password_field'), _password);
   await _tapAppButton(
@@ -170,25 +170,27 @@ Future<void> _sendViaLockedPaymentUri(
   await _pumpUntil(
     tester,
     () =>
-        _editableTextEquals(
+        tester.any(find.byKey(const ValueKey('payment_request_continue'))) &&
+        _keyedTextEquals(
           tester,
-          const ValueKey('send_address_field'),
-          address,
-        ) &&
-        _editableTextEquals(
-          tester,
-          const ValueKey('send_amount_field'),
-          amount,
+          const ValueKey('payment_request_amount'),
+          '$amount ${_currencyTicker.toUpperCase()}',
         ),
     description:
-        'unlock to deliver the parked payment URI to the prefilled send screen',
+        'unlock to deliver the parked payment URI to the payment-request card',
     timeout: const Duration(minutes: 1),
   );
-  _log('locked-path: unlock delivered the prefill to the send screen');
+  _log('locked-path: unlock raised the payment-request card');
 
   await _tapAppButton(
     tester,
-    const ValueKey('send_review_button'),
+    const ValueKey('payment_request_continue'),
+    timeout: const Duration(minutes: 1),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Review payment request')),
+    description: 'the payment-request review screen',
     timeout: const Duration(minutes: 1),
   );
   await _tapAppButton(
@@ -645,15 +647,6 @@ bool _keyedTextEquals(WidgetTester tester, Key key, String expected) {
   final finder = find.byKey(key);
   if (!tester.any(finder)) return false;
   return tester.widget<Text>(finder).data == expected;
-}
-
-bool _editableTextEquals(WidgetTester tester, Key key, String expected) {
-  final editable = find.descendant(
-    of: find.byKey(key),
-    matching: find.byType(EditableText),
-  );
-  if (!tester.any(editable)) return false;
-  return tester.widget<EditableText>(editable).controller.text == expected;
 }
 
 Set<String> _textSetIn(WidgetTester tester, Finder finder) {

@@ -15,8 +15,9 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 // End-to-end regtest coverage for the ZIP-321 payment-URI feature: opening a
-// `zcash:<address>?amount=...` link must prefill the send screen and produce a
-// real, mineable shielded transaction. The native deep-link delivery is
+// `zcash:<address>?amount=...` link must raise the payment-request card over
+// the wallet and produce a real, mineable shielded transaction from it. The
+// native deep-link delivery is
 // simulated by pushing an `onUris` call over the `com.zcash.wallet/payment_uri`
 // MethodChannel (the same contract the macOS/Windows/Linux/Android/iOS runners
 // implement), so this exercises the Dart consumer + ZIP-321 parser + send flow
@@ -85,8 +86,8 @@ void main() {
       await _waitForBalance(tester, shielded: '1.25');
       await _waitForMempoolObserver();
 
-      // The heart of this test: a zcash: URI must drive the send screen, not a
-      // manually typed address/amount.
+      // The heart of this test: a zcash: URI must raise the payment-request
+      // card and be answered from it, not typed into the composer by hand.
       await _sendViaPaymentUri(tester, secondAddress, '0.25');
 
       await _openWallet(tester);
@@ -126,7 +127,7 @@ void main() {
 }
 
 /// Simulates the native side delivering a `zcash:` deep link, then asserts the
-/// send screen is prefilled from it and drives the send to completion.
+/// payment-request card presents it and drives Review -> Confirm to completion.
 Future<void> _sendViaPaymentUri(
   WidgetTester tester,
   String address,
@@ -143,28 +144,32 @@ Future<void> _sendViaPaymentUri(
     (_) {},
   );
 
-  // The URI is parsed and drained to /send with the address + amount prefilled.
+  // The URI is parsed and drained onto the payment-request card, over
+  // whatever the wallet was showing — it is not a jump into the composer.
   await _pumpUntil(
     tester,
     () =>
-        _editableTextEquals(
+        tester.any(find.byKey(const ValueKey('payment_request_continue'))) &&
+        _keyedTextEquals(
           tester,
-          const ValueKey('send_address_field'),
-          address,
-        ) &&
-        _editableTextEquals(
-          tester,
-          const ValueKey('send_amount_field'),
-          amount,
+          const ValueKey('payment_request_amount'),
+          '$amount ${_currencyTicker.toUpperCase()}',
         ),
-    description: 'payment URI to prefill the send address + amount',
+    description: 'the payment-request card to show the requested amount',
     timeout: const Duration(minutes: 1),
   );
-  _log('send screen prefilled from payment URI');
+  _log('payment-request card raised from payment URI');
 
+  // Review hands the card's proposal straight to the review screen.
   await _tapAppButton(
     tester,
-    const ValueKey('send_review_button'),
+    const ValueKey('payment_request_continue'),
+    timeout: const Duration(minutes: 1),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Review payment request')),
+    description: 'the payment-request review screen',
     timeout: const Duration(minutes: 1),
   );
   await _tapAppButton(
@@ -606,15 +611,6 @@ bool _keyedTextEquals(WidgetTester tester, Key key, String expected) {
   final finder = find.byKey(key);
   if (!tester.any(finder)) return false;
   return tester.widget<Text>(finder).data == expected;
-}
-
-bool _editableTextEquals(WidgetTester tester, Key key, String expected) {
-  final editable = find.descendant(
-    of: find.byKey(key),
-    matching: find.byType(EditableText),
-  );
-  if (!tester.any(editable)) return false;
-  return tester.widget<EditableText>(editable).controller.text == expected;
 }
 
 Set<String> _textSetIn(WidgetTester tester, Finder finder) {
