@@ -174,10 +174,12 @@ Widget _harness(GoRouter router) {
 }
 
 PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
-  validateAddress: ({required String address}) async =>
+  spendableIsAuthoritativeNow: () => true,
+  validateAddress: ({required String address, required String network}) async =>
       const rust_sync.AddressValidationResult(
         isValid: true,
         addressType: 'sapling',
+        wrongNetwork: false,
       ),
   proposeTransfer:
       ({
