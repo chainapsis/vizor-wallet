@@ -295,6 +295,10 @@ class PaymentRequestPrecheck {
     final lower = raw.toLowerCase();
     if (lower.contains('wallet sync is still finishing') ||
         lower.contains('wallet sync failed before balance refresh') ||
+        // What Rust itself emits when the wallet has no target/anchor
+        // heights yet ("Wallet must sync before …"), which is exactly the
+        // fresh-import state a payment link is most likely to land in.
+        lower.contains('wallet must sync') ||
         lower.contains('sync_in_progress') ||
         lower.contains('scan_required')) {
       return PaymentRequestPrecheckSyncing(memoDropped: memoDropped);
@@ -307,8 +311,15 @@ class PaymentRequestPrecheck {
         memoDropped: memoDropped,
       );
     }
+    // `validate_address` is format-only, so an address that is well-formed
+    // for another network passes the card's own check and is refused first
+    // by the proposal. The card already has a status for that.
+    if (lower.contains('decoding the address from a payment request') ||
+        lower.contains('bad address')) {
+      return const PaymentRequestPrecheckInvalidAddress();
+    }
     return PaymentRequestPrecheckFailed(
-      friendlyProposeSendError(raw),
+      friendlyPaymentRequestCheckError(raw),
       memoDropped: memoDropped,
     );
   }

@@ -229,14 +229,49 @@ void main() {
     );
   });
 
-  test('any other proposal failure carries a friendly message', () async {
+  test('a network failure says so in the card\'s own words', () async {
     final api = FakeSendApi(proposeThrows: Exception('grpc connect failed'));
     final result = await run(api);
     expect(result, isA<PaymentRequestPrecheckFailed>());
     expect(
       (result as PaymentRequestPrecheckFailed).message,
-      'Network error. Check your connection and try again.',
+      "Couldn't reach the network — check your connection and open the link "
+      'again',
     );
+  });
+
+  test('any other proposal failure names the exit the card has', () async {
+    final api = FakeSendApi(proposeThrows: Exception('something unmapped'));
+    final result = await run(api);
+    expect(result, isA<PaymentRequestPrecheckFailed>());
+    expect(
+      (result as PaymentRequestPrecheckFailed).message,
+      "Couldn't check this request — open Edit to review the details",
+      reason: 'nothing was sent from this card, so no send wording applies',
+    );
+  });
+
+  test('an address the proposal refuses is an invalid address', () async {
+    for (final raw in const [
+      'Error decoding the address from a payment request',
+      'Bad address: IncorrectNetwork { expected: Main, actual: Test }',
+    ]) {
+      final api = FakeSendApi(proposeThrows: Exception(raw));
+      expect(
+        await run(api),
+        isA<PaymentRequestPrecheckInvalidAddress>(),
+        reason: raw,
+      );
+    }
+  });
+
+  test('the sync message Rust actually emits is syncing', () async {
+    final api = FakeSendApi(
+      proposeThrows: StateError(
+        'Wallet must sync before sending; no chain tip is known yet',
+      ),
+    );
+    expect(await run(api), isA<PaymentRequestPrecheckSyncing>());
   });
 
   test('an unreadable amount fails instead of proposing zero', () async {
