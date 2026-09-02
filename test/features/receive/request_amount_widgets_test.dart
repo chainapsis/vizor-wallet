@@ -11,8 +11,6 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/pool_badge.dart';
-import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
-import 'package:zcash_wallet/src/features/receive/widgets/request/receive_request_entry.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_card.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_sheet.dart';
@@ -542,43 +540,6 @@ void main() {
       tester,
     ) async {
       await expectLater(renderRequestQrPng(''), throwsArgumentError);
-    });
-  });
-
-  group('receive entry', () {
-    testWidgets('the request sits between share and copy', (tester) async {
-      await _pump(
-        tester,
-        const ReceiveRequestActionStack(isShielded: true),
-        size: _mobileSize,
-      );
-
-      expect(tester.takeException(), isNull);
-      expect(find.text('Share shielded address'), findsOneWidget);
-      expect(find.text('Request ZEC'), findsOneWidget);
-      expect(find.text('Copy shielded address'), findsOneWidget);
-      expect(
-        _button(tester, 'mobile_receive_request').variant,
-        AppButtonVariant.secondary,
-      );
-    });
-
-    testWidgets('the mobile entry preview renders the whole screen', (
-      tester,
-    ) async {
-      await _pump(
-        tester,
-        const MobileReceiveRequestEntryPreview(
-          type: ReceiveAddressType.shielded,
-          address: _shielded,
-        ),
-        size: _mobileSize,
-      );
-
-      expect(tester.takeException(), isNull);
-      expect(find.text('Request ZEC'), findsOneWidget);
-      // The plain address QR is untouched by the new entry.
-      expect(find.byType(ReceiveQrSurface), findsOneWidget);
     });
   });
 }

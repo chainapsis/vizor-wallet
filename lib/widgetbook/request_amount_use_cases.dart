@@ -12,11 +12,10 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 
 import '../src/core/theme/app_theme.dart';
-import '../src/features/receive/widgets/receive_address_widgets.dart';
-import '../src/features/receive/widgets/request/receive_request_entry.dart';
 import '../src/features/receive/widgets/request/request_amount_card.dart';
 import '../src/features/receive/widgets/request/request_amount_model.dart';
 import '../src/features/receive/widgets/request/request_amount_sheet.dart';
+import 'receive_use_cases.dart';
 
 /// The addresses the Receive use cases already preview, so the request states
 /// and the address states describe the same wallet.
@@ -103,15 +102,13 @@ Widget buildRequestModalStepTwoTransparentUseCase(BuildContext context) =>
 
 // ─── Mobile ──────────────────────────────────────────────────────────
 
-Widget buildRequestMobileEntryUseCase(BuildContext context) {
-  return _frame(
-    const Size(393, 852),
-    const MobileReceiveRequestEntryPreview(
-      type: ReceiveAddressType.shielded,
-      address: _shieldedAddress,
-    ),
-  );
-}
+/// Where the request flow starts on mobile.
+///
+/// This is the shipped Receive screen, not a mock of it: the entry is an
+/// icon-only button beside Share, and a fixture that redrew it as a labelled
+/// third tier would be reviewing an arrangement the app does not have.
+Widget buildRequestMobileEntryUseCase(BuildContext context) =>
+    buildReceiveMobileShieldedUseCase(context);
 
 Widget buildRequestMobileComposeEmptyUseCase(BuildContext context) =>
     _mobileCompose(_emptyRequest);
