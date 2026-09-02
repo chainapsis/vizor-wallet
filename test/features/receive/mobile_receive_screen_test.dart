@@ -678,6 +678,24 @@ void main() {
 
   testWidgets('a USD request keeps the ZEC it was created with when the price '
       'moves', (tester) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add(
+            (call.arguments as Map<Object?, Object?>)['text']! as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
     await _pumpReceive(
       tester,
       _FakeReceiveAddressService(),
@@ -716,6 +734,10 @@ void main() {
       tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data,
       'zcash:$_shielded?amount=0.5',
     );
+    // Copy hands out the same snapshot the QR shows.
+    await tester.tap(find.byKey(const ValueKey('request_copy_link_button')));
+    await _settle(tester);
+    expect(copied, ['zcash:$_shielded?amount=0.5']);
   });
 
   testWidgets('requests a transparent address without a message step', (

@@ -451,6 +451,11 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
     final requestDraft = _requestDraft;
     final requestView = requestDraft?.resolve(zecUsdUnitPrice: zecUsdUnitPrice);
+    // What the result step shows, copies and saves is the confirmed snapshot;
+    // the compose step is the live draft.
+    final shownRequest = _requestStep == RequestModalStep.result
+        ? (_requestResult ?? requestView)
+        : requestView;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -478,9 +483,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                 // is composed on top of the address it pays to, not on a
                 // screen that replaced it.
                 background: const SizedBox.expand(),
-                request: _requestStep == RequestModalStep.result
-                    ? (_requestResult ?? requestView)
-                    : requestView,
+                request: shownRequest!,
                 step: _requestStep,
                 messageExpanded: _requestMessageExpanded,
                 amountController: _requestAmountController,
@@ -495,7 +498,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                     : null,
                 onAddMessage: _expandRequestMessage,
                 onCopyLink: () {
-                  final uri = requestView.requestUri;
+                  final uri = shownRequest.requestUri;
                   if (uri == null) return;
                   copyTextWithToast(
                     context,
@@ -504,7 +507,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                   );
                 },
                 onSaveQrImage: (png) =>
-                    unawaited(_saveRequestQrImage(png, requestView.amountZec)),
+                    unawaited(_saveRequestQrImage(png, shownRequest.amountZec)),
               ),
             if (infoDialogType != null)
               AppPaneModalOverlay(

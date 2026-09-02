@@ -144,15 +144,18 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
       );
     }
 
+    // The confirmed snapshot is what the result step shows, copies and
+    // shares; the live draft stays behind on the compose step.
+    final result = _result ?? request;
     return RequestAmountSheetResult(
-      request: _result ?? request,
+      request: result,
       onBack: () => setState(() {
         _result = null;
         _showsResult = false;
       }),
       onClose: _close,
       onCopyLink: () {
-        final uri = request.requestUri;
+        final uri = result.requestUri;
         if (uri == null) return;
         unawaited(_copyLink(uri));
       },

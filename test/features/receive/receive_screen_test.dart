@@ -769,6 +769,24 @@ void main() {
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
     });
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add(
+            (call.arguments as Map<Object?, Object?>)['text']! as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
 
     await tester.pumpWidget(
       _receiveHarness(
@@ -809,6 +827,10 @@ void main() {
 
     expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
     expect(find.text('0.5 ZEC'), findsOneWidget);
+    // Copy hands out the same snapshot the QR shows.
+    await tester.tap(find.byKey(const ValueKey('request_copy_link_button')));
+    await tester.pump();
+    expect(copied, ['zcash:$_shieldedAddress?amount=0.5']);
 
     // Back on the form the draft is live again, and the next Next takes a
     // fresh snapshot at the new price.
