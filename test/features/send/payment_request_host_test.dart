@@ -212,7 +212,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Payment request'), findsOneWidget);
-    expect(find.text('Requested by Coffee shop'), findsOneWidget);
+    expect(find.text('Requester'), findsOneWidget);
+    expect(find.text('Coffee shop'), findsOneWidget);
+    expect(find.text('Requested by Coffee shop'), findsNothing);
     expect(
       find.text('screen /home'),
       findsOneWidget,

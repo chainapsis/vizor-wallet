@@ -16,7 +16,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
-import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
@@ -133,10 +132,7 @@ void main() {
       _expectFits(tester, size);
 
       await tester.tap(
-        find.descendant(
-          of: find.byKey(const ValueKey('payment_request_memo')),
-          matching: find.byType(ReviewListRow),
-        ),
+        find.byKey(const ValueKey('payment_request_memo_toggle')),
       );
       await tester.pumpAndSettle();
       _expectFits(tester, size);
