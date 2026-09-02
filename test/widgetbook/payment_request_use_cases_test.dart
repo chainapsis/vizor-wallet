@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
@@ -438,10 +439,6 @@ void main() {
         'Not enough ZEC for this amount and the network fee (0.21 available)',
       ),
       (
-        buildPaymentRequestSyncingUseCase,
-        'Wallet is still syncing — this will update when it finishes',
-      ),
-      (
         buildPaymentRequestFailedUseCase,
         "Couldn't check this request — open Edit to review the details",
       ),
@@ -452,7 +449,38 @@ void main() {
         colors.text.destructive,
         reason: message,
       );
+      expect(
+        _statusIcons(tester),
+        findsOneWidget,
+        reason: 'an error carries the warning glyph: $message',
+      );
     }
+  });
+
+  testWidgets('syncing is a pending line, not an error', (tester) async {
+    final colors = AppThemeData.light.colors;
+    const message =
+        'Wallet is still syncing — this will update when it '
+        'finishes';
+
+    for (final (builder, size) in <(WidgetBuilder, Size)>[
+      (buildPaymentRequestSyncingUseCase, _desktopSize),
+      (buildMobilePaymentRequestSyncingUseCase, _mobileSize),
+    ]) {
+      await _pumpUseCase(tester, builder, size: size);
+
+      expect(tester.takeException(), isNull);
+      // The copy promises the card will update itself, so the line stays
+      // quiet: secondary text and no warning glyph to act on.
+      expect(_statusColor(tester, message), colors.text.secondary);
+      expect(_statusIcons(tester), findsNothing);
+      // Review still cannot be pressed — that is `blocksContinue`'s job, not
+      // the tone's.
+      expect(_button(tester, 'payment_request_continue').onPressed, isNull);
+    }
+
+    expect(PaymentRequestStatus.syncing.blocksContinue, isTrue);
+    expect(PaymentRequestStatus.syncing.isError, isFalse);
   });
 
   testWidgets('a failed check is its own status, not a bad address', (
@@ -959,6 +987,12 @@ String _titleText(WidgetTester tester) => tester
 
 Color? _statusColor(WidgetTester tester, String message) =>
     tester.widget<Text>(find.text(message)).style?.color;
+
+/// Glyphs inside the one status slot — the warning badge, when there is one.
+Finder _statusIcons(WidgetTester tester) => find.descendant(
+  of: find.byKey(const ValueKey('payment_request_status')),
+  matching: find.byType(AppIcon),
+);
 
 double _scrollOffset(WidgetTester tester) => tester
     .widget<SingleChildScrollView>(find.byKey(kPaymentRequestScrollViewKey))

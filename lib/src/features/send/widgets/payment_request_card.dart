@@ -96,10 +96,16 @@ extension PaymentRequestStatusX on PaymentRequestStatus {
 
   /// Something is wrong rather than merely pending, so the status line takes
   /// the destructive tone and the warning glyph.
+  ///
+  /// [PaymentRequestStatus.syncing] is deliberately not one of these. It
+  /// blocks Review through [blocksContinue] like the rest, but it is the one
+  /// blocked state that resolves itself: the card watches the sync and
+  /// re-runs its own check, and its copy says so. A warning glyph on a line
+  /// that promises to update itself asks the user to act on a condition they
+  /// have nothing to do about.
   bool get isError =>
       this == PaymentRequestStatus.invalidAddress ||
       this == PaymentRequestStatus.insufficientFunds ||
-      this == PaymentRequestStatus.syncing ||
       this == PaymentRequestStatus.failed;
 }
 
@@ -1174,10 +1180,14 @@ class _ProseRows extends StatelessWidget {
   }
 }
 
-/// The card's one status line, which only ever carries one of the request
-/// errors: they take the destructive tone and the warning glyph the text
-/// fields already use. "Checking" says itself inside the primary button, so
-/// nothing neutral competes for this slot.
+/// The card's one status line.
+///
+/// The request errors ([PaymentRequestStatusX.isError]) take the destructive
+/// tone and the warning glyph the text fields already use. The one other line
+/// that reaches this slot is `syncing`, which is a pending state the card
+/// resolves on its own, so it renders as quiet secondary text with no glyph —
+/// the same treatment the replaced-link notice gets. "Checking" says itself
+/// inside the primary button and never comes through here.
 class _StatusMessage extends StatelessWidget {
   const _StatusMessage({
     required this.status,
@@ -1194,18 +1204,11 @@ class _StatusMessage extends StatelessWidget {
     if (message == null || message.isEmpty) return const SizedBox.shrink();
     final colors = context.colors;
 
-    final (Color color, String? iconName, bool animatedIcon) = switch (status) {
-      PaymentRequestStatus.invalidAddress ||
-      PaymentRequestStatus.insufficientFunds ||
-      PaymentRequestStatus.syncing ||
-      PaymentRequestStatus.failed => (
-        colors.text.destructive,
-        AppIcons.warning,
-        false,
-      ),
-      PaymentRequestStatus.ready ||
-      PaymentRequestStatus.checking => (colors.text.secondary, null, false),
-    };
+    // One rule for the tone, so the enum's own answer and what the card
+    // paints cannot drift apart.
+    final isError = status.isError;
+    final color = isError ? colors.text.destructive : colors.text.secondary;
+    final iconName = isError ? AppIcons.warning : null;
 
     final textStyle = AppTypography.bodySmall.copyWith(color: color);
     // The glyph centers on the first line of its own message, so it has to
@@ -1227,7 +1230,7 @@ class _StatusMessage extends StatelessWidget {
                   iconName,
                   size: AppIconSize.medium,
                   color: color,
-                  animated: animatedIcon,
+                  animated: false,
                 ),
               ),
             ),
