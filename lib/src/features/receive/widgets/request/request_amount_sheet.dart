@@ -19,6 +19,7 @@ import 'package:flutter/widgets.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../../core/widgets/app_icon.dart';
 import 'request_amount_card.dart' show RequestMessageField;
 import 'request_amount_model.dart';
@@ -351,6 +352,7 @@ class _AmountUnitToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final text = this.text;
     return Center(
       child: Semantics(
         button: true,
@@ -369,13 +371,28 @@ class _AmountUnitToggle extends StatelessWidget {
                 color: colors.text.secondary,
               ),
               const SizedBox(width: AppSpacing.xxs),
-              Text(
-                text ?? r'$ 0',
-                key: const ValueKey('request_amount_conversion_text'),
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.secondary,
+              // No price for the typed amount yet: the same placeholder the
+              // send composer shows, not a number nobody can vouch for.
+              if (text == null) ...[
+                Text(
+                  r'$',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.secondary,
+                  ),
                 ),
-              ),
+                const SizedBox(width: AppSpacing.xxs),
+                const AmountPriceLoadingBar(
+                  key: ValueKey('request_amount_price_loading'),
+                  animated: true,
+                ),
+              ] else
+                Text(
+                  text,
+                  key: const ValueKey('request_amount_conversion_text'),
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
             ],
           ),
         ),

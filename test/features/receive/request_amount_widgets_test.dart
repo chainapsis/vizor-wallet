@@ -39,6 +39,10 @@ const _transparentRequest = ZecRequestView(
   amountZec: '0.5',
   conversionText: r'$35.00',
 );
+
+/// ZEC typed with no live price to convert it.
+const _priceUnavailable = ZecRequestView(address: _shielded, amountZec: '0.5');
+
 const _withError = ZecRequestView(
   address: _shielded,
   amountDisplayText: '0.123456789',
@@ -106,6 +110,30 @@ void main() {
       expect(find.byType(RequestSummaryRow), findsNothing);
       expect(_button(tester, 'request_next_button').onPressed, isNull);
       expect(find.byKey(const ValueKey('request_modal_back')), findsNothing);
+    });
+
+    testWidgets('no live price shows the loading pill, not a number', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const RequestAmountCard(
+          request: _priceUnavailable,
+          onToggleAmountUnit: null,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('request_amount_price_loading')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('request_amount_conversion_text')),
+        findsNothing,
+      );
+      expect(find.text(r'$ 0'), findsNothing);
+      // Next still works: the request is in ZEC and needs no conversion.
+      expect(_button(tester, 'request_next_button').onPressed, isNotNull);
     });
 
     testWidgets('an amount enables Next', (tester) async {
@@ -245,6 +273,29 @@ void main() {
   });
 
   group('mobile request sheet', () {
+    testWidgets('no live price shows the loading pill, not a number', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const RequestAmountSheetCompose(
+          request: _priceUnavailable,
+          onToggleAmountUnit: null,
+        ),
+        size: _mobileSize,
+      );
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('request_amount_price_loading')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('request_amount_conversion_text')),
+        findsNothing,
+      );
+      expect(find.text(r'$ 0'), findsNothing);
+    });
+
     testWidgets('step one gates the CTA on a usable amount', (tester) async {
       await _pump(
         tester,

@@ -1020,6 +1020,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'receive-request-compose-no-price',
+    description: 'Desktop request modal step one with no live price',
+    builder: buildRequestModalStepOnePriceUnavailableUseCase,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-request-compose-no-price',
+    description: 'Mobile request sheet step one with no live price',
+    builder: buildRequestMobileComposePriceUnavailableUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-receive-request-compose',
     description: 'Mobile request sheet step one with an amount and a message',
     builder: buildRequestMobileComposeMessageUseCase,

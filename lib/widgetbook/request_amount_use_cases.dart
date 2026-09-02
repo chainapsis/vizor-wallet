@@ -69,6 +69,13 @@ const _usdRequest = ZecRequestView(
   conversionText: '$_amountZec ZEC',
 );
 
+/// ZEC typed but no live price to convert it: the readout is the same
+/// placeholder the send composer shows, and the unit switch is inert.
+const _priceUnavailableRequest = ZecRequestView(
+  address: _shieldedAddress,
+  amountZec: _amountZec,
+);
+
 // ─── Desktop ─────────────────────────────────────────────────────────
 
 Widget buildRequestModalStepOneEmptyUseCase(BuildContext context) =>
@@ -77,6 +84,8 @@ Widget buildRequestModalStepOneEmptyUseCase(BuildContext context) =>
 Widget buildRequestModalStepOneAmountUseCase(BuildContext context) =>
     _desktop(_amountRequest);
 
+Widget buildRequestModalStepOnePriceUnavailableUseCase(BuildContext context) =>
+    _desktop(_priceUnavailableRequest, toggleEnabled: false);
 Widget buildRequestModalStepOneMessageUseCase(BuildContext context) =>
     _desktop(_amountWithMessageRequest, messageExpanded: true);
 
@@ -110,6 +119,8 @@ Widget buildRequestMobileComposeEmptyUseCase(BuildContext context) =>
 Widget buildRequestMobileComposeUsdUseCase(BuildContext context) =>
     _mobileCompose(_usdRequest);
 
+Widget buildRequestMobileComposePriceUnavailableUseCase(BuildContext context) =>
+    _mobileCompose(_priceUnavailableRequest, toggleEnabled: false);
 Widget buildRequestMobileComposeMessageUseCase(BuildContext context) =>
     _mobileCompose(_amountWithMessageRequest);
 
@@ -125,6 +136,7 @@ Widget _desktop(
   ZecRequestView request, {
   RequestModalStep step = RequestModalStep.compose,
   bool messageExpanded = false,
+  bool toggleEnabled = true,
 }) {
   return _frame(
     // A desktop pane is the surface the request modal opens over.
@@ -139,19 +151,19 @@ Widget _desktop(
       onCopyLink: _noop,
       onSaveQrImage: _logPng('save QR image'),
       onAddMessage: _noop,
-      onToggleAmountUnit: _noop,
+      onToggleAmountUnit: toggleEnabled ? _noop : null,
     ),
   );
 }
 
-Widget _mobileCompose(ZecRequestView request) {
+Widget _mobileCompose(ZecRequestView request, {bool toggleEnabled = true}) {
   return _frame(
     const Size(393, 852),
     RequestAmountSheetSurface(
       child: RequestAmountSheetCompose(
         request: request,
         onClose: _noop,
-        onToggleAmountUnit: _noop,
+        onToggleAmountUnit: toggleEnabled ? _noop : null,
         onAddMessage: _noop,
         onCreateRequest: _noop,
       ),

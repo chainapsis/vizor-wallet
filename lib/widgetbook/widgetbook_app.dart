@@ -764,6 +764,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildRequestModalStepOneAmountUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Request modal - step 1 - price unavailable',
+                      builder: buildRequestModalStepOnePriceUnavailableUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Request modal - step 1 - amount + message',
                       builder: buildRequestModalStepOneMessageUseCase,
                     ),
@@ -815,6 +819,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Request step 1 - amount (USD mode)',
                       builder: buildRequestMobileComposeUsdUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - price unavailable',
+                      builder: buildRequestMobileComposePriceUnavailableUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Request step 1 - message added',

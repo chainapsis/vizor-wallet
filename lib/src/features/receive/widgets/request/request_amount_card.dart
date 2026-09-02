@@ -20,6 +20,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_icon_hover_button.dart';
 import '../../../../core/widgets/app_modal_card.dart';
@@ -418,6 +419,7 @@ class _RequestAmountConversionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final text = this.text;
     final enabled = onTap != null;
     return Align(
       alignment: AlignmentDirectional.centerStart,
@@ -438,14 +440,28 @@ class _RequestAmountConversionRow extends StatelessWidget {
                 color: enabled ? colors.icon.muted : colors.icon.disabled,
               ),
               const SizedBox(width: AppSpacing.xxs),
-              Text(
-                text ?? r'$ 0',
-                key: const ValueKey('request_amount_conversion_text'),
-                style: AppTypography.labelLarge.copyWith(
-                  color: enabled ? colors.text.muted : colors.text.disabled,
-                  fontWeight: FontWeight.w400,
+              // No price for the typed amount yet: the same placeholder the
+              // send composer shows, not a number nobody can vouch for.
+              if (text == null) ...[
+                Text(
+                  r'$',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.muted,
+                  ),
                 ),
-              ),
+                const SizedBox(width: AppSpacing.xxs),
+                const AmountPriceLoadingBar(
+                  key: ValueKey('request_amount_price_loading'),
+                ),
+              ] else
+                Text(
+                  text,
+                  key: const ValueKey('request_amount_conversion_text'),
+                  style: AppTypography.labelLarge.copyWith(
+                    color: enabled ? colors.text.muted : colors.text.disabled,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
             ],
           ),
         ),
