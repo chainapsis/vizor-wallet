@@ -1,11 +1,19 @@
-/// Desktop "Request ZEC" modal.
+/// Desktop "Request ZEC" modal, in two steps.
+///
+/// Step one composes the request (amount, optional message); step two is the
+/// artefact it produces (QR, summary, and the two ways of handing it over).
+/// They are separate steps for the same reason the mobile sheet splits them,
+/// plus one the desktop window makes sharper: a single card carrying the form
+/// *and* a scannable QR is taller than the app's minimum window, so it either
+/// overflows or turns the modal into a scrolling page.
 ///
 /// Presentation only: every value is a prop, every action is a callback, and
-/// nothing here reads a provider or builds a transaction. The live QR is the
-/// one thing that computes — it re-encodes whatever [ZecRequestView] currently
+/// nothing here reads a provider or builds a transaction. The QR on step two
+/// is the one thing that computes — it re-encodes whatever [ZecRequestView]
 /// describes, so the code on screen always matches the link the buttons copy.
 library;
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
@@ -31,18 +39,17 @@ const double kRequestModalCardWidth = 396;
 /// Side of the QR inside the desktop modal.
 const double kRequestModalQrSize = 160;
 
-/// The desktop request modal's body.
+/// Step one: what you are asking for.
 ///
 /// Reading order top to bottom is the order the request is assembled: what you
-/// are asking for, what you want to say about it, and only then the artefact
-/// the payer receives. The QR sits below its inputs rather than beside them so
-/// that it reads as the result of the form, not as a second thing to fill in.
+/// are asking for, what you want to say about it, and then the one action that
+/// turns those into a request. Nothing on this step is the request yet, so
+/// nothing here shows a QR.
 class RequestAmountCard extends StatelessWidget {
   const RequestAmountCard({
     required this.request,
     this.onClose,
-    this.onCopyLink,
-    this.onSaveQrImage,
+    this.onNext,
     this.onAddMessage,
     this.onToggleAmountUnit,
     this.onAmountChanged,
@@ -56,11 +63,9 @@ class RequestAmountCard extends StatelessWidget {
 
   final ZecRequestView request;
   final VoidCallback? onClose;
-  final VoidCallback? onCopyLink;
 
-  /// Receives the request QR as PNG bytes. Presentation only: writing the
-  /// file is the caller's job.
-  final ValueChanged<Uint8List>? onSaveQrImage;
+  /// Advances to [RequestResultCard]. Disabled until the amount is usable.
+  final VoidCallback? onNext;
   final VoidCallback? onAddMessage;
   final VoidCallback? onToggleAmountUnit;
   final ValueChanged<String>? onAmountChanged;
@@ -84,41 +89,11 @@ class RequestAmountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final uri = request.requestUri;
-    final summary = request.summaryAmountText;
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Semantics(
-                header: true,
-                child: Text(
-                  kRequestFlowTitle,
-                  key: const ValueKey('request_modal_title'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.headlineMedium.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            AppIconHoverButton(
-              key: const ValueKey('request_modal_close'),
-              icon: AppIcons.cross,
-              semanticLabel: 'Close request',
-              onTap: onClose ?? _noop,
-              iconColor: colors.icon.regular,
-            ),
-          ],
-        ),
+        RequestModalHeader(onClose: onClose),
         const SizedBox(height: AppSpacing.sm),
         RequestAmountField(
           request: request,
@@ -139,6 +114,62 @@ class RequestAmountCard extends StatelessWidget {
             RequestAddMessageCard(onTap: onAddMessage),
         ],
         const SizedBox(height: AppSpacing.sm),
+        AppButton(
+          key: const ValueKey('request_next_button'),
+          expand: true,
+          constrainContent: true,
+          // Disabled, not hidden: the step's one action stays visible while
+          // the amount is still being typed, so nothing appears to arrive
+          // late once the number is valid.
+          onPressed: request.isReady ? (onNext ?? _noop) : null,
+          child: const Text(
+            'Next',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  static void _noop() {}
+}
+
+/// Step two: the request itself.
+///
+/// The QR, what it is asking for, and the two ways of handing it over. The
+/// back chevron returns to step one with the composed amount and message
+/// intact — this step edits nothing, it only publishes.
+class RequestResultCard extends StatelessWidget {
+  const RequestResultCard({
+    required this.request,
+    this.onBack,
+    this.onClose,
+    this.onCopyLink,
+    this.onSaveQrImage,
+    super.key,
+  });
+
+  final ZecRequestView request;
+  final VoidCallback? onBack;
+  final VoidCallback? onClose;
+  final VoidCallback? onCopyLink;
+
+  /// Receives the request QR as PNG bytes. Presentation only: writing the
+  /// file is the caller's job.
+  final ValueChanged<Uint8List>? onSaveQrImage;
+
+  @override
+  Widget build(BuildContext context) {
+    final uri = request.requestUri;
+    final summary = request.summaryAmountText;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        RequestModalHeader(onBack: onBack, onClose: onClose),
+        const SizedBox(height: AppSpacing.sm),
         Center(
           child: RequestQrSurface(
             data: request.qrData,
@@ -158,9 +189,6 @@ class RequestAmountCard extends StatelessWidget {
           expand: true,
           constrainContent: true,
           leading: const AppIcon(AppIcons.copy),
-          // Disabled, not hidden: the action the modal exists for should stay
-          // visible while the amount is still being typed, so nothing appears
-          // to arrive late once the number is valid.
           onPressed: request.isReady ? (onCopyLink ?? _noop) : null,
           child: const Text(
             'Copy request link',
@@ -185,6 +213,60 @@ class RequestAmountCard extends StatelessWidget {
   }
 
   static void _noop() {}
+}
+
+/// The title row both steps share: one title for the whole flow, the step's
+/// own back affordance on the left when there is somewhere to go back to, and
+/// the modal's ⨯ pinned right.
+class RequestModalHeader extends StatelessWidget {
+  const RequestModalHeader({this.onBack, this.onClose, super.key});
+
+  final VoidCallback? onBack;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final onBack = this.onBack;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (onBack != null) ...[
+          AppIconHoverButton(
+            key: const ValueKey('request_modal_back'),
+            icon: AppIcons.chevronBackward,
+            semanticLabel: 'Back',
+            onTap: onBack,
+            iconColor: colors.icon.accent,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+        ],
+        Expanded(
+          child: Semantics(
+            header: true,
+            child: Text(
+              kRequestFlowTitle,
+              key: const ValueKey('request_modal_title'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.headlineMedium.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        AppIconHoverButton(
+          key: const ValueKey('request_modal_close'),
+          icon: AppIcons.cross,
+          semanticLabel: 'Close request',
+          onTap: onClose ?? RequestAmountCard._noop,
+          iconColor: colors.icon.regular,
+        ),
+      ],
+    );
+  }
 }
 
 /// The amount input plus the two rows beneath it, mirroring the send
@@ -484,12 +566,15 @@ class RequestMessageField extends StatelessWidget {
   }
 }
 
-/// Modal chrome for [RequestAmountCard]: the pane scrim plus the centered
-/// card, rendered inline so previews do not have to push a route.
+/// Modal chrome for the desktop request steps: the pane scrim plus the
+/// centered card, rendered inline so previews do not have to push a route.
 class RequestAmountSurface extends StatelessWidget {
   const RequestAmountSurface({
     required this.request,
+    this.step = RequestModalStep.compose,
     this.onClose,
+    this.onNext,
+    this.onBack,
     this.onCopyLink,
     this.onSaveQrImage,
     this.onAddMessage,
@@ -504,7 +589,13 @@ class RequestAmountSurface extends StatelessWidget {
   });
 
   final ZecRequestView request;
+
+  /// Which of the two cards is on screen.
+  final RequestModalStep step;
+
   final VoidCallback? onClose;
+  final VoidCallback? onNext;
+  final VoidCallback? onBack;
   final VoidCallback? onCopyLink;
   final ValueChanged<Uint8List>? onSaveQrImage;
   final VoidCallback? onAddMessage;
@@ -521,40 +612,50 @@ class RequestAmountSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final card = switch (step) {
+      RequestModalStep.compose => RequestAmountCard(
+        request: request,
+        onClose: onClose,
+        onNext: onNext,
+        onAddMessage: onAddMessage,
+        onToggleAmountUnit: onToggleAmountUnit,
+        onAmountChanged: onAmountChanged,
+        onMessageChanged: onMessageChanged,
+        amountController: amountController,
+        messageController: messageController,
+        messageExpanded: messageExpanded,
+      ),
+      RequestModalStep.result => RequestResultCard(
+        request: request,
+        onBack: onBack,
+        onClose: onClose,
+        onCopyLink: onCopyLink,
+        onSaveQrImage: onSaveQrImage,
+      ),
+    };
+
     return Stack(
       fit: StackFit.expand,
       children: [
         background ?? ColoredBox(color: colors.background.window),
         AppPaneModalOverlay(
           onDismiss: onClose ?? RequestAmountCard._noop,
-          // The card is taller with the message editor open than a short
-          // window is. It scrolls rather than overflowing, so the primary
-          // action stays reachable instead of being clipped off the bottom.
+          // Either step fits the app's minimum window on its own. The scroll
+          // view is the floor under a bigger text scale or a translation that
+          // wraps: the card grows into a scroll rather than into overflow.
           child: LayoutBuilder(
             builder: (context, constraints) => SingleChildScrollView(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   minHeight: constraints.maxHeight.isFinite
-                      ? constraints.maxHeight - AppSpacing.sm * 2
+                      ? math.max(0, constraints.maxHeight - AppSpacing.sm * 2)
                       : 0,
                 ),
                 child: Center(
                   child: AppModalCard(
                     width: kRequestModalCardWidth,
-                    child: RequestAmountCard(
-                      request: request,
-                      onClose: onClose,
-                      onCopyLink: onCopyLink,
-                      onSaveQrImage: onSaveQrImage,
-                      onAddMessage: onAddMessage,
-                      onToggleAmountUnit: onToggleAmountUnit,
-                      onAmountChanged: onAmountChanged,
-                      onMessageChanged: onMessageChanged,
-                      amountController: amountController,
-                      messageController: messageController,
-                      messageExpanded: messageExpanded,
-                    ),
+                    child: card,
                   ),
                 ),
               ),

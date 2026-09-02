@@ -25,6 +25,19 @@ final String kRequestFlowTitle = 'Request $kZcashDefaultCurrencyTicker';
 /// The collapsed message prompt, worded as the action it starts.
 const kRequestAddMessageLabel = 'Add a message';
 
+/// The two steps both form factors present the request flow in.
+///
+/// Named here rather than beside either presentation because the desktop
+/// modal and the mobile sheet are the same two steps in different chrome, and
+/// the screen that drives them holds one step value for whichever is mounted.
+enum RequestModalStep {
+  /// Amount and optional message. Nothing is a request yet.
+  compose,
+
+  /// The request itself: QR, summary, and the ways of handing it over.
+  result,
+}
+
 /// Why the message exists and where it does not: the same sentence the send
 /// composer's memo card carries, so the two prompts stay one component.
 const kRequestMessageHelpText = 'Encrypted, for shielded addresses only.';

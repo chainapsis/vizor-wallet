@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
@@ -650,8 +651,9 @@ void main() {
 
     expect(find.byKey(const ValueKey('receive_request_modal')), findsOneWidget);
     expect(find.byKey(const ValueKey('request_modal_title')), findsOneWidget);
-    // No amount yet: the request QR is still the address QR.
-    expect(_requestQrData(tester), _shieldedAddress);
+    // Step one composes the request, so there is no QR on it yet.
+    expect(find.byType(RequestQrSurface), findsNothing);
+    expect(_button(tester, 'request_next_button').onPressed, isNull);
     // Shielded requests can carry a message.
     expect(
       find.byKey(const ValueKey('request_add_message_card')),
@@ -668,11 +670,66 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('receive_request_button')));
     await tester.pump();
 
-    expect(_requestQrData(tester), _transparentAddress);
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+
+    expect(_requestQrData(tester), startsWith('zcash:$_transparentAddress'));
     expect(
       find.byKey(const ValueKey('request_add_message_card')),
       findsNothing,
     );
+  });
+
+  testWidgets('the request steps carry the composed amount both ways', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _receiveHarness(
+        extraOverrides: [zecLiveUsdUnitPriceProvider.overrideWithValue(70)],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+    expect(find.byKey(const ValueKey('request_amount_field')), findsNothing);
+
+    // Back returns to the form with the amount still in it.
+    await tester.tap(find.byKey(const ValueKey('request_modal_back')));
+    await tester.pump();
+
+    expect(find.byType(RequestQrSurface), findsNothing);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('request_amount_conversion_text')),
+          )
+          .data,
+      r'$ 35.00',
+    );
+    expect(_button(tester, 'request_next_button').onPressed, isNotNull);
   });
 
   testWidgets('turns a typed amount into a live request link and copies it', (
@@ -719,7 +776,6 @@ void main() {
     );
     await tester.pump();
 
-    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
     expect(
       tester
           .widget<Text>(
@@ -728,6 +784,11 @@ void main() {
           .data,
       r'$ 35.00',
     );
+
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
 
     await tester.tap(find.byKey(const ValueKey('request_copy_link_button')));
     await tester.pump();
@@ -772,6 +833,8 @@ void main() {
       '0.5',
     );
     await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
 
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('request_save_qr_button')));
@@ -801,6 +864,9 @@ void main() {
 String _requestQrData(WidgetTester tester) {
   return tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data;
 }
+
+AppButton _button(WidgetTester tester, String key) =>
+    tester.widget<AppButton>(find.byKey(ValueKey(key)));
 
 String _folderName(String path) =>
     path.split(Platform.pathSeparator).where((s) => s.isNotEmpty).last;

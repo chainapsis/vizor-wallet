@@ -90,36 +90,38 @@ void main() {
     });
   });
 
-  group('desktop request modal', () {
-    testWidgets('empty amount shows the address QR and a disabled action', (
-      tester,
-    ) async {
+  group('desktop request modal step one', () {
+    testWidgets('empty amount shows no QR and a disabled Next', (tester) async {
       await _pump(tester, const RequestAmountCard(request: _empty));
 
       expect(tester.takeException(), isNull);
       expect(find.text(kRequestFlowTitle), findsOneWidget);
-      expect(find.byType(RequestQrSurface), findsOneWidget);
+      // The artefact belongs to step two: nothing here is a request yet.
+      expect(find.byType(RequestQrSurface), findsNothing);
       // No error while the field is simply still empty.
       expect(
         find.byKey(const ValueKey('request_amount_error_text')),
         findsNothing,
       );
       expect(find.byType(RequestSummaryRow), findsNothing);
-      expect(_button(tester, 'request_copy_link_button').onPressed, isNull);
+      expect(_button(tester, 'request_next_button').onPressed, isNull);
+      expect(find.byKey(const ValueKey('request_modal_back')), findsNothing);
     });
 
-    testWidgets('an amount enables the copy action and states the pool', (
-      tester,
-    ) async {
-      await _pump(tester, const RequestAmountCard(request: _withAmount));
+    testWidgets('an amount enables Next', (tester) async {
+      var advanced = 0;
+      await _pump(
+        tester,
+        RequestAmountCard(request: _withAmount, onNext: () => advanced++),
+      );
 
       expect(tester.takeException(), isNull);
-      expect(find.text('0.5 ZEC'), findsOneWidget);
-      expect(find.text('Shielded'), findsOneWidget);
-      expect(find.byType(PoolBadge), findsOneWidget);
-      // The link itself is carried by the actions, not printed under the QR.
-      expect(find.byKey(const ValueKey('request_uri_line')), findsNothing);
-      expect(_button(tester, 'request_copy_link_button').onPressed, isNotNull);
+      expect(find.text('Next'), findsOneWidget);
+      expect(_button(tester, 'request_next_button').onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const ValueKey('request_next_button')));
+      await tester.pump();
+      expect(advanced, 1);
     });
 
     testWidgets('the expanded message carries the byte counter', (
@@ -148,7 +150,6 @@ void main() {
       );
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Transparent'), findsOneWidget);
       // Absent, not disabled: a transparent memo can never be sent.
       expect(
         find.byKey(const ValueKey('request_add_message_card')),
@@ -167,8 +168,44 @@ void main() {
         _text(tester, 'request_amount_error_text'),
         kRequestAmountDecimalsError,
       );
-      expect(_button(tester, 'request_copy_link_button').onPressed, isNull);
+      expect(_button(tester, 'request_next_button').onPressed, isNull);
       expect(find.byType(RequestSummaryRow), findsNothing);
+    });
+  });
+
+  group('desktop request modal step two', () {
+    testWidgets('shows the request QR, its summary and a way back', (
+      tester,
+    ) async {
+      var back = 0;
+      await _pump(
+        tester,
+        RequestResultCard(request: _withAmount, onBack: () => back++),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(kRequestFlowTitle), findsOneWidget);
+      expect(find.byType(RequestQrSurface), findsOneWidget);
+      expect(find.text('0.5 ZEC'), findsOneWidget);
+      expect(find.text('Shielded'), findsOneWidget);
+      expect(find.byType(PoolBadge), findsOneWidget);
+      // The link itself is carried by the actions, not printed under the QR.
+      expect(find.byKey(const ValueKey('request_uri_line')), findsNothing);
+      expect(_button(tester, 'request_copy_link_button').onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const ValueKey('request_modal_back')));
+      await tester.pump();
+      expect(back, 1);
+    });
+
+    testWidgets('a transparent request states its pool', (tester) async {
+      await _pump(
+        tester,
+        const RequestResultCard(request: _transparentRequest),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Transparent'), findsOneWidget);
     });
 
     testWidgets('saving the QR hands the caller PNG bytes once', (
@@ -177,7 +214,7 @@ void main() {
       final saved = <Uint8List>[];
       await _pump(
         tester,
-        RequestAmountCard(request: _withAmount, onSaveQrImage: saved.add),
+        RequestResultCard(request: _withAmount, onSaveQrImage: saved.add),
       );
 
       await tester.tap(find.byKey(const ValueKey('request_save_qr_button')));
@@ -199,10 +236,11 @@ void main() {
     testWidgets('an empty request cannot be saved as an image', (tester) async {
       await _pump(
         tester,
-        RequestAmountCard(request: _empty, onSaveQrImage: (_) {}),
+        RequestResultCard(request: _empty, onSaveQrImage: (_) {}),
       );
 
       expect(_exportButton(tester, 'request_save_qr_button').onPressed, isNull);
+      expect(_button(tester, 'request_copy_link_button').onPressed, isNull);
     });
   });
 

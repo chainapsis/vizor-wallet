@@ -71,20 +71,26 @@ const _usdRequest = ZecRequestView(
 
 // ─── Desktop ─────────────────────────────────────────────────────────
 
-Widget buildRequestModalEmptyUseCase(BuildContext context) =>
+Widget buildRequestModalStepOneEmptyUseCase(BuildContext context) =>
     _desktop(_emptyRequest);
 
-Widget buildRequestModalAmountUseCase(BuildContext context) =>
+Widget buildRequestModalStepOneAmountUseCase(BuildContext context) =>
     _desktop(_amountRequest);
 
-Widget buildRequestModalAmountMessageUseCase(BuildContext context) =>
+Widget buildRequestModalStepOneMessageUseCase(BuildContext context) =>
     _desktop(_amountWithMessageRequest, messageExpanded: true);
 
-Widget buildRequestModalTransparentUseCase(BuildContext context) =>
+Widget buildRequestModalStepOneTransparentUseCase(BuildContext context) =>
     _desktop(_transparentRequest);
 
-Widget buildRequestModalAmountErrorUseCase(BuildContext context) =>
+Widget buildRequestModalStepOneAmountErrorUseCase(BuildContext context) =>
     _desktop(_amountErrorRequest);
+
+Widget buildRequestModalStepTwoShieldedUseCase(BuildContext context) =>
+    _desktop(_amountWithMessageRequest, step: RequestModalStep.result);
+
+Widget buildRequestModalStepTwoTransparentUseCase(BuildContext context) =>
+    _desktop(_transparentRequest, step: RequestModalStep.result);
 
 // ─── Mobile ──────────────────────────────────────────────────────────
 
@@ -115,14 +121,21 @@ Widget buildRequestMobileResultTransparentUseCase(BuildContext context) =>
 
 // ─── Frames ──────────────────────────────────────────────────────────
 
-Widget _desktop(ZecRequestView request, {bool messageExpanded = false}) {
+Widget _desktop(
+  ZecRequestView request, {
+  RequestModalStep step = RequestModalStep.compose,
+  bool messageExpanded = false,
+}) {
   return _frame(
     // A desktop pane is the surface the request modal opens over.
     const Size(AppWindowSizing.contentAreaMaxWidth + AppSpacing.xl2, 720),
     RequestAmountSurface(
       request: request,
+      step: step,
       messageExpanded: messageExpanded,
       onClose: _noop,
+      onNext: _noop,
+      onBack: _noop,
       onCopyLink: _noop,
       onSaveQrImage: _logPng('save QR image'),
       onAddMessage: _noop,

@@ -966,9 +966,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'receive-request-modal-amount-message',
-    description: 'Desktop request modal with an amount and an open message',
-    builder: buildRequestModalAmountMessageUseCase,
+    id: 'receive-request-modal-step-1',
+    description: 'Desktop request modal step one with an open message',
+    builder: buildRequestModalStepOneMessageUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-request-modal-step-2',
+    description: 'Desktop request modal step two with the request QR',
+    builder: buildRequestModalStepTwoShieldedUseCase,
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-request-compose',

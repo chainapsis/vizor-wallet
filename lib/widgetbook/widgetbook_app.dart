@@ -756,24 +756,32 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildReceiveDesktopRequestEntryUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Request modal - empty',
-                      builder: buildRequestModalEmptyUseCase,
+                      name: 'Request modal - step 1 - empty',
+                      builder: buildRequestModalStepOneEmptyUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Request modal - amount',
-                      builder: buildRequestModalAmountUseCase,
+                      name: 'Request modal - step 1 - amount',
+                      builder: buildRequestModalStepOneAmountUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Request modal - amount + message',
-                      builder: buildRequestModalAmountMessageUseCase,
+                      name: 'Request modal - step 1 - amount + message',
+                      builder: buildRequestModalStepOneMessageUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Request modal - transparent',
-                      builder: buildRequestModalTransparentUseCase,
+                      name: 'Request modal - step 1 - transparent',
+                      builder: buildRequestModalStepOneTransparentUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Request modal - amount error',
-                      builder: buildRequestModalAmountErrorUseCase,
+                      name: 'Request modal - step 1 - amount error',
+                      builder: buildRequestModalStepOneAmountErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 2 - shielded',
+                      builder: buildRequestModalStepTwoShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 2 - transparent',
+                      builder: buildRequestModalStepTwoTransparentUseCase,
                     ),
                   ],
                 ),

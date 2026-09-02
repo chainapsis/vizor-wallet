@@ -62,6 +62,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   String? _transparentLoadingAccountUuid;
   ReceiveAddressType? _infoDialogType;
   ZecRequestDraft? _requestDraft;
+  RequestModalStep _requestStep = RequestModalStep.compose;
   bool _requestMessageExpanded = false;
   final TextEditingController _requestAmountController =
       TextEditingController();
@@ -310,6 +311,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     _requestMessageController.clear();
     setState(() {
       _requestDraft = ZecRequestDraft(address: address);
+      _requestStep = RequestModalStep.compose;
       _requestMessageExpanded = false;
     });
   }
@@ -318,8 +320,29 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     if (_requestDraft == null) return;
     setState(() {
       _requestDraft = null;
+      _requestStep = RequestModalStep.compose;
       _requestMessageExpanded = false;
     });
+  }
+
+  /// Moves to the artefact step.
+  ///
+  /// Guarded on the same `isReady` the button is disabled by, so a stray
+  /// programmatic call cannot land on a QR of the bare address.
+  void _showRequestResult() {
+    final draft = _requestDraft;
+    if (draft == null) return;
+    final ready = draft
+        .resolve(zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider))
+        .isReady;
+    if (!ready) return;
+    setState(() => _requestStep = RequestModalStep.result);
+  }
+
+  /// Returns to the form with the composed amount and message intact.
+  void _editRequestAgain() {
+    if (_requestStep == RequestModalStep.compose) return;
+    setState(() => _requestStep = RequestModalStep.compose);
   }
 
   void _handleRequestAmountChanged(String value) {
@@ -437,10 +460,13 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                 // screen that replaced it.
                 background: const SizedBox.expand(),
                 request: requestView,
+                step: _requestStep,
                 messageExpanded: _requestMessageExpanded,
                 amountController: _requestAmountController,
                 messageController: _requestMessageController,
                 onClose: _closeRequest,
+                onNext: _showRequestResult,
+                onBack: _editRequestAgain,
                 onAmountChanged: _handleRequestAmountChanged,
                 onMessageChanged: _handleRequestMessageChanged,
                 onToggleAmountUnit: requestDraft.canToggleUnit(zecUsdUnitPrice)

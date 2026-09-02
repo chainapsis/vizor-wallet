@@ -167,6 +167,13 @@ Future<String> _composeRequestLink(WidgetTester tester) async {
   );
   await tester.pump(const Duration(milliseconds: 100));
 
+  await _tapAppButton(tester, const ValueKey('request_next_button'));
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.byKey(const ValueKey('request_copy_link_button'))),
+    description: 'the request result step',
+  );
+
   await _tapAppButton(tester, const ValueKey('request_copy_link_button'));
   final data = await Clipboard.getData('text/plain');
   final uri = data?.text?.trim() ?? '';
