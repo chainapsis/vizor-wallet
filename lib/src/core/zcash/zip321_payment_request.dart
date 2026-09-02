@@ -217,6 +217,23 @@ class Zip321ParseException implements Exception {
   String toString() => message;
 }
 
+/// A `zcash:` link that parsed cleanly but asks for something Vizor does not
+/// implement yet — see [Zip321PaymentRequest.unsupportedReason].
+///
+/// Separate from [Zip321ParseException] so a surface can tell "we cannot do
+/// this yet" apart from "this link is broken" without matching on the spec
+/// wording of a parse message. Both reasons are for the log; the user-facing
+/// sentence comes from `paymentUriRejectionMessage`.
+class Zip321UnsupportedRequestException implements Exception {
+  const Zip321UnsupportedRequestException(this.reason);
+
+  /// The parser's own wording, for the log. Never shown to the user.
+  final String reason;
+
+  @override
+  String toString() => reason;
+}
+
 class _Zip321PaymentBuilder {
   _Zip321PaymentBuilder({required this.index});
 

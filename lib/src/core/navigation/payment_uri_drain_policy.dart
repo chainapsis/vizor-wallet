@@ -15,6 +15,8 @@
 /// or a wallet that failed to load.
 library;
 
+import '../zcash/zip321_payment_request.dart';
+
 /// A parked prefill older than this is stale and is dropped instead of
 /// delivered.
 ///
@@ -52,6 +54,31 @@ const kPaymentUriOnboardingMessage =
 /// Delivering the link would open a send form that cannot be submitted.
 const kPaymentUriMigrationSendGateMessage =
     'Finish the migration before opening payment links.';
+
+/// Shown when a `zcash:` link parses but asks for a ZIP-321 feature Vizor does
+/// not implement yet: more than one recipient, a binary memo, a custom asset.
+/// Nothing about the link is wrong, so it does not tell the sender off.
+const kPaymentUriUnsupportedMessage =
+    "This payment link uses a feature Vizor doesn't support yet.";
+
+/// Shown when a `zcash:` link cannot be parsed at all — bad encoding, a
+/// malformed amount, a missing address, a link too long to read.
+///
+/// The parser's own message is spec wording written for us, not for the payer,
+/// and it echoes back fragments of the link's own text; it belongs in the log.
+const kPaymentUriMalformedMessage =
+    "This payment link isn't valid. Ask the sender for a new one.";
+
+/// The one sentence the payer sees when a `zcash:` link is refused.
+///
+/// Two buckets, because only two answers differ for the user: wait for Vizor
+/// to support the feature, or ask the sender for a link that works.
+/// [Zip321UnsupportedRequestException] carries the first, every other rejection
+/// the second.
+String paymentUriRejectionMessage(Object error) =>
+    error is Zip321UnsupportedRequestException
+    ? kPaymentUriUnsupportedMessage
+    : kPaymentUriMalformedMessage;
 
 /// What `_drainPendingPrefill` should do with the parked prefill.
 enum PaymentUriDrainAction {

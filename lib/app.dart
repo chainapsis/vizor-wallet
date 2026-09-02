@@ -1326,10 +1326,17 @@ class _PaymentUriLinkListenerState
         // the earlier one.
         _showPaymentUriMessage(kPaymentUriReplacedMessage);
       }
+    } on Zip321UnsupportedRequestException catch (e) {
+      // Do not clear here: a refused link must not wipe a prefill already
+      // parked from an earlier valid one.
+      log('Payment URI: unsupported: ${e.reason}');
+      _showPaymentUriMessage(paymentUriRejectionMessage(e));
     } on Zip321ParseException catch (e) {
-      // Do not clear here: a failed parse of THIS link must not wipe a prefill
-      // already parked from an earlier valid link.
-      _showPaymentUriMessage(e.message);
+      // The parser's message is spec wording written for us, and it echoes
+      // fragments of the link's own text; keep it in the log and show the
+      // payer one sentence they can act on.
+      log('Payment URI: rejected: ${e.message}');
+      _showPaymentUriMessage(paymentUriRejectionMessage(e));
     } catch (e) {
       log('Payment URI: failed to parse: $e');
       _showPaymentUriMessage('Payment link could not be opened.');
@@ -1339,7 +1346,9 @@ class _PaymentUriLinkListenerState
   SendPrefillArgs _prefillFromUri(String rawUri) {
     final request = Zip321PaymentRequest.parse(rawUri);
     if (!request.isSupported) {
-      throw Zip321ParseException(request.unsupportedReason!);
+      // Its own type, not a parse exception: the link is well-formed and the
+      // payer needs a different sentence than a broken one gets.
+      throw Zip321UnsupportedRequestException(request.unsupportedReason!);
     }
     final payment = request.primaryPayment;
     return sendPrefillArgsFromZip321Payment(

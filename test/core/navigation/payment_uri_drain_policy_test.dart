@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
+import 'package:zcash_wallet/src/core/zcash/zip321_payment_request.dart';
 
 /// Calls [decidePaymentUriDrain] with the "healthy, unlocked, on /home, link
 /// just arrived" baseline so each test only states the row it exercises.
@@ -231,4 +232,81 @@ void main() {
       }
     });
   });
+
+  // A refused `zcash:` link gets one of two sentences, never the parser's own
+  // spec wording: that text is written for us, and it echoes fragments of the
+  // link's own string back at the payer.
+  group('rejection buckets', () {
+    test('a request Vizor cannot answer yet reads as unsupported', () {
+      expect(
+        paymentUriRejectionMessage(
+          const Zip321UnsupportedRequestException(
+            'Multiple-recipient ZIP-321 requests are parsed but not supported '
+            'yet.',
+          ),
+        ),
+        kPaymentUriUnsupportedMessage,
+      );
+    });
+
+    test('every real unsupported reason lands in the unsupported bucket', () {
+      for (final raw in [
+        // Multiple recipients.
+        'zcash:?address=u1first&amount=0.5&address.1=u1second&amount.1=0.25',
+        // A binary memo (0xFF is not valid UTF-8).
+        'zcash:u1recipient?amount=0.5&memo=_w',
+        // A custom asset.
+        'zcash:u1recipient?req-asset=abcd',
+      ]) {
+        final request = Zip321PaymentRequest.parse(raw);
+        expect(request.isSupported, isFalse, reason: raw);
+        expect(
+          paymentUriRejectionMessage(
+            Zip321UnsupportedRequestException(request.unsupportedReason!),
+          ),
+          kPaymentUriUnsupportedMessage,
+          reason: raw,
+        );
+      }
+    });
+
+    test('a parse failure reads as an invalid link, whatever the reason', () {
+      for (final raw in [
+        'zcash://u1recipient',
+        'zcash:u1recipient?amount=not-a-number',
+        'zcash:u1recipient?memo=%zz',
+        'zcash:u1recipient?req-unknown=1',
+        'zcash:u1recipient?amount=1&amount=2',
+        'https://example.com/pay',
+        '',
+      ]) {
+        final error = _parseError(raw);
+        expect(error, isA<Zip321ParseException>(), reason: raw);
+        expect(
+          paymentUriRejectionMessage(error),
+          kPaymentUriMalformedMessage,
+          reason: raw,
+        );
+      }
+    });
+
+    test('the two sentences never leak the parser wording', () {
+      for (final message in [
+        kPaymentUriUnsupportedMessage,
+        kPaymentUriMalformedMessage,
+      ]) {
+        expect(message, isNot(contains('ZIP-321')));
+      }
+    });
+  });
+}
+
+/// The exception [Zip321PaymentRequest.parse] throws for [raw].
+Object _parseError(String raw) {
+  try {
+    Zip321PaymentRequest.parse(raw);
+  } catch (e) {
+    return e;
+  }
+  fail('expected a parse failure for: $raw');
 }
