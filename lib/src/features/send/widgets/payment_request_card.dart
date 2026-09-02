@@ -207,6 +207,27 @@ class PaymentRequestView {
   /// Renders the "Replaced an earlier link" notice above the amount.
   final bool replacedNotice;
 
+  /// Same request, different verdict. The pre-check fills the amount and the
+  /// requester in once, up front; only the status (and the two fields the
+  /// status line reads) change as the checks land.
+  PaymentRequestView copyWithStatus(
+    PaymentRequestStatus status, {
+    String? statusMessage,
+    String? spendableText,
+  }) => PaymentRequestView(
+    source: source,
+    address: address,
+    amountZecText: amountZecText,
+    requesterLabel: requesterLabel,
+    fiatText: fiatText,
+    memo: memo,
+    note: note,
+    spendableText: spendableText ?? this.spendableText,
+    status: status,
+    statusMessage: statusMessage,
+    replacedNotice: replacedNotice,
+  );
+
   String? get resolvedStatusMessage =>
       statusMessage ??
       defaultPaymentRequestStatusMessage(status, spendableText: spendableText);

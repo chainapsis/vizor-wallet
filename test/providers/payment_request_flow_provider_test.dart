@@ -1,0 +1,275 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
+import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/migration_send_gate_provider.dart';
+import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
+import '../fakes/fake_sync_notifier.dart';
+
+/// Rust stand-in whose proposal is held open until the test releases it, so
+/// "checking" is an observable state rather than a race.
+class _FakeSendApi {
+  _FakeSendApi({this.addressIsValid = true});
+
+  bool addressIsValid;
+  Completer<void>? gate;
+  var nextProposalId = 1;
+  final discarded = <BigInt>[];
+  final proposed = <BigInt>[];
+
+  PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
+    validateAddress: ({required String address}) async =>
+        rust_sync.AddressValidationResult(
+          isValid: addressIsValid,
+          addressType: 'unified',
+        ),
+    proposeTransfer:
+        ({
+          required String accountUuid,
+          required String sendFlowId,
+          required String address,
+          required String addressType,
+          required BigInt amountZatoshi,
+          String? memo,
+          bool isPaymentRequest = false,
+          String? requestedBy,
+          BigInt? requestedAmountZatoshi,
+        }) async {
+          final pending = gate;
+          if (pending != null) await pending.future;
+          final id = BigInt.from(nextProposalId++);
+          proposed.add(id);
+          return SendReviewArgs(
+            proposalId: id,
+            sendFlowId: sendFlowId,
+            proposalAccountUuid: accountUuid,
+            address: address,
+            addressType: addressType,
+            amountZatoshi: amountZatoshi,
+            feeZatoshi: BigInt.from(10000),
+            needsSaplingParams: false,
+            isPaymentRequest: isPaymentRequest,
+            requestedBy: requestedBy,
+            requestedAmountZatoshi: requestedAmountZatoshi,
+          );
+        },
+    discardProposal:
+        ({
+          required BigInt proposalId,
+          required String sendFlowId,
+          required String logContext,
+        }) async => discarded.add(proposalId),
+  );
+}
+
+class _FakeAccountNotifier extends AccountNotifier {
+  @override
+  FutureOr<AccountState> build() => const AccountState(
+    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    activeAccountUuid: 'account-1',
+  );
+}
+
+SendPrefillArgs request(String address, {String? amountText = '0.5'}) =>
+    SendPrefillArgs(
+      id: 'payment-uri-$address',
+      source: kPaymentUriPrefillSource,
+      address: address,
+      amountText: amountText,
+      label: 'Coffee shop',
+    );
+
+// ignore: library_private_types_in_public_api
+ProviderContainer makeContainer(_FakeSendApi api) {
+  final container = ProviderContainer(
+    overrides: [
+      paymentRequestPrecheckProvider.overrideWithValue(api.precheck),
+      accountProvider.overrideWith(_FakeAccountNotifier.new),
+      syncProvider.overrideWith(
+        () => FakeSyncNotifier(
+          SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            spendableBalance: BigInt.from(100000000),
+          ),
+        ),
+      ),
+      migrationSendGateProvider.overrideWithValue(false),
+      zecHomeUsdUnitPriceProvider.overrideWithValue(null),
+    ],
+  );
+  addTearDown(container.dispose);
+  return container;
+}
+
+void main() {
+  test('present starts in checking and lands on ready', () async {
+    final api = _FakeSendApi()..gate = Completer<void>();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+
+    var state = container.read(paymentRequestFlowProvider)!;
+    expect(state.view.status, PaymentRequestStatus.checking);
+    expect(state.view.amountZecText, '0.50 ZEC');
+    expect(state.view.requesterLabel, 'Coffee shop');
+    expect(state.canReview, isFalse);
+
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    state = container.read(paymentRequestFlowProvider)!;
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(state.canReview, isTrue);
+    expect(state.reviewArgs!.proposalId, BigInt.one);
+  });
+
+  test('an amount-less request is ready but cannot go to review', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(
+          request('u1a', amountText: null),
+          source: PaymentRequestSource.link,
+        );
+    await pumpEventQueue();
+
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(state.view.amountZecText, isNull);
+    expect(state.canReview, isFalse);
+  });
+
+  test('an unpayable address renders the invalid-address status', () async {
+    final api = _FakeSendApi(addressIsValid: false);
+    final container = makeContainer(api);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.view.status, PaymentRequestStatus.invalidAddress);
+    expect(state.canReview, isFalse);
+  });
+
+  test('a newer link replaces the card, says so, and frees the old '
+      'proposal', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1first'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(api.proposed, [BigInt.one]);
+
+    notifier.present(request('u1second'), source: PaymentRequestSource.link);
+    expect(
+      container.read(paymentRequestFlowProvider)!.view.replacedNotice,
+      isTrue,
+    );
+    await pumpEventQueue();
+
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.prefill.address, 'u1second');
+    expect(state.reviewArgs!.proposalId, BigInt.two);
+    expect(
+      api.discarded,
+      [BigInt.one],
+      reason: 'the displaced request must not leave a proposal behind',
+    );
+  });
+
+  test('edit clears the card, frees the proposal, and returns the '
+      'request', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    final prefill = notifier.edit();
+    await pumpEventQueue();
+
+    expect(prefill!.address, 'u1a');
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(api.discarded, [BigInt.one]);
+  });
+
+  test('dismiss frees the proposal', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    notifier.dismiss();
+    await pumpEventQueue();
+
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(api.discarded, [BigInt.one]);
+  });
+
+  test('review hands the proposal on without discarding it', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    final args = notifier.review();
+    await pumpEventQueue();
+
+    expect(args!.proposalId, BigInt.one);
+    expect(args.isPaymentRequest, isTrue);
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(
+      api.discarded,
+      isEmpty,
+      reason: 'the review screen owns the proposal from here',
+    );
+  });
+
+  test('a pre-check that finishes after its card is gone frees its own '
+      'proposal', () async {
+    final api = _FakeSendApi()..gate = Completer<void>();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    notifier.dismiss();
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(api.discarded, [BigInt.one]);
+  });
+
+  test('clear frees the proposal without a user answer', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    notifier.clear();
+    await pumpEventQueue();
+
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(api.discarded, [BigInt.one]);
+  });
+}
