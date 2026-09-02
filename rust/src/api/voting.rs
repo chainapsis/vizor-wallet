@@ -5,7 +5,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 #[cfg(test)]
@@ -19,6 +19,7 @@ use crate::wallet::{
     keys,
     voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
 };
+use base64::Engine as _;
 use secrecy::ExposeSecret;
 use zcash_voting::config;
 use zcash_voting::wire::{
@@ -183,6 +184,501 @@ pub struct ApiVoteCommitEvent {
     pub commitments: Option<zcash_voting::wire::SignedVoteCommitmentsView>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiChainRecoveryMode {
+    StatusOnly,
+    ExactTree,
+}
+
+impl From<ApiChainRecoveryMode> for zcash_voting::ChainRecoveryMode {
+    fn from(mode: ApiChainRecoveryMode) -> Self {
+        match mode {
+            ApiChainRecoveryMode::StatusOnly => Self::StatusOnly,
+            ApiChainRecoveryMode::ExactTree => Self::ExactTree,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiChainSubmissionOutcomeKind {
+    Confirmed,
+    Tracking,
+    Recovering,
+    Rejected,
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiChainSubmissionState {
+    Submitting,
+    Tracking,
+    Recovering,
+    Confirmed,
+    LegacyConfirmed,
+    Rejected,
+}
+
+impl From<zcash_voting::ChainSubmissionState> for ApiChainSubmissionState {
+    fn from(state: zcash_voting::ChainSubmissionState) -> Self {
+        match state {
+            zcash_voting::ChainSubmissionState::Submitting => Self::Submitting,
+            zcash_voting::ChainSubmissionState::Tracking => Self::Tracking,
+            zcash_voting::ChainSubmissionState::Recovering => Self::Recovering,
+            zcash_voting::ChainSubmissionState::Confirmed => Self::Confirmed,
+            zcash_voting::ChainSubmissionState::LegacyConfirmed => Self::LegacyConfirmed,
+            zcash_voting::ChainSubmissionState::Rejected => Self::Rejected,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiChainConfirmationSource {
+    Hash,
+    Tree,
+    LegacyImport,
+    LegacyProjection,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiChainDiagnosticKind {
+    AmbiguousDispatch,
+    TrackingWindowExpired,
+    ChainRejected,
+    ReconciliationPending,
+    InvalidProtocolResponse,
+    RecoveryUnavailable,
+    StorageFailure,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiChainDiagnostic {
+    pub kind: ApiChainDiagnosticKind,
+    pub message: String,
+}
+
+impl From<&zcash_voting::ChainSubmissionDiagnostic> for ApiChainDiagnostic {
+    fn from(diagnostic: &zcash_voting::ChainSubmissionDiagnostic) -> Self {
+        let kind = match diagnostic.kind() {
+            zcash_voting::ChainSubmissionDiagnosticKind::AmbiguousDispatch => {
+                ApiChainDiagnosticKind::AmbiguousDispatch
+            }
+            zcash_voting::ChainSubmissionDiagnosticKind::TrackingWindowExpired => {
+                ApiChainDiagnosticKind::TrackingWindowExpired
+            }
+            zcash_voting::ChainSubmissionDiagnosticKind::ChainRejected => {
+                ApiChainDiagnosticKind::ChainRejected
+            }
+            zcash_voting::ChainSubmissionDiagnosticKind::ReconciliationPending => {
+                ApiChainDiagnosticKind::ReconciliationPending
+            }
+            zcash_voting::ChainSubmissionDiagnosticKind::InvalidProtocolResponse => {
+                ApiChainDiagnosticKind::InvalidProtocolResponse
+            }
+            zcash_voting::ChainSubmissionDiagnosticKind::RecoveryUnavailable => {
+                ApiChainDiagnosticKind::RecoveryUnavailable
+            }
+            zcash_voting::ChainSubmissionDiagnosticKind::StorageFailure => {
+                ApiChainDiagnosticKind::StorageFailure
+            }
+        };
+        Self {
+            kind,
+            message: diagnostic.message().to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiChainSubmissionOutcome {
+    pub kind: ApiChainSubmissionOutcomeKind,
+    pub confirmation_source: Option<ApiChainConfirmationSource>,
+    pub transaction_hash: Option<String>,
+    pub candidate_transaction_hash: Option<String>,
+    pub final_van_position: Option<u64>,
+    pub vote_commitment_positions: Vec<u64>,
+    pub diagnostic: Option<ApiChainDiagnostic>,
+}
+
+impl From<zcash_voting::ChainSubmissionResult> for ApiChainSubmissionOutcome {
+    fn from(result: zcash_voting::ChainSubmissionResult) -> Self {
+        use zcash_voting::{ChainSubmissionPending, ChainSubmissionResult};
+
+        let empty = |kind| Self {
+            kind,
+            confirmation_source: None,
+            transaction_hash: None,
+            candidate_transaction_hash: None,
+            final_van_position: None,
+            vote_commitment_positions: Vec::new(),
+            diagnostic: None,
+        };
+        match result {
+            ChainSubmissionResult::Confirmed(confirmation) => {
+                let source = match confirmation.source() {
+                    zcash_voting::ChainSubmissionConfirmationSource::Hash => {
+                        ApiChainConfirmationSource::Hash
+                    }
+                    zcash_voting::ChainSubmissionConfirmationSource::Tree => {
+                        ApiChainConfirmationSource::Tree
+                    }
+                    zcash_voting::ChainSubmissionConfirmationSource::LegacyImport => {
+                        ApiChainConfirmationSource::LegacyImport
+                    }
+                    zcash_voting::ChainSubmissionConfirmationSource::LegacyProjection => {
+                        ApiChainConfirmationSource::LegacyProjection
+                    }
+                };
+                Self {
+                    kind: ApiChainSubmissionOutcomeKind::Confirmed,
+                    confirmation_source: Some(source),
+                    transaction_hash: confirmation.transaction_hash().map(|hash| hash.to_hex()),
+                    candidate_transaction_hash: None,
+                    final_van_position: Some(confirmation.final_van_position()),
+                    vote_commitment_positions: confirmation.vote_commitment_positions().to_vec(),
+                    diagnostic: None,
+                }
+            }
+            ChainSubmissionResult::Pending(ChainSubmissionPending::Tracking {
+                candidate_transaction_hash,
+            }) => Self {
+                candidate_transaction_hash: Some(candidate_transaction_hash.to_hex()),
+                ..empty(ApiChainSubmissionOutcomeKind::Tracking)
+            },
+            ChainSubmissionResult::Pending(ChainSubmissionPending::Recovering {
+                candidate_transaction_hash,
+                diagnostic,
+            }) => Self {
+                candidate_transaction_hash: candidate_transaction_hash.map(|hash| hash.to_hex()),
+                diagnostic: Some(ApiChainDiagnostic::from(&diagnostic)),
+                ..empty(ApiChainSubmissionOutcomeKind::Recovering)
+            },
+            ChainSubmissionResult::Rejected(diagnostic) => Self {
+                diagnostic: Some(ApiChainDiagnostic::from(&diagnostic)),
+                ..empty(ApiChainSubmissionOutcomeKind::Rejected)
+            },
+            ChainSubmissionResult::Cancelled => empty(ApiChainSubmissionOutcomeKind::Cancelled),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiChainSubmissionFailureKind {
+    InvalidInput,
+    InvariantViolation,
+    Storage,
+    Transport,
+    Protocol,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiChainSubmissionStateEvidence {
+    Durable,
+    KnownPossiblyDispatched,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiChainSubmissionFailureState {
+    pub state: ApiChainSubmissionState,
+    pub evidence: ApiChainSubmissionStateEvidence,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiChainSubmissionFailure {
+    pub kind: ApiChainSubmissionFailureKind,
+    pub strongest_state: Option<ApiChainSubmissionFailureState>,
+    pub message: String,
+}
+
+impl ApiChainSubmissionFailure {
+    fn local(kind: ApiChainSubmissionFailureKind, message: impl AsRef<str>) -> Self {
+        Self {
+            kind,
+            strongest_state: None,
+            message: bounded_chain_message(message.as_ref()),
+        }
+    }
+}
+
+impl From<zcash_voting::ChainSubmissionFailure> for ApiChainSubmissionFailure {
+    fn from(failure: zcash_voting::ChainSubmissionFailure) -> Self {
+        let kind = match failure.kind() {
+            zcash_voting::ChainSubmissionFailureKind::InvalidInput => {
+                ApiChainSubmissionFailureKind::InvalidInput
+            }
+            zcash_voting::ChainSubmissionFailureKind::InvariantViolation => {
+                ApiChainSubmissionFailureKind::InvariantViolation
+            }
+            zcash_voting::ChainSubmissionFailureKind::Storage => {
+                ApiChainSubmissionFailureKind::Storage
+            }
+            zcash_voting::ChainSubmissionFailureKind::Transport => {
+                ApiChainSubmissionFailureKind::Transport
+            }
+            zcash_voting::ChainSubmissionFailureKind::Protocol => {
+                ApiChainSubmissionFailureKind::Protocol
+            }
+        };
+        let strongest_state =
+            failure
+                .strongest_state()
+                .map(|state| ApiChainSubmissionFailureState {
+                    state: state.state().into(),
+                    evidence: match state.evidence() {
+                        zcash_voting::ChainSubmissionStateEvidence::Durable => {
+                            ApiChainSubmissionStateEvidence::Durable
+                        }
+                        zcash_voting::ChainSubmissionStateEvidence::KnownPossiblyDispatched => {
+                            ApiChainSubmissionStateEvidence::KnownPossiblyDispatched
+                        }
+                    },
+                });
+        Self {
+            kind,
+            strongest_state,
+            message: failure.message().to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiChainSubmissionCallResult {
+    pub outcome: Option<ApiChainSubmissionOutcome>,
+    pub failure: Option<ApiChainSubmissionFailure>,
+}
+
+impl ApiChainSubmissionCallResult {
+    fn outcome(outcome: zcash_voting::ChainSubmissionResult) -> Self {
+        Self {
+            outcome: Some(outcome.into()),
+            failure: None,
+        }
+    }
+
+    fn failure(failure: impl Into<ApiChainSubmissionFailure>) -> Self {
+        Self {
+            outcome: None,
+            failure: Some(failure.into()),
+        }
+    }
+}
+
+fn bounded_chain_message(message: &str) -> String {
+    let mut bounded = String::with_capacity(
+        message
+            .len()
+            .min(zcash_voting::MAX_CHAIN_SUBMISSION_DIAGNOSTIC_BYTES),
+    );
+    for character in message.chars() {
+        let escaped = character.escape_default().collect::<String>();
+        if bounded.len() + escaped.len() > zcash_voting::MAX_CHAIN_SUBMISSION_DIAGNOSTIC_BYTES {
+            break;
+        }
+        bounded.push_str(&escaped);
+    }
+    bounded
+}
+
+/// One exact, cancellable chain-submission advancement pass.
+#[flutter_rust_bridge::frb(opaque)]
+pub struct VotingChainSubmissionPassHandle {
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    network: zcash_voting::Network,
+    vote_chain_id: String,
+    endpoints: Vec<String>,
+    control: zcash_voting::ChainSubmissionControl,
+}
+
+impl VotingChainSubmissionPassHandle {
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn cancel(&self) {
+        self.control.cancel();
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn set_operation_epoch(&self, operation_epoch: u64) {
+        self.control.set_operation_epoch(operation_epoch);
+    }
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_chain_submission_pass(
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    network: String,
+    endpoints: Vec<String>,
+    operation_epoch: u64,
+) -> Result<VotingChainSubmissionPassHandle, String> {
+    if endpoints.is_empty() {
+        return Err("vote-chain endpoint list must not be empty".to_string());
+    }
+    let network = voting_network(keys::parse_network(&network)?);
+    let vote_chain_id = match network {
+        zcash_voting::Network::Mainnet => "zvote-1",
+        zcash_voting::Network::Testnet | zcash_voting::Network::Regtest => "svote-1",
+    }
+    .to_string();
+    Ok(VotingChainSubmissionPassHandle {
+        db_path,
+        account_uuid,
+        round_id,
+        network,
+        vote_chain_id,
+        endpoints,
+        control: zcash_voting::ChainSubmissionControl::new(operation_epoch),
+    })
+}
+
+fn chain_submission_round_id(
+    handle: &VotingChainSubmissionPassHandle,
+) -> Result<[u8; 32], ApiChainSubmissionFailure> {
+    zcash_voting::types::validate_vote_round_id_hex(&handle.round_id).map_err(|error| {
+        ApiChainSubmissionFailure::local(
+            ApiChainSubmissionFailureKind::InvalidInput,
+            error.to_string(),
+        )
+    })?;
+    let bytes = hex::decode(&handle.round_id).map_err(|error| {
+        ApiChainSubmissionFailure::local(
+            ApiChainSubmissionFailureKind::InvalidInput,
+            error.to_string(),
+        )
+    })?;
+    bytes.try_into().map_err(|bytes: Vec<u8>| {
+        ApiChainSubmissionFailure::local(
+            ApiChainSubmissionFailureKind::InvalidInput,
+            format!("vote round id must be 32 bytes, got {}", bytes.len()),
+        )
+    })
+}
+
+fn chain_submission_client(
+    handle: &VotingChainSubmissionPassHandle,
+) -> Result<
+    zcash_voting::ChainSubmissionClient<
+        crate::wallet::voting::helper_transport::VotingHelperTransport,
+    >,
+    ApiChainSubmissionFailure,
+> {
+    let database = db::with_voting_sidecar_write_lock(&handle.db_path, || {
+        db::open_voting_db(&handle.db_path, &handle.account_uuid)
+    })
+    .map_err(|error| {
+        ApiChainSubmissionFailure::local(ApiChainSubmissionFailureKind::Storage, error)
+    })?;
+    let maximum_post_attempts = handle.endpoints.len().min(3);
+    let retry_backoffs = [Duration::from_secs(2), Duration::from_secs(4)]
+        .into_iter()
+        .take(maximum_post_attempts.saturating_sub(1))
+        .collect();
+    zcash_voting::ChainSubmissionClient::with_transport(
+        Arc::new(database),
+        crate::wallet::voting::helper_transport::VotingHelperTransport::new(),
+        zcash_voting::ChainSubmissionClientConfig {
+            network: handle.network,
+            vote_chain_id: handle.vote_chain_id.clone(),
+            endpoints: handle.endpoints.clone(),
+            tracking_window: Duration::from_secs(90),
+            maximum_post_attempts,
+            retry_backoffs,
+        },
+    )
+    .map_err(Into::into)
+}
+
+pub async fn advance_chain_delegation(
+    handle: &VotingChainSubmissionPassHandle,
+    bundle_index: u32,
+    submission: zcash_voting::wire::SignedDelegationPayloadView,
+    recovery_mode: ApiChainRecoveryMode,
+) -> ApiChainSubmissionCallResult {
+    if submission.bundle_index != bundle_index {
+        return ApiChainSubmissionCallResult::failure(ApiChainSubmissionFailure::local(
+            ApiChainSubmissionFailureKind::InvalidInput,
+            "delegation payload bundle does not match the requested bundle",
+        ));
+    }
+    let request = (|| {
+        let vote_round_id = chain_submission_round_id(handle)?;
+        let signature = base64::engine::general_purpose::STANDARD
+            .decode(&submission.submission.spend_auth_sig)
+            .map_err(|error| {
+                ApiChainSubmissionFailure::local(
+                    ApiChainSubmissionFailureKind::InvalidInput,
+                    format!("invalid delegation signature encoding: {error}"),
+                )
+            })?;
+        let sighash =
+            zcash_voting::delegate::pczt_sighash(&submission.pczt_bytes).map_err(|error| {
+                ApiChainSubmissionFailure::local(
+                    ApiChainSubmissionFailureKind::InvalidInput,
+                    error.to_string(),
+                )
+            })?;
+        let signer =
+            zcash_voting::delegate::DelegationSigner::signature_from_bytes(&signature, &sighash)
+                .map_err(|error| {
+                    ApiChainSubmissionFailure::local(
+                        ApiChainSubmissionFailureKind::InvalidInput,
+                        error.to_string(),
+                    )
+                })?;
+        Ok::<_, ApiChainSubmissionFailure>(zcash_voting::AdvanceDelegation {
+            vote_round_id,
+            bundle_index,
+            signer,
+        })
+    })();
+    let request = match request {
+        Ok(request) => request,
+        Err(failure) => return ApiChainSubmissionCallResult::failure(failure),
+    };
+    let client = match chain_submission_client(handle) {
+        Ok(client) => client,
+        Err(failure) => return ApiChainSubmissionCallResult::failure(failure),
+    };
+    match client
+        .advance_delegation_with_recovery(request, recovery_mode.into(), &handle.control)
+        .await
+    {
+        Ok(outcome) => ApiChainSubmissionCallResult::outcome(outcome),
+        Err(failure) => ApiChainSubmissionCallResult::failure(failure),
+    }
+}
+
+pub async fn advance_chain_vote(
+    handle: &VotingChainSubmissionPassHandle,
+    bundle_index: u32,
+    proposal_id: u32,
+    recovery_mode: ApiChainRecoveryMode,
+) -> ApiChainSubmissionCallResult {
+    let vote_round_id = match chain_submission_round_id(handle) {
+        Ok(round_id) => round_id,
+        Err(failure) => return ApiChainSubmissionCallResult::failure(failure),
+    };
+    let client = match chain_submission_client(handle) {
+        Ok(client) => client,
+        Err(failure) => return ApiChainSubmissionCallResult::failure(failure),
+    };
+    match client
+        .advance_vote_with_recovery(
+            zcash_voting::AdvanceVote {
+                vote_round_id,
+                bundle_index,
+                proposal_id,
+            },
+            recovery_mode.into(),
+            &handle.control,
+        )
+        .await
+    {
+        Ok(outcome) => ApiChainSubmissionCallResult::outcome(outcome),
+        Err(failure) => ApiChainSubmissionCallResult::failure(failure),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 /// Shared delegation/voting round context passed across the FRB boundary.
 ///
@@ -305,29 +801,6 @@ pub struct ApiPendingShareRound {
     pub account_uuid: String,
     pub round_id: String,
     pub session_json: Option<String>,
-}
-
-/// Returns the vote-chain delegation submission body as validated wire JSON.
-///
-/// Binary fields are base64-encoded here so Dart does not duplicate protocol
-/// field names or byte encoding rules.
-pub fn delegation_submission_wire_json(
-    submission: zcash_voting::wire::SignedDelegationPayloadView,
-) -> Result<String, String> {
-    catch(|| {
-        // Serialize validated delegation payload into chain wire JSON.
-        submission.submission.to_json().map_err(|e| e.to_string())
-    })
-}
-
-/// Returns the vote-chain cast-vote submission body as validated wire JSON.
-pub fn vote_commitment_wire_json(
-    commitment: zcash_voting::wire::VoteCommitmentWire,
-) -> Result<String, String> {
-    catch(|| {
-        // Serialize validated cast-vote commitment into chain wire JSON.
-        commitment.to_json().map_err(|e| e.to_string())
-    })
 }
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
@@ -1653,62 +2126,6 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
 
-/// Record a submitted delegation transaction hash for one bundle.
-///
-/// Repeated calls are idempotent only for the same transaction hash.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the bundle key is missing,
-/// or the stored hash conflicts with `tx_hash`.
-pub fn mark_delegation_submitted(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    tx_hash: String,
-) -> Result<(), String> {
-    catch(|| {
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            // Persist submission hash for this round/bundle key.
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            db.mark_delegation_submitted(&round_id, bundle_index, &tx_hash)
-                .map_err(|e| e.to_string())
-        })
-    })
-}
-
-/// Parse tx events and record a confirmed delegation submission.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the event payload does not
-/// match the expected round/type shape, or confirmation state cannot be stored.
-pub fn confirm_delegation_submission(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    tx_hash: String,
-    events_json: String,
-) -> Result<zcash_voting::wire::DelegationConfirmation, String> {
-    catch(|| {
-        let events = parse_tx_events_json(&events_json)?;
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            // Parse tx events and persist confirmation details for this bundle.
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            zcash_voting::confirmation::confirm_delegation_submission(
-                &db,
-                &round_id,
-                bundle_index,
-                &tx_hash,
-                &events,
-            )
-            .map_err(|e| e.to_string())
-        })
-    })
-}
-
 /// Delete bundle rows at or above `keep_count` for partial-bundle recovery.
 ///
 /// Returns the number of deleted rows.
@@ -2093,71 +2510,6 @@ pub fn get_round_recovery_state(
     })
 }
 
-/// Record a submitted cast-vote transaction hash for one bundle/proposal key.
-///
-/// Repeated calls are idempotent only for the same transaction hash.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the vote key is missing, or
-/// the stored hash conflicts with `tx_hash`.
-pub fn mark_vote_submitted(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-    tx_hash: String,
-) -> Result<(), String> {
-    catch(|| {
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            // Persist submission hash for this round/bundle/proposal key.
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            db.mark_vote_submitted(&round_id, bundle_index, proposal_id, &tx_hash)
-                .map_err(|e| e.to_string())
-        })
-    })
-}
-
-/// Parse tx events and record a confirmed vote submission.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the event payload does not
-/// match the expected round/type shape, or confirmation state cannot be stored.
-pub fn confirm_vote_submission(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-    tx_hash: String,
-    events_json: String,
-) -> Result<zcash_voting::wire::VoteConfirmation, String> {
-    catch(|| {
-        let events = parse_tx_events_json(&events_json)?;
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            // Parse tx events and persist vote confirmation fields.
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            zcash_voting::confirmation::confirm_vote_submission(
-                &db,
-                &round_id,
-                bundle_index,
-                proposal_id,
-                &tx_hash,
-                &events,
-            )
-            .map_err(|e| e.to_string())
-        })
-    })
-}
-
-fn parse_tx_events_json(events_json: &str) -> Result<Vec<zcash_voting::prelude::TxEvent>, String> {
-    let events: Vec<zcash_voting::prelude::TxEvent> =
-        serde_json::from_str(events_json).map_err(|e| format!("invalid tx events JSON: {e}"))?;
-    Ok(events)
-}
-
 /// Compute the resumable voting-session plan for a round. The plan reports the
 /// ordered remaining work (`next_steps`) and which proposals are still open.
 pub fn get_round_plan(
@@ -2325,7 +2677,6 @@ mod tests {
     use crate::wallet::voting::test_support::{
         test_api_round_params, test_note_info, ROUND_ID, TEST_ACCOUNT_UUID,
     };
-    use base64::Engine as _;
     use ff::PrimeField;
     use pasta_curves::group::{Group, GroupEncoding};
     use std::{
@@ -2341,10 +2692,63 @@ mod tests {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
+    fn delegation_submission_wire_json(
+        submission: zcash_voting::wire::SignedDelegationPayloadView,
+    ) -> Result<String, String> {
+        submission
+            .submission
+            .to_json()
+            .map_err(|error| error.to_string())
+    }
+
+    fn vote_commitment_wire_json(
+        commitment: zcash_voting::wire::VoteCommitmentWire,
+    ) -> Result<String, String> {
+        commitment.to_json().map_err(|error| error.to_string())
+    }
+
     fn point_bytes(multiplier: u64) -> Vec<u8> {
         (pasta_curves::pallas::Point::generator() * pasta_curves::pallas::Scalar::from(multiplier))
             .to_bytes()
             .to_vec()
+    }
+
+    #[test]
+    fn chain_submission_pass_binds_network_chain_and_epoch() {
+        let handle = begin_chain_submission_pass(
+            "voting.sqlite".to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            "main".to_string(),
+            vec!["https://vote.example".to_string()],
+            7,
+        )
+        .unwrap();
+
+        assert_eq!(handle.network, zcash_voting::Network::Mainnet);
+        assert_eq!(handle.vote_chain_id, "zvote-1");
+        assert_eq!(handle.control.operation_epoch(), 7);
+        handle.set_operation_epoch(8);
+        assert_eq!(handle.control.operation_epoch(), 8);
+        handle.cancel();
+        assert!(handle.control.is_cancelled());
+    }
+
+    #[test]
+    fn chain_submission_pass_rejects_an_empty_endpoint_fleet() {
+        let error = match begin_chain_submission_pass(
+            "voting.sqlite".to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            "testnet".to_string(),
+            vec![],
+            0,
+        ) {
+            Ok(_) => panic!("empty endpoint fleet was accepted"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("endpoint list must not be empty"));
     }
 
     fn full_share_comms() -> Vec<[u8; 32]> {
@@ -2357,10 +2761,6 @@ mod tests {
         let mut effects = vec![0; zcash_voting::tx1::TX1_EFFECTS_LEN];
         effects[0] = zcash_voting::tx1::TX1_EFFECTS_VERSION;
         effects
-    }
-
-    fn tx_events_json(events: Vec<TxEvent>) -> String {
-        serde_json::to_string(&events).unwrap()
     }
 
     fn delegate_event(round_id: &str, leaf_index: u32) -> TxEvent {
@@ -2563,18 +2963,17 @@ mod tests {
         assert_eq!(prepared_snapshot, unconfirmed_snapshot);
         drop(db);
 
-        confirm_vote_submission(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        zcash_voting::confirmation::confirm_vote_submission(
+            &db,
+            ROUND_ID,
             0,
             7,
-            "vote-confirmed-tx".to_string(),
-            tx_events_json(vec![cast_vote_event(ROUND_ID, 42, 88)]),
+            "vote-confirmed-tx",
+            &[cast_vote_event(ROUND_ID, 42, 88)],
         )
         .unwrap();
 
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
         let (confirmed_snapshot, synchronized_plan_snapshot): (String, String) = db
             .conn()
             .query_row(
@@ -3446,15 +3845,8 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        mark_vote_submitted(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-            1,
-            2,
-            "vote-tx-1-2".to_string(),
-        )
-        .unwrap();
+        db.mark_vote_submitted(ROUND_ID, 1, 2, "vote-tx-1-2")
+            .unwrap();
         {
             let conn = db.conn();
             conn.execute(
@@ -3913,14 +4305,8 @@ mod tests {
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
-        mark_delegation_submitted(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            "delegation-submitted-tx".to_string(),
-        )
-        .unwrap();
+        db.mark_delegation_submitted(ROUND_ID, 0, "delegation-submitted-tx")
+            .unwrap();
 
         let snapshot = get_round_recovery_state(
             db_path.to_str().unwrap().to_string(),
@@ -3949,26 +4335,24 @@ mod tests {
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
 
-        let delegation = confirm_delegation_submission(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
+        let delegation = zcash_voting::confirmation::confirm_delegation_submission(
+            &db,
+            ROUND_ID,
             0,
-            "delegate-confirmed-tx".to_string(),
-            tx_events_json(vec![delegate_event(ROUND_ID, 42)]),
+            "delegate-confirmed-tx",
+            &[delegate_event(ROUND_ID, 42)],
         )
         .unwrap();
         assert_eq!(delegation.tx_hash, "delegate-confirmed-tx");
         assert_eq!(delegation.van_leaf_position, 42);
 
-        let vote = confirm_vote_submission(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
+        let vote = zcash_voting::confirmation::confirm_vote_submission(
+            &db,
+            ROUND_ID,
             0,
             7,
-            "vote-confirmed-tx".to_string(),
-            tx_events_json(vec![cast_vote_event(ROUND_ID, 42, 88)]),
+            "vote-confirmed-tx",
+            &[cast_vote_event(ROUND_ID, 42, 88)],
         )
         .unwrap();
         assert_eq!(vote.tx_hash, "vote-confirmed-tx");

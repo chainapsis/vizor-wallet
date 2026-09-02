@@ -458,7 +458,7 @@ rust_frb_types.DelegationRecoveryView delegationWorkflow({
   required int bundleIndex,
   required String phase,
   String? txHash,
-  int? vanLeafPosition,
+  BigInt? vanLeafPosition,
 }) {
   return rust_frb_types.DelegationRecoveryView(
     bundleIndex: bundleIndex,
