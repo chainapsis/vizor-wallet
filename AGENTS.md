@@ -178,23 +178,6 @@ correct differences from the design.
   explicitly requests a Figma change. When they do, read `FIGMA-AI-FIX.md` in
   full and follow its target-approval, copy-only, and visual-parity workflow.
 
-## PR screenshots for design changes
-
-Any feature change that involves design or user-visible UI must attach
-review screenshots to the pull request before it is marked ready.
-
-- Capture with the widget-test path (`scripts/figma-compare.sh widget`).
-  Register a deterministic scenario in
-  `lib/figma_compare/figma_compare_scenarios.dart` when one does not exist.
-  Do not use Widgetbook chrome as the review evidence.
-- Include every form factor the change ships on (desktop, mobile, or both).
-- Show the states a reviewer needs to judge the design: the entry point (for
-  example the settings row) plus the new or changed screen, and the important
-  variants (default vs custom, empty vs populated). Dark is required; add
-  light when the change is theme-sensitive or both themes are in scope.
-- Embed the PNGs in the PR description. A design PR is not ready if the UI
-  is only described in prose.
-
 ## Figma Layer Interpretation
 
 When reading or implementing Figma designs, distinguish app UI from
