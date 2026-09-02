@@ -5,10 +5,10 @@ import '../theme/app_theme.dart';
 /// The "price not here yet" placeholder that stands in for a converted amount
 /// under an amount field: a small pill where the `$ 12.34` readout would be.
 ///
-/// Shared by the send composers and the request composer so the three
-/// surfaces read the same. Desktop keeps it static; mobile sweeps a highlight
-/// across it ([animated]) — and only while tickers run and the platform has
-/// not asked for reduced motion.
+/// Shared by both send composers and both request composers so every surface
+/// that waits on a price reads the same. Desktop keeps it static; mobile
+/// sweeps a highlight across it ([animated]) — and only while tickers run and
+/// the platform has not asked for reduced motion.
 class AmountPriceLoadingBar extends StatefulWidget {
   const AmountPriceLoadingBar({
     this.animated = false,

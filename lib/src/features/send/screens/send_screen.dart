@@ -15,6 +15,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -2136,7 +2137,9 @@ class _SendAmountConversionRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xxs),
-            const _SendAmountPriceLoadingBar(),
+            const AmountPriceLoadingBar(
+              key: ValueKey('send_amount_price_loading'),
+            ),
           ] else
             Text(
               text ?? r'$ 0',
@@ -2167,24 +2170,6 @@ class _SendAmountConversionRow extends StatelessWidget {
             child: content,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SendAmountPriceLoadingBar extends StatelessWidget {
-  const _SendAmountPriceLoadingBar();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      key: const ValueKey('send_amount_price_loading'),
-      width: 48,
-      height: 12,
-      decoration: BoxDecoration(
-        color: colors.background.overlay.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(AppRadii.full),
       ),
     );
   }
