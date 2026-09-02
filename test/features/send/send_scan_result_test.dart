@@ -35,22 +35,60 @@ void main() {
       expect(first.prefill.id, isNot(second.prefill.id));
     });
 
-    test('an amount-less ZIP-321 request stays address-only', () {
+    test('an address-only ZIP-321 request stays address-only', () {
+      for (final raw in ['zcash:$_address', 'zcash:?address=$_address']) {
+        final result = resolveSendScanPayload(raw);
+        expect(result, isA<SendScanAddress>(), reason: raw);
+        expect((result! as SendScanAddress).address, _address, reason: raw);
+        expect(
+          (result as SendScanAddress).downgrade,
+          isNull,
+          reason: 'the address is exactly what the request asked to be paid at',
+        );
+      }
+    });
+
+    test('an amount-less request keeps the terms it does carry', () {
+      // The composer collects an amount; it has nowhere to put a memo, a
+      // label or a message, so collapsing to address-only threw them away
+      // with no downgrade notice. The same URI opened as a `zcash:` link
+      // reaches the card, which preserves all three — the two paths have to
+      // read the same QR the same way.
+      const memo = 'aW52b2ljZS0xMjM'; // base64url for `invoice-123`.
       final result = resolveSendScanPayload(
-        'zcash:$_address?message=Table%204',
+        'zcash:$_address?memo=$memo&label=Acme&message=Table%204',
       );
-      expect(result, isA<SendScanAddress>());
-      expect((result! as SendScanAddress).address, _address);
+      expect(result, isA<SendScanPaymentRequest>());
+      final prefill = (result! as SendScanPaymentRequest).prefill;
+      expect(prefill.address, _address);
+      expect(prefill.amountText, isNull);
+      expect(prefill.memoText, 'invoice-123');
+      expect(prefill.preserveMemoText, isTrue);
+      expect(prefill.label, 'Acme');
+      expect(prefill.message, 'Table 4');
+    });
+
+    test('a memo alone is enough to keep the request', () {
+      const memo = 'aW52b2ljZS0xMjM';
+      final result = resolveSendScanPayload('zcash:$_address?memo=$memo');
+      expect(result, isA<SendScanPaymentRequest>());
       expect(
-        (result as SendScanAddress).downgrade,
-        isNull,
-        reason: 'the address is exactly what the request asked to be paid at',
+        (result! as SendScanPaymentRequest).prefill.memoText,
+        'invoice-123',
+        reason: 'in shielded Zcash the memo is the only reconciliation channel',
       );
     });
 
-    test('a zero amount stays address-only', () {
+    test('a zero amount with no other terms stays address-only', () {
       final result = resolveSendScanPayload('zcash:$_address?amount=0');
       expect(result, isA<SendScanAddress>());
+    });
+
+    test('a zero amount beside a memo still becomes a request', () {
+      final result = resolveSendScanPayload(
+        'zcash:$_address?amount=0&memo=aW52b2ljZS0xMjM',
+      );
+      expect(result, isA<SendScanPaymentRequest>());
     });
 
     test('a request the parser refuses falls back to the scanned address', () {

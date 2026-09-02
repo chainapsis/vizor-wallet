@@ -2,10 +2,11 @@
 ///
 /// A camera has no idea what it is pointed at. Most of the time it is a bare
 /// address and the composer just fills its recipient field. But a ZIP-321 QR
-/// that already names an amount is the same object a `zcash:` link is, and
-/// answering it in the send composer would throw away the framing the payment
-/// request card exists to give it. So the send scanners classify first and let
-/// the caller route: an address goes in the field, a request goes to the card.
+/// that asks for anything beyond the address — an amount, a memo, a label, a
+/// message — is the same object a `zcash:` link is, and answering it in the
+/// send composer would throw away the framing the payment request card exists
+/// to give it. So the send scanners classify first and let the caller route:
+/// an address goes in the field, a request goes to the card.
 ///
 /// Only the send-context scanners do this. Address book, swap and pay scan for
 /// a destination, not for a payment to answer, so they stay address-only.
@@ -104,14 +105,13 @@ SendScanResult? resolveSendScanPayload(String raw, {String? acceptedAddress}) {
   return SendScanAddress(address, downgrade: resolved.downgrade);
 }
 
-/// The single payment of a supported ZIP-321 request that names a positive
-/// amount, or why the payload could not become one.
+/// The single payment of a supported ZIP-321 request that asked for anything
+/// beyond an address, or why the payload could not become one.
 ///
 /// Everything without a payment falls through to the address-only path the
 /// scanners already had. What changed is that the reasons are no longer all
 /// the same silence: a request we refuse loses terms the payer scanned, while
-/// a bare address or an amount-less request loses nothing the composer does
-/// not ask for anyway.
+/// a bare address loses nothing the composer does not ask for anyway.
 ({Zip321Payment? payment, SendScanDowngrade? downgrade}) _resolveZip321(
   String raw,
 ) {
@@ -132,14 +132,34 @@ SendScanResult? resolveSendScanPayload(String raw, {String? acceptedAddress}) {
 
   final payment = request.primaryPayment;
   final amount = parseZecAmount(payment.amount?.trim() ?? '');
-  if (amount == null || amount <= BigInt.zero) {
-    // An amount-less request has nothing the card can present that the
-    // composer does not present better, and its address is what it asked to be
-    // paid at. Nothing to report.
+  final hasAmount = amount != null && amount > BigInt.zero;
+  if (!hasAmount && !_carriesTermsBeyondAddress(payment)) {
+    // A request that asked only to be paid at an address has nothing the card
+    // can present that the composer does not present better, and its address
+    // is exactly what it asked for. Nothing to report.
     return (payment: null, downgrade: null);
   }
   return (payment: payment, downgrade: null);
 }
+
+/// Whether the request carries terms the composer would silently drop.
+///
+/// The amount is not the only thing a request can ask for. A merchant's
+/// "pay what you want" QR carries the invoice id in the memo — in shielded
+/// Zcash the memo is the only channel that reconciliation data has — and a
+/// `label` or `message` is consent copy the payer is entitled to read. The
+/// `zcash:` link path for the identical URI keeps all three: an amount-less
+/// request reaches the card as ready, the memo bytes are preserved exactly and
+/// the composer collects only the amount. Collapsing to address-only here
+/// discarded them with no downgrade notice, so the same QR meant two different
+/// things depending on whether it was scanned or tapped.
+bool _carriesTermsBeyondAddress(Zip321Payment payment) =>
+    _isNotBlank(payment.memoBase64Url) ||
+    _isNotBlank(payment.memoText) ||
+    _isNotBlank(payment.label) ||
+    _isNotBlank(payment.message);
+
+bool _isNotBlank(String? value) => value != null && value.trim().isNotEmpty;
 
 /// Why a parsed-but-refused request is a downgrade.
 ///
