@@ -5,8 +5,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 prepare_compatible_regtest_state
 sync
-compose up -d zcashd lightwalletd
-wait_for_zcashd
+start_regtest_services
 wait_for_lightwalletd
 ensure_faucet_state
 
