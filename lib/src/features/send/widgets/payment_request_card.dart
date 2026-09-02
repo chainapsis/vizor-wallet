@@ -135,10 +135,11 @@ String? defaultPaymentRequestStatusMessage(
           ? 'Not enough ZEC for this amount and the network fee'
           : 'Not enough ZEC for this amount and the network fee '
                 '($spendable available)',
-    // The card runs its checks once and never re-runs them, so "try again"
-    // has to name the wait, not promise this card will change.
+    // The card watches the sync and re-runs its check when it settles, so the
+    // message promises exactly that rather than sending the user back to the
+    // link they already opened.
     PaymentRequestStatus.syncing =>
-      'Wallet is still syncing — try again once it finishes',
+      'Wallet is still syncing — this will update when it finishes',
     // Always overridden in practice: every failure the pre-check publishes
     // carries its own reason. This is the floor, not the message.
     PaymentRequestStatus.failed => "Couldn't check this request",

@@ -355,7 +355,7 @@ void main() {
       ),
       (
         buildPaymentRequestSyncingUseCase,
-        'Wallet is still syncing — try again once it finishes',
+        'Wallet is still syncing — this will update when it finishes',
       ),
       (
         buildPaymentRequestFailedUseCase,
@@ -439,7 +439,7 @@ void main() {
       ),
       (
         buildPaymentRequestSyncingUseCase,
-        'Wallet is still syncing — try again once it finishes',
+        'Wallet is still syncing — this will update when it finishes',
       ),
       (
         buildPaymentRequestFailedUseCase,
