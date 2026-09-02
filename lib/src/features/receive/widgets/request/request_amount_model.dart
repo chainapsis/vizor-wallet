@@ -38,9 +38,14 @@ enum RequestModalStep {
   result,
 }
 
-/// Why the message exists and where it does not: the same sentence the send
-/// composer's memo card carries, so the two prompts stay one component.
-const kRequestMessageHelpText = 'Encrypted, for shielded addresses only.';
+/// Why the message exists and who can read it.
+///
+/// Deliberately *not* the send composer's memo line: there the memo goes on
+/// chain encrypted to the recipient, but a request writes it into the link the
+/// user is about to hand out, where it is only base64url-encoded. Anyone who
+/// sees the link, the QR or the chat it was pasted into can read it.
+const kRequestMessageHelpText =
+    'Shielded addresses only — anyone with this link can read it.';
 
 /// Inline amount errors. Both are phrased as the correction to make, not as a
 /// verdict on what was typed.
@@ -92,7 +97,7 @@ class ZecRequestView {
   /// mode). Null renders the price-unavailable placeholder.
   final String? conversionText;
 
-  /// The optional encrypted memo. Shielded requests only.
+  /// The optional memo the link carries. Shielded requests only.
   final String? messageText;
 
   /// Inline error under the amount field, or null.

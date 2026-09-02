@@ -152,6 +152,34 @@ void main() {
       expect(advanced, 1);
     });
 
+    testWidgets('the message prompt says the link is readable, not encrypted', (
+      tester,
+    ) async {
+      await _pump(tester, const RequestAmountCard(request: _empty));
+
+      // The request memo rides in the shareable link, so the send composer's
+      // "Encrypted" promise must not be repeated here.
+      expect(
+        kRequestMessageHelpText,
+        'Shielded addresses only — anyone with this link can read it.',
+      );
+      expect(find.text(kRequestMessageHelpText), findsOneWidget);
+      expect(find.textContaining('Encrypted'), findsNothing);
+    });
+
+    testWidgets('the expanded message hints who can read it', (tester) async {
+      await _pump(
+        tester,
+        const RequestAmountCard(request: _empty, messageExpanded: true),
+      );
+
+      expect(
+        find.text('Anyone you send the link to can read this'),
+        findsOneWidget,
+      );
+      expect(find.text('Only the recipient can read this'), findsNothing);
+    });
+
     testWidgets('the expanded message carries the byte counter', (
       tester,
     ) async {

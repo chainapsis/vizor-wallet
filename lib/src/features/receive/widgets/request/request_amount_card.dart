@@ -578,7 +578,7 @@ class RequestMessageField extends StatelessWidget {
       ),
       controller: controller,
       initialValue: controller == null ? text : null,
-      hintText: 'Only the recipient can read this',
+      hintText: 'Anyone you send the link to can read this',
       tone: overLimit ? AppTextFieldTone.destructive : AppTextFieldTone.neutral,
       borderColor: overLimit ? colors.border.utilityDestructive : null,
       leading: AppIcon(AppIcons.scroll, size: 20, color: colors.icon.regular),
