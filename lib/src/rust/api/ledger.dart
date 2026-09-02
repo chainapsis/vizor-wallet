@@ -20,6 +20,14 @@ Future<LedgerDeviceApp> ledgerOpenZcashApp() =>
 Future<void> ledgerCancelOperation() =>
     RustLib.instance.api.crateApiLedgerLedgerCancelOperation();
 
+/// Reject a PCZT shape that the currently supported Ledger Zcash app cannot
+/// sign correctly. This release gate intentionally sits above the raw
+/// transport signer so a future app build can still be exercised by canaries.
+Future<void> ledgerValidateSupportedPczt({required List<int> pcztBytes}) =>
+    RustLib.instance.api.crateApiLedgerLedgerValidateSupportedPczt(
+      pcztBytes: pcztBytes,
+    );
+
 /// Export a Unified Full Viewing Key for `m/32'/133'/account'` after the user
 /// approves the request on the Ledger device.
 Future<String> ledgerExportUfvk({

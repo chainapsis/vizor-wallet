@@ -8,6 +8,7 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
@@ -433,6 +434,9 @@ class _SwapLedgerSigningOverlayState
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
+    if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
+      return kLedgerLegacyOrchardRecoveryUnavailableMessage;
+    }
     if (lower.contains('rejected') || lower.contains('6985')) {
       return 'The ZEC deposit was rejected on your Ledger.';
     }
@@ -451,21 +455,31 @@ class _SwapLedgerSigningOverlayState
   @override
   Widget build(BuildContext context) {
     final canLeave = !_isBroadcasting;
+    final legacyOrchardRecoveryUnavailable =
+        _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
     final modal = LedgerSigningModal(
       accountUuid: widget.intent.accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
-              title: 'Ledger signing failed',
-              statusLabel: 'Action needed',
+              title: legacyOrchardRecoveryUnavailable
+                  ? 'Ledger app update required'
+                  : 'Ledger signing failed',
+              statusLabel: legacyOrchardRecoveryUnavailable
+                  ? 'Recovery unavailable'
+                  : 'Action needed',
               message: _error ?? 'Ledger signing could not be completed.',
-              showDeviceAppPrompt: true,
-              actionLabel: 'Try again',
+              showDeviceAppPrompt: !legacyOrchardRecoveryUnavailable,
+              actionLabel: legacyOrchardRecoveryUnavailable
+                  ? null
+                  : 'Try again',
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancel()) : null,
       cancelLabel: 'Back to activity',
-      onFailureAction: _phase == LedgerSigningModalPhase.failed
+      onFailureAction:
+          _phase == LedgerSigningModalPhase.failed &&
+              !legacyOrchardRecoveryUnavailable
           ? () => unawaited(_retry())
           : null,
     );

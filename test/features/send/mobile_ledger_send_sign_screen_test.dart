@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send_sign_screen.dart';
@@ -230,6 +231,29 @@ void main() {
     ]);
     expect(operationService.batchCheckpointCalls, 1);
   });
+
+  testWidgets(
+    'legacy Orchard recovery requires an app update without retrying',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          operationService: _FakeOperationService(),
+          signer: (_) async => throw StateError(
+            '$kLedgerLegacyOrchardRecoveryErrorCode: test fixture',
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ledger app update required'), findsOneWidget);
+      expect(
+        find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
+        findsOneWidget,
+      );
+      expect(find.text('Try again'), findsNothing);
+    },
+  );
 
   testWidgets('Ledger TEX round two rejection can cancel the proposal', (
     tester,

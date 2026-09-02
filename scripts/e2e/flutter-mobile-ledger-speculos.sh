@@ -106,6 +106,7 @@ run_flutter_scenario() {
 
 run_flutter_scenario "imports with Ledger through Speculos"
 run_flutter_scenario "sends with Ledger through Speculos"
+run_flutter_scenario "blocks recovered Orchard send until the Ledger app is compatible"
 run_flutter_scenario "sends to TEX with two Ledger approvals through Speculos"
 run_flutter_scenario "shields transparent balance with Ledger through Speculos"
 run_flutter_scenario "pays with Ledger through Speculos"
