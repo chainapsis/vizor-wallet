@@ -9211,6 +9211,48 @@ void main() {
     },
   );
 
+  test('Keystone submission waits for in-flight background ZKP1', () async {
+    final backgroundProofGate = Completer<void>();
+    final rust = FakeVotingRustApi(
+      backgroundDelegationProofGate: backgroundProofGate,
+    );
+    final container = _sessionContainer(rust: rust, accountIsHardware: true);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.refreshEligibleWeight();
+    await notifier.prepareKeystoneSigning();
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value?.pirEndpoint,
+      isNotNull,
+    );
+
+    rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
+      bundleIndex: 0,
+      sig: Uint8List.fromList(const [3, 0]),
+      sighash: Uint8List.fromList(const [10, 0]),
+      rk: Uint8List.fromList(const [2, 0]),
+    );
+    final precomputeFuture = notifier.precomputeSnapshotBundles(
+      accountUuid: 'account-1',
+    );
+    await rust.backgroundDelegationProofStarted.future;
+
+    final delegationFuture = notifier
+        .delegatePendingBundlesWithKeystoneSignatures();
+    for (var i = 0; i < 10; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(rust.keystoneProofBundleCalls, isEmpty);
+    backgroundProofGate.complete();
+    await Future.wait([precomputeFuture, delegationFuture]);
+
+    expect(rust.backgroundDelegationProofCalls, [0]);
+    expect(rust.keystoneProofBundleCalls, [0]);
+  });
+
   test('snapshot bundle precompute pipelines every software ZKP1', () async {
     final rust = FakeVotingRustApi(bundleCount: 3);
     final hotkeyStore = FakeVotingHotkeyStore(null);

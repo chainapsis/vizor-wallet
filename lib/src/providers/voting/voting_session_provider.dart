@@ -936,6 +936,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             progress: progress,
             logLabel: 'Keystone',
             prove: (bundleIndex, publishProgress) async {
+              await _awaitSnapshotBundlePrecomputeIfRunning(context);
+              _throwIfContextStale(context, 'keystone-delegation-proof');
               final signature = signatures[bundleIndex]!;
               rust_wire.SignedDelegationPayloadView? signedPayload;
               await for (final event
