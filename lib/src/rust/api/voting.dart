@@ -796,20 +796,6 @@ Future<VoteConfirmation> confirmVoteSubmission({
   eventsJson: eventsJson,
 );
 
-/// Clear vote/delegation recovery columns and share-tracking rows for a round.
-///
-/// This is an explicit reset for finalized or abandoned rounds, not a normal
-/// retry step.
-Future<void> clearRecoveryState({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-}) => RustLib.instance.api.crateApiVotingClearRecoveryState(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-);
-
 /// Compute the resumable voting-session plan for a round. The plan reports the
 /// ordered remaining work (`next_steps`) and which proposals are still open.
 Future<RoundPlanView> getRoundPlan({

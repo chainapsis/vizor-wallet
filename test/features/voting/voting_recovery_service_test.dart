@@ -22,7 +22,6 @@ void main() {
 
     expect(plan.pendingDelegationBundleIndexes, [0, 1, 2]);
     expect(plan.pendingVoteSubmissionKeys, isEmpty);
-    expect(api.clearCalls, isEmpty);
   });
 
   test('mixed delegation hashes only resume missing bundle indexes', () async {
@@ -358,7 +357,6 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   FakeVotingRecoveryApi({required this.state});
 
   rust_frb_types.RoundRecoveryStateView state;
-  final clearCalls = <String>[];
 
   @override
   Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
@@ -395,15 +393,6 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required bool skipped,
     int? choice,
   }) async {}
-
-  @override
-  Future<void> clearRecoveryState({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  }) async {
-    clearCalls.add(roundId);
-  }
 }
 
 rust_frb_types.RoundRecoveryStateView recoveryState({
