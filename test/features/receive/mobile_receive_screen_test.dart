@@ -680,6 +680,46 @@ void main() {
     );
   });
 
+  testWidgets('a message character a memo cannot carry leaves the field too', (
+    tester,
+  ) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_request')));
+    await _settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_input')),
+      '0.5',
+    );
+    await _settle(tester);
+
+    await tester.tap(find.byKey(const ValueKey('request_message_row')));
+    await _settle(tester);
+    // U+202E cannot travel in a ZIP-321 memo, so the draft drops it. The
+    // field has to say so: a link that differs from what is on screen is a
+    // silent, unrecoverable edit.
+    await tester.enterText(
+      find.byKey(const ValueKey('request_message_field')),
+      'Table‮ 4',
+    );
+    await _settle(tester);
+
+    expect(_requestMessageFieldText(tester), 'Table 4');
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('request_message_counter')))
+          .data,
+      '7/512',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('request_create_button')));
+    await _settle(tester);
+    expect(
+      tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data,
+      'zcash:$_shielded?amount=0.5&memo=VGFibGUgNA',
+    );
+  });
+
   testWidgets('copies the request link from the result step', (tester) async {
     final copied = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -891,4 +931,17 @@ void main() {
       'zcash:$_transparent?amount=1',
     );
   });
+}
+
+/// What the message editor actually holds, not what the draft was given.
+String _requestMessageFieldText(WidgetTester tester) {
+  return tester
+      .widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('request_message_field')),
+          matching: find.byType(EditableText),
+        ),
+      )
+      .controller
+      .text;
 }

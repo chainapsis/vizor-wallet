@@ -74,7 +74,23 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
   }
 
   void _handleMessageChanged(String value) {
-    setState(() => _draft = _draft.copyWith(message: value));
+    final next = _draft.copyWith(message: value);
+    // The draft drops the characters a ZIP-321 memo cannot carry. The field
+    // keeps whatever was typed unless it is told, so write the result back:
+    // the field, the byte counter and the link have to be the same string.
+    final stripped = next.message ?? '';
+    if (stripped != value) {
+      final offset = _messageController.selection.baseOffset;
+      _messageController.value = TextEditingValue(
+        text: stripped,
+        selection: TextSelection.collapsed(
+          offset: offset < 0 || offset > stripped.length
+              ? stripped.length
+              : offset,
+        ),
+      );
+    }
+    setState(() => _draft = next);
   }
 
   void _toggleAmountUnit() {

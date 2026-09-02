@@ -763,6 +763,48 @@ void main() {
     expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
   });
 
+  testWidgets('a message character a memo cannot carry leaves the field too', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('request_add_message_card')));
+    await tester.pump();
+    // U+202E cannot travel in a ZIP-321 memo, so the draft drops it. The
+    // field has to say so: a link that differs from what is on screen is a
+    // silent, unrecoverable edit.
+    await tester.enterText(
+      find.byKey(const ValueKey('request_message_field')),
+      'Table‮ 4',
+    );
+    await tester.pump();
+
+    expect(_requestMessageFieldText(tester), 'Table 4');
+    expect(_text(tester, 'request_message_counter'), '7/512');
+
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+    expect(
+      _requestQrData(tester),
+      'zcash:$_shieldedAddress?amount=0.5&memo=VGFibGUgNA',
+    );
+  });
+
   testWidgets('the request steps carry the composed amount both ways', (
     tester,
   ) async {
@@ -1082,6 +1124,22 @@ Future<void> _saveRequestQr(
 
 String _requestQrData(WidgetTester tester) {
   return tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data;
+}
+
+String _text(WidgetTester tester, String key) =>
+    tester.widget<Text>(find.byKey(ValueKey(key))).data!;
+
+/// What the message editor actually holds, not what the draft was given.
+String _requestMessageFieldText(WidgetTester tester) {
+  return tester
+      .widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('request_message_field')),
+          matching: find.byType(EditableText),
+        ),
+      )
+      .controller
+      .text;
 }
 
 AppButton _button(WidgetTester tester, String key) =>
