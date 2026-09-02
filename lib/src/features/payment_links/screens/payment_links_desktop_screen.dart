@@ -1033,7 +1033,8 @@ class _PaymentLinksDesktopScreenState
   }) async {
     final previousSession = _receivedClaimSession;
     if (previousSession != null &&
-        previousSession.link.address != link.address) {
+        paymentLinkClaimWalletDirectoryName(previousSession.link) !=
+            paymentLinkClaimWalletDirectoryName(link)) {
       await ref
           .read(paymentLinkOperationsProvider)
           .discardClaimSession(previousSession);

@@ -1147,6 +1147,46 @@ void main() {
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
   });
 
+  testWidgets('discards a previous claim wallet when its identity changes', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations();
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cards'));
+    await tester.pumpAndSettle();
+
+    final differentBirthdayLink = VizorPaymentLink(
+      network: _incomingLink.network,
+      address: _incomingLink.address,
+      amountZatoshi: _incomingLink.amountZatoshi,
+      mnemonic: _incomingLink.mnemonic,
+      birthdayHeight: _incomingLink.birthdayHeight - 1,
+      label: _incomingLink.label,
+      createdAt: _incomingLink.createdAt,
+      presentation: _incomingLink.presentation,
+    );
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(differentBirthdayLink.toUri().toString());
+    await tester.pumpAndSettle();
+
+    expect(operations.allowLongSyncCalls, [isFalse, isFalse]);
+    expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+    expect(find.text('You’ve received\na gift card!'), findsOneWidget);
+  });
+
   testWidgets('does not reopen an in-flight received Gift Card', (
     tester,
   ) async {

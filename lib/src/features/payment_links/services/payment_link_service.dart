@@ -480,7 +480,6 @@ void requireMatchingPaymentLinkClaimDestination({
 /// account and its scan range. Share-payload fields such as amount, label,
 /// timestamp, and presentation deliberately do not participate, so a corrected
 /// payload can reuse already-scanned state.
-@visibleForTesting
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
   final identity = sha256
       .convert(
@@ -1228,6 +1227,9 @@ class PaymentLinkService implements PaymentLinkOperations {
       );
     }
 
+    // A Vizor-created Gift Card funds exactly the advertised amount plus its
+    // claim fee. Keep that advertised amount as the Card contract instead of
+    // sweeping unrelated top-ups; the bearer link can recover this wallet.
     _requireWalletUnlocked();
     final sendResult = await _sendShielded(
       dbPath: session.dbPath,
