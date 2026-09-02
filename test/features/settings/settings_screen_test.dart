@@ -87,7 +87,21 @@ void main() {
 
     final row = find.byKey(const ValueKey('settings_gift_cards_row'));
     expect(row, findsOneWidget);
-    expect(find.text('Gift Cards'), findsOneWidget);
+    expect(
+      tester
+          .widgetList<AppIcon>(
+            find.descendant(of: row, matching: find.byType(AppIcon)),
+          )
+          .first
+          .name,
+      AppIcons.giftCardOutline,
+    );
+    expect(find.text('My Gift Cards'), findsOneWidget);
+    expect(find.text('New'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('My Gift Cards')).dy,
+      greaterThan(tester.getTopLeft(find.text('Link mobile')).dy),
+    );
 
     await tester.tap(row);
     await tester.pump();

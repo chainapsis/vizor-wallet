@@ -501,15 +501,16 @@ class _SettingsList extends StatelessWidget {
               onTap: onAddressBook,
             ),
             _SettingsRow(
-              key: const ValueKey('settings_gift_cards_row'),
-              iconName: AppIcons.giftCard,
-              label: 'Gift Cards',
-              onTap: onGiftCards,
-            ),
-            _SettingsRow(
               iconName: AppIcons.link,
               label: 'Link mobile',
               onTap: onLinkMobile,
+            ),
+            _SettingsRow(
+              key: const ValueKey('settings_gift_cards_row'),
+              iconName: AppIcons.giftCardOutline,
+              label: 'My Gift Cards',
+              labelBadge: const _SettingsNewBadge(),
+              onTap: onGiftCards,
             ),
           ],
         ),
@@ -1045,6 +1046,7 @@ class _SettingsRow extends StatefulWidget {
     required this.label,
     this.value,
     this.valueLeading,
+    this.labelBadge,
     this.destructive = false,
     this.onTap,
   });
@@ -1053,6 +1055,7 @@ class _SettingsRow extends StatefulWidget {
   final String label;
   final String? value;
   final Widget? valueLeading;
+  final Widget? labelBadge;
   final bool destructive;
   final VoidCallback? onTap;
 
@@ -1110,10 +1113,22 @@ class _SettingsRowState extends State<_SettingsRow> {
         AppIcon(widget.iconName, size: 20, color: iconColor),
         const SizedBox(width: AppSpacing.xs),
         Expanded(
-          child: Text(
-            widget.label,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelMedium.copyWith(color: contentColor),
+          child: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  widget.label,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: contentColor,
+                  ),
+                ),
+              ),
+              if (widget.labelBadge != null) ...[
+                const SizedBox(width: AppSpacing.xxs),
+                widget.labelBadge!,
+              ],
+            ],
           ),
         ),
         const SizedBox(width: AppSpacing.xs),
@@ -1197,6 +1212,31 @@ class _SettingsRowState extends State<_SettingsRow> {
             child: row,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SettingsNewBadge extends StatelessWidget {
+  const _SettingsNewBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final brandColor = context.colors.text.brandCrimson;
+
+    return Container(
+      key: const ValueKey('settings_gift_cards_new_badge'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xxs,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: brandColor.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        'New',
+        style: AppTypography.labelLarge.copyWith(color: brandColor),
       ),
     );
   }
