@@ -34,6 +34,7 @@ SendPrefillArgs sendPrefillArgsFromZip321Payment({
   required String id,
   required Zip321Payment payment,
 }) {
+  final message = payment.message;
   return SendPrefillArgs(
     id: id,
     source: kPaymentUriPrefillSource,
@@ -42,6 +43,11 @@ SendPrefillArgs sendPrefillArgsFromZip321Payment({
     memoText: payment.memoText,
     preserveMemoText: payment.memoText != null,
     label: payment.label,
-    message: payment.message,
+    // The parser screens `memo` for characters that can restyle the text
+    // around them, but not `label` or `message`. The label is stripped where
+    // it is sanitised; the message reaches the payment-request card with no
+    // collapse and no clamp at all, so it is stripped here, at the boundary
+    // where an untrusted request turns into something the wallet renders.
+    message: message == null ? null : stripUnsupportedZip321MemoText(message),
   );
 }

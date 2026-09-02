@@ -16,6 +16,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/zcash/zip321_payment_request.dart'
+    show stripUnsupportedZip321MemoText;
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -34,10 +36,15 @@ const int kPaymentRequestLabelMaxLength = 64;
 /// One-line, length-clamped version of an untrusted requester label, or null
 /// when there is nothing left to show.
 ///
-/// Collapses every run of whitespace (newlines included) to a single space so
-/// the label cannot grow the row it sits in, then clamps the length.
+/// Drops the code points a ZIP-321 memo may not carry first — bidi overrides
+/// and C0/C1 controls, which `RegExp(r'\s+')` does not match and which the
+/// clamp would otherwise spend on invisible characters — so one rule covers
+/// every untrusted ZIP-321 string the wallet renders. Then collapses every run
+/// of whitespace (newlines included) to a single space so the label cannot
+/// grow the row it sits in, and clamps the length.
 String? sanitisePaymentRequestLabel(String? raw) {
-  final collapsed = raw?.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final stripped = raw == null ? null : stripUnsupportedZip321MemoText(raw);
+  final collapsed = stripped?.replaceAll(RegExp(r'\s+'), ' ').trim();
   if (collapsed == null || collapsed.isEmpty) return null;
   if (collapsed.length <= kPaymentRequestLabelMaxLength) return collapsed;
   return '${collapsed.substring(0, kPaymentRequestLabelMaxLength - 1)}\u2026';

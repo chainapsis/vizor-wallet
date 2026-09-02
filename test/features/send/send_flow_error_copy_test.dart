@@ -31,4 +31,27 @@ void main() {
       expect(copy.toLowerCase(), isNot(contains('send failed')));
     });
   });
+
+  group('sanitisePaymentRequestLabel', () {
+    test('drops characters that can restyle the review screen', () {
+      // U+202E is not whitespace, so the collapse alone left an unterminated
+      // right-to-left override running through the "Requested by" row on the
+      // surface whose whole job is stating what the user is consenting to.
+      final label = sanitisePaymentRequestLabel('Alice‮gnidnep');
+
+      expect(label, 'Alicegnidnep');
+      expect(label, isNot(contains('‮')));
+    });
+
+    test('an invisible-only label is nothing to show', () {
+      expect(sanitisePaymentRequestLabel('‮‏ '), isNull);
+    });
+
+    test('still collapses whitespace and clamps the length', () {
+      expect(sanitisePaymentRequestLabel('  Coffee\n shop  '), 'Coffee shop');
+      final long = sanitisePaymentRequestLabel('a' * 100)!;
+      expect(long.length, kPaymentRequestLabelMaxLength);
+      expect(long.endsWith('…'), isTrue);
+    });
+  });
 }

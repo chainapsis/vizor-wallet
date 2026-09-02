@@ -20,4 +20,21 @@ void main() {
     expect(prefill.memoText, rawMemo);
     expect(prefill.preserveMemoText, isTrue);
   });
+
+  test('ZIP-321 message drops characters the parser refuses in a memo', () {
+    // The parser screens `memo` for these code points but not `message`, and
+    // the payment-request card renders the message with no collapse and no
+    // clamp, so the strip happens here.
+    final request = Zip321PaymentRequest.parse(
+      'zcash:u1zip321destination?amount=1&message=Invoice%20%E2%80%AE42',
+    );
+
+    final prefill = sendPrefillArgsFromZip321Payment(
+      id: 'payment-uri-test',
+      payment: request.primaryPayment,
+    );
+
+    expect(request.primaryPayment.message, contains('‮'));
+    expect(prefill.message, 'Invoice 42');
+  });
 }
