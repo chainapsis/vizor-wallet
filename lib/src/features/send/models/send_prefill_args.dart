@@ -1,5 +1,10 @@
 import '../../../core/zcash/zip321_payment_request.dart';
 
+/// [SendPrefillArgs.source] for a prefill that came from a ZIP-321 payment
+/// request (a `zcash:` link today, an in-app QR scan later). The send flow
+/// reads it to keep the payment-request framing on the review screen.
+const kPaymentUriPrefillSource = 'zcash-uri';
+
 class SendPrefillArgs {
   const SendPrefillArgs({
     required this.id,
@@ -31,7 +36,7 @@ SendPrefillArgs sendPrefillArgsFromZip321Payment({
 }) {
   return SendPrefillArgs(
     id: id,
-    source: 'zcash-uri',
+    source: kPaymentUriPrefillSource,
     address: payment.address,
     amountText: payment.amount,
     memoText: payment.memoText,

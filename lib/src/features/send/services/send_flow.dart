@@ -14,6 +14,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -22,6 +23,25 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import 'sapling_params.dart';
+
+/// Longest requester label the review screens will render.
+///
+/// The label comes straight out of a `zcash:` link's `label` parameter, so it
+/// is attacker-controlled. Sanitising is what keeps it a short, single-line
+/// piece of quoted text instead of something that can restyle a review screen.
+const int kPaymentRequestLabelMaxLength = 64;
+
+/// One-line, length-clamped version of an untrusted requester label, or null
+/// when there is nothing left to show.
+///
+/// Collapses every run of whitespace (newlines included) to a single space so
+/// the label cannot grow the row it sits in, then clamps the length.
+String? sanitisePaymentRequestLabel(String? raw) {
+  final collapsed = raw?.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (collapsed == null || collapsed.isEmpty) return null;
+  if (collapsed.length <= kPaymentRequestLabelMaxLength) return collapsed;
+  return '${collapsed.substring(0, kPaymentRequestLabelMaxLength - 1)}\u2026';
+}
 
 /// Route-extra payload for the review/status legs of the send flow.
 class SendReviewArgs {
@@ -35,6 +55,9 @@ class SendReviewArgs {
     required this.feeZatoshi,
     required this.needsSaplingParams,
     this.memo,
+    this.isPaymentRequest = false,
+    this.requestedBy,
+    this.requestedAmountZatoshi,
   });
 
   final BigInt proposalId;
@@ -47,7 +70,28 @@ class SendReviewArgs {
   final bool needsSaplingParams;
   final String? memo;
 
+  /// This send answers a ZIP-321 payment request rather than being composed
+  /// from scratch. Only the review framing reads it — the proposal, the
+  /// broadcast and the receipt are identical either way.
+  final bool isPaymentRequest;
+
+  /// Sanitised requester label from the request, when it carried one.
+  final String? requestedBy;
+
+  /// The amount the request asked for, when it named one.
+  ///
+  /// Kept alongside [amountZatoshi] rather than replacing it so the review can
+  /// say what was requested when the user edited the amount before confirming.
+  final BigInt? requestedAmountZatoshi;
+
   bool get isShielded => addressType == 'unified' || addressType == 'sapling';
+
+  /// The requested amount, but only when it differs from what is being sent.
+  BigInt? get differingRequestedAmountZatoshi {
+    final requested = requestedAmountZatoshi;
+    if (requested == null || requested == amountZatoshi) return null;
+    return requested;
+  }
 }
 
 /// Hardware-wallet handoff payload: the phone-side proof PCZT plus the compact
@@ -224,26 +268,63 @@ Future<SendReviewArgs> proposeSendTransfer({
   required String addressType,
   required BigInt amountZatoshi,
   String? memo,
+  bool isPaymentRequest = false,
+  String? requestedBy,
+  BigInt? requestedAmountZatoshi,
+  Future<String> Function() loadDbPath = getWalletDbPath,
+}) => proposeSendTransferWith(
+  syncNotifier: ref.read(syncProvider.notifier),
+  readEndpoint: () => ref.read(rpcEndpointProvider),
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  address: address,
+  addressType: addressType,
+  amountZatoshi: amountZatoshi,
+  memo: memo,
+  isPaymentRequest: isPaymentRequest,
+  requestedBy: requestedBy,
+  requestedAmountZatoshi: requestedAmountZatoshi,
+  loadDbPath: loadDbPath,
+);
+
+/// [proposeSendTransfer] with its two provider reads passed in.
+///
+/// `WidgetRef` and `Ref` share no common type, and the payment-request
+/// pre-check runs from a `Notifier` rather than a widget. Naming the two
+/// dependencies is what lets both callers reach the same proposal code.
+/// [readEndpoint] stays lazy on purpose: the authoritative-spendable wait below
+/// can outlast an endpoint failover, and the proposal must use the endpoint in
+/// effect when it is actually made.
+Future<SendReviewArgs> proposeSendTransferWith({
+  required SyncNotifier syncNotifier,
+  required RpcEndpointConfig Function() readEndpoint,
+  required String accountUuid,
+  required String sendFlowId,
+  required String address,
+  required String addressType,
+  required BigInt amountZatoshi,
+  String? memo,
+  bool isPaymentRequest = false,
+  String? requestedBy,
+  BigInt? requestedAmountZatoshi,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
-  final proposal = await ref
-      .read(syncProvider.notifier)
-      .runWithAuthoritativeSpendable(
+  final proposal = await syncNotifier.runWithAuthoritativeSpendable(
+    accountUuid: accountUuid,
+    operation: () async {
+      final dbPath = await loadDbPath();
+      final endpoint = readEndpoint();
+      return rust_sync.proposeSend(
+        dbPath: dbPath,
+        network: endpoint.networkName,
         accountUuid: accountUuid,
-        operation: () async {
-          final dbPath = await loadDbPath();
-          final endpoint = ref.read(rpcEndpointProvider);
-          return rust_sync.proposeSend(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            sendFlowId: sendFlowId,
-            toAddress: address,
-            amountZatoshi: amountZatoshi,
-            memo: (memo != null && memo.isNotEmpty) ? memo : null,
-          );
-        },
+        sendFlowId: sendFlowId,
+        toAddress: address,
+        amountZatoshi: amountZatoshi,
+        memo: (memo != null && memo.isNotEmpty) ? memo : null,
       );
+    },
+  );
   return SendReviewArgs(
     proposalId: proposal.proposalId,
     sendFlowId: sendFlowId,
@@ -254,6 +335,9 @@ Future<SendReviewArgs> proposeSendTransfer({
     feeZatoshi: proposal.feeZatoshi,
     memo: (memo != null && memo.isNotEmpty) ? memo : null,
     needsSaplingParams: proposal.needsSaplingParams,
+    isPaymentRequest: isPaymentRequest,
+    requestedBy: sanitisePaymentRequestLabel(requestedBy),
+    requestedAmountZatoshi: requestedAmountZatoshi,
   );
 }
 

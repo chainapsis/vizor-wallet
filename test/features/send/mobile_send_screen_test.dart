@@ -407,6 +407,9 @@ Widget _reviewApp({
   bool refreshReviewFeeOnInit = true,
   String initialAmount = '1.5',
   BigInt? initialFeeZatoshi,
+  bool isPaymentRequest = false,
+  String? paymentRequestLabel,
+  BigInt? requestedAmountZatoshi,
 }) {
   return ProviderScope(
     overrides: [
@@ -436,6 +439,9 @@ Widget _reviewApp({
           initialMaxMode: initialMaxMode,
           refreshReviewFeeOnInit: refreshReviewFeeOnInit,
           estimateFee: estimateFee,
+          isPaymentRequest: isPaymentRequest,
+          paymentRequestLabel: paymentRequestLabel,
+          requestedAmountZatoshi: requestedAmountZatoshi,
         ),
       ),
     ),
@@ -2719,4 +2725,91 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review Send'), findsOneWidget);
   });
+
+  group('payment request framing', () {
+    testWidgets('retitles the review step and names who asked', (tester) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.5',
+          initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coffee shop',
+          estimateFee: _fixedFeeEstimator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review payment request'), findsOneWidget);
+      expect(find.text('Review Send'), findsNothing);
+      expect(find.text('Requested by'), findsOneWidget);
+      expect(find.text('Coffee shop'), findsOneWidget);
+      expect(find.text('To'), findsNothing);
+    });
+
+    testWidgets('states the requested amount only when it was edited', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.75',
+          initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          requestedAmountZatoshi: BigInt.from(50000000),
+          estimateFee: _fixedFeeEstimator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Requested 0.50 ZEC'), findsOneWidget);
+    });
+
+    testWidgets('says nothing when the amount still matches the request', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.5',
+          initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          requestedAmountZatoshi: BigInt.from(50000000),
+          estimateFee: _fixedFeeEstimator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Requested'), findsNothing);
+    });
+
+    testWidgets('an ordinary send keeps the plain review step', (tester) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.5',
+          initialFeeZatoshi: BigInt.from(10000),
+          estimateFee: _fixedFeeEstimator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review Send'), findsOneWidget);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.textContaining('Requested'), findsNothing);
+    });
+  });
 }
+
+Future<BigInt> _fixedFeeEstimator({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String toAddress,
+  required BigInt amountZatoshi,
+  String? memo,
+}) async => BigInt.from(10000);

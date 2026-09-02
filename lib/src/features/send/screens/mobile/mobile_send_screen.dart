@@ -225,7 +225,20 @@ class MobileSendReviewDraftArgs {
     this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
+    this.isPaymentRequest = false,
+    this.requestedBy,
+    this.requestedAmountZatoshi,
   });
+
+  /// Retitles the step "Review payment request".
+  final bool isPaymentRequest;
+
+  /// Sanitised requester label from the request, when it carried one.
+  final String? requestedBy;
+
+  /// The amount the request asked for; shown only when the reviewed amount
+  /// differs from it.
+  final BigInt? requestedAmountZatoshi;
 
   final String sendFlowId;
   final String recipient;
@@ -285,6 +298,9 @@ class MobileSendReviewScreen extends StatelessWidget {
       preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
+      isPaymentRequest: args.isPaymentRequest,
+      paymentRequestLabel: args.requestedBy,
+      requestedAmountZatoshi: args.requestedAmountZatoshi,
     );
   }
 }
@@ -356,6 +372,9 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialContactLabel,
     this.initialContactPictureId,
     this.initialRecipientFocused = false,
+    this.isPaymentRequest = false,
+    this.paymentRequestLabel,
+    this.requestedAmountZatoshi,
     super.key,
   });
 
@@ -388,6 +407,18 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final String? initialContactLabel;
   final String? initialContactPictureId;
   final bool initialRecipientFocused;
+
+  /// This send answers a ZIP-321 payment request: the review step is retitled
+  /// and its recipient row says who asked. Nothing about the proposal, the
+  /// broadcast or the receipt changes.
+  final bool isPaymentRequest;
+
+  /// Sanitised requester label; null renders the ordinary "To" row.
+  final String? paymentRequestLabel;
+
+  /// The amount the request asked for. Rendered under the review info block
+  /// only when the reviewed amount differs from it.
+  final BigInt? requestedAmountZatoshi;
 
   /// Preview/test seam for the direct Rust validation call.
   final MobileSendAddressValidator? validateAddress;
@@ -1469,6 +1500,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Future<void> _showFeeInfo() => showMobileTxFeeInfoSheet(context);
 
+  /// The requested amount, but only while the reviewed amount is a different
+  /// number. The info block above already states what is being sent; repeating
+  /// the same figure as "Requested" would be noise.
+  String? get _requestedAmountNotice {
+    final requested = widget.requestedAmountZatoshi;
+    if (requested == null) return null;
+    if (requested == parseZecAmount(_amountText.trim())) return null;
+    return ZecAmount.fromZatoshi(requested).activityDetail.toString();
+  }
+
   void _openStatusRoute(Object extra) {
     if (widget.useRouteSteps) {
       final router = GoRouter.of(context);
@@ -1776,7 +1817,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _SendPhase.compose => switch (_step) {
         _SendStep.recipient => 'Select Recipient',
         _SendStep.amount => 'Enter Amount',
-        _SendStep.review => 'Review Send',
+        _SendStep.review =>
+          widget.isPaymentRequest ? 'Review payment request' : 'Review Send',
       },
       _SendPhase.failed => 'Send failed',
     };
@@ -2761,8 +2803,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           const SizedBox(height: AppSpacing.xs),
                           _ReviewInfoRow(
                             leading: recipient.buildReviewLeading(),
-                            title: 'To',
-                            headline: recipient.headline,
+                            title: widget.paymentRequestLabel == null
+                                ? 'To'
+                                : 'Requested by',
+                            headline:
+                                widget.paymentRequestLabel ??
+                                recipient.headline,
                             bottom: _ReviewAddressLine(
                               address: _compactReviewAddress(address),
                               addressType: _addressType,
@@ -2776,6 +2822,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       ),
                     ),
                   ),
+                  if (_requestedAmountNotice != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Requested $_requestedAmountNotice',
+                      key: const ValueKey('mobile_send_review_requested'),
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.base),
                   _ReviewWrap(
                     isShielded: _isShieldedAddress,

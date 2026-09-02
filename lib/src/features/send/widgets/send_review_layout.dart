@@ -52,6 +52,8 @@ class SendReviewInfoSection extends StatelessWidget {
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
+    this.requestedByLabel,
+    this.requestedAmountText,
     this.connectorIconName = AppIcons.arrowDown,
     this.recipientStruckThrough = false,
     this.onShowFullAddress,
@@ -75,6 +77,20 @@ class SendReviewInfoSection extends StatelessWidget {
 
   /// Optional fiat sub-label under the amount; hidden when null.
   final String? fiatText;
+
+  /// Sanitised requester label from a ZIP-321 payment request.
+  ///
+  /// When set, the recipient row says who asked instead of leading with the
+  /// address: the headline becomes the requester, the address drops to the
+  /// sub-line. The label is attacker-controlled, so it is only ever rendered
+  /// through the same single-line, clamped slot a contact name uses — and the
+  /// address stays on screen underneath it, because that is the fact the user
+  /// is actually consenting to.
+  final String? requestedByLabel;
+
+  /// Preformatted amount the request asked for ("0.5 ZEC"), shown as a muted
+  /// line under the amount when the user changed it before reviewing.
+  final String? requestedAmountText;
 
   /// Connector between the Amount and To rows — arrow-down on review /
   /// in-progress / completed, uturn-up on failed.
@@ -124,6 +140,17 @@ class SendReviewInfoSection extends StatelessWidget {
             leading: const _ZecCoinImage(),
             bottomLeftText: fiatText,
           ),
+          if (requestedAmountText != null)
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.xl),
+              child: Text(
+                'Requested $requestedAmountText',
+                key: const ValueKey('send_review_requested_amount'),
+                style: AppTypography.bodySmall.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+            ),
           _ReviewConnectorIcon(iconName: connectorIconName),
           _recipientRow(context),
         ],
@@ -132,6 +159,20 @@ class SendReviewInfoSection extends StatelessWidget {
   }
 
   Widget _recipientRow(BuildContext context) {
+    final requestedBy = requestedByLabel;
+    if (requestedBy != null) {
+      return ReviewInfoRow(
+        key: const ValueKey('send_review_requested_by'),
+        label: 'Requested by',
+        value: requestedBy,
+        leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
+        struckThrough: recipientStruckThrough,
+        bottomLeftIconName: _contactRecipientBottomLeftIconName,
+        bottomLeftText: _contactRecipientBottomLeftText(recipient.address),
+        trailingActionLabel: 'Show full address',
+        onTrailingAction: onShowFullAddress,
+      );
+    }
     return switch (recipient) {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
         label: 'To',

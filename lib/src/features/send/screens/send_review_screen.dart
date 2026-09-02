@@ -382,6 +382,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = widget.args.memo;
     final hasMemo = memo != null && memo.trim().isNotEmpty;
+    final requestedAmountZatoshi = widget.args.differingRequestedAmountZatoshi;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -397,6 +398,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               ),
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
               child: SendReviewContentView(
+                isPaymentRequest: widget.args.isPaymentRequest,
+                requestedByLabel: widget.args.requestedBy,
+                requestedAmountText: requestedAmountZatoshi == null
+                    ? null
+                    : _formatAmount(requestedAmountZatoshi),
                 amountText: _formatAmount(widget.args.amountZatoshi),
                 fiatText: fiatTextForZatoshi(
                   widget.args.amountZatoshi,

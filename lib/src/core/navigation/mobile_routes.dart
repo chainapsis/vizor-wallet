@@ -28,8 +28,9 @@ import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
+import '../../core/formatting/zec_amount.dart' show parseZecAmount;
 import '../../features/send/services/send_flow.dart'
-    show KeystoneBroadcastArgs, SendReviewArgs;
+    show KeystoneBroadcastArgs, SendReviewArgs, sanitisePaymentRequestLabel;
 import '../../features/send/models/send_prefill_args.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_status_screen.dart';
@@ -158,6 +159,15 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
             initialAmount: prefill?.amountText,
             initialMemo: prefill?.memoText,
             preserveInitialMemoWhitespace: prefill?.preserveMemoText ?? false,
+            // Editing a payment request keeps the request's framing on the
+            // review step; a hand-composed send has none of this.
+            isPaymentRequest: prefill?.source == kPaymentUriPrefillSource,
+            paymentRequestLabel: prefill?.source == kPaymentUriPrefillSource
+                ? sanitisePaymentRequestLabel(prefill?.label)
+                : null,
+            requestedAmountZatoshi: prefill?.source == kPaymentUriPrefillSource
+                ? parseZecAmount(prefill?.amountText ?? '')
+                : null,
           ),
         );
       },

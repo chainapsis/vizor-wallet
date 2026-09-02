@@ -899,6 +899,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   bool get _isAmountValid => _amountError == null;
 
+  /// The prefill this compose form was opened from, when it came from a
+  /// payment request and still points at the same recipient.
+  SendPrefillArgs? _activePaymentRequest(String address) {
+    final prefill = widget.prefill;
+    if (prefill == null) return null;
+    if (prefill.source != kPaymentUriPrefillSource) return null;
+    if (prefill.address.trim() != address) return null;
+    return prefill;
+  }
+
   Future<void> _openReview() async {
     setState(() {
       _isSending = true;
@@ -966,6 +976,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         });
         return;
       }
+      // A payment request that was edited rather than accepted as-is keeps
+      // its framing — but only while the recipient is still the one the
+      // request named. Retype the address and this is an ordinary send again.
+      final request = _activePaymentRequest(address);
       final reviewArgs = await proposeSendTransfer(
         ref: ref,
         loadDbPath: ref.read(sendWalletDbPathProvider),
@@ -975,6 +989,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         addressType: _addressType,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        isPaymentRequest: request != null,
+        requestedBy: request?.label,
+        requestedAmountZatoshi: parseZecAmount(request?.amountText ?? ''),
       );
       activeProposalId = reviewArgs.proposalId;
 

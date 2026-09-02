@@ -314,6 +314,87 @@ void main() {
     );
     expect(stack.onPrimaryPressed, isNull);
   });
+
+  group('payment request framing', () {
+    testWidgets('retitles the screen and names who asked', (tester) async {
+      await _pump(
+        tester,
+        const SendReviewContentView(
+          amountText: '0.50 ZEC',
+          recipient: SendReviewAddressRecipient(address: _address),
+          feeText: '0.012 ZEC',
+          isPaymentRequest: true,
+          requestedByLabel: 'Coffee shop',
+        ),
+      );
+
+      expect(find.text('Review payment request'), findsOneWidget);
+      expect(find.text('Review send'), findsNothing);
+      expect(find.text('Requested by'), findsOneWidget);
+      expect(find.text('Coffee shop'), findsOneWidget);
+      expect(
+        find.text('To'),
+        findsNothing,
+        reason: 'the requester replaces the recipient headline',
+      );
+      expect(
+        find.text(truncatedAddress(_address)),
+        findsOneWidget,
+        reason: 'the address the user is consenting to stays on screen',
+      );
+    });
+
+    testWidgets('a request with no label keeps the plain To row', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const SendReviewContentView(
+          amountText: '0.50 ZEC',
+          recipient: SendReviewAddressRecipient(address: _address),
+          feeText: '0.012 ZEC',
+          isPaymentRequest: true,
+        ),
+      );
+
+      expect(find.text('Review payment request'), findsOneWidget);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.text('Requested by'), findsNothing);
+    });
+
+    testWidgets('states the requested amount when it was edited', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const SendReviewContentView(
+          amountText: '0.75 ZEC',
+          recipient: SendReviewAddressRecipient(address: _address),
+          feeText: '0.012 ZEC',
+          isPaymentRequest: true,
+          requestedAmountText: '0.50 ZEC',
+        ),
+      );
+
+      expect(find.text('0.75 ZEC'), findsOneWidget);
+      expect(find.text('Requested 0.50 ZEC'), findsOneWidget);
+    });
+
+    testWidgets('an ordinary send is untouched', (tester) async {
+      await _pump(
+        tester,
+        const SendReviewContentView(
+          amountText: '0.50 ZEC',
+          recipient: SendReviewAddressRecipient(address: _address),
+          feeText: '0.012 ZEC',
+        ),
+      );
+
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.textContaining('Requested'), findsNothing);
+    });
+  });
 }
 
 Future<void> _pump(WidgetTester tester, Widget child) async {

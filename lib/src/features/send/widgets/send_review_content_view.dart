@@ -28,6 +28,9 @@ class SendReviewContentView extends StatelessWidget {
     this.fiatText,
     this.memoText,
     this.memoExpanded = false,
+    this.requestedByLabel,
+    this.requestedAmountText,
+    this.isPaymentRequest = false,
     this.confirmLabel = 'Confirm & send',
     this.confirmLeadingIconName = AppIcons.plane,
     this.onConfirm,
@@ -63,6 +66,17 @@ class SendReviewContentView extends StatelessWidget {
   /// Whether the Message row shows the full memo (see [ReviewMemoRows]).
   final bool memoExpanded;
 
+  /// Sanitised requester label; see [SendReviewInfoSection.requestedByLabel].
+  final String? requestedByLabel;
+
+  /// Preformatted requested amount, shown only when it differs from what is
+  /// about to be sent.
+  final String? requestedAmountText;
+
+  /// Retitles the screen "Review payment request". Set independently of
+  /// [requestedByLabel] because a request can arrive without a label.
+  final bool isPaymentRequest;
+
   /// Primary CTA label. The hardware-account wiring swaps in
   /// "Confirm with Keystone" while keeping the shared layout.
   final String confirmLabel;
@@ -81,7 +95,7 @@ class SendReviewContentView extends StatelessWidget {
     final colors = context.colors;
 
     return SendReviewContentColumn(
-      title: 'Review send',
+      title: isPaymentRequest ? 'Review payment request' : 'Review send',
       children: [
         SendReviewInfoSection(
           amountText: amountText,
@@ -89,6 +103,8 @@ class SendReviewContentView extends StatelessWidget {
           recipient: recipient,
           isShieldedRecipient: isShieldedRecipient,
           recipientAddressType: recipientAddressType,
+          requestedByLabel: requestedByLabel,
+          requestedAmountText: requestedAmountText,
           onShowFullAddress: onShowFullAddress,
         ),
         ReviewWrapCard(
