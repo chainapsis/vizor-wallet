@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+import 'support/desktop_onboarding_flow.dart';
 
 // End-to-end regtest coverage for the ZIP-321 payment-URI LOCKED path — the
 // regression guard for delivering a parked request after unlock instead of
@@ -247,6 +248,7 @@ Future<void> _importFirstWallet(WidgetTester tester) async {
     _password,
   );
   await _tapAppButton(tester, const ValueKey('set_password_submit_button'));
+  await finishDesktopAccountCustomisation(tester);
   await _waitForHome(tester);
   _log('first wallet imported');
 }
@@ -265,6 +267,7 @@ Future<void> _importAdditionalWallet(WidgetTester tester) async {
     tester,
     const ValueKey('unknown_birthday_confirm_button'),
   );
+  await finishDesktopAccountCustomisation(tester);
   await _waitForHome(tester);
   _log('second wallet imported');
 }
