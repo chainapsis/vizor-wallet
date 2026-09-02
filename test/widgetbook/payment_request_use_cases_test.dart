@@ -819,14 +819,31 @@ void main() {
     }
   });
 
-  testWidgets('an amount-less request still shows a blocking error', (
-    tester,
-  ) async {
+  testWidgets('an amount-less request that is blocked still has one live '
+      'control', (tester) async {
     await _pumpUseCase(tester, (context) => _noAmountFrame(context));
 
     expect(tester.takeException(), isNull);
     expect(find.text("Recipient address doesn't look right"), findsOneWidget);
-    expect(find.text('Enter amount'), findsOneWidget);
+    // The card renders no secondary without an amount, so blocking the
+    // primary too would leave the ⨯ as the only exit. The primary is the
+    // edit action here, and it is named after what it does.
+    expect(_key('payment_request_edit'), findsNothing);
+    expect(find.text('Enter amount'), findsNothing);
+    expect(find.text('Edit'), findsOneWidget);
+    expect(_button(tester, 'payment_request_continue').onPressed, isNotNull);
+  });
+
+  testWidgets('an amount-less request keeps waiting while it is checked', (
+    tester,
+  ) async {
+    await _pumpUseCase(
+      tester,
+      (context) => _noAmountFrame(context, PaymentRequestStatus.checking),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Checking…'), findsOneWidget);
     expect(_button(tester, 'payment_request_continue').onPressed, isNull);
   });
 
@@ -898,12 +915,15 @@ void main() {
 /// The amount-less card with a failing pre-check — the one combination no
 /// registered use case covers, because the gallery shows the two states
 /// separately.
-Widget _noAmountFrame(BuildContext context) => PaymentRequestSurface(
+Widget _noAmountFrame(
+  BuildContext context, [
+  PaymentRequestStatus status = PaymentRequestStatus.invalidAddress,
+]) => PaymentRequestSurface(
   layout: PaymentRequestLayout.desktop,
-  request: const PaymentRequestView(
+  request: PaymentRequestView(
     source: PaymentRequestSource.link,
     address: 't1PZ4vMuLdt2wRfDGGKS1qXfBpJt5CJHhNz',
-    status: PaymentRequestStatus.invalidAddress,
+    status: status,
   ),
   onContinue: () {},
   onEdit: () {},

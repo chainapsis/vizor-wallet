@@ -1259,7 +1259,9 @@ class _QuietNotice extends StatelessWidget {
 ///
 /// An amount-less request has nothing to review yet, so its primary reads
 /// "Enter amount" and opens the composer — the same destination `Edit`
-/// leads to, which is why the secondary is absent in that state.
+/// leads to, which is why the secondary is absent in that state. That also
+/// makes it the only control the card has left when such a request is
+/// blocked, so it stays enabled and says "Edit" instead.
 ///
 /// Neither form factor carries a Cancel button: desktop refuses through the
 /// header's close ⨯, mobile through the sheet's pinned ⨯
@@ -1295,6 +1297,11 @@ class _Actions extends StatelessWidget {
       ? 'Checking…'
       : hasAmount
       ? 'Review'
+      // A blocked amount-less request is not waiting for an amount — the
+      // address or the check is the problem — so naming the button after
+      // the amount would point at the wrong fix.
+      : _blocked
+      ? 'Edit'
       : 'Enter amount';
 
   @override
@@ -1375,8 +1382,13 @@ class _Actions extends StatelessWidget {
   Widget _primaryFill() => _fillButton(
     key: const ValueKey('payment_request_continue'),
     label: _primaryLabel,
-    // Without an amount the primary *is* the edit action.
-    onPressed: _blocked ? null : (hasAmount ? onContinue : onEdit),
+    // Without an amount the primary *is* the edit action, and there is no
+    // second Edit under it. Blocking it too would leave the card with no
+    // enabled control at all — a stated error and no way to act on it. Edit
+    // is never blocked; it only waits while the checks run.
+    onPressed: hasAmount
+        ? (_blocked ? null : onContinue)
+        : (_checking ? null : onEdit),
     variant: AppButtonVariant.primary,
     leading: _primaryLeading(),
   );

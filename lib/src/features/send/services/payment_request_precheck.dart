@@ -241,11 +241,17 @@ class PaymentRequestPrecheck {
     }
 
     final amountZatoshi = parseZecAmount(amountText);
-    if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
+    if (amountZatoshi == null) {
       return PaymentRequestPrecheckFailed(
-        'This payment link has an amount the wallet cannot read',
+        "This link doesn't ask for a payable amount — enter one to continue",
         memoDropped: memoDropped,
       );
+    }
+    if (amountZatoshi <= BigInt.zero) {
+      // `amount=0` parses, so the wallet read it fine — it is simply not a
+      // payment. Treat it as the amount-less request it is and let the
+      // composer collect one, rather than dead-ending the card on it.
+      return PaymentRequestPrecheckReady(memoDropped: memoDropped);
     }
 
     if (accountUuid == null) {

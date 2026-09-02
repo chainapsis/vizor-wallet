@@ -314,7 +314,30 @@ void main() {
     final api = FakeSendApi();
     final result = await run(api, request: prefill(amountText: 'not-a-number'));
     expect(result, isA<PaymentRequestPrecheckFailed>());
+    expect(
+      (result as PaymentRequestPrecheckFailed).message,
+      "This link doesn't ask for a payable amount — enter one to continue",
+    );
     expect(api.proposeCalls, 0);
+  });
+
+  test('a request for zero is treated as a request with no amount', () async {
+    for (final amount in const ['0', '0.00000000']) {
+      final api = FakeSendApi();
+      final result = await run(api, request: prefill(amountText: amount));
+
+      expect(result, isA<PaymentRequestPrecheckReady>(), reason: amount);
+      expect(
+        (result as PaymentRequestPrecheckReady).proposal,
+        isNull,
+        reason: amount,
+      );
+      expect(
+        api.proposeCalls,
+        0,
+        reason: 'zero is not a payment, so there is nothing to propose',
+      );
+    }
   });
 
   test('a dropped memo is reported so the card can stop showing it', () async {
