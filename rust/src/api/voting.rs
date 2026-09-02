@@ -2181,23 +2181,6 @@ fn parse_tx_events_json(events_json: &str) -> Result<Vec<zcash_voting::prelude::
     Ok(events)
 }
 
-/// Clear vote/delegation recovery columns and share-tracking rows for a round.
-///
-/// This is an explicit reset for finalized or abandoned rounds, not a normal
-/// retry step.
-pub fn clear_recovery_state(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-) -> Result<(), String> {
-    catch(|| {
-        // Clear persisted recovery/share-tracking state for this round.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::recovery::clear(&db, &round_id)
-            .map_err(|e| format!("clear_recovery_state failed: {e}"))
-    })
-}
-
 /// Compute the resumable voting-session plan for a round. The plan reports the
 /// ordered remaining work (`next_steps`) and which proposals are still open.
 pub fn get_round_plan(
@@ -3624,20 +3607,6 @@ mod tests {
         )
         .unwrap();
         assert!(confirmed_state.unconfirmed_share_delegations.is_empty());
-
-        clear_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
-        let cleared_state = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
-        assert!(cleared_state.share_delegations.is_empty());
     }
 
     #[test]

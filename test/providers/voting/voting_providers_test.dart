@@ -9211,6 +9211,51 @@ void main() {
     },
   );
 
+  test(
+    'Keystone signing joins in-flight ZKP1 before retrying PIR resolution',
+    () async {
+      final backgroundProofGate = Completer<void>();
+      final pirEndpoint = Uri.parse('https://pir.example');
+      final pirResolver = _OneShotPirResolver(
+        _pirResolution(pirEndpoint, [pirEndpoint]),
+      );
+      final rust = FakeVotingRustApi(
+        backgroundDelegationProofGate: backgroundProofGate,
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        accountIsHardware: true,
+        pirResolver: pirResolver,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      final precomputeFuture = notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
+      await rust.backgroundDelegationProofStarted.future;
+
+      final signingFuture = notifier.prepareKeystoneSigning();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(pirResolver.calls, 1);
+      expect(rust.persistedDelegationProofChecks, isEmpty);
+      expect(rust.keystoneDelegationRequestCalls, isEmpty);
+
+      backgroundProofGate.complete();
+      await Future.wait([precomputeFuture, signingFuture]);
+
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+      expect(pirResolver.calls, 1);
+      expect(rust.persistedDelegationProofChecks, [0]);
+      expect(rust.keystoneDelegationRequestCalls, [0]);
+      expect(state.phase, VotingSessionPhase.keystoneSigning);
+      expect(state.pirEndpoint, isNull);
+    },
+  );
+
   test('Keystone submission waits for in-flight background ZKP1', () async {
     final backgroundProofGate = Completer<void>();
     final rust = FakeVotingRustApi(
@@ -9357,46 +9402,50 @@ void main() {
     expect(rust.snapshotBundlePrecomputeAccounts, isEmpty);
   });
 
-  test('bundle setup waits for snapshot bundle precompute', () async {
-    final precomputeGate = Completer<void>();
-    final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
-    final container = _sessionContainer(rust: rust);
-    addTearDown(container.dispose);
+  test(
+    'foreground delegation joins snapshot proof before bundle setup',
+    () async {
+      final precomputeGate = Completer<void>();
+      final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
-    await notifier.refreshEligibleWeight();
-    final precomputeFuture = notifier.precomputeSnapshotBundles(
-      accountUuid: 'account-1',
-    );
-    await rust.precomputeStarted.future;
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      final precomputeFuture = notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
+      await rust.precomputeStarted.future;
 
-    final delegationFuture = notifier.delegatePendingBundles(
-      mnemonic: kTestMnemonic,
-    );
+      final delegationFuture = notifier.delegatePendingBundles(
+        mnemonic: kTestMnemonic,
+      );
 
-    VotingSessionState? waitingState;
-    for (var i = 0; i < 10; i++) {
-      await Future<void>.delayed(Duration.zero);
-      final current = container.read(votingSessionProvider(kRoundId)).value;
-      if (current?.phase == VotingSessionPhase.loadingWitnesses) {
-        waitingState = current;
-        break;
+      VotingSessionState? waitingState;
+      for (var i = 0; i < 10; i++) {
+        await Future<void>.delayed(Duration.zero);
+        final current = container.read(votingSessionProvider(kRoundId)).value;
+        if (current?.phase == VotingSessionPhase.loadingWitnesses) {
+          waitingState = current;
+          break;
+        }
       }
-    }
 
-    expect(waitingState?.phase, VotingSessionPhase.loadingWitnesses);
-    expect(rust.setupCalls, 0);
-    expect(rust.delegationBundleCalls, isEmpty);
+      expect(waitingState?.phase, VotingSessionPhase.loadingWitnesses);
+      expect(rust.setupCalls, 0);
+      expect(rust.delegationBundleCalls, isEmpty);
 
-    precomputeGate.complete();
-    await Future.wait([precomputeFuture, delegationFuture]);
+      precomputeGate.complete();
+      await Future.wait([precomputeFuture, delegationFuture]);
 
-    final finalState = container.read(votingSessionProvider(kRoundId)).value!;
-    expect(finalState.phase, VotingSessionPhase.delegated);
-    expect(rust.setupCalls, 1);
-    expect(rust.delegationBundleCalls, [0]);
-  });
+      final finalState = container.read(votingSessionProvider(kRoundId)).value!;
+      expect(finalState.phase, VotingSessionPhase.delegated);
+      expect(rust.persistedDelegationProofChecks, [0]);
+      expect(rust.setupCalls, 0);
+      expect(rust.delegationBundleCalls, [0]);
+    },
+  );
 
   test(
     'snapshot bundle precompute failure is a non-fatal cache miss',
@@ -11027,13 +11076,6 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   }
 
   @override
-  Future<void> clearRecoveryState({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  }) async {}
-
-  @override
   Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
     required String dbPath,
     required String accountUuid,
@@ -11263,6 +11305,23 @@ class FakePirResolver implements PirSnapshotResolver {
     final error = this.error;
     if (error != null) throw error;
     return resolution!;
+  }
+}
+
+class _OneShotPirResolver implements PirSnapshotResolver {
+  _OneShotPirResolver(this.resolution);
+
+  final PirSnapshotResolution resolution;
+  int calls = 0;
+
+  @override
+  Future<PirSnapshotResolution> resolve({
+    required List<Uri> endpoints,
+    required int expectedSnapshotHeight,
+  }) async {
+    calls += 1;
+    if (calls > 1) throw StateError('unexpected PIR retry');
+    return resolution;
   }
 }
 

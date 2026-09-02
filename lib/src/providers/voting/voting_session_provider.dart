@@ -3620,6 +3620,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final bundleIndexes = plan.pendingDelegationBundleIndexes;
     if (bundleIndexes.isEmpty) return false;
 
+    if (_snapshotBundlePrecomputes.containsKey(
+      _snapshotBundlePrecomputeKey(context.accountUuid),
+    )) {
+      final current = state.value;
+      if (current != null) {
+        _setStateForContext(
+          context,
+          current.copyWith(phase: VotingSessionPhase.loadingWitnesses),
+        );
+      }
+    }
+    await _awaitSnapshotBundlePrecomputeIfRunning(context);
+    _throwIfContextStale(context, 'delegation-proof-precheck');
+
     final rust = ref.read(votingRustApiProvider);
     for (final bundleIndex in bundleIndexes) {
       final persisted = await rust.hasPersistedDelegationProof(

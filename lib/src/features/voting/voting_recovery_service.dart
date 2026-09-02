@@ -5,9 +5,9 @@ import 'voting_resume_plan.dart';
 /// Converts persisted Rust recovery records into Dart actions for resuming UI.
 ///
 /// Rust owns the durable voting database. This service keeps the Dart side
-/// focused on orchestration: loading the crate planner, keying raw recovery
-/// records by bundle/proposal/share, and clearing recovery records only at
-/// explicit boundaries.
+/// focused on orchestration: loading the crate planner and keying raw recovery
+/// records by bundle/proposal/share without exposing selective cleanup of
+/// ambiguous submission evidence.
 class VotingRecoveryService {
   final VotingRecoveryApi _api;
 

@@ -4730,13 +4730,6 @@ class _ControlledVotingSubmissionJobsNotifier
 
 class _FakeVotingRecoveryApi implements VotingRecoveryApi {
   @override
-  Future<void> clearRecoveryState({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  }) async {}
-
-  @override
   Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
     required String dbPath,
     required String accountUuid,
