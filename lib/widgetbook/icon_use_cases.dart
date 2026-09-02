@@ -69,6 +69,7 @@ const _iconNames = <String>[
   AppIcons.unlock,
   AppIcons.users,
   AppIcons.vizor,
+  AppIcons.vote,
   AppIcons.wallet,
   AppIcons.warning,
   AppIcons.warningCircle,

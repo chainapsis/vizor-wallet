@@ -602,7 +602,7 @@ void main() {
         of: entry,
         matching: find.byWidgetPredicate(
           (widget) =>
-              widget is AppIcon && widget.name == AppIcons.coinholderVoting,
+              widget is AppIcon && widget.name == AppIcons.vote,
         ),
       ),
       findsOneWidget,

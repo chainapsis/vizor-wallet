@@ -438,7 +438,7 @@ class _PayPreviewSidebar extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             AppSidebarItem(
               label: 'Vote',
-              iconName: AppIcons.scroll,
+              iconName: AppIcons.vote,
               onTap: () {},
             ),
             const SizedBox(height: AppSpacing.xs),
