@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart'
     show CircularProgressIndicator, Colors, ScaffoldMessenger, SnackBar;
@@ -17,11 +18,17 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
+import '../../../providers/zec_price_change_provider.dart';
+import '../services/request_qr_export.dart';
+import '../services/zec_request_draft.dart';
 import '../widgets/receive_address_widgets.dart';
+import '../widgets/request/request_amount_card.dart';
+import '../widgets/request/request_amount_model.dart';
 
 const _renewShieldedAddressErrorMessage =
     "We couldn't refresh your shielded address. Try again, or use your current one.";
@@ -54,9 +61,22 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   String? _transparentErrorText;
   String? _transparentLoadingAccountUuid;
   ReceiveAddressType? _infoDialogType;
+  ZecRequestDraft? _requestDraft;
+  bool _requestMessageExpanded = false;
+  final TextEditingController _requestAmountController =
+      TextEditingController();
+  final TextEditingController _requestMessageController =
+      TextEditingController();
   bool _isLoading = true;
   bool _isLoadingTransparent = false;
   bool _isRenewingShielded = false;
+
+  @override
+  void dispose() {
+    _requestAmountController.dispose();
+    _requestMessageController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -277,6 +297,78 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     };
   }
 
+  /// Opens the request modal against the address currently on screen.
+  ///
+  /// The address is snapshotted here rather than read live: renewing the
+  /// shielded address afterwards must not repoint a link already handed out,
+  /// and switching tabs behind the modal must not silently change the pool
+  /// the request is asking to be paid into.
+  void _openRequest() {
+    final address = _selectedAddress;
+    if (address.isEmpty) return;
+    _requestAmountController.clear();
+    _requestMessageController.clear();
+    setState(() {
+      _requestDraft = ZecRequestDraft(address: address);
+      _requestMessageExpanded = false;
+    });
+  }
+
+  void _closeRequest() {
+    if (_requestDraft == null) return;
+    setState(() {
+      _requestDraft = null;
+      _requestMessageExpanded = false;
+    });
+  }
+
+  void _handleRequestAmountChanged(String value) {
+    final draft = _requestDraft;
+    if (draft == null) return;
+    setState(() => _requestDraft = draft.copyWith(input: value));
+  }
+
+  void _handleRequestMessageChanged(String value) {
+    final draft = _requestDraft;
+    if (draft == null) return;
+    setState(() => _requestDraft = draft.copyWith(message: value));
+  }
+
+  void _toggleRequestAmountUnit() {
+    final draft = _requestDraft;
+    if (draft == null) return;
+    final next = draft.toggledUnit(
+      zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider),
+    );
+    if (next.inputIsUsd == draft.inputIsUsd) return;
+    _requestAmountController.value = TextEditingValue(
+      text: next.input,
+      selection: TextSelection.collapsed(offset: next.input.length),
+    );
+    setState(() => _requestDraft = next);
+  }
+
+  void _expandRequestMessage() {
+    if (_requestMessageExpanded) return;
+    setState(() => _requestMessageExpanded = true);
+  }
+
+  Future<void> _saveRequestQrImage(Uint8List png, String amountZec) async {
+    try {
+      final saved = await saveRequestQrPng(
+        png: png,
+        amountZec: amountZec,
+        resolveDirectory: ref.read(requestQrDirectoryResolverProvider),
+      );
+      if (!mounted) return;
+      showAppToast(context, 'QR image saved to ${saved.folderName}');
+    } catch (e) {
+      log('Receive: ERROR saving request QR image: $e');
+      if (!mounted) return;
+      showAppToast(context, "We couldn't save the QR image. $e");
+    }
+  }
+
   void _showAddressInfo(ReceiveAddressType type) {
     setState(() => _infoDialogType = type);
   }
@@ -314,6 +406,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         : _isLoadingTransparent;
     final selectedErrorText = isShielded ? _errorText : _transparentErrorText;
     final infoDialogType = _infoDialogType;
+    final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
+    final requestDraft = _requestDraft;
+    final requestView = requestDraft?.resolve(zecUsdUnitPrice: zecUsdUnitPrice);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -331,8 +426,39 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
               onTypeChanged: _selectAddressType,
               onRenewShielded: isShielded ? _renewShieldedAddress : null,
               onCopy: _copySelectedAddress,
+              onRequest: _openRequest,
               onShowHelp: () => _showAddressInfo(_selectedType),
             ),
+            if (requestDraft != null && requestView != null)
+              RequestAmountSurface(
+                key: const ValueKey('receive_request_modal'),
+                // The receive pane stays visible under the scrim: the request
+                // is composed on top of the address it pays to, not on a
+                // screen that replaced it.
+                background: const SizedBox.expand(),
+                request: requestView,
+                messageExpanded: _requestMessageExpanded,
+                amountController: _requestAmountController,
+                messageController: _requestMessageController,
+                onClose: _closeRequest,
+                onAmountChanged: _handleRequestAmountChanged,
+                onMessageChanged: _handleRequestMessageChanged,
+                onToggleAmountUnit: requestDraft.canToggleUnit(zecUsdUnitPrice)
+                    ? _toggleRequestAmountUnit
+                    : null,
+                onAddMessage: _expandRequestMessage,
+                onCopyLink: () {
+                  final uri = requestView.requestUri;
+                  if (uri == null) return;
+                  copyTextWithToast(
+                    context,
+                    text: uri,
+                    toastMessage: kRequestLinkCopiedToast,
+                  );
+                },
+                onSaveQrImage: (png) =>
+                    unawaited(_saveRequestQrImage(png, requestView.amountZec)),
+              ),
             if (infoDialogType != null)
               AppPaneModalOverlay(
                 onDismiss: _dismissAddressInfo,
@@ -358,6 +484,7 @@ class _ReceivePane extends StatelessWidget {
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
+    required this.onRequest,
     required this.onShowHelp,
   });
 
@@ -369,6 +496,7 @@ class _ReceivePane extends StatelessWidget {
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
+  final VoidCallback onRequest;
   final VoidCallback onShowHelp;
 
   @override
@@ -392,6 +520,7 @@ class _ReceivePane extends StatelessWidget {
             onTypeChanged: onTypeChanged,
             onRenewShielded: onRenewShielded,
             onCopy: onCopy,
+            onRequest: onRequest,
             onShowHelp: onShowHelp,
           ),
         ),
@@ -410,12 +539,21 @@ class _ReceiveContentLayout extends StatelessWidget {
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
+    required this.onRequest,
     required this.onShowHelp,
   });
 
   static const _contentWidth = 420.0;
-  static const _contentHeight = 656.0;
-  static const _contentHeightWithError = 724.0;
+
+  /// The action column carries two pills now, so the fixed-coordinate content
+  /// is 40px taller than the single-button screen and its actions start 12px
+  /// higher — the exact re-tune the entry-state preview pinned.
+  static const _contentHeight = 696.0;
+  static const _contentHeightWithError = 764.0;
+  static const _actionsTop = 584.0;
+  static const _actionsHeight = 96.0;
+  static const _actionButtonWidth = 230.0;
+  static const _actionButtonHeight = 44.0;
 
   final ReceiveAddressType selectedType;
   final String address;
@@ -425,6 +563,7 @@ class _ReceiveContentLayout extends StatelessWidget {
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
+  final VoidCallback onRequest;
   final VoidCallback onShowHelp;
 
   bool get _isShielded => selectedType == ReceiveAddressType.shielded;
@@ -507,27 +646,53 @@ class _ReceiveContentLayout extends StatelessWidget {
                     ),
                     Positioned(
                       left: 95,
-                      top: 596,
-                      width: 230,
-                      height: 44,
-                      child: ReceiveCopyAddressButton(
-                        key: ValueKey(
-                          _isShielded
-                              ? 'receive_copy_shielded_address_button'
-                              : 'receive_copy_transparent_address_button',
-                        ),
-                        label: _isShielded
-                            ? 'Copy shielded address'
-                            : 'Copy transparent address',
-                        type: selectedType,
-                        enabled: address.isNotEmpty && !isLoading,
-                        onTap: onCopy,
+                      top: _actionsTop,
+                      width: _actionButtonWidth,
+                      height: _actionsHeight,
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            height: _actionButtonHeight,
+                            child: ReceiveCopyAddressButton(
+                              key: ValueKey(
+                                _isShielded
+                                    ? 'receive_copy_shielded_address_button'
+                                    : 'receive_copy_transparent_address_button',
+                              ),
+                              label: _isShielded
+                                  ? 'Copy shielded address'
+                                  : 'Copy transparent address',
+                              type: selectedType,
+                              enabled: address.isNotEmpty && !isLoading,
+                              onTap: onCopy,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          SizedBox(
+                            height: _actionButtonHeight,
+                            child: AppButton(
+                              key: const ValueKey('receive_request_button'),
+                              variant: AppButtonVariant.secondary,
+                              height: _actionButtonHeight,
+                              minWidth: _actionButtonWidth,
+                              leading: const AppIcon(AppIcons.qr, size: 20),
+                              onPressed: address.isNotEmpty && !isLoading
+                                  ? onRequest
+                                  : null,
+                              child: Text(
+                                'Request $kZcashDefaultCurrencyTicker',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     if (errorText != null)
                       Positioned(
                         left: 12,
-                        top: 656,
+                        top: _contentHeight,
                         width: 396,
                         child: Text(
                           errorText!,

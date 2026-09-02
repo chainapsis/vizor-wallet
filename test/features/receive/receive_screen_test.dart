@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -10,10 +13,13 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
+import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -591,7 +597,213 @@ void main() {
 
     expect(_findAddressRichText('u1accounttwo'), findsOneWidget);
   });
+
+  testWidgets('offers a request entry under copy without losing the error '
+      'slot', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _receiveHarness(receiveAddressService: _FailingReceiveAddressService.new),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final copy = find.byKey(
+      const ValueKey('receive_copy_shielded_address_button'),
+    );
+    final request = find.byKey(const ValueKey('receive_request_button'));
+    expect(request, findsOneWidget);
+    expect(find.text('Request ZEC'), findsOneWidget);
+    expect(tester.getSize(request), const Size(230, 44));
+    expect(
+      tester.getTopLeft(request).dy - tester.getBottomLeft(copy).dy,
+      moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
+    );
+
+    // The error slot moved down with the taller action column instead of
+    // being overlapped by it.
+    final error = find.textContaining('shielded address is unavailable');
+    expect(error, findsOneWidget);
+    expect(
+      tester.getTopLeft(error).dy,
+      greaterThan(tester.getBottomLeft(request).dy),
+    );
+  });
+
+  testWidgets('opens the request modal on the selected pool address', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('receive_request_modal')), findsOneWidget);
+    expect(find.byKey(const ValueKey('request_modal_title')), findsOneWidget);
+    // No amount yet: the request QR is still the address QR.
+    expect(_requestQrData(tester), _shieldedAddress);
+    // Shielded requests can carry a message.
+    expect(
+      find.byKey(const ValueKey('request_add_message_card')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('request_modal_close')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('receive_request_modal')), findsNothing);
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+
+    expect(_requestQrData(tester), _transparentAddress);
+    expect(
+      find.byKey(const ValueKey('request_add_message_card')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('turns a typed amount into a live request link and copies it', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add(
+            (call.arguments as Map<Object?, Object?>)['text']! as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _receiveHarness(
+        extraOverrides: [zecLiveUsdUnitPriceProvider.overrideWithValue(70)],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('request_amount_conversion_text')),
+          )
+          .data,
+      r'$ 35.00',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('request_copy_link_button')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(copied, ['zcash:$_shieldedAddress?amount=0.5']);
+    expect(find.text('Request link copied'), findsOneWidget);
+  });
+
+  testWidgets('writes the request QR into the resolved directory', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    // Synchronous file APIs throughout: a real async I/O future created
+    // inside the test zone never completes outside runAsync.
+    final directory = Directory.systemTemp.createTempSync('vizor-request');
+    addTearDown(() {
+      if (directory.existsSync()) directory.deleteSync(recursive: true);
+    });
+
+    await tester.pumpWidget(
+      _receiveHarness(
+        extraOverrides: [
+          zecLiveUsdUnitPriceProvider.overrideWithValue(70),
+          requestQrDirectoryResolverProvider.overrideWithValue(
+            () async => directory,
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('request_save_qr_button')));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pump();
+    });
+    await tester.pump();
+
+    final saved = File(
+      '${directory.path}${Platform.pathSeparator}vizor-request-0.5.png',
+    );
+    expect(saved.existsSync(), isTrue);
+    expect(saved.readAsBytesSync().take(4), [
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+    ], reason: 'the saved file is a PNG');
+    expect(
+      find.textContaining('QR image saved to ${_folderName(directory.path)}'),
+      findsOneWidget,
+    );
+  });
 }
+
+String _requestQrData(WidgetTester tester) {
+  return tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data;
+}
+
+String _folderName(String path) =>
+    path.split(Platform.pathSeparator).where((s) => s.isNotEmpty).last;
 
 Finder _findAddressRichText(String fragment) {
   return find.byWidgetPredicate(
@@ -623,6 +835,7 @@ Widget _receiveHarness({
   AppBootstrapState? bootstrap,
   ReceiveAddressService Function(Ref ref)? receiveAddressService,
   AppThemeData themeData = AppThemeData.light,
+  List<Override> extraOverrides = const [],
 }) {
   final effectiveBootstrap = bootstrap ?? _bootstrap;
   final router = GoRouter(
@@ -647,6 +860,7 @@ Widget _receiveHarness({
       receiveAddressServiceProvider.overrideWith(
         receiveAddressService ?? _FakeReceiveAddressService.new,
       ),
+      ...extraOverrides,
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -792,6 +1006,18 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
   @override
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     return _shieldedAddress;
+  }
+}
+
+class _FailingReceiveAddressService extends _FakeReceiveAddressService {
+  _FailingReceiveAddressService(super.ref);
+
+  @override
+  Future<String> loadShieldedAddress({
+    required String accountUuid,
+    String? currentShieldedAddress,
+  }) async {
+    throw StateError('shielded address is unavailable');
   }
 }
 
