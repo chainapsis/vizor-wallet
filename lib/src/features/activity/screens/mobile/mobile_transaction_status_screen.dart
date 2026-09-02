@@ -22,6 +22,7 @@ import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
@@ -260,6 +261,7 @@ class _MobileTransactionStatusScreenState
       networkName: endpoint.networkName,
       txidHex: widget.args.txidHex,
       txidOrder: ZcashExplorerTxidOrder.protocol,
+      customTemplate: ref.read(zcashExplorerProvider),
     );
     if (launched || !mounted) return;
     await Clipboard.setData(ClipboardData(text: widget.args.txidHex));

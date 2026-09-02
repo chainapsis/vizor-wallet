@@ -10,6 +10,7 @@ import 'core/profile_pictures.dart';
 import 'core/config/app_version_config.dart';
 import 'core/config/rpc_endpoint_config.dart';
 import 'core/config/swap_remote_enable_config.dart';
+import 'core/config/zcash_explorer.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'providers/account_models.dart';
@@ -49,6 +50,7 @@ class AppBootstrapState {
     required this.initialSyncSnapshot,
     required this.network,
     required this.rpcEndpointConfig,
+    this.explorerUrlTemplate = '',
     required this.themeMode,
     required this.privacyModeEnabled,
     required this.isPasswordConfigured,
@@ -67,6 +69,7 @@ class AppBootstrapState {
   final AppSyncSnapshot initialSyncSnapshot;
   final String network;
   final RpcEndpointConfig rpcEndpointConfig;
+  final String explorerUrlTemplate;
   final ThemeMode themeMode;
   final bool privacyModeEnabled;
   final bool swapEnabledOverrideCachedForRelease;
@@ -235,6 +238,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       await storage.readString(_networkKey),
     );
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
+    final explorerUrlTemplate = await _readExplorerUrlTemplate(storage);
     final themeMode = await _readThemeMode(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
     final swapEnabledOverrideCachedForRelease =
@@ -344,6 +348,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       initialSyncSnapshot: initialSyncSnapshot,
       network: network,
       rpcEndpointConfig: rpcEndpointConfig,
+      explorerUrlTemplate: explorerUrlTemplate,
       themeMode: themeMode,
       privacyModeEnabled: privacyModeEnabled,
       swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
@@ -446,6 +451,22 @@ Future<RpcEndpointConfig> _readRpcEndpointConfig(
   } catch (e) {
     log('bootstrap: failed to read RPC endpoint: $e');
     return defaultRpcEndpointConfig(network);
+  }
+}
+
+Future<String> _readExplorerUrlTemplate(AppSecureStore storage) async {
+  try {
+    final stored = await storage.readString(kZcashExplorerUrlKey);
+    if (stored == null || stored.trim().isEmpty) return '';
+    return normalizeExplorerUrlTemplate(stored);
+  } on SecureStorageUnavailableException {
+    rethrow;
+  } on FormatException catch (e) {
+    log('bootstrap: ignoring invalid explorer URL: $e');
+    return '';
+  } catch (e) {
+    log('bootstrap: failed to read explorer URL: $e');
+    return '';
   }
 }
 

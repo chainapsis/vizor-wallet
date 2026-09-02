@@ -91,4 +91,102 @@ void main() {
 
     expect(launched, isFalse);
   });
+
+  test('origin-only custom template appends /tx/{txid}', () {
+    expect(
+      normalizeExplorerUrlTemplate('https://explorer.example'),
+      'https://explorer.example/tx/{txid}',
+    );
+    expect(
+      zcashExplorerTransactionUri(
+        networkName: 'main',
+        txidHex:
+            '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
+        txidOrder: ZcashExplorerTxidOrder.display,
+        customTemplate: 'https://explorer.example',
+      ).toString(),
+      'https://explorer.example/tx/'
+      '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
+    );
+  });
+
+  test('substitutes {txid} and {txHash} placeholders', () {
+    const txid =
+        '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f';
+    expect(
+      zcashExplorerTransactionUri(
+        networkName: 'main',
+        txidHex: txid,
+        txidOrder: ZcashExplorerTxidOrder.display,
+        customTemplate: 'https://self-hosted.example/zcash/{txHash}',
+      ).toString(),
+      'https://self-hosted.example/zcash/$txid',
+    );
+  });
+
+  test('replaces a concrete 64-hex path tail with {txid}', () {
+    expect(
+      normalizeExplorerUrlTemplate(
+        'https://cipherscan.app/tx/'
+        '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
+      ),
+      'https://cipherscan.app/tx/{txid}',
+    );
+  });
+
+  test('adds https when the scheme is omitted', () {
+    expect(
+      normalizeExplorerUrlTemplate('my-explorer.local/tx/{txid}'),
+      'https://my-explorer.local/tx/{txid}',
+    );
+  });
+
+  test('rejects non-http schemes', () {
+    expect(
+      () => normalizeExplorerUrlTemplate('javascript:alert(1)'),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          'Enter an http or https URL.',
+        ),
+      ),
+    );
+  });
+
+  test('settings label is CipherScan until a custom host is set', () {
+    expect(
+      explorerSettingsLabel('', networkName: 'main'),
+      kDefaultZcashExplorerLabel,
+    );
+    expect(
+      explorerSettingsLabel(
+        'https://privacy.example/tx/{txid}',
+        networkName: 'main',
+      ),
+      'privacy.example',
+    );
+  });
+
+  test('launch uses the custom template when provided', () async {
+    final launched = <Uri>[];
+    final opened = await launchZcashExplorerTransaction(
+      networkName: 'main',
+      txidHex:
+          '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
+      txidOrder: ZcashExplorerTxidOrder.display,
+      customTemplate: 'http://127.0.0.1:8080/tx/{txid}',
+      launcher: (uri) async {
+        launched.add(uri);
+        return true;
+      },
+    );
+
+    expect(opened, isTrue);
+    expect(
+      launched.single.toString(),
+      'http://127.0.0.1:8080/tx/'
+      '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
+    );
+  });
 }

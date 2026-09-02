@@ -18,6 +18,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
+import '../../../providers/zcash_explorer_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
@@ -148,6 +149,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       networkName: endpoint.networkName,
       txidHex: txid,
       txidOrder: ZcashExplorerTxidOrder.display,
+      customTemplate: ref.read(zcashExplorerProvider),
     );
     if (launched || !mounted) return;
     _copyTransactionHash();

@@ -55,6 +55,7 @@ import '../src/features/onboarding/create/onboarding_split_view.dart';
 import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/features/settings/screens/settings_change_password_screen.dart';
 import '../src/features/settings/screens/settings_endpoint_screen.dart';
+import '../src/features/settings/screens/settings_explorer_screen.dart';
 import '../src/features/settings/screens/settings_screen.dart';
 import '../src/features/settings/screens/settings_seed_phrase_screen.dart';
 import '../src/features/settings/screens/settings_uninstall_screen.dart';
@@ -805,6 +806,13 @@ Widget buildSettingsEndpointUseCase(BuildContext context) {
   return _buildSettingsSubScreenUseCase(
     '/settings/endpoint',
     const SettingsEndpointScreen(),
+  );
+}
+
+Widget buildSettingsExplorerUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/explorer',
+    const SettingsExplorerScreen(),
   );
 }
 
@@ -2426,6 +2434,7 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
           '/settings/secret-passphrase',
           '/settings/change-password',
           '/settings/endpoint',
+          '/settings/explorer',
           '/settings/uninstall',
           '/address-book',
           '/about',
@@ -2754,6 +2763,11 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
           path: '/settings/endpoint',
           builder: (_, _) =>
               const _PreviewRoutePlaceholder(label: '/settings/endpoint'),
+        ),
+        GoRoute(
+          path: '/settings/explorer',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/settings/explorer'),
         ),
         GoRoute(
           path: '/migration',
