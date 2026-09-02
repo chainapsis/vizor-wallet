@@ -50,7 +50,7 @@ mod error;
 mod lwd;
 pub(crate) mod mempool;
 
-use enhance::run_enhancement;
+use enhance::{run_enhancement, run_foreground_enhancement, BackgroundEnhancementWorker};
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
@@ -2306,6 +2306,38 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
+    // Full transaction bytes are not required to spend notes discovered by
+    // compact block scanning. Foreground syncs therefore drain Enhancement
+    // requests on an owned worker while the main task continues scanning and
+    // servicing status/transparent requests. Mode 2 remains single-lane to
+    // avoid expanding background execution on mobile.
+    let mut background_enhancement = if running_mode == 1 {
+        match BackgroundEnhancementWorker::start(
+            db_data_path.to_string(),
+            lightwalletd_url.to_string(),
+            network,
+            cancel.clone(),
+        ) {
+            Ok(worker) => {
+                log::info!(
+                    "[{}] sync: started transaction enhancement worker",
+                    elapsed()
+                );
+                Some(worker)
+            }
+            Err(error) => {
+                log::warn!(
+                    "[{}] sync: could not start transaction enhancement worker; \
+                     using foreground enhancement: {error}",
+                    elapsed(),
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let background_enhancement_active = background_enhancement.is_some();
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -3378,7 +3410,14 @@ async fn run_sync_impl(
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
         // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
+        run_foreground_enhancement(
+            &mut client,
+            &mut db,
+            db_data_path,
+            network,
+            background_enhancement_active,
+        )
+        .await?;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
@@ -3690,10 +3729,16 @@ async fn run_sync_impl(
             e
         ),
     }
-    with_wallet_db_write_lock("sync_engine.mark_sync_completed", || {
-        mark_sync_completed(db_data_path, final_tip_height)
-    })
-    .map_err(SyncError::db)?;
+    // A running enhancement worker leaves the durable session marked in
+    // progress until its queue drains. The completion event below deliberately
+    // makes the scanned balance usable first; if the process exits during
+    // enhancement, bootstrap will resume the unfinished session.
+    if !background_enhancement_active {
+        with_wallet_db_write_lock("sync_engine.mark_sync_completed", || {
+            mark_sync_completed(db_data_path, final_tip_height)
+        })
+        .map_err(SyncError::db)?;
+    }
     // Final progress
     let final_progress = SyncProgressEvent {
         scanned_height: final_scanned_height,
@@ -3785,7 +3830,15 @@ async fn run_sync_impl(
             ),
         }
         if deferred_received_outputs && !should_exit() {
-            if let Err(error) = run_enhancement(&mut client, &mut db, db_data_path, network).await {
+            if let Err(error) = run_foreground_enhancement(
+                &mut client,
+                &mut db,
+                db_data_path,
+                network,
+                background_enhancement_active,
+            )
+            .await
+            {
                 log::warn!(
                     "[{}] sync: deferred transparent transaction enhancement failed; it will retry on a later sync: {}",
                     elapsed(),
@@ -3796,6 +3849,54 @@ async fn run_sync_impl(
             // running. Re-emit completion even after a terminal partial
             // failure so Dart refreshes whichever account is active now from
             // every output that was committed by an earlier successful group.
+            progress_fn(SyncProgressEvent {
+                scanned_height: final_scanned_height,
+                chain_tip_height: final_tip_height,
+                percentage: 1.0,
+                display_target_percentage: 1.0,
+                display_target_blocks: 0,
+                is_syncing: false,
+                is_complete: true,
+                has_new_tx: true,
+                phase_completed_units: 0,
+                phase_total_units: 0,
+                phase: String::new(),
+            });
+        }
+    }
+
+    if should_exit() {
+        drop(background_enhancement.take());
+        return Ok(());
+    }
+
+    if let Some(worker) = background_enhancement.take() {
+        let background_changed_history = match worker.finish() {
+            Ok(did_work) => did_work,
+            Err(error) => {
+                log::warn!(
+                    "[{}] sync: transaction enhancement worker stopped early; \
+                     retrying its durable queue on the foreground task: {error}",
+                    elapsed(),
+                );
+                true
+            }
+        };
+        if should_exit() {
+            return Ok(());
+        }
+
+        // Catch requests left by a failed worker and run fee backfill after
+        // background writes have stopped. A failure keeps the durable session
+        // incomplete so the existing retry wrapper or a later launch resumes
+        // it, even though spendability was already reported above.
+        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
+        with_wallet_db_write_lock("sync_engine.mark_sync_completed", || {
+            mark_sync_completed(db_data_path, final_tip_height)
+        })
+        .map_err(SyncError::db)?;
+
+        if background_changed_history && !should_exit() {
             progress_fn(SyncProgressEvent {
                 scanned_height: final_scanned_height,
                 chain_tip_height: final_tip_height,

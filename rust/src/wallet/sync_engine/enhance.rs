@@ -23,7 +23,15 @@
 //! (e.g. a newly-decrypted transaction may reveal additional parent
 //! transactions to enhance).
 
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread::JoinHandle,
+    time::Duration,
+};
 
 use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
@@ -32,16 +40,256 @@ use zcash_client_backend::{
         wallet::decrypt_and_store_transaction, TransactionDataRequest, TransactionStatus,
         WalletRead, WalletWrite,
     },
-    proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
+    proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
-use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
+use crate::wallet::db::{
+    open_wallet_db_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::network::WalletNetwork;
 
 use super::{lwd, SyncError, WalletDatabase};
+
+const BACKGROUND_QUEUE_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const BACKGROUND_CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+// Foreground status work and the background enhancement worker can both need
+// GetTransaction. Keep their aggregate concurrency at the production value of
+// one so moving enhancement off the scan path does not multiply provider load.
+static GET_TRANSACTION_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+
+#[derive(Clone, Copy)]
+struct SimpleTransactionRequest {
+    txid: TxId,
+    update_status: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RequestSelection {
+    All,
+    EnhancementOnly,
+    NonEnhancement,
+}
+
+impl RequestSelection {
+    fn includes(self, request: &TransactionDataRequest) -> bool {
+        match self {
+            Self::All => true,
+            Self::EnhancementOnly => matches!(request, TransactionDataRequest::Enhancement(_)),
+            Self::NonEnhancement => !matches!(request, TransactionDataRequest::Enhancement(_)),
+        }
+    }
+}
+
+/// Owns the independent full-transaction enhancement lane for one foreground
+/// sync attempt. The worker is joined before the Rust sync call returns, so
+/// cancellation and wallet mutation cannot outlive the global sync guard.
+pub(super) struct BackgroundEnhancementWorker {
+    stop: BackgroundStop,
+    producers_complete: Arc<AtomicBool>,
+    did_work: Arc<AtomicBool>,
+    handle: Option<JoinHandle<Result<(), String>>>,
+}
+
+#[derive(Clone)]
+struct BackgroundStop {
+    local: Arc<AtomicBool>,
+    sync_cancel: Arc<AtomicBool>,
+}
+
+impl BackgroundStop {
+    fn is_requested(&self) -> bool {
+        self.local.load(Ordering::Acquire) || self.sync_cancel.load(Ordering::Acquire)
+    }
+
+    fn request(&self) {
+        self.local.store(true, Ordering::Release);
+    }
+}
+
+impl BackgroundEnhancementWorker {
+    pub(super) fn start(
+        db_path: String,
+        endpoint: String,
+        network: WalletNetwork,
+        sync_cancel: Arc<AtomicBool>,
+    ) -> Result<Self, String> {
+        let stop = BackgroundStop {
+            local: Arc::new(AtomicBool::new(false)),
+            sync_cancel,
+        };
+        let producers_complete = Arc::new(AtomicBool::new(false));
+        let did_work = Arc::new(AtomicBool::new(false));
+        let worker_stop = stop.clone();
+        let worker_producers_complete = producers_complete.clone();
+        let worker_did_work = did_work.clone();
+        let handle = std::thread::Builder::new()
+            .name("vizor-transaction-enhancement".to_string())
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|error| format!("build enhancement runtime: {error}"))?;
+                runtime.block_on(run_background_enhancement(
+                    db_path,
+                    endpoint,
+                    network,
+                    worker_producers_complete,
+                    worker_did_work,
+                    worker_stop,
+                ))
+            })
+            .map_err(|error| format!("start enhancement worker: {error}"))?;
+
+        Ok(Self {
+            stop,
+            producers_complete,
+            did_work,
+            handle: Some(handle),
+        })
+    }
+
+    /// Signals that scanning and transparent refreshes cannot enqueue more
+    /// enhancement requests, then waits for the durable queue to drain.
+    pub(super) fn finish(mut self) -> Result<bool, String> {
+        self.producers_complete.store(true, Ordering::Release);
+        self.join()?;
+        Ok(self.did_work.load(Ordering::Acquire))
+    }
+
+    fn join(&mut self) -> Result<(), String> {
+        let Some(handle) = self.handle.take() else {
+            return Ok(());
+        };
+        handle
+            .join()
+            .map_err(|_| "enhancement worker panicked".to_string())?
+    }
+}
+
+impl Drop for BackgroundEnhancementWorker {
+    fn drop(&mut self) {
+        self.stop.request();
+        if let Err(error) = self.join() {
+            log::warn!("sync: failed to stop enhancement worker: {error}");
+        }
+    }
+}
+
+async fn run_background_enhancement(
+    db_path: String,
+    endpoint: String,
+    network: WalletNetwork,
+    producers_complete: Arc<AtomicBool>,
+    did_work: Arc<AtomicBool>,
+    stop: BackgroundStop,
+) -> Result<(), String> {
+    let mut db = with_wallet_db_write_lock("sync_engine.enhance.open_background_db", || {
+        open_wallet_db_with_timeout(&db_path, network, SYNC_DB_BUSY_TIMEOUT)
+    })?;
+    let mut client = None;
+
+    loop {
+        if stop.is_requested() {
+            return Ok(());
+        }
+
+        // Read the producer flag before the queue. Once the acquire observes
+        // completion, every producer commit happened before this queue read,
+        // so an empty result is a stable drain boundary.
+        let production_done = producers_complete.load(Ordering::Acquire);
+        let pending_before = pending_enhancement_txids(&mut db)?;
+        if pending_before.is_empty() {
+            if production_done {
+                return Ok(());
+            }
+            tokio::select! {
+                biased;
+                _ = wait_for_stop(&stop) => return Ok(()),
+                _ = tokio::time::sleep(BACKGROUND_QUEUE_POLL_INTERVAL) => {}
+            }
+            continue;
+        }
+        did_work.store(true, Ordering::Release);
+
+        if client.is_none() {
+            let open = super::open_lwd_channel(&endpoint);
+            tokio::pin!(open);
+            client = Some(tokio::select! {
+                biased;
+                _ = wait_for_stop(&stop) => return Ok(()),
+                result = &mut open => result
+                    .map_err(|error| format!("open enhancement lightwalletd channel: {error}"))?,
+            });
+        }
+
+        run_selected_enhancement(
+            client.as_mut().expect("enhancement client initialized"),
+            &mut db,
+            &db_path,
+            network,
+            RequestSelection::EnhancementOnly,
+            Some(&stop),
+        )
+        .await
+        .map_err(|error| format!("drain enhancement queue: {error}"))?;
+        let pending_after = pending_enhancement_txids(&mut db)?;
+        if !pending_after.is_empty() && pending_after == pending_before {
+            return Err(format!(
+                "enhancement queue made no progress with {} request(s) remaining",
+                pending_after.len()
+            ));
+        }
+    }
+}
+
+fn pending_enhancement_txids(db: &mut WalletDatabase) -> Result<HashSet<String>, String> {
+    db.transaction_data_requests()
+        .map_err(|error| format!("read enhancement queue: {error}"))
+        .map(|requests| {
+            requests
+                .into_iter()
+                .filter_map(|request| match request {
+                    TransactionDataRequest::Enhancement(txid) => Some(txid.to_string()),
+                    _ => None,
+                })
+                .collect()
+        })
+}
+
+async fn wait_for_stop(stop: &BackgroundStop) {
+    while !stop.is_requested() {
+        tokio::time::sleep(BACKGROUND_CANCEL_POLL_INTERVAL).await;
+    }
+}
+
+async fn get_transaction(
+    client: &mut CompactTxStreamerClient<Channel>,
+    txid: TxId,
+    stop: Option<&BackgroundStop>,
+) -> Option<Result<RawTransaction, Status>> {
+    let request = async {
+        let _permit = GET_TRANSACTION_GATE
+            .acquire()
+            .await
+            .expect("enhancement GetTransaction gate is never closed");
+        lwd::get_transaction(client, txid.as_ref().to_vec()).await
+    };
+
+    match stop {
+        Some(stop) => {
+            tokio::select! {
+                biased;
+                _ = wait_for_stop(stop) => None,
+                result = request => Some(result),
+            }
+        }
+        None => Some(request.await),
+    }
+}
 
 /// Services `db.transaction_data_requests()` against lightwalletd until
 /// the queue is empty or no request is actionable. Returns `SyncError::Db`
@@ -51,17 +299,49 @@ use super::{lwd, SyncError, WalletDatabase};
 /// `set_transaction_status` so it doesn't get retried forever, while
 /// transient network failures bubble up as `SyncError::Network` so the
 /// outer sync retry path can recover without deleting the request.
+pub(super) async fn run_foreground_enhancement(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    background_worker_active: bool,
+) -> Result<(), SyncError> {
+    let selection = if background_worker_active {
+        RequestSelection::NonEnhancement
+    } else {
+        RequestSelection::All
+    };
+    run_selected_enhancement(client, db, db_path, network, selection, None).await
+}
+
+/// Drains every kind of transaction data request on the caller's task.
 pub(super) async fn run_enhancement(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<(), SyncError> {
+    run_selected_enhancement(client, db, db_path, network, RequestSelection::All, None).await
+}
+
+async fn run_selected_enhancement(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    selection: RequestSelection,
+    stop: Option<&BackgroundStop>,
+) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
 
-    backfill_stored_fees(client, db, db_path).await?;
+    if selection == RequestSelection::All {
+        backfill_stored_fees(client, db, db_path).await?;
+    }
 
     for _ in 0..3 {
+        if stop.is_some_and(BackgroundStop::is_requested) {
+            return Ok(());
+        }
         let requests = db
             .transaction_data_requests()
             .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?;
@@ -73,168 +353,192 @@ pub(super) async fn run_enhancement(
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests.iter().any(request_is_actionable);
+        let actionable = requests
+            .iter()
+            .filter(|request| selection.includes(request))
+            .any(request_is_actionable);
         if !actionable {
             break;
         }
 
-        for req in &requests {
-            match req {
-                TransactionDataRequest::GetStatus(txid)
-                | TransactionDataRequest::Enhancement(txid) => {
-                    let txid_str = format!("{txid}");
-                    if failed_txids.contains(&txid_str) {
-                        continue;
-                    }
+        let simple_requests = requests
+            .iter()
+            .filter(|request| selection.includes(request))
+            .filter_map(|request| {
+                let (txid, update_status) = match request {
+                    TransactionDataRequest::GetStatus(txid) => (*txid, true),
+                    TransactionDataRequest::Enhancement(txid) => (*txid, false),
+                    TransactionDataRequest::TransactionsInvolvingAddress(_) => return None,
+                };
+                (!failed_txids.contains(&txid.to_string())).then_some(SimpleTransactionRequest {
+                    txid,
+                    update_status,
+                })
+            })
+            .collect::<Vec<_>>();
+        for request in simple_requests {
+            if stop.is_some_and(BackgroundStop::is_requested) {
+                return Ok(());
+            }
+            let Some(response) = get_transaction(client, request.txid, stop).await else {
+                return Ok(());
+            };
+            service_fetched_transaction(
+                client,
+                db,
+                db_path,
+                network,
+                &mut failed_txids,
+                request,
+                response,
+                stop,
+            )
+            .await?;
+        }
 
-                    match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
-                        Ok(raw) => {
-                            let mined_height = mined_height_from_raw_height(raw.height)?;
-                            if !raw.data.is_empty() {
-                                match Transaction::read(&raw.data[..], BranchId::Sapling) {
-                                    Ok(tx) => {
-                                        if let Err(e) = with_wallet_db_write_lock(
-                                            "sync_engine.enhance.decrypt_and_store_transaction",
-                                            || {
-                                                decrypt_and_store_transaction(
-                                                    &network,
-                                                    db,
-                                                    &tx,
-                                                    mined_height,
-                                                )
-                                            },
-                                        ) {
-                                            log::error!(
-                                                "sync: decrypt_and_store_transaction failed: {e}"
-                                            );
-                                        }
-                                        if let Err(e) = fill_missing_fee(client, db_path, &tx).await
-                                        {
-                                            log::warn!(
-                                                "sync: fee enhancement failed for {txid_str}: {e}"
-                                            );
-                                        }
-                                    }
-                                    Err(e) => log::warn!(
-                                        "sync: Transaction::read failed for {txid_str}: {e}"
-                                    ),
-                                }
-                            }
-                            if matches!(req, TransactionDataRequest::GetStatus(_)) {
-                                let status = transaction_status_from_raw_height(raw.height)?;
-                                if let Err(e) = with_wallet_db_write_lock(
-                                    "sync_engine.enhance.set_transaction_status",
-                                    || db.set_transaction_status(*txid, status),
-                                ) {
-                                    log::error!("sync: set_transaction_status failed: {e}");
-                                }
-                            }
-                        }
-                        Err(e) => match classify_get_transaction_error(&e) {
-                            GetTransactionErrorAction::MarkTxidNotRecognized => {
-                                log::warn!(
-                                    "sync: get_transaction did not recognize {txid_str}: {e}"
-                                );
-                                failed_txids.insert(txid_str);
-                                if let Err(e) = with_wallet_db_write_lock(
-                                    "sync_engine.enhance.set_transaction_status",
-                                    || {
-                                        db.set_transaction_status(
-                                            *txid,
-                                            TransactionStatus::TxidNotRecognized,
-                                        )
-                                    },
-                                ) {
-                                    log::error!("sync: set_transaction_status failed: {e}");
-                                }
-                            }
-                            GetTransactionErrorAction::RetryAsNetwork => {
-                                return Err(SyncError::net(format!(
-                                    "get_transaction failed for {txid_str}: {e}"
-                                )));
-                            }
-                        },
-                    }
-                }
-                TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-                    let end_height = match req.block_range_end() {
-                        Some(h) => h,
-                        None => continue,
-                    };
-                    let addr_str = zcash_keys::encoding::encode_transparent_address_p(
-                        &network,
-                        &req.address(),
-                    );
-                    let start = u32::from(req.block_range_start()) as u64;
-                    let end = u32::from(end_height) as u64;
+        for request in requests
+            .iter()
+            .filter(|request| selection.includes(request))
+        {
+            if let TransactionDataRequest::TransactionsInvolvingAddress(req) = request {
+                let end_height = match req.block_range_end() {
+                    Some(h) => h,
+                    None => continue,
+                };
+                let addr_str =
+                    zcash_keys::encoding::encode_transparent_address_p(&network, &req.address());
+                let start = u32::from(req.block_range_start()) as u64;
+                let end = u32::from(end_height) as u64;
 
-                    match lwd::get_taddress_txids(client, addr_str, start, end.saturating_sub(1))
-                        .await
-                    {
-                        Ok(mut stream) => {
-                            let mut fee_client = client.clone();
-                            loop {
-                                match lwd::next_stream_message(
-                                    &mut stream,
-                                    "get_taddress_txids stream",
-                                )
+                match lwd::get_taddress_txids(client, addr_str, start, end.saturating_sub(1)).await
+                {
+                    Ok(mut stream) => {
+                        let mut fee_client = client.clone();
+                        loop {
+                            match lwd::next_stream_message(&mut stream, "get_taddress_txids stream")
                                 .await
-                                {
-                                    Ok(Some(raw)) => {
-                                        if !raw.data.is_empty() {
-                                            let mined_height =
-                                                mined_height_from_raw_height(raw.height)?;
-                                            match Transaction::read(
-                                                &raw.data[..],
-                                                BranchId::Sapling,
-                                            ) {
-                                                Ok(tx) => {
-                                                    if let Err(e) = with_wallet_db_write_lock(
-                                                        "sync_engine.enhance.decrypt_and_store_transaction",
-                                                        || {
-                                                            decrypt_and_store_transaction(
-                                                                &network,
-                                                                db,
-                                                                &tx,
-                                                                mined_height,
-                                                            )
-                                                        },
-                                                    ) {
-                                                        log::error!(
-                                                            "sync: decrypt_and_store_transaction (addr) failed: {e}"
-                                                        );
-                                                    }
-                                                    if let Err(e) = fill_missing_fee(
-                                                        &mut fee_client,
-                                                        db_path,
-                                                        &tx,
-                                                    )
-                                                    .await
-                                                    {
-                                                        log::warn!(
-                                                            "sync: fee enhancement (addr) failed for {}: {e}",
-                                                            tx.txid()
-                                                        );
-                                                    }
+                            {
+                                Ok(Some(raw)) => {
+                                    if !raw.data.is_empty() {
+                                        let mined_height =
+                                            mined_height_from_raw_height(raw.height)?;
+                                        match Transaction::read(&raw.data[..], BranchId::Sapling) {
+                                            Ok(tx) => {
+                                                if let Err(e) = with_wallet_db_write_lock(
+                                                    "sync_engine.enhance.decrypt_and_store_transaction",
+                                                    || {
+                                                        decrypt_and_store_transaction(
+                                                            &network,
+                                                            db,
+                                                            &tx,
+                                                            mined_height,
+                                                        )
+                                                    },
+                                                ) {
+                                                    log::error!(
+                                                        "sync: decrypt_and_store_transaction (addr) failed: {e}"
+                                                    );
                                                 }
-                                                Err(e) => {
+                                                if let Err(e) = fill_missing_fee(
+                                                    &mut fee_client,
+                                                    db_path,
+                                                    &tx,
+                                                    None,
+                                                )
+                                                .await
+                                                {
                                                     log::warn!(
-                                                        "sync: Transaction::read (addr) failed: {e}"
-                                                    )
+                                                        "sync: fee enhancement (addr) failed for {}: {e}",
+                                                        tx.txid()
+                                                    );
                                                 }
+                                            }
+                                            Err(e) => {
+                                                log::warn!(
+                                                    "sync: Transaction::read (addr) failed: {e}"
+                                                )
                                             }
                                         }
                                     }
-                                    Ok(None) => break,
-                                    Err(e) => return Err(e),
                                 }
+                                Ok(None) => break,
+                                Err(e) => return Err(e),
                             }
                         }
-                        Err(e) => return Err(e),
                     }
+                    Err(e) => return Err(e),
                 }
             }
         }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn service_fetched_transaction(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    failed_txids: &mut HashSet<String>,
+    request: SimpleTransactionRequest,
+    response: Result<RawTransaction, Status>,
+    stop: Option<&BackgroundStop>,
+) -> Result<(), SyncError> {
+    let txid_str = request.txid.to_string();
+    match response {
+        Ok(raw) => {
+            let mined_height = mined_height_from_raw_height(raw.height)?;
+            if !raw.data.is_empty() {
+                match Transaction::read(&raw.data[..], BranchId::Sapling) {
+                    Ok(tx) => {
+                        if let Err(error) = with_wallet_db_write_lock(
+                            "sync_engine.enhance.decrypt_and_store_transaction",
+                            || decrypt_and_store_transaction(&network, db, &tx, mined_height),
+                        ) {
+                            log::error!("sync: decrypt_and_store_transaction failed: {error}");
+                        }
+                        if let Err(error) = fill_missing_fee(client, db_path, &tx, stop).await {
+                            log::warn!("sync: fee enhancement failed for {txid_str}: {error}");
+                        }
+                    }
+                    Err(error) => {
+                        log::warn!("sync: Transaction::read failed for {txid_str}: {error}")
+                    }
+                }
+            }
+            if request.update_status {
+                let status = transaction_status_from_raw_height(raw.height)?;
+                if let Err(error) =
+                    with_wallet_db_write_lock("sync_engine.enhance.set_transaction_status", || {
+                        db.set_transaction_status(request.txid, status)
+                    })
+                {
+                    log::error!("sync: set_transaction_status failed: {error}");
+                }
+            }
+        }
+        Err(error) => match classify_get_transaction_error(&error) {
+            GetTransactionErrorAction::MarkTxidNotRecognized => {
+                log::warn!("sync: get_transaction did not recognize {txid_str}: {error}");
+                failed_txids.insert(txid_str);
+                if let Err(error) =
+                    with_wallet_db_write_lock("sync_engine.enhance.set_transaction_status", || {
+                        db.set_transaction_status(
+                            request.txid,
+                            TransactionStatus::TxidNotRecognized,
+                        )
+                    })
+                {
+                    log::error!("sync: set_transaction_status failed: {error}");
+                }
+            }
+            GetTransactionErrorAction::RetryAsNetwork => {
+                return Err(SyncError::net(format!(
+                    "get_transaction failed for {txid_str}: {error}"
+                )));
+            }
+        },
     }
     Ok(())
 }
@@ -250,7 +554,7 @@ async fn backfill_stored_fees(
         let txid_str = format!("{txid}");
         match db.get_transaction(txid) {
             Ok(Some(tx)) => {
-                if let Err(e) = fill_missing_fee(client, db_path, &tx).await {
+                if let Err(e) = fill_missing_fee(client, db_path, &tx, None).await {
                     log::warn!("sync: stored fee enhancement failed for {txid_str}: {e}");
                 }
             }
@@ -307,6 +611,7 @@ async fn fill_missing_fee(
     client: &mut CompactTxStreamerClient<Channel>,
     db_path: &str,
     tx: &Transaction,
+    stop: Option<&BackgroundStop>,
 ) -> Result<(), SyncError> {
     if !should_fill_missing_fee(db_path, tx)? {
         return Ok(());
@@ -317,7 +622,7 @@ async fn fill_missing_fee(
     // that fee too so these rows do not remain in the backfill query forever.
     let prevout_values = match tx.transparent_bundle() {
         Some(bundle) if !bundle.vin.is_empty() => {
-            let values = fetch_transparent_prevout_values(client, tx).await?;
+            let values = fetch_transparent_prevout_values(client, tx, stop).await?;
             if values.is_empty() {
                 return Ok(());
             }
@@ -338,6 +643,7 @@ async fn fill_missing_fee(
 async fn fetch_transparent_prevout_values(
     client: &mut CompactTxStreamerClient<Channel>,
     tx: &Transaction,
+    stop: Option<&BackgroundStop>,
 ) -> Result<BTreeMap<OutPoint, Zatoshis>, SyncError> {
     let Some(bundle) = tx.transparent_bundle() else {
         return Ok(BTreeMap::new());
@@ -353,7 +659,12 @@ async fn fetch_transparent_prevout_values(
             continue;
         }
 
-        let parent_raw = match lwd::get_transaction(client, outpoint.hash().to_vec()).await {
+        let Some(parent_response) =
+            get_transaction(client, TxId::from_bytes(*outpoint.hash()), stop).await
+        else {
+            return Ok(BTreeMap::new());
+        };
+        let parent_raw = match parent_response {
             Ok(raw) => raw,
             Err(e) => {
                 log::warn!(
@@ -494,6 +805,20 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 mod tests {
     use super::*;
 
+    #[test]
+    fn request_selection_assigns_enhancement_to_only_one_lane() {
+        let txid = TxId::from_bytes([0x42; 32]);
+        let enhancement = TransactionDataRequest::Enhancement(txid);
+        let status = TransactionDataRequest::GetStatus(txid);
+
+        assert!(RequestSelection::All.includes(&enhancement));
+        assert!(RequestSelection::All.includes(&status));
+        assert!(RequestSelection::EnhancementOnly.includes(&enhancement));
+        assert!(!RequestSelection::EnhancementOnly.includes(&status));
+        assert!(!RequestSelection::NonEnhancement.includes(&enhancement));
+        assert!(RequestSelection::NonEnhancement.includes(&status));
+    }
+
     fn scanned_transaction_missing_fee_test_db(
         mined_height: BlockHeight,
     ) -> (tempfile::NamedTempFile, WalletDatabase, Transaction) {
@@ -550,6 +875,25 @@ mod tests {
         )
         .unwrap();
         (file, db, tx)
+    }
+
+    #[test]
+    fn background_worker_opens_no_network_channel_for_an_empty_queue() {
+        let (file, db, _) = scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+        drop(db);
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute("DELETE FROM tx_retrieval_queue", []).unwrap();
+        drop(conn);
+
+        let worker = BackgroundEnhancementWorker::start(
+            file.path().to_string_lossy().into_owned(),
+            "not a valid endpoint".to_string(),
+            WalletNetwork::Regtest,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+
+        assert!(!worker.finish().unwrap());
     }
 
     fn transparent_fee_test_tx_and_bytes() -> (Transaction, Vec<u8>) {

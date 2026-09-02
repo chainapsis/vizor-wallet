@@ -384,10 +384,10 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
 3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O)
 4. `scan_cached_blocks` from memory (100 blocks per batch)
-5. Enhancement: fetch full tx data (`GetStatus`, `Enhancement`, `TransactionsInvolvingAddress`). librustzcash persistently requests `GetStatus` only when compact-block scanning cannot observe the transaction's mined state. During recovery, Vizor separately excludes previously mined transactions from resubmission while a pending scan range can still restore their mined heights.
+5. Enhancement: fetch full tx data (`GetStatus`, `Enhancement`, `TransactionsInvolvingAddress`). Foreground sync drains `Enhancement` requests on an owned worker while compact scanning continues; status and transparent requests stay on the main lane, and both lanes share one `GetTransaction` permit. Mode 2 remains single-lane. librustzcash persistently requests `GetStatus` only when compact-block scanning cannot observe the transaction's mined state. During recovery, Vizor separately excludes previously mined transactions from resubmission while a pending scan range can still restore their mined heights.
 6. Progress streamed to Dart via FRB `StreamSink` per batch
 
-Single DB connection reused across entire sync (opened once, passed to all operations).
+The main sync reuses one DB connection. Foreground enhancement lazily opens one dedicated connection after its first queued request; the owned worker is joined before Rust releases the global sync guard.
 
 Progress percentage: `initial_total` (total blocks to scan) is captured once before the scan loop from `suggest_scan_ranges()`. After each batch, `remaining` unscanned blocks are recalculated, then `pct = 1.0 - remaining / initial_total`. Note: `suggest_scan_ranges()` does not return `Scanned` ranges, so per-batch `total` cannot be used as the denominator. Each progress event includes `has_new_tx` (from `ScanSummary` received/spent note counts) to trigger transaction history refresh only when needed.
 
@@ -461,7 +461,7 @@ rust/src/
 │   ├── sync_engine.rs  # run_sync_inner() — retry wrapper (3 retries, 2/4/8s backoff)
 │   │                    # run_sync_impl() — single sync attempt
 │   │                    # MemoryBlockSource (BlockSource trait impl)
-│   │                    # Single DB connection reused across entire sync
+│   │                    # Main DB connection plus a lazy owned foreground-enhancement connection
 │   │                    # Checks cancel + mode mismatch after each download/scan/batch
 │   │                    # Progress: initial_total based (remaining / initial_total)
 │   │                    # has_new_tx from ScanSummary note counts
