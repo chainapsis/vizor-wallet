@@ -119,6 +119,40 @@ void main() {
       );
     });
 
+    test('derived dollars stay creatable after the price expires', () {
+      final usdDraft = const ZecRequestDraft(
+        address: _shielded,
+        input: '0.5',
+      ).toggledUnit(zecUsdUnitPrice: 70);
+
+      // The dollars on screen came from 0.5 ZEC; losing the price does not
+      // lose that.
+      final view = usdDraft.resolve(zecUsdUnitPrice: null);
+      expect(view.amountZec, '0.5');
+      expect(view.conversionText, '0.5 ZEC');
+      expect(view.isReady, isTrue);
+      expect(view.requestUri, 'zcash:$_shielded?amount=0.5');
+
+      // Typed dollars are dollars, and dollars need a price.
+      final typed = usdDraft.withInput('40', zecUsdUnitPrice: 70);
+      expect(typed.resolve(zecUsdUnitPrice: null).amountZec, '');
+      expect(typed.resolve(zecUsdUnitPrice: null).isReady, isFalse);
+    });
+
+    test('switching an unfinished ZEC field to USD derives nothing', () {
+      for (final input in ['', '0', '0.', 'abc']) {
+        final usdDraft = ZecRequestDraft(
+          address: _shielded,
+          input: input,
+        ).toggledUnit(zecUsdUnitPrice: 70);
+        final view = usdDraft.resolve(zecUsdUnitPrice: null);
+        expect(usdDraft.input, '', reason: input);
+        expect(view.amountZec, '', reason: input);
+        expect(view.isReady, isFalse, reason: input);
+        expect(view.amountError, isNull, reason: input);
+      }
+    });
+
     test('an edited USD field re-derives the ZEC the request asks for', () {
       const price = 35.123;
       final usdDraft = const ZecRequestDraft(address: _shielded, input: '0.5')

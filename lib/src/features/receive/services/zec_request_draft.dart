@@ -162,13 +162,17 @@ class ZecRequestDraft {
     }
 
     final zatoshi = parseZecAmount(input.trim());
+    final hasAmount = zatoshi != null && zatoshi > BigInt.zero;
     return copyWith(
       inputIsUsd: true,
-      input: zatoshi == null || zatoshi <= BigInt.zero
-          ? ''
-          : sendSendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!),
+      input: hasAmount
+          ? sendSendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!)
+          : '',
       usdModeZecInput: input.trim(),
-      usdInputIsDerived: true,
+      // Only dollars that actually came from an amount are derived; an empty
+      // or half-typed ZEC field switches to an empty USD field that means
+      // nothing yet.
+      usdInputIsDerived: hasAmount,
     );
   }
 
@@ -179,13 +183,14 @@ class ZecRequestDraft {
   /// it ([usdModeZecInput]), so that merely switching units never changes
   /// the request — the field shows a cent rounding, and converting *that*
   /// back would encode a payment a few zatoshi away from the typed one.
+  ///
+  /// Derived dollars need no price to answer: the ZEC behind them is already
+  /// known, so a price that expires while they are on screen does not take
+  /// "Create request" away from an amount the user finished typing.
   String amountZec({required double? zecUsdUnitPrice}) {
     if (!inputIsUsd) return input.trim();
-    final converted = _convertedZec(zecUsdUnitPrice);
-    if (converted.isEmpty) return '';
-    return usdInputIsDerived && usdModeZecInput.isNotEmpty
-        ? usdModeZecInput
-        : converted;
+    if (usdInputIsDerived) return usdModeZecInput;
+    return _convertedZec(zecUsdUnitPrice);
   }
 
   /// [input] converted from dollars at [zecUsdUnitPrice], empty when it does
