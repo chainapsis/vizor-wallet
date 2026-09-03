@@ -150,6 +150,15 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
     }
   }
 
+  void _revalidateAfterDependencyChange() {
+    _validationTimer?.cancel();
+    final dependencySequence = ++_validationSequence;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || dependencySequence != _validationSequence) return;
+      _scheduleValidation(immediate: true);
+    });
+  }
+
   Future<void> _validateAmount(int sequence) async {
     final price = ref.read(zecLiveUsdUnitPriceProvider);
     final amount = _amountZatoshi(price);
@@ -266,6 +275,30 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (_, _) => _revalidateAfterDependencyChange(),
+    );
+    ref.listen(
+      syncProvider.select((value) {
+        final sync = value.value ?? SyncState();
+        return (
+          accountUuid: sync.accountUuid,
+          displaySpendableBalance: sync.displaySpendableBalance,
+          displayIronwoodBalance: sync.displayIronwoodBalance,
+          displaySpendableFreshness: sync.displaySpendableFreshness,
+        );
+      }),
+      (_, _) => _revalidateAfterDependencyChange(),
+    );
+    ref.listen<IronwoodHomeMigrationCtaMode?>(
+      ironwoodHomeMigrationCtaProvider.select((value) => value.value?.mode),
+      (_, _) => _revalidateAfterDependencyChange(),
+    );
+    ref.listen<double?>(zecLiveUsdUnitPriceProvider, (_, _) {
+      if (_isUsd) _revalidateAfterDependencyChange();
+    });
+
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final scoped = ref.watch(
       syncProvider.select(
