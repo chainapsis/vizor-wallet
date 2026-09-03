@@ -17,6 +17,7 @@ import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/pir_snapshot_resolver.dart';
+import '../../services/voting/voting_rust_exception.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_config_loader.dart';
@@ -734,24 +735,25 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
   }
 
   @override
-  Future<rust_voting.RoundPlanView> plan() => inner.plan();
+  Future<rust_voting.RoundPlanView> plan() => _typed(() => inner.plan());
 
   @override
   Future<rust_voting.RoundPlanView> setBallotIntents(
     List<rust_session.ApiBallotIntent> intents,
-  ) => inner.setBallotIntents(intents: intents);
+  ) => _typed(() => inner.setBallotIntents(intents: intents));
 
   @override
   Stream<rust_session.ApiRoundStepEvent> advanceStep({
     required rust_voting.NextStepView step,
     required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
-  }) => inner.advanceStep(step: step, host: host, signer: signer);
+  }) => _typedStream(inner.advanceStep(step: step, host: host, signer: signer));
 
   @override
   Future<List<rust_delegate.KeystoneSigningRequest>> keystoneSigningRequests(
     List<int> bundleIndices,
-  ) => inner.keystoneSigningRequests(bundleIndices: bundleIndices);
+  ) =>
+      _typed(() => inner.keystoneSigningRequests(bundleIndices: bundleIndices));
 
   @override
   VotingShareTrackingPassHandle beginShareTrackingPass() {
@@ -764,6 +766,32 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
 }
 
 /// Production implementation backed by generated FRB calls.
+/// Rethrows a bridge `VotingErrorView` as [VotingRustException] so callers
+/// classify it by kind and its message survives `toString`.
+Future<T> _typed<T>(Future<T> Function() call) async {
+  try {
+    return await call();
+  } on rust_voting.VotingErrorView catch (error) {
+    throw VotingRustException(error);
+  }
+}
+
+T _typedSync<T>(T Function() call) {
+  try {
+    return call();
+  } on rust_voting.VotingErrorView catch (error) {
+    throw VotingRustException(error);
+  }
+}
+
+Stream<T> _typedStream<T>(Stream<T> stream) {
+  return stream.handleError(
+    (Object error) =>
+        throw VotingRustException(error as rust_voting.VotingErrorView),
+    test: (error) => error is rust_voting.VotingErrorView,
+  );
+}
+
 class FrbVotingRustApi implements VotingRustApi {
   const FrbVotingRustApi();
 
@@ -779,15 +807,17 @@ class FrbVotingRustApi implements VotingRustApi {
     return _FrbVotingRoundSession(
       accountUuid: ctx.accountUuid,
       roundId: ctx.roundParams.voteRoundId,
-      inner: rust_session.openVotingRoundSession(
-        ctx: ctx,
-        chainEndpoints: chainEndpoints,
-        pirServerUrls: pirServerUrls,
-        proposals: proposals,
-        storedHotkeySecret: storedHotkeySecret == null
-            ? null
-            : Uint8List.fromList(storedHotkeySecret),
-        operationEpoch: operationEpoch,
+      inner: _typedSync(
+        () => rust_session.openVotingRoundSession(
+          ctx: ctx,
+          chainEndpoints: chainEndpoints,
+          pirServerUrls: pirServerUrls,
+          proposals: proposals,
+          storedHotkeySecret: storedHotkeySecret == null
+              ? null
+              : Uint8List.fromList(storedHotkeySecret),
+          operationEpoch: operationEpoch,
+        ),
       ),
     );
   }
@@ -798,10 +828,12 @@ class FrbVotingRustApi implements VotingRustApi {
     required BigInt expectedSnapshotHeight,
     required BigInt matchIndex,
   }) {
-    return rust_api.selectPirSnapshotEndpoint(
-      diagnostics: diagnostics,
-      expectedSnapshotHeight: expectedSnapshotHeight,
-      matchIndex: matchIndex,
+    return _typedSync(
+      () => rust_api.selectPirSnapshotEndpoint(
+        diagnostics: diagnostics,
+        expectedSnapshotHeight: expectedSnapshotHeight,
+        matchIndex: matchIndex,
+      ),
     );
   }
 
@@ -813,12 +845,14 @@ class FrbVotingRustApi implements VotingRustApi {
     required List<int> ncRoot,
     required List<int> nullifierImtRoot,
   }) {
-    return rust_api.trustedVotingRoundParamsFromConfig(
-      resolvedConfig: config,
-      roundId: roundId,
-      snapshotHeight: snapshotHeight,
-      ncRoot: ncRoot,
-      nullifierImtRoot: nullifierImtRoot,
+    return _typed(
+      () => rust_api.trustedVotingRoundParamsFromConfig(
+        resolvedConfig: config,
+        roundId: roundId,
+        snapshotHeight: snapshotHeight,
+        ncRoot: ncRoot,
+        nullifierImtRoot: nullifierImtRoot,
+      ),
     );
   }
 
@@ -826,14 +860,14 @@ class FrbVotingRustApi implements VotingRustApi {
   Future<rust_api.ApiBundleLayout> setupDelegationBundles({
     required rust_api.ApiVotingRoundContext ctx,
   }) {
-    return rust_api.setupDelegationBundles(ctx: ctx);
+    return _typed(() => rust_api.setupDelegationBundles(ctx: ctx));
   }
 
   @override
   Future<rust_api.ApiVotingEligibility> checkVotingEligibility({
     required rust_api.ApiVotingRoundContext ctx,
   }) {
-    return rust_api.checkVotingEligibility(ctx: ctx);
+    return _typed(() => rust_api.checkVotingEligibility(ctx: ctx));
   }
 
   @override
@@ -841,9 +875,11 @@ class FrbVotingRustApi implements VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
   }) {
-    return rust_api.precomputeSnapshotBundles(
-      ctx: ctx,
-      pirServerUrl: pirServerUrl,
+    return _typed(
+      () => rust_api.precomputeSnapshotBundles(
+        ctx: ctx,
+        pirServerUrl: pirServerUrl,
+      ),
     );
   }
 
@@ -854,11 +890,13 @@ class FrbVotingRustApi implements VotingRustApi {
     required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) {
-    return rust_api.precomputeDelegationProof(
-      ctx: ctx,
-      pirServerUrls: pirServerUrls,
-      storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
+    return _typed(
+      () => rust_api.precomputeDelegationProof(
+        ctx: ctx,
+        pirServerUrls: pirServerUrls,
+        storedHotkeySecret: storedHotkeySecret,
+        bundleIndex: bundleIndex,
+      ),
     );
   }
 
@@ -873,15 +911,17 @@ class FrbVotingRustApi implements VotingRustApi {
     required rust_config.PirLayout pirLayout,
     required List<Uint8List> keepRoots,
   }) {
-    return rust_api.warmPirProofCache(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      network: network,
-      lightwalletdUrl: lightwalletdUrl,
-      snapshotHeight: snapshotHeight,
-      pirServerUrl: pirServerUrl,
-      pirLayout: pirLayout,
-      keepRoots: keepRoots,
+    return _typed(
+      () => rust_api.warmPirProofCache(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        network: network,
+        lightwalletdUrl: lightwalletdUrl,
+        snapshotHeight: snapshotHeight,
+        pirServerUrl: pirServerUrl,
+        pirLayout: pirLayout,
+        keepRoots: keepRoots,
+      ),
     );
   }
 
@@ -892,7 +932,7 @@ class FrbVotingRustApi implements VotingRustApi {
 
   @override
   Future<List<int>> generateVotingHotkey({required String network}) {
-    return rust_api.generateVotingHotkey(network: network);
+    return _typed(() => rust_api.generateVotingHotkey(network: network));
   }
 
   @override
@@ -902,10 +942,12 @@ class FrbVotingRustApi implements VotingRustApi {
     required List<int> storedHotkeySecret,
     required List<int> bundleIndices,
   }) {
-    return rust_api.buildKeystoneDelegationRequests(
-      ctx: ctx,
-      storedHotkeySecret: storedHotkeySecret,
-      bundleIndices: bundleIndices,
+    return _typed(
+      () => rust_api.buildKeystoneDelegationRequests(
+        ctx: ctx,
+        storedHotkeySecret: storedHotkeySecret,
+        bundleIndices: bundleIndices,
+      ),
     );
   }
 
@@ -917,11 +959,13 @@ class FrbVotingRustApi implements VotingRustApi {
     required String roundId,
     required List<rust_api.ApiKeystoneSignatureInput> signatures,
   }) {
-    return rust_api.storeKeystoneSignaturesBatch(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      signatures: signatures,
+    return _typed(
+      () => rust_api.storeKeystoneSignaturesBatch(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
+        signatures: signatures,
+      ),
     );
   }
 
@@ -931,10 +975,12 @@ class FrbVotingRustApi implements VotingRustApi {
     required String accountUuid,
     required String roundId,
   }) {
-    return rust_api.getKeystoneSignatures(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
+    return _typed(
+      () => rust_api.getKeystoneSignatures(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
+      ),
     );
   }
 
@@ -945,11 +991,13 @@ class FrbVotingRustApi implements VotingRustApi {
     required String roundId,
     required int keepCount,
   }) {
-    return rust_api.deleteSkippedBundles(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      keepCount: keepCount,
+    return _typed(
+      () => rust_api.deleteSkippedBundles(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
+        keepCount: keepCount,
+      ),
     );
   }
 
@@ -960,11 +1008,13 @@ class FrbVotingRustApi implements VotingRustApi {
     required String roundId,
     required String nodeUrl,
   }) {
-    return rust_api.syncVoteTree(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      nodeUrl: nodeUrl,
+    return _typed(
+      () => rust_api.syncVoteTree(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
+        nodeUrl: nodeUrl,
+      ),
     );
   }
 
@@ -974,10 +1024,12 @@ class FrbVotingRustApi implements VotingRustApi {
     required String accountUuid,
     String? roundId,
   }) {
-    return rust_api.resetVotingSessionState(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
+    return _typed(
+      () => rust_api.resetVotingSessionState(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
+      ),
     );
   }
 
@@ -987,10 +1039,12 @@ class FrbVotingRustApi implements VotingRustApi {
     required String accountUuid,
     String? roundId,
   }) {
-    return rust_api.resetVoteTree(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
+    return _typed(
+      () => rust_api.resetVoteTree(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
+      ),
     );
   }
 
@@ -999,9 +1053,11 @@ class FrbVotingRustApi implements VotingRustApi {
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
   }) {
-    return rust_api.lastMomentBufferSeconds(
-      ceremonyStartSeconds: ceremonyStartSeconds,
-      voteEndTimeSeconds: voteEndTimeSeconds,
+    return _typedSync(
+      () => rust_api.lastMomentBufferSeconds(
+        ceremonyStartSeconds: ceremonyStartSeconds,
+        voteEndTimeSeconds: voteEndTimeSeconds,
+      ),
     );
   }
 
@@ -1011,10 +1067,12 @@ class FrbVotingRustApi implements VotingRustApi {
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
   }) {
-    return rust_api.isLastMoment(
-      nowSeconds: nowSeconds,
-      ceremonyStartSeconds: ceremonyStartSeconds,
-      voteEndTimeSeconds: voteEndTimeSeconds,
+    return _typedSync(
+      () => rust_api.isLastMoment(
+        nowSeconds: nowSeconds,
+        ceremonyStartSeconds: ceremonyStartSeconds,
+        voteEndTimeSeconds: voteEndTimeSeconds,
+      ),
     );
   }
 
@@ -1032,11 +1090,13 @@ class FrbVotingRustApi implements VotingRustApi {
         'Expected an FRB share tracking pass handle',
       );
     }
-    return rust_api.trackPendingShares(
-      passHandle: passHandle.inner,
-      configuredHelperUrls: configuredHelperUrls,
-      nowSeconds: nowSeconds,
-      voteEndTimeSeconds: voteEndTimeSeconds,
+    return _typed(
+      () => rust_api.trackPendingShares(
+        passHandle: passHandle.inner,
+        configuredHelperUrls: configuredHelperUrls,
+        nowSeconds: nowSeconds,
+        voteEndTimeSeconds: voteEndTimeSeconds,
+      ),
     );
   }
 
@@ -1056,13 +1116,15 @@ class FrbVotingRustApi implements VotingRustApi {
         'Expected an FRB voting share tracking pass handle',
       );
     }
-    return rust_api.confirmShareWithHelpers(
-      passHandle: passHandle.inner,
-      configuredHelperUrls: configuredHelperUrls,
-      bundleIndex: bundleIndex,
-      proposalId: proposalId,
-      shareIndex: shareIndex,
-      nowSeconds: nowSeconds,
+    return _typed(
+      () => rust_api.confirmShareWithHelpers(
+        passHandle: passHandle.inner,
+        configuredHelperUrls: configuredHelperUrls,
+        bundleIndex: bundleIndex,
+        proposalId: proposalId,
+        shareIndex: shareIndex,
+        nowSeconds: nowSeconds,
+      ),
     );
   }
 
@@ -1105,9 +1167,11 @@ class FrbVotingRustApi implements VotingRustApi {
     required List<rust_voting.ShareDelegationRecordView> shares,
     required BigInt nowSeconds,
   }) {
-    return rust_api.nextShareTrackingDelaySeconds(
-      shares: shares,
-      nowSeconds: nowSeconds,
+    return _typed(
+      () => rust_api.nextShareTrackingDelaySeconds(
+        shares: shares,
+        nowSeconds: nowSeconds,
+      ),
     );
   }
 }

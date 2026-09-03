@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/duration_format.dart';
 import '../../features/voting/voting_error_messages.dart';
+import '../../services/voting/voting_rust_exception.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
@@ -22,8 +23,6 @@ import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
-
-final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 
 /// The PCZT value-pool tag for Ironwood actions.
 ///
@@ -359,7 +358,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return _enqueue(_refreshEligibleWeightUnlocked).then((_) {
       final current = state.value;
       final error = current?.error;
-      if (error != null && !isVotingEligibilityErrorText(error.message)) {
+      if (error != null && !error.isEligibilityFailure) {
         throw error.cause ?? StateError(error.message);
       }
       return current?.eligibleWeightZatoshi;
@@ -729,7 +728,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       try {
-        final result = await rust.storeKeystoneSignaturesBatch(
+        // A conflicting tuple fails the whole batch with a typed error; a
+        // successful write needs no inspection.
+        await rust.storeKeystoneSignaturesBatch(
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
@@ -747,12 +748,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ),
           ],
         );
-        if (result.conflictingBundleIndex != null) {
+      } on VotingRustException catch (error) {
+        if (error.kind ==
+            rust_wire.VotingErrorKindView.keystoneSignatureConflict) {
           reject(
             'This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.',
           );
           return;
         }
+        reject(
+          'Could not save the Keystone signatures. Scan the same Keystone result again.',
+        );
+        return;
       } catch (error) {
         reject(
           'Could not save the Keystone signatures. Scan the same Keystone result again.',
@@ -2742,7 +2749,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         if (cleanupProcessStateOnError) {
           await _cleanupCurrentSessionState(reason: 'action-failed');
         }
-        if (publishError) _setError(_actionErrorMessage(e), cause: e);
+        if (publishError) {
+          _setError(
+            _actionErrorMessage(e),
+            cause: e,
+            isEligibilityFailure:
+                votingRustExceptionOf(e)?.isEligibilityFailure ?? false,
+          );
+        }
         onError?.call();
         if (propagateError) rethrow;
       } finally {
@@ -3088,16 +3102,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             ? base
             : base.copyWith(
                 error: VotingSessionError(
-                  message: _minimumVotingEligibilityErrorMessage(
-                    eligibility: eligibility,
+                  message: minimumVotingEligibilityMessage(
                     snapshotHeight: context.round.snapshotHeight,
                   ),
+                  isEligibilityFailure: true,
                 ),
               ),
       );
     } catch (error) {
       final message = friendlyVotingErrorMessage(error);
-      final eligibilityError = isVotingEligibilityErrorText(message);
+      final eligibilityError =
+          votingRustExceptionOf(error)?.isEligibilityFailure ?? false;
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
@@ -3109,23 +3124,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           eligibleWeightZatoshi: eligibilityError ? BigInt.zero : null,
           privacyTrimDroppedValueZatoshi: eligibilityError ? BigInt.zero : null,
           isHardwareAccount: context.isHardwareAccount,
-          error: VotingSessionError(message: message, cause: error),
+          error: VotingSessionError(
+            message: message,
+            cause: error,
+            isEligibilityFailure: eligibilityError,
+          ),
         ),
       );
     }
-  }
-
-  String _minimumVotingEligibilityErrorMessage({
-    required rust_api.ApiVotingEligibility eligibility,
-    required int snapshotHeight,
-  }) {
-    return 'minimum voting eligibility requires at least one eligible voting '
-        'bundle with $_minimumVotingBundleWeightZatoshi zatoshi voting weight; '
-        'selected '
-        '${eligibility.distinctNoteCount} distinct notes across eligible '
-        'bundles with ${eligibility.eligibleWeightZatoshi} zatoshi eligible '
-        'bundle weight at '
-        'snapshot height $snapshotHeight';
   }
 
   Future<_VotingSessionContext> _loadContext(
@@ -3351,6 +3357,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     Object? cause,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     _VotingSessionContext? context,
+    bool isEligibilityFailure = false,
   }) {
     if (!_canUpdateSessionUi(context)) return;
     final current = state.value ?? VotingSessionState(roundId: _roundId);
@@ -3361,6 +3368,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           message: message,
           cause: cause,
           pirDiagnostics: pirDiagnostics ?? const [],
+          isEligibilityFailure: isEligibilityFailure,
         ),
         pirDiagnostics: pirDiagnostics,
       ),
@@ -3616,14 +3624,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   static bool _isKeystoneSetupOverwriteError(Object error) {
-    final normalized = error
-        .toString()
-        .toLowerCase()
-        .replaceAll('_', ' ')
-        .replaceAll('-', ' ');
-    return normalized.contains('refusing to overwrite pczt sighash') ||
-        normalized.contains('refusing to overwrite pczt hash') ||
-        normalized.contains('refusing to overwrite padded note secrets');
+    return error is VotingRustException &&
+        error.kind == rust_wire.VotingErrorKindView.setupAlreadyPersisted;
   }
 }
 
@@ -3687,6 +3689,23 @@ class _BundleWorkOutcome<T> {
   final StackTrace? stackTrace;
 }
 
+/// The bridge failure that best describes a batch of per-bundle failures.
+///
+/// An eligibility failure wins because it is round-wide rather than specific
+/// to the bundle that reported it first.
+VotingRustException? _representativeVotingRustException(
+  Iterable<Object> errors,
+) {
+  VotingRustException? first;
+  for (final error in errors) {
+    final rustError = votingRustExceptionOf(error);
+    if (rustError == null) continue;
+    if (rustError.isEligibilityFailure) return rustError;
+    first ??= rustError;
+  }
+  return first;
+}
+
 class _VoteBundleFailure {
   const _VoteBundleFailure({
     required this.bundleIndex,
@@ -3699,10 +3718,17 @@ class _VoteBundleFailure {
   final Object error;
 }
 
-class _VoteBundleBatchException implements Exception {
+class _VoteBundleBatchException
+    implements Exception, VotingRustExceptionSource {
   const _VoteBundleBatchException(this.failures);
 
   final List<_VoteBundleFailure> failures;
+
+  @override
+  VotingRustException? get votingRustException =>
+      _representativeVotingRustException(
+        failures.map((failure) => failure.error),
+      );
 
   @override
   String toString() {
@@ -3729,10 +3755,17 @@ class _DelegationBundleFailure {
   final Object error;
 }
 
-class _DelegationBundleBatchException implements Exception {
+class _DelegationBundleBatchException
+    implements Exception, VotingRustExceptionSource {
   const _DelegationBundleBatchException(this.failures);
 
   final List<_DelegationBundleFailure> failures;
+
+  @override
+  VotingRustException? get votingRustException =>
+      _representativeVotingRustException(
+        failures.map((failure) => failure.error),
+      );
 
   @override
   String toString() {

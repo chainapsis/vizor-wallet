@@ -4837,12 +4837,14 @@ class _FailingEligibilityVotingSessionNotifier
 
   @override
   Future<BigInt?> refreshEligibleWeight() async {
-    throw Exception(
-      'Invalid input: minimum voting eligibility requires at least one '
-      'eligible voting bundle with 12500000 zatoshi voting weight; selected 0 '
-      'distinct notes across eligible bundles with 0 zatoshi eligible bundle '
-      'weight at snapshot height '
-      '3359740',
+    throw votingRustError(
+      rust_wire.VotingErrorKindView.insufficientEligibility,
+      message:
+          'minimum voting eligibility requires at least one eligible voting '
+          'bundle with 12500000 zatoshi voting weight',
+      snapshotHeight: BigInt.from(3359740),
+      requiredWeightZatoshi: BigInt.from(12500000),
+      selectedWeightZatoshi: BigInt.zero,
     );
   }
 }
@@ -5114,8 +5116,10 @@ class _IneligibleVotingRustApi extends _VotingStatusRustApi {
     required bool singleShare,
     required int maxProofConcurrency,
   }) async* {
-    throw Exception(
-      'Invalid input: no spendable voting notes at snapshot height 3359740',
+    throw votingRustError(
+      rust_wire.VotingErrorKindView.noSpendableNotes,
+      message: 'no spendable voting notes at snapshot height 3359740',
+      snapshotHeight: BigInt.from(3359740),
     );
   }
 }
@@ -5658,7 +5662,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
     return rust_api.ApiKeystoneSignatureBatchResult(
       inserted: inserted,
       alreadyPresent: alreadyPresent,
-      conflictingBundleIndex: null,
     );
   }
 

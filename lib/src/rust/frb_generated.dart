@@ -1942,7 +1942,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_keystone_signing_request,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingBuildKeystoneDelegationRequestsConstMeta,
         argValues: [ctx, storedHotkeySecret, bundleIndices],
@@ -1997,7 +1997,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_voting_eligibility,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingCheckVotingEligibilityConstMeta,
         argValues: [ctx],
@@ -2421,7 +2421,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingConfirmShareWithHelpersConstMeta,
         argValues: [
@@ -3118,7 +3118,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingDeleteSkippedBundlesConstMeta,
         argValues: [dbPath, accountUuid, roundId, keepCount],
@@ -3153,7 +3153,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingDeleteVotingAccountStateConstMeta,
         argValues: [dbPath, accountUuid],
@@ -4053,7 +4053,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingGenerateVotingHotkeyConstMeta,
         argValues: [network],
@@ -4401,7 +4401,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_keystone_signature_record,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingGetKeystoneSignaturesConstMeta,
         argValues: [dbPath, accountUuid, roundId],
@@ -4844,7 +4844,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_round_plan_view,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingGetRoundPlanConstMeta,
         argValues: [dbPath, accountUuid, roundId, proposalIds],
@@ -4880,7 +4880,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_round_recovery_state_view,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingGetRoundRecoveryStateConstMeta,
         argValues: [dbPath, accountUuid, roundId],
@@ -5803,7 +5803,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_api_pending_share_round,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingListPendingShareRoundsConstMeta,
         argValues: [dbPath, accountUuids],
@@ -6077,7 +6077,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_u_64,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingNextShareTrackingDelaySecondsConstMeta,
         argValues: [shares, nowSeconds],
@@ -6206,7 +6206,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingPrecomputeDelegationProofConstMeta,
         argValues: [ctx, pirServerUrls, storedHotkeySecret, bundleIndex],
@@ -6242,7 +6242,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_snapshot_bundle_precompute_result,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingPrecomputeSnapshotBundlesConstMeta,
         argValues: [ctx, pirServerUrl],
@@ -6937,7 +6937,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingResetVoteTreeConstMeta,
         argValues: [dbPath, accountUuid, roundId],
@@ -6974,7 +6974,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingResetVotingSessionStateConstMeta,
         argValues: [dbPath, accountUuid, roundId],
@@ -7009,7 +7009,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingResolveStaticVotingConfigConstMeta,
         argValues: [source, staticBytes],
@@ -7051,7 +7051,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_voting_config_resolution,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingResolveVotingConfigFromAttemptsConstMeta,
         argValues: [source, staticBytes, attempts, previous],
@@ -7333,7 +7333,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingSelectPirSnapshotEndpointConstMeta,
         argValues: [diagnostics, expectedSnapshotHeight, matchIndex],
@@ -7408,7 +7408,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingSetBallotIntentConstMeta,
         argValues: [
@@ -7553,7 +7553,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_bundle_layout,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingSetupDelegationBundlesConstMeta,
         argValues: [ctx],
@@ -8006,7 +8006,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_keystone_signature_batch_result,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingStoreKeystoneSignaturesBatchConstMeta,
         argValues: [dbPath, accountUuid, roundId, signatures],
@@ -8080,7 +8080,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingSyncVoteTreeConstMeta,
         argValues: [dbPath, accountUuid, roundId, nodeUrl],
@@ -8300,7 +8300,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_share_tracking_report,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingTrackPendingSharesConstMeta,
         argValues: [
@@ -8354,7 +8354,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_voting_round_params,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingTrustedVotingRoundParamsFromConfigConstMeta,
         argValues: [
@@ -8566,7 +8566,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_pir_cache_warmup_result,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingWarmPirProofCacheConstMeta,
         argValues: [
@@ -8984,12 +8984,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   dco_decode_api_keystone_signature_batch_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return ApiKeystoneSignatureBatchResult(
       inserted: dco_decode_u_32(arr[0]),
       alreadyPresent: dco_decode_u_32(arr[1]),
-      conflictingBundleIndex: dco_decode_opt_box_autoadd_u_32(arr[2]),
     );
   }
 
@@ -12218,13 +12217,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_inserted = sse_decode_u_32(deserializer);
     var var_alreadyPresent = sse_decode_u_32(deserializer);
-    var var_conflictingBundleIndex = sse_decode_opt_box_autoadd_u_32(
-      deserializer,
-    );
     return ApiKeystoneSignatureBatchResult(
       inserted: var_inserted,
       alreadyPresent: var_alreadyPresent,
-      conflictingBundleIndex: var_conflictingBundleIndex,
     );
   }
 
@@ -16459,7 +16454,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.inserted, serializer);
     sse_encode_u_32(self.alreadyPresent, serializer);
-    sse_encode_opt_box_autoadd_u_32(self.conflictingBundleIndex, serializer);
   }
 
   @protected

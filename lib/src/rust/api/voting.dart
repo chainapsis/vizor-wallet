@@ -10,7 +10,7 @@ import '../third_party/zcash_voting/share_policy.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `round_inputs`, `routed_transport`, `share_record`, `share_tracking_pass_for`
+// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `internal`, `invalid_input`, `is_cancelled`, `round_inputs`, `routed_transport`, `share_record`, `share_tracking_pass_for`, `view`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
@@ -289,8 +289,9 @@ Future<List<KeystoneSigningRequest>> buildKeystoneDelegationRequests({
 ///
 /// Existing tuples for the same sighash and randomized key are accepted as
 /// idempotent retries, even when randomized signing produced different valid
-/// signature bytes. A tuple for a different signing context is a conflict, and
-/// any validation or database error rolls back the complete batch.
+/// signature bytes. A tuple for a different signing context is a
+/// `KeystoneSignatureConflict` error, and any validation or database error
+/// rolls back the complete batch.
 Future<ApiKeystoneSignatureBatchResult> storeKeystoneSignaturesBatch({
   required String dbPath,
   required String accountUuid,
@@ -619,22 +620,20 @@ class ApiDynamicConfigMirrorFailure {
 }
 
 /// Outcome of an idempotent Keystone signature batch write.
+///
+/// A tuple for a different signing context fails the whole batch with
+/// `VotingError::KeystoneSignatureConflict`, which names the bundle.
 class ApiKeystoneSignatureBatchResult {
   final int inserted;
   final int alreadyPresent;
-  final int? conflictingBundleIndex;
 
   const ApiKeystoneSignatureBatchResult({
     required this.inserted,
     required this.alreadyPresent,
-    this.conflictingBundleIndex,
   });
 
   @override
-  int get hashCode =>
-      inserted.hashCode ^
-      alreadyPresent.hashCode ^
-      conflictingBundleIndex.hashCode;
+  int get hashCode => inserted.hashCode ^ alreadyPresent.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -642,8 +641,7 @@ class ApiKeystoneSignatureBatchResult {
       other is ApiKeystoneSignatureBatchResult &&
           runtimeType == other.runtimeType &&
           inserted == other.inserted &&
-          alreadyPresent == other.alreadyPresent &&
-          conflictingBundleIndex == other.conflictingBundleIndex;
+          alreadyPresent == other.alreadyPresent;
 }
 
 /// One Keystone delegation signature tuple to persist atomically.

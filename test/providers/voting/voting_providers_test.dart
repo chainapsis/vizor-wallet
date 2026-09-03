@@ -2567,9 +2567,11 @@ void main() {
   test('hardware voting retries stale Keystone setup overwrite once', () async {
     final rust = FakeVotingRustApi(
       keystoneDelegationRequestFailuresByCall: {
-        0: StateError(
-          'delegate::keystone_request failed: Invalid input: '
-          'refusing to overwrite pczt_sighash for round=round-id, bundle=0',
+        0: votingRustError(
+          rust_wire.VotingErrorKindView.setupAlreadyPersisted,
+          message:
+              'refusing to overwrite pczt_sighash for round=round-id, bundle=0',
+          bundleIndex: 0,
         ),
       },
     );
@@ -2597,9 +2599,12 @@ void main() {
       final rust = FakeVotingRustApi(
         bundleCount: 2,
         keystoneDelegationRequestFailuresByCall: {
-          0: StateError(
-            'delegate::keystone_request failed: Invalid input: '
-            'refusing to overwrite padded_note_secrets for round=round-id, bundle=1',
+          0: votingRustError(
+            rust_wire.VotingErrorKindView.setupAlreadyPersisted,
+            message:
+                'refusing to overwrite padded_note_secrets for round=round-id, '
+                'bundle=1',
+            bundleIndex: 1,
           ),
         },
       );
@@ -12141,10 +12146,13 @@ class FakeVotingRustApi
       if (existing != null) {
         if (!listEquals(existing.sighash, signature.sighash) ||
             !listEquals(existing.rk, signature.rk)) {
-          return rust_api.ApiKeystoneSignatureBatchResult(
-            inserted: 0,
-            alreadyPresent: 0,
-            conflictingBundleIndex: signature.bundleIndex,
+          // The SDK fails the whole batch with a typed conflict naming the
+          // bundle; nothing is written.
+          throw votingRustError(
+            rust_wire.VotingErrorKindView.keystoneSignatureConflict,
+            message:
+                'Keystone signature conflict for bundle ${signature.bundleIndex}',
+            bundleIndex: signature.bundleIndex,
           );
         }
         alreadyPresent++;
@@ -12164,7 +12172,6 @@ class FakeVotingRustApi
     return rust_api.ApiKeystoneSignatureBatchResult(
       inserted: inserted,
       alreadyPresent: alreadyPresent,
-      conflictingBundleIndex: null,
     );
   }
 

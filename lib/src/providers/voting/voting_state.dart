@@ -112,10 +112,16 @@ class VotingSessionError {
   final Object? cause;
   final List<PirSnapshotEndpointDiagnostic> pirDiagnostics;
 
+  /// True when the account cannot vote in this round (no spendable notes or
+  /// too little eligible weight). Such errors are not retryable and switch
+  /// the UI to its ineligible presentation.
+  final bool isEligibilityFailure;
+
   const VotingSessionError({
     required this.message,
     this.cause,
     this.pirDiagnostics = const [],
+    this.isEligibilityFailure = false,
   });
 }
 

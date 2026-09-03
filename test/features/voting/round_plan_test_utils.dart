@@ -4,6 +4,7 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart
     as rust_share_policy;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
+import 'package:zcash_wallet/src/services/voting/voting_rust_exception.dart';
 
 /// Mirrors the SDK's `summarize_plan_work` so fixtures stay faithful to the
 /// derived predicates the app now reads instead of matching step kinds.
@@ -440,4 +441,36 @@ rust_wire.RoundPlanActionKind _primaryAction({
     return rust_wire.RoundPlanActionKind.submitShares;
   }
   return rust_wire.RoundPlanActionKind.idle;
+}
+
+/// Builds the typed bridge failure a scripted fake would surface for `kind`.
+///
+/// Production Rust returns `VotingErrorView` from every voting FRB call and the
+/// bridge wrapper rethrows it as [VotingRustException]; fakes construct the
+/// same pair so provider and screen code is exercised through its real
+/// classification path.
+VotingRustException votingRustError(
+  rust_wire.VotingErrorKindView kind, {
+  required String message,
+  bool retryable = false,
+  int? bundleIndex,
+  BigInt? snapshotHeight,
+  BigInt? requiredWeightZatoshi,
+  BigInt? selectedWeightZatoshi,
+  int? requiredNotes,
+  int? selectedNotes,
+}) {
+  return VotingRustException(
+    rust_wire.VotingErrorView(
+      kind: kind,
+      retryable: retryable,
+      message: message,
+      bundleIndex: bundleIndex,
+      snapshotHeight: snapshotHeight,
+      requiredWeightZatoshi: requiredWeightZatoshi,
+      selectedWeightZatoshi: selectedWeightZatoshi,
+      requiredNotes: requiredNotes,
+      selectedNotes: selectedNotes,
+    ),
+  );
 }

@@ -204,9 +204,8 @@ class _VotingProposalDetailViewState
           preparing: votingPowerPreparing,
         );
         final votingError = state.error;
-        final votingEligibilityError = votingError == null
-            ? false
-            : isVotingEligibilityErrorText(votingError.message);
+        final votingEligibilityError =
+            votingError?.isEligibilityFailure ?? false;
         _maybePrecomputeSnapshotBundles(state);
         return VotingActivePollContent(
           showDesktopToolbar: widget.showDesktopToolbar,

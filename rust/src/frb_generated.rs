@@ -870,7 +870,7 @@ fn wire__crate__api__voting__build_keystone_delegation_requests_impl(
             let api_bundle_indices = <Vec<u32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
                     (move || async move {
                         let output_ok = crate::api::voting::build_keystone_delegation_requests(
                             api_ctx,
@@ -943,7 +943,7 @@ fn wire__crate__api__voting__check_voting_eligibility_impl(
                 <crate::api::voting::ApiVotingRoundContext>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
                     (move || async move {
                         let output_ok =
                             crate::api::voting::check_voting_eligibility(api_ctx).await?;
@@ -1321,7 +1321,7 @@ fn wire__crate__api__voting__confirm_share_with_helpers_impl(
             let api_now_seconds = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
                     (move || async move {
                         let mut api_pass_handle_guard = None;
                         let decode_indices_ =
@@ -2031,7 +2031,7 @@ fn wire__crate__api__voting__delete_skipped_bundles_impl(
             let api_keep_count = <u32>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::delete_skipped_bundles(
                         api_db_path,
                         api_account_uuid,
@@ -2070,7 +2070,7 @@ fn wire__crate__api__voting__delete_voting_account_state_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::delete_voting_account_state(
                         api_db_path,
                         api_account_uuid,
@@ -2929,7 +2929,7 @@ fn wire__crate__api__voting__generate_voting_hotkey_impl(
             let api_network = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::generate_voting_hotkey(api_network)?;
                     Ok(output_ok)
                 })())
@@ -3298,7 +3298,7 @@ fn wire__crate__api__voting__get_keystone_signatures_impl(
             let api_round_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::get_keystone_signatures(
                         api_db_path,
                         api_account_uuid,
@@ -3752,7 +3752,7 @@ fn wire__crate__api__voting__get_round_plan_impl(
             let api_proposal_ids = <Vec<u32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::get_round_plan(
                         api_db_path,
                         api_account_uuid,
@@ -3792,7 +3792,7 @@ fn wire__crate__api__voting__get_round_recovery_state_impl(
             let api_round_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::get_round_recovery_state(
                         api_db_path,
                         api_account_uuid,
@@ -4685,7 +4685,7 @@ fn wire__crate__api__voting__list_pending_share_rounds_impl(
             let api_account_uuids = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::list_pending_share_rounds(
                         api_db_path,
                         api_account_uuids,
@@ -4906,7 +4906,7 @@ fn wire__crate__api__voting__next_share_tracking_delay_seconds_impl(
             let api_now_seconds = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::next_share_tracking_delay_seconds(
                         api_shares,
                         api_now_seconds,
@@ -5025,7 +5025,7 @@ fn wire__crate__api__voting__precompute_delegation_proof_impl(
             let api_bundle_index = <u32>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
                     (move || async move {
                         let output_ok = crate::api::voting::precompute_delegation_proof(
                             api_ctx,
@@ -5069,7 +5069,7 @@ fn wire__crate__api__voting__precompute_snapshot_bundles_impl(
             let api_pir_server_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
                     (move || async move {
                         let output_ok = crate::api::voting::precompute_snapshot_bundles(
                             api_ctx,
@@ -5664,7 +5664,7 @@ fn wire__crate__api__voting__reset_vote_tree_impl(
             let api_round_id = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::reset_vote_tree(
                         api_db_path,
                         api_account_uuid,
@@ -5703,7 +5703,7 @@ fn wire__crate__api__voting__reset_voting_session_state_impl(
             let api_round_id = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::reset_voting_session_state(
                         api_db_path,
                         api_account_uuid,
@@ -5741,7 +5741,7 @@ fn wire__crate__api__voting__resolve_static_voting_config_impl(
             let api_static_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::resolve_static_voting_config(
                         api_source,
                         api_static_bytes,
@@ -5782,7 +5782,7 @@ fn wire__crate__api__voting__resolve_voting_config_from_attempts_impl(
                 <Option<zcash_voting::config::ResolvedVotingConfig>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::resolve_voting_config_from_attempts(
                         api_source,
                         api_static_bytes,
@@ -6037,7 +6037,7 @@ fn wire__crate__api__voting__select_pir_snapshot_endpoint_impl(
             let api_expected_snapshot_height = <u64>::sse_decode(&mut deserializer);
             let api_match_index = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
+            transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                 let output_ok = crate::api::voting::select_pir_snapshot_endpoint(
                     api_diagnostics,
                     api_expected_snapshot_height,
@@ -6111,7 +6111,7 @@ fn wire__crate__api__voting__set_ballot_intent_impl(
             let api_choice = <Option<u32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::set_ballot_intent(
                         api_db_path,
                         api_account_uuid,
@@ -6258,7 +6258,7 @@ fn wire__crate__api__voting__setup_delegation_bundles_impl(
                 <crate::api::voting::ApiVotingRoundContext>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
                     (move || async move {
                         let output_ok =
                             crate::api::voting::setup_delegation_bundles(api_ctx).await?;
@@ -6659,7 +6659,7 @@ fn wire__crate__api__voting__store_keystone_signatures_batch_impl(
                 <Vec<crate::api::voting::ApiKeystoneSignatureInput>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::store_keystone_signatures_batch(
                         api_db_path,
                         api_account_uuid,
@@ -6735,7 +6735,7 @@ fn wire__crate__api__voting__sync_vote_tree_impl(
             let api_node_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::sync_vote_tree(
                         api_db_path,
                         api_account_uuid,
@@ -6983,7 +6983,7 @@ fn wire__crate__api__voting__track_pending_shares_impl(
             let api_vote_end_time_seconds = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
                     (move || async move {
                         let mut api_pass_handle_guard = None;
                         let decode_indices_ =
@@ -7049,7 +7049,7 @@ fn wire__crate__api__voting__trusted_voting_round_params_from_config_impl(
             let api_nullifier_imt_root = <Vec<u8>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::trusted_voting_round_params_from_config(
                         api_resolved_config,
                         api_round_id,
@@ -7257,7 +7257,7 @@ fn wire__crate__api__voting__warm_pir_proof_cache_impl(
             let api__keep_roots = <Vec<Vec<u8>>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
                     (move || async move {
                         let output_ok = crate::api::voting::warm_pir_proof_cache(
                             api_db_path,
@@ -8026,11 +8026,9 @@ impl SseDecode for crate::api::voting::ApiKeystoneSignatureBatchResult {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_inserted = <u32>::sse_decode(deserializer);
         let mut var_alreadyPresent = <u32>::sse_decode(deserializer);
-        let mut var_conflictingBundleIndex = <Option<u32>>::sse_decode(deserializer);
         return crate::api::voting::ApiKeystoneSignatureBatchResult {
             inserted: var_inserted,
             already_present: var_alreadyPresent,
-            conflicting_bundle_index: var_conflictingBundleIndex,
         };
     }
 }
@@ -12318,7 +12316,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiKeystoneSignatureB
         [
             self.inserted.into_into_dart().into_dart(),
             self.already_present.into_into_dart().into_dart(),
-            self.conflicting_bundle_index.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -15929,7 +15926,6 @@ impl SseEncode for crate::api::voting::ApiKeystoneSignatureBatchResult {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.inserted, serializer);
         <u32>::sse_encode(self.already_present, serializer);
-        <Option<u32>>::sse_encode(self.conflicting_bundle_index, serializer);
     }
 }
 

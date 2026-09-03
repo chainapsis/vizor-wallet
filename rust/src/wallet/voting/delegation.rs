@@ -34,6 +34,18 @@ use crate::wallet::voting::network::wallet_network;
 use super::db::open_voting_db;
 use super::transport::fetch_snapshot_tree_state;
 
+fn invalid_input(message: impl Into<String>) -> VotingError {
+    VotingError::InvalidInput {
+        message: message.into(),
+    }
+}
+
+fn internal(message: impl Into<String>) -> VotingError {
+    VotingError::Internal {
+        message: message.into(),
+    }
+}
+
 /// Round inputs every delegation stage needs.
 #[derive(Clone, Debug)]
 pub struct RoundInputs {
@@ -72,19 +84,19 @@ pub type VizorDelegationPipeline = DelegationPipeline<VizorWalletDbOpener>;
 pub async fn open_pipeline(
     inputs: &RoundInputs,
     hotkey: Option<VotingHotkey>,
-) -> Result<Arc<VizorDelegationPipeline>, String> {
+) -> Result<Arc<VizorDelegationPipeline>, VotingError> {
     zcash_voting::validate_round_params(&inputs.round_params)
-        .map_err(|e| format!("Invalid voting round params: {e}"))?;
+        .map_err(|error| invalid_input(format!("Invalid voting round params: {error}")))?;
     let tree_state =
         fetch_snapshot_tree_state(&inputs.lightwalletd_url, inputs.round_params.snapshot_height)
-            .await?;
+            .await
+            .map_err(internal)?;
     let lwd = DelegationLwdInputs::from_anchor_tree_state(
         inputs.network,
         inputs.round_params.clone(),
         &inputs.round_name,
         &tree_state,
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
     let voting_db = open_voting_db(&inputs.db_path, &inputs.account_uuid)?;
     let opener = VizorWalletDbOpener {
         db_path: inputs.db_path.clone(),
@@ -100,34 +112,30 @@ pub async fn open_pipeline(
         inputs.session_json.as_deref(),
     )
     .map(Arc::new)
-    .map_err(|e| e.to_string())
 }
 
 /// PIR fleet over the SDK's direct HTTP transport.
 pub fn pir_fleet(
     pir_server_urls: &[String],
     pir_layout: PirLayout,
-) -> Result<Arc<PirFleet>, String> {
-    PirFleet::new(pir_server_urls, pir_layout, Arc::new(HyperTransport::new()))
-        .map(Arc::new)
-        .map_err(|e| e.to_string())
+) -> Result<Arc<PirFleet>, VotingError> {
+    PirFleet::new(pir_server_urls, pir_layout, Arc::new(HyperTransport::new())).map(Arc::new)
 }
 
 async fn blocking<T: Send + 'static>(
     label: &'static str,
     work: impl FnOnce() -> Result<T, VotingError> + Send + 'static,
-) -> Result<T, String> {
+) -> Result<T, VotingError> {
     tokio::task::spawn_blocking(work)
         .await
-        .map_err(|e| format!("{label} task failed: {e}"))?
-        .map_err(|e| e.to_string())
+        .map_err(|error| internal(format!("{label} task failed: {error}")))?
 }
 
 /// Runs proving work on a dedicated large-stack thread.
 async fn proving<T: Send + 'static>(
     label: &'static str,
     work: impl FnOnce() -> Result<T, VotingError> + Send + 'static,
-) -> Result<T, String> {
+) -> Result<T, VotingError> {
     const PROVING_STACK_BYTES: usize = 64 * 1024 * 1024;
     let (tx, rx) = tokio::sync::oneshot::channel();
     std::thread::Builder::new()
@@ -136,10 +144,9 @@ async fn proving<T: Send + 'static>(
         .spawn(move || {
             let _ = tx.send(work());
         })
-        .map_err(|e| format!("failed to spawn {label} thread: {e}"))?;
+        .map_err(|error| internal(format!("failed to spawn {label} thread: {error}")))?;
     rx.await
-        .map_err(|_| format!("{label} thread exited without a result"))?
-        .map_err(|e| e.to_string())
+        .map_err(|_| internal(format!("{label} thread exited without a result")))?
 }
 
 /// Start process-lifetime Halo2 proving-key warm-up if it has not started yet.
@@ -148,7 +155,7 @@ pub fn start_proving_cache_warmup() {
 }
 
 /// Select notes and create/reuse delegation bundle rows for a round.
-pub async fn setup_delegation_bundles(inputs: RoundInputs) -> Result<BundleLayout, String> {
+pub async fn setup_delegation_bundles(inputs: RoundInputs) -> Result<BundleLayout, VotingError> {
     let pipeline = open_pipeline(&inputs, None).await?;
     blocking("bundle setup", move || pipeline.setup_bundles()).await
 }
@@ -159,17 +166,15 @@ pub async fn setup_delegation_bundles(inputs: RoundInputs) -> Result<BundleLayou
 /// block the check was made at.
 pub async fn check_voting_eligibility(
     inputs: RoundInputs,
-) -> Result<VotingEligibilityReport, String> {
+) -> Result<VotingEligibilityReport, VotingError> {
     let snapshot_height = inputs.round_params.snapshot_height;
     let pipeline = open_pipeline(&inputs, None).await?;
-    tokio::task::spawn_blocking(move || {
+    blocking("eligibility", move || {
         pipeline
             .eligibility()
             .map_err(|error| error.with_snapshot_height(snapshot_height))
     })
     .await
-    .map_err(|e| format!("eligibility task failed: {e}"))?
-    .map_err(|e| e.to_string())
 }
 
 /// Persist the snapshot-stable bundle plan and warm PIR for every bundle.
@@ -177,7 +182,7 @@ pub async fn precompute_snapshot_bundles(
     inputs: RoundInputs,
     pir_server_url: &str,
     pir_layout: PirLayout,
-) -> Result<SnapshotBundlePrecomputeReport, String> {
+) -> Result<SnapshotBundlePrecomputeReport, VotingError> {
     start_proving_cache_warmup();
     let fleet = pir_fleet(&[pir_server_url.to_string()], pir_layout)?;
     let pipeline = open_pipeline(&inputs, None).await?;
@@ -211,7 +216,7 @@ pub async fn precompute_delegation_proof(
     pir_layout: PirLayout,
     hotkey: VotingHotkey,
     bundle_index: u32,
-) -> Result<bool, String> {
+) -> Result<bool, VotingError> {
     let fleet = pir_fleet(pir_server_urls, pir_layout)?;
     let pipeline = open_pipeline(&inputs, Some(hotkey)).await?;
     let status = proving("delegation-proof", move || {
@@ -242,40 +247,38 @@ pub async fn warm_pir_proof_cache(
     snapshot_height: u64,
     pir_server_url: &str,
     pir_layout: PirLayout,
-) -> Result<PirCacheWarmupOutcome, String> {
+) -> Result<PirCacheWarmupOutcome, VotingError> {
     let fleet = pir_fleet(&[pir_server_url.to_string()], pir_layout)?;
     let anchor_tree_state = fetch_snapshot_tree_state(lightwalletd_url, snapshot_height)
         .await
-        .map_err(|error| format!("voting note selection failed: {error}"))?;
+        .map_err(|error| internal(format!("voting note selection failed: {error}")))?;
     let db_path = db_path.to_string();
     let account_uuid = account_uuid.to_string();
     let wallet_net = wallet_network(network);
-    tokio::task::spawn_blocking(move || {
+    blocking("PIR proof cache warm-up", move || {
         let voting_db = open_voting_db(&db_path, &account_uuid)?;
-        let wallet_db = open_wallet_db_for_read(&db_path, wallet_net)?;
+        let wallet_db = open_wallet_db_for_read(&db_path, wallet_net)
+            .map_err(|message| VotingError::Storage { message })?;
         let selected = select_notes_with_wallet_db(
             &wallet_db,
             network,
             &account_uuid,
             snapshot_height,
             anchor_tree_state,
-        )
-        .map_err(|e| format!("voting note selection failed: {e}"))?;
+        )?;
         let notes = selected.voting_note_infos();
         let note_count = u32::try_from(notes.len())
-            .map_err(|_| "selected note count does not fit in u32".to_string())?;
+            .map_err(|_| internal("selected note count does not fit in u32"))?;
         let bundle_policy = zcash_voting::recoverable_bundle_policy_v1();
-        let result = fleet
-            .with_failover(|session| {
-                zcash_voting::precompute::precompute_pir_proofs(
-                    &voting_db,
-                    &notes,
-                    bundle_policy,
-                    network,
-                    session,
-                )
-            })
-            .map_err(|e| e.to_string())?;
+        let result = fleet.with_failover(|session| {
+            zcash_voting::precompute::precompute_pir_proofs(
+                &voting_db,
+                &notes,
+                bundle_policy,
+                network,
+                session,
+            )
+        })?;
         Ok(PirCacheWarmupOutcome {
             note_count,
             cached_count: result.cached_count,
@@ -285,5 +288,4 @@ pub async fn warm_pir_proof_cache(
         })
     })
     .await
-    .map_err(|e| format!("PIR proof cache warm-up task failed: {e}"))?
 }
