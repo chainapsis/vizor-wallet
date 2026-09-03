@@ -10,6 +10,7 @@ import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.security.MessageDigest
 
 // FlutterFragmentActivity: BiometricPrompt requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
@@ -18,11 +19,22 @@ class MainActivity : FlutterFragmentActivity() {
     private var incomingUriChannel: MethodChannel? = null
     private val pendingIncomingUris = mutableListOf<String>()
     private var incomingUriDartReady = false
-    private val consumedIncomingUris = ArrayList<String>()
+
+    /**
+     * Replay guard for links this activity record already delivered, held as
+     * SHA-256 digests rather than the links themselves.
+     *
+     * A Gift Card link carries a 24-word claim mnemonic in its fragment, and
+     * saved instance state is written to disk by the system. The guard only
+     * ever asks "have I seen this exact link before", which a digest answers
+     * just as well as the plaintext.
+     */
+    private val consumedIncomingUriDigests = ArrayList<String>()
 
     /**
      * The link this activity record was created with, kept outside
-     * [consumedIncomingUris] so the bound can never evict it.
+     * [consumedIncomingUriDigests] so the bound can never evict it. Also a
+     * digest, for the same reason.
      *
      * A task restore recreates the activity from its creating intent, so the
      * cold-start link is exactly the one most likely to be replayed — and, once
@@ -30,26 +42,28 @@ class MainActivity : FlutterFragmentActivity() {
      * LRU that evicts from the front. Pinning it separately keeps the bound for
      * the onNewIntent links, which are re-deliverable by design.
      */
-    private var launchIncomingUri: String? = null
+    private var launchIncomingUriDigest: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Restored before super.onCreate: on a recreated activity super
         // re-attaches the Flutter fragment, which already runs
         // configureFlutterEngine and the capture guard below.
-        consumedIncomingUris.clear()
-        savedInstanceState?.getStringArrayList(KEY_CONSUMED_INCOMING_URIS)?.let {
-            consumedIncomingUris.addAll(it)
+        consumedIncomingUriDigests.clear()
+        savedInstanceState?.getStringArrayList(KEY_CONSUMED_INCOMING_URI_DIGESTS)?.let {
+            consumedIncomingUriDigests.addAll(it)
         }
-        launchIncomingUri = savedInstanceState?.getString(KEY_LAUNCH_INCOMING_URI)
+        launchIncomingUriDigest =
+            savedInstanceState?.getString(KEY_LAUNCH_INCOMING_URI_DIGEST)
         // Links captured but not yet handed to Dart when the activity was
         // saved. A link is recorded as consumed at capture, so without this the
         // restore would recognise the creating intent as already delivered and
         // skip it, while the in-memory queue that still held it is gone —
         // a cold-start link opened just before the app was backgrounded would
-        // simply disappear.
+        // simply disappear. Only `zcash:` links are restored; see
+        // [onSaveInstanceState] for why an https link is dropped instead.
         pendingIncomingUris.clear()
         savedInstanceState?.getStringArrayList(KEY_PENDING_INCOMING_URIS)?.let {
-            pendingIncomingUris.addAll(it)
+            pendingIncomingUris.addAll(it.filter(::isSecretFreeIncomingUri))
         }
         super.onCreate(savedInstanceState)
     }
@@ -57,12 +71,25 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         // Survives process death, so the recreated activity knows which of the
-        // task's VIEW intents were already delivered.
-        outState.putStringArrayList(KEY_CONSUMED_INCOMING_URIS, ArrayList(consumedIncomingUris))
-        outState.putString(KEY_LAUNCH_INCOMING_URI, launchIncomingUri)
-        // Undelivered links travel with the consumed record they were already
-        // added to, so restoring one cannot lose the other.
-        outState.putStringArrayList(KEY_PENDING_INCOMING_URIS, ArrayList(pendingIncomingUris))
+        // task's VIEW intents were already delivered. Digests only: the system
+        // persists this bundle to disk, and a Gift Card link's fragment is a
+        // bearer secret.
+        outState.putStringArrayList(
+            KEY_CONSUMED_INCOMING_URI_DIGESTS,
+            ArrayList(consumedIncomingUriDigests)
+        )
+        outState.putString(KEY_LAUNCH_INCOMING_URI_DIGEST, launchIncomingUriDigest)
+        // Undelivered links normally travel with the consumed record they were
+        // already added to, so restoring one cannot lose the other. Only
+        // `zcash:` links are persisted here, because they carry no secret; an
+        // https Gift Card link that has not reached Dart yet is deliberately
+        // dropped on process death rather than written to disk, and the user
+        // re-taps it. The consumed digest for it stays, so the restore does not
+        // replay a link that was already delivered.
+        outState.putStringArrayList(
+            KEY_PENDING_INCOMING_URIS,
+            ArrayList(pendingIncomingUris.filter(::isSecretFreeIncomingUri))
+        )
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -173,9 +200,10 @@ class MainActivity : FlutterFragmentActivity() {
         // already delivered. The launch link is checked against its own pinned
         // field as well, because the bounded set can evict it.
         val incomingLaunchUri = intent?.dataString
-        if (incomingLaunchUri == null ||
-            (incomingLaunchUri != launchIncomingUri &&
-                !consumedIncomingUris.contains(incomingLaunchUri))
+        val incomingLaunchUriDigest = incomingLaunchUri?.let(::incomingUriDigest)
+        if (incomingLaunchUriDigest == null ||
+            (incomingLaunchUriDigest != launchIncomingUriDigest &&
+                !consumedIncomingUriDigests.contains(incomingLaunchUriDigest))
         ) {
             captureIncomingUri(intent, isLaunchIntent = true)
         }
@@ -302,7 +330,7 @@ class MainActivity : FlutterFragmentActivity() {
         // it. The creating intent is what a restore hands back, so it is
         // pinned rather than added to the set the bound trims.
         if (isLaunchIntent) {
-            launchIncomingUri = rawUri
+            launchIncomingUriDigest = incomingUriDigest(rawUri)
         } else {
             rememberConsumedIncomingUri(rawUri)
         }
@@ -313,15 +341,33 @@ class MainActivity : FlutterFragmentActivity() {
     /**
      * Newest last, deduped, bounded so a long-lived task's saved state stays
      * small. Only onNewIntent links live here; the launch link is pinned in
-     * [launchIncomingUri], because it is the oldest entry and the one a restore
-     * replays, so trimming from the front would drop exactly the wrong one.
+     * [launchIncomingUriDigest], because it is the oldest entry and the one a
+     * restore replays, so trimming from the front would drop exactly the wrong
+     * one.
      */
     private fun rememberConsumedIncomingUri(uri: String) {
-        consumedIncomingUris.remove(uri)
-        consumedIncomingUris.add(uri)
-        while (consumedIncomingUris.size > MAX_CONSUMED_INCOMING_URIS) {
-            consumedIncomingUris.removeAt(0)
+        val digest = incomingUriDigest(uri)
+        consumedIncomingUriDigests.remove(digest)
+        consumedIncomingUriDigests.add(digest)
+        while (consumedIncomingUriDigests.size > MAX_CONSUMED_INCOMING_URIS) {
+            consumedIncomingUriDigests.removeAt(0)
         }
+    }
+
+    /**
+     * Whether this link may be written to disk. A ZIP-321 `zcash:` request
+     * carries no bearer secret; an https deeplink can carry a Gift Card claim
+     * mnemonic in its fragment and never leaves memory.
+     */
+    private fun isSecretFreeIncomingUri(uri: String): Boolean {
+        val scheme = runCatching { Uri.parse(uri).scheme }.getOrNull() ?: return false
+        return "zcash".equals(scheme, ignoreCase = true)
+    }
+
+    private fun incomingUriDigest(uri: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256")
+            .digest(uri.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
     }
 
     private fun flushPendingIncomingUris() {
@@ -341,8 +387,10 @@ class MainActivity : FlutterFragmentActivity() {
         private val DEEPLINK_HOST = BuildConfig.VIZOR_DEEPLINK_HOST
         private const val MAX_INCOMING_URI_BYTES = 16 * 1024
         private const val MAX_PENDING_INCOMING_URIS = 16
-        private const val KEY_CONSUMED_INCOMING_URIS = "vizor.consumedIncomingUris"
-        private const val KEY_LAUNCH_INCOMING_URI = "vizor.launchIncomingUri"
+        private const val KEY_CONSUMED_INCOMING_URI_DIGESTS =
+            "vizor.consumedIncomingUriDigests"
+        private const val KEY_LAUNCH_INCOMING_URI_DIGEST =
+            "vizor.launchIncomingUriDigest"
         private const val KEY_PENDING_INCOMING_URIS = "vizor.pendingIncomingUris"
         private const val MAX_CONSUMED_INCOMING_URIS = 8
     }
