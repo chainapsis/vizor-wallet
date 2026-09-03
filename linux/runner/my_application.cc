@@ -222,9 +222,31 @@ static gboolean my_application_local_command_line(GApplication* application,
 
   g_autoptr(GError) error = nullptr;
   if (!g_application_register(application, nullptr, &error)) {
-    g_warning("Failed to register: %s", error->message);
-    *exit_status = 1;
-    return TRUE;
+    // Unique mode needs a session bus to negotiate ownership of the
+    // application ID, and a session without a usable D-Bus -- a minimal window
+    // manager, a container -- has none. Treating that as fatal exited before a
+    // window was ever created, so the app simply would not launch where it
+    // used to.
+    //
+    // Single-instance behaviour is a nicety; starting at all is not. Retry as
+    // a non-unique application, which skips the negotiation entirely. Nothing
+    // about the launch is lost: the local branch below still collects the
+    // zcash: arguments this process was started with and hands them to Dart.
+    // Only forwarding a link to an already-running instance is given up, and
+    // without a session bus there was no way to reach one anyway.
+    g_warning("Failed to register on the session bus (%s); continuing as a "
+              "non-unique instance.",
+              error->message);
+    g_application_set_flags(
+        application, static_cast<GApplicationFlags>(
+                         g_application_get_flags(application) |
+                         G_APPLICATION_NON_UNIQUE));
+    g_autoptr(GError) non_unique_error = nullptr;
+    if (!g_application_register(application, nullptr, &non_unique_error)) {
+      g_warning("Failed to register: %s", non_unique_error->message);
+      *exit_status = 1;
+      return TRUE;
+    }
   }
 
   if (g_application_get_is_remote(application)) {
