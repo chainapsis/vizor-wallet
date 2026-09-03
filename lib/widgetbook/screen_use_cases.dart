@@ -706,7 +706,7 @@ class _MobileSettingsMainPreview extends StatelessWidget {
 Widget buildSettingsSupportVizorUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(
     const NetworkPrivacyState.off(),
-    initialScrollOffset: 560,
+    initialScrollOffset: 820,
   );
 }
 
