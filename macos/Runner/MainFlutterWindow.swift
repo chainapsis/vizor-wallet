@@ -952,6 +952,9 @@ final class PaymentUriChannel {
   private static var channel: FlutterMethodChannel?
   private static var pendingURLs: [String] = []
   private static var dartReady = false
+  /// Bound on links buffered before Dart installs its handler, matching the
+  /// iOS bridge.
+  private static let maxPendingURLs = 16
 
   static func register(messenger: FlutterBinaryMessenger) {
     let methodChannel = FlutterMethodChannel(
@@ -985,7 +988,21 @@ final class PaymentUriChannel {
     guard !urlStrings.isEmpty else {
       return
     }
-    pendingURLs.append(contentsOf: urlStrings)
+    // The same two guards the iOS bridge applies. Dedupe is scoped to the
+    // not-yet-delivered buffer, so re-opening a link Dart already took still
+    // arrives; it only stops one delivery from queueing a link that is
+    // already waiting, which macOS can cause by handing the same URL to
+    // `application(_:open:)` twice -- and which then makes the "keep only the
+    // latest link" notice churn on a duplicate of the link it is showing.
+    for uri in urlStrings {
+      guard
+        pendingURLs.count < maxPendingURLs,
+        !pendingURLs.contains(uri)
+      else {
+        continue
+      }
+      pendingURLs.append(uri)
+    }
     flushPendingURLs()
     presentMainWindow()
   }

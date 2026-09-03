@@ -47,8 +47,26 @@ static gboolean is_zcash_uri(const gchar* value) {
   return value != nullptr && g_ascii_strncasecmp(value, "zcash:", 6) == 0;
 }
 
+// Bound on links buffered before Dart installs its handler, matching the
+// iOS/Android/macOS intake.
+static const guint kMaxPendingPaymentUris = 16;
+
+// Dedupe is scoped to the not-yet-delivered buffer, so re-opening a link Dart
+// already took still arrives; it only stops one delivery from queueing a link
+// that is already waiting, which would make the "keep only the latest link"
+// notice churn on a duplicate of the link it is showing.
 static void add_pending_payment_uri(MyApplication* self, const gchar* value) {
   if (!is_zcash_uri(value)) {
+    return;
+  }
+  for (guint i = 0; i < self->pending_payment_uris->len; ++i) {
+    const gchar* pending = static_cast<const gchar*>(
+        g_ptr_array_index(self->pending_payment_uris, i));
+    if (g_strcmp0(pending, value) == 0) {
+      return;
+    }
+  }
+  if (self->pending_payment_uris->len >= kMaxPendingPaymentUris) {
     return;
   }
   g_ptr_array_add(self->pending_payment_uris, g_strdup(value));

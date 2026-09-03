@@ -321,6 +321,8 @@ class MainActivity : FlutterFragmentActivity() {
         val data = intent.data ?: return
         if (!acceptsIncomingUri(data)) return
         val rawUri = intent.dataString ?: data.toString()
+        // Memory bound only. A link that is merely too big for Dart to parse
+        // still travels, so Dart can say so; see [MAX_INCOMING_URI_BYTES].
         if (rawUri.length > MAX_INCOMING_URI_BYTES) return
         if (rawUri.toByteArray(Charsets.UTF_8).size > MAX_INCOMING_URI_BYTES) return
         if (rawUri in pendingIncomingUris) return
@@ -385,7 +387,18 @@ class MainActivity : FlutterFragmentActivity() {
         private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
         private const val INCOMING_URI_CHANNEL = "com.zcash.wallet/payment_uri"
         private val DEEPLINK_HOST = BuildConfig.VIZOR_DEEPLINK_HOST
-        private const val MAX_INCOMING_URI_BYTES = 16 * 1024
+        /**
+         * Sanity ceiling, set far above every link this app actually accepts.
+         *
+         * Dart owns the real size limits -- `VizorPaymentLink.maxEncodedLength`
+         * and `kMaxPaymentUriLength`, both 16 KB -- and rejects an oversize
+         * link with a message the user can read. Capping here at those same
+         * 16 KB dropped exactly the links Dart had copy for, in silence, so the
+         * rejection never rendered. Forward anything up to this bound and let
+         * Dart explain; the bound exists only so a pathological
+         * multi-megabyte intent still cannot sit in the queue.
+         */
+        private const val MAX_INCOMING_URI_BYTES = 64 * 1024
         private const val MAX_PENDING_INCOMING_URIS = 16
         private const val KEY_CONSUMED_INCOMING_URI_DIGESTS =
             "vizor.consumedIncomingUriDigests"

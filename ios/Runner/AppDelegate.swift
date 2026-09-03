@@ -789,7 +789,16 @@ final class IncomingUriChannelBridge {
     (Bundle.main.object(forInfoDictionaryKey: "VizorDeeplinkHost") as? String)?
     .lowercased() ?? "link.vizor.cash"
   private static let paymentLinkPath = "/payment-links/open"
-  private static let maxIncomingUriBytes = 16 * 1024
+  /// Sanity ceiling, set far above every link this app actually accepts.
+  ///
+  /// Dart owns the real size limits -- `VizorPaymentLink.maxEncodedLength` and
+  /// `kMaxPaymentUriLength`, both 16 KB -- and rejects an oversize link with a
+  /// message the user can read. Capping here at those same 16 KB dropped
+  /// exactly the links Dart had copy for, in silence, so the rejection never
+  /// rendered. Forward anything up to this bound and let Dart explain; the
+  /// bound exists only so a pathological multi-megabyte URL still cannot sit
+  /// in the queue.
+  private static let maxIncomingUriBytes = 64 * 1024
   private static let maxPendingUris = 16
   private init() {}
 
