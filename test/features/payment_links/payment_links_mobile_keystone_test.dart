@@ -370,6 +370,7 @@ class _FakePaymentLinkHardwareSigningService
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
     String? outputParamsPath,
+    void Function()? onSubmissionStarted,
   }) async {
     return const PaymentLinkHardwareFundingResult(
       txids: 'hardware-funding-txid',

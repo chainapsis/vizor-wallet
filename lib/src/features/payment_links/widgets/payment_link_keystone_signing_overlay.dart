@@ -230,6 +230,11 @@ class _PaymentLinkKeystoneSigningOverlayState
     }
 
     _draft = null;
+    // Mirrors `runPaymentLinkFundingSubmission`: once the transaction has been
+    // handed to the network, a later throw must not delete the draft. The
+    // draft carries the `markPrepared` txid, and dropping it strands a Gift
+    // Card whose funding is on-chain but has no recovery row to settle.
+    var submissionStarted = false;
     try {
       final result = await service.broadcastSignedPczt(
         draft: draft,
@@ -241,6 +246,7 @@ class _PaymentLinkKeystoneSigningOverlayState
         outputParamsPath: draft.needsSaplingParams
             ? saplingParams!.outputPath
             : null,
+        onSubmissionStarted: () => submissionStarted = true,
       );
       final fundingAccepted = isPaymentLinkFundingSubmitted(
         status: result.status,
@@ -258,6 +264,11 @@ class _PaymentLinkKeystoneSigningOverlayState
       rethrow;
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._broadcast: $error\n$stackTrace');
+      if (submissionStarted) {
+        // The funding may be on the network already; leave the draft and its
+        // prepared txid for the recovery reconciler to settle or expire.
+        rethrow;
+      }
       try {
         await service.discardPcztDraft(draft: draft);
       } catch (cleanupError, cleanupStackTrace) {

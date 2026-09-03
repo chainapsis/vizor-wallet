@@ -105,6 +105,7 @@ class _StalledSigningService implements PaymentLinkHardwareSigningService {
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
     String? outputParamsPath,
+    void Function()? onSubmissionStarted,
   }) => Completer<PaymentLinkHardwareFundingResult>().future;
 }
 

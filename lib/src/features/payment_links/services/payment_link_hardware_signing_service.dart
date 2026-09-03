@@ -45,12 +45,21 @@ abstract interface class PaymentLinkHardwareSigningService {
 
   Future<void> discardPcztDraft({required PaymentLinkHardwarePcztDraft draft});
 
+  /// Applies [pcztWithSignaturesBytes] and broadcasts the funding transaction.
+  ///
+  /// [onSubmissionStarted] fires immediately before the transaction is handed
+  /// to the network, mirroring the software path's
+  /// `runPaymentLinkFundingSubmission` marker. Once it has fired the caller
+  /// must keep the recovery draft on failure: the network may already hold
+  /// the transaction, and the draft carries the `markPrepared` txid the
+  /// reconciler needs to settle it.
   Future<PaymentLinkHardwareFundingResult> broadcastSignedPczt({
     required PaymentLinkHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
     String? outputParamsPath,
+    void Function()? onSubmissionStarted,
   });
 }
 
@@ -285,9 +294,13 @@ class RustPaymentLinkHardwareSigningService
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
     String? outputParamsPath,
+    void Function()? onSubmissionStarted,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    // Rust broadcasts before it stores, so from here on a throw can no longer
+    // prove the network did not accept the transaction.
+    onSubmissionStarted?.call();
     final stored = await rust_sync
         .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
           dbPath: dbPath,

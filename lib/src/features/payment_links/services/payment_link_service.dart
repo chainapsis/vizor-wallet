@@ -489,6 +489,23 @@ class PaymentLinkClaimInFlightException implements Exception {
   String toString() => 'This Gift Card is already being received.';
 }
 
+/// A pasted Gift Card belongs to a different Zcash network than the wallet.
+///
+/// This is a permanent property of the link, not a transient lookup failure,
+/// so the redeem screen says so instead of offering a retry.
+class PaymentLinkNetworkMismatchException implements Exception {
+  const PaymentLinkNetworkMismatchException({
+    required this.linkNetwork,
+    required this.walletNetwork,
+  });
+
+  final String linkNetwork;
+  final String walletNetwork;
+
+  @override
+  String toString() => 'This Gift Card is for a different Zcash network.';
+}
+
 @visibleForTesting
 void requireMatchingPaymentLinkClaimDestination({
   required String preparedAddress,
@@ -1062,9 +1079,9 @@ class PaymentLinkService implements PaymentLinkOperations {
     await _requireShieldedAddress(destinationAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     if (link.network != endpoint.networkName) {
-      throw StateError(
-        'Payment link is for ${link.network}, but this wallet is using '
-        '${endpoint.networkName}.',
+      throw PaymentLinkNetworkMismatchException(
+        linkNetwork: link.network,
+        walletNetwork: endpoint.networkName,
       );
     }
     log('PaymentLinkClaim: endpoint validated');

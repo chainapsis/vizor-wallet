@@ -123,6 +123,57 @@ void main() {
       },
     );
 
+    test('counts in-flight claims across every account', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final link = _link();
+      final store = PaymentLinkReceivedStore(storage);
+
+      await store.saveReady(link);
+      expect(await store.countClaimsInFlight(), 0);
+
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+      );
+      expect(await store.countClaimsInFlight(), 1);
+
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      expect(await store.countClaimsInFlight(), 1);
+
+      await store.markReceived(address: link.address);
+      expect(await store.countClaimsInFlight(), 0);
+    });
+
+    test(
+      'refreshes the in-flight claim count after lifecycle writes',
+      () async {
+        final store = _CountingReceivedStore();
+        final container = ProviderContainer(
+          overrides: [
+            paymentLinkReceivedStoreProvider.overrideWithValue(store),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        expect(
+          await container.read(paymentLinkClaimsInFlightProvider.future),
+          1,
+        );
+
+        store.inFlightCount = 0;
+        container.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+
+        expect(
+          await container.read(paymentLinkClaimsInFlightProvider.future),
+          0,
+        );
+      },
+    );
+
     test(
       'refreshes the cached receiving count after lifecycle writes',
       () async {
@@ -283,9 +334,13 @@ class _CountingReceivedStore extends PaymentLinkReceivedStore {
   _CountingReceivedStore() : super(_FakePaymentLinkReceivedStorage());
 
   int count = 1;
+  int inFlightCount = 1;
 
   @override
   Future<int> countReceivingForAccount(String destinationAccountUuid) async {
     return count;
   }
+
+  @override
+  Future<int> countClaimsInFlight() async => inFlightCount;
 }

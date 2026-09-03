@@ -1290,6 +1290,42 @@ void main() {
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
   });
 
+  testWidgets('names the network when a pasted card is for another network', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(
+      prepareClaimError: const PaymentLinkNetworkMismatchException(
+        linkNetwork: 'test',
+        walletNetwork: 'main',
+      ),
+    );
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('This Gift Card is for a different Zcash network.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Card balance could not be checked. Try again.'),
+      findsNothing,
+    );
+    // A different network never resolves itself, so no retry is offered.
+    expect(find.text('Try again'), findsNothing);
+    expect(find.text('Paste card link'), findsOneWidget);
+  });
+
   testWidgets('discards a previous claim wallet when its identity changes', (
     tester,
   ) async {

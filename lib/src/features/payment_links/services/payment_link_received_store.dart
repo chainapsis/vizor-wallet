@@ -31,6 +31,17 @@ final paymentLinkReceivingCountProvider = FutureProvider.family<int, String>((
       .countReceivingForAccount(destinationAccountUuid);
 });
 
+/// Gift Card claims that are mid-flight across every account.
+///
+/// A wallet reset drains claims instead of refusing them, so a claim that
+/// finishes during the drain settles into a wallet that is about to be wiped.
+/// The reset and uninstall confirmations read this to warn about that window
+/// before the user commits; a non-zero count means funds are still moving.
+final paymentLinkClaimsInFlightProvider = FutureProvider<int>((ref) {
+  ref.watch(paymentLinkLifecycleRevisionProvider);
+  return ref.watch(paymentLinkReceivedStoreProvider).countClaimsInFlight();
+});
+
 enum PaymentLinkReceivedStatus { readyToClaim, submitting, receiving, received }
 
 class PaymentLinkInFlightClaimsException implements Exception {
@@ -192,6 +203,14 @@ class PaymentLinkReceivedStore {
     return _runExclusive(() async {
       return _findByAddress(await _loadUnlocked(), address);
     });
+  }
+
+  /// Claims that have been submitted but not yet observed as received, across
+  /// every destination account — including records whose destination account
+  /// is not yet written, which [countReceivingForAccount] cannot see.
+  Future<int> countClaimsInFlight() async {
+    final records = await load();
+    return records.where((record) => record.isClaimInFlight).length;
   }
 
   Future<int> countReceivingForAccount(String destinationAccountUuid) async {

@@ -1216,6 +1216,20 @@ class _PaymentLinksDesktopScreenState
         _page = _PaymentLinksLocalPage.home;
       });
       _showError(error.toString());
+    } on PaymentLinkNetworkMismatchException catch (error) {
+      log(
+        'PaymentLinkClaim: rejected link for another network '
+        'link=${error.linkNetwork} wallet=${error.walletNetwork}',
+      );
+      if (!mounted) return;
+      // A different network is a permanent property of the link, so there is
+      // nothing to retry: clear the retry affordance and name the reason.
+      setState(() {
+        _longSyncLink = null;
+        _retryLink = null;
+        _redeemState = PaymentLinkRedeemVisualState.paste;
+      });
+      _showError(error.toString());
     } on FormatException catch (error) {
       log(
         'PaymentLinkClaim: preparation rejected '
