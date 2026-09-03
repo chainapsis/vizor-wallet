@@ -3265,8 +3265,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _scheduleShareTracking(
     _VotingSessionContext context,
-    VotingResumePlan plan,
-  ) async {
+    VotingResumePlan plan, {
+    DateTime? preservedFullPassAt,
+  }) async {
     if (!_ownsAutomaticShareTracking) {
       _shareTrackingTimer?.cancel();
       _shareTrackingTimer = null;
@@ -3292,39 +3293,54 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // left to track.
     final scheduledContext = context.withResumePlan(plan);
 
-    final delaySeconds = await ref
-        .read(votingRustApiProvider)
-        .nextShareTrackingDelaySeconds(
-          shares: plan.unconfirmedShareDelegations,
-          nowSeconds: BigInt.from(
-            DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
-          ),
-        );
-    if (!_isCurrentContext(context) ||
-        scheduleEpoch != _shareTrackingScheduleEpoch) {
-      return;
-    }
-    if (delaySeconds == null) {
-      _releaseAutomaticShareTracking();
-      return;
+    // A status heartbeat is only an earlier observation point. Keep the
+    // protocol wake as an absolute instant so a slow/failed status request
+    // cannot restart its countdown and postpone helper/DB work.
+    final DateTime fullPassAt;
+    if (preservedFullPassAt != null) {
+      fullPassAt = preservedFullPassAt;
+    } else {
+      final delayCalculatedAt = DateTime.now();
+      final delaySeconds = await ref
+          .read(votingRustApiProvider)
+          .nextShareTrackingDelaySeconds(
+            shares: plan.unconfirmedShareDelegations,
+            nowSeconds: BigInt.from(
+              delayCalculatedAt.toUtc().millisecondsSinceEpoch ~/ 1000,
+            ),
+          );
+      if (!_isCurrentContext(context) ||
+          scheduleEpoch != _shareTrackingScheduleEpoch) {
+        return;
+      }
+      if (delaySeconds == null) {
+        _releaseAutomaticShareTracking();
+        return;
+      }
+      fullPassAt = delayCalculatedAt.add(
+        Duration(seconds: delaySeconds.toInt()),
+      );
     }
     // The status-only wake reads [_currentContext]. Publish the exact plan
     // used for this schedule so its next rearm cannot fall back to the plan
     // that existed before the preceding full pass completed.
     _currentContext = scheduledContext;
-    final remaining = scheduledContext.round.voteEndTime!.difference(
-      DateTime.now(),
-    );
+    final now = DateTime.now();
+    final remaining = scheduledContext.round.voteEndTime!.difference(now);
     if (remaining <= Duration.zero) {
       _armShareTrackingTimer(
         scheduledContext,
         Duration.zero,
         scheduleEpoch,
         _ShareTrackingWake.roundStatus,
+        fullPassAt,
       );
       return;
     }
-    final protocolDelay = Duration(seconds: delaySeconds.toInt());
+    final untilFullPass = fullPassAt.difference(now);
+    final protocolDelay = untilFullPass.isNegative
+        ? Duration.zero
+        : untilFullPass;
     var delay = protocolDelay;
     var wake = _ShareTrackingWake.fullPass;
     if (remaining <= delay) {
@@ -3338,7 +3354,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       delay = roundRefreshInterval;
       wake = _ShareTrackingWake.roundStatus;
     }
-    _armShareTrackingTimer(scheduledContext, delay, scheduleEpoch, wake);
+    _armShareTrackingTimer(
+      scheduledContext,
+      delay,
+      scheduleEpoch,
+      wake,
+      fullPassAt,
+    );
   }
 
   void _scheduleShareTrackingFailureRetry() {
@@ -3367,7 +3389,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
     final delay = configuredDelay.isNegative ? Duration.zero : configuredDelay;
     final scheduleEpoch = _cancelShareTrackingSchedule();
-    final remaining = context.round.voteEndTime!.difference(DateTime.now());
+    final now = DateTime.now();
+    final fullPassAt = now.add(delay);
+    final remaining = context.round.voteEndTime!.difference(now);
     final crossesCachedDeadline =
         remaining > Duration.zero && remaining <= delay;
     final wake = remaining <= Duration.zero || crossesCachedDeadline
@@ -3378,6 +3402,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       crossesCachedDeadline ? remaining : delay,
       scheduleEpoch,
       wake,
+      fullPassAt,
     );
   }
 
@@ -3393,6 +3418,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     Duration delay,
     int scheduleEpoch,
     _ShareTrackingWake wake,
+    DateTime fullPassAt,
   ) {
     if (scheduleEpoch != _shareTrackingScheduleEpoch) return;
     _shareTrackingTimer = Timer(delay, () {
@@ -3404,12 +3430,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (wake == _ShareTrackingWake.fullPass) {
         unawaited(_runShareTrackingPassInBackground());
       } else {
-        unawaited(_runShareTrackingRoundStatusRefreshInBackground());
+        unawaited(_runShareTrackingRoundStatusRefreshInBackground(fullPassAt));
       }
     });
   }
 
-  void _scheduleShareTrackingRoundStatusRetry(_VotingSessionContext context) {
+  void _scheduleShareTrackingRoundStatusRetry(
+    _VotingSessionContext context,
+    DateTime fullPassAt,
+  ) {
     if (_automaticShareTrackingStopped ||
         _shareTrackingRoundClosed ||
         _isDisposed ||
@@ -3423,17 +3452,35 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final configuredDelay = ref.read(
       votingShareTrackingFailureRetryDelayProvider,
     );
-    final delay = configuredDelay.isNegative ? Duration.zero : configuredDelay;
+    final retryDelay = configuredDelay.isNegative
+        ? Duration.zero
+        : configuredDelay;
+    final now = DateTime.now();
+    final untilVoteEnd = context.round.voteEndTime!.difference(now);
+    final rawUntilFullPass = fullPassAt.difference(now);
+    final untilFullPass = rawUntilFullPass.isNegative
+        ? Duration.zero
+        : rawUntilFullPass;
+    var delay = retryDelay;
+    var wake = _ShareTrackingWake.roundStatus;
+    // Preserve the cached deadline as the hard round-status boundary, while
+    // allowing the already-planned full pass to win before that boundary.
+    if (untilVoteEnd > Duration.zero && untilVoteEnd < delay) {
+      delay = untilVoteEnd;
+    }
+    if (untilVoteEnd > Duration.zero &&
+        untilFullPass < untilVoteEnd &&
+        untilFullPass <= delay) {
+      delay = untilFullPass;
+      wake = _ShareTrackingWake.fullPass;
+    }
     final retryEpoch = _cancelShareTrackingSchedule();
-    _armShareTrackingTimer(
-      context,
-      delay,
-      retryEpoch,
-      _ShareTrackingWake.roundStatus,
-    );
+    _armShareTrackingTimer(context, delay, retryEpoch, wake, fullPassAt);
   }
 
-  Future<void> _runShareTrackingRoundStatusRefreshInBackground() async {
+  Future<void> _runShareTrackingRoundStatusRefreshInBackground(
+    DateTime fullPassAt,
+  ) async {
     await _enqueueShareTracking(() async {
       _cancelShareTrackingSchedule();
       final context = _currentContext;
@@ -3472,13 +3519,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await _scheduleShareTracking(
           refreshedContext,
           refreshedContext.resumePlan,
+          preservedFullPassAt: fullPassAt,
         );
       } catch (error, stackTrace) {
         debugPrint(
           '[zcash] Voting: share tracking round refresh failed '
           'round=${context.round.roundId} error=$error\n$stackTrace',
         );
-        _scheduleShareTrackingRoundStatusRetry(context);
+        _scheduleShareTrackingRoundStatusRetry(context, fullPassAt);
       }
     });
   }
