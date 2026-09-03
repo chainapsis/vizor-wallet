@@ -40,6 +40,16 @@ class MainActivity : FlutterFragmentActivity() {
             consumedPaymentUris.addAll(it)
         }
         launchPaymentUri = savedInstanceState?.getString(KEY_LAUNCH_PAYMENT_URI)
+        // Links captured but not yet handed to Dart when the activity was
+        // saved. A link is recorded as consumed at capture, so without this the
+        // restore would recognise the creating intent as already delivered and
+        // skip it, while the in-memory queue that still held it is gone —
+        // a cold-start link opened just before the app was backgrounded would
+        // simply disappear.
+        pendingPaymentUris.clear()
+        savedInstanceState?.getStringArrayList(KEY_PENDING_PAYMENT_URIS)?.let {
+            pendingPaymentUris.addAll(it)
+        }
         super.onCreate(savedInstanceState)
     }
 
@@ -49,6 +59,9 @@ class MainActivity : FlutterFragmentActivity() {
         // task's VIEW intents were already delivered.
         outState.putStringArrayList(KEY_CONSUMED_PAYMENT_URIS, ArrayList(consumedPaymentUris))
         outState.putString(KEY_LAUNCH_PAYMENT_URI, launchPaymentUri)
+        // Undelivered links travel with the consumed record they were already
+        // added to, so restoring one cannot lose the other.
+        outState.putStringArrayList(KEY_PENDING_PAYMENT_URIS, ArrayList(pendingPaymentUris))
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -293,6 +306,7 @@ class MainActivity : FlutterFragmentActivity() {
         private const val PAYMENT_URI_CHANNEL = "com.zcash.wallet/payment_uri"
         private const val KEY_CONSUMED_PAYMENT_URIS = "vizor.consumedPaymentUris"
         private const val KEY_LAUNCH_PAYMENT_URI = "vizor.launchPaymentUri"
+        private const val KEY_PENDING_PAYMENT_URIS = "vizor.pendingPaymentUris"
         private const val MAX_CONSUMED_PAYMENT_URIS = 8
     }
 }
