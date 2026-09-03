@@ -176,9 +176,7 @@ pub async fn tor_http_get(
     request_id: Option<u64>,
 ) -> Result<NetworkHttpResponse, String> {
     let response = with_tor_http_request_cancellation(request_id, async {
-        // `|| false` because the surrounding cancellation wrapper already
-        // `select!`s over this whole future, so a Dart-side cancel interrupts
-        // the bootstrap wait as well as the request.
+        // The cancellation wrapper selects over this whole future, wait included.
         let client = crate::network_privacy::tor_client_for_route(true, || false)
             .await?
             .ok_or_else(|| "Tor is not enabled".to_string())?;
@@ -215,9 +213,7 @@ pub async fn tor_http_post(
     request_id: Option<u64>,
 ) -> Result<NetworkHttpResponse, String> {
     let response = with_tor_http_request_cancellation(request_id, async {
-        // `|| false` because the surrounding cancellation wrapper already
-        // `select!`s over this whole future, so a Dart-side cancel interrupts
-        // the bootstrap wait as well as the request.
+        // The cancellation wrapper selects over this whole future, wait included.
         let client = crate::network_privacy::tor_client_for_route(true, || false)
             .await?
             .ok_or_else(|| "Tor is not enabled".to_string())?;

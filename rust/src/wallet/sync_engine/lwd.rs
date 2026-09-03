@@ -136,15 +136,9 @@ pub(crate) async fn open_lwd_channel(
     open_lwd_channel_for_route(lightwalletd_url, false, || false).await
 }
 
-/// Opens a channel that stops waiting for Tor when the caller stops.
-///
-/// A channel opened while Tor is bootstrapping waits for the route rather than
-/// failing, which is the whole point — but a sync the user has already
-/// cancelled must not sit in that wait for the bootstrap's deadline. Pass the
-/// flag the caller already stops on. Only a caller whose cancellation is scoped
-/// to the work in hand may use this: the process-wide sync cancel stays set
-/// between sessions, so reading it from an unrelated channel open would turn
-/// every wait back into an instant failure.
+/// Opens a channel whose Tor wait stops when the caller stops. Pass a flag
+/// scoped to the work in hand: the process-wide sync cancel stays set between
+/// sessions, so an unrelated channel open must not read it.
 pub(crate) async fn open_lwd_channel_with_cancel(
     lightwalletd_url: &str,
     cancelled: impl Fn() -> bool,

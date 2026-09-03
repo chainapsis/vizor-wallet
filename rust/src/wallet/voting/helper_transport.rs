@@ -82,14 +82,9 @@ impl VotingHelperTransport {
         body: Vec<u8>,
         timeout: Duration,
     ) -> Result<HelperResponse, HelperTransportError> {
-        // Fails closed: a broken Tor route is an error here, never a fallback
-        // to a direct connection. A bootstrap still in flight is waited out
-        // instead, so a helper request made moments after launch is not
-        // rejected for a route that is seconds from being ready — but only
-        // inside this request's own budget. The route wait can otherwise last
-        // the bootstrap's full deadline, and a status poll or share upload
-        // sized for seconds must not sit behind it for minutes; nothing has
-        // been sent yet, so running out here is a plain timeout.
+        // Fails closed: a broken Tor route is an error, never a direct fallback.
+        // A bootstrap in flight is waited out, but only inside this request's
+        // own budget; nothing has been sent yet, so running out is a timeout.
         let started = tokio::time::Instant::now();
         let route = tokio::time::timeout(
             timeout,

@@ -395,6 +395,42 @@ void main() {
       expect(source.fetchCount, 2);
     });
 
+    testWidgets('mobile defers a route-change retry until resume', (
+      tester,
+    ) async {
+      final source = _FakeSwapEnabledOverrideSource(
+        enabled: true,
+        unresolvedCalls: 1,
+      );
+      final store = _FakeSwapEnabledOverrideStore();
+      final privacy = _FakeNetworkPrivacyNotifier();
+      final container = _container(
+        source: source,
+        store: store,
+        forceDisabled: true,
+        privacy: privacy,
+        processWorkPolicy: mobilePolicy,
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(
+        swapEnabledRemoteOverrideProvider,
+        (_, _) {},
+      );
+      await tester.pump();
+      expect(source.fetchCount, 1);
+
+      background();
+      privacy.publish(_privacyState(NetworkPrivacyConnectionStatus.connected));
+      await tester.pump();
+      await tester.pump(const Duration(minutes: 10));
+      expect(source.fetchCount, 1, reason: 'no request while backgrounded');
+
+      foreground();
+      await tester.pump();
+      expect(source.fetchCount, 2);
+      expect(sub.read(), true);
+    });
+
     testWidgets('desktop keeps retrying with its windows hidden', (
       tester,
     ) async {

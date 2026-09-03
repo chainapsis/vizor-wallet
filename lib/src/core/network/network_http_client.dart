@@ -392,13 +392,11 @@ class NetworkHttpClient {
     var currentUri = initialUri;
     var currentHeaders = Map<String, String>.of(headers);
     var currentBody = bodyBytes;
-    // The redirect budget charges every hop, including the first — except
-    // when that first hop is about to park inside Rust waiting for Tor to
-    // bootstrap. That wait is not covered by the per-request timeout either,
-    // and billing it here would leave a redirect with no budget at all, so
-    // for a request made mid-bootstrap the clock starts at the first
-    // response instead. Dart cannot see when the wait ended, and the exchange
-    // itself stays bounded by the Rust-side timeout on that hop.
+    // Every hop is charged to the redirect budget, except a first hop that
+    // is about to park inside Rust waiting for a Tor bootstrap: that wait is
+    // outside the per-request timeout too, and billing it would leave a
+    // redirect no budget. Dart cannot see when the wait ends, so the clock
+    // then starts at the first response.
     final stopwatch = Stopwatch();
     if (!_torBootstrapping()) stopwatch.start();
     for (var redirectCount = 0; redirectCount <= 5; redirectCount++) {

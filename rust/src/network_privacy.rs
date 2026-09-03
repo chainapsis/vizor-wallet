@@ -54,9 +54,7 @@ static NEXT_DIRECT_IO_ID: AtomicU64 = AtomicU64::new(1);
 static ACTIVE_DIRECT_IO: AtomicUsize = AtomicUsize::new(0);
 static DIRECT_IO_WAKERS: OnceLock<Mutex<HashMap<u64, Waker>>> = OnceLock::new();
 static DIRECT_IO_DRAINED: OnceLock<tokio::sync::Notify> = OnceLock::new();
-/// Signalled after every published change to [`TOR_STATUS`] or the client slot,
-/// so a request parked on a bootstrap resumes as soon as one resolves rather
-/// than on its next poll tick.
+/// Signalled after every published change to [`TOR_STATUS`] or the client slot.
 static TOR_STATUS_CHANGED: OnceLock<tokio::sync::Notify> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,11 +143,8 @@ fn tor_status_changed() -> &'static tokio::sync::Notify {
     TOR_STATUS_CHANGED.get_or_init(tokio::sync::Notify::new)
 }
 
-/// Wakes every request waiting on the route to resolve.
-///
-/// Called after the status is published and after the lock guarding the client
-/// slot is released, so a woken waiter reads the state that woke it rather than
-/// blocking on the writer that is still holding the slot.
+/// Called after the status is published and the client-slot lock is released,
+/// so a woken waiter reads the state that woke it.
 fn notify_tor_status_changed() {
     tor_status_changed().notify_waiters();
 }
@@ -548,11 +543,10 @@ pub fn disable_tor() {
     log::info!("network privacy: direct route enabled");
 }
 
-/// Publishes a failed enable when the caller abandons the route switch after
-/// [`begin_tor_enable`] but before [`enable_tor`] ever ran — a direct drain
-/// that did not finish, a transport restart that was refused. Without this
-/// the status stays `Bootstrapping` with no bootstrap running, and every
-/// policy-aware request keeps waiting for a client that will never arrive.
+/// Publishes a failed enable when the caller abandons the switch between
+/// [`begin_tor_enable`] and the bootstrap (failed drain, refused transport
+/// restart). Otherwise the status stays `Bootstrapping` with nothing running
+/// and every waiter sits until the deadline.
 pub fn fail_tor_enable() {
     set_tor_failed();
     log::info!("network privacy: Tor enable abandoned before bootstrap; requests fail closed");
@@ -573,18 +567,11 @@ fn set_tor_failed() {
     notify_tor_status_changed();
 }
 
-/// Why the route policy is refusing a request, and whether waiting can change
-/// that.
-///
-/// Only `Bootstrapping` is a state a caller can outlast; the other two are
-/// answers. The `Display` strings are load-bearing beyond logging — Dart
-/// distinguishes "Tor is coming up" from "Tor is broken" by matching on them —
-/// so they must stay verbatim.
+/// Why the route policy is refusing a request. Only `Bootstrapping` can be
+/// waited out. Dart matches on the `Display` strings, so they must not drift.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RouteBlocked {
-    /// Tor is on its way up and the route may still resolve on its own.
     Bootstrapping,
-    /// The bootstrap ended in failure. Nothing is running to wait for.
     Failed,
     /// Tor is the route, but there is no client and no bootstrap behind it.
     Unavailable,
@@ -623,12 +610,8 @@ fn route_decision(
     })
 }
 
-/// The route as it stands right now, without waiting for a bootstrap in flight.
-///
-/// Use this only where a caller has to answer immediately and can act on
-/// [`RouteBlocked::Bootstrapping`] itself. Every request path should take
-/// [`tor_client_for_route`] instead: a startup request that arrives in the
-/// tenth of a second before Tor is ready is not a request that should fail.
+/// The route as it stands right now, without waiting for a bootstrap in
+/// flight. Request paths should use [`tor_client_for_route`] instead.
 pub(crate) fn try_tor_client_for_route(isolated: bool) -> Result<Option<TorClient>, RouteBlocked> {
     let client = client_slot()
         .read()
@@ -643,29 +626,15 @@ pub(crate) fn try_tor_client_for_route(isolated: bool) -> Result<Option<TorClien
 
 /// Resolves the route for one request, waiting out a bootstrap in flight.
 ///
-/// Bootstrapping means *wait*, not *fail*. A Tor bootstrap takes on the order
-/// of a second on a healthy network, and every request the app makes in that
-/// window used to be rejected instantly: the swap feature flag was fetched
-/// 0.12s into launch, refused at 0.13s, and stayed off for the whole session
-/// because its caller does not retry. Lightwalletd channel opens failed the
-/// same way and were counted against the endpoint's failover budget.
-///
-/// The contract:
-///
-/// - `Bootstrapping` waits, bounded by [`TOR_BOOTSTRAP_TIMEOUT`] — the same
-///   budget the bootstrap itself gets — and interruptible through `cancelled`.
-/// - `Failed`, `Unavailable` and a switch back to the direct route resolve
-///   immediately: none of them is a state that waiting improves.
-/// - Waiting never falls back to clearnet. Running out of patience returns the
-///   bootstrap timeout message, exactly as the bootstrap would.
-///
-/// `cancelled` is polled on the same tick as the route, so pass whatever flag
-/// the caller already stops on (a sync cancel, a mode handoff). Non-cancellable
-/// callers pass `|| false` and rely on the deadline.
-///
-/// A caller that abandons an enable between [`begin_tor_enable`] and the
-/// bootstrap must publish [`fail_tor_enable`]: waiters here have no other way
-/// to learn that nothing is coming, and would sit until the deadline.
+/// Requests made in the second or so after launch used to be refused outright
+/// (the swap flag fetch, the first lightwalletd channel), and their callers
+/// never asked again. `Bootstrapping` therefore waits, bounded by
+/// [`TOR_BOOTSTRAP_TIMEOUT`] and interruptible through `cancelled` (polled
+/// every tick; pass whatever flag the caller already stops on, or `|| false`).
+/// `Failed`, `Unavailable` and a switch to direct resolve immediately, and
+/// nothing ever falls back to clearnet. A caller that abandons an enable
+/// before the bootstrap must publish [`fail_tor_enable`] or waiters sit until
+/// the deadline.
 pub(crate) async fn tor_client_for_route(
     isolated: bool,
     cancelled: impl Fn() -> bool,
@@ -682,17 +651,14 @@ async fn tor_client_for_route_with_deadline(
 ) -> Result<Option<TorClient>, String> {
     let expires_at = tokio::time::Instant::now() + deadline;
     loop {
-        // Enabled before the probe, not after it: a `Notified` joins the waiter
-        // list only once enabled, so a status published between the probe and
-        // the registration would be a wakeup this call never receives. The poll
-        // tick below bounds what is left of that window either way.
+        // Enabled before the probe so a status published in between is not a
+        // missed wakeup; the tick below bounds whatever window is left.
         let status_changed = tor_status_changed().notified();
         tokio::pin!(status_changed);
         status_changed.as_mut().enable();
 
-        // Cancellation wins ties. A sync stopped in the same instant Tor came
-        // up must not be handed a route and go on to open a connection the
-        // lock or toggle that stopped it is already waiting out.
+        // Cancellation wins ties: a sync stopped as Tor came up must not open
+        // a connection its stopper is already waiting out.
         if cancelled() {
             return Err(ROUTE_WAIT_CANCELLED_MESSAGE.to_string());
         }
@@ -704,9 +670,7 @@ async fn tor_client_for_route_with_deadline(
         if tokio::time::Instant::now() >= expires_at {
             return Err(TOR_BOOTSTRAP_TIMEOUT_MESSAGE.to_string());
         }
-        // The tick is the fallback, not the mechanism: it is what makes a
-        // cancellation and a missed wakeup bounded rather than indefinite,
-        // the same role it plays in `await_tor_bootstrap`.
+        // The tick bounds cancellation and any missed wakeup.
         tokio::select! {
             _ = status_changed.as_mut() => {}
             _ = tokio::time::sleep(BOOTSTRAP_ROUTE_POLL_INTERVAL) => {}

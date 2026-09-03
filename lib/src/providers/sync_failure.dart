@@ -1,9 +1,8 @@
 enum SyncFailureKind {
   network,
 
-  /// The Tor route is enabled but its bootstrap failed. Unlike [network],
-  /// nothing retries on its own: Rust stays fail-closed until Tor is retried
-  /// or turned off, so the notice has to hand the user those two actions.
+  /// The Tor bootstrap failed. Unlike [network], nothing retries on its own:
+  /// the notice has to offer a Tor retry or turning Tor off.
   torUnavailable,
   endpoint,
   databaseBusy,
@@ -29,8 +28,6 @@ class SyncFailure {
   String get actionLabel => showSettingsAction ? 'Settings' : 'Retry';
 
   /// Whether "Retry" should re-run the Tor bootstrap rather than the sync.
-  /// Restarting the sync against a failed Tor route fails again instantly;
-  /// only a new bootstrap (or turning Tor off) can move it.
   bool get retriesTorRoute => kind == SyncFailureKind.torUnavailable;
 }
 
@@ -92,10 +89,9 @@ bool _looksLikeEndpointFailure(String lower) {
       lower.contains('chain name');
 }
 
-/// The route resolver's resolved-failure wording (`RouteBlocked` in Rust) and
-/// the bootstrap deadline message. "Tor was turned off while it was
-/// connecting" and "Tor wait cancelled" are deliberately absent: both are
-/// the user's own action and the next sync attempt simply proceeds.
+/// Rust's resolved-failure wording (`RouteBlocked`) and the bootstrap deadline
+/// message. A user-initiated abort ("turned off while connecting", "wait
+/// cancelled") is deliberately absent: the next attempt simply proceeds.
 bool _looksLikeTorUnavailable(String lower) {
   return lower.contains('tor connection failed') ||
       lower.contains('tor could not connect') ||

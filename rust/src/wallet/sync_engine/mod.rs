@@ -2300,9 +2300,7 @@ async fn run_sync_impl(
     })
     .map_err(SyncError::db)?;
 
-    // Declared before the first network call: opening the channel can wait for
-    // a Tor bootstrap, and a session the user has already stopped must leave
-    // that wait rather than hold it for the bootstrap's deadline.
+    // Declared before the channel open so a stopped session leaves the Tor wait.
     let should_exit =
         || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
 

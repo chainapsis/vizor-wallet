@@ -678,11 +678,9 @@ class _HomePaneState extends ConsumerState<_HomePane> {
             ? () => context.push('/settings/endpoint')
             : syncFailure.retriesTorRoute &&
                   ref.watch(networkPrivacyProvider).torRouteRetained
-            // A sync restart against a failed Tor route fails again at once;
-            // the bootstrap is what has to be retried. Once the user has
-            // turned Tor off, or asked to, the failure is stale and `retry()`
-            // would re-run the disable instead, so a plain sync restart is
-            // the right retry again.
+            // A sync restart against a failed Tor route fails again at once,
+            // so retry the bootstrap instead; once Tor is off, or being
+            // turned off, the failure is stale and a sync restart is right.
             ? () => unawaited(ref.read(networkPrivacyProvider.notifier).retry())
             : widget.onRetrySync,
       );

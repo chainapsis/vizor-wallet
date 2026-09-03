@@ -57,12 +57,11 @@ class NetworkPrivacyState {
 
   bool get isBusy => status == NetworkPrivacyConnectionStatus.connecting;
 
-  /// Whether the runtime is on Tor and not on its way off it. This is the
-  /// state in which a `failed` status means the Tor connection itself failed
-  /// and a retry means a new bootstrap: an enable that never reached the
-  /// runtime (`torEnabled` false, target true) and a disable that could not
-  /// quiesce (`torEnabled` true, target false) both publish `failed` while
-  /// the live route is something else.
+  /// Whether the runtime is on Tor and not on its way off it: the only state
+  /// in which `failed` means the Tor connection failed and a retry means a new
+  /// bootstrap. An enable that never reached the runtime (`torEnabled` false,
+  /// target true) and a disable that could not quiesce (`torEnabled` true,
+  /// target false) both publish `failed` with the live route elsewhere.
   bool get torRouteRetained => torEnabled && (targetTorEnabled ?? true);
 }
 
@@ -94,14 +93,9 @@ class SharedPreferencesNetworkPrivacyStore
 abstract interface class NetworkPrivacyRuntime {
   void beginEnable();
 
-  /// Publishes an enable this side has given up on part-way through.
-  ///
-  /// [beginEnable] leaves Rust fail-closed and willing to hold policy-aware
-  /// requests until Tor connects, so every [beginEnable] has to be followed by
-  /// either `configure(enabled: true)` or this. Abandoning one in between —
-  /// a drain that failed, a refused transport restart, a preference read that
-  /// threw — otherwise leaves those requests waiting on a bootstrap nobody
-  /// started, until Rust's own bootstrap deadline expires.
+  /// Publishes an enable this side gave up on. Every [beginEnable] must be
+  /// followed by `configure(enabled: true)` or this, or Rust keeps holding
+  /// requests for a bootstrap nobody started, until its own deadline.
   void failEnable();
 
   Future<void> quiesceDirectRequests();
@@ -503,10 +497,7 @@ Future<void> initializeNetworkPrivacyRuntime({
     }
     runtime.beginEnable();
     final drainFailure = await _captureDirectDrain(runtime, directRequests);
-    // No `configure` can follow this enable: there is no preference to apply.
-    // Publishing the abandoned enable turns "still connecting" into a
-    // definite failure, so requests fail now instead of waiting out Rust's
-    // bootstrap deadline for a bootstrap that never starts.
+    // No `configure` follows: turn "still connecting" into a definite failure.
     runtime.failEnable();
     final failureDetails = [
       'Could not read the saved Tor preference: $error',
@@ -587,10 +578,8 @@ Future<NetworkPrivacyState?> _activateTorForStartup({
     );
   } catch (error) {
     if (_startupActivationSuperseded) return null;
-    // This activation owns the enable and is not going to complete it, so the
-    // waiting requests have to be released. Superseded is the one exception:
-    // there the route belongs to a newer owner. Harmless when `configure`
-    // itself was what threw — Rust takes a repeated failure as the same one.
+    // Release the waiting requests; a superseded activation leaves the route
+    // to its newer owner. Harmless when `configure` itself threw.
     runtime.failEnable();
     return NetworkPrivacyState(
       torEnabled: true,
@@ -842,9 +831,7 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
     } catch (error) {
       if (generation != _generation) return;
       if (enabled) {
-        // `beginEnable` is in force with no `configure` to follow it. A
-        // disable never took that lock, and a superseded toggle has already
-        // returned above — the newer owner will complete or fail its own.
+        // `beginEnable` is in force with no `configure` to follow it.
         runtime.failEnable();
       }
       final effectiveTorEnabled = runtime.isTorEnabled();

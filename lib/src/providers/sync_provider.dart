@@ -1141,10 +1141,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             return;
           }
 
-          // The preflight can sit inside Rust for as long as a Tor bootstrap
-          // takes. A lock or transport change in that window has already
-          // moved the generation and drained what was running; starting Rust
-          // work now would resurrect the stopped sync behind that drain.
+          // The preflight can wait out a Tor bootstrap; a lock or transport
+          // change meanwhile has moved the generation and drained Rust work.
           if (gen != _syncGen) {
             log('Sync: preflight finished after stop; not starting');
             return;

@@ -30,29 +30,35 @@ use crate::wallet::sync_engine;
 /// `anchor_tree_state_with_retry_on`, so the two budgets do not compound.
 const LWD_DIAL_ATTEMPTS: u32 = 3;
 const LWD_DIAL_RETRY_BASE_DELAY: Duration = Duration::from_millis(500);
+/// How long a snapshot fetch waits for a Tor bootstrap before giving up. Short
+/// on purpose: the voting work around it is awaited by the destructive drain.
+const SNAPSHOT_ROUTE_WAIT: Duration = Duration::from_secs(20);
 
 /// Fetches the voting snapshot anchor over the user's selected route.
 ///
 /// # Errors
 ///
-/// Returns an error if the route policy blocks the request, if Tor does not
-/// finish bootstrapping within its deadline, if the channel cannot be opened
+/// Returns an error if the route policy blocks the request, if Tor is still
+/// bootstrapping after [`SNAPSHOT_ROUTE_WAIT`], if the channel cannot be opened
 /// within [`LWD_DIAL_ATTEMPTS`], or if lightwalletd does not answer within the
 /// SDK's retry budget.
 pub(crate) async fn fetch_snapshot_tree_state(
     lightwalletd_url: &str,
     snapshot_height: u64,
 ) -> Result<TreeState, String> {
-    // Resolve the route before spending any dial attempts. A bootstrap in
-    // flight is waited out here, once, rather than being spread across the
-    // backoff schedule below — that schedule exists for transient connect
-    // failures, and a broken or unavailable Tor route still fails closed
-    // without consuming an attempt.
-    crate::network_privacy::tor_client_for_route(false, || false).await?;
+    // Resolve the route before spending any dial attempts: a broken Tor route
+    // fails closed without consuming one. A bootstrap in flight is waited out,
+    // but only briefly — this runs inside voting work the destructive drain
+    // has to await, so account deletion must not sit behind the bootstrap's
+    // full deadline.
+    let route_deadline = tokio::time::Instant::now() + SNAPSHOT_ROUTE_WAIT;
+    let route_wait_expired = || tokio::time::Instant::now() >= route_deadline;
+    crate::network_privacy::tor_client_for_route(false, route_wait_expired).await?;
 
     let mut last_error = None;
     for attempt in 1..=LWD_DIAL_ATTEMPTS {
-        match sync_engine::open_lwd_channel(lightwalletd_url).await {
+        match sync_engine::open_lwd_channel_with_cancel(lightwalletd_url, route_wait_expired).await
+        {
             Ok(mut client) => {
                 return zcash_voting::lwd::anchor_tree_state_with_retry_on(
                     &mut client,
@@ -85,9 +91,7 @@ mod tests {
     async fn snapshot_tree_state_fails_closed_while_tor_is_unavailable() {
         let _policy = lock_route_policy();
         crate::network_privacy::begin_tor_enable();
-        // A definite failure, not a bootstrap in flight: the route resolver
-        // waits out `Bootstrapping` now, so only a resolved failure is the
-        // fail-closed state this test is about.
+        // A resolved failure, not a bootstrap in flight (which is waited out).
         crate::network_privacy::fail_tor_enable();
 
         let started = Instant::now();

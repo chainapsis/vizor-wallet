@@ -6,18 +6,15 @@ import '../../providers/sync_provider.dart';
 /// status row and the mobile top nav sync widget.
 enum SyncStatusKind { syncing, failed, synced }
 
-/// Shown while the wallet is waiting on Tor: the embedded client is still
-/// bootstrapping, or it is up and the sync's first lightwalletd connection
-/// over it has not answered yet. Both look identical from the outside — the
-/// status row sits on "1% Syncing..." (the preflight display floor) with
-/// nothing to say why — and on a warm device the bootstrap is over in a
-/// second while that first circuit can take a minute. Copy is provisional.
+/// Shown while the wallet waits on Tor: the client is still bootstrapping, or
+/// the sync's first lightwalletd connection over it has not answered yet
+/// (otherwise the row sits on the preflight "1% Syncing..." floor). Copy is
+/// provisional.
 const kSyncStatusConnectingToTorLabel = 'Connecting to Tor…';
 const kSyncStatusConnectingToTorSemanticsLabel = 'Connecting to Tor';
 
-/// Shown once the Tor bootstrap has failed. Nothing retries on its own from
-/// there: every request fails until Tor connects on a later toggle or the
-/// user turns it off, so this is a paused state, not a transient one.
+/// Shown once the Tor bootstrap has failed: nothing retries on its own, so
+/// this is a paused state, not a transient one.
 const kSyncStatusTorFailedLabel = "Tor couldn't connect...";
 const kSyncStatusTorFailedSemanticsLabel = "Tor couldn't connect";
 
@@ -32,24 +29,17 @@ class SyncStatusLabel {
   final String label;
   final String semanticsLabel;
 
-  /// [networkPrivacy] wins over every sync-derived state. A failed Tor
-  /// route is the root cause of whatever the sync last recorded, and while
-  /// the route is still coming up — or the sync is still waiting for its
-  /// first answer over it — a failure or "synced" carried over from the
-  /// previous session is stale for as long as that lasts.
+  /// [networkPrivacy] wins over the sync-derived state: a failed Tor route is
+  /// the root cause of whatever the sync recorded, and while Tor is still
+  /// coming up the carried-over sync state is stale.
   factory SyncStatusLabel.from(
     SyncState sync, {
     int? displayWholePercentage,
     NetworkPrivacyState? networkPrivacy,
   }) {
     if (networkPrivacy != null) {
-      // `failed` alone is not a failed Tor route. An enable that failed while
-      // saving the preference publishes `failed` with the runtime still
-      // direct (`torEnabled` false, target true), and a disable that could not
-      // quiesce publishes `failed` with a healthy Tor still running
-      // (`torEnabled` true, target false); in both the sync state is the
-      // truth. Only a runtime that is on Tor, and was not on its way off it,
-      // has a Tor connection failure to report.
+      // `failed` is a Tor connection failure only while the runtime is on
+      // Tor and not on its way off it (see `torRouteRetained`).
       if (networkPrivacy.torRouteRetained &&
           networkPrivacy.status == NetworkPrivacyConnectionStatus.failed) {
         return const SyncStatusLabel(
@@ -100,19 +90,16 @@ class SyncStatusLabel {
   }
 }
 
-/// Whether Tor is where the route is heading: already the enabled route with
-/// no switch pending, or the target of a switch in flight. A disable in
-/// progress keeps `torEnabled` true while it drains, so the flag alone
-/// would read a route being turned off as one being connected.
+/// Whether Tor is where the route is heading. A disable in progress keeps
+/// `torEnabled` true while it drains, so the flag alone would read a route
+/// being turned off as one being connected.
 bool torIsTargetRoute(NetworkPrivacyState networkPrivacy) =>
     networkPrivacy.targetTorEnabled ?? networkPrivacy.torEnabled;
 
-/// Whether the sync is blocked on Tor rather than on chain work: the route
-/// is still bootstrapping, or it is connected and the sync has not received
-/// its first event — that first lightwalletd connection over a fresh circuit
-/// is the slow part on a warm device. Direct-route preflight is not covered:
-/// it is over in well under a second and needs no explanation. Neither is a
-/// disable in progress: its `connecting` is the way out of Tor, not into it.
+/// Whether the sync is blocked on Tor rather than on chain work: the route is
+/// still bootstrapping, or it is connected and the sync has not received its
+/// first event (the first connection over a fresh circuit is the slow part).
+/// Direct-route preflight and a disable in progress are not covered.
 bool syncIsWaitingOnTor(NetworkPrivacyState networkPrivacy, SyncState sync) {
   if (!torIsTargetRoute(networkPrivacy)) return false;
   return switch (networkPrivacy.status) {
