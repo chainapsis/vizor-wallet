@@ -11,8 +11,9 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `log_sink_closed`, `parse_tx_events_json`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These functions are ignored because they are not marked as `pub`: `bounded_chain_message`, `build_vote_commitments_result`, `catch`, `chain_submission_client_config`, `chain_submission_client`, `chain_submission_round_id`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `failure`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `local`, `log_sink_closed`, `outcome`, `share_record`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PreparedVoteWork`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
 ///
@@ -48,21 +49,61 @@ bool isLastMoment({
   voteEndTimeSeconds: voteEndTimeSeconds,
 );
 
-/// Returns the vote-chain delegation submission body as validated wire JSON.
-///
-/// Binary fields are base64-encoded here so Dart does not duplicate protocol
-/// field names or byte encoding rules.
-Future<String> delegationSubmissionWireJson({
-  required SignedDelegationPayloadView submission,
-}) => RustLib.instance.api.crateApiVotingDelegationSubmissionWireJson(
-  submission: submission,
+VotingChainSubmissionPassHandle beginChainSubmissionPass({
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
+  required String network,
+  required List<String> endpoints,
+  required BigInt operationEpoch,
+}) => RustLib.instance.api.crateApiVotingBeginChainSubmissionPass(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+  network: network,
+  endpoints: endpoints,
+  operationEpoch: operationEpoch,
 );
 
-/// Returns the vote-chain cast-vote submission body as validated wire JSON.
-Future<String> voteCommitmentWireJson({
-  required VoteCommitmentWire commitment,
-}) => RustLib.instance.api.crateApiVotingVoteCommitmentWireJson(
-  commitment: commitment,
+Future<ApiChainSubmissionCallResult> advanceChainDelegation({
+  required VotingChainSubmissionPassHandle handle,
+  required int bundleIndex,
+  required SignedDelegationPayloadView submission,
+  required ApiChainRecoveryMode recoveryMode,
+}) => RustLib.instance.api.crateApiVotingAdvanceChainDelegation(
+  handle: handle,
+  bundleIndex: bundleIndex,
+  submission: submission,
+  recoveryMode: recoveryMode,
+);
+
+Future<ApiChainSubmissionCallResult> advanceChainVote({
+  required VotingChainSubmissionPassHandle handle,
+  required int bundleIndex,
+  required int proposalId,
+  required ApiChainRecoveryMode recoveryMode,
+}) => RustLib.instance.api.crateApiVotingAdvanceChainVote(
+  handle: handle,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  recoveryMode: recoveryMode,
+);
+
+/// Advances the complete durable atomic batch containing `proposal_id`.
+///
+/// The proposal is only a recovery anchor. The SDK reloads and validates the
+/// authoritative ordered roster and digest before constructing or dispatching
+/// the chain request.
+Future<ApiChainSubmissionCallResult> advanceChainVoteBatch({
+  required VotingChainSubmissionPassHandle handle,
+  required int bundleIndex,
+  required int proposalId,
+  required ApiChainRecoveryMode recoveryMode,
+}) => RustLib.instance.api.crateApiVotingAdvanceChainVoteBatch(
+  handle: handle,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  recoveryMode: recoveryMode,
 );
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
@@ -522,50 +563,6 @@ buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
       keystoneSighash: keystoneSighash,
     );
 
-/// Record a submitted delegation transaction hash for one bundle.
-///
-/// Repeated calls are idempotent only for the same transaction hash.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the bundle key is missing,
-/// or the stored hash conflicts with `tx_hash`.
-Future<void> markDelegationSubmitted({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required String txHash,
-}) => RustLib.instance.api.crateApiVotingMarkDelegationSubmitted(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  txHash: txHash,
-);
-
-/// Parse tx events and record a confirmed delegation submission.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the event payload does not
-/// match the expected round/type shape, or confirmation state cannot be stored.
-Future<DelegationConfirmation> confirmDelegationSubmission({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required String txHash,
-  required String eventsJson,
-}) => RustLib.instance.api.crateApiVotingConfirmDelegationSubmission(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  txHash: txHash,
-  eventsJson: eventsJson,
-);
-
 /// Delete bundle rows at or above `keep_count` for partial-bundle recovery.
 ///
 /// Returns the number of deleted rows.
@@ -699,7 +696,7 @@ Future<List<ApiPendingShareRound>> listPendingShareRounds({
 ///
 /// Returns an error if opening the voting DB fails, no matching commitment is
 /// recoverable, or wire conversion fails.
-Future<SignedVoteCommitmentsView> recoverVoteCommitment({
+Future<ApiSignedVoteCommitments> recoverVoteCommitment({
   required String dbPath,
   required String accountUuid,
   required String roundId,
@@ -716,7 +713,7 @@ Future<SignedVoteCommitmentsView> recoverVoteCommitment({
 /// Streaming variant of `build_vote_commitments`.
 ///
 /// Emits per-proposal progress events, then a terminal `"result"` event carrying
-/// `SignedVoteCommitmentsView`.
+/// the persisted singleton or atomic-batch commitment roster.
 Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required String dbPath,
   required String accountUuid,
@@ -726,6 +723,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required List<int> storedHotkeySecret,
   required VanWitness vanWitness,
   required List<DraftVote> draftVotes,
+  required int maxProofConcurrency,
 }) => RustLib.instance.api.crateApiVotingBuildVoteCommitmentsWithProgress(
   dbPath: dbPath,
   accountUuid: accountUuid,
@@ -735,6 +733,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   storedHotkeySecret: storedHotkeySecret,
   vanWitness: vanWitness,
   draftVotes: draftVotes,
+  maxProofConcurrency: maxProofConcurrency,
 );
 
 /// Load the full recovery/share-tracking summary for one voting round.
@@ -746,54 +745,6 @@ Future<RoundRecoveryStateView> getRoundRecoveryState({
   dbPath: dbPath,
   accountUuid: accountUuid,
   roundId: roundId,
-);
-
-/// Record a submitted cast-vote transaction hash for one bundle/proposal key.
-///
-/// Repeated calls are idempotent only for the same transaction hash.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the vote key is missing, or
-/// the stored hash conflicts with `tx_hash`.
-Future<void> markVoteSubmitted({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required String txHash,
-}) => RustLib.instance.api.crateApiVotingMarkVoteSubmitted(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  txHash: txHash,
-);
-
-/// Parse tx events and record a confirmed vote submission.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the event payload does not
-/// match the expected round/type shape, or confirmation state cannot be stored.
-Future<VoteConfirmation> confirmVoteSubmission({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required String txHash,
-  required String eventsJson,
-}) => RustLib.instance.api.crateApiVotingConfirmVoteSubmission(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  txHash: txHash,
-  eventsJson: eventsJson,
 );
 
 /// Compute the resumable voting-session plan for a round. The plan reports the
@@ -878,6 +829,13 @@ Future<VotingConfigResolution> resolveVotingConfigFromAttempts({
   previous: previous,
 );
 
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingChainSubmissionPassHandle>>
+abstract class VotingChainSubmissionPassHandle implements RustOpaqueInterface {
+  void cancel();
+
+  void setOperationEpoch({required BigInt operationEpoch});
+}
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingHelperDeliveryContext>>
 abstract class VotingHelperDeliveryContext implements RustOpaqueInterface {}
 
@@ -930,6 +888,176 @@ class ApiBundleLayout {
           privacyTrimDroppedValueZatoshi ==
               other.privacyTrimDroppedValueZatoshi;
 }
+
+enum ApiChainConfirmationSource { hash, tree, legacyImport, legacyProjection }
+
+class ApiChainDiagnostic {
+  final ApiChainDiagnosticKind kind;
+  final String message;
+
+  const ApiChainDiagnostic({required this.kind, required this.message});
+
+  @override
+  int get hashCode => kind.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiChainDiagnostic &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          message == other.message;
+}
+
+enum ApiChainDiagnosticKind {
+  ambiguousDispatch,
+  ambiguousAttemptsExhausted,
+  nullifierAlreadySpent,
+  trackingWindowExpired,
+  chainRejected,
+  reconciliationPending,
+  invalidProtocolResponse,
+  recoveryUnavailable,
+  storageFailure,
+}
+
+enum ApiChainRecoveryMode { statusOnly, exactTree }
+
+class ApiChainSubmissionCallResult {
+  final ApiChainSubmissionOutcome? outcome;
+  final ApiChainSubmissionFailure? failure;
+
+  const ApiChainSubmissionCallResult({this.outcome, this.failure});
+
+  @override
+  int get hashCode => outcome.hashCode ^ failure.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiChainSubmissionCallResult &&
+          runtimeType == other.runtimeType &&
+          outcome == other.outcome &&
+          failure == other.failure;
+}
+
+class ApiChainSubmissionFailure {
+  final ApiChainSubmissionFailureKind kind;
+  final ApiChainSubmissionFailureState? strongestState;
+  final String message;
+
+  const ApiChainSubmissionFailure({
+    required this.kind,
+    this.strongestState,
+    required this.message,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^ strongestState.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiChainSubmissionFailure &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          strongestState == other.strongestState &&
+          message == other.message;
+}
+
+enum ApiChainSubmissionFailureKind {
+  invalidInput,
+  invariantViolation,
+  storage,
+  transport,
+  protocol,
+}
+
+class ApiChainSubmissionFailureState {
+  final ApiChainSubmissionState state;
+  final ApiChainSubmissionStateEvidence evidence;
+
+  const ApiChainSubmissionFailureState({
+    required this.state,
+    required this.evidence,
+  });
+
+  @override
+  int get hashCode => state.hashCode ^ evidence.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiChainSubmissionFailureState &&
+          runtimeType == other.runtimeType &&
+          state == other.state &&
+          evidence == other.evidence;
+}
+
+class ApiChainSubmissionOutcome {
+  final ApiChainSubmissionOutcomeKind kind;
+  final ApiChainConfirmationSource? confirmationSource;
+  final String? transactionHash;
+  final String? candidateTransactionHash;
+  final BigInt? finalVanPosition;
+  final Uint64List voteCommitmentPositions;
+  final ApiChainDiagnostic? diagnostic;
+
+  const ApiChainSubmissionOutcome({
+    required this.kind,
+    this.confirmationSource,
+    this.transactionHash,
+    this.candidateTransactionHash,
+    this.finalVanPosition,
+    required this.voteCommitmentPositions,
+    this.diagnostic,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      confirmationSource.hashCode ^
+      transactionHash.hashCode ^
+      candidateTransactionHash.hashCode ^
+      finalVanPosition.hashCode ^
+      voteCommitmentPositions.hashCode ^
+      diagnostic.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiChainSubmissionOutcome &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          confirmationSource == other.confirmationSource &&
+          transactionHash == other.transactionHash &&
+          candidateTransactionHash == other.candidateTransactionHash &&
+          finalVanPosition == other.finalVanPosition &&
+          voteCommitmentPositions == other.voteCommitmentPositions &&
+          diagnostic == other.diagnostic;
+}
+
+enum ApiChainSubmissionOutcomeKind {
+  confirmed,
+  tracking,
+  recovering,
+  submittedWithoutHash,
+  rejected,
+  cancelled,
+}
+
+enum ApiChainSubmissionState {
+  submitting,
+  tracking,
+  recovering,
+  submittedWithoutHash,
+  confirmed,
+  legacyConfirmed,
+  rejected,
+}
+
+enum ApiChainSubmissionStateEvidence { durable, knownPossiblyDispatched }
 
 /// Progress event emitted while building, proving, and signing a delegation payload.
 ///
@@ -1368,6 +1496,36 @@ class ApiShareTrackingReport {
           nextDelaySeconds == other.nextDelaySeconds;
 }
 
+/// Prepared singleton or atomic-batch commitments without chain wire payloads.
+///
+/// `batch_digest` is present only when every commitment belongs to one atomic
+/// batch. Chain submission reloads the canonical request body from durable SDK
+/// state, so neither that body nor individual submission payloads cross FRB.
+class ApiSignedVoteCommitments {
+  final int bundleIndex;
+  final List<SignedVoteCommitmentView> commitments;
+  final Uint8List? batchDigest;
+
+  const ApiSignedVoteCommitments({
+    required this.bundleIndex,
+    required this.commitments,
+    this.batchDigest,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ commitments.hashCode ^ batchDigest.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiSignedVoteCommitments &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          commitments == other.commitments &&
+          batchDigest == other.batchDigest;
+}
+
 /// PIR cache result for one snapshot-precomputed delegation bundle.
 class ApiSnapshotBundlePirResult {
   final int cachedCount;
@@ -1444,7 +1602,7 @@ class ApiVoteCommitEvent {
   final int? proposalId;
   final int? bundleIndex;
   final double? proofProgress;
-  final SignedVoteCommitmentsView? commitments;
+  final ApiSignedVoteCommitments? commitments;
 
   const ApiVoteCommitEvent({
     required this.phase,

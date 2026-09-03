@@ -29,8 +29,9 @@ use http::{Method, Uri};
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::connect::HttpConnector;
 use zcash_voting::{
-    HelperFuture, HelperResponse, HelperTransport, HelperTransportError, HyperTransport,
-    MAX_HELPER_RESPONSE_BYTES,
+    ChainHttpRequest, ChainHttpResponse, ChainPostDispatch, ChainTransport, ChainTransportError,
+    ChainTransportFuture, HelperFuture, HelperResponse, HelperTransport, HelperTransportError,
+    HyperTransport, MAX_HELPER_RESPONSE_BYTES,
 };
 
 use crate::network_privacy;
@@ -251,15 +252,24 @@ fn classify_tor_error(
 async fn collect_tor_body(
     mut body: hyper::body::Incoming,
 ) -> Result<Vec<u8>, zcash_client_backend::tor::Error> {
+    collect_tor_body_with_limit(&mut body, MAX_HELPER_RESPONSE_BYTES, "helper").await
+}
+
+/// Reads a routed response body without buffering beyond the caller's limit.
+async fn collect_tor_body_with_limit(
+    body: &mut hyper::body::Incoming,
+    max_response_bytes: usize,
+    label: &str,
+) -> Result<Vec<u8>, zcash_client_backend::tor::Error> {
     use zcash_client_backend::tor::http::HttpError;
 
     let mut collected: Vec<u8> = Vec::new();
     while let Some(frame) = body.frame().await {
         let frame = frame.map_err(HttpError::from)?;
         if let Ok(data) = frame.into_data() {
-            if collected.len().saturating_add(data.len()) > MAX_HELPER_RESPONSE_BYTES {
+            if collected.len().saturating_add(data.len()) > max_response_bytes {
                 return Err(std::io::Error::other(format!(
-                    "helper response body exceeded {MAX_HELPER_RESPONSE_BYTES} bytes"
+                    "{label} response body exceeded {max_response_bytes} bytes"
                 ))
                 .into());
             }
@@ -269,6 +279,123 @@ async fn collect_tor_body(
     Ok(collected)
 }
 
+impl VotingHelperTransport {
+    async fn chain_request_over_tor(
+        &self,
+        tor: &zcash_client_backend::tor::Client,
+        method: Method,
+        request: ChainHttpRequest,
+        body: Vec<u8>,
+        dispatch: Option<ChainPostDispatch>,
+    ) -> Result<ChainHttpResponse, ChainTransportError> {
+        let uri: Uri = request.url().parse().map_err(|error| {
+            ChainTransportError::definitely_unsent(format!("invalid vote-chain URL: {error}"))
+        })?;
+        let is_post = method == Method::POST;
+        let request_headers = request.headers().to_vec();
+        let dispatch_for_headers = dispatch.clone();
+        let apply_headers = move |mut builder: http::request::Builder| {
+            for (name, value) in &request_headers {
+                builder = builder.header(name, value);
+            }
+            if let Some(dispatch) = dispatch_for_headers.as_ref() {
+                // librustzcash invokes this only after Tor connection and TLS
+                // setup, immediately before it constructs the HTTP request.
+                dispatch.mark_possible();
+            }
+            builder
+        };
+        let max_response_bytes = request.max_response_bytes();
+
+        let response = tokio::time::timeout(request.timeout(), async {
+            match method {
+                Method::POST => {
+                    tor.http_post(
+                        uri,
+                        apply_headers,
+                        Full::new(Bytes::from(body)),
+                        move |mut body| async move {
+                            collect_tor_body_with_limit(&mut body, max_response_bytes, "vote-chain")
+                                .await
+                        },
+                        0,
+                        |_| None,
+                    )
+                    .await
+                }
+                _ => {
+                    tor.http_get(
+                        uri,
+                        apply_headers,
+                        move |mut body| async move {
+                            collect_tor_body_with_limit(&mut body, max_response_bytes, "vote-chain")
+                                .await
+                        },
+                        0,
+                        |_| None,
+                    )
+                    .await
+                }
+            }
+        })
+        .await
+        .map_err(|_| {
+            if is_post
+                && dispatch
+                    .as_ref()
+                    .is_some_and(ChainPostDispatch::is_possible)
+            {
+                ChainTransportError::possibly_dispatched("vote-chain request timed out")
+            } else {
+                ChainTransportError::definitely_unsent(
+                    "vote-chain request timed out before dispatch",
+                )
+            }
+        })?
+        .map_err(|error| classify_tor_chain_error(is_post, dispatch.as_ref(), error))?;
+
+        let status = response.status().as_u16();
+        let content_type = response
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let headers = response
+            .headers()
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|value| (name.as_str().to_string(), value.to_string()))
+            })
+            .collect();
+        Ok(ChainHttpResponse::new(
+            status,
+            response.into_body(),
+            content_type,
+            headers,
+        ))
+    }
+}
+
+fn classify_tor_chain_error(
+    is_post: bool,
+    dispatch: Option<&ChainPostDispatch>,
+    error: zcash_client_backend::tor::Error,
+) -> ChainTransportError {
+    let helper_classification = classify_tor_error(is_post, error);
+    let message = helper_classification.to_string();
+    let possibly_dispatched = is_post
+        && (dispatch.is_some_and(ChainPostDispatch::is_possible)
+            || matches!(helper_classification, HelperTransportError::Ambiguous(_)));
+    if possibly_dispatched {
+        ChainTransportError::possibly_dispatched(message)
+    } else {
+        ChainTransportError::definitely_unsent(message)
+    }
+}
+
 impl HelperTransport for VotingHelperTransport {
     fn get<'a>(&'a self, url: &'a str, timeout: Duration) -> HelperFuture<'a> {
         Box::pin(async move { self.request(Method::GET, url, Vec::new(), timeout).await })
@@ -276,6 +403,70 @@ impl HelperTransport for VotingHelperTransport {
 
     fn post_json<'a>(&'a self, url: &'a str, body: Vec<u8>, timeout: Duration) -> HelperFuture<'a> {
         Box::pin(async move { self.request(Method::POST, url, body, timeout).await })
+    }
+}
+
+impl ChainTransport for VotingHelperTransport {
+    fn chain_get<'a>(&'a self, request: ChainHttpRequest) -> ChainTransportFuture<'a> {
+        Box::pin(async move {
+            match network_privacy::tor_client_for_route(true, || false)
+                .await
+                .map_err(ChainTransportError::definitely_unsent)?
+            {
+                Some(tor) => {
+                    self.chain_request_over_tor(&tor, Method::GET, request, Vec::new(), None)
+                        .await
+                }
+                None => ChainTransport::chain_get(&self.direct, request).await,
+            }
+        })
+    }
+
+    fn chain_post_json<'a>(
+        &'a self,
+        request: ChainHttpRequest,
+        json: Vec<u8>,
+    ) -> ChainTransportFuture<'a> {
+        Box::pin(async move {
+            match network_privacy::tor_client_for_route(true, || false)
+                .await
+                .map_err(ChainTransportError::definitely_unsent)?
+            {
+                Some(tor) => {
+                    self.chain_request_over_tor(&tor, Method::POST, request, json, None)
+                        .await
+                }
+                None => ChainTransport::chain_post_json(&self.direct, request, json).await,
+            }
+        })
+    }
+
+    fn chain_post_json_with_dispatch<'a>(
+        &'a self,
+        request: ChainHttpRequest,
+        json: Vec<u8>,
+        dispatch: ChainPostDispatch,
+    ) -> ChainTransportFuture<'a> {
+        Box::pin(async move {
+            match network_privacy::tor_client_for_route(true, || false)
+                .await
+                .map_err(ChainTransportError::definitely_unsent)?
+            {
+                Some(tor) => {
+                    self.chain_request_over_tor(&tor, Method::POST, request, json, Some(dispatch))
+                        .await
+                }
+                None => {
+                    ChainTransport::chain_post_json_with_dispatch(
+                        &self.direct,
+                        request,
+                        json,
+                        dispatch,
+                    )
+                    .await
+                }
+            }
+        })
     }
 }
 
@@ -400,9 +591,12 @@ mod tests {
     };
 
     use http::Method;
-    use zcash_voting::HelperTransportError;
+    use zcash_voting::{ChainPostDispatch, ChainTransportFailureKind, HelperTransportError};
 
-    use super::{classify_tor_error, classify_tor_outer_timeout, VotingHelperTransport};
+    use super::{
+        classify_tor_chain_error, classify_tor_error, classify_tor_outer_timeout,
+        VotingHelperTransport,
+    };
 
     #[test]
     fn tor_post_classification_distinguishes_pre_dispatch_failures() {
@@ -451,6 +645,31 @@ mod tests {
             classify_tor_error(false, zcash_client_backend::tor::Error::MissingTorDirectory),
             HelperTransportError::Transport(_)
         ));
+    }
+
+    #[test]
+    fn chain_post_classification_honors_the_dispatch_boundary() {
+        let dispatch = ChainPostDispatch::default();
+        let before_dispatch = classify_tor_chain_error(
+            true,
+            Some(&dispatch),
+            zcash_client_backend::tor::Error::MissingTorDirectory,
+        );
+        assert_eq!(
+            before_dispatch.kind(),
+            ChainTransportFailureKind::DefinitelyUnsent
+        );
+
+        dispatch.mark_possible();
+        let after_dispatch = classify_tor_chain_error(
+            true,
+            Some(&dispatch),
+            zcash_client_backend::tor::Error::MissingTorDirectory,
+        );
+        assert_eq!(
+            after_dispatch.kind(),
+            ChainTransportFailureKind::PossiblyDispatched
+        );
     }
 
     #[test]

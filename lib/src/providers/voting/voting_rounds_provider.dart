@@ -180,6 +180,14 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
           states[round.roundId] = recoveryState;
         }
       } catch (error) {
+        // Opening and migrating the voting sidecar is global to the wallet,
+        // not specific to one round. Retrying the same structural failure for
+        // every visible round can keep the poll list on its entry spinner for
+        // a long time and flood the logs without producing useful state.
+        if (_isVotingDatabaseOpenFailure(error)) {
+          debugPrint('[zcash] Voting: poll-state database unavailable: $error');
+          rethrow;
+        }
         debugPrint(
           '[zcash] Voting: recovery lookup failed for round '
           '${round.roundId}: '
@@ -263,6 +271,10 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       return const [];
     }
   }
+}
+
+bool _isVotingDatabaseOpenFailure(Object error) {
+  return error.toString().contains('Error opening voting database:');
 }
 
 final votingRoundsProvider =

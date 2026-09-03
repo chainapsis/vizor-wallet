@@ -77,14 +77,6 @@ final votingTransportRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
   );
 });
 
-/// Retry policy for chain broadcasts (`cast-vote`, `delegate-vote`).
-final votingBroadcastRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
-  return VotingRetryPolicy.transientHttp(
-    name: 'voting-broadcast',
-    delays: const [Duration(seconds: 2), Duration(seconds: 4)],
-  );
-});
-
 /// Retry policy for PIR endpoint probes.
 final votingPirProbeRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
   return VotingRetryPolicy.transientHttp(
@@ -117,7 +109,6 @@ final votingApiClientProvider =
         httpClient: ref.watch(votingHttpClientProvider),
         timeout: ref.watch(votingApiRequestTimeoutProvider),
         readRetryPolicy: ref.watch(votingApiReadRetryPolicyProvider),
-        broadcastRetryPolicy: ref.watch(votingBroadcastRetryPolicyProvider),
       );
     });
 
@@ -394,11 +385,58 @@ abstract interface class VotingShareTrackingPassHandle {
   void dispose();
 }
 
+/// Cancellable host-epoch token for one SDK-owned chain advancement episode.
+abstract interface class VotingChainSubmissionPassHandle {
+  String get accountUuid;
+
+  String get roundId;
+
+  bool get isCancelled;
+
+  bool get isDisposed;
+
+  void setOperationEpoch(BigInt operationEpoch);
+
+  void cancel();
+
+  void dispose();
+}
+
 /// Narrow interface over Rust voting work used by the session state machine.
 ///
 /// Keeping this boundary explicit lets tests verify sequencing, recovery skips,
 /// and progress forwarding without invoking FRB or cryptographic proof work.
 abstract interface class VotingRustApi {
+  VotingChainSubmissionPassHandle beginChainSubmissionPass({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required String network,
+    required List<String> endpoints,
+    required BigInt operationEpoch,
+  });
+
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainDelegation({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required rust_voting.SignedDelegationPayloadView submission,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  });
+
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVote({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  });
+
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVoteBatch({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  });
+
   /// Selects an exact-height PIR endpoint using the SDK's protocol policy.
   String? selectPirSnapshotEndpoint({
     required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
@@ -507,27 +545,6 @@ abstract interface class VotingRustApi {
     required List<int> keystoneSighash,
   });
 
-  Future<String> delegationSubmissionWireJson({
-    required rust_voting.SignedDelegationPayloadView submission,
-  });
-
-  Future<void> markDelegationSubmitted({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required String txHash,
-  });
-
-  Future<rust_voting.DelegationConfirmation> confirmDelegationSubmission({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required String txHash,
-    required String eventsJson,
-  });
-
   Future<int> syncVoteTree({
     required String dbPath,
     required String accountUuid,
@@ -573,18 +590,15 @@ abstract interface class VotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   });
 
-  Future<rust_voting.SignedVoteCommitmentsView> recoverVoteCommitment({
+  Future<rust_api.ApiSignedVoteCommitments> recoverVoteCommitment({
     required String dbPath,
     required String accountUuid,
     required String roundId,
     required int bundleIndex,
     required int proposalId,
-  });
-
-  Future<String> voteCommitmentWireJson({
-    required rust_voting.VoteCommitmentWire commitment,
   });
 
   BigInt? lastMomentBufferSeconds({
@@ -662,25 +676,6 @@ abstract interface class VotingRustApi {
   Future<BigInt?> nextShareTrackingDelaySeconds({
     required List<rust_voting.ShareDelegationRecordView> shares,
     required BigInt nowSeconds,
-  });
-
-  Future<void> markVoteSubmitted({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required String txHash,
-  });
-
-  Future<rust_voting.VoteConfirmation> confirmVoteSubmission({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required String txHash,
-    required String eventsJson,
   });
 }
 
@@ -765,9 +760,130 @@ final class _FrbVotingShareTrackingPassHandle
   }
 }
 
+final class _FrbVotingChainSubmissionPassHandle
+    implements VotingChainSubmissionPassHandle {
+  _FrbVotingChainSubmissionPassHandle({
+    required this.accountUuid,
+    required this.roundId,
+    required rust_api.VotingChainSubmissionPassHandle inner,
+  }) : _inner = inner;
+
+  @override
+  final String accountUuid;
+
+  @override
+  final String roundId;
+
+  final rust_api.VotingChainSubmissionPassHandle _inner;
+  bool _isCancelled = false;
+
+  @override
+  bool get isCancelled => _isCancelled;
+
+  @override
+  bool get isDisposed => _inner.isDisposed;
+
+  rust_api.VotingChainSubmissionPassHandle get inner {
+    if (isDisposed) {
+      throw StateError('Chain submission pass handle has been disposed.');
+    }
+    return _inner;
+  }
+
+  @override
+  void setOperationEpoch(BigInt operationEpoch) {
+    if (isDisposed) return;
+    _inner.setOperationEpoch(operationEpoch: operationEpoch);
+  }
+
+  @override
+  void cancel() {
+    if (_isCancelled || isDisposed) return;
+    _inner.cancel();
+    _isCancelled = true;
+  }
+
+  @override
+  void dispose() {
+    if (isDisposed) return;
+    _inner.dispose();
+  }
+}
+
 /// Production implementation backed by generated FRB calls.
 class FrbVotingRustApi implements VotingRustApi {
   const FrbVotingRustApi();
+
+  @override
+  VotingChainSubmissionPassHandle beginChainSubmissionPass({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required String network,
+    required List<String> endpoints,
+    required BigInt operationEpoch,
+  }) {
+    return _FrbVotingChainSubmissionPassHandle(
+      accountUuid: accountUuid,
+      roundId: roundId,
+      inner: rust_api.beginChainSubmissionPass(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
+        network: network,
+        endpoints: endpoints,
+        operationEpoch: operationEpoch,
+      ),
+    );
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainDelegation({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required rust_voting.SignedDelegationPayloadView submission,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  }) {
+    final handle = passHandle as _FrbVotingChainSubmissionPassHandle;
+    return rust_api.advanceChainDelegation(
+      handle: handle.inner,
+      bundleIndex: bundleIndex,
+      submission: submission,
+      recoveryMode: recoveryMode,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVote({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  }) {
+    final handle = passHandle as _FrbVotingChainSubmissionPassHandle;
+    return rust_api.advanceChainVote(
+      handle: handle.inner,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      recoveryMode: recoveryMode,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVoteBatch({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  }) {
+    final handle = passHandle as _FrbVotingChainSubmissionPassHandle;
+    return rust_api.advanceChainVoteBatch(
+      handle: handle.inner,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      recoveryMode: recoveryMode,
+    );
+  }
 
   @override
   String? selectPirSnapshotEndpoint({
@@ -970,49 +1086,6 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<String> delegationSubmissionWireJson({
-    required rust_voting.SignedDelegationPayloadView submission,
-  }) {
-    return rust_api.delegationSubmissionWireJson(submission: submission);
-  }
-
-  @override
-  Future<void> markDelegationSubmitted({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required String txHash,
-  }) {
-    return rust_api.markDelegationSubmitted(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      bundleIndex: bundleIndex,
-      txHash: txHash,
-    );
-  }
-
-  @override
-  Future<rust_voting.DelegationConfirmation> confirmDelegationSubmission({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required String txHash,
-    required String eventsJson,
-  }) {
-    return rust_api.confirmDelegationSubmission(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      bundleIndex: bundleIndex,
-      txHash: txHash,
-      eventsJson: eventsJson,
-    );
-  }
-
-  @override
   Future<int> syncVoteTree({
     required String dbPath,
     required String accountUuid,
@@ -1080,6 +1153,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) {
     return rust_api.buildVoteCommitmentsWithProgress(
       dbPath: dbPath,
@@ -1090,11 +1164,12 @@ class FrbVotingRustApi implements VotingRustApi {
       storedHotkeySecret: storedHotkeySecret,
       vanWitness: vanWitness,
       draftVotes: draftVotes,
+      maxProofConcurrency: maxProofConcurrency,
     );
   }
 
   @override
-  Future<rust_voting.SignedVoteCommitmentsView> recoverVoteCommitment({
+  Future<rust_api.ApiSignedVoteCommitments> recoverVoteCommitment({
     required String dbPath,
     required String accountUuid,
     required String roundId,
@@ -1108,13 +1183,6 @@ class FrbVotingRustApi implements VotingRustApi {
       bundleIndex: bundleIndex,
       proposalId: proposalId,
     );
-  }
-
-  @override
-  Future<String> voteCommitmentWireJson({
-    required rust_voting.VoteCommitmentWire commitment,
-  }) {
-    return rust_api.voteCommitmentWireJson(commitment: commitment);
   }
 
   @override
@@ -1303,46 +1371,6 @@ class FrbVotingRustApi implements VotingRustApi {
     return rust_api.nextShareTrackingDelaySeconds(
       shares: shares,
       nowSeconds: nowSeconds,
-    );
-  }
-
-  @override
-  Future<void> markVoteSubmitted({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required String txHash,
-  }) {
-    return rust_api.markVoteSubmitted(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      bundleIndex: bundleIndex,
-      proposalId: proposalId,
-      txHash: txHash,
-    );
-  }
-
-  @override
-  Future<rust_voting.VoteConfirmation> confirmVoteSubmission({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required String txHash,
-    required String eventsJson,
-  }) {
-    return rust_api.confirmVoteSubmission(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      bundleIndex: bundleIndex,
-      proposalId: proposalId,
-      txHash: txHash,
-      eventsJson: eventsJson,
     );
   }
 }
