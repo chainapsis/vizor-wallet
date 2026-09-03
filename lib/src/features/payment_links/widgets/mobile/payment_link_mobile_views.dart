@@ -13,6 +13,7 @@ import '../payment_link_card_motion.dart';
 import '../payment_link_cards_layout.dart';
 import '../payment_link_copy.dart';
 import '../payment_link_dashed_border_painter.dart';
+import '../payment_link_wizard_chrome.dart';
 import '../payment_link_skeleton.dart';
 
 export '../payment_link_cards_layout.dart'
@@ -374,7 +375,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _MobileCardsTab(
+                  PaymentLinkTabAction(
                     key: const ValueKey('payment_links_mobile_created_tab'),
                     icon: AppIcons.plane,
                     label: kPaymentLinkCreatedTabLabel,
@@ -384,7 +385,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                         : () => onTabSelected!(PaymentLinkCardsTab.created),
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  _MobileCardsTab(
+                  PaymentLinkTabAction(
                     key: const ValueKey('payment_links_mobile_received_tab'),
                     icon: AppIcons.arrowDownward,
                     label: kPaymentLinkReceivedTabLabel,
@@ -631,59 +632,6 @@ class _MobileCardStatus extends StatelessWidget {
             vertical: AppSpacing.xs,
           ),
           child: content,
-        ),
-      ),
-    );
-  }
-}
-
-class _MobileCardsTab extends StatelessWidget {
-  const _MobileCardsTab({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    super.key,
-  });
-
-  final String icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected
-        ? context.colors.text.primary
-        : context.colors.text.muted;
-    return PaymentLinkAction(
-      onPressed: onTap,
-      selected: selected,
-      role: SemanticsRole.tab,
-      semanticLabel: label,
-      builder: (context, _, focused) => DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadii.small),
-          border: focused
-              ? Border.all(color: context.colors.state.focusRing, width: 2)
-              : null,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xs,
-            vertical: AppSpacing.xs,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(icon, size: 16, color: color),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                label,
-                style: AppTypography.labelLarge.copyWith(color: color),
-              ),
-            ],
-          ),
         ),
       ),
     );
