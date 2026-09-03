@@ -1534,11 +1534,13 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         widget.router.go('/welcome');
         _showPaymentUriMessage(decision.message!);
       case PaymentUriDrainAction.deliver:
-        prefillNotifier.clear();
-        // The request is presented over the current screen, not navigated to.
-        ref
-            .read(paymentRequestFlowProvider.notifier)
-            .present(prefill!, source: PaymentRequestSource.link);
+        // Nothing to deliver onto yet. The presenting surface — the payment
+        // request card and its host — arrives in the next PR of this stack;
+        // presenting here would run the precheck and leave a live Rust
+        // proposal holding the wallet's inputs behind a card the user can
+        // neither see nor dismiss. So the link stays parked: a parked link is
+        // drained on the next pass, once a host exists.
+        return;
     }
   }
 
