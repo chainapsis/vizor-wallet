@@ -26,6 +26,7 @@ class PaymentRequestSurface extends StatelessWidget {
     this.layout = PaymentRequestLayout.auto,
     this.initialAddressExpanded = false,
     this.initialMessageExpanded = false,
+    this.cardKey,
     this.background,
     super.key,
   });
@@ -43,6 +44,9 @@ class PaymentRequestSurface extends StatelessWidget {
 
   /// Tooling-only: renders the Message row already expanded to its full text.
   final bool initialMessageExpanded;
+
+  /// Identity of the request whose disclosure state the card owns.
+  final Key? cardKey;
 
   /// What the modal sits on top of. Defaults to the flat window color so a
   /// preview does not have to supply a whole screen.
@@ -63,6 +67,7 @@ class PaymentRequestSurface extends StatelessWidget {
     final card = Material(
       type: MaterialType.transparency,
       child: PaymentRequestCard(
+        key: cardKey,
         request: request,
         onContinue: onContinue,
         onEdit: onEdit,

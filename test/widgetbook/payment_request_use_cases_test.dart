@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -95,6 +96,65 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('requester and memo disclosures expose one semantics action', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
+
+    final requester = tester.getSemantics(
+      find.bySemanticsLabel('Show requester details'),
+    );
+    final memo = tester.getSemantics(
+      find.bySemanticsLabel('Expand transaction memo'),
+    );
+
+    expect(requester.childrenCountInTraversalOrder, 0);
+    expect(memo.childrenCountInTraversalOrder, 0);
+    semantics.dispose();
+  });
+
+  testWidgets('a very long requester note scrolls inside its existing card', (
+    tester,
+  ) async {
+    final note = List.filled(12000, 'a').join();
+    await _pumpUseCase(
+      tester,
+      (_) => PaymentRequestSurface(
+        layout: PaymentRequestLayout.mobile,
+        request: PaymentRequestView(
+          source: PaymentRequestSource.link,
+          requesterLabel: 'Blue Door Coffee',
+          amountZecText: '0.5 ZEC',
+          address:
+              'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+              '73d57f73c6dc05121591a83861cd190591',
+          note: note,
+        ),
+        onContinue: () {},
+        onEdit: () {},
+        onCancel: () {},
+      ),
+      size: _mobileSize,
+    );
+
+    await tester.tap(_key('payment_request_requester_toggle'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Review'), findsOneWidget);
+    expect(find.text('Edit'), findsOneWidget);
+    expect(_requesterNoteMaxScrollExtent(tester), greaterThan(0));
+
+    await tester.drag(
+      find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+      const Offset(0, -80),
+    );
+    await tester.pumpAndSettle();
+
+    expect(_requesterNoteScrollOffset(tester), greaterThan(0));
+  });
+
   testWidgets('a requester name without a note is not an empty accordion', (
     tester,
   ) async {
@@ -127,6 +187,44 @@ void main() {
         text.style!.color,
         AppThemeData.light.colors.text.secondary,
         reason: label,
+      );
+    }
+  });
+
+  testWidgets('disclosures do not add a hover fill', (tester) async {
+    await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+
+    for (final key in const [
+      'payment_request_requester_toggle',
+      'payment_request_memo_toggle',
+    ]) {
+      final button = _key(key);
+      await mouse.moveTo(tester.getCenter(button));
+      await tester.pump();
+
+      final decoration =
+          tester
+                  .widget<AnimatedContainer>(
+                    find.descendant(
+                      of: button,
+                      matching: find.byType(AnimatedContainer),
+                    ),
+                  )
+                  .decoration!
+              as ShapeDecoration;
+      final container = tester.widget<AnimatedContainer>(
+        find.descendant(of: button, matching: find.byType(AnimatedContainer)),
+      );
+      expect(
+        decoration.color,
+        AppThemeData.light.colors.background.ground.withValues(alpha: 0),
+      );
+      expect(
+        container.padding,
+        const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       );
     }
   });
@@ -410,7 +508,7 @@ void main() {
       await _pumpUseCase(tester, builder);
 
       expect(tester.takeException(), isNull, reason: message);
-      // Exactly one status line, in the one slot above the actions.
+      // Exactly one status line, attached to the details card.
       expect(find.text(message), findsOneWidget, reason: message);
       expect(
         find.byKey(const ValueKey('payment_request_status')),
@@ -425,7 +523,7 @@ void main() {
     }
   });
 
-  testWidgets('the status line sits between the details and the actions', (
+  testWidgets('the status line sits below the card, away from the actions', (
     tester,
   ) async {
     await _pumpUseCase(tester, buildPaymentRequestInvalidAddressUseCase);
@@ -439,6 +537,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(status.top, greaterThanOrEqualTo(card.bottom - 0.5));
     expect(status.bottom, lessThanOrEqualTo(review.top + 0.5));
+    expect(status.top - card.bottom, lessThan(review.top - status.bottom));
   });
 
   testWidgets('checking is a button state, not a status line', (tester) async {
@@ -932,7 +1031,7 @@ void main() {
 
   // ─── Actions ───────────────────────────────────────────────────────
 
-  testWidgets('the actions are a full-width primary over text-only Edit', (
+  testWidgets('the actions are full-width primary and ghost buttons', (
     tester,
   ) async {
     for (final (builder, size) in <(WidgetBuilder, Size)>[
@@ -950,16 +1049,13 @@ void main() {
       final edit = _button(tester, 'payment_request_edit');
       expect(review.variant, AppButtonVariant.primary);
       expect(edit.variant, AppButtonVariant.ghost);
-      expect(edit.size, AppButtonSize.small);
       expect(review.expand, isTrue);
-      expect(edit.expand, isFalse);
+      expect(edit.expand, isTrue);
 
-      // Edit remains a real button but no longer paints a second full-width
-      // pill under the primary action.
       final reviewRect = tester.getRect(_key('payment_request_continue'));
       final editRect = tester.getRect(_key('payment_request_edit'));
-      expect(editRect.width, lessThan(reviewRect.width));
-      expect(editRect.height, lessThan(reviewRect.height));
+      expect(editRect.width, moreOrLessEquals(reviewRect.width));
+      expect(editRect.height, moreOrLessEquals(reviewRect.height));
       expect(editRect.top, greaterThan(reviewRect.bottom));
 
       // Nothing edits in place any more.
@@ -1056,6 +1152,21 @@ double _scrollOffset(WidgetTester tester) => tester
 
 double _maxScrollExtent(WidgetTester tester) => tester
     .widget<SingleChildScrollView>(find.byKey(kPaymentRequestScrollViewKey))
+    .controller!
+    .position
+    .maxScrollExtent;
+
+double _requesterNoteScrollOffset(WidgetTester tester) => tester
+    .widget<SingleChildScrollView>(
+      find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+    )
+    .controller!
+    .offset;
+
+double _requesterNoteMaxScrollExtent(WidgetTester tester) => tester
+    .widget<SingleChildScrollView>(
+      find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+    )
     .controller!
     .position
     .maxScrollExtent;

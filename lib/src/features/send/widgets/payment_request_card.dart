@@ -19,14 +19,6 @@ import '../../../core/widgets/review_wrap_card.dart';
 /// the home confirmation cards).
 const double kPaymentRequestCardWidth = 396;
 
-/// Vertical padding added around the card's 24px-high compact ghost button
-/// ("Show full address") in the mobile layout.
-///
-/// The pill keeps its Figma height; the transparent ring around it brings the
-/// tap target to 44px, which is what a thumb needs. Desktop keeps the bare
-/// 24px control — it is above the WCAG 2.5.8 floor and pointer-driven.
-const double kPaymentRequestTouchRingInset = 10;
-
 /// Horizontal room the mobile header leaves for the sheet's pinned close.
 ///
 /// The card renders no close of its own on mobile — `MobileModalScaffold`
@@ -43,11 +35,28 @@ const double kPaymentRequestMobileCloseClearance = 40;
 /// far in from that card's edge. One gutter, two left edges.
 const double kPaymentRequestGutter = AppSpacing.sm;
 
+/// Horizontal breathing room inside the two-line disclosure controls.
+/// They stay visually quiet on hover like the existing review rows, while
+/// keeping their labels away from the full-row hit target's edges.
+const _paymentRequestDisclosurePadding = EdgeInsets.symmetric(
+  horizontal: AppSpacing.xs,
+);
+
 /// The scroll region's overlay scrollbar, for tests.
 const kPaymentRequestScrollbarKey = ValueKey('payment_request_scrollbar');
 
 /// The scroll region's scroll view, for tests.
 const kPaymentRequestScrollViewKey = ValueKey('payment_request_scroll_view');
+
+/// The requester note's nested scroll view, for tests.
+const kPaymentRequestRequesterNoteScrollViewKey = ValueKey(
+  'payment_request_requester_note_scroll_view',
+);
+
+/// The requester note's nested scrollbar, for tests.
+const kPaymentRequestRequesterNoteScrollbarKey = ValueKey(
+  'payment_request_requester_note_scrollbar',
+);
 
 /// Which of the two presentations [PaymentRequestCard] lays itself out for.
 ///
@@ -603,19 +612,16 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
                 rows: rows,
                 bounded: false,
               ),
-            // One status slot for every condition, directly under the
-            // details card and directly above the buttons it explains.
+            // A request error belongs to the details card, so keep it close
+            // to that surface and leave the full section gap before actions.
             if (statusMessage != null) ...[
-              SizedBox(height: sectionGap),
+              SizedBox(height: isMobile ? AppSpacing.xxs : AppSpacing.xs),
               _StatusMessage(
                 key: const ValueKey('payment_request_status'),
                 status: status,
                 message: statusMessage,
               ),
-              // The status line explains the buttons underneath, so it sits
-              // close to them and far from the content above — the gap below
-              // stays well under half the gap above in both lanes.
-              SizedBox(height: isMobile ? AppSpacing.xxs : AppSpacing.xs),
+              SizedBox(height: sectionGap),
             ] else
               SizedBox(height: sectionGap),
             _Actions(
@@ -684,6 +690,7 @@ class _RequesterDetailsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final transparent = colors.background.ground.withValues(alpha: 0);
     final summary = requester ?? 'Note from requester';
     final scaler = MediaQuery.textScalerOf(context);
     // Label over value, both at body size: the requester is text the link
@@ -737,9 +744,11 @@ class _RequesterDetailsCard extends StatelessWidget {
         : Semantics(
             button: true,
             expanded: expanded,
+            excludeSemantics: true,
             label: expanded
                 ? 'Hide requester details'
                 : 'Show requester details',
+            value: 'Requester, $summary',
             onTap: toggle,
             child: AppButton(
               key: const ValueKey('payment_request_requester_toggle'),
@@ -747,9 +756,11 @@ class _RequesterDetailsCard extends StatelessWidget {
               variant: AppButtonVariant.ghost,
               size: AppButtonSize.small,
               height: summaryHeight,
+              enabledBackgroundColor: transparent,
+              pressedBackgroundColor: transparent,
               expand: true,
               constrainContent: true,
-              contentPadding: EdgeInsets.zero,
+              contentPadding: _paymentRequestDisclosurePadding,
               child: summaryRow,
             ),
           );
@@ -773,11 +784,19 @@ class _RequesterDetailsCard extends StatelessWidget {
                 style: labelStyle.copyWith(color: colors.text.secondary),
               ),
               const SizedBox(height: AppSpacing.xxs),
-              Text(
-                note!,
-                key: const ValueKey('payment_request_requester_note'),
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.accent,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: AppSpacing.xl3),
+                child: _FadingScrollRegion(
+                  scrollViewKey: kPaymentRequestRequesterNoteScrollViewKey,
+                  scrollbarKey: kPaymentRequestRequesterNoteScrollbarKey,
+                  contentPadding: EdgeInsets.zero,
+                  child: Text(
+                    note!,
+                    key: const ValueKey('payment_request_requester_note'),
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -980,6 +999,7 @@ class _AddressRow extends StatelessWidget {
         if (isMobileLayout)
           GestureDetector(
             behavior: HitTestBehavior.translucent,
+            excludeFromSemantics: true,
             onTap: onToggle,
             child: recipient,
           )
@@ -1153,38 +1173,6 @@ class _AddressChunks extends StatelessWidget {
   }
 }
 
-/// Adds a transparent ring around a compact control so the tap target
-/// reaches 44px on touch without changing the pill.
-///
-/// The inner control keeps its own opaque gesture detector; this one only
-/// catches the ring, and both call the same callback.
-class _TouchTargetRing extends StatelessWidget {
-  const _TouchTargetRing({
-    required this.apply,
-    required this.onTap,
-    required this.child,
-  });
-
-  final bool apply;
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!apply) return child;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          vertical: kPaymentRequestTouchRingInset,
-        ),
-        child: child,
-      ),
-    );
-  }
-}
-
 /// The card's name in the serif headline scale the send screens use for
 /// their titles, with the desktop close affordance beside it.
 ///
@@ -1328,6 +1316,7 @@ class _ProseRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final transparent = colors.background.ground.withValues(alpha: 0);
     final valueStyle = AppTypography.bodyMediumStrong;
     final scaler = MediaQuery.textScalerOf(context);
     // The control is the whole label-over-value block: 54px on mobile,
@@ -1345,9 +1334,11 @@ class _ProseRows extends StatelessWidget {
         Semantics(
           button: true,
           expanded: expanded,
+          excludeSemantics: true,
           label: expanded
               ? 'Collapse transaction memo'
               : 'Expand transaction memo',
+          value: '$label, $text',
           onTap: onToggle,
           child: AppButton(
             key: const ValueKey('payment_request_memo_toggle'),
@@ -1355,9 +1346,11 @@ class _ProseRows extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.small,
             height: controlHeight,
+            enabledBackgroundColor: transparent,
+            pressedBackgroundColor: transparent,
             expand: true,
             constrainContent: true,
-            contentPadding: EdgeInsets.zero,
+            contentPadding: _paymentRequestDisclosurePadding,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1479,8 +1472,9 @@ class _QuietNotice extends StatelessWidget {
   }
 }
 
-/// The card's action area: one full-width primary with a compact text-only
-/// edit action underneath.
+/// The card's action area: one full-width primary over one full-width ghost
+/// action, the pair `ReviewButtonsStack` already uses on the send review
+/// screens.
 ///
 /// "Review" names where the primary lands — the send review step — rather
 /// than the generic "Continue" it replaced; nothing is signed from here.
@@ -1541,7 +1535,7 @@ class _Actions extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _primaryFill(),
-        if (hasAmount) ...[const SizedBox(height: AppSpacing.xs), _editText()],
+        if (hasAmount) ...[const SizedBox(height: AppSpacing.xs), _editFill()],
       ],
     );
 
@@ -1623,22 +1617,11 @@ class _Actions extends StatelessWidget {
     leading: _primaryLeading(),
   );
 
-  Widget _editText() => Align(
-    child: _TouchTargetRing(
-      apply: isMobileLayout,
-      onTap: onEdit,
-      child: _semantics(
-        enabled: true,
-        label: 'Edit',
-        child: AppButton(
-          key: const ValueKey('payment_request_edit'),
-          onPressed: onEdit,
-          variant: AppButtonVariant.ghost,
-          size: AppButtonSize.small,
-          child: const Text('Edit'),
-        ),
-      ),
-    ),
+  Widget _editFill() => _fillButton(
+    key: const ValueKey('payment_request_edit'),
+    label: 'Edit',
+    onPressed: onEdit,
+    variant: AppButtonVariant.ghost,
   );
 }
 
@@ -1707,9 +1690,17 @@ class _DetailsFrame extends StatelessWidget {
 /// result — the reason an expanded memo collapsed the moment the user
 /// scrolled.
 class _FadingScrollRegion extends StatefulWidget {
-  const _FadingScrollRegion({required this.child});
+  const _FadingScrollRegion({
+    required this.child,
+    this.scrollViewKey = kPaymentRequestScrollViewKey,
+    this.scrollbarKey = kPaymentRequestScrollbarKey,
+    this.contentPadding = defaultContentPadding,
+  });
 
   final Widget child;
+  final Key scrollViewKey;
+  final Key scrollbarKey;
+  final EdgeInsetsGeometry contentPadding;
 
   static const _fadeHeight = AppSpacing.md;
 
@@ -1717,7 +1708,7 @@ class _FadingScrollRegion extends StatefulWidget {
   /// the full height of the card. The card gutter on every side, not the
   /// review screen's 24/16 pair: this card sits inside a frame that uses
   /// 16, and two vertical rhythms one level apart read as a mistake.
-  static const contentPadding = EdgeInsets.all(kPaymentRequestGutter);
+  static const defaultContentPadding = EdgeInsets.all(kPaymentRequestGutter);
 
   /// Overlay scrollbar geometry: the pane scrollbar's 6px capsule, centered
   /// in the card's 16px inner gutter so it never rides over text.
@@ -1800,9 +1791,9 @@ class _FadingScrollRegionState extends State<_FadingScrollRegion> {
       child: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
         child: SingleChildScrollView(
-          key: kPaymentRequestScrollViewKey,
+          key: widget.scrollViewKey,
           controller: _controller,
-          padding: _FadingScrollRegion.contentPadding,
+          padding: widget.contentPadding,
           child: widget.child,
         ),
       ),
@@ -1812,7 +1803,7 @@ class _FadingScrollRegionState extends State<_FadingScrollRegion> {
     // content, and a cue that dissolves the control it belongs to reads as
     // a rendering fault.
     return RawScrollbar(
-      key: kPaymentRequestScrollbarKey,
+      key: widget.scrollbarKey,
       controller: _controller,
       thumbVisibility: _canScroll,
       thickness: _FadingScrollRegion.scrollbarThickness,
