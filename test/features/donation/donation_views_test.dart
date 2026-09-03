@@ -35,8 +35,8 @@ void main() {
     );
 
     expect(find.text('Support Vizor'), findsOneWidget);
-    expect(find.text('0.05 ZEC'), findsOneWidget);
-    expect(find.text('0.25 ZEC'), findsOneWidget);
+    expect(find.text('0.02 ZEC'), findsOneWidget);
+    expect(find.text('0.12 ZEC'), findsOneWidget);
     expect(find.text('Shielded balance'), findsOneWidget);
     expect(
       tester

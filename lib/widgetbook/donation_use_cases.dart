@@ -15,9 +15,9 @@ Widget buildDonationZecEmptyUseCase(BuildContext context) =>
 Widget buildDonationZecSelectedUseCase(BuildContext context) =>
     const _DonationComposePreview(
       mode: DonationAmountMode.zec,
-      amount: '0.05',
-      selectedPreset: '0.05',
-      conversion: r'$ 2.50',
+      amount: '0.02',
+      selectedPreset: '0.02',
+      conversion: r'$ 16.00',
     );
 
 Widget buildDonationUsdSelectedUseCase(BuildContext context) =>
