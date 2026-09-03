@@ -292,7 +292,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
         accountUuid != null;
 
     return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
+      sidebar: const AppMainSidebar(suppressActiveSelection: true),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
         child: Column(

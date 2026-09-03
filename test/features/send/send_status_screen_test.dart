@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/zcash_explorer.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -81,6 +82,27 @@ void main() {
     expect(rustApi.discardCalls, isEmpty);
     expect(rustApi.macosExecuteCalls, Platform.isMacOS ? 1 : 0);
     expect(rustApi.mnemonicExecuteCalls, Platform.isMacOS ? 0 : 1);
+  });
+
+  testWidgets('donation status keeps every sidebar section inactive', (
+    tester,
+  ) async {
+    rustApi.executeResult = _executeResult(status: 'broadcasted');
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(_reviewArgs(flowKind: SendFlowKind.donation)),
+    );
+    await tester.pump();
+
+    expect(_sidebarItem(tester, 'Home').active, isFalse);
+    expect(_sidebarItem(tester, 'Settings').active, isFalse);
+
+    await _flushBroadcast(tester);
+
+    expect(find.text('Thank you for supporting Vizor'), findsOneWidget);
+    expect(_sidebarItem(tester, 'Home').active, isFalse);
+    expect(_sidebarItem(tester, 'Settings').active, isFalse);
   });
 
   testWidgets('tx id row opens the explorer with the display-order txid', (
@@ -736,6 +758,7 @@ SendReviewArgs _reviewArgs({
   String addressType = 'unified',
   String? memo,
   bool needsSaplingParams = false,
+  SendFlowKind flowKind = SendFlowKind.send,
 }) {
   return SendReviewArgs(
     proposalId: BigInt.one,
@@ -747,6 +770,13 @@ SendReviewArgs _reviewArgs({
     feeZatoshi: BigInt.from(12000),
     needsSaplingParams: needsSaplingParams,
     memo: memo,
+    flowKind: flowKind,
+  );
+}
+
+AppSidebarItem _sidebarItem(WidgetTester tester, String label) {
+  return tester.widget<AppSidebarItem>(
+    find.ancestor(of: find.text(label), matching: find.byType(AppSidebarItem)),
   );
 }
 

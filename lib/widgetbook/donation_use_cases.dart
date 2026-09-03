@@ -132,11 +132,7 @@ class _DonationPreviewSidebar extends StatelessWidget {
           children: [
             const AppSidebarItem(label: 'Username', iconName: AppIcons.user),
             const SizedBox(height: AppSpacing.base),
-            const AppSidebarItem(
-              label: 'Home',
-              iconName: AppIcons.home,
-              active: true,
-            ),
+            const AppSidebarItem(label: 'Home', iconName: AppIcons.home),
             const SizedBox(height: AppSpacing.xs),
             const AppSidebarItem(label: 'Swap', iconName: AppIcons.swapArrows),
             const SizedBox(height: AppSpacing.xs),

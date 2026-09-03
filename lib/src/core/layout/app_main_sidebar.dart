@@ -84,9 +84,16 @@ String _formatSidebarCompactBalance(
 }
 
 class AppMainSidebar extends ConsumerStatefulWidget {
-  const AppMainSidebar({this.disabledRoutePaths = const {}, super.key});
+  const AppMainSidebar({
+    this.disabledRoutePaths = const {},
+    this.suppressActiveSelection = false,
+    super.key,
+  });
 
   final Set<String> disabledRoutePaths;
+
+  /// Keeps navigation interactive while rendering every section inactive.
+  final bool suppressActiveSelection;
 
   @override
   ConsumerState<AppMainSidebar> createState() => _AppMainSidebarState();
@@ -107,11 +114,15 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   bool get _isHomeRoute => _matches('/home');
 
+  bool _routeShouldBeActive(String routePath) =>
+      !widget.suppressActiveSelection && _matches(routePath);
+
   bool get _homeShouldBeActive =>
-      _isHomeRoute ||
-      _matches('/send') ||
-      _matches('/receive') ||
-      _matches('/migration');
+      !widget.suppressActiveSelection &&
+      (_isHomeRoute ||
+          _matches('/send') ||
+          _matches('/receive') ||
+          _matches('/migration'));
 
   bool get _isAccountMenuOpen => _accountMenuEntry != null;
 
@@ -527,7 +538,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         key: const ValueKey('sidebar_swap_button'),
                         label: 'Swap',
                         iconName: AppIcons.swapArrows,
-                        active: _matches('/swap'),
+                        active: _routeShouldBeActive('/swap'),
                         onTap:
                             isImporting ||
                                 widget.disabledRoutePaths.contains('/swap')
@@ -539,7 +550,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         key: const ValueKey('sidebar_pay_button'),
                         label: 'Pay',
                         iconName: AppIcons.paid,
-                        active: _matches('/pay'),
+                        active: _routeShouldBeActive('/pay'),
                         onTap:
                             isImporting ||
                                 widget.disabledRoutePaths.contains('/pay') ||
@@ -553,7 +564,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       key: const ValueKey('sidebar_voting_button'),
                       label: 'Vote',
                       iconName: AppIcons.vote,
-                      active: _matches('/voting'),
+                      active: _routeShouldBeActive('/voting'),
                       // Stays tappable while active: _navigateTo requests a
                       // poll-list refresh when re-tapped on /voting.
                       onTap:
@@ -568,16 +579,17 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       key: const ValueKey('sidebar_activity_button'),
                       label: 'Activity',
                       iconName: AppIcons.history,
-                      active: _matches('/activity'),
+                      active: _routeShouldBeActive('/activity'),
                       // Stays tappable on detail subroutes (tx/swap status)
                       // as a way back to the main activity feed.
                       onTap: isImporting ? null : _openActivity,
                     ),
                     const Spacer(),
                     AppSidebarItem(
+                      key: const ValueKey('sidebar_settings_button'),
                       label: 'Settings',
                       iconName: AppIcons.cog,
-                      active: _matches('/settings'),
+                      active: _routeShouldBeActive('/settings'),
                       onTap: _openSettings,
                     ),
                     const SizedBox(height: AppSpacing.xs),

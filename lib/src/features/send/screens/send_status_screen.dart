@@ -55,6 +55,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   bool _showVerifyAddress = false;
   Completer<bool>? _saplingParamsPromptCompleter;
 
+  bool get _suppressSidebarSelection =>
+      widget.args.flowKind == SendFlowKind.donation;
+
   @override
   void initState() {
     super.initState();
@@ -186,7 +189,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   Widget _buildKeystoneSubmittingScreen(BuildContext context) {
     final colors = context.colors;
     return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
+      sidebar: AppMainSidebar(
+        suppressActiveSelection: _suppressSidebarSelection,
+      ),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
         child: Column(
@@ -262,14 +267,18 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                 _phase == _SendStatusPhase.succeeded
           ? AppDesktopShell(
               background: const DonationSuccessBackground(),
-              sidebar: const AppMainSidebar(),
+              sidebar: AppMainSidebar(
+                suppressActiveSelection: _suppressSidebarSelection,
+              ),
               pane: AppDesktopPane(
                 padding: EdgeInsets.zero,
                 child: DonationSuccessView(onDone: () => unawaited(_goHome())),
               ),
             )
           : AppDesktopShell(
-              sidebar: const AppMainSidebar(),
+              sidebar: AppMainSidebar(
+                suppressActiveSelection: _suppressSidebarSelection,
+              ),
               pane: AppDesktopPane(
                 padding: EdgeInsets.zero,
                 child: Stack(

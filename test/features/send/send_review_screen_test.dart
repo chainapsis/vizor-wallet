@@ -15,6 +15,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -102,6 +103,8 @@ void main() {
     expect(find.text('Review Amount'), findsOneWidget);
     expect(find.text('Send'), findsOneWidget);
     expect(find.text('Donation'), findsNothing);
+    expect(_sidebarItem(tester, 'Home').active, isFalse);
+    expect(_sidebarItem(tester, 'Settings').active, isFalse);
   });
 
   testWidgets('renders the contact variant for an address-book match', (
@@ -502,6 +505,30 @@ void main() {
     expect(rustApi.discardCalls, isEmpty);
   });
 
+  testWidgets('donation Keystone scan preserves suppressed selection', (
+    tester,
+  ) async {
+    final scanExtras = <Object?>[];
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', flowKind: SendFlowKind.donation),
+        bootstrap: _bootstrap(isHardware: true),
+        scanExtras: scanExtras,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    await tester.tap(find.text('Get signature'));
+    await tester.pumpAndSettle();
+
+    final scanArgs = scanExtras.single as KeystoneSendScanArgs;
+    expect(scanArgs.suppressSidebarSelection, isTrue);
+  });
+
   testWidgets('Keystone TEX advances through two explicit signing rounds', (
     tester,
   ) async {
@@ -760,6 +787,12 @@ void main() {
       // its owner-scoped DB input lock until the hardware flow finishes.
       expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
     },
+  );
+}
+
+AppSidebarItem _sidebarItem(WidgetTester tester, String label) {
+  return tester.widget<AppSidebarItem>(
+    find.ancestor(of: find.text(label), matching: find.byType(AppSidebarItem)),
   );
 }
 

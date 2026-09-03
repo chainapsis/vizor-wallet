@@ -335,8 +335,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final response = await context.push<List<int>>(
       '/send/keystone/scan',
       extra: _keystoneBatchRequestsByRound[_keystoneRound] == null
-          ? const KeystoneSendScanArgs()
-          : const KeystoneSendScanArgs.batch(),
+          ? KeystoneSendScanArgs(
+              suppressSidebarSelection:
+                  widget.args.flowKind == SendFlowKind.donation,
+            )
+          : KeystoneSendScanArgs.batch(
+              suppressSidebarSelection:
+                  widget.args.flowKind == SendFlowKind.donation,
+            ),
     );
     if (response == null || !mounted) return;
     try {
@@ -400,7 +406,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final hasMemo = memo != null && memo.trim().isNotEmpty;
 
     return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
+      sidebar: AppMainSidebar(
+        suppressActiveSelection: widget.args.flowKind == SendFlowKind.donation,
+      ),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
         child: Stack(
