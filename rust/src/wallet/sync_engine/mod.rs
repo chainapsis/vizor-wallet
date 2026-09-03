@@ -3429,7 +3429,10 @@ async fn run_sync_impl(
         // independent position queue is populated atomically by compact scan.
         // Box this transport-heavy future so its Hyper/Tor connector state does
         // not inflate the already-large sync future exported through FRB.
-        tolerate_pir_failure("DAG pass", Box::pin(dag_sync.run(&mut db)).await)?;
+        tolerate_pir_failure(
+            "DAG pass",
+            Box::pin(dag_sync.run_after_batch(&mut db, batch_blocks)).await,
+        )?;
         tolerate_pir_failure("memo PIR", Box::pin(memo_pir.run(&mut db)).await)?;
 
         // Legacy enhancement remains available for status and transparent

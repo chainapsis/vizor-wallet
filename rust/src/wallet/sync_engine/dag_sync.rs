@@ -52,6 +52,11 @@ const MAX_PASSES_AT_TIP: usize = 8;
 /// every batch anyway, and one envelope per batch keeps the scan moving.
 const MAX_PASSES_WHILE_SCANNING: usize = 1;
 
+/// Blocks compact scanning covers between two passes while it has work. A
+/// pass costs one envelope; spending it after every small batch would hold
+/// the scan far more than it helps.
+const BLOCKS_BETWEEN_PASSES: u64 = 2_000;
+
 /// Queries of one envelope in flight at once. The envelope is fixed either
 /// way; concurrency changes only how long a pass takes. Matches the
 /// coordinator's per-table query slots so a burst is queued, not refused.
@@ -73,6 +78,8 @@ pub(super) struct DagSync {
     anchor_hint: Option<BlockHeight>,
     sessions: Option<(TableSessions, WitnessCap)>,
     root_verified: bool,
+    /// Blocks scanned since the last pass ran after a batch.
+    blocks_since_pass: u64,
     /// Nullifiers already checked against the connected generation.
     checked: HashSet<[u8; 32]>,
     /// Spent notes whose spending transaction's records are still to be read.
@@ -84,6 +91,7 @@ impl DagSync {
         Self {
             endpoint: endpoint_for(network),
             anchor_hint: None,
+            blocks_since_pass: 0,
             sessions: None,
             root_verified: false,
             checked: HashSet::new(),
@@ -121,6 +129,27 @@ impl DagSync {
             .map_err(|error| SyncError::db(format!("block_metadata: {error}")))?
             .is_some();
         Ok((!scanned).then_some(anchor))
+    }
+
+    /// Runs after a compact batch of `batch_blocks` blocks: a pass every
+    /// [`BLOCKS_BETWEEN_PASSES`] scanned blocks while the scan has work, and
+    /// unconditionally once it has none.
+    pub(super) async fn run_after_batch(
+        &mut self,
+        db: &mut WalletDatabase,
+        batch_blocks: u64,
+    ) -> Result<(), SyncError> {
+        self.blocks_since_pass += batch_blocks;
+        let scan_pending = db
+            .suggest_scan_ranges()
+            .map_err(|error| SyncError::db(format!("suggest_scan_ranges: {error}")))?
+            .iter()
+            .any(|range| range.priority() > ScanPriority::Scanned);
+        if scan_pending && self.blocks_since_pass < BLOCKS_BETWEEN_PASSES {
+            return Ok(());
+        }
+        self.blocks_since_pass = 0;
+        self.run(db).await
     }
 
     pub(super) async fn run(&mut self, db: &mut WalletDatabase) -> Result<(), SyncError> {
