@@ -31,6 +31,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
+import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -675,6 +676,13 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         actionLabel: syncFailure.actionLabel,
         onTap: syncFailure.showSettingsAction
             ? () => context.push('/settings/endpoint')
+            : syncFailure.retriesTorRoute &&
+                  ref.watch(networkPrivacyProvider).torEnabled
+            // A sync restart against a failed Tor route fails again at once;
+            // the bootstrap is what has to be retried. Once the user has
+            // turned Tor off the failure is stale and a plain sync restart is
+            // the right retry again.
+            ? () => unawaited(ref.read(networkPrivacyProvider.notifier).retry())
             : widget.onRetrySync,
       );
     }
