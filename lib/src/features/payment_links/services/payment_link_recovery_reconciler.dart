@@ -59,7 +59,7 @@ enum PaymentLinkPreparedFundingDisposition { pending, funded, expired }
 
 PaymentLinkPreparedFundingDisposition _paymentLinkPreparedFundingDisposition({
   required String fundingTxid,
-  required int expiryHeight,
+  required int? expiryHeight,
   required BigInt currentHeight,
   required BigInt scannedHeight,
   required List<rust_sync.TransactionInfo> transactions,
@@ -70,7 +70,19 @@ PaymentLinkPreparedFundingDisposition _paymentLinkPreparedFundingDisposition({
   )) {
     return PaymentLinkPreparedFundingDisposition.funded;
   }
-  if (currentHeight >= BigInt.from(expiryHeight) &&
+  // The wallet watched this transaction expire unmined, which is definitive
+  // whatever the record knows about expiry heights.
+  if (paymentLinkFundingExpired(
+    fundingTxids: fundingTxid,
+    transactions: transactions,
+  )) {
+    return PaymentLinkPreparedFundingDisposition.expired;
+  }
+  // A software draft carries its broadcast transaction but no expiry height,
+  // so it can only be promoted once mined; without a height there is nothing
+  // to discard it on.
+  if (expiryHeight != null &&
+      currentHeight >= BigInt.from(expiryHeight) &&
       scannedHeight >= BigInt.from(expiryHeight)) {
     return PaymentLinkPreparedFundingDisposition.expired;
   }
@@ -146,7 +158,7 @@ class PaymentLinkRecoveryReconciler {
         final fundingTxid = record.fundingTxids!.trim();
         final disposition = _paymentLinkPreparedFundingDisposition(
           fundingTxid: fundingTxid,
-          expiryHeight: record.preparedExpiryHeight!,
+          expiryHeight: record.preparedExpiryHeight,
           currentHeight: currentHeight,
           scannedHeight: scannedHeight,
           transactions:

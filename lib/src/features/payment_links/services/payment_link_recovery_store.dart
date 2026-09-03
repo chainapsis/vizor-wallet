@@ -219,6 +219,59 @@ class PaymentLinkRecoveryStore {
     });
   }
 
+  /// Records the broadcast transaction id on a draft without promoting it to
+  /// [PaymentLinkRecoveryState.funded].
+  ///
+  /// The software funding path only learns its transaction id when the
+  /// broadcast returns, so unlike the hardware path it has nothing to write
+  /// through [markPrepared] beforehand. Writing the id separately from the
+  /// promotion means a [markFunded] that fails still leaves the reconciler a
+  /// transaction to match against the chain, and leaves
+  /// [countUnsharedFundedPaymentLinks] counting the row — otherwise a draft
+  /// whose funding really was broadcast reads as inert and its Card link
+  /// becomes unreachable.
+  ///
+  /// No expiry height is recorded, because the software path never sees one.
+  /// The reconciler therefore promotes such a draft when its transaction is
+  /// mined but never expires it.
+  Future<PaymentLinkRecoveryRecord> markSubmitted({
+    required String address,
+    required String fundingTxids,
+    DateTime? updatedAt,
+  }) {
+    return _runExclusive(() async {
+      final submittedTxids = fundingTxids.trim();
+      if (submittedTxids.isEmpty) {
+        throw ArgumentError.value(
+          fundingTxids,
+          'fundingTxids',
+          'A submitted payment link requires a transaction id.',
+        );
+      }
+      final records = await _loadUnlocked();
+      final existing = _findRequired(records, address);
+      // Nothing to add once the record has moved past `draft`; the promotion
+      // that follows owns those states.
+      if (existing.state != PaymentLinkRecoveryState.draft) return existing;
+      final existingTxids = existing.fundingTxids?.trim();
+      if (existingTxids != null && existingTxids.isNotEmpty) {
+        if (existingTxids.toLowerCase() != submittedTxids.toLowerCase()) {
+          throw StateError(
+            'Payment link funding was prepared with a different transaction.',
+          );
+        }
+        return existing;
+      }
+      final updated = existing.copyWith(
+        state: PaymentLinkRecoveryState.draft,
+        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        fundingTxids: submittedTxids,
+      );
+      await _writeRecords(_replaceByAddress(records, updated));
+      return updated;
+    });
+  }
+
   Future<PaymentLinkRecoveryRecord> markPrepared({
     required String address,
     required String fundingTxid,
@@ -466,6 +519,16 @@ class PaymentLinkFundingRecovery {
     required String Function(T result) fundingTxids,
   }) async {
     final txids = fundingTxids(transaction);
+    // Earliest durable trace of a broadcast the software path can produce. If
+    // the promotion below never lands and the in-app retry never runs, the
+    // draft still carries its funding transaction, so recovery can finish the
+    // job on a later launch instead of leaving funded ZEC behind an
+    // unreachable link.
+    try {
+      await _store.markSubmitted(address: address, fundingTxids: txids);
+    } catch (_) {
+      // The promotion below reports the durable-write failure to the caller.
+    }
     Object? recoveryError;
     StackTrace? recoveryStackTrace;
     for (var attempt = 0; attempt < _fundingMetadataWriteAttempts; attempt++) {
@@ -592,10 +655,15 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     );
   }
 
+  // A draft may carry a funding transaction without an expiry height: the
+  // hardware path records both through `markPrepared`, while the software path
+  // learns its transaction id only when the broadcast returns and never sees an
+  // expiry height. An expiry height without a transaction is still incomplete —
+  // there would be nothing to reconcile it against.
   final hasPreparedTxid =
       state == PaymentLinkRecoveryState.draft &&
       (fundingTxids as String?)?.trim().isNotEmpty == true;
-  if (hasPreparedTxid != (preparedExpiryHeight != null)) {
+  if (preparedExpiryHeight != null && !hasPreparedTxid) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Prepared recovery metadata is incomplete.',
     );

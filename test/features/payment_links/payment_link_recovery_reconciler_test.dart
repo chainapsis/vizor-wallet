@@ -43,6 +43,69 @@ void main() {
     },
   );
 
+  test(
+    'promotes a software draft whose markFunded never landed once it is mined',
+    () async {
+      final fixture = await _submittedFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(200),
+        loadScannedHeight: () async => BigInt.from(200),
+        loadTransactionsByAccount: (_) async => {
+          'source-account': [_transaction(txid: _preparedTxid)],
+        },
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.funded);
+      expect(record.fundingTxids, _preparedTxid);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    },
+  );
+
+  test(
+    'retains a software draft with no expiry height while its tx is unseen',
+    () async {
+      final fixture = await _submittedFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(100000),
+        loadScannedHeight: () async => BigInt.from(100000),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.fundingTxids, _preparedTxid);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    },
+  );
+
+  test('removes a software draft whose transaction expired unmined', () async {
+    final fixture = await _submittedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(200),
+      loadScannedHeight: () async => BigInt.from(200),
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [
+          _transaction(txid: _preparedTxid, expiredUnmined: true),
+        ],
+      },
+    );
+
+    expect(await reconciler.load(), isEmpty);
+    expect(await reconciler.countUnsharedFundedForAccount('source-account'), 0);
+  });
+
   test('promotes a recorded transaction even at its expiry height', () async {
     final fixture = await _preparedFixture();
     final reconciler = PaymentLinkRecoveryReconciler(
@@ -210,6 +273,27 @@ _preparedFixture() async {
     fundingTxid: _preparedTxid,
     expiryHeight: 120,
   );
+  return (store: store, storage: storage);
+}
+
+/// A software funding whose broadcast landed but whose `markFunded` promotion
+/// never did: the draft carries its transaction id and no expiry height.
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_submittedFixture() async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: _preparedAddress,
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+  await store.markSubmitted(address: link.address, fundingTxids: _preparedTxid);
   return (store: store, storage: storage);
 }
 

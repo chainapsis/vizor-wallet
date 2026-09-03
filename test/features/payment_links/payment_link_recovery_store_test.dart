@@ -125,7 +125,12 @@ void main() {
     test(
       'returns the broadcast result when funding metadata cannot be updated',
       () async {
-        final storage = _FakePaymentLinkRecoveryStorage(failOnWrites: {2, 3});
+        // Writes: 1 saveDraft, 2 markSubmitted, 3+4 the two markFunded
+        // attempts. A storage outage spanning all of them is the one case that
+        // still loses the transaction id.
+        final storage = _FakePaymentLinkRecoveryStorage(
+          failOnWrites: {2, 3, 4},
+        );
         final link = _link();
         var transactionCount = 0;
 
@@ -148,6 +153,7 @@ void main() {
         expect(transactionCount, 1);
         final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
         expect(restartedRecords.single.state, PaymentLinkRecoveryState.draft);
+        expect(restartedRecords.single.fundingTxids, isNull);
         expect(restartedRecords.single.link.mnemonic, link.mnemonic);
       },
     );
@@ -390,7 +396,7 @@ void main() {
       );
     });
 
-    test('rejects prepared metadata without an expiry height', () async {
+    test('rejects an expiry height with no funding transaction', () async {
       final link = _link();
       final storage = _FakePaymentLinkRecoveryStorage()
         ..value = jsonEncode({
@@ -400,8 +406,8 @@ void main() {
               'link': link.toUri().toString(),
               'sourceAccountUuid': 'source-account',
               'state': 'draft',
-              'fundingTxids': 'prepared-hardware-txid',
-              'preparedExpiryHeight': null,
+              'fundingTxids': null,
+              'preparedExpiryHeight': 120,
               'archivedAt': null,
               'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
             },
@@ -411,6 +417,94 @@ void main() {
       await expectLater(
         PaymentLinkRecoveryStore(storage).load(),
         throwsA(isA<PaymentLinkRecoveryStoreFormatException>()),
+      );
+    });
+
+    test('reads a software draft that carries only its funding txid', () async {
+      final link = _link();
+      final storage = _FakePaymentLinkRecoveryStorage()
+        ..value = jsonEncode({
+          'version': 1,
+          'records': [
+            {
+              'link': link.toUri().toString(),
+              'sourceAccountUuid': 'source-account',
+              'state': 'draft',
+              'fundingTxids': 'submitted-software-txid',
+              'preparedExpiryHeight': null,
+              'archivedAt': null,
+              'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+            },
+          ],
+        });
+
+      final record = (await PaymentLinkRecoveryStore(storage).load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.fundingTxids, 'submitted-software-txid');
+      expect(record.preparedExpiryHeight, isNull);
+    });
+
+    test(
+      'a software draft whose markFunded never landed keeps its funding txid',
+      () async {
+        // Writes: 1 saveDraft, 2 markSubmitted, 3+4 the two markFunded
+        // attempts. Only the promotion fails, so the broadcast transaction has
+        // to survive on the draft.
+        final storage = _FakePaymentLinkRecoveryStorage(
+          failOnWrites: const {3, 4},
+        );
+        final link = _link();
+
+        final funding =
+            await PaymentLinkFundingRecovery(
+              PaymentLinkRecoveryStore(storage),
+            ).fund(
+              link: link,
+              sourceAccountUuid: 'source-account',
+              createTransaction: () async => 'funding-txid',
+              fundingTxids: (txid) => txid,
+            );
+
+        expect(funding.fundingMetadataSaved, isFalse);
+
+        final restarted = PaymentLinkRecoveryStore(storage);
+        final record = (await restarted.load()).single;
+        expect(record.state, PaymentLinkRecoveryState.draft);
+        expect(record.fundingTxids, 'funding-txid');
+        expect(record.preparedExpiryHeight, isNull);
+        // The account-deletion guard must still see the funded ZEC.
+        expect(
+          await restarted.countUnsharedFundedForAccount('source-account'),
+          1,
+        );
+      },
+    );
+
+    test('an inert software draft is still removable', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+
+      await store.removeUnsubmittedDraft(address: link.address);
+
+      expect(await store.load(), isEmpty);
+    });
+
+    test('a submitted software draft cannot be removed as inert', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+      await store.markSubmitted(
+        address: link.address,
+        fundingTxids: 'funding-txid',
+      );
+
+      await expectLater(
+        store.removeUnsubmittedDraft(address: link.address),
+        throwsStateError,
       );
     });
 
