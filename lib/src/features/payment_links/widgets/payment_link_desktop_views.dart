@@ -1,13 +1,8 @@
 import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:pretty_qr_code/pretty_qr_code.dart';
 
-import '../../../core/layout/app_desktop_shell.dart';
-import '../../../core/layout/app_pane_floating_bar.dart';
-import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
@@ -17,8 +12,9 @@ import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
 import 'payment_link_cards_layout.dart';
 import 'payment_link_copy.dart';
-import 'payment_link_dashed_border_painter.dart';
 import 'payment_link_gift_card.dart';
+import 'payment_link_qr_share_card.dart';
+import 'payment_link_wizard_chrome.dart';
 
 export 'payment_link_cards_layout.dart'
     show PaymentLinkCardsSection, PaymentLinkCardsTab;
@@ -74,7 +70,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _PaymentLinkPane(
+    return PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,
       child: Align(
@@ -108,7 +104,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.s),
-                    _TextAction(
+                    PaymentLinkTextAction(
                       label: helpLabel,
                       onTap: onShowHelp,
                       trailing: AppIcon(
@@ -138,7 +134,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
                       child: Text(createLabel),
                     ),
                     const SizedBox(height: AppSpacing.s),
-                    _TextAction(label: redeemLabel, onTap: onRedeem),
+                    PaymentLinkTextAction(label: redeemLabel, onTap: onRedeem),
                   ],
                 ),
               ),
@@ -209,11 +205,17 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
-                _HelpStep(icon: AppIcons.giftCard, text: createDescription),
+                PaymentLinkHelpStep(
+                  icon: AppIcons.giftCard,
+                  text: createDescription,
+                ),
                 const SizedBox(height: AppSpacing.xs),
-                _HelpStep(icon: AppIcons.link, text: shareDescription),
+                PaymentLinkHelpStep(
+                  icon: AppIcons.link,
+                  text: shareDescription,
+                ),
                 const SizedBox(height: AppSpacing.xs),
-                _HelpStep(
+                PaymentLinkHelpStep(
                   icon: AppIcons.arrowDownCircle,
                   text: redeemDescription,
                 ),
@@ -280,7 +282,7 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canContinue = _hasAmount && onCreate != null;
-    return _PaymentLinkWizardPane(
+    return PaymentLinkWizardPane(
       title: title,
       subtitle: subtitle,
       currentStep: 0,
@@ -356,7 +358,7 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _PaymentLinkWizardPane(
+    return PaymentLinkWizardPane(
       title: title,
       subtitle: subtitle,
       currentStep: 1,
@@ -368,7 +370,7 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
       action: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _TextAction(label: skipLabel, onTap: onSkip),
+          PaymentLinkTextAction(label: skipLabel, onTap: onSkip),
           const SizedBox(height: AppSpacing.sm),
           AppButton(
             key: const ValueKey('payment_link_message_continue_button'),
@@ -437,7 +439,7 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _PaymentLinkWizardPane(
+    return PaymentLinkWizardPane(
       title: title,
       subtitle: subtitle,
       currentStep: 2,
@@ -610,14 +612,14 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
         ? PaymentLinkAction(
             onPressed: onCardTap,
             semanticLabel: kPaymentLinkFlipCardSemanticLabel,
-            builder: (context, _, focused) => _ActionFocusRing(
+            builder: (context, _, focused) => PaymentLinkActionFocusRing(
               focused: focused,
               borderRadius: AppRadii.large,
               child: ExcludeSemantics(child: motionCard),
             ),
           )
         : motionCard;
-    return _PaymentLinkPane(
+    return PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,
       child: Align(
@@ -679,7 +681,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                       ),
                     const SizedBox(height: AppSpacing.lg),
                     if (waiting)
-                      _DashedStatusPill(label: waitingStatusLabel)
+                      PaymentLinkDashedStatusPill(label: waitingStatusLabel)
                     else
                       AppButton(
                         key: const ValueKey('payment_link_copy_link_button'),
@@ -690,7 +692,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                       ),
                     if (!waiting) ...[
                       const SizedBox(height: AppSpacing.xs),
-                      _TextAction(
+                      PaymentLinkTextAction(
                         label: returnLabel,
                         onTap: onReturnHome ?? onBack,
                       ),
@@ -741,7 +743,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
       celebrate: true,
       child: canRevealMessage ? IgnorePointer(child: card) : card,
     );
-    return _PaymentLinkPane(
+    return PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,
       child: Align(
@@ -777,11 +779,12 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                           ),
                           onPressed: onRevealMessage,
                           semanticLabel: cardActionLabel,
-                          builder: (context, _, focused) => _ActionFocusRing(
-                            focused: focused,
-                            borderRadius: AppRadii.large,
-                            child: ExcludeSemantics(child: motionCard),
-                          ),
+                          builder: (context, _, focused) =>
+                              PaymentLinkActionFocusRing(
+                                focused: focused,
+                                borderRadius: AppRadii.large,
+                                child: ExcludeSemantics(child: motionCard),
+                              ),
                         )
                       : motionCard,
                 ),
@@ -882,7 +885,7 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _PaymentLinkPane(
+    return PaymentLinkPane(
       backLabel: 'Gift cards',
       onBack: onBack,
       child: Center(
@@ -923,147 +926,6 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// The exportable 396×270 Gift Card artwork and QR composite.
-class PaymentLinkQrShareCard extends StatelessWidget {
-  const PaymentLinkQrShareCard({
-    required this.artwork,
-    required this.qrData,
-    super.key,
-  });
-
-  static const size = Size(396, 270);
-  static const _foreground = Color(0xFFFFFFFF);
-  static const _secondary = Color(0xFFA3A4A4);
-  static const brandBadgeAssetPath =
-      'assets/icons/payment_link_share_badge.png';
-
-  final PaymentLinkCardArtwork artwork;
-  final String qrData;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      container: true,
-      label: 'Gift Card QR code',
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        child: SizedBox.fromSize(
-          key: const ValueKey('payment_link_qr_share_card'),
-          size: size,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.asset(
-                artwork.assetPath,
-                fit: BoxFit.cover,
-                excludeFromSemantics: true,
-              ),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerRight,
-                    end: Alignment.centerLeft,
-                    colors: [Color(0x00000000), Color(0xCC000000)],
-                    stops: [0.03, 0.78],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 25,
-                top: 25,
-                child: Text(
-                  'You’ve\ngot ZEC',
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: _foreground,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 25,
-                top: 107,
-                child: Text(
-                  'Scan to redeem',
-                  style: AppTypography.bodyMedium.copyWith(color: _secondary),
-                ),
-              ),
-              Positioned(
-                right: 18,
-                top: 66,
-                child: Container(
-                  key: const ValueKey('payment_link_qr_code'),
-                  width: 184,
-                  height: 184,
-                  padding: const EdgeInsets.all(AppSpacing.s),
-                  decoration: BoxDecoration(
-                    color: _foreground,
-                    borderRadius: BorderRadius.circular(AppRadii.medium),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0xF2000000),
-                        offset: Offset(0, 4),
-                        blurRadius: 54,
-                      ),
-                    ],
-                  ),
-                  child: PrettyQrView.data(
-                    data: qrData,
-                    errorCorrectLevel: QrErrorCorrectLevel.L,
-                    decoration: const PrettyQrDecoration(
-                      quietZone: PrettyQrQuietZone.zero,
-                      shape: PrettyQrSmoothSymbol(roundFactor: 0.5),
-                    ),
-                    errorBuilder: (context, error, stackTrace) => const Center(
-                      child: AppIcon(
-                        AppIcons.warning,
-                        color: Color(0xFF141818),
-                        semanticLabel: 'QR code could not be generated',
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const Positioned(
-                left: 20,
-                bottom: 20,
-                child: _PaymentLinkShareBrand(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PaymentLinkShareBrand extends StatelessWidget {
-  const _PaymentLinkShareBrand();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Image.asset(
-          PaymentLinkQrShareCard.brandBadgeAssetPath,
-          key: const ValueKey('payment_link_share_brand_badge'),
-          width: 26,
-          height: 26,
-          excludeFromSemantics: true,
-        ),
-        const SizedBox(width: 9),
-        Text(
-          'vizor.cash',
-          style: AppTypography.labelMedium.copyWith(
-            color: PaymentLinkQrShareCard._foreground,
-            fontSize: 12.5,
-            letterSpacing: -0.375,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1134,7 +996,7 @@ class PaymentLinkCardListRow extends StatelessWidget {
             ),
           ),
           if (secondaryActionText case final secondaryLabel?) ...[
-            _TextAction(
+            PaymentLinkTextAction(
               label: secondaryLabel,
               onTap: onSecondaryAction,
               enabled: onSecondaryAction != null,
@@ -1161,7 +1023,7 @@ class PaymentLinkCardListRow extends StatelessWidget {
               ],
             )
           else if (statusText case final label?)
-            _TextAction(
+            PaymentLinkTextAction(
               label: label,
               onTap: onAction,
               enabled: onAction != null,
@@ -1205,7 +1067,7 @@ class _CardListIconAction extends StatelessWidget {
     return PaymentLinkAction(
       semanticLabel: semanticLabel,
       onPressed: onPressed,
-      builder: (context, hovered, focused) => _ActionFocusRing(
+      builder: (context, hovered, focused) => PaymentLinkActionFocusRing(
         focused: focused,
         borderRadius: AppRadii.xSmall,
         child: AnimatedContainer(
@@ -1308,7 +1170,7 @@ class _PaymentLinkCardsDesktopViewState
 
   @override
   Widget build(BuildContext context) {
-    return _PaymentLinkPane(
+    return PaymentLinkPane(
       backLabel: widget.backLabel,
       onBack: widget.onBack,
       scrollController: _scrollController,
@@ -1324,7 +1186,7 @@ class _PaymentLinkCardsDesktopViewState
             child: const Text(kPaymentLinkCreateCardLabel),
           ),
           const SizedBox(height: AppSpacing.s),
-          _TextAction(
+          PaymentLinkTextAction(
             label: kPaymentLinkRedeemCardLabel,
             onTap: widget.onRedeem,
           ),
@@ -1350,7 +1212,7 @@ class _PaymentLinkCardsDesktopViewState
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _TabAction(
+                    PaymentLinkTabAction(
                       icon: AppIcons.plane,
                       label: kPaymentLinkCreatedTabLabel,
                       selected: widget.activeTab == PaymentLinkCardsTab.created,
@@ -1361,7 +1223,7 @@ class _PaymentLinkCardsDesktopViewState
                             ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    _TabAction(
+                    PaymentLinkTabAction(
                       icon: AppIcons.arrowDownward,
                       label: kPaymentLinkReceivedTabLabel,
                       selected:
@@ -1435,7 +1297,7 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
     final invalid = state == PaymentLinkRedeemVisualState.invalid;
     final unavailable = state == PaymentLinkRedeemVisualState.unavailable;
     final showError = invalid || unavailable;
-    return _PaymentLinkPane(
+    return PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,
       child: Align(
@@ -1464,8 +1326,8 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
                 top: 179,
                 left: 18,
                 child: loading
-                    ? loadingPlaceholder ?? const _PaymentLinkLoadingCard()
-                    : _DashedDropZone(
+                    ? loadingPlaceholder ?? const PaymentLinkLoadingCard()
+                    : PaymentLinkDashedDropZone(
                         child: showError
                             ? Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -1490,13 +1352,13 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
                                     ),
                                   ),
                                   const SizedBox(height: AppSpacing.sm),
-                                  _PasteButton(
+                                  PaymentLinkPasteButton(
                                     label: pasteLabel,
                                     onPressed: onPaste,
                                   ),
                                 ],
                               )
-                            : _PasteButton(
+                            : PaymentLinkPasteButton(
                                 label: pasteLabel,
                                 onPressed: onPaste,
                               ),
@@ -1525,7 +1387,7 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
                   left: 0,
                   right: 0,
                   child: Center(
-                    child: _TextAction(
+                    child: PaymentLinkTextAction(
                       label: clearLabel,
                       onTap: onClearClipboard,
                       leading: const AppIcon(AppIcons.trash),
@@ -1536,651 +1398,6 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _PasteButton extends StatelessWidget {
-  const _PasteButton({required this.label, this.onPressed});
-
-  final String label;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppButton(
-      key: const ValueKey('payment_link_redeem_paste_button'),
-      onPressed: onPressed,
-      size: AppButtonSize.mediumLarge,
-      leading: const AppIcon(AppIcons.paste),
-      child: Text(label),
-    );
-  }
-}
-
-class _DashedDropZone extends StatelessWidget {
-  const _DashedDropZone({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      key: const ValueKey('payment_link_redeem_drop_zone'),
-      painter: PaymentLinkDashedBorderPainter(
-        color: context.colors.border.medium,
-        radius: AppRadii.large,
-        strokeWidth: 3,
-      ),
-      child: SizedBox(width: 360, height: 225, child: Center(child: child)),
-    );
-  }
-}
-
-class _PaymentLinkPane extends StatelessWidget {
-  const _PaymentLinkPane({
-    required this.backLabel,
-    required this.onBack,
-    required this.child,
-    this.actions,
-    this.scrollController,
-    this.showTopScrollFade = false,
-    this.showBottomActionFade = true,
-  });
-
-  final String backLabel;
-  final VoidCallback onBack;
-  final Widget child;
-  final Widget? actions;
-  final ScrollController? scrollController;
-  final bool showTopScrollFade;
-  final bool showBottomActionFade;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppPaneFloatingBar(
-      visible: actions != null,
-      fadeVisible: showBottomActionFade,
-      overlayWidth: 420,
-      bar: actions ?? const SizedBox.shrink(),
-      builder: (context, bottomReserve) => Stack(
-        fit: StackFit.expand,
-        children: [
-          AppPaneScrollScaffold(
-            controller: scrollController,
-            toolbar: AppPaneToolbar(
-              leading: AppBackLink(
-                label: backLabel,
-                minWidth: 60,
-                onTap: onBack,
-              ),
-            ),
-            padding: EdgeInsets.fromLTRB(
-              AppSpacing.s,
-              AppSpacing.sm,
-              AppSpacing.s,
-              bottomReserve,
-            ),
-            child: child,
-          ),
-          if (showTopScrollFade)
-            Positioned(
-              top: AppPaneScrollScaffold.toolbarHeight,
-              left: 0,
-              right: 0,
-              height: 40,
-              child: Center(
-                child: SizedBox(
-                  width: 420,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      key: const ValueKey('payment_link_list_top_fade'),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            context.colors.macosUtility.window,
-                            context.colors.macosUtility.windowTransparent,
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PaymentLinkWizardPane extends StatelessWidget {
-  const _PaymentLinkWizardPane({
-    required this.title,
-    required this.subtitle,
-    required this.currentStep,
-    required this.backLabel,
-    required this.onBack,
-    required this.child,
-    required this.action,
-    this.childSpacing = AppSpacing.lg + AppSpacing.md,
-    this.onStepSelected,
-  });
-
-  final String title;
-  final String subtitle;
-  final int currentStep;
-  final String backLabel;
-  final VoidCallback onBack;
-  final Widget child;
-  final Widget action;
-  final double childSpacing;
-  final ValueChanged<int>? onStepSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return _PaymentLinkPane(
-      backLabel: backLabel,
-      onBack: onBack,
-      actions: action,
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: SizedBox(
-          width: 420,
-          child: Column(
-            children: [
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: AppTypography.headlineSmall.copyWith(
-                  color: context.colors.text.accent,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.s),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: context.colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _PaymentLinkWizardStepper(
-                currentStep: currentStep,
-                onStepSelected: onStepSelected,
-              ),
-              SizedBox(height: childSpacing),
-              child,
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PaymentLinkWizardStepper extends StatelessWidget {
-  const _PaymentLinkWizardStepper({
-    required this.currentStep,
-    this.onStepSelected,
-  });
-
-  final int currentStep;
-  final ValueChanged<int>? onStepSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    const labels = ['Create', 'Add Message', 'Review'];
-    return SizedBox(
-      width: 365,
-      height: 24,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var index = 0; index < labels.length; index++) ...[
-              _WizardStep(
-                index: index,
-                label: labels[index],
-                currentStep: currentStep,
-                onTap: onStepSelected == null
-                    ? null
-                    : () => onStepSelected!(index),
-              ),
-              if (index != labels.length - 1) ...[
-                const SizedBox(width: AppSpacing.s),
-                AppIcon(
-                  AppIcons.chevronForward,
-                  size: 16,
-                  color: context.colors.icon.muted,
-                ),
-                const SizedBox(width: AppSpacing.s),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WizardStep extends StatelessWidget {
-  const _WizardStep({
-    required this.index,
-    required this.label,
-    required this.currentStep,
-    this.onTap,
-  });
-
-  final int index;
-  final String label;
-  final int currentStep;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final completed = index < currentStep;
-    final active = index == currentStep;
-    final color = active
-        ? context.colors.text.primary
-        : context.colors.text.muted;
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 24,
-          height: 24,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: active || completed
-                ? context.colors.background.raised
-                : context.colors.background.base,
-          ),
-          child: completed
-              ? AppIcon(AppIcons.check, size: 14, color: color)
-              : Text(
-                  '${index + 1}',
-                  style: AppTypography.labelMedium.copyWith(color: color),
-                ),
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        Text(label, style: AppTypography.labelLarge.copyWith(color: color)),
-      ],
-    );
-    if (onTap == null) return content;
-    return PaymentLinkAction(
-      onPressed: onTap,
-      selected: active,
-      builder: (context, hovered, focused) => _ActionFocusRing(
-        focused: focused,
-        borderRadius: AppRadii.small,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-          opacity: hovered ? 0.72 : 1,
-          child: content,
-        ),
-      ),
-    );
-  }
-}
-
-class _HelpStep extends StatelessWidget {
-  const _HelpStep({required this.icon, required this.text});
-
-  final String icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          key: ValueKey('payment_link_help_icon_slot_$icon'),
-          width: 32,
-          height: 24,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: AppIcon(
-                icon,
-                size: AppIconSize.medium,
-                color: context.colors.icon.accent,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xxs),
-        Expanded(
-          child: Text(
-            text,
-            style: AppTypography.bodyMedium.copyWith(
-              color: context.colors.text.accent,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DashedStatusPill extends StatelessWidget {
-  const _DashedStatusPill({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: label,
-      enabled: false,
-      child: CustomPaint(
-        painter: PaymentLinkDashedBorderPainter(
-          color: context.colors.border.medium,
-          radius: AppRadii.full,
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 185, minHeight: 36),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.time,
-                  size: 16,
-                  color: context.colors.icon.muted,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  label,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PaymentLinkLoadingCard extends StatefulWidget {
-  const _PaymentLinkLoadingCard();
-
-  @override
-  State<_PaymentLinkLoadingCard> createState() =>
-      _PaymentLinkLoadingCardState();
-}
-
-class _PaymentLinkLoadingCardState extends State<_PaymentLinkLoadingCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  bool _motionEnabled = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final shouldAnimate =
-        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false) &&
-        TickerMode.valuesOf(context).enabled;
-    if (shouldAnimate == _motionEnabled) return;
-    _motionEnabled = shouldAnimate;
-    if (shouldAnimate) {
-      _controller.repeat();
-    } else {
-      _controller
-        ..stop()
-        ..value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const cardRadius = BorderRadius.all(Radius.circular(AppRadii.large));
-    final card = Container(
-      key: const ValueKey('payment_link_loading_card'),
-      width: 360,
-      height: 225,
-      decoration: BoxDecoration(
-        color: context.colors.background.ground,
-        borderRadius: cardRadius,
-      ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          const DecoratedBox(
-            key: ValueKey('payment_link_loading_card_gradient'),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0x0D141818),
-                  Color(0x594D5252),
-                  Color(0x0D141818),
-                ],
-                stops: [0, 0.5, 1],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    return Semantics(
-      label: 'Loading gift card',
-      container: true,
-      child: RepaintBoundary(
-        child: ClipRRect(
-          borderRadius: cardRadius,
-          child: Stack(
-            children: [
-              card,
-              if (_motionEnabled)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: AnimatedBuilder(
-                      animation: _controller,
-                      child: Transform.rotate(
-                        angle: -0.18,
-                        child: const SizedBox(
-                          width: 76,
-                          height: 320,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Color(0x00FFFFFF),
-                                  Color(0x20FFFFFF),
-                                  Color(0x00FFFFFF),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      builder: (context, child) {
-                        return Transform.translate(
-                          key: const ValueKey('payment_link_loading_shimmer'),
-                          offset: Offset(-110 + (590 * _controller.value), 0),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: child,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TabAction extends StatelessWidget {
-  const _TabAction({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected
-        ? context.colors.text.primary
-        : context.colors.text.muted;
-    return PaymentLinkAction(
-      onPressed: onTap,
-      selected: selected,
-      role: SemanticsRole.tab,
-      builder: (context, hovered, focused) => _ActionFocusRing(
-        focused: focused,
-        borderRadius: AppRadii.small,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-          opacity: hovered ? 0.72 : 1,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(icon, size: 16, color: color),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  label,
-                  style: AppTypography.labelLarge.copyWith(color: color),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TextAction extends StatelessWidget {
-  const _TextAction({
-    required this.label,
-    this.onTap,
-    this.leading,
-    this.trailing,
-    this.enabled = true,
-  });
-
-  final String label;
-  final VoidCallback? onTap;
-  final Widget? leading;
-  final Widget? trailing;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final active = enabled && onTap != null;
-    final color = active
-        ? context.colors.text.secondary
-        : context.colors.text.muted;
-    return PaymentLinkAction(
-      onPressed: active ? onTap : null,
-      builder: (context, hovered, focused) => _ActionFocusRing(
-        key: ValueKey('payment_link_text_action_focus_ring_$label'),
-        focused: focused,
-        borderRadius: AppRadii.small,
-        child: AnimatedOpacity(
-          key: ValueKey('payment_link_text_action_hover_$label'),
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-          opacity: hovered ? 0.72 : 1,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xxs,
-              vertical: AppSpacing.xxs,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (leading != null) ...[
-                  IconTheme(
-                    data: IconThemeData(color: color, size: 16),
-                    child: leading!,
-                  ),
-                  const SizedBox(width: AppSpacing.xxs),
-                ],
-                Text(
-                  label,
-                  style: AppTypography.bodyMedium.copyWith(color: color),
-                ),
-                if (trailing != null) ...[
-                  const SizedBox(width: AppSpacing.xxs),
-                  trailing!,
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionFocusRing extends StatelessWidget {
-  const _ActionFocusRing({
-    required this.focused,
-    required this.borderRadius,
-    required this.child,
-    super.key,
-  });
-
-  final bool focused;
-  final double borderRadius;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: focused
-            ? Border.all(
-                color: context.colors.state.focusRing,
-                width: 2,
-                strokeAlign: BorderSide.strokeAlignOutside,
-              )
-            : null,
-      ),
-      child: child,
     );
   }
 }

@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 
