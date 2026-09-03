@@ -15,6 +15,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 GENERATOR_PATH = ROOT / "scripts" / "generate-fdroid-metadata.py"
 RUST_WRAPPER_PATH = ROOT / "scripts" / "run-with-android-reproducible-rust.sh"
+REPRODUCIBLE_BUILD_PATH = ROOT / "scripts" / "build-android-reproducible.sh"
 SPEC = importlib.util.spec_from_file_location("generate_fdroid_metadata", GENERATOR_PATH)
 assert SPEC is not None and SPEC.loader is not None
 GENERATOR = importlib.util.module_from_spec(SPEC)
@@ -93,6 +94,20 @@ class FdroidMetadataTest(unittest.TestCase):
             ),
             3,
         )
+        self.assertEqual(rendered.count(f"flutter@{GENERATOR.FLUTTER_VERSION}"), 3)
+        self.assertNotIn("flutter@stable", rendered)
+        self.assertEqual(
+            rendered.count(
+                "export PUB_CACHE=/tmp/vizor-android-reproducible/pub-cache"
+            ),
+            6,
+        )
+        self.assertEqual(
+            rendered.count(
+                "export CARGO_HOME=/tmp/vizor-android-reproducible/cargo-home"
+            ),
+            6,
+        )
 
     def test_rejects_unexpected_signing_key(self) -> None:
         metadata = release_metadata()
@@ -166,6 +181,12 @@ class FdroidBuildScriptTest(unittest.TestCase):
             "--dart-define=VIZOR_WALLET_LINK_BACKEND_URL=https://functions.vizor.cash",
             command_output,
         )
+        self.assertIn(
+            "Canonical source: /tmp/vizor-android-reproducible/source",
+            command_output,
+        )
+        self.assertIn("signing=unsigned", command_output)
+        self.assertIn("offline=true", command_output)
 
     def test_dry_run_rejects_wrong_abi_version_code(self) -> None:
         result = subprocess.run(
@@ -186,6 +207,66 @@ class FdroidBuildScriptTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("Version code mismatch", result.stderr)
+
+
+class AndroidReproducibleBuildScriptTest(unittest.TestCase):
+    def test_dry_run_centralizes_release_inputs(self) -> None:
+        result = subprocess.run(
+            [
+                str(REPRODUCIBLE_BUILD_PATH),
+                "--build-name",
+                "0.0.35",
+                "--build-number",
+                "350999",
+                "--release-version",
+                "0.0.35-internal.2",
+                "--signing",
+                "required",
+                "--dry-run",
+            ],
+            check=True,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        command_output = result.stdout.replace("\\", "")
+        self.assertIn("signing=required", command_output)
+        self.assertIn("offline=false", command_output)
+        self.assertIn("--build-name 0.0.35", command_output)
+        self.assertIn("--build-number 350999", command_output)
+        self.assertIn(
+            "--dart-define=VIZOR_RELEASE_VERSION=0.0.35-internal.2",
+            command_output,
+        )
+        self.assertIn(
+            "--dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=https://functions.vizor.cash/api/v3",
+            command_output,
+        )
+
+    def test_rejects_relative_flutter_binary(self) -> None:
+        environment = os.environ.copy()
+        environment["FLUTTER_BIN"] = "flutter"
+        result = subprocess.run(
+            [
+                str(REPRODUCIBLE_BUILD_PATH),
+                "--build-name",
+                "0.0.35",
+                "--build-number",
+                "350999",
+                "--release-version",
+                "0.0.35",
+                "--signing",
+                "unsigned",
+                "--dry-run",
+            ],
+            check=False,
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("FLUTTER_BIN must be an absolute path", result.stderr)
 
 
 class AndroidReproducibleRustWrapperTest(unittest.TestCase):

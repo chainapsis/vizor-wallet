@@ -97,50 +97,26 @@ if ((calculated_version_code > 2100000000)); then
   exit 2
 fi
 
-flutter_command=(fvm flutter)
-if [[ -n "${FLUTTER_BIN:-}" ]]; then
-  if [[ "${FLUTTER_BIN}" != /* ]]; then
-    echo "FLUTTER_BIN must be an absolute path: ${FLUTTER_BIN}" >&2
-    exit 2
-  fi
-  flutter_command=("${FLUTTER_BIN}")
-fi
-
-build_args=(
-  build apk
-  --release
-  --split-per-abi
-  --target-platform android-arm64,android-arm,android-x64
-  --build-name "${version}"
-  --build-number "${version_code_base}"
-  --dart-define=VIZOR_FORM_FACTOR=mobile
-  --dart-define="VIZOR_RELEASE_VERSION=${version}"
-  --dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=https://functions.vizor.cash/api/v3
-  --dart-define=VIZOR_WALLET_LINK_BACKEND_URL=https://functions.vizor.cash
-)
-
 printf 'F-Droid build: version=%s baseVersionCode=%s selectedAbi=%s selectedVersionCode=%s rust=%s\n' \
   "${version}" "${version_code_base}" "${expected_abi}" "${calculated_version_code}" \
   "${release_rust_toolchain}"
-printf 'Command:'
-printf ' %q' "${flutter_command[@]}" "${build_args[@]}"
-printf '\n'
 
 if [[ "${dry_run}" == "true" ]]; then
-  exit 0
+  exec "${script_dir}/build-android-reproducible.sh" \
+    --build-name "${version}" \
+    --build-number "${version_code_base}" \
+    --release-version "${version}" \
+    --signing unsigned \
+    --offline \
+    --dry-run
 fi
 
-# An F-Droid build must never inherit an upstream or debug signing identity.
-unset ANDROID_KEYSTORE_PATH
-unset ANDROID_KEYSTORE_PASSWORD
-unset ANDROID_KEY_ALIAS
-unset ANDROID_KEY_PASSWORD
-unset ANDROID_REQUIRE_RELEASE_SIGNING
-export ANDROID_ALLOW_UNSIGNED_RELEASE=true
-export CI=true
-
-"${script_dir}/run-with-android-reproducible-rust.sh" \
-  "${flutter_command[@]}" "${build_args[@]}"
+"${script_dir}/build-android-reproducible.sh" \
+  --build-name "${version}" \
+  --build-number "${version_code_base}" \
+  --release-version "${version}" \
+  --signing unsigned \
+  --offline
 
 abis=(arm64-v8a armeabi-v7a x86_64)
 version_code_offsets=(2000 1000 4000)
