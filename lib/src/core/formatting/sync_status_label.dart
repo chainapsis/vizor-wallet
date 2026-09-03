@@ -43,10 +43,12 @@ class SyncStatusLabel {
     NetworkPrivacyState? networkPrivacy,
   }) {
     if (networkPrivacy != null) {
-      // `failed` alone is not a failed Tor route: an enable that failed while
-      // saving the preference publishes `failed` with Tor still off and
-      // direct networking intact, and the sync state is then the truth.
-      if (networkPrivacy.torEnabled &&
+      // `failed` alone is not a failed Tor route. An enable that failed while
+      // saving the preference publishes `failed` with Tor still off, and a
+      // disable that could not quiesce publishes `failed` with a healthy Tor
+      // still running; in both the sync state is the truth. Only a failure
+      // on the way to Tor is a Tor connection failure.
+      if (torIsTargetRoute(networkPrivacy) &&
           networkPrivacy.status == NetworkPrivacyConnectionStatus.failed) {
         return const SyncStatusLabel(
           kind: SyncStatusKind.failed,
@@ -96,13 +98,21 @@ class SyncStatusLabel {
   }
 }
 
+/// Whether Tor is where the route is heading: already the enabled route with
+/// no switch pending, or the target of a switch in flight. A disable in
+/// progress keeps `torEnabled` true while it drains, so the flag alone
+/// would read a route being turned off as one being connected.
+bool torIsTargetRoute(NetworkPrivacyState networkPrivacy) =>
+    networkPrivacy.targetTorEnabled ?? networkPrivacy.torEnabled;
+
 /// Whether the sync is blocked on Tor rather than on chain work: the route
 /// is still bootstrapping, or it is connected and the sync has not received
 /// its first event — that first lightwalletd connection over a fresh circuit
 /// is the slow part on a warm device. Direct-route preflight is not covered:
-/// it is over in well under a second and needs no explanation.
+/// it is over in well under a second and needs no explanation. Neither is a
+/// disable in progress: its `connecting` is the way out of Tor, not into it.
 bool syncIsWaitingOnTor(NetworkPrivacyState networkPrivacy, SyncState sync) {
-  if (!networkPrivacy.torEnabled) return false;
+  if (!torIsTargetRoute(networkPrivacy)) return false;
   return switch (networkPrivacy.status) {
     NetworkPrivacyConnectionStatus.connecting => true,
     NetworkPrivacyConnectionStatus.connected =>
