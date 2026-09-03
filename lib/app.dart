@@ -12,6 +12,7 @@ import 'src/app_bootstrap.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
+import 'src/core/navigation/app_route_predicates.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
@@ -1275,7 +1276,9 @@ Widget buildIncomingLinkHostForTest({
 ///   screen. Route-agnostic: it never navigates on delivery.
 /// * **gift card** (`https://` on the Vizor origin) — queues in
 ///   `paymentLinkIntakeProvider` and navigates to `/payment-links`.
-/// * **vizor home** — brings an unlocked wallet to `/home`.
+/// * **vizor home** — brings an unlocked wallet to `/home`, unless the user is
+///   part-way through onboarding, import, or add-account, where the link is
+///   dropped rather than allowed to discard widget-only state.
 ///
 /// The two intakes defer to each other: a Gift Card waits while a request card
 /// is up (`paymentLinkEntryDeferredMessageAtLocation`), and a request waits
@@ -1317,6 +1320,9 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     return AppToastHost(child: widget.child);
   }
 
+  String get _currentLocation =>
+      widget.router.routerDelegate.currentConfiguration.uri.path;
+
   void _handleIncomingUri(String rawUri) {
     switch (classifyIncomingLink(rawUri)) {
       case IncomingPaymentRequestLink():
@@ -1326,15 +1332,23 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         // Gift Card intake wired in PR 5 (giftcard-05-core).
         return;
       case IncomingVizorHomeLink():
-        if (!ref.read(appSecurityProvider).requiresUnlock) {
-          widget.router.go('/home');
-        }
+        if (ref.read(appSecurityProvider).requiresUnlock) return;
+        // Onboarding, import, and add-account keep their state only in the
+        // widget tree -- a half-typed seed phrase, a freshly generated
+        // mnemonic that has never been written down -- so `go('/home')` would
+        // destroy work the user cannot get back. A bare-origin link is the
+        // weakest intent there is ("open Vizor"), and Vizor is already open,
+        // so it loses to anything in progress: drop it as silently as an
+        // unknown link.
+        if (isOnboardingLocation(_currentLocation)) return;
+        widget.router.go('/home');
       case IncomingLinkUnknown():
         // Silent by contract — see classifyIncomingLink.
         return;
     }
   }
 }
+
 class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {
   const _WindowsUpdateStartupCheck({required this.child});
 
