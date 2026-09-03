@@ -58,9 +58,9 @@ const MAX_PASSES_WHILE_SCANNING: usize = 1;
 const BLOCKS_BETWEEN_PASSES: u64 = 2_000;
 
 /// Queries of one envelope in flight at once. The envelope is fixed either
-/// way; concurrency changes only how long a pass takes. Matches the
-/// coordinator's per-table query slots so a burst is queued, not refused.
-const QUERY_CONCURRENCY: usize = 2;
+/// way; concurrency changes only how long a pass takes. The coordinator
+/// queues a burst per table, so this spans the envelope's five tables.
+const QUERY_CONCURRENCY: usize = 10;
 
 #[derive(Default)]
 struct PassStats {
