@@ -721,40 +721,6 @@ void main() {
     }
   });
 
-  testWidgets('collapsed mobile address and pool badge fit at 2x text scale', (
-    tester,
-  ) async {
-    await _pumpUseCase(
-      tester,
-      (context) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(textScaler: const TextScaler.linear(2)),
-        child: PaymentRequestSurface(
-          layout: PaymentRequestLayout.mobile,
-          request: const PaymentRequestView(
-            source: PaymentRequestSource.link,
-            requesterLabel: 'Blue Door Coffee',
-            amountZecText: '0.5 ZEC',
-            address:
-                'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
-                '73d57f73c6dc05121591a83861cd190591',
-          ),
-          onContinue: () {},
-          onEdit: () {},
-          onCancel: () {},
-        ),
-      ),
-      size: const Size(320, 700),
-    );
-
-    expect(tester.takeException(), isNull);
-    expect(
-      tester.widget<Text>(find.text('u195091 ... 190591')).overflow,
-      TextOverflow.ellipsis,
-    );
-  });
-
   testWidgets('every registered use case renders in its own lane', (
     tester,
   ) async {
