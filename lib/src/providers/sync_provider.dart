@@ -2556,21 +2556,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       await waitForAuthoritativeSpendable(accountUuid: accountUuid);
       return await operation();
     } finally {
-      _releaseForegroundSyncLease();
-    }
-  }
-
-  void _releaseForegroundSyncLease() {
-    assert(_authoritativeSpendableOperationCount > 0);
-    _authoritativeSpendableOperationCount--;
-    if (_authoritativeSpendableOperationCount == 0 &&
-        _syncStartDeferred &&
-        ref.mounted &&
-        !_requiresUnlock) {
-      final latestTipHeight = _deferredSyncLatestTipHeight;
-      _syncStartDeferred = false;
-      _deferredSyncLatestTipHeight = null;
-      startSync(latestTipHeight: latestTipHeight);
+      _authoritativeSpendableOperationCount--;
+      if (_authoritativeSpendableOperationCount == 0 &&
+          _syncStartDeferred &&
+          ref.mounted &&
+          !_requiresUnlock) {
+        final latestTipHeight = _deferredSyncLatestTipHeight;
+        _syncStartDeferred = false;
+        _deferredSyncLatestTipHeight = null;
+        startSync(latestTipHeight: latestTipHeight);
+      }
     }
   }
 

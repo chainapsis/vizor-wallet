@@ -64,11 +64,13 @@ dependencies:
   # without re-exporting.
   flutter_svg: ^2.0.10+1
   pretty_qr_code: ^3.6.0
-  # Native desktop save dialog for exporting Gift Card QR images.
-  file_selector: ^1.1.0
   # Platform share sheet for the receive screen's share action.
   share_plus: ^12.0.1
   shared_preferences: ^2.5.3
+  # Native save dialog for the desktop "Save QR image" action. The macOS app
+  # is sandboxed, so a resolved Downloads path would land inside the app
+  # container — only an NSSavePanel result is a folder the user can reach.
+  file_selector: ^1.1.0
 
 dev_dependencies:
   flutter_test:
