@@ -194,6 +194,19 @@ bool CommandExecutableExists(const std::wstring& command) {
          error != ERROR_INVALID_NAME;
 }
 
+// Returns whether |command| launches this module: its executable token, read
+// the way the shell reads it, is |lower_module_path| (already lower-cased).
+// Identity of the executable, not a substring search over the whole command:
+// a handler that merely mentions our path -- a wrapper that passes it as an
+// argument, or an executable whose path happens to start with ours -- is
+// somebody else's registration, and the uninstall path deletes whatever this
+// says is ours. A command we cannot parse is not ours either.
+bool CommandLaunchesModule(const std::wstring& command,
+                           const std::wstring& lower_module_path) {
+  const std::wstring executable = CommandExecutable(command);
+  return !executable.empty() && ToLower(executable) == lower_module_path;
+}
+
 void NotifyAssociationChanged() {
   ::SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
@@ -233,15 +246,15 @@ void UnregisterZcashProtocolHandler() {
   if (module_path.empty()) {
     return;
   }
-  // Delete only a registration we could actually read and that points at this
-  // module. An unreadable command is not evidence the scheme is ours, so leave
-  // it alone rather than tearing down a handler that may belong to someone
-  // else.
+  // Delete only a registration we could actually read and whose executable
+  // is this module. An unreadable command is not evidence the scheme is ours,
+  // and neither is a command that merely contains our path, so leave both
+  // alone rather than tearing down a handler that may belong to someone else.
   std::wstring command;
   if (ReadDefaultCommand(&command) != DefaultCommandState::kPresent) {
     return;
   }
-  if (ToLower(command).find(module_path) == std::wstring::npos) {
+  if (!CommandLaunchesModule(command, module_path)) {
     return;
   }
 
@@ -273,7 +286,7 @@ void RegisterZcashProtocolHandlerIfUnclaimed() {
     // Already ours: return without writing. Rewriting the same four values and
     // firing SHChangeNotify on every launch is pure churn for an install that
     // owns the scheme.
-    if (ToLower(command).find(module_path) != std::wstring::npos) {
+    if (CommandLaunchesModule(command, module_path)) {
       return;
     }
     // Someone else's handler, and it still exists -- leave it alone. A command
