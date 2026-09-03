@@ -7,9 +7,9 @@
 //!
 //! The route is decided **per request** through
 //! [`network_privacy::tor_client_for_route`], the same primitive the wallet's
-//! gRPC path uses. That call fails closed while Tor is starting or broken, so a
-//! helper request never silently downgrades to the clearnet — a leaked voting
-//! request is worse than a failed one.
+//! gRPC path uses. That call waits out a bootstrap in flight and fails closed
+//! when Tor is broken, so a helper request never silently downgrades to the
+//! clearnet — a leaked voting request is worse than a failed one.
 //!
 //! Direct requests are made on a leased connection
 //! ([`network_privacy::DirectRouteLease`]) so that enabling Tor drains and then
@@ -82,9 +82,12 @@ impl VotingHelperTransport {
         body: Vec<u8>,
         timeout: Duration,
     ) -> Result<HelperResponse, HelperTransportError> {
-        // Fails closed: a broken or half-started Tor route is an error here,
-        // never a fallback to a direct connection.
-        match network_privacy::tor_client_for_route(true)
+        // Fails closed: a broken Tor route is an error here, never a fallback
+        // to a direct connection. A bootstrap still in flight is waited out
+        // instead, so a helper request made moments after launch is not
+        // rejected for a route that is seconds from being ready.
+        match network_privacy::tor_client_for_route(true, || false)
+            .await
             .map_err(HelperTransportError::Transport)?
         {
             Some(tor) => {

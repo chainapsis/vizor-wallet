@@ -68,12 +68,16 @@ void main() {
         directRequests: _FakeDirectRequestGate(events),
       );
 
+      // The enable is published as failed: nothing will call `configure` for
+      // a preference this launch could not read, and unpublished it would
+      // hold every policy-aware request until Rust's bootstrap deadline.
       expect(events, [
         'store:read',
         'native:force-pause',
         'begin-enable',
         'runtime-quiesce',
         'direct-quiesce',
+        'fail-enable',
       ]);
       final container = ProviderContainer();
       addTearDown(container.dispose);
@@ -215,6 +219,7 @@ void main() {
           'begin-enable',
           'runtime-quiesce',
           'direct-quiesce',
+          'fail-enable',
         ]);
       } finally {
         await initializeNetworkPrivacyRuntime(
@@ -301,6 +306,8 @@ void main() {
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
 
     final state = container.read(networkPrivacyProvider);
+    // The enable this toggle took out is published as failed exactly once, so
+    // requests stop waiting on a bootstrap that is no longer running.
     expect(events, [
       'native:true',
       'store:true',
@@ -309,10 +316,95 @@ void main() {
       'direct-quiesce',
       'restart',
       'configure:true',
+      'fail-enable',
     ]);
     expect(state.torEnabled, isTrue);
     expect(state.status, NetworkPrivacyConnectionStatus.failed);
     expect(state.error, contains('bootstrap failed'));
+  });
+
+  test('a startup drain failure publishes the abandoned enable', () async {
+    final events = <String>[];
+    try {
+      await initializeNetworkPrivacyRuntime(
+        store: _EnabledStore(events),
+        runtime: _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+        nativeUpdates: _FakeNativeUpdateCoordinator(events),
+        directRequests: _DrainFailingDirectRequestGate(events),
+      ).timeout(const Duration(seconds: 1));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      // Read first so the notifier adopts the pending activation, then let it
+      // resolve and publish.
+      container.read(networkPrivacyProvider);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      // The startup activation gave up before `configure`, so the enable it
+      // took out is published as failed — exactly once, and only here.
+      expect(events.where((event) => event == 'fail-enable'), hasLength(1));
+      expect(events, isNot(contains('configure:true')));
+
+      expect(
+        container.read(networkPrivacyProvider),
+        isA<NetworkPrivacyState>()
+            .having((state) => state.torEnabled, 'torEnabled', isTrue)
+            .having(
+              (state) => state.status,
+              'status',
+              NetworkPrivacyConnectionStatus.failed,
+            ),
+      );
+    } finally {
+      await initializeNetworkPrivacyRuntime(
+        store: _FakeStore(<String>[]),
+        runtime: _FakeRuntime(<String>[], NetworkPrivacyConnectionStatus.off),
+        nativeUpdates: _FakeNativeUpdateCoordinator(<String>[]),
+        directRequests: _FakeDirectRequestGate(<String>[]),
+      );
+    }
+  });
+
+  test('a toggle drain failure publishes the abandoned enable', () async {
+    final events = <String>[];
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _FakeStore(events),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(
+          _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+        ),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _DrainFailingDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+
+    expect(events, [
+      'native:true',
+      'store:true',
+      'begin-enable',
+      'runtime-quiesce',
+      'direct-quiesce-failed',
+      'restart',
+      'fail-enable',
+    ]);
+    final state = container.read(networkPrivacyProvider);
+    expect(state.status, NetworkPrivacyConnectionStatus.failed);
+    expect(state.error, contains('did not drain'));
   });
 
   test('disabling persists direct intent and restarts transport', () async {
@@ -511,6 +603,7 @@ void main() {
         'runtime-quiesce',
         'direct-quiesce',
         'restart',
+        'fail-enable',
       ]);
       expect(
         container.read(networkPrivacyProvider),
@@ -1126,6 +1219,11 @@ class _PendingBootstrapRuntime implements NetworkPrivacyRuntime {
   }
 
   @override
+  void failEnable() {
+    events.add('fail-enable');
+  }
+
+  @override
   bool isTorEnabled() => _torEnabled;
 
   @override
@@ -1215,6 +1313,11 @@ class _FakeRuntime implements NetworkPrivacyRuntime {
   }
 
   @override
+  void failEnable() {
+    events.add('fail-enable');
+  }
+
+  @override
   bool isTorEnabled() => _torEnabled;
 
   @override
@@ -1243,6 +1346,11 @@ class _ThrowingRuntime implements NetworkPrivacyRuntime {
   @override
   void beginEnable() {
     events.add('begin-enable');
+  }
+
+  @override
+  void failEnable() {
+    events.add('fail-enable');
   }
 
   @override
@@ -1418,6 +1526,18 @@ class _DisableFailingNativeUpdateCoordinator
   Future<void> setTorEnabled(bool enabled) async {
     events.add('native:$enabled');
     if (!enabled) throw StateError('native updater route failed');
+  }
+}
+
+/// The drain half that can realistically fail: an in-flight direct request
+/// that never releases its slot before the gate gives up on it.
+class _DrainFailingDirectRequestGate extends _FakeDirectRequestGate {
+  _DrainFailingDirectRequestGate(super.events);
+
+  @override
+  Future<void> quiesce() async {
+    events.add('direct-quiesce-failed');
+    throw StateError('direct requests did not drain');
   }
 }
 

@@ -133,7 +133,23 @@ where
 pub(crate) async fn open_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
-    open_lwd_channel_for_route(lightwalletd_url, false).await
+    open_lwd_channel_for_route(lightwalletd_url, false, || false).await
+}
+
+/// Opens a channel that stops waiting for Tor when the caller stops.
+///
+/// A channel opened while Tor is bootstrapping waits for the route rather than
+/// failing, which is the whole point — but a sync the user has already
+/// cancelled must not sit in that wait for the bootstrap's deadline. Pass the
+/// flag the caller already stops on. Only a caller whose cancellation is scoped
+/// to the work in hand may use this: the process-wide sync cancel stays set
+/// between sessions, so reading it from an unrelated channel open would turn
+/// every wait back into an instant failure.
+pub(crate) async fn open_lwd_channel_with_cancel(
+    lightwalletd_url: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_channel_for_route(lightwalletd_url, false, cancelled).await
 }
 
 /// Opens an isolated Tor circuit when Tor is enabled. Direct mode retains its
@@ -142,7 +158,7 @@ pub(crate) async fn open_lwd_channel(
 pub(crate) async fn open_isolated_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
-    open_lwd_channel_for_route(lightwalletd_url, true).await
+    open_lwd_channel_for_route(lightwalletd_url, true, || false).await
 }
 
 /// Opens a lightwalletd channel that is always direct, bypassing the
@@ -188,6 +204,7 @@ pub(crate) async fn open_background_direct_lwd_channel(
 async fn open_lwd_channel_for_route(
     lightwalletd_url: &str,
     isolated: bool,
+    cancelled: impl Fn() -> bool,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
@@ -197,7 +214,8 @@ async fn open_lwd_channel_for_route(
     let endpoint = Endpoint::from_shared(lightwalletd_url.to_string())
         .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
         .connect_timeout(LIGHTWALLETD_CONNECT_TIMEOUT);
-    if let Some(tor_client) = crate::network_privacy::tor_client_for_route(isolated)
+    if let Some(tor_client) = crate::network_privacy::tor_client_for_route(isolated, cancelled)
+        .await
         .map_err(|e| SyncError::net(format!("network privacy blocked lightwalletd: {e}")))?
     {
         let allow_onion_services = endpoint_allows_onion_services(&endpoint);

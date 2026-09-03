@@ -3,8 +3,8 @@
 //! What this replaces is the SDK's URL-taking convenience layer. A helper that
 //! takes a `&str` endpoint dials its own clearnet socket, which silently
 //! overrides the user's chosen route; the `_on` / injected-client form lets
-//! Vizor open the connection instead, so a Tor wallet keeps its route and a
-//! half-bootstrapped Tor fails closed.
+//! Vizor open the connection instead, so a Tor wallet keeps its route, a
+//! bootstrapping Tor is waited for, and a broken Tor fails closed.
 //!
 //! The split of responsibility that follows from opening our own sockets:
 //!
@@ -35,17 +35,20 @@ const LWD_DIAL_RETRY_BASE_DELAY: Duration = Duration::from_millis(500);
 ///
 /// # Errors
 ///
-/// Returns an error if the route policy blocks the request, if the channel
-/// cannot be opened within [`LWD_DIAL_ATTEMPTS`], or if lightwalletd does not
-/// answer within the SDK's retry budget.
+/// Returns an error if the route policy blocks the request, if Tor does not
+/// finish bootstrapping within its deadline, if the channel cannot be opened
+/// within [`LWD_DIAL_ATTEMPTS`], or if lightwalletd does not answer within the
+/// SDK's retry budget.
 pub(crate) async fn fetch_snapshot_tree_state(
     lightwalletd_url: &str,
     snapshot_height: u64,
 ) -> Result<TreeState, String> {
-    // Fail closed before spending any dial attempts. An unusable Tor route will
-    // not become usable inside a backoff schedule, unlike the transient connect
-    // failures the loop below exists for.
-    crate::network_privacy::tor_client_for_route(false)?;
+    // Resolve the route before spending any dial attempts. A bootstrap in
+    // flight is waited out here, once, rather than being spread across the
+    // backoff schedule below — that schedule exists for transient connect
+    // failures, and a broken or unavailable Tor route still fails closed
+    // without consuming an attempt.
+    crate::network_privacy::tor_client_for_route(false, || false).await?;
 
     let mut last_error = None;
     for attempt in 1..=LWD_DIAL_ATTEMPTS {
@@ -82,6 +85,10 @@ mod tests {
     async fn snapshot_tree_state_fails_closed_while_tor_is_unavailable() {
         let _policy = lock_route_policy();
         crate::network_privacy::begin_tor_enable();
+        // A definite failure, not a bootstrap in flight: the route resolver
+        // waits out `Bootstrapping` now, so only a resolved failure is the
+        // fail-closed state this test is about.
+        crate::network_privacy::fail_tor_enable();
 
         let started = Instant::now();
         let error = fetch_snapshot_tree_state(UNREACHABLE_LWD, 1)

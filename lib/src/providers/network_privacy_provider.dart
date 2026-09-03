@@ -86,6 +86,16 @@ class SharedPreferencesNetworkPrivacyStore
 abstract interface class NetworkPrivacyRuntime {
   void beginEnable();
 
+  /// Publishes an enable this side has given up on part-way through.
+  ///
+  /// [beginEnable] leaves Rust fail-closed and willing to hold policy-aware
+  /// requests until Tor connects, so every [beginEnable] has to be followed by
+  /// either `configure(enabled: true)` or this. Abandoning one in between —
+  /// a drain that failed, a refused transport restart, a preference read that
+  /// threw — otherwise leaves those requests waiting on a bootstrap nobody
+  /// started, until Rust's own bootstrap deadline expires.
+  void failEnable();
+
   Future<void> quiesceDirectRequests();
 
   bool isTorEnabled();
@@ -111,6 +121,11 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   @override
   void beginEnable() {
     rust_network_privacy.beginNetworkPrivacyEnable();
+  }
+
+  @override
+  void failEnable() {
+    rust_network_privacy.failNetworkPrivacyEnable();
   }
 
   @override
@@ -480,6 +495,11 @@ Future<void> initializeNetworkPrivacyRuntime({
     }
     runtime.beginEnable();
     final drainFailure = await _captureDirectDrain(runtime, directRequests);
+    // No `configure` can follow this enable: there is no preference to apply.
+    // Publishing the abandoned enable turns "still connecting" into a
+    // definite failure, so requests fail now instead of waiting out Rust's
+    // bootstrap deadline for a bootstrap that never starts.
+    runtime.failEnable();
     final failureDetails = [
       'Could not read the saved Tor preference: $error',
       if (drainFailure != null)
@@ -559,6 +579,11 @@ Future<NetworkPrivacyState?> _activateTorForStartup({
     );
   } catch (error) {
     if (_startupActivationSuperseded) return null;
+    // This activation owns the enable and is not going to complete it, so the
+    // waiting requests have to be released. Superseded is the one exception:
+    // there the route belongs to a newer owner. Harmless when `configure`
+    // itself was what threw — Rust takes a repeated failure as the same one.
+    runtime.failEnable();
     return NetworkPrivacyState(
       torEnabled: true,
       status: NetworkPrivacyConnectionStatus.failed,
@@ -808,6 +833,12 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
       );
     } catch (error) {
       if (generation != _generation) return;
+      if (enabled) {
+        // `beginEnable` is in force with no `configure` to follow it. A
+        // disable never took that lock, and a superseded toggle has already
+        // returned above — the newer owner will complete or fail its own.
+        runtime.failEnable();
+      }
       final effectiveTorEnabled = runtime.isTorEnabled();
       var softwareUpdatesAvailable = enabled
           ? false

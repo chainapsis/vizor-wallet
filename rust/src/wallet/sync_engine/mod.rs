@@ -60,7 +60,7 @@ use lwd::{
 pub(crate) use lwd::{
     get_latest_block, get_taddress_txids, get_transaction, next_stream_message,
     open_background_direct_lwd_channel, open_isolated_lwd_channel, open_lwd_channel,
-    send_transaction, send_transaction_with_status,
+    open_lwd_channel_with_cancel, send_transaction, send_transaction_with_status,
 };
 
 /// Progress event sent to caller (Dart or Swift).
@@ -2300,8 +2300,14 @@ async fn run_sync_impl(
     })
     .map_err(SyncError::db)?;
 
+    // Declared before the first network call: opening the channel can wait for
+    // a Tor bootstrap, and a session the user has already stopped must leave
+    // that wait rather than hold it for the bootstrap's deadline.
+    let should_exit =
+        || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
+
     // 1. Connect gRPC (plain TLS via tonic + webpki roots).
-    let mut client = open_lwd_channel(lightwalletd_url).await?;
+    let mut client = open_lwd_channel_with_cancel(lightwalletd_url, should_exit).await?;
 
     // Open DB once — reused for the entire sync
     let mut db =
@@ -2309,8 +2315,6 @@ async fn run_sync_impl(
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
-    let should_exit =
-        || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
 
     // 2. Get the chain tip. Reconcile it with the DB before treating it as
     // authoritative: `WalletDb::update_chain_tip` deliberately ignores a

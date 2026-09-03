@@ -17,6 +17,14 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 void beginNetworkPrivacyEnable() =>
     RustLib.instance.api.crateApiNetworkPrivacyBeginNetworkPrivacyEnable();
 
+/// Publishes a failed enable when Dart gives up between
+/// [begin_network_privacy_enable] and [configure_network_privacy] (for example
+/// the direct drain did not finish). The route stays Tor-desired and
+/// fail-closed; this only turns "still connecting" into a definite failure so
+/// requests stop waiting for a bootstrap that is not running.
+void failNetworkPrivacyEnable() =>
+    RustLib.instance.api.crateApiNetworkPrivacyFailNetworkPrivacyEnable();
+
 /// Waits until direct tonic connections cancelled by
 /// [begin_network_privacy_enable] have released their sockets.
 Future<void> quiesceNetworkPrivacyDirectRequests() => RustLib.instance.api

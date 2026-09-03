@@ -80,6 +80,16 @@ pub fn begin_network_privacy_enable() {
     crate::network_privacy::begin_tor_enable();
 }
 
+/// Publishes a failed enable when Dart gives up between
+/// [begin_network_privacy_enable] and [configure_network_privacy] (for example
+/// the direct drain did not finish). The route stays Tor-desired and
+/// fail-closed; this only turns "still connecting" into a definite failure so
+/// requests stop waiting for a bootstrap that is not running.
+#[flutter_rust_bridge::frb(sync)]
+pub fn fail_network_privacy_enable() {
+    crate::network_privacy::fail_tor_enable();
+}
+
 /// Waits until direct tonic connections cancelled by
 /// [begin_network_privacy_enable] have released their sockets.
 pub async fn quiesce_network_privacy_direct_requests() -> Result<(), String> {
@@ -155,6 +165,10 @@ pub struct NetworkHttpResponse {
 /// Makes a GET request on a fresh Tor circuit. Dart calls this only after its
 /// process-wide route check has selected Tor; direct requests stay in Dart so
 /// existing test injection and platform behaviour remain unchanged.
+///
+/// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
+/// Tor is still bootstrapping waits for the route first, under the bootstrap's
+/// own deadline, and the caller's cancellation covers that wait.
 pub async fn tor_http_get(
     url: String,
     headers: Vec<NetworkHttpHeader>,
@@ -162,7 +176,11 @@ pub async fn tor_http_get(
     request_id: Option<u64>,
 ) -> Result<NetworkHttpResponse, String> {
     let response = with_tor_http_request_cancellation(request_id, async {
-        let client = crate::network_privacy::tor_client_for_route(true)?
+        // `|| false` because the surrounding cancellation wrapper already
+        // `select!`s over this whole future, so a Dart-side cancel interrupts
+        // the bootstrap wait as well as the request.
+        let client = crate::network_privacy::tor_client_for_route(true, || false)
+            .await?
             .ok_or_else(|| "Tor is not enabled".to_string())?;
         let uri = url
             .parse()
@@ -185,6 +203,10 @@ pub async fn tor_http_get(
 
 /// Makes a POST request on a fresh Tor circuit. Every app-owned HTTP call is
 /// isolated from wallet gRPC and from other HTTP destinations.
+///
+/// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
+/// Tor is still bootstrapping waits for the route first, under the bootstrap's
+/// own deadline, and the caller's cancellation covers that wait.
 pub async fn tor_http_post(
     url: String,
     headers: Vec<NetworkHttpHeader>,
@@ -193,7 +215,11 @@ pub async fn tor_http_post(
     request_id: Option<u64>,
 ) -> Result<NetworkHttpResponse, String> {
     let response = with_tor_http_request_cancellation(request_id, async {
-        let client = crate::network_privacy::tor_client_for_route(true)?
+        // `|| false` because the surrounding cancellation wrapper already
+        // `select!`s over this whole future, so a Dart-side cancel interrupts
+        // the bootstrap wait as well as the request.
+        let client = crate::network_privacy::tor_client_for_route(true, || false)
+            .await?
             .ok_or_else(|| "Tor is not enabled".to_string())?;
         let uri = url
             .parse()
@@ -285,7 +311,8 @@ pub async fn tor_http_download(
     headers: Vec<NetworkHttpHeader>,
     destination_path: String,
 ) -> Result<NetworkHttpResponse, String> {
-    let client = crate::network_privacy::tor_client_for_route(true)?
+    let client = crate::network_privacy::tor_client_for_route(true, || false)
+        .await?
         .ok_or_else(|| "Tor is not enabled".to_string())?;
     let uri = url
         .parse()
