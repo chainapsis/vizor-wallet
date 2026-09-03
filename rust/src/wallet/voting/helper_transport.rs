@@ -85,16 +85,29 @@ impl VotingHelperTransport {
         // Fails closed: a broken Tor route is an error here, never a fallback
         // to a direct connection. A bootstrap still in flight is waited out
         // instead, so a helper request made moments after launch is not
-        // rejected for a route that is seconds from being ready.
-        match network_privacy::tor_client_for_route(true, || false)
-            .await
-            .map_err(HelperTransportError::Transport)?
-        {
+        // rejected for a route that is seconds from being ready — but only
+        // inside this request's own budget. The route wait can otherwise last
+        // the bootstrap's full deadline, and a status poll or share upload
+        // sized for seconds must not sit behind it for minutes; nothing has
+        // been sent yet, so running out here is a plain timeout.
+        let started = tokio::time::Instant::now();
+        let route = tokio::time::timeout(
+            timeout,
+            network_privacy::tor_client_for_route(true, || false),
+        )
+        .await
+        .map_err(|_| HelperTransportError::Timeout)?
+        .map_err(HelperTransportError::Transport)?;
+        let remaining = timeout.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return Err(HelperTransportError::Timeout);
+        }
+        match route {
             Some(tor) => {
-                self.request_over_tor(&tor, method, url, body, timeout)
+                self.request_over_tor(&tor, method, url, body, remaining)
                     .await
             }
-            None => request_direct(&self.direct, method, url, body, timeout).await,
+            None => request_direct(&self.direct, method, url, body, remaining).await,
         }
     }
 
@@ -516,5 +529,35 @@ mod tests {
 
         assert!(matches!(result, Err(HelperTransportError::Transport(_))));
         server.join().unwrap();
+    }
+
+    /// The route wait is charged to the same budget as the request. A
+    /// helper call sized for seconds must not sit behind a Tor bootstrap for
+    /// its full deadline; nothing has been dispatched, so it is a timeout.
+    #[tokio::test]
+    async fn route_resolution_is_bounded_by_the_request_timeout() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::begin_tor_enable();
+        let transport = VotingHelperTransport::new();
+
+        let started = std::time::Instant::now();
+        let result = transport
+            .request(
+                Method::GET,
+                "https://helper.invalid/shielded-vote/v1/status",
+                Vec::new(),
+                Duration::from_millis(200),
+            )
+            .await;
+        let waited = started.elapsed();
+
+        assert!(
+            matches!(result, Err(HelperTransportError::Timeout)),
+            "{result:?}"
+        );
+        assert!(
+            waited < Duration::from_secs(1),
+            "the route wait outlived the request timeout: {waited:?}"
+        );
     }
 }
