@@ -20,6 +20,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../payment_links/services/payment_link_received_store.dart';
 import '../../swap/providers/swap_activity_store.dart';
 import '../widgets/confirm_access_card.dart';
 import '../widgets/settings_pane_backdrop.dart';
@@ -51,7 +52,7 @@ final String _wipeSubtitle =
         ? 'this Mac'
         : Platform.isWindows
         ? 'this PC'
-        : 'this device'}.';
+        : 'this device'}. Unshared Gift Card links will be permanently lost.';
 
 final String _finishSubtitle = Platform.isMacOS
     ? 'To finish uninstallation, remove the Vizor app from Applications.'
@@ -105,13 +106,41 @@ class _SettingsUninstallScreenState
     if (_isCheckingSwaps) return;
     if (_blockIfVotingSubmissionInProgress()) return;
 
-    // Same stranded-funds rule as account removal: while any account still
-    // has a non-terminal swap with deposit evidence, ZEC may arrive after
-    // the wipe and be lost.
+    // Two stranded-funds checks before the gate, both of which can land ZEC
+    // in a wallet that is about to stop existing.
     setState(() {
       _isCheckingSwaps = true;
       _confirmError = null;
     });
+    // A Gift Card claim still in flight pays into the wallet this screen
+    // wipes. Say so at the gate rather than after the progress bar has
+    // started; `resetWallet` still refuses as the backstop.
+    try {
+      final claimsInFlight = await ref.read(
+        paymentLinkClaimsInFlightProvider.future,
+      );
+      if (!mounted) return;
+      if (claimsInFlight > 0) {
+        setState(() {
+          _isCheckingSwaps = false;
+          _confirmError = kWalletResetInFlightGiftCardClaimsMessage;
+        });
+        return;
+      }
+    } catch (e, st) {
+      log('SettingsUninstallScreen._openGate: claim check ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _isCheckingSwaps = false;
+        _confirmError =
+            "Couldn't check for incoming Gift Cards. "
+            'Try again before uninstalling.';
+      });
+      return;
+    }
+    // Same stranded-funds rule as account removal: while any account still
+    // has a non-terminal swap with deposit evidence, ZEC may arrive after
+    // the wipe and be lost.
     try {
       final accounts =
           ref.read(accountProvider).value?.accounts ?? const <AccountInfo>[];
@@ -235,6 +264,16 @@ class _SettingsUninstallScreenState
       if (!mounted) return;
       setState(() {
         _stage = SettingsUninstallStage.done;
+      });
+    } on WalletResetInFlightGiftCardClaimsException catch (e, st) {
+      // Not a failed wipe: nothing was deleted, and the user only has to wait.
+      // Same shape as the active-swap refusal in [_openGate].
+      log('SettingsUninstallScreen._runUninstall held for claim: $e\n$st');
+      if (!mounted) return;
+      _progressController.stop();
+      setState(() {
+        _stage = SettingsUninstallStage.confirm;
+        _confirmError = kWalletResetInFlightGiftCardClaimsMessage;
       });
     } catch (e, st) {
       log('SettingsUninstallScreen._runUninstall: ERROR: $e\n$st');

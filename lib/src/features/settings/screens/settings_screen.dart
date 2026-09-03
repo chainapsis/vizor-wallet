@@ -16,6 +16,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../core/config/zcash_explorer.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -25,9 +26,11 @@ import '../../../providers/windows_update_provider.dart';
 import '../../accounts/widgets/account_modal_card.dart';
 import '../../accounts/widgets/account_edit_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
+import '../../payment_links/providers/payment_link_cards_provider.dart';
 import '../../donation/donation_config.dart';
 import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
+import '../widgets/settings_new_badge.dart';
 import '../widgets/windows_update_download_flow.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
@@ -55,6 +58,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String? _editDraftName;
   String? _editDraftProfilePictureId;
   bool _pfpPickerFromEdit = false;
+  bool _isOpeningGiftCards = false;
 
   void _showModal(_SettingsModalType modal) {
     setState(() {
@@ -118,6 +122,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         .updateProfilePicture(accountUuid, profilePictureId);
     if (!mounted) return;
     _closeModal();
+  }
+
+  Future<void> _openGiftCards() async {
+    if (_isOpeningGiftCards) return;
+    final router = GoRouter.of(context);
+    final entryPath = router.routerDelegate.currentConfiguration.uri.path;
+    setState(() => _isOpeningGiftCards = true);
+    try {
+      final cards = await ref.read(paymentLinkCardsLoaderProvider)();
+      if (!mounted ||
+          router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+        return;
+      }
+      router.go('/payment-links', extra: cards);
+    } catch (_) {
+      if (!mounted ||
+          router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+        return;
+      }
+      showAppToast(
+        context,
+        'Gift Cards could not be loaded.',
+        iconName: AppIcons.warning,
+        tone: AppToastTone.destructive,
+      );
+    } finally {
+      if (mounted) setState(() => _isOpeningGiftCards = false);
+    }
   }
 
   @override
@@ -199,6 +231,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ? () => _showModal(_SettingsModalType.profilePicture)
                     : null,
                 onAddressBook: () => context.push('/address-book'),
+                onGiftCards: _isOpeningGiftCards
+                    ? null
+                    : () => unawaited(_openGiftCards()),
                 onLinkMobile: () => context.push('/settings/link-mobile'),
                 onTheme: () => _showModal(_SettingsModalType.theme),
                 onUpdates: updateState == null
@@ -313,6 +348,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onAddressBook,
+    required this.onGiftCards,
     required this.onLinkMobile,
     required this.onTheme,
     required this.onUpdates,
@@ -337,6 +373,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onAddressBook;
+  final VoidCallback? onGiftCards;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
   final VoidCallback? onUpdates;
@@ -384,6 +421,7 @@ class _SettingsPane extends StatelessWidget {
                 onAccountName: onAccountName,
                 onProfilePicture: onProfilePicture,
                 onAddressBook: onAddressBook,
+                onGiftCards: onGiftCards,
                 onLinkMobile: onLinkMobile,
                 onTheme: onTheme,
                 onUpdates: onUpdates,
@@ -418,6 +456,7 @@ class _SettingsList extends StatelessWidget {
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onAddressBook,
+    required this.onGiftCards,
     required this.onLinkMobile,
     required this.onTheme,
     required this.onUpdates,
@@ -442,6 +481,7 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onAddressBook;
+  final VoidCallback? onGiftCards;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
   final VoidCallback? onUpdates;
@@ -454,6 +494,24 @@ class _SettingsList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _SettingsBlock(
+          title: 'Personal',
+          rows: [
+            _SettingsRow(
+              key: const ValueKey('settings_gift_cards_row'),
+              iconName: AppIcons.giftCardOutline,
+              label: 'My Gift Cards',
+              labelBadge: const SettingsNewBadge(),
+              onTap: onGiftCards,
+            ),
+            _SettingsRow(
+              iconName: AppIcons.users,
+              label: 'Address book',
+              onTap: onAddressBook,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
           title: 'Account',
           rows: [
@@ -489,24 +547,9 @@ class _SettingsList extends StatelessWidget {
               onTap: onAccountName,
             ),
             _SettingsRow(
-              iconName: AppIcons.users,
-              label: 'Contacts',
-              onTap: onAddressBook,
-            ),
-            _SettingsRow(
               iconName: AppIcons.link,
-              label: 'Link mobile',
+              label: 'Link Vizor mobile',
               onTap: onLinkMobile,
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _SettingsBlock(
-          title: 'Privacy',
-          rows: const [
-            NetworkPrivacyControl(
-              key: ValueKey('settings_tor_control'),
-              showSurface: false,
             ),
           ],
         ),
@@ -539,6 +582,16 @@ class _SettingsList extends StatelessWidget {
                 value: updateLabel,
                 onTap: onUpdates,
               ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _SettingsBlock(
+          title: 'Privacy',
+          rows: const [
+            NetworkPrivacyControl(
+              key: ValueKey('settings_tor_control'),
+              showSurface: false,
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
@@ -1041,11 +1094,13 @@ class _SettingsBlock extends StatelessWidget {
 
 class _SettingsRow extends StatefulWidget {
   const _SettingsRow({
+    super.key,
     required this.iconName,
     required this.label,
     this.iconGlyphSize = 20,
     this.value,
     this.valueLeading,
+    this.labelBadge,
     this.destructive = false,
     this.onTap,
   });
@@ -1055,6 +1110,7 @@ class _SettingsRow extends StatefulWidget {
   final double iconGlyphSize;
   final String? value;
   final Widget? valueLeading;
+  final Widget? labelBadge;
   final bool destructive;
   final VoidCallback? onTap;
 
@@ -1121,10 +1177,22 @@ class _SettingsRowState extends State<_SettingsRow> {
         ),
         const SizedBox(width: AppSpacing.xs),
         Expanded(
-          child: Text(
-            widget.label,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelMedium.copyWith(color: contentColor),
+          child: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  widget.label,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: contentColor,
+                  ),
+                ),
+              ),
+              if (widget.labelBadge != null) ...[
+                const SizedBox(width: AppSpacing.xxs),
+                widget.labelBadge!,
+              ],
+            ],
           ),
         ),
         const SizedBox(width: AppSpacing.xs),

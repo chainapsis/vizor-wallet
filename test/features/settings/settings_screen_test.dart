@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart'
@@ -15,6 +16,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -72,6 +74,74 @@ void main() {
     await tester.pump();
 
     expect(_hasFocusRing(tester), isTrue);
+  });
+
+  testWidgets('Gift Cards waits for its data before opening', (tester) async {
+    final cards = Completer<PaymentLinkCardsSnapshot>();
+    await tester.pumpWidget(
+      _settingsHarness(
+        extraOverrides: [
+          paymentLinkCardsLoaderProvider.overrideWithValue(() => cards.future),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('settings_gift_cards_row'));
+    expect(row, findsOneWidget);
+    expect(
+      tester
+          .widgetList<AppIcon>(
+            find.descendant(of: row, matching: find.byType(AppIcon)),
+          )
+          .first
+          .name,
+      AppIcons.giftCardOutline,
+    );
+    expect(find.text('My Gift Cards'), findsOneWidget);
+    expect(find.text('New'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('My Gift Cards')).dy,
+      lessThan(tester.getTopLeft(find.text('Link Vizor mobile')).dy),
+    );
+
+    await tester.tap(row);
+    await tester.pump();
+
+    expect(find.text('Settings'), findsWidgets);
+    expect(find.text('payment links route with data'), findsNothing);
+
+    cards.complete(const PaymentLinkCardsSnapshot(created: [], received: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('payment links route with data'), findsOneWidget);
+  });
+
+  testWidgets('settings sections are grouped Personal to Danger zone', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_settingsHarness());
+    await tester.pump();
+
+    double sectionTop(String title) => tester.getTopLeft(find.text(title)).dy;
+
+    // Personal leads, and Privacy sits after System (not between Account
+    // and System as it used to). The System block is located by its first
+    // row because "System" is also the theme value.
+    expect(sectionTop('Personal'), lessThan(sectionTop('Account')));
+    expect(sectionTop('Account'), lessThan(sectionTop('Endpoint')));
+    expect(sectionTop('Endpoint'), lessThan(sectionTop('Privacy')));
+    expect(sectionTop('Privacy'), lessThan(sectionTop('Misc')));
+
+    // Personal owns the gift cards and address book entries.
+    expect(find.text('Address book'), findsOneWidget);
+    expect(find.text('Contacts'), findsNothing);
+    expect(sectionTop('My Gift Cards'), lessThan(sectionTop('Address book')));
+    expect(sectionTop('Address book'), lessThan(sectionTop('Account')));
+
+    // Account keeps the renamed mobile-link row.
+    expect(find.text('Link Vizor mobile'), findsOneWidget);
+    expect(find.text('Link mobile'), findsNothing);
   });
 
   testWidgets('uninstall setting is hidden on Windows', (tester) async {
@@ -537,6 +607,14 @@ Widget _settingsHarness({
       GoRoute(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
+      ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, state) => Text(
+          state.extra is PaymentLinkCardsSnapshot
+              ? 'payment links route with data'
+              : 'payment links route without data',
+        ),
       ),
     ],
   );

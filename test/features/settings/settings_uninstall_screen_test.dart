@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -36,6 +37,55 @@ void main() {
       );
     },
   );
+
+  testWidgets('uninstall gate refuses while a Gift Card is being received', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final accountNotifier = _ResettingAccountNotifier();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _bootstrap('/settings/uninstall'),
+            ),
+            accountProvider.overrideWith(() => accountNotifier),
+            appSecurityProvider.overrideWith(_TestAppSecurityNotifier.new),
+            syncProvider.overrideWith(_TestSyncNotifier.new),
+            votingShareTrackingRestorerProvider.overrideWith(
+              (ref) => VotingShareTrackingRestorer(ref),
+            ),
+            swapPendingIntentCountProvider.overrideWith(
+              (ref, accountUuid) async => 0,
+            ),
+            paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 1),
+          ],
+          child: const ZcashWalletApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(AppButton, 'Uninstall Vizor'));
+      await tester.pumpAndSettle();
+
+      // The password gate never opens and nothing is wiped: the claim would
+      // pay into the wallet this flow is about to delete.
+      expect(
+        find.text(kWalletResetInFlightGiftCardClaimsMessage),
+        findsOneWidget,
+      );
+      expect(find.text('Confirm access'), findsNothing);
+      expect(accountNotifier.resetWalletCalled, isFalse);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 }
 
 Future<void> _runUninstallFlow(
@@ -66,6 +116,9 @@ Future<void> _runUninstallFlow(
           swapPendingIntentCountProvider.overrideWith(
             (ref, accountUuid) async => 0,
           ),
+          // Same reason as the swap count above: the gate awaits this before
+          // it opens, and the real store reads secure storage.
+          paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 0),
         ],
         child: const ZcashWalletApp(),
       ),
@@ -80,6 +133,10 @@ Future<void> _runUninstallFlow(
       await tester.pumpAndSettle();
     }
 
+    expect(
+      find.textContaining('Unshared Gift Card links will be permanently lost.'),
+      findsOneWidget,
+    );
     await tester.tap(find.widgetWithText(AppButton, 'Uninstall Vizor'));
     await tester.pumpAndSettle();
     expect(find.text('Confirm access'), findsOneWidget);
