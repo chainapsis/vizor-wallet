@@ -33,7 +33,7 @@ Widget buildDonationUsdSelectedUseCase(BuildContext context) =>
 Widget buildDonationReviewUseCase(BuildContext context) => _DonationFrame(
   child: AppPaneScrollScaffold(
     toolbar: AppPaneToolbar(
-      leading: AppBackLink(label: 'Send', minWidth: 60, onTap: () {}),
+      leading: AppBackLink(label: 'Support Vizor', minWidth: 60, onTap: () {}),
     ),
     padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
     child: DonationReviewContentView(

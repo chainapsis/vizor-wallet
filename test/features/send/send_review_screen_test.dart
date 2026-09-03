@@ -91,7 +91,7 @@ void main() {
     expect(find.text('Cancel'), findsOneWidget);
   });
 
-  testWidgets('donation review uses the Figma Send back label', (tester) async {
+  testWidgets('donation review links back to Support Vizor', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
       _harness(
@@ -101,10 +101,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Review Amount'), findsOneWidget);
-    expect(find.text('Send'), findsOneWidget);
+    expect(find.text('Support Vizor'), findsOneWidget);
+    expect(find.text('Send'), findsNothing);
     expect(find.text('Donation'), findsNothing);
     expect(_sidebarItem(tester, 'Home').active, isFalse);
     expect(_sidebarItem(tester, 'Settings').active, isFalse);
+
+    await tester.tap(find.text('Support Vizor'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('donation-route'), findsOneWidget);
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
   });
 
   testWidgets('renders the contact variant for an address-book match', (
@@ -830,6 +837,10 @@ Widget _harness(
     refreshListenable: routerRefresh,
     routes: [
       GoRoute(path: '/send', builder: (_, _) => const Text('send-route')),
+      GoRoute(
+        path: '/donation',
+        builder: (_, _) => const Text('donation-route'),
+      ),
       GoRoute(
         path: '/send/review',
         builder: (_, _) => SendReviewScreen(args: args),

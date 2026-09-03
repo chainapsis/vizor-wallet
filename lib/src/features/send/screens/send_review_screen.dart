@@ -418,7 +418,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               toolbar: AppPaneToolbar(
                 leading: widget.args.flowKind == SendFlowKind.donation
                     ? AppBackLink(
-                        label: 'Send',
+                        label: 'Support Vizor',
                         minWidth: 60,
                         onTap: _handleDonationBack,
                       )
