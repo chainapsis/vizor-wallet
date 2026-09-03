@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../send/services/sapling_params.dart';
@@ -281,38 +282,45 @@ class _PaymentLinkKeystoneSigningOverlayState
       key: const ValueKey('payment_link_keystone_signing_overlay_surface'),
       fit: StackFit.expand,
       children: [
-        AppPaneModalOverlay(
-          onDismiss: _cancel,
-          child: KeystoneSigningModal(
-            phase: modalPhase,
-            urParts: _urParts,
-            error: _error,
-            title: isBroadcasting
-                ? 'Broadcasting Gift Card funding'
-                : 'Sign Gift Card on Keystone',
-            subtitle: isBroadcasting
-                ? 'Submitting transaction'
-                : 'Scan to sign',
-            instruction: isBroadcasting
-                ? 'Keep Vizor open while the transaction is sent.'
-                : _phase == _PaymentLinkKeystonePhase.failed
-                ? null
-                : 'After you scanned, click Get signature.',
-            primaryLabel:
-                _phase == _PaymentLinkKeystonePhase.failed || isBroadcasting
-                ? null
-                : 'Get signature',
-            onPrimary:
-                _phase == _PaymentLinkKeystonePhase.ready &&
-                    _pcztWithProofs != null
-                ? () => unawaited(_getSignature())
-                : null,
-            secondaryLabel: isBroadcasting
-                ? null
-                : _phase == _PaymentLinkKeystonePhase.failed
-                ? 'Back to Gift Card'
-                : 'Cancel',
-            onSecondary: _cancel,
+        // The device's camera is reading the animated PCZT QR inside this
+        // modal, and the surface owns no route of its own (`/payment-links`
+        // stays put behind it). The hold is what tells an arriving `zcash:`
+        // link to stay parked instead of covering the QR with a card; the
+        // link lands as soon as the signing round ends.
+        PaymentUriBusySurfaceHold(
+          child: AppPaneModalOverlay(
+            onDismiss: _cancel,
+            child: KeystoneSigningModal(
+              phase: modalPhase,
+              urParts: _urParts,
+              error: _error,
+              title: isBroadcasting
+                  ? 'Broadcasting Gift Card funding'
+                  : 'Sign Gift Card on Keystone',
+              subtitle: isBroadcasting
+                  ? 'Submitting transaction'
+                  : 'Scan to sign',
+              instruction: isBroadcasting
+                  ? 'Keep Vizor open while the transaction is sent.'
+                  : _phase == _PaymentLinkKeystonePhase.failed
+                  ? null
+                  : 'After you scanned, click Get signature.',
+              primaryLabel:
+                  _phase == _PaymentLinkKeystonePhase.failed || isBroadcasting
+                  ? null
+                  : 'Get signature',
+              onPrimary:
+                  _phase == _PaymentLinkKeystonePhase.ready &&
+                      _pcztWithProofs != null
+                  ? () => unawaited(_getSignature())
+                  : null,
+              secondaryLabel: isBroadcasting
+                  ? null
+                  : _phase == _PaymentLinkKeystonePhase.failed
+                  ? 'Back to Gift Card'
+                  : 'Cancel',
+              onSecondary: _cancel,
+            ),
           ),
         ),
         if (_showSaplingParamsPrompt)

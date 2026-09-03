@@ -1,6 +1,6 @@
 /// Pure routing policy for a parked ZIP-321 `zcash:` payment URI.
 ///
-/// `_PaymentUriLinkListener` in `app.dart` parks an arriving payment URI in
+/// `_IncomingLinkHost` in `app.dart` parks an arriving payment URI in
 /// `paymentUriPrefillProvider` and then asks this policy what to do with it.
 /// Everything here is a plain function of the app's observable state so the
 /// whole decision table can be unit-tested without a router, a wallet, or a
@@ -18,6 +18,13 @@
 library;
 
 import '../zcash/zip321_payment_request.dart';
+import 'app_route_predicates.dart';
+
+// Re-exported so a caller that already reasons about the drain (`appRedirect`
+// in `app.dart`) does not need a second import for the two route questions
+// this table asks.
+export 'app_route_predicates.dart'
+    show isOnboardingLocation, isUnlockFlowLocation;
 
 /// A parked prefill older than this is stale and is dropped instead of
 /// delivered.
@@ -133,25 +140,6 @@ class PaymentUriDrainDecision {
 }
 
 const _waitDecision = PaymentUriDrainDecision(PaymentUriDrainAction.wait);
-
-/// Whether [matchedLocation] belongs to onboarding, import, or add-account.
-///
-/// Shared with `appRedirect` so the router guard and the payment-URI drain
-/// cannot drift apart. Covers both route trees: the desktop tree in `app.dart`
-/// and `mobileOnboardingRoutes()` use the same paths on purpose.
-bool isOnboardingLocation(String matchedLocation) =>
-    matchedLocation == '/welcome' ||
-    matchedLocation == '/add-account' ||
-    matchedLocation.startsWith('/onboarding/') ||
-    matchedLocation.startsWith('/import');
-
-/// Locations that own the locked-wallet reset flow. A payment URI arriving
-/// here must not navigate: `go('/unlock')` from `/lost-password` unmounts the
-/// reset the user is part-way through (including while the Windows CredUI
-/// prompt is up). The mobile forgot-passcode flow is a sheet over `/unlock`,
-/// so it is covered by `/unlock` itself.
-bool isUnlockFlowLocation(String matchedLocation) =>
-    matchedLocation == '/unlock' || matchedLocation == '/lost-password';
 
 /// The send receipt route, desktop and mobile — both register `/send/status`.
 ///

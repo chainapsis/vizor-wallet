@@ -16,7 +16,7 @@ abstract final class VizorDeepLink {
   static String get host => _origin.host;
 
   static VizorDeepLinkRoute? routeFor(Uri uri) {
-    if (!_matchesOrigin(uri)) return null;
+    if (!matchesOrigin(uri)) return null;
 
     return switch (uri.path) {
       '' ||
@@ -26,7 +26,13 @@ abstract final class VizorDeepLink {
     };
   }
 
-  static bool _matchesOrigin(Uri uri) {
+  /// Whether [uri] is on the trusted Vizor deeplink origin, whatever its path.
+  ///
+  /// Public because `classifyIncomingLink` has to answer "is this the Gift
+  /// Card host?" *before* anything else looks at the link: a Gift Card link's
+  /// fragment carries a mnemonic, so an unrecognised path on this host must
+  /// stop here rather than fall through to the ZIP-321 parser or a log line.
+  static bool matchesOrigin(Uri uri) {
     return uri.scheme.toLowerCase() == scheme &&
         uri.host.toLowerCase() == host &&
         uri.userInfo.isEmpty &&
