@@ -249,7 +249,7 @@ bool isSyncKeepAwakeActiveSync(SyncState sync) {
   // enough progress metadata to describe the remaining work yet. Keep the
   // screen awake during this discovery window so a slow endpoint/Tor preflight
   // cannot let the device sleep before the first progress event arrives.
-  if (sync.phase == kSyncPhasePreflight || sync.phase == kSyncPhaseSetup) {
+  if (isSyncPreparationPhase(sync.phase)) {
     return true;
   }
 

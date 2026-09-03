@@ -118,7 +118,12 @@ void main() {
     final startedAt = DateTime(2026, 7, 9, 12);
     const settings = SyncKeepAwakeSettings(enabled: true, promptSeen: true);
 
-    for (final phase in [kSyncPhasePreflight, kSyncPhaseSetup]) {
+    for (final phase in [
+      kSyncPhasePreflight,
+      kSyncPhaseSetup,
+      kSyncPhaseActiveUtxo,
+      kSyncPhaseChainPrepare,
+    ]) {
       expect(
         shouldKeepScreenAwakeForSync(
           settings: settings,

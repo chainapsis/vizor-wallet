@@ -84,37 +84,60 @@ void main() {
     expect(_enabledArgs(calls), [true]);
   });
 
-  testWidgets('enables during preflight then disables when sync is near tip', (
-    tester,
-  ) async {
-    final calls = _recordScreenAwakeCalls();
-    final startedAt = DateTime(2026, 7, 9, 12);
-    final syncNotifier = FakeSyncNotifier(
-      _sync(
-        percentage: 0,
-        scannedHeight: 0,
-        chainTipHeight: 0,
-        lastSyncStartedAt: startedAt,
-        phase: kSyncPhasePreflight,
-      ),
-    );
+  testWidgets(
+    'stays enabled through preparation then disables when sync is near tip',
+    (tester) async {
+      final calls = _recordScreenAwakeCalls();
+      final startedAt = DateTime(2026, 7, 9, 12);
+      final syncNotifier = FakeSyncNotifier(
+        _sync(
+          percentage: 0,
+          scannedHeight: 0,
+          chainTipHeight: 0,
+          lastSyncStartedAt: startedAt,
+          phase: kSyncPhasePreflight,
+        ),
+      );
 
-    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
-    await _drainNativeQueue(tester);
-    expect(_enabledArgs(calls), [true]);
+      await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+      await _drainNativeQueue(tester);
+      expect(_enabledArgs(calls), [true]);
 
-    syncNotifier.emit(
-      _sync(
-        percentage: 0,
-        scannedHeight: 100,
-        chainTipHeight: 102,
-        lastSyncStartedAt: startedAt,
-      ),
-    );
-    await _drainNativeQueue(tester);
+      for (final phase in [
+        kSyncPhaseSetup,
+        kSyncPhaseActiveUtxo,
+        kSyncPhaseChainPrepare,
+      ]) {
+        syncNotifier.emit(
+          _sync(
+            percentage: 0,
+            scannedHeight: 0,
+            chainTipHeight: 200,
+            lastSyncStartedAt: startedAt,
+            phase: phase,
+          ),
+        );
+        await _drainNativeQueue(tester);
+        expect(
+          _enabledArgs(calls),
+          [true],
+          reason: '$phase must not disable keep-awake during preparation',
+        );
+      }
 
-    expect(_enabledArgs(calls), [true, false]);
-  });
+      syncNotifier.emit(
+        _sync(
+          percentage: 0,
+          scannedHeight: 100,
+          chainTipHeight: 102,
+          lastSyncStartedAt: startedAt,
+        ),
+      );
+      await _drainNativeQueue(tester);
+
+      expect(_enabledArgs(calls), [true, false]);
+    },
+  );
 
   testWidgets('disables native keep-awake while the app is not foreground', (
     tester,
