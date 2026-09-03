@@ -68,7 +68,7 @@ import 'src/features/payment_links/models/vizor_payment_link.dart';
 import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
-import 'src/features/payment_links/screens/payment_links_desktop_screen.dart';
+import 'src/features/payment_links/screens/payment_links_screen.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
@@ -865,7 +865,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
   GoRoute(
     path: '/payment-links',
-    builder: (_, state) => PaymentLinksDesktopScreen(
+    builder: (_, state) => PaymentLinksScreen(
       initialCards: state.extra is PaymentLinkCardsSnapshot
           ? state.extra! as PaymentLinkCardsSnapshot
           : null,

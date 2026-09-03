@@ -11,7 +11,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
-import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_desktop_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_screen.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
@@ -170,9 +170,9 @@ void main() {
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
 
     accountNotifier.completeOnboarding();
-    await _pumpUntilPresent(tester, find.byType(PaymentLinksDesktopScreen));
+    await _pumpUntilPresent(tester, find.byType(PaymentLinksScreen));
 
-    expect(find.byType(PaymentLinksDesktopScreen), findsOneWidget);
+    expect(find.byType(PaymentLinksScreen), findsOneWidget);
   });
 
   testWidgets('defers a Gift Card until the active send flow is left', (
@@ -217,9 +217,9 @@ void main() {
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
 
     GoRouter.of(sendContext).go('/home');
-    await _pumpUntilPresent(tester, find.byType(PaymentLinksDesktopScreen));
+    await _pumpUntilPresent(tester, find.byType(PaymentLinksScreen));
 
-    expect(find.byType(PaymentLinksDesktopScreen), findsOneWidget);
+    expect(find.byType(PaymentLinksScreen), findsOneWidget);
   });
 
   testWidgets(
@@ -267,9 +267,9 @@ void main() {
       expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
 
       GoRouter.of(sendContext).go('/home');
-      await _pumpUntilPresent(tester, find.byType(PaymentLinksDesktopScreen));
+      await _pumpUntilPresent(tester, find.byType(PaymentLinksScreen));
 
-      expect(find.byType(PaymentLinksDesktopScreen), findsOneWidget);
+      expect(find.byType(PaymentLinksScreen), findsOneWidget);
     },
     tags: ['mobile'],
   );
@@ -282,7 +282,7 @@ void main() {
 
       final context = tester.element(find.byType(Scaffold).first);
       unawaited(GoRouter.of(context).push('/payment-links'));
-      await _pumpUntilPresent(tester, find.byType(PaymentLinksDesktopScreen));
+      await _pumpUntilPresent(tester, find.byType(PaymentLinksScreen));
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byType(PaymentLinksHomeMobileView), findsOneWidget);
@@ -305,7 +305,7 @@ void main() {
     ProviderScope.containerOf(context)
         .read(paymentLinkIntakeProvider.notifier)
         .receive(_paymentLink.toUri().toString());
-    await _pumpUntilPresent(tester, find.byType(PaymentLinksDesktopScreen));
+    await _pumpUntilPresent(tester, find.byType(PaymentLinksScreen));
 
     // The waiting link goes straight into the redeem pre-check — with this
     // fake it resolves at once into the received page — and the landing is

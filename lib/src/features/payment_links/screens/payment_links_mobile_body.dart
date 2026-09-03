@@ -1,6 +1,6 @@
 /// The mobile Gift Card render tree.
 ///
-/// It is the whole mobile side of `payment_links_desktop_screen.dart`, which
+/// It is the whole mobile side of `payment_links_screen.dart`, which
 /// owns the state machine for both form factors. Every value and callback it
 /// needs arrives as a constructor argument, so the widget reads as the explicit
 /// contract between the state machine and the mobile surface, and the screen

@@ -47,18 +47,16 @@ import 'payment_links_mobile_body.dart';
 /// recovery persistence, sync, and transaction work stays behind
 /// [PaymentLinkOperations]. Artwork and message are carried by the v1
 /// presentation payload.
-class PaymentLinksDesktopScreen extends ConsumerStatefulWidget {
-  const PaymentLinksDesktopScreen({this.initialCards, super.key});
+class PaymentLinksScreen extends ConsumerStatefulWidget {
+  const PaymentLinksScreen({this.initialCards, super.key});
 
   final PaymentLinkCardsSnapshot? initialCards;
 
   @override
-  ConsumerState<PaymentLinksDesktopScreen> createState() =>
-      _PaymentLinksDesktopScreenState();
+  ConsumerState<PaymentLinksScreen> createState() => _PaymentLinksScreenState();
 }
 
-class _PaymentLinksDesktopScreenState
-    extends ConsumerState<PaymentLinksDesktopScreen> {
+class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   static const _estimatedBlockTimeSeconds = 75;
   static const _linkAvailableSoonRemainingConfirmations = 3;
   static const _syncingFeeEstimateMessage =

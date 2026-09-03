@@ -15,7 +15,7 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
-import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_desktop_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
@@ -130,9 +130,9 @@ void main() {
 
   testWidgets('disabled swap leaves payment links accessible', (tester) async {
     await tester.pumpWidget(_appHarness('/payment-links', swapEnabled: false));
-    await _pumpUntilPresent(tester, find.byType(PaymentLinksDesktopScreen));
+    await _pumpUntilPresent(tester, find.byType(PaymentLinksScreen));
 
-    expect(find.byType(PaymentLinksDesktopScreen), findsOneWidget);
+    expect(find.byType(PaymentLinksScreen), findsOneWidget);
     expect(find.byType(HomeScreen), findsNothing);
   });
 
