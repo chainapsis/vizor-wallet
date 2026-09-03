@@ -4526,7 +4526,7 @@ dependencies = [
  "zakura-orchard",
  "zakura-pasta-curves",
  "zakura-pczt",
- "zakura-pir-memo",
+ "zakura-pir-enhance",
  "zakura-primitives",
  "zakura-proofs",
  "zakura-sapling-crypto",
@@ -7630,7 +7630,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-backend"
 version = "0.1.0-rc4"
-source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=e8447921882d67826bdcfb5402bf504aebfd864f#e8447921882d67826bdcfb5402bf504aebfd864f"
+source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=97553d530618d90219949c5df19c4a506b20731b#97553d530618d90219949c5df19c4a506b20731b"
 dependencies = [
  "arti-client",
  "async-trait",
@@ -7698,7 +7698,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-sqlite"
 version = "0.1.0-rc4"
-source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=e8447921882d67826bdcfb5402bf504aebfd864f#e8447921882d67826bdcfb5402bf504aebfd864f"
+source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=97553d530618d90219949c5df19c4a506b20731b#97553d530618d90219949c5df19c4a506b20731b"
 dependencies = [
  "bip32",
  "bitflags 2.13.1",
@@ -7900,7 +7900,7 @@ dependencies = [
 [[package]]
 name = "zakura-pczt"
 version = "0.1.0-rc2"
-source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=e8447921882d67826bdcfb5402bf504aebfd864f#e8447921882d67826bdcfb5402bf504aebfd864f"
+source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=97553d530618d90219949c5df19c4a506b20731b#97553d530618d90219949c5df19c4a506b20731b"
 dependencies = [
  "blake2b_simd",
  "document-features",
@@ -7927,9 +7927,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "zakura-pir-memo"
+name = "zakura-pir-enhance"
 version = "0.1.0"
-source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=e8447921882d67826bdcfb5402bf504aebfd864f#e8447921882d67826bdcfb5402bf504aebfd864f"
+source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=97553d530618d90219949c5df19c4a506b20731b#97553d530618d90219949c5df19c4a506b20731b"
 dependencies = [
  "hex",
  "ipir-sp",

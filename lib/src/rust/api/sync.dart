@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -22,6 +22,10 @@ int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
 /// should be scheduled first. Requests already in flight are not interrupted.
 void setActiveSyncAccount({String? accountUuid}) => RustLib.instance.api
     .crateApiSyncSetActiveSyncAccount(accountUuid: accountUuid);
+
+/// Enable private Ironwood transaction enhancement for future sync work.
+void setEnhancePirEnabled({required bool enabled}) =>
+    RustLib.instance.api.crateApiSyncSetEnhancePirEnabled(enabled: enabled);
 
 /// Start a full sync. Streams progress events to Dart via StreamSink.
 /// mode: 1=foreground, 2=background. Sync exits if desired mode changes.

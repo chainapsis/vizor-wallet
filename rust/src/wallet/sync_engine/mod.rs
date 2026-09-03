@@ -46,12 +46,13 @@ use {
 
 mod block_source;
 mod enhance;
+mod enhance_pir;
 mod error;
 mod lwd;
-mod memo_pir;
 pub(crate) mod mempool;
 
 use enhance::run_enhancement;
+use enhance_pir::EnhancePirSync;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
@@ -63,7 +64,6 @@ pub(crate) use lwd::{
     open_background_direct_lwd_channel, open_isolated_lwd_channel, open_lwd_channel,
     open_lwd_channel_with_cancel, send_transaction, send_transaction_with_status,
 };
-use memo_pir::MemoPirSync;
 
 /// Progress event sent to caller (Dart or Swift).
 #[derive(Clone, Debug)]
@@ -2312,7 +2312,7 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
-    let mut memo_pir = MemoPirSync::new(network);
+    let mut enhance_pir = EnhancePirSync::new(network, crate::api::sync::enhance_pir_enabled());
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -2650,9 +2650,9 @@ async fn run_sync_impl(
     // `suggest_scan_ranges` runs again).
     let mut prefetch: Option<Prefetch<ScanBatch>> = None;
 
-    // Retry memo work left by an interrupted/older sync even when the wallet
+    // Retry enhancement work left by an interrupted/older sync even when the wallet
     // is already at the chain tip and no compact-block batch will run.
-    Box::pin(memo_pir.run(&mut db)).await?;
+    Box::pin(enhance_pir.run(&mut db)).await?;
 
     // 5. Sync loop
     loop {
@@ -3386,21 +3386,21 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
-        // Complete Ironwood memos without disclosing transaction IDs. The
+        // Complete Ironwood incoming and outgoing details without disclosing transaction IDs. The
         // independent position queue is populated atomically by compact scan.
         // Box this transport-heavy future so its Hyper/Tor connector state does
         // not inflate the already-large sync future exported through FRB.
-        Box::pin(memo_pir.run(&mut db)).await?;
+        Box::pin(enhance_pir.run(&mut db)).await?;
 
         // Legacy enhancement remains available for status and transparent
-        // history. On mainnet, transaction enhancement itself is deliberately
-        // inert: Ironwood memos must never fall back to GetTransaction(txid).
+        // history. When private recovery is enabled, protected Ironwood
+        // transactions never fall back to GetTransaction(txid).
         run_enhancement(
             &mut client,
             &mut db,
             db_data_path,
             network,
-            memo_pir.suppresses_tx_enhancement(),
+            enhance_pir.enabled(),
         )
         .await?;
 
@@ -3814,7 +3814,7 @@ async fn run_sync_impl(
                 &mut db,
                 db_data_path,
                 network,
-                memo_pir.suppresses_tx_enhancement(),
+                enhance_pir.enabled(),
             )
             .await
             {

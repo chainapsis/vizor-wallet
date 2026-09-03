@@ -109,13 +109,13 @@ features = [
     "tor",
     "sync",
     "pczt",
-    "zakura-pir-memo",
+    "zakura-pir-enhance",
 ]
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
 version = "=0.1.0-rc4"
-features = ["orchard", "transparent-inputs", "unstable", "serde", "zakura-pir-memo"]
+features = ["orchard", "transparent-inputs", "unstable", "serde", "zakura-pir-enhance"]
 
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
@@ -150,15 +150,15 @@ package = "ur-registry"
 default-features = false
 features = ["std"]
 
-[dependencies.zakura-pir-memo]
+[dependencies.zakura-pir-enhance]
 git = "https://github.com/zakura-core/wallet-libraries.git"
-rev = "e8447921882d67826bdcfb5402bf504aebfd864f"
+rev = "97553d530618d90219949c5df19c4a506b20731b"
 default-features = false
 
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e8447921882d67826bdcfb5402bf504aebfd864f" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e8447921882d67826bdcfb5402bf504aebfd864f" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e8447921882d67826bdcfb5402bf504aebfd864f" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "97553d530618d90219949c5df19c4a506b20731b" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "97553d530618d90219949c5df19c4a506b20731b" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "97553d530618d90219949c5df19c4a506b20731b" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }

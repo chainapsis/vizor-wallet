@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/config/app_version_config.dart';
+import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -22,7 +23,7 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
-import '../../../../core/config/zcash_explorer.dart';
+import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
@@ -57,6 +58,7 @@ class MobileSettingsScreen extends ConsumerWidget {
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
     final syncKeepAwake = ref.watch(syncKeepAwakeProvider);
+    final enhancePirEnabled = ref.watch(enhancePirProvider);
     const settingsRowStyle = AppTypography.labelLarge;
     final settingsValueColor = context.colors.text.accent;
     final settingsChevronColor = context.colors.icon.accent;
@@ -210,6 +212,12 @@ class MobileSettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 const MobileNetworkPrivacyCard(),
+                const SizedBox(height: AppSpacing.md),
+                _EnhancePirSettingsCard(
+                  enabled: enhancePirEnabled,
+                  onToggle: () =>
+                      unawaited(ref.read(enhancePirProvider.notifier).toggle()),
+                ),
                 const SizedBox(height: AppSpacing.md),
                 _SettingsGroup(
                   title: 'System',
@@ -675,10 +683,106 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
   }
 }
 
-class _SyncKeepAwakeToggle extends StatelessWidget {
-  const _SyncKeepAwakeToggle({required this.enabled, super.key});
+class _EnhancePirSettingsCard extends StatelessWidget {
+  const _EnhancePirSettingsCard({
+    required this.enabled,
+    required this.onToggle,
+  });
 
   final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MobileSurfaceCard(
+      cornerRadius: AppRadii.large,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.base,
+        AppSpacing.sm,
+        AppSpacing.base,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxs),
+            child: Text(
+              'Advanced',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          Semantics(
+            button: true,
+            toggled: enabled,
+            label: 'Private Ironwood recovery',
+            excludeSemantics: true,
+            child: GestureDetector(
+              key: const ValueKey('mobile_settings_enhance_pir_row'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onToggle,
+              child: SizedBox(
+                height: _settingsRowHeight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xxs,
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox.square(
+                        dimension: 32,
+                        child: Center(child: _RowIcon(AppIcons.eye)),
+                      ),
+                      const SizedBox(width: AppSpacing.s),
+                      Expanded(
+                        child: Text(
+                          'Private Ironwood recovery',
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                      ),
+                      _SyncKeepAwakeToggle(
+                        enabled: enabled,
+                        thumbKey: const ValueKey(
+                          'mobile_settings_enhance_pir_toggle_thumb',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Privately completes future Ironwood incoming and outgoing details during recovery. It does not reprocess past history, and timing and query counts remain visible to the service.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SyncKeepAwakeToggle extends StatelessWidget {
+  const _SyncKeepAwakeToggle({
+    required this.enabled,
+    this.thumbKey = const ValueKey(
+      'mobile_settings_sync_keep_awake_toggle_thumb',
+    ),
+    super.key,
+  });
+
+  final bool enabled;
+  final Key thumbKey;
 
   @override
   Widget build(BuildContext context) {
@@ -705,7 +809,7 @@ class _SyncKeepAwakeToggle extends StatelessWidget {
         curve: Curves.easeOutCubic,
         alignment: enabled ? Alignment.centerRight : Alignment.centerLeft,
         child: DecoratedBox(
-          key: const ValueKey('mobile_settings_sync_keep_awake_toggle_thumb'),
+          key: thumbKey,
           decoration: BoxDecoration(
             color: const Color(0xFFFFFFFF),
             borderRadius: BorderRadius.circular(AppRadii.full),

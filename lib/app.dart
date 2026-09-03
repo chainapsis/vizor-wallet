@@ -144,6 +144,7 @@ Future<Widget> buildBootstrappedZcashWalletApp({
   List<Override> overrides = const [],
 }) async {
   final bootstrap = await loadAppBootstrap();
+  rust_sync.setEnhancePirEnabled(enabled: bootstrap.enhancePirEnabled);
   return BootstrappedZcashWalletApp(
     initialBootstrap: bootstrap,
     overrides: overrides,
@@ -186,6 +187,7 @@ class _BootstrappedZcashWalletAppState
 
   Future<void> _reloadBootstrap() async {
     final bootstrap = await loadAppBootstrap();
+    rust_sync.setEnhancePirEnabled(enabled: bootstrap.enhancePirEnabled);
     if (!mounted) return;
     setState(() {
       _bootstrap = bootstrap;

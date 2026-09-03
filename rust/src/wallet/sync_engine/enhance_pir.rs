@@ -1,4 +1,4 @@
-//! Private completion of Ironwood memos discovered by compact scanning.
+//! Private completion of Ironwood transactions discovered by compact scanning.
 //!
 //! The server sees randomized iPIR queries, never a transaction ID or note
 //! position. Snapshot metadata is accepted only after its block hash and
@@ -13,10 +13,12 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use zakura_pir_memo::{ClientError, MemoPirSession, MemoSnapshotMetadata, RECORDS_PER_ROW};
-use zcash_client_backend::data_api::memo_pir::{
-    decrypt_and_store_ironwood_memo, IronwoodMemoRecord, MemoPirRead, MemoPirSnapshotAnchor,
-    MemoPirSnapshotStatus, MemoPirStoreResult,
+use zakura_pir_enhance::client::record_in_row;
+use zakura_pir_enhance::{ClientError, EnhanceGeneration, QuerySession, RECORDS_PER_ROW};
+use zcash_client_backend::data_api::enhance_pir::{
+    decrypt_and_store_ironwood_memo, recover_and_store_ironwood_outgoing, EnhancePirRead,
+    EnhancePirSnapshotAnchor, EnhancePirSnapshotStatus, EnhancePirStoreResult,
+    IronwoodEnhanceRecord,
 };
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
@@ -25,25 +27,28 @@ use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
 use super::{lwd::DirectRouteConnector, SyncError, WalletDatabase};
 
-const DEFAULT_MAINNET_ENDPOINT: &str = "https://memo-pir.167.99.42.60.sslip.io";
-const ENDPOINT_ENV: &str = "VIZOR_MEMO_PIR_URL";
+const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
+const ENDPOINT_ENV: &str = "VIZOR_ENHANCE_PIR_URL";
+const LEGACY_ENDPOINT_ENV: &str = "VIZOR_MEMO_PIR_URL";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-const MAX_METADATA_BYTES: usize = 1024 * 1024;
+const MAX_GENERATION_BYTES: usize = 1024 * 1024;
 const MAX_PARAMS_BYTES: usize = 64 * 1024;
 const MAX_PIR_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 /// Per-sync cached PIR state. A validated immutable generation is reused while
 /// the wallet scans toward its anchor instead of redownloading parameters for
 /// every compact-block batch.
-pub(super) struct MemoPirSync {
+pub(super) struct EnhancePirSync {
     endpoint: Option<String>,
-    session: Option<MemoPirSession>,
+    session: Option<QuerySession>,
 }
 
-impl MemoPirSync {
-    pub(super) fn new(network: WalletNetwork) -> Self {
-        let endpoint = (network == WalletNetwork::Main).then(|| {
-            std::env::var(ENDPOINT_ENV).unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.to_owned())
+impl EnhancePirSync {
+    pub(super) fn new(network: WalletNetwork, enabled: bool) -> Self {
+        let endpoint = (enabled && network == WalletNetwork::Main).then(|| {
+            std::env::var(ENDPOINT_ENV)
+                .or_else(|_| std::env::var(LEGACY_ENDPOINT_ENV))
+                .unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.to_owned())
         });
         Self {
             endpoint,
@@ -51,17 +56,14 @@ impl MemoPirSync {
         }
     }
 
-    /// Mainnet never falls back from memo PIR to transaction-ID enhancement.
-    /// Test/regtest retain their existing behavior because the demo service is
-    /// intentionally anchored to mainnet.
-    pub(super) fn suppresses_tx_enhancement(&self) -> bool {
+    pub(super) fn enabled(&self) -> bool {
         self.endpoint.is_some()
     }
 
     pub(super) async fn run(&mut self, db: &mut WalletDatabase) -> Result<(), SyncError> {
         let requests = db
-            .memo_pir_requests()
-            .map_err(|error| SyncError::db(format!("memo_pir_requests: {error}")))?;
+            .enhance_pir_requests()
+            .map_err(|error| SyncError::db(format!("enhance_pir_requests: {error}")))?;
         if requests.is_empty() || self.endpoint.is_none() {
             return Ok(());
         }
@@ -71,22 +73,24 @@ impl MemoPirSync {
             self.session = Some(connect(endpoint).await?);
         }
         let session = self.session.as_ref().expect("initialized above");
-        let snapshot_anchor = session.snapshot_anchor();
+        let generation = session.generation();
         match db
-            .memo_pir_snapshot_status(MemoPirSnapshotAnchor {
-                height: BlockHeight::from(snapshot_anchor.height),
-                block_hash: BlockHash::from_slice(&snapshot_anchor.block_hash),
-                ironwood_tree_size: snapshot_anchor.ironwood_tree_size,
+            .enhance_pir_snapshot_status(EnhancePirSnapshotAnchor {
+                height: BlockHeight::from(u32::try_from(generation.anchor_height).map_err(
+                    |_| SyncError::parse("Enhance PIR anchor height exceeds the supported range"),
+                )?),
+                block_hash: parse_display_block_hash(&generation.anchor_block_hash)?,
+                ironwood_tree_size: generation.ironwood_tree_size,
             })
-            .map_err(|error| SyncError::db(format!("memo_pir_snapshot_status: {error}")))?
+            .map_err(|error| SyncError::db(format!("enhance_pir_snapshot_status: {error}")))?
         {
-            MemoPirSnapshotStatus::NotYetScanned => return Ok(()),
-            MemoPirSnapshotStatus::Mismatch => {
+            EnhancePirSnapshotStatus::NotYetScanned => return Ok(()),
+            EnhancePirSnapshotStatus::Mismatch => {
                 return Err(SyncError::parse(
-                    "memo PIR snapshot anchor disagrees with the locally scanned chain",
+                    "Enhance PIR snapshot anchor disagrees with the locally scanned chain",
                 ));
             }
-            MemoPirSnapshotStatus::Accepted => {}
+            EnhancePirSnapshotStatus::Accepted => {}
         }
 
         // One returned row can satisfy up to RECORDS_PER_ROW pending notes. We
@@ -94,7 +98,7 @@ impl MemoPirSync {
         let mut rows = BTreeMap::<u64, Vec<_>>::new();
         for request in requests {
             let position = u64::from(request.position());
-            if position < session.metadata().ironwood_tree_size {
+            if position < session.generation().ironwood_tree_size {
                 rows.entry(position / RECORDS_PER_ROW as u64)
                     .or_default()
                     .push(request);
@@ -105,13 +109,16 @@ impl MemoPirSync {
         let row_count = rows.len();
         for requests in rows.into_values() {
             let position = u64::from(requests[0].position());
-            let query = session
+            let (query, _) = session
                 .prepare_position(position)
                 .map_err(client_protocol_error)?;
             let response = routed_request(
                 Method::POST,
-                &endpoint_path(self.endpoint.as_deref().expect("configured"), "/memo/query")?,
-                query.request_body().to_vec(),
+                &endpoint_path(
+                    self.endpoint.as_deref().expect("configured"),
+                    "/v1/enhance/query",
+                )?,
+                query.body().to_vec(),
                 MAX_PIR_BODY_BYTES,
             )
             .await?;
@@ -121,24 +128,34 @@ impl MemoPirSync {
 
             for request in requests {
                 let position = u64::from(request.position());
-                let record = row.record(position).ok_or_else(|| {
-                    SyncError::parse("memo PIR response did not contain the requested row")
-                })?;
-                let record =
-                    IronwoodMemoRecord::from_parts(*record.ephemeral_key(), *record.ciphertext());
-                let result = with_wallet_db_write_lock(
-                    "sync_engine.memo_pir.decrypt_and_store_ironwood_memo",
+                let slot = position as usize % RECORDS_PER_ROW;
+                let wire_record = record_in_row(&row, slot);
+                let record = IronwoodEnhanceRecord::from_parts(
+                    *wire_record.ephemeral_key(),
+                    *wire_record.enc_ciphertext(),
+                    *wire_record.cv_net(),
+                    *wire_record.out_ciphertext(),
+                );
+                let incoming = with_wallet_db_write_lock(
+                    "sync_engine.enhance_pir.store_ironwood_memo",
                     || decrypt_and_store_ironwood_memo(db, request, &record),
                 )
-                .map_err(|error| SyncError::db(format!("store memo PIR result: {error}")))?;
-                match result {
-                    MemoPirStoreResult::Stored => stored += 1,
-                    MemoPirStoreResult::AlreadyResolved => {}
-                    MemoPirStoreResult::Rejected => {
-                        return Err(SyncError::parse(
-                            "memo PIR record failed wallet note authentication",
-                        ));
-                    }
+                .map_err(|error| SyncError::db(format!("store Enhance PIR memo: {error}")))?;
+                let outgoing = with_wallet_db_write_lock(
+                    "sync_engine.enhance_pir.store_ironwood_outgoing",
+                    || recover_and_store_ironwood_outgoing(db, request, &record),
+                )
+                .map_err(|error| SyncError::db(format!("store Enhance PIR output: {error}")))?;
+                stored += [incoming, outgoing]
+                    .into_iter()
+                    .filter(|result| *result == EnhancePirStoreResult::Stored)
+                    .count();
+                if incoming == EnhancePirStoreResult::Rejected
+                    || outgoing == EnhancePirStoreResult::Rejected
+                {
+                    return Err(SyncError::parse(
+                        "Enhance PIR record failed wallet authentication",
+                    ));
                 }
             }
         }
@@ -146,57 +163,76 @@ impl MemoPirSync {
         if row_count > 0 {
             // Counts are useful demo evidence without recording txids or note positions.
             log::info!(
-                "sync: memo PIR privately completed {stored} Ironwood memo(s) in {row_count} row query/queries"
+                "sync: Enhance PIR privately completed {stored} Ironwood enhancement(s) in {row_count} row query/queries"
             );
         }
         Ok(())
     }
 }
 
-async fn connect(endpoint: &str) -> Result<MemoPirSession, SyncError> {
+async fn connect(endpoint: &str) -> Result<QuerySession, SyncError> {
     if !endpoint.starts_with("https://") {
         return Err(SyncError::parse(
-            "memo PIR endpoint must use an https:// URL",
+            "Enhance PIR endpoint must use an https:// URL",
         ));
     }
-    let metadata = routed_request(
+    let generation = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/memo/metadata")?,
+        &endpoint_path(endpoint, "/v1/enhance/generation")?,
         Vec::new(),
-        MAX_METADATA_BYTES,
+        MAX_GENERATION_BYTES,
     )
     .await?;
-    let metadata: MemoSnapshotMetadata = serde_json::from_slice(&metadata)
-        .map_err(|error| SyncError::parse(format!("memo PIR metadata JSON: {error}")))?;
+    let generation: EnhanceGeneration = serde_json::from_slice(&generation)
+        .map_err(|error| SyncError::parse(format!("Enhance PIR generation JSON: {error}")))?;
+    let generation_id = generation.generation;
     let params = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/memo/params")?,
+        &endpoint_path(
+            endpoint,
+            &format!("/v1/enhance/params?generation={generation_id}"),
+        )?,
         Vec::new(),
         MAX_PARAMS_BYTES,
     )
     .await?;
+    let params = serde_json::from_slice(&params)
+        .map_err(|error| SyncError::parse(format!("Enhance PIR params JSON: {error}")))?;
     let public_params = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/memo/public-params")?,
+        &endpoint_path(
+            endpoint,
+            &format!("/v1/enhance/public-params?generation={generation_id}"),
+        )?,
         Vec::new(),
         MAX_PIR_BODY_BYTES,
     )
     .await?;
-    MemoPirSession::new("main", metadata, &params, &public_params).map_err(client_protocol_error)
+    QuerySession::new(generation, params, &public_params).map_err(client_protocol_error)
+}
+
+fn parse_display_block_hash(hash: &str) -> Result<BlockHash, SyncError> {
+    let mut bytes = hex::decode(hash)
+        .map_err(|error| SyncError::parse(format!("invalid Enhance PIR anchor hash: {error}")))?;
+    if bytes.len() != 32 {
+        return Err(SyncError::parse("invalid Enhance PIR anchor hash length"));
+    }
+    bytes.reverse();
+    Ok(BlockHash::from_slice(&bytes))
 }
 
 fn endpoint_path(endpoint: &str, path: &str) -> Result<String, SyncError> {
     let endpoint = endpoint.trim_end_matches('/');
     if !endpoint.starts_with("https://") {
         return Err(SyncError::parse(
-            "memo PIR endpoint must use an https:// URL",
+            "Enhance PIR endpoint must use an https:// URL",
         ));
     }
     Ok(format!("{endpoint}{path}"))
 }
 
 fn client_protocol_error(error: ClientError) -> SyncError {
-    SyncError::parse(format!("memo PIR protocol validation failed: {error}"))
+    SyncError::parse(format!("Enhance PIR protocol validation failed: {error}"))
 }
 
 async fn routed_request(
@@ -207,11 +243,13 @@ async fn routed_request(
 ) -> Result<Vec<u8>, SyncError> {
     if crate::network_privacy::is_tor_desired() {
         let client = crate::network_privacy::tor_client_for_route(true)
-            .map_err(|error| SyncError::net(format!("network privacy blocked memo PIR: {error}")))?
-            .ok_or_else(|| SyncError::net("Tor route changed before memo PIR request"))?;
+            .map_err(|error| {
+                SyncError::net(format!("network privacy blocked Enhance PIR: {error}"))
+            })?
+            .ok_or_else(|| SyncError::net("Tor route changed before Enhance PIR request"))?;
         let uri = url
             .parse()
-            .map_err(|error| SyncError::parse(format!("invalid memo PIR URL: {error}")))?;
+            .map_err(|error| SyncError::parse(format!("invalid Enhance PIR URL: {error}")))?;
         let response = match method {
             Method::GET => {
                 tokio::time::timeout(
@@ -242,13 +280,13 @@ async fn routed_request(
                 )
                 .await
             }
-            _ => unreachable!("memo PIR uses GET and POST only"),
+            _ => unreachable!("Enhance PIR uses GET and POST only"),
         }
-        .map_err(|_| SyncError::net("memo PIR Tor request timed out"))?
-        .map_err(|error| SyncError::net(format!("memo PIR Tor request failed: {error}")))?;
+        .map_err(|_| SyncError::net("Enhance PIR Tor request timed out"))?
+        .map_err(|error| SyncError::net(format!("Enhance PIR Tor request failed: {error}")))?;
         if !response.status().is_success() {
             return Err(SyncError::net(format!(
-                "memo PIR server returned HTTP {}",
+                "Enhance PIR server returned HTTP {}",
                 response.status()
             )));
         }
@@ -257,9 +295,9 @@ async fn routed_request(
 
     let uri = url
         .parse::<http::Uri>()
-        .map_err(|error| SyncError::parse(format!("invalid memo PIR URL: {error}")))?;
+        .map_err(|error| SyncError::parse(format!("invalid Enhance PIR URL: {error}")))?;
     if uri.scheme_str() != Some("https") {
-        return Err(SyncError::parse("memo PIR transport requires HTTPS"));
+        return Err(SyncError::parse("Enhance PIR transport requires HTTPS"));
     }
     let connector = HttpsConnectorBuilder::new()
         .with_webpki_roots()
@@ -272,14 +310,14 @@ async fn routed_request(
         .uri(uri)
         .header(http::header::CONTENT_TYPE, "application/octet-stream")
         .body(Full::new(Bytes::from(body)))
-        .map_err(|error| SyncError::parse(format!("build memo PIR request: {error}")))?;
+        .map_err(|error| SyncError::parse(format!("build Enhance PIR request: {error}")))?;
     let response = tokio::time::timeout(HTTP_TIMEOUT, client.request(request))
         .await
-        .map_err(|_| SyncError::net("memo PIR HTTPS request timed out"))?
-        .map_err(|error| SyncError::net(format!("memo PIR HTTPS request failed: {error}")))?;
+        .map_err(|_| SyncError::net("Enhance PIR HTTPS request timed out"))?
+        .map_err(|error| SyncError::net(format!("Enhance PIR HTTPS request failed: {error}")))?;
     if !response.status().is_success() {
         return Err(SyncError::net(format!(
-            "memo PIR server returned HTTP {}",
+            "Enhance PIR server returned HTTP {}",
             response.status()
         )));
     }
@@ -297,7 +335,7 @@ async fn tor_body_limited(
             if bytes.len().saturating_add(data.len()) > limit {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "memo PIR HTTP body exceeds limit",
+                    "Enhance PIR HTTP body exceeds limit",
                 )
                 .into());
             }
@@ -316,10 +354,10 @@ async fn read_body_limited(
     let mut bytes = Vec::new();
     while let Some(frame) = body.frame().await {
         let frame = frame
-            .map_err(|error| SyncError::net(format!("read memo PIR response body: {error}")))?;
+            .map_err(|error| SyncError::net(format!("read Enhance PIR response body: {error}")))?;
         if let Some(data) = frame.data_ref() {
             if bytes.len().saturating_add(data.len()) > limit {
-                return Err(SyncError::parse("memo PIR HTTP body exceeds limit"));
+                return Err(SyncError::parse("Enhance PIR HTTP body exceeds limit"));
             }
             bytes.extend_from_slice(data);
         }
@@ -332,25 +370,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_mainnet_suppresses_legacy_transaction_enhancement() {
-        assert!(MemoPirSync::new(WalletNetwork::Main).suppresses_tx_enhancement());
-        assert!(!MemoPirSync::new(WalletNetwork::Test).suppresses_tx_enhancement());
-        assert!(!MemoPirSync::new(WalletNetwork::Regtest).suppresses_tx_enhancement());
+    fn only_enabled_mainnet_uses_enhance_pir() {
+        assert!(EnhancePirSync::new(WalletNetwork::Main, true).enabled());
+        assert!(!EnhancePirSync::new(WalletNetwork::Main, false).enabled());
+        assert!(!EnhancePirSync::new(WalletNetwork::Test, true).enabled());
+        assert!(!EnhancePirSync::new(WalletNetwork::Regtest, true).enabled());
     }
 
     #[test]
     fn endpoint_requires_https() {
-        assert!(endpoint_path("http://example.test", "/memo/metadata").is_err());
+        assert!(endpoint_path("http://example.test", "/v1/enhance/generation").is_err());
         assert_eq!(
-            endpoint_path("https://example.test/", "/memo/metadata").unwrap(),
-            "https://example.test/memo/metadata"
+            endpoint_path("https://example.test/", "/v1/enhance/generation").unwrap(),
+            "https://example.test/v1/enhance/generation"
+        );
+    }
+
+    #[test]
+    fn display_block_hash_is_converted_to_internal_byte_order() {
+        let bytes: [u8; 32] = std::array::from_fn(|index| index as u8);
+        let expected = BlockHash::from_slice(&bytes);
+        assert_eq!(
+            parse_display_block_hash(&expected.to_string()).unwrap(),
+            expected,
         );
     }
 
     /// Manual smoke test for the deployed demo service. It issues a randomized
     /// cover query, so running it never discloses a wallet position.
     #[tokio::test]
-    #[ignore = "requires the deployed memo-PIR demo endpoint"]
+    #[ignore = "requires the deployed Enhance-PIR demo endpoint"]
     async fn deployed_endpoint_accepts_and_decodes_a_private_query() {
         // Production sync installs this while opening lightwalletd; this test
         // intentionally exercises the PIR transport in isolation.
@@ -359,8 +408,8 @@ mod tests {
         let query = session.prepare_dummy().unwrap();
         let response = routed_request(
             Method::POST,
-            &endpoint_path(DEFAULT_MAINNET_ENDPOINT, "/memo/query").unwrap(),
-            query.request_body().to_vec(),
+            &endpoint_path(DEFAULT_MAINNET_ENDPOINT, "/v1/enhance/query").unwrap(),
+            query.body().to_vec(),
             MAX_PIR_BODY_BYTES,
         )
         .await
