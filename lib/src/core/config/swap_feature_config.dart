@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io' show HttpClient, HttpException, HttpHeaders, Platform;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,6 +11,7 @@ import '../../../main.dart' show log;
 import '../../app_bootstrap.dart';
 import '../../providers/network_privacy_provider.dart';
 import '../layout/app_form_factor.dart';
+import '../layout/app_process_work_policy.dart';
 import '../network/network_http_client.dart';
 import 'app_version_config.dart';
 import 'network_config.dart';
@@ -146,6 +148,14 @@ const _kSwapOverrideRetryDelays = <Duration>[
   Duration(seconds: 300),
 ];
 
+/// Whether an override retry may run in the current lifecycle. Mobile keeps
+/// Dart-owned network work foreground-only (the Tor client is put to sleep
+/// on hide); desktop keeps working with its windows hidden.
+final swapOverrideProcessWorkPolicyProvider =
+    Provider<bool Function({required bool isInForeground})>(
+      (_) => canRunAppProcessWork,
+    );
+
 final swapEnabledRemoteOverrideProvider =
     NotifierProvider<SwapEnabledRemoteOverrideNotifier, bool>(
       SwapEnabledRemoteOverrideNotifier.new,
@@ -158,12 +168,44 @@ class SwapEnabledRemoteOverrideNotifier extends Notifier<bool> {
   var _disposed = false;
   Timer? _retryTimer;
   var _retryAttempt = 0;
+  AppLifecycleListener? _lifecycle;
+  var _isInForeground = true;
+
+  /// A retry that was due (or fell due) while the app was backgrounded and
+  /// is owed on the next foreground entry.
+  var _retryDeferredToForeground = false;
+
+  bool get _mayRunNow => ref.read(swapOverrideProcessWorkPolicyProvider)(
+    isInForeground: _isInForeground,
+  );
 
   @override
   bool build() {
+    // A retry timer that fires after `onHide` but before the OS suspends the
+    // process would build a fresh Tor circuit on a client the lifecycle has
+    // just put to sleep. Mobile therefore parks a pending retry on hide and
+    // settles it on resume; desktop keeps the timer, as it keeps every other
+    // background poll.
+    _lifecycle ??= AppLifecycleListener(
+      onHide: () {
+        _isInForeground = false;
+        if (_mayRunNow || _retryTimer == null) return;
+        _cancelRetry();
+        _retryDeferredToForeground = true;
+      },
+      onResume: () {
+        _isInForeground = true;
+        if (!_retryDeferredToForeground) return;
+        _retryDeferredToForeground = false;
+        if (_disposed || _fetchInFlight) return;
+        unawaited(_fetchOverride());
+      },
+    );
     ref.onDispose(() {
       _disposed = true;
       _cancelRetry();
+      _lifecycle?.dispose();
+      _lifecycle = null;
     });
     final bootstrap = ref.watch(appBootstrapProvider);
     if (bootstrap.swapEnabledOverrideCachedForRelease) return true;
@@ -237,10 +279,21 @@ class SwapEnabledRemoteOverrideNotifier extends Notifier<bool> {
         : _kSwapOverrideRetryDelays.length - 1;
     _retryAttempt++;
     _retryTimer?.cancel();
+    if (!_mayRunNow) {
+      // Backgrounded already: nothing may be armed, the attempt waits for
+      // the foreground.
+      _retryDeferredToForeground = true;
+      return;
+    }
     _retryTimer = Timer(_kSwapOverrideRetryDelays[index], () {
       _retryTimer = null;
       // A fetch already running will schedule the next attempt itself.
       if (_disposed || _fetchInFlight) return;
+      if (!_mayRunNow) {
+        // `onHide` and this timer raced; the foreground entry owns it now.
+        _retryDeferredToForeground = true;
+        return;
+      }
       unawaited(_fetchOverride());
     });
   }

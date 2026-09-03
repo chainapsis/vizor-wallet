@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +12,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_remote_enable_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
+import 'package:zcash_wallet/src/core/layout/app_process_work_policy.dart';
 import 'package:zcash_wallet/src/core/network/network_http_client.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
@@ -301,6 +303,127 @@ void main() {
   // `testWidgets` runs its body inside `FakeAsync`, so `tester.pump(duration)`
   // is virtual time: retry timers fire exactly on schedule with no real
   // waiting, and a timer still pending when the test ends fails it.
+  group('unresolved fetch retries in the background', () {
+    bool mobilePolicy({required bool isInForeground}) => canRunAppProcessWork(
+      isInForeground: isInForeground,
+      formFactor: AppFormFactor.mobile,
+    );
+
+    void lifecycle(AppLifecycleState state) {
+      TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(state);
+    }
+
+    // The listener asserts the platform's legal transitions, so a return to
+    // the foreground has to climb back the way it left.
+    void background() {
+      lifecycle(AppLifecycleState.inactive);
+      lifecycle(AppLifecycleState.hidden);
+      lifecycle(AppLifecycleState.paused);
+    }
+
+    void foreground() {
+      lifecycle(AppLifecycleState.hidden);
+      lifecycle(AppLifecycleState.inactive);
+      lifecycle(AppLifecycleState.resumed);
+    }
+
+    testWidgets(
+      'mobile parks a pending retry on hide and settles it on resume',
+      (tester) async {
+        final source = _FakeSwapEnabledOverrideSource(
+          enabled: true,
+          unresolvedCalls: 1,
+        );
+        final store = _FakeSwapEnabledOverrideStore();
+        final container = _container(
+          source: source,
+          store: store,
+          forceDisabled: true,
+          processWorkPolicy: mobilePolicy,
+        );
+        addTearDown(container.dispose);
+        final sub = container.listen(
+          swapEnabledRemoteOverrideProvider,
+          (_, _) {},
+        );
+        await tester.pump();
+        expect(source.fetchCount, 1);
+
+        background();
+        await tester.pump(const Duration(minutes: 10));
+        expect(source.fetchCount, 1, reason: 'no retry while backgrounded');
+        expect(sub.read(), false);
+
+        foreground();
+        await tester.pump();
+        expect(source.fetchCount, 2, reason: 'the owed retry runs on resume');
+        expect(sub.read(), true);
+        expect(store.cachedVersions, [kVizorReleaseVersion]);
+        await tester.pump(const Duration(minutes: 10));
+        expect(source.fetchCount, 2);
+      },
+    );
+
+    testWidgets('mobile arms nothing for a failure that lands while hidden', (
+      tester,
+    ) async {
+      final source = _FakeSwapEnabledOverrideSource(
+        enabled: true,
+        unresolvedCalls: 1,
+        holdCall: 1,
+      );
+      final store = _FakeSwapEnabledOverrideStore();
+      final container = _container(
+        source: source,
+        store: store,
+        forceDisabled: true,
+        processWorkPolicy: mobilePolicy,
+      );
+      addTearDown(container.dispose);
+      container.listen(swapEnabledRemoteOverrideProvider, (_, _) {});
+      await tester.pump();
+      expect(source.fetchCount, 1);
+
+      background();
+      source.releaseHeldCall();
+      await tester.pump();
+      await tester.pump(const Duration(minutes: 10));
+      expect(source.fetchCount, 1, reason: 'the failure must not arm a timer');
+
+      foreground();
+      await tester.pump();
+      expect(source.fetchCount, 2);
+    });
+
+    testWidgets('desktop keeps retrying with its windows hidden', (
+      tester,
+    ) async {
+      final source = _FakeSwapEnabledOverrideSource(
+        enabled: true,
+        unresolvedCalls: 1,
+      );
+      final container = _container(
+        source: source,
+        store: _FakeSwapEnabledOverrideStore(),
+        forceDisabled: true,
+        processWorkPolicy: ({required bool isInForeground}) =>
+            canRunAppProcessWork(
+              isInForeground: isInForeground,
+              formFactor: AppFormFactor.desktop,
+            ),
+      );
+      addTearDown(container.dispose);
+      container.listen(swapEnabledRemoteOverrideProvider, (_, _) {});
+      await tester.pump();
+
+      background();
+      await tester.pump(const Duration(seconds: 15));
+      expect(source.fetchCount, 2, reason: 'desktop is not foreground-only');
+      foreground();
+      await tester.pump();
+    });
+  });
+
   group('unresolved fetch retries', () {
     testWidgets('re-asks on a timer when no route change comes', (
       tester,
@@ -488,10 +611,15 @@ ProviderContainer _container({
   required _FakeSwapEnabledOverrideStore store,
   _FakeNetworkPrivacyNotifier? privacy,
   bool autoDispose = true,
+  bool Function({required bool isInForeground})? processWorkPolicy,
 }) {
   final privacyNotifier = privacy ?? _FakeNetworkPrivacyNotifier();
   final container = ProviderContainer(
     overrides: [
+      if (processWorkPolicy != null)
+        swapOverrideProcessWorkPolicyProvider.overrideWithValue(
+          processWorkPolicy,
+        ),
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap()),
       swapForceDisabledForCurrentBuildProvider.overrideWithValue(forceDisabled),
       swapEnabledOverrideSourceProvider.overrideWithValue(source),
@@ -601,6 +729,11 @@ class _FakeSwapEnabledOverrideSource implements SwapEnabledOverrideSource {
   final int? holdCall;
 
   final _held = Completer<void>();
+
+  void releaseHeldCall() {
+    if (!_held.isCompleted) _held.complete();
+  }
+
   var fetchCount = 0;
   final requestedVersions = <String>[];
 
@@ -609,10 +742,13 @@ class _FakeSwapEnabledOverrideSource implements SwapEnabledOverrideSource {
     fetchCount++;
     requestedVersions.add(version);
     final call = fetchCount;
+    // Held first, so a held call can still end unresolved once released —
+    // the shape of a request that fails after the app has left the
+    // foreground.
+    if (call == holdCall) await _held.future;
     if (call <= unresolvedCalls) {
       throw StateError('Tor is still connecting');
     }
-    if (call == holdCall) await _held.future;
     return enabled;
   }
 }
