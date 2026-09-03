@@ -891,6 +891,8 @@ class ApiChainDiagnostic {
 
 enum ApiChainDiagnosticKind {
   ambiguousDispatch,
+  ambiguousAttemptsExhausted,
+  nullifierAlreadySpent,
   trackingWindowExpired,
   chainRejected,
   reconciliationPending,
@@ -1020,6 +1022,7 @@ enum ApiChainSubmissionOutcomeKind {
   confirmed,
   tracking,
   recovering,
+  submittedWithoutHash,
   rejected,
   cancelled,
 }
@@ -1028,6 +1031,7 @@ enum ApiChainSubmissionState {
   submitting,
   tracking,
   recovering,
+  submittedWithoutHash,
   confirmed,
   legacyConfirmed,
   rejected,

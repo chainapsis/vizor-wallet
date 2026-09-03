@@ -8221,12 +8221,14 @@ impl SseDecode for crate::api::voting::ApiChainDiagnosticKind {
         let mut inner = <i32>::sse_decode(deserializer);
         return match inner {
             0 => crate::api::voting::ApiChainDiagnosticKind::AmbiguousDispatch,
-            1 => crate::api::voting::ApiChainDiagnosticKind::TrackingWindowExpired,
-            2 => crate::api::voting::ApiChainDiagnosticKind::ChainRejected,
-            3 => crate::api::voting::ApiChainDiagnosticKind::ReconciliationPending,
-            4 => crate::api::voting::ApiChainDiagnosticKind::InvalidProtocolResponse,
-            5 => crate::api::voting::ApiChainDiagnosticKind::RecoveryUnavailable,
-            6 => crate::api::voting::ApiChainDiagnosticKind::StorageFailure,
+            1 => crate::api::voting::ApiChainDiagnosticKind::AmbiguousAttemptsExhausted,
+            2 => crate::api::voting::ApiChainDiagnosticKind::NullifierAlreadySpent,
+            3 => crate::api::voting::ApiChainDiagnosticKind::TrackingWindowExpired,
+            4 => crate::api::voting::ApiChainDiagnosticKind::ChainRejected,
+            5 => crate::api::voting::ApiChainDiagnosticKind::ReconciliationPending,
+            6 => crate::api::voting::ApiChainDiagnosticKind::InvalidProtocolResponse,
+            7 => crate::api::voting::ApiChainDiagnosticKind::RecoveryUnavailable,
+            8 => crate::api::voting::ApiChainDiagnosticKind::StorageFailure,
             _ => unreachable!("Invalid variant for ApiChainDiagnosticKind: {}", inner),
         };
     }
@@ -8338,8 +8340,9 @@ impl SseDecode for crate::api::voting::ApiChainSubmissionOutcomeKind {
             0 => crate::api::voting::ApiChainSubmissionOutcomeKind::Confirmed,
             1 => crate::api::voting::ApiChainSubmissionOutcomeKind::Tracking,
             2 => crate::api::voting::ApiChainSubmissionOutcomeKind::Recovering,
-            3 => crate::api::voting::ApiChainSubmissionOutcomeKind::Rejected,
-            4 => crate::api::voting::ApiChainSubmissionOutcomeKind::Cancelled,
+            3 => crate::api::voting::ApiChainSubmissionOutcomeKind::SubmittedWithoutHash,
+            4 => crate::api::voting::ApiChainSubmissionOutcomeKind::Rejected,
+            5 => crate::api::voting::ApiChainSubmissionOutcomeKind::Cancelled,
             _ => unreachable!(
                 "Invalid variant for ApiChainSubmissionOutcomeKind: {}",
                 inner
@@ -8356,9 +8359,10 @@ impl SseDecode for crate::api::voting::ApiChainSubmissionState {
             0 => crate::api::voting::ApiChainSubmissionState::Submitting,
             1 => crate::api::voting::ApiChainSubmissionState::Tracking,
             2 => crate::api::voting::ApiChainSubmissionState::Recovering,
-            3 => crate::api::voting::ApiChainSubmissionState::Confirmed,
-            4 => crate::api::voting::ApiChainSubmissionState::LegacyConfirmed,
-            5 => crate::api::voting::ApiChainSubmissionState::Rejected,
+            3 => crate::api::voting::ApiChainSubmissionState::SubmittedWithoutHash,
+            4 => crate::api::voting::ApiChainSubmissionState::Confirmed,
+            5 => crate::api::voting::ApiChainSubmissionState::LegacyConfirmed,
+            6 => crate::api::voting::ApiChainSubmissionState::Rejected,
             _ => unreachable!("Invalid variant for ApiChainSubmissionState: {}", inner),
         };
     }
@@ -12144,12 +12148,14 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainDiagnosticKin
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
             Self::AmbiguousDispatch => 0.into_dart(),
-            Self::TrackingWindowExpired => 1.into_dart(),
-            Self::ChainRejected => 2.into_dart(),
-            Self::ReconciliationPending => 3.into_dart(),
-            Self::InvalidProtocolResponse => 4.into_dart(),
-            Self::RecoveryUnavailable => 5.into_dart(),
-            Self::StorageFailure => 6.into_dart(),
+            Self::AmbiguousAttemptsExhausted => 1.into_dart(),
+            Self::NullifierAlreadySpent => 2.into_dart(),
+            Self::TrackingWindowExpired => 3.into_dart(),
+            Self::ChainRejected => 4.into_dart(),
+            Self::ReconciliationPending => 5.into_dart(),
+            Self::InvalidProtocolResponse => 6.into_dart(),
+            Self::RecoveryUnavailable => 7.into_dart(),
+            Self::StorageFailure => 8.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -12307,8 +12313,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionOut
             Self::Confirmed => 0.into_dart(),
             Self::Tracking => 1.into_dart(),
             Self::Recovering => 2.into_dart(),
-            Self::Rejected => 3.into_dart(),
-            Self::Cancelled => 4.into_dart(),
+            Self::SubmittedWithoutHash => 3.into_dart(),
+            Self::Rejected => 4.into_dart(),
+            Self::Cancelled => 5.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -12331,9 +12338,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionSta
             Self::Submitting => 0.into_dart(),
             Self::Tracking => 1.into_dart(),
             Self::Recovering => 2.into_dart(),
-            Self::Confirmed => 3.into_dart(),
-            Self::LegacyConfirmed => 4.into_dart(),
-            Self::Rejected => 5.into_dart(),
+            Self::SubmittedWithoutHash => 3.into_dart(),
+            Self::Confirmed => 4.into_dart(),
+            Self::LegacyConfirmed => 5.into_dart(),
+            Self::Rejected => 6.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -15513,12 +15521,14 @@ impl SseEncode for crate::api::voting::ApiChainDiagnosticKind {
         <i32>::sse_encode(
             match self {
                 crate::api::voting::ApiChainDiagnosticKind::AmbiguousDispatch => 0,
-                crate::api::voting::ApiChainDiagnosticKind::TrackingWindowExpired => 1,
-                crate::api::voting::ApiChainDiagnosticKind::ChainRejected => 2,
-                crate::api::voting::ApiChainDiagnosticKind::ReconciliationPending => 3,
-                crate::api::voting::ApiChainDiagnosticKind::InvalidProtocolResponse => 4,
-                crate::api::voting::ApiChainDiagnosticKind::RecoveryUnavailable => 5,
-                crate::api::voting::ApiChainDiagnosticKind::StorageFailure => 6,
+                crate::api::voting::ApiChainDiagnosticKind::AmbiguousAttemptsExhausted => 1,
+                crate::api::voting::ApiChainDiagnosticKind::NullifierAlreadySpent => 2,
+                crate::api::voting::ApiChainDiagnosticKind::TrackingWindowExpired => 3,
+                crate::api::voting::ApiChainDiagnosticKind::ChainRejected => 4,
+                crate::api::voting::ApiChainDiagnosticKind::ReconciliationPending => 5,
+                crate::api::voting::ApiChainDiagnosticKind::InvalidProtocolResponse => 6,
+                crate::api::voting::ApiChainDiagnosticKind::RecoveryUnavailable => 7,
+                crate::api::voting::ApiChainDiagnosticKind::StorageFailure => 8,
                 _ => {
                     unimplemented!("");
                 }
@@ -15624,8 +15634,9 @@ impl SseEncode for crate::api::voting::ApiChainSubmissionOutcomeKind {
                 crate::api::voting::ApiChainSubmissionOutcomeKind::Confirmed => 0,
                 crate::api::voting::ApiChainSubmissionOutcomeKind::Tracking => 1,
                 crate::api::voting::ApiChainSubmissionOutcomeKind::Recovering => 2,
-                crate::api::voting::ApiChainSubmissionOutcomeKind::Rejected => 3,
-                crate::api::voting::ApiChainSubmissionOutcomeKind::Cancelled => 4,
+                crate::api::voting::ApiChainSubmissionOutcomeKind::SubmittedWithoutHash => 3,
+                crate::api::voting::ApiChainSubmissionOutcomeKind::Rejected => 4,
+                crate::api::voting::ApiChainSubmissionOutcomeKind::Cancelled => 5,
                 _ => {
                     unimplemented!("");
                 }
@@ -15643,9 +15654,10 @@ impl SseEncode for crate::api::voting::ApiChainSubmissionState {
                 crate::api::voting::ApiChainSubmissionState::Submitting => 0,
                 crate::api::voting::ApiChainSubmissionState::Tracking => 1,
                 crate::api::voting::ApiChainSubmissionState::Recovering => 2,
-                crate::api::voting::ApiChainSubmissionState::Confirmed => 3,
-                crate::api::voting::ApiChainSubmissionState::LegacyConfirmed => 4,
-                crate::api::voting::ApiChainSubmissionState::Rejected => 5,
+                crate::api::voting::ApiChainSubmissionState::SubmittedWithoutHash => 3,
+                crate::api::voting::ApiChainSubmissionState::Confirmed => 4,
+                crate::api::voting::ApiChainSubmissionState::LegacyConfirmed => 5,
+                crate::api::voting::ApiChainSubmissionState::Rejected => 6,
                 _ => {
                     unimplemented!("");
                 }

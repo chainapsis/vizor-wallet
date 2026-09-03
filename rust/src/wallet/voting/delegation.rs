@@ -299,7 +299,7 @@ async fn prove_delegation_bundle<F>(
     prepared: &PreparedDelegationBundle,
     pir_connect: PirConnectThread,
     on_progress: Arc<F>,
-) -> Result<(), String>
+) -> Result<zcash_voting::delegate::DelegationProofStatus, String>
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
@@ -335,16 +335,14 @@ where
 
             retry_voting_db_locks_coordinated(&proof_db_path, || {
                 prepared
-                    .prove(&proof_voting_db, &pir_client, &reporter)
-                    .map(|_| ())
-                    .map_err(|e| format!("delegate::prove failed: {e}"))
-            })?;
-            Ok(())
+                    .ensure_proof(&proof_voting_db, &pir_client, &reporter)
+                    .map(|completion| completion.status)
+                    .map_err(|e| format!("delegate::ensure_proof failed: {e}"))
+            })
         })
     })
     .await
-    .map_err(|e| format!("delegation proof task failed: {e}"))??;
-    Ok(())
+    .map_err(|e| format!("delegation proof task failed: {e}"))?
 }
 
 /// Select notes and create/reuse delegation bundle rows for a round.
@@ -860,7 +858,7 @@ pub async fn precompute_delegation_proof(
     }
 
     let noop_progress = Arc::new(|_: DelegationProgress| {});
-    prove_delegation_bundle(
+    let proof_status = prove_delegation_bundle(
         db_path,
         &pir_server_urls,
         pir_layout,
@@ -870,7 +868,10 @@ pub async fn precompute_delegation_proof(
         noop_progress,
     )
     .await?;
-    Ok(true)
+    Ok(matches!(
+        proof_status,
+        zcash_voting::delegate::DelegationProofStatus::Generated
+    ))
 }
 
 /// Build, prove, and sign one delegation payload.

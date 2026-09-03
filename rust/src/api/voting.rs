@@ -107,6 +107,7 @@ pub fn select_pir_snapshot_endpoint(
 const PHASE_SELECTING_NOTES: &str = "selecting_notes";
 const PHASE_BUILDING_PCZT: &str = "building_pczt";
 const PHASE_BUILDING_PROOF: &str = "building_proof";
+const PHASE_WAITING_FOR_EXISTING_PROOF: &str = "waiting_for_existing_proof";
 const PHASE_PROOF_PROGRESS: &str = "proof_progress";
 const PHASE_SIGNING_PAYLOAD: &str = "signing_payload";
 const PHASE_PAYLOAD_READY: &str = "payload_ready";
@@ -215,6 +216,7 @@ pub enum ApiChainSubmissionOutcomeKind {
     Confirmed,
     Tracking,
     Recovering,
+    SubmittedWithoutHash,
     Rejected,
     Cancelled,
 }
@@ -224,6 +226,7 @@ pub enum ApiChainSubmissionState {
     Submitting,
     Tracking,
     Recovering,
+    SubmittedWithoutHash,
     Confirmed,
     LegacyConfirmed,
     Rejected,
@@ -235,8 +238,8 @@ impl From<zcash_voting::ChainSubmissionState> for ApiChainSubmissionState {
             zcash_voting::ChainSubmissionState::Submitting => Self::Submitting,
             zcash_voting::ChainSubmissionState::Tracking => Self::Tracking,
             zcash_voting::ChainSubmissionState::Recovering => Self::Recovering,
+            zcash_voting::ChainSubmissionState::SubmittedWithoutHash => Self::SubmittedWithoutHash,
             zcash_voting::ChainSubmissionState::Confirmed => Self::Confirmed,
-            zcash_voting::ChainSubmissionState::LegacyConfirmed => Self::LegacyConfirmed,
             zcash_voting::ChainSubmissionState::Rejected => Self::Rejected,
         }
     }
@@ -253,6 +256,8 @@ pub enum ApiChainConfirmationSource {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiChainDiagnosticKind {
     AmbiguousDispatch,
+    AmbiguousAttemptsExhausted,
+    NullifierAlreadySpent,
     TrackingWindowExpired,
     ChainRejected,
     ReconciliationPending,
@@ -273,6 +278,12 @@ impl From<&zcash_voting::ChainSubmissionDiagnostic> for ApiChainDiagnostic {
             zcash_voting::ChainSubmissionDiagnosticKind::AmbiguousDispatch => {
                 ApiChainDiagnosticKind::AmbiguousDispatch
             }
+            zcash_voting::ChainSubmissionDiagnosticKind::AmbiguousAttemptsExhausted => {
+                ApiChainDiagnosticKind::AmbiguousAttemptsExhausted
+            }
+            zcash_voting::ChainSubmissionDiagnosticKind::NullifierAlreadySpent => {
+                ApiChainDiagnosticKind::NullifierAlreadySpent
+            }
             zcash_voting::ChainSubmissionDiagnosticKind::TrackingWindowExpired => {
                 ApiChainDiagnosticKind::TrackingWindowExpired
             }
@@ -284,9 +295,6 @@ impl From<&zcash_voting::ChainSubmissionDiagnostic> for ApiChainDiagnostic {
             }
             zcash_voting::ChainSubmissionDiagnosticKind::InvalidProtocolResponse => {
                 ApiChainDiagnosticKind::InvalidProtocolResponse
-            }
-            zcash_voting::ChainSubmissionDiagnosticKind::RecoveryUnavailable => {
-                ApiChainDiagnosticKind::RecoveryUnavailable
             }
             zcash_voting::ChainSubmissionDiagnosticKind::StorageFailure => {
                 ApiChainDiagnosticKind::StorageFailure
@@ -332,12 +340,6 @@ impl From<zcash_voting::ChainSubmissionResult> for ApiChainSubmissionOutcome {
                     zcash_voting::ChainSubmissionConfirmationSource::Tree => {
                         ApiChainConfirmationSource::Tree
                     }
-                    zcash_voting::ChainSubmissionConfirmationSource::LegacyImport => {
-                        ApiChainConfirmationSource::LegacyImport
-                    }
-                    zcash_voting::ChainSubmissionConfirmationSource::LegacyProjection => {
-                        ApiChainConfirmationSource::LegacyProjection
-                    }
                 };
                 Self {
                     kind: ApiChainSubmissionOutcomeKind::Confirmed,
@@ -362,6 +364,10 @@ impl From<zcash_voting::ChainSubmissionResult> for ApiChainSubmissionOutcome {
                 candidate_transaction_hash: candidate_transaction_hash.map(|hash| hash.to_hex()),
                 diagnostic: Some(ApiChainDiagnostic::from(&diagnostic)),
                 ..empty(ApiChainSubmissionOutcomeKind::Recovering)
+            },
+            ChainSubmissionResult::SubmittedWithoutHash(diagnostic) => Self {
+                diagnostic: Some(ApiChainDiagnostic::from(&diagnostic)),
+                ..empty(ApiChainSubmissionOutcomeKind::SubmittedWithoutHash)
             },
             ChainSubmissionResult::Rejected(diagnostic) => Self {
                 diagnostic: Some(ApiChainDiagnostic::from(&diagnostic)),
@@ -621,26 +627,12 @@ pub async fn advance_chain_delegation(
                     format!("invalid delegation signature encoding: {error}"),
                 )
             })?;
-        let sighash =
-            zcash_voting::delegate::pczt_sighash(&submission.pczt_bytes).map_err(|error| {
-                ApiChainSubmissionFailure::local(
-                    ApiChainSubmissionFailureKind::InvalidInput,
-                    error.to_string(),
-                )
-            })?;
-        let signer =
-            zcash_voting::delegate::DelegationSigner::signature_from_bytes(&signature, &sighash)
-                .map_err(|error| {
-                    ApiChainSubmissionFailure::local(
-                        ApiChainSubmissionFailureKind::InvalidInput,
-                        error.to_string(),
-                    )
-                })?;
-        Ok::<_, ApiChainSubmissionFailure>(zcash_voting::AdvanceDelegation {
+        zcash_voting::AdvanceDelegation::from_signature_bytes(
             vote_round_id,
             bundle_index,
-            signer,
-        })
+            &signature,
+        )
+        .map_err(ApiChainSubmissionFailure::from)
     })();
     let request = match request {
         Ok(request) => request,
@@ -1390,6 +1382,11 @@ impl From<DelegationProgress> for ApiDelegationProofEvent {
             DelegationProgress::ProofStarting => Self {
                 phase: PHASE_BUILDING_PROOF.to_string(),
                 proof_progress: Some(0.0),
+                signed_delegation_payload: None,
+            },
+            DelegationProgress::WaitingForExistingProof => Self {
+                phase: PHASE_WAITING_FOR_EXISTING_PROOF.to_string(),
+                proof_progress: None,
                 signed_delegation_payload: None,
             },
             DelegationProgress::ProofProgress(value) => Self {
@@ -2809,6 +2806,95 @@ mod tests {
         assert!(error.contains("endpoint list must not be empty"));
     }
 
+    #[test]
+    fn hashless_submission_remains_terminal_and_diagnostic_at_the_api_boundary() {
+        let diagnostic = zcash_voting::ChainSubmissionDiagnostic::from_redacted_message(
+            zcash_voting::ChainSubmissionDiagnosticKind::AmbiguousAttemptsExhausted,
+            "dispatch attempts exhausted",
+        );
+
+        let outcome = ApiChainSubmissionOutcome::from(
+            zcash_voting::ChainSubmissionResult::SubmittedWithoutHash(diagnostic),
+        );
+
+        assert_eq!(
+            outcome.kind,
+            ApiChainSubmissionOutcomeKind::SubmittedWithoutHash
+        );
+        assert_eq!(
+            outcome.diagnostic,
+            Some(ApiChainDiagnostic {
+                kind: ApiChainDiagnosticKind::AmbiguousAttemptsExhausted,
+                message: "dispatch attempts exhausted".to_string(),
+            })
+        );
+        assert_eq!(
+            ApiChainSubmissionState::from(
+                zcash_voting::ChainSubmissionState::SubmittedWithoutHash
+            ),
+            ApiChainSubmissionState::SubmittedWithoutHash
+        );
+    }
+
+    #[tokio::test]
+    async fn delegation_advancement_does_not_require_returned_pczt_bytes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let database = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        database
+            .init_round(
+                zcash_voting::Network::Regtest,
+                &test_api_round_params(),
+                None,
+            )
+            .unwrap();
+        database
+            .ensure_bundles(ROUND_ID, &[test_note_info(0)])
+            .unwrap();
+        drop(database);
+
+        let handle = begin_chain_submission_pass(
+            db_path.to_str().unwrap().to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            "regtest".to_string(),
+            vec!["https://vote.example".to_string()],
+            0,
+        )
+        .unwrap();
+        let result = advance_chain_delegation(
+            &handle,
+            0,
+            zcash_voting::wire::SignedDelegationPayloadView {
+                pczt_bytes: Vec::new(),
+                status: "ready_for_submission".to_string(),
+                message: None,
+                submission: zcash_voting::wire::DelegationSubmissionWire {
+                    proof: b64([0x08; 96]),
+                    rk: b64([0x01; 32]),
+                    spend_auth_sig: b64([0x02; 64]),
+                    tx1_effects: b64(test_tx1_effects()),
+                    nf_signed: b64([0x04; 32]),
+                    cmx_new: b64([0x05; 32]),
+                    gov_comm: b64([0x06; 32]),
+                    gov_nullifiers: vec![b64([0x07; 32]); zcash_voting::BUNDLE_NOTE_SLOTS],
+                    vote_round_id: b64([0x11; 32]),
+                },
+                eligible_weight_zatoshi: 0,
+                delegated_weight_zatoshi: 0,
+                bundle_count: 1,
+                bundle_index: 0,
+            },
+            ApiChainRecoveryMode::StatusOnly,
+        )
+        .await;
+
+        let failure = result.failure.expect("unprepared delegation must fail");
+        assert!(failure.message.contains("complete delegation generation"));
+        assert!(!failure.message.contains("Failed to parse PCZT"));
+        assert!(result.outcome.is_none());
+    }
+
     fn full_share_comms() -> Vec<[u8; 32]> {
         (0..16)
             .map(|index| pasta_curves::pallas::Base::from(index + 10).to_repr())
@@ -3437,6 +3523,10 @@ mod tests {
         let proof = ApiDelegationProofEvent::from(DelegationProgress::ProofProgress(0.5));
         assert_eq!(proof.phase, "proof_progress");
         assert_eq!(proof.proof_progress, Some(0.5));
+
+        let waiting = ApiDelegationProofEvent::from(DelegationProgress::WaitingForExistingProof);
+        assert_eq!(waiting.phase, "waiting_for_existing_proof");
+        assert_eq!(waiting.proof_progress, None);
 
         let result = ApiDelegationProofEvent {
             phase: "result".to_string(),

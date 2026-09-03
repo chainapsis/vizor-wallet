@@ -1087,6 +1087,61 @@ void main() {
     expect(rounds.map((round) => round.roundId), [kRoundId, kOtherRoundId]);
   });
 
+  test(
+    'rounds provider stops after a structural voting database open failure',
+    () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          ...votingHttpResponses(),
+          '/shielded-vote/v1/rounds': {
+            'rounds': [
+              {
+                'vote_round_id': kRoundId,
+                'title': 'Poll',
+                'status': 'active',
+                'proposals': [
+                  {'id': 7, 'title': 'Question', 'options': []},
+                ],
+              },
+              {
+                'vote_round_id': kOtherRoundId,
+                'title': 'Other',
+                'status': 'active',
+                'proposals': [
+                  {'id': 8, 'title': 'Other question', 'options': []},
+                ],
+              },
+            ],
+          },
+        },
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(),
+        roundPlanError: StateError(
+          'Error opening voting database: incompatible schema',
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        recoveryApi: recoveryApi,
+        authenticatedRoundIds: const [kRoundId, kOtherRoundId],
+      );
+      addTearDown(container.dispose);
+
+      await expectLater(
+        container.read(votingRoundsProvider.future),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('Error opening voting database'),
+          ),
+        ),
+      );
+      expect(recoveryApi.roundPlanProposalIds, hasLength(1));
+    },
+  );
+
   test('rounds provider hides authenticated [TEST] title prefixes', () async {
     final http = FakeVotingHttpClient(
       responses: {
@@ -1932,78 +1987,82 @@ void main() {
     ]);
   });
 
-  test('submitted delegation resumes through the SDK after app restart', () async {
-    final rust = FakeVotingRustApi(
-      delegationChainResultsByBundle: {
-        0: [
-          _recoveringChainSubmission(
-            txHash: 'submitted-delegation-tx',
-            diagnosticKind: rust_api.ApiChainDiagnosticKind.recoveryUnavailable,
-          ),
-          _confirmedChainSubmission(
-            txHash: 'submitted-delegation-tx',
-            vanPosition: 12,
-          ),
-        ],
-      },
-    );
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(
-        bundleCount: 1,
-        delegationWorkflows: [
-          rust_frb_types.DelegationRecoveryView(
-            bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
-            txHash: 'submitted-delegation-tx',
-            vanLeafPosition: null,
-          ),
-        ],
-      ),
-    );
-    final http = FakeVotingHttpClient(responses: votingHttpResponses());
-    final firstContainer = _sessionContainer(
-      http: http,
-      rust: rust,
-      recoveryApi: recoveryApi,
-    );
-    await firstContainer.read(votingSessionProvider(kRoundId).future);
-    await firstContainer
-        .read(votingSessionProvider(kRoundId).notifier)
-        .delegatePendingBundles(mnemonic: kTestMnemonic);
-    expect(
-      firstContainer.read(votingSessionProvider(kRoundId)).value!.phase,
-      VotingSessionPhase.error,
-    );
-    firstContainer.dispose();
+  test(
+    'submitted delegation resumes through the SDK after app restart',
+    () async {
+      final rust = FakeVotingRustApi(
+        delegationChainResultsByBundle: {
+          0: [
+            _recoveringChainSubmission(
+              txHash: 'submitted-delegation-tx',
+              diagnosticKind:
+                  rust_api.ApiChainDiagnosticKind.recoveryUnavailable,
+            ),
+            _confirmedChainSubmission(
+              txHash: 'submitted-delegation-tx',
+              vanPosition: 12,
+            ),
+          ],
+        },
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 1,
+          delegationWorkflows: [
+            rust_frb_types.DelegationRecoveryView(
+              bundleIndex: 0,
+              phase: VotingWorkflowPhase.submittedDelegation,
+              txHash: 'submitted-delegation-tx',
+              vanLeafPosition: null,
+            ),
+          ],
+        ),
+      );
+      final http = FakeVotingHttpClient(responses: votingHttpResponses());
+      final firstContainer = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+      );
+      await firstContainer.read(votingSessionProvider(kRoundId).future);
+      await firstContainer
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      expect(
+        firstContainer.read(votingSessionProvider(kRoundId)).value!.phase,
+        VotingSessionPhase.error,
+      );
+      firstContainer.dispose();
 
-    final restartedContainer = _sessionContainer(
-      http: http,
-      rust: rust,
-      recoveryApi: recoveryApi,
-    );
-    addTearDown(restartedContainer.dispose);
-    await restartedContainer.read(votingSessionProvider(kRoundId).future);
-    await restartedContainer
-        .read(votingSessionProvider(kRoundId).notifier)
-        .delegatePendingBundles(mnemonic: kTestMnemonic);
+      final restartedContainer = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+      );
+      addTearDown(restartedContainer.dispose);
+      await restartedContainer.read(votingSessionProvider(kRoundId).future);
+      await restartedContainer
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
 
-    expect(
-      restartedContainer.read(votingSessionProvider(kRoundId)).value!.phase,
-      VotingSessionPhase.delegated,
-    );
-    expect(rust.delegationRecoveryModes, [
-      rust_api.ApiChainRecoveryMode.statusOnly,
-      rust_api.ApiChainRecoveryMode.statusOnly,
-    ]);
-    expect(rust.chainSubmissionPassHandles, hasLength(2));
-    expect(
-      rust.chainSubmissionPassHandles.every((handle) => handle.isDisposed),
-      isTrue,
-    );
-    expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
-    expect(rust.storedDelegationTxHashes, ['0:submitted-delegation-tx']);
-    expect(rust.storedVanPositions, ['0:12']);
-  });
+      expect(
+        restartedContainer.read(votingSessionProvider(kRoundId)).value!.phase,
+        VotingSessionPhase.delegated,
+      );
+      expect(rust.delegationRecoveryModes, [
+        rust_api.ApiChainRecoveryMode.statusOnly,
+        rust_api.ApiChainRecoveryMode.statusOnly,
+      ]);
+      expect(rust.chainSubmissionPassHandles, hasLength(2));
+      expect(
+        rust.chainSubmissionPassHandles.every((handle) => handle.isDisposed),
+        isTrue,
+      );
+      expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
+      expect(rust.storedDelegationTxHashes, ['0:submitted-delegation-tx']);
+      expect(rust.storedVanPositions, ['0:12']);
+    },
+  );
 
   test('delegation submits chain payload and stores recovery state', () async {
     final rust = FakeVotingRustApi();
@@ -2094,30 +2153,33 @@ void main() {
     expect(rust.storedVanPositions, ['0:12']);
   });
 
-  test('tracking schedules a status-only follow-up without exact recovery', () async {
-    final rust = FakeVotingRustApi(
-      delegationChainResultsByBundle: {
-        0: [
-          _trackingChainSubmission(txHash: 'candidate-tx'),
-          _confirmedChainSubmission(txHash: 'candidate-tx', vanPosition: 12),
-        ],
-      },
-    );
-    final container = _sessionContainer(rust: rust);
-    addTearDown(container.dispose);
+  test(
+    'tracking schedules a status-only follow-up without exact recovery',
+    () async {
+      final rust = FakeVotingRustApi(
+        delegationChainResultsByBundle: {
+          0: [
+            _trackingChainSubmission(txHash: 'candidate-tx'),
+            _confirmedChainSubmission(txHash: 'candidate-tx', vanPosition: 12),
+          ],
+        },
+      );
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    await container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .delegatePendingBundles(mnemonic: kTestMnemonic);
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
 
-    expect(rust.delegationRecoveryModes, [
-      rust_api.ApiChainRecoveryMode.statusOnly,
-      rust_api.ApiChainRecoveryMode.statusOnly,
-    ]);
-    expect(rust.storedDelegationTxHashes, ['0:candidate-tx']);
-    expect(rust.storedVanPositions, ['0:12']);
-  });
+      expect(rust.delegationRecoveryModes, [
+        rust_api.ApiChainRecoveryMode.statusOnly,
+        rust_api.ApiChainRecoveryMode.statusOnly,
+      ]);
+      expect(rust.storedDelegationTxHashes, ['0:candidate-tx']);
+      expect(rust.storedVanPositions, ['0:12']);
+    },
+  );
 
   test('delegation surfaces a typed SDK rejection', () async {
     final rust = FakeVotingRustApi(
@@ -2138,6 +2200,31 @@ void main() {
     expect(state.error?.message, contains('delegation rejected by chain'));
     expect(rust.storedDelegationTxHashes, isEmpty);
   });
+
+  test(
+    'hashless delegation submission is terminal and is not retried',
+    () async {
+      final rust = FakeVotingRustApi(
+        delegationChainResultsByBundle: {
+          0: [_submittedWithoutHashChainSubmission()],
+        },
+      );
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.error);
+      expect(state.error?.message, contains('dispatch attempts exhausted'));
+      expect(rust.delegationRecoveryModes, [
+        rust_api.ApiChainRecoveryMode.statusOnly,
+      ]);
+    },
+  );
 
   test('delegation proves at most three bundles concurrently', () async {
     final proofGate = Completer<void>();
@@ -2183,6 +2270,70 @@ void main() {
       '2:delegation-tx',
       '3:delegation-tx',
     ]);
+  });
+
+  test('ready delegation bundles submit before a slow sibling proof', () async {
+    final slowProof = Completer<void>();
+    final rust = FakeVotingRustApi(
+      bundleCount: 3,
+      delegationProofGatesByBundle: {2: slowProof},
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(bundleCount: 3),
+    );
+    final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final delegation = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundles(mnemonic: kTestMnemonic);
+    while (!rust.delegationChainAdvanceStartedBundles.contains(0) ||
+        !rust.delegationChainAdvanceStartedBundles.contains(1)) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(rust.delegationChainAdvanceStartedBundles, containsAll([0, 1]));
+    expect(
+      rust.storedDelegationTxHashes,
+      containsAll(['0:delegation-tx', '1:delegation-tx']),
+    );
+    expect(rust.storedDelegationTxHashes, isNot(contains('2:delegation-tx')));
+
+    slowProof.complete();
+    await delegation;
+    expect(rust.storedDelegationTxHashes, contains('2:delegation-tx'));
+  });
+
+  test('delegation submissions run concurrently across bundles', () async {
+    final submissionGates = {
+      for (var bundleIndex = 0; bundleIndex < 3; bundleIndex++)
+        bundleIndex: Completer<void>(),
+    };
+    final rust = FakeVotingRustApi(
+      bundleCount: 3,
+      delegationChainGatesByBundle: submissionGates,
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(bundleCount: 3),
+    );
+    final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final delegation = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundles(mnemonic: kTestMnemonic);
+    while (rust.delegationChainAdvanceStartedBundles.length < 3) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(rust.delegationChainAdvanceStartedBundles.toSet(), {0, 1, 2});
+    for (final gate in submissionGates.values) {
+      gate.complete();
+    }
+    await delegation;
+    expect(rust.storedDelegationTxHashes, hasLength(3));
   });
 
   test('delegation drains siblings and preserves successful bundles', () async {
@@ -5990,6 +6141,74 @@ void main() {
   });
 
   test(
+    'all independent bundle SDK episodes can await confirmation concurrently',
+    () async {
+      final blockedAdvances = {
+        for (var bundleIndex = 0; bundleIndex < 3; bundleIndex++)
+          '$bundleIndex:7': Completer<void>(),
+      };
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        bundleCount: 4,
+        voteChainGatesByKey: blockedAdvances,
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 4,
+          delegationTxHashes: [
+            for (var bundleIndex = 0; bundleIndex < 4; bundleIndex++)
+              rust_frb_types.DelegationRecoveryView(
+                bundleIndex: bundleIndex,
+                phase: VotingWorkflowPhase.submittedDelegation,
+                txHash: 'delegation-$bundleIndex',
+                vanLeafPosition: null,
+              ),
+          ],
+          votes: [
+            for (var bundleIndex = 0; bundleIndex < 4; bundleIndex++)
+              vote(bundleIndex: bundleIndex, proposalId: 7),
+          ],
+        ),
+      );
+      final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+      addTearDown(container.dispose);
+      addTearDown(() {
+        for (final gate in blockedAdvances.values) {
+          if (!gate.isCompleted) gate.complete();
+        }
+      });
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final cast = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(draftVotes: _singleProposalDrafts());
+
+      for (var attempt = 0; attempt < 200; attempt++) {
+        if (rust.voteChainAdvanceStartedKeys.contains('3:7')) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(
+        rust.voteChainAdvanceStartedKeys,
+        contains('3:7'),
+        reason: 'bundle 3 must start while bundles 0-2 remain in SDK tracking',
+      );
+
+      for (final gate in blockedAdvances.values) {
+        gate.complete();
+      }
+      await cast;
+
+      expect(rust.voteChainAdvanceStartedKeys.toSet(), {
+        '0:7',
+        '1:7',
+        '2:7',
+        '3:7',
+      });
+    },
+  );
+
+  test(
     'fake rejects a second vote proved against an already-spent VAN',
     () async {
       // Pins the regression guard itself: if this stops throwing, the
@@ -6685,17 +6904,20 @@ void main() {
         [0, 1],
       );
       expect(rust.voteCommitmentKeys, ['0:8', '1:8']);
-      expect(rust.operationLog, containsAllInOrder([
-        'recover_vote:1:7',
-        'mark_vote_submitted:1:7',
-        'mark_vote_confirmed:1:7',
-        'recover_vote:1:7',
-        'prepare_share_delivery:1:7',
-        'submit_prepared_shares:1:7',
-        'record_share:1:7:0',
-        'record_share:1:7:1',
-        'build_vote:0:8',
-      ]));
+      expect(
+        rust.operationLog,
+        containsAllInOrder([
+          'recover_vote:1:7',
+          'mark_vote_submitted:1:7',
+          'mark_vote_confirmed:1:7',
+          'recover_vote:1:7',
+          'prepare_share_delivery:1:7',
+          'submit_prepared_shares:1:7',
+          'record_share:1:7:0',
+          'record_share:1:7:1',
+          'build_vote:0:8',
+        ]),
+      );
     },
   );
 
@@ -9033,8 +9255,12 @@ void main() {
       [42, 43, 44],
     ]);
 
-    backgroundProofGate.complete();
     await precomputeFuture;
+    final proofPrecomputeFuture = notifier.precomputeSnapshotBundles(
+      accountUuid: 'account-1',
+    );
+    backgroundProofGate.complete();
+    await proofPrecomputeFuture;
   });
 
   test(
@@ -9169,6 +9395,7 @@ void main() {
       final notifier = container.read(votingSessionProvider(kRoundId).notifier);
       await notifier.refreshEligibleWeight();
       await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+      await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
 
       expect(rust.setupCalls, 0);
       expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
@@ -9219,9 +9446,11 @@ void main() {
     final notifier = container.read(votingSessionProvider(kRoundId).notifier);
     await notifier.refreshEligibleWeight();
     await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
 
     expect(rust.generateVotingHotkeyCalls, 1);
     expect(rust.backgroundDelegationProofCalls, [0, 1, 2]);
+    expect(rust.maxConcurrentBackgroundDelegationProofs, 3);
     expect(rust.backgroundDelegationProofHotkeys, [
       [42, 43, 44],
       [42, 43, 44],
@@ -9277,10 +9506,53 @@ void main() {
 
     await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
     await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
 
     expect(rust.snapshotBundlePrecomputeAccounts, ['account-1', 'account-1']);
     expect(rust.backgroundDelegationProofCalls, [0, 0]);
   });
+
+  test(
+    'foreground delegation does not wait for a slow sibling background proof',
+    () async {
+      final slowProof = Completer<void>();
+      final rust = FakeVotingRustApi(
+        bundleCount: 3,
+        backgroundDelegationProofGatesByBundle: {2: slowProof},
+        delegationProofGatesByBundle: {2: slowProof},
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(bundleCount: 3),
+      );
+      final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+      while (rust.backgroundDelegationProofCalls.length < 3) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      final delegation = notifier.delegatePendingBundles(
+        mnemonic: kTestMnemonic,
+      );
+      while (!rust.delegationChainAdvanceStartedBundles.contains(0) ||
+          !rust.delegationChainAdvanceStartedBundles.contains(1)) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(rust.maxConcurrentBackgroundDelegationProofs, 3);
+      expect(rust.delegationChainAdvanceStartedBundles, containsAll([0, 1]));
+      expect(rust.delegationChainAdvanceStartedBundles, isNot(contains(2)));
+
+      slowProof.complete();
+      await delegation;
+      expect(rust.delegationChainAdvanceStartedBundles, contains(2));
+    },
+  );
 
   test('snapshot bundle precompute skips after account switch', () async {
     final rust = FakeVotingRustApi();
@@ -11005,6 +11277,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   final ballotIntents = <String>[];
   final roundPlanProposalIds = <List<int>>[];
   final Object? setBallotIntentError;
+  final Object? roundPlanError;
   var _roundPlanCallCount = 0;
 
   FakeVotingRecoveryApi({
@@ -11012,6 +11285,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     this.roundPlan,
     this.roundPlanSequence,
     this.setBallotIntentError,
+    this.roundPlanError,
   });
 
   Future<void> addSentServers({
@@ -11046,6 +11320,8 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required List<int> proposalIds,
   }) async {
     roundPlanProposalIds.add(List<int>.from(proposalIds));
+    final error = roundPlanError;
+    if (error != null) throw error;
     final sequence = roundPlanSequence;
     late final rust_wire.RoundPlanView plan;
     if (sequence != null && sequence.isNotEmpty) {
@@ -11851,6 +12127,24 @@ rust_api.ApiChainSubmissionCallResult _rejectedChainSubmission(String message) {
   );
 }
 
+rust_api.ApiChainSubmissionCallResult _submittedWithoutHashChainSubmission() {
+  return rust_api.ApiChainSubmissionCallResult(
+    outcome: rust_api.ApiChainSubmissionOutcome(
+      kind: rust_api.ApiChainSubmissionOutcomeKind.submittedWithoutHash,
+      confirmationSource: null,
+      transactionHash: null,
+      candidateTransactionHash: null,
+      finalVanPosition: null,
+      voteCommitmentPositions: frb.Uint64List(0),
+      diagnostic: const rust_api.ApiChainDiagnostic(
+        kind: rust_api.ApiChainDiagnosticKind.ambiguousAttemptsExhausted,
+        message: 'dispatch attempts exhausted',
+      ),
+    ),
+    failure: null,
+  );
+}
+
 class FakeVotingRustApi implements VotingRustApi {
   FakeVotingRustApi({
     this.setupDelay = Duration.zero,
@@ -11863,6 +12157,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.precomputeGate,
     this.failPrecompute = false,
     this.backgroundDelegationProofGate,
+    this.backgroundDelegationProofGatesByBundle = const {},
     this.backgroundDelegationProofErrorsByBundle = const {},
     this.bundleCount = 1,
     this.setupEligibleWeight = 100,
@@ -11875,11 +12170,13 @@ class FakeVotingRustApi implements VotingRustApi {
     this.keystoneDelegationStreamErrorsByBundle = const {},
     this.onDelegationConfirmed,
     this.delegationProofGate,
+    this.delegationProofGatesByBundle = const {},
     this.keystoneDelegationProofGate,
     this.delegationWireJsonGate,
     this.voteCommitmentGate,
     this.voteWireJsonGate,
     this.delegationChainResultsByBundle = const {},
+    this.delegationChainGatesByBundle = const {},
     this.voteChainResultsByKey = const {},
     this.voteChainGatesByKey = const {},
     this.voteCommitmentErrorsByKey = const {},
@@ -11913,6 +12210,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Completer<void>? precomputeGate;
   final bool failPrecompute;
   final Completer<void>? backgroundDelegationProofGate;
+  final Map<int, Completer<void>> backgroundDelegationProofGatesByBundle;
   final Map<int, Object> backgroundDelegationProofErrorsByBundle;
   final int bundleCount;
   int setupEligibleWeight;
@@ -11926,12 +12224,14 @@ class FakeVotingRustApi implements VotingRustApi {
   final void Function(int bundleIndex, String txHash, int vanLeafPosition)?
   onDelegationConfirmed;
   final Completer<void>? delegationProofGate;
+  final Map<int, Completer<void>> delegationProofGatesByBundle;
   final Completer<void>? keystoneDelegationProofGate;
   final Completer<void>? delegationWireJsonGate;
   final Completer<void>? voteCommitmentGate;
   final Completer<void>? voteWireJsonGate;
   final Map<int, List<rust_api.ApiChainSubmissionCallResult>>
   delegationChainResultsByBundle;
+  final Map<int, Completer<void>> delegationChainGatesByBundle;
   final Map<String, List<rust_api.ApiChainSubmissionCallResult>>
   voteChainResultsByKey;
   final Map<String, Completer<void>> voteChainGatesByKey;
@@ -11962,6 +12262,8 @@ class FakeVotingRustApi implements VotingRustApi {
   int maxConcurrentSetups = 0;
   int _activeDelegationProofs = 0;
   int maxConcurrentDelegationProofs = 0;
+  int _activeBackgroundDelegationProofs = 0;
+  int maxConcurrentBackgroundDelegationProofs = 0;
   int _activeKeystoneDelegationProofs = 0;
   int maxConcurrentKeystoneDelegationProofs = 0;
   int _activeVoteCommitments = 0;
@@ -12040,6 +12342,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Map<int, int> _delegationChainResultIndexes = {};
   final Map<String, int> _voteChainResultIndexes = {};
   final List<rust_api.ApiChainRecoveryMode> delegationRecoveryModes = [];
+  final delegationChainAdvanceStartedBundles = <int>[];
   final List<rust_api.ApiChainRecoveryMode> voteRecoveryModes = [];
   final voteChainAdvanceStartedKeys = <String>[];
   final chainSubmissionPassHandles = <_FakeChainSubmissionPassHandle>[];
@@ -12070,6 +12373,8 @@ class FakeVotingRustApi implements VotingRustApi {
     required rust_api.ApiChainRecoveryMode recoveryMode,
   }) async {
     delegationRecoveryModes.add(recoveryMode);
+    delegationChainAdvanceStartedBundles.add(bundleIndex);
+    await delegationChainGatesByBundle[bundleIndex]?.future;
     final gate = delegationWireJsonGate;
     if (gate != null) {
       if (!delegationWireJsonStarted.isCompleted) {
@@ -12324,6 +12629,7 @@ class FakeVotingRustApi implements VotingRustApi {
         signedDelegationPayload: null,
       );
       await delegationProofGate?.future;
+      await delegationProofGatesByBundle[bundleIndex]?.future;
       yield rust_api.ApiDelegationProofEvent(
         phase: 'result',
         proofProgress: null,
@@ -12639,10 +12945,21 @@ class FakeVotingRustApi implements VotingRustApi {
     if (!backgroundDelegationProofStarted.isCompleted) {
       backgroundDelegationProofStarted.complete();
     }
-    await backgroundDelegationProofGate?.future;
-    final error = backgroundDelegationProofErrorsByBundle[bundleIndex];
-    if (error != null) throw error;
-    return true;
+    _activeBackgroundDelegationProofs++;
+    if (_activeBackgroundDelegationProofs >
+        maxConcurrentBackgroundDelegationProofs) {
+      maxConcurrentBackgroundDelegationProofs =
+          _activeBackgroundDelegationProofs;
+    }
+    try {
+      await backgroundDelegationProofGate?.future;
+      await backgroundDelegationProofGatesByBundle[bundleIndex]?.future;
+      final error = backgroundDelegationProofErrorsByBundle[bundleIndex];
+      if (error != null) throw error;
+      return true;
+    } finally {
+      _activeBackgroundDelegationProofs--;
+    }
   }
 
   @override

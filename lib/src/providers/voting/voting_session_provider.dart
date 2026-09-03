@@ -85,7 +85,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _operation = Future.value();
   final String _roundId;
+  // Foreground delegation may await only this snapshot/PIR-plan stage. Proof
+  // warm-up has a separate lifecycle so one slow sibling cannot gate bundles
+  // whose SDK-coordinated proofs are already ready.
   final Map<String, Future<void>> _snapshotBundlePrecomputes = {};
+  final Map<String, Future<void>> _backgroundDelegationProofPrecomputes = {};
   final Set<String> _completedSnapshotBundlePrecomputes = {};
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
@@ -209,6 +213,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _isDisposed = true;
       _advanceSessionGeneration();
       _snapshotBundlePrecomputes.clear();
+      _backgroundDelegationProofPrecomputes.clear();
       _completedSnapshotBundlePrecomputes.clear();
       _hotkeyEnsures.clear();
       _shareTrackingTimer?.cancel();
@@ -300,6 +305,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _sessionIsHardwareAccount = null;
     _currentContext = null;
     _snapshotBundlePrecomputes.clear();
+    _backgroundDelegationProofPrecomputes.clear();
     _completedSnapshotBundlePrecomputes.clear();
     _hotkeyEnsures.clear();
     _shareTrackingTimer?.cancel();
@@ -379,6 +385,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final key = _snapshotBundlePrecomputeKey(accountUuid);
     final existing = _snapshotBundlePrecomputes[key];
     if (existing != null) return existing;
+    final existingProofs = _backgroundDelegationProofPrecomputes[key];
+    if (existingProofs != null) return existingProofs;
     if (_completedSnapshotBundlePrecomputes.contains(key)) {
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute skipped '
@@ -482,13 +490,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final pirEndpoint = await _resolvePirEndpoint(context);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     if (pirEndpoint == null) return;
-    final completed = await _runSnapshotBundlePrecompute(
+    final bundleCount = await _runSnapshotBundlePrecompute(
       context: context,
       pirEndpoint: pirEndpoint,
     );
-    if (completed && _isCurrentPrecomputeContext(context, accountUuid)) {
-      _completedSnapshotBundlePrecomputes.add(precomputeKey);
+    if (bundleCount == null ||
+        !_isCurrentPrecomputeContext(context, accountUuid)) {
+      return;
     }
+    if (context.isHardwareAccount || bundleCount == 0) {
+      _completedSnapshotBundlePrecomputes.add(precomputeKey);
+      return;
+    }
+    _startBackgroundDelegationProofPrecompute(
+      context: context,
+      pirEndpoint: pirEndpoint,
+      bundleCount: bundleCount,
+      precomputeKey: precomputeKey,
+    );
   }
 
   Future<void> delegatePendingBundles({String? mnemonic}) {
@@ -1781,10 +1800,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final proofElapsed = <VotingVoteKey, Duration>{};
     final failures = <_VoteWaveFailure>[];
     final proofPool = _AsyncPermitPool(_votingWorkConcurrency);
-    // Each SDK call owns its full reservation, POST, tracking, and recovery
-    // episode. Keep only the app's ordinary work bound here; the SDK's
-    // coordinator is the sole authority for chain-submission concurrency.
-    final broadcastPool = _AsyncPermitPool(_votingWorkConcurrency);
+    // Do not put the SDK's complete reservation, POST, tracking, and recovery
+    // episode behind the proof-work limit. Different bundles own independent
+    // VAN chains and may wait for confirmation concurrently; only proposals
+    // within one bundle are serialized by runBundleChain.
     final sharePool = _AsyncPermitPool(_votingWorkConcurrency);
     final shareOutcomeFutures =
         <VotingVoteKey, Future<_BundleWorkOutcome<void>>>{};
@@ -1988,13 +2007,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           try {
             _throwIfContextStale(context, 'vote-chain-submit');
             final submitTimer = Stopwatch()..start();
-            await broadcastPool.run(() async {
-              // The context can become stale while this bundle waits for a
-              // work permit. Revalidate after acquiring it so a queued bundle
-              // cannot start an SDK episode for an inactive session.
-              _throwIfContextStale(context, 'vote-chain-submit-acquired');
-              await _submitVoteCommitments(context, commitments);
-            });
+            await _submitVoteCommitments(context, commitments);
             _logVoteTiming(
               'bundle=$bundleIndex proposal=${key.proposalId} '
               'submit-confirm elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
@@ -2223,6 +2236,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             }
             exactRecoveryAttempted = true;
             continue;
+          case rust_api.ApiChainSubmissionOutcomeKind.submittedWithoutHash:
+            throw _ChainSubmissionIndeterminate(outcome);
           case rust_api.ApiChainSubmissionOutcomeKind.rejected:
             throw _ChainSubmissionRejected(outcome);
           case rust_api.ApiChainSubmissionOutcomeKind.cancelled:
@@ -2292,9 +2307,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required String logLabel,
   }) async {
     final batchTimer = Stopwatch()..start();
-    final proofWallTimer = Stopwatch()..start();
-    final timers = <int, Stopwatch>{};
     final proofElapsed = <int, Duration>{};
+    final proofCompletedAt = <int, Duration>{};
 
     void publishProgress(VotingSessionProgress update) {
       final bundleIndex = update.bundleIndex;
@@ -2310,27 +2324,63 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
     }
 
-    final proofOutcomes = await _runBoundedBundleWork(
+    final pipelineOutcomes = await _runBoundedBundleWork(
       bundleIndexes,
       concurrency: _votingWorkConcurrency,
       work: (bundleIndex) async {
         _throwIfContextStale(context, '$logLabel-proof-start');
-        final timer = Stopwatch()..start();
-        timers[bundleIndex] = timer;
+        final pipelineTimer = Stopwatch()..start();
+        final proofTimer = Stopwatch()..start();
         debugPrint(
           '[zcash] Voting: $logLabel delegation bundle start '
           'round=${context.round.roundId} bundle=$bundleIndex',
         );
+        late final rust_wire.SignedDelegationPayloadView submission;
         try {
-          final submission = await prove(bundleIndex, publishProgress);
+          submission = await prove(bundleIndex, publishProgress);
           debugPrint(
             '[zcash] Voting: $logLabel delegation proof stream completed '
             'round=${context.round.roundId} bundle=$bundleIndex '
-            'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+            'elapsed=${formatElapsedSeconds(proofTimer.elapsed)}',
           );
-          return submission;
+        } catch (error) {
+          throw _DelegationBundleFailure(
+            bundleIndex: bundleIndex,
+            stage: 'proof',
+            error: error,
+          );
         } finally {
-          proofElapsed[bundleIndex] = timer.elapsed;
+          proofElapsed[bundleIndex] = proofTimer.elapsed;
+          proofCompletedAt[bundleIndex] = batchTimer.elapsed;
+        }
+
+        try {
+          _throwIfContextStale(context, '$logLabel-delegation-submit');
+          final outcome = await _submitDelegation(
+            context: context,
+            bundleIndex: bundleIndex,
+            submission: submission,
+          );
+          publishProgress(
+            VotingSessionProgress(
+              phase: 'confirmed',
+              bundleIndex: bundleIndex,
+              message: outcome.transactionHash,
+            ),
+          );
+          debugPrint(
+            '[zcash] Voting: $logLabel delegation bundle completed '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'leafIndex=${outcome.finalVanPosition} '
+            'total=${formatElapsedSeconds(pipelineTimer.elapsed)}',
+          );
+          return bundleIndex;
+        } catch (error) {
+          throw _DelegationBundleFailure(
+            bundleIndex: bundleIndex,
+            stage: 'submission',
+            error: error,
+          );
         }
       },
     );
@@ -2338,78 +2388,41 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       Duration.zero,
       (total, elapsed) => total + elapsed,
     );
+    final proofWallDuration = proofCompletedAt.values.fold<Duration>(
+      Duration.zero,
+      (longest, elapsed) => elapsed > longest ? elapsed : longest,
+    );
     debugPrint(
-      '[zcash] Voting: $logLabel delegation proof fan-in '
+      '[zcash] Voting: $logLabel delegation proof batch '
       'round=${context.round.roundId} bundles=${bundleIndexes.length} '
       'concurrency=$_votingWorkConcurrency '
-      'wall=${formatElapsedSeconds(proofWallTimer.elapsed)} '
+      'wall=${formatElapsedSeconds(proofWallDuration)} '
       'serialEquivalent=${formatElapsedSeconds(serialProofDuration)}',
     );
 
-    _throwIfContextStale(context, '$logLabel-proof-fan-in');
     final failures = <_DelegationBundleFailure>[];
     final completed = <int>{};
-
-    // Advance each semantic generation serially. The SDK owns reservation,
-    // dispatch classification, status polling, recovery, and confirmation.
     for (final bundleIndex in bundleIndexes) {
-      final proof = proofOutcomes[bundleIndex]!;
-      if (proof.error != null) {
+      final pipeline = pipelineOutcomes[bundleIndex]!;
+      final error = pipeline.error;
+      if (error != null) {
+        final failure = error is _DelegationBundleFailure
+            ? error
+            : _DelegationBundleFailure(
+                bundleIndex: bundleIndex,
+                stage: 'pipeline',
+                error: error,
+              );
         publishProgress(
           VotingSessionProgress(
             phase: 'failed',
             bundleIndex: bundleIndex,
-            message: proof.error.toString(),
+            message: failure.error.toString(),
           ),
         );
-        failures.add(
-          _DelegationBundleFailure(
-            bundleIndex: bundleIndex,
-            stage: 'proof',
-            error: proof.error!,
-          ),
-        );
-        continue;
-      }
-      try {
-        _throwIfContextStale(context, '$logLabel-delegation-submit');
-        final outcome = await _submitDelegation(
-          context: context,
-          bundleIndex: bundleIndex,
-          submission: proof.value!,
-        );
-        completed.add(bundleIndex);
-        publishProgress(
-          VotingSessionProgress(
-            phase: 'confirmed',
-            bundleIndex: bundleIndex,
-            message: outcome.transactionHash,
-          ),
-        );
-        debugPrint(
-          '[zcash] Voting: $logLabel delegation bundle completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'leafIndex=${outcome.finalVanPosition} '
-          'total=${formatElapsedSeconds(timers[bundleIndex]!.elapsed)}',
-        );
-      } catch (error) {
-        publishProgress(
-          VotingSessionProgress(
-            phase: 'failed',
-            bundleIndex: bundleIndex,
-            message: error.toString(),
-          ),
-        );
-        failures.add(
-          _DelegationBundleFailure(
-            bundleIndex: bundleIndex,
-            stage: 'submission',
-            error: error,
-          ),
-        );
-        if (error is _StaleVotingSessionAction) {
-          break;
-        }
+        failures.add(failure);
+      } else {
+        completed.add(pipeline.value!);
       }
     }
 
@@ -2902,7 +2915,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<bool> _runSnapshotBundlePrecompute({
+  Future<int?> _runSnapshotBundlePrecompute({
     required _VotingSessionContext context,
     required Uri pirEndpoint,
   }) async {
@@ -2932,11 +2945,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'cached=$cached fetched=$fetched '
         'elapsed=${formatElapsedSeconds(timer.elapsed)}',
       );
-      return await _runBackgroundDelegationProofPrecompute(
-        context: context,
-        pirEndpoint: pirEndpoint,
-        bundleCount: result.bundleCount,
-      );
+      return result.bundleCount;
     } catch (e) {
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute failed '
@@ -2944,8 +2953,62 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
         'reason=cache-miss',
       );
-      return false;
+      return null;
     }
+  }
+
+  /// Starts drainable, best-effort proof warm-up without extending the
+  /// foreground snapshot-readiness barrier.
+  void _startBackgroundDelegationProofPrecompute({
+    required _VotingSessionContext context,
+    required Uri pirEndpoint,
+    required int bundleCount,
+    required String precomputeKey,
+  }) {
+    if (_backgroundDelegationProofPrecomputes.containsKey(precomputeKey)) {
+      return;
+    }
+    final releaseBackgroundWork = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork(accountUuid: context.accountUuid);
+    if (releaseBackgroundWork == null) {
+      debugPrint(
+        '[zcash] Voting: background delegation proof skipped '
+        'round=${context.round.roundId} reason=wallet-mutation-in-progress',
+      );
+      return;
+    }
+
+    late final Future<void> proofPrecompute;
+    proofPrecompute = () async {
+      try {
+        final completed = await _runBackgroundDelegationProofPrecompute(
+          context: context,
+          pirEndpoint: pirEndpoint,
+          bundleCount: bundleCount,
+        );
+        if (completed &&
+            _isCurrentPrecomputeContext(context, context.accountUuid)) {
+          _completedSnapshotBundlePrecomputes.add(precomputeKey);
+        }
+      } catch (error) {
+        debugPrint(
+          '[zcash] Voting: background delegation proof pass failed '
+          'round=${context.round.roundId} error=$error '
+          'reason=foreground-fallback',
+        );
+      } finally {
+        if (identical(
+          _backgroundDelegationProofPrecomputes[precomputeKey],
+          proofPrecompute,
+        )) {
+          _backgroundDelegationProofPrecomputes.remove(precomputeKey);
+        }
+        releaseBackgroundWork();
+      }
+    }();
+    _backgroundDelegationProofPrecomputes[precomputeKey] = proofPrecompute;
+    unawaited(proofPrecompute);
   }
 
   Future<bool> _runBackgroundDelegationProofPrecompute({
@@ -2985,40 +3048,43 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       pirServerUrls.add(_transportUrl(pirEndpoint));
     }
 
-    var allProofsReady = true;
-    for (var bundleIndex = 0; bundleIndex < bundleCount; bundleIndex++) {
-      if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
-        return false;
-      }
-      final timer = Stopwatch()..start();
-      debugPrint(
-        '[zcash] Voting: background delegation proof start '
-        'round=${context.round.roundId} bundle=$bundleIndex',
-      );
-      try {
-        final generated = await rust.precomputeDelegationProof(
-          ctx: _apiRoundContext(context),
-          pirServerUrls: pirServerUrls,
-          storedHotkeySecret: storedHotkeySecret,
-          bundleIndex: bundleIndex,
-        );
+    final outcomes = await _runBoundedBundleWork(
+      List<int>.generate(bundleCount, (bundleIndex) => bundleIndex),
+      concurrency: _votingWorkConcurrency,
+      work: (bundleIndex) async {
+        if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+          throw const _StaleVotingSessionAction();
+        }
+        final timer = Stopwatch()..start();
         debugPrint(
-          '[zcash] Voting: background delegation proof completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'result=${generated ? 'generated' : 'reused'} '
-          'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+          '[zcash] Voting: background delegation proof start '
+          'round=${context.round.roundId} bundle=$bundleIndex',
         );
-      } catch (e) {
-        debugPrint(
-          '[zcash] Voting: background delegation proof failed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
-          'reason=foreground-fallback',
-        );
-        allProofsReady = false;
-      }
-    }
-    return allProofsReady;
+        try {
+          final generated = await rust.precomputeDelegationProof(
+            ctx: _apiRoundContext(context),
+            pirServerUrls: pirServerUrls,
+            storedHotkeySecret: storedHotkeySecret,
+            bundleIndex: bundleIndex,
+          );
+          debugPrint(
+            '[zcash] Voting: background delegation proof completed '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'result=${generated ? 'generated' : 'reused'} '
+            'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+          );
+        } catch (e) {
+          debugPrint(
+            '[zcash] Voting: background delegation proof failed '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
+            'reason=foreground-fallback',
+          );
+          rethrow;
+        }
+      },
+    );
+    return outcomes.values.every((outcome) => outcome.error == null);
   }
 
   Future<void> _awaitSnapshotBundlePrecomputeIfRunning(
@@ -4528,6 +4594,17 @@ class _ChainSubmissionRejected implements Exception {
   @override
   String toString() =>
       outcome.diagnostic?.message ?? 'Chain submission was rejected.';
+}
+
+class _ChainSubmissionIndeterminate implements Exception {
+  const _ChainSubmissionIndeterminate(this.outcome);
+
+  final rust_api.ApiChainSubmissionOutcome outcome;
+
+  @override
+  String toString() =>
+      outcome.diagnostic?.message ??
+      'Submission may have reached the chain, but no transaction hash was returned. Do not retry it.';
 }
 
 class _ChainSubmissionCancelled implements Exception {

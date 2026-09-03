@@ -163,6 +163,7 @@ class MobileVotingStatusScreen extends StatelessWidget {
           MobileVotingSubmissionProgressScreen(
             activeStep: presentation.activeStep,
             activeStepProgress: presentation.activeStepProgress,
+            activeStepDetail: presentation.activeStepDetail,
           ),
       contentWrapper: (_, content) =>
           MobileVotingScaffold(title: 'Submit vote', child: content),

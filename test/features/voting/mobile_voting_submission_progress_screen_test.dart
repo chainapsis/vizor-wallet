@@ -134,6 +134,28 @@ void main() {
     );
   });
 
+  testWidgets('shows detail for a coordinated in-progress proof', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        const MobileVotingSubmissionProgressScreen(
+          activeStep: VotingSubmissionProgressStep.delegating,
+          activeStepDetail:
+              'Reusing an in-progress proof — 1 of 3 bundles complete',
+        ),
+      ),
+    );
+
+    expect(
+      find.text('Reusing an in-progress proof — 1 of 3 bundles complete'),
+      findsOneWidget,
+    );
+    expect(find.text('Don’t leave this window.'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('keeps the proof notice visible on a compact mobile height', (
     tester,
   ) async {
