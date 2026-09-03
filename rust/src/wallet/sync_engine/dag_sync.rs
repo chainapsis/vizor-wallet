@@ -42,11 +42,19 @@ use super::memo_pir::{
 };
 use super::{SyncError, WalletDatabase};
 
-/// Passes per sync run. A spend found in one pass needs the next pass to read
-/// its transaction, and change found there needs another for its own checks,
-/// so a chain of self-spends resolves one link per pass; the rest waits for
-/// the next run.
-const MAX_PASSES_PER_RUN: usize = 8;
+/// Passes per run while nothing else is pending. A spend found in one pass
+/// needs the next pass to read its transaction, and change found there needs
+/// another for its own checks, so a chain of self-spends resolves one link
+/// per pass; the rest waits for the next run.
+const MAX_PASSES_AT_TIP: usize = 8;
+
+/// Passes per run while compact scanning still has work: the pass runs after
+/// every batch anyway, and one envelope per batch keeps the scan moving.
+const MAX_PASSES_WHILE_SCANNING: usize = 1;
+
+/// Queries of one envelope in flight at once. The envelope is fixed either
+/// way; concurrency changes only how long a pass takes.
+const QUERY_CONCURRENCY: usize = 8;
 
 #[derive(Default)]
 struct PassStats {
@@ -175,14 +183,20 @@ impl DagSync {
         // Compact scanning marks spends inside every range it scans, so a
         // spend check is only informative while a range below the anchor is
         // still pending (a restore in progress).
-        let scan_pending_below_anchor = db
+        let scan_ranges = db
             .suggest_scan_ranges()
-            .map_err(|error| SyncError::db(format!("suggest_scan_ranges: {error}")))?
+            .map_err(|error| SyncError::db(format!("suggest_scan_ranges: {error}")))?;
+        let scan_pending = scan_ranges
             .iter()
-            .any(|range| {
-                range.priority() > ScanPriority::Scanned
-                    && range.block_range().start < anchor_height
-            });
+            .any(|range| range.priority() > ScanPriority::Scanned);
+        let scan_pending_below_anchor = scan_ranges.iter().any(|range| {
+            range.priority() > ScanPriority::Scanned && range.block_range().start < anchor_height
+        });
+        let max_passes = if scan_pending {
+            MAX_PASSES_WHILE_SCANNING
+        } else {
+            MAX_PASSES_AT_TIP
+        };
         let tree_size = manifest.ironwood_tree_size;
 
         let mut planner = DagSyncPlanner::new();
@@ -221,6 +235,7 @@ impl DagSync {
                 &mut stats,
                 tree_size,
                 scan_pending_below_anchor,
+                max_passes,
             )
             .await;
         // On failure the generation most likely aged out of retention
@@ -255,31 +270,16 @@ impl DagSync {
         stats: &mut PassStats,
         tree_size: u64,
         scan_pending_below_anchor: bool,
+        max_passes: usize,
     ) -> Result<(), SyncError> {
-        while planner.pending() != (0, 0, 0) && stats.passes < MAX_PASSES_PER_RUN {
+        while planner.pending() != (0, 0, 0) && stats.passes < max_passes {
             stats.passes += 1;
             let queries = planner.plan(sessions).map_err(client_protocol_error)?;
             let mut found_spends = HashMap::new();
             let mut witness_parts: HashMap<u64, (Option<Vec<u8>>, Option<Vec<u8>>)> =
                 HashMap::new();
 
-            for PlannedQuery {
-                table,
-                target,
-                query,
-            } in queries
-            {
-                let session = table_session(sessions, table);
-                let response = routed_request(
-                    Method::POST,
-                    &endpoint_path(endpoint, &format!("/v1/{}/query", table.as_str()))?,
-                    query.request_body().to_vec(),
-                    MAX_PIR_BODY_BYTES,
-                )
-                .await?;
-                let row = session
-                    .decode(query, &response)
-                    .map_err(client_protocol_error)?;
+            for (table, target, row) in issue_envelope(endpoint, sessions, queries).await? {
                 match target {
                     Target::Dummy => {}
                     Target::Nullifier(nullifier) => {
@@ -396,6 +396,38 @@ fn enqueue_notes<A>(
             planner.enqueue_witness(u64::from(note.position));
         }
     }
+}
+
+/// Sends every query of one envelope, at most `QUERY_CONCURRENCY` in flight,
+/// and returns the decoded rows in issue order. The request set is fixed by
+/// the planner before anything is sent, so concurrency does not change what
+/// the server observes beyond timing.
+async fn issue_envelope(
+    endpoint: &str,
+    sessions: &TableSessions,
+    queries: Vec<PlannedQuery>,
+) -> Result<Vec<(DatabaseId, Target, PirRow)>, SyncError> {
+    use futures::stream::{StreamExt, TryStreamExt};
+
+    let responses: Vec<Vec<u8>> = futures::stream::iter(queries.iter().map(|planned| {
+        let url = endpoint_path(endpoint, &format!("/v1/{}/query", planned.table.as_str()));
+        let body = planned.query.request_body().to_vec();
+        async move { routed_request(Method::POST, &url?, body, MAX_PIR_BODY_BYTES).await }
+    }))
+    .buffered(QUERY_CONCURRENCY)
+    .try_collect()
+    .await?;
+
+    queries
+        .into_iter()
+        .zip(responses)
+        .map(|(planned, response)| {
+            let row = table_session(sessions, planned.table)
+                .decode(planned.query, &response)
+                .map_err(client_protocol_error)?;
+            Ok((planned.table, planned.target, row))
+        })
+        .collect()
 }
 
 fn table_session(sessions: &TableSessions, table: DatabaseId) -> &zakura_pir_memo::PirSession {
