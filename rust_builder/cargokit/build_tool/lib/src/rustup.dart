@@ -64,13 +64,13 @@ class Rustup {
 
     final res = runCommand("rustup", ['toolchain', 'list']);
 
-    // To list all non-custom toolchains, we need to filter out lines that
-    // don't start with "stable", "beta", or "nightly".
-    Pattern nonCustom = RegExp(r"^(stable|beta|nightly)");
+    // Vizor's opt-in release override can select an exact Rust toolchain.
+    Pattern supported =
+        RegExp(r"^(stable|beta|nightly|[0-9]+\.[0-9]+\.[0-9]+)(-|$)");
     final lines = res.stdout
         .toString()
         .split('\n')
-        .where((e) => e.isNotEmpty && e.startsWith(nonCustom))
+        .where((e) => e.isNotEmpty && e.startsWith(supported))
         .map(extractToolchainName)
         .toList(growable: true);
 

@@ -9,17 +9,46 @@ val androidKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
 val androidKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
 val androidKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
 val androidKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+val allowUnsignedAndroidRelease =
+    System.getenv("ANDROID_ALLOW_UNSIGNED_RELEASE") == "true"
 val hasAndroidReleaseSigning = listOf(
     androidKeystorePath,
     androidKeystorePassword,
     androidKeyAlias,
     androidKeyPassword,
 ).all { !it.isNullOrBlank() }
+val hasAnyAndroidReleaseSigning = listOf(
+    androidKeystorePath,
+    androidKeystorePassword,
+    androidKeyAlias,
+    androidKeyPassword,
+).any { !it.isNullOrBlank() }
+
+if (hasAnyAndroidReleaseSigning && !hasAndroidReleaseSigning) {
+    throw GradleException(
+        "Android release signing is only partially configured. Set all of " +
+            "ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, " +
+            "and ANDROID_KEY_PASSWORD, or unset all four."
+    )
+}
+
+if (
+    allowUnsignedAndroidRelease &&
+    System.getenv("ANDROID_REQUIRE_RELEASE_SIGNING") == "true"
+) {
+    throw GradleException(
+        "ANDROID_ALLOW_UNSIGNED_RELEASE and ANDROID_REQUIRE_RELEASE_SIGNING " +
+            "cannot both be true."
+    )
+}
 
 android {
     namespace = "com.keplr.vizor"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Keep the Android toolchain explicit so upstream and F-Droid builds do
+    // not silently diverge when Flutter changes its defaults.
+    compileSdk = 36
+    buildToolsVersion = "36.0.0"
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -35,8 +64,8 @@ android {
         applicationId = "com.keplr.vizor"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = 24
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -57,6 +86,10 @@ android {
         release {
             signingConfig = if (hasAndroidReleaseSigning) {
                 signingConfigs.getByName("release")
+            } else if (allowUnsignedAndroidRelease) {
+                // F-Droid builds an unsigned APK, verifies it against the
+                // upstream-signed APK, and publishes the upstream signature.
+                null
             } else {
                 if (
                     System.getenv("CI") == "true" ||
