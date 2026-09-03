@@ -105,8 +105,11 @@ void main() {
       );
 
       final update = await fetchLinuxUpdate(
-        clientFactory: () =>
-            NetworkHttpClient(torDesired: () => true, torBridge: bridge),
+        clientFactory: () => NetworkHttpClient(
+          torDesired: () => true,
+          torBootstrapping: () => false,
+          torBridge: bridge,
+        ),
         repository: 'chainapsis/vizor-wallet',
         flavor: 'mainnet',
         arch: 'x86_64',
@@ -133,8 +136,11 @@ void main() {
       final bridge = _LinuxUpdateTorBridge(waitForever: true);
 
       final update = await fetchLinuxUpdate(
-        clientFactory: () =>
-            NetworkHttpClient(torDesired: () => true, torBridge: bridge),
+        clientFactory: () => NetworkHttpClient(
+          torDesired: () => true,
+          torBootstrapping: () => false,
+          torBridge: bridge,
+        ),
         repository: 'chainapsis/vizor-wallet',
         flavor: 'mainnet',
         arch: 'x86_64',

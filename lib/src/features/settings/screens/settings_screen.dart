@@ -18,8 +18,10 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../core/config/zcash_explorer.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
+import '../../../providers/zcash_explorer_provider.dart';
 import '../../../providers/windows_update_provider.dart';
 import '../../accounts/widgets/account_modal_card.dart';
 import '../../accounts/widgets/account_edit_modal.dart';
@@ -174,7 +176,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final activeAccountIsHardware =
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
-    final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
+    final endpoint = ref.watch(rpcEndpointProvider);
+    final endpointLabel = endpoint.hostPort;
+    final explorerLabel = explorerSettingsLabel(
+      ref.watch(zcashExplorerProvider),
+      networkName: endpoint.networkName,
+    );
     final updateState = defaultTargetPlatform == TargetPlatform.windows
         ? ref.watch(windowsUpdateProvider)
         : null;
@@ -201,6 +208,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
+                explorerLabel: explorerLabel,
                 themeLabel: _themeLabel(themeMode),
                 updateLabel: updateState == null
                     ? null
@@ -210,6 +218,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onChangePassword: () =>
                     context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
+                onExplorer: () => context.push('/settings/explorer'),
                 onAccountName: hasActiveAccount
                     ? () => _showModal(_SettingsModalType.accountName)
                     : null,
@@ -319,12 +328,14 @@ class _SettingsPane extends StatelessWidget {
     required this.profilePictureLabel,
     required this.activeAccountIsHardware,
     required this.endpointLabel,
+    required this.explorerLabel,
     required this.themeLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onViewingKey,
     required this.onChangePassword,
     required this.onEndpoint,
+    required this.onExplorer,
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onAddressBook,
@@ -341,12 +352,14 @@ class _SettingsPane extends StatelessWidget {
   final String profilePictureLabel;
   final bool activeAccountIsHardware;
   final String endpointLabel;
+  final String explorerLabel;
   final String themeLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onViewingKey;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
+  final VoidCallback onExplorer;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onAddressBook;
@@ -386,12 +399,14 @@ class _SettingsPane extends StatelessWidget {
                 profilePictureLabel: profilePictureLabel,
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
+                explorerLabel: explorerLabel,
                 themeLabel: themeLabel,
                 updateLabel: updateLabel,
                 onSeedPhrase: onSeedPhrase,
                 onViewingKey: onViewingKey,
                 onChangePassword: onChangePassword,
                 onEndpoint: onEndpoint,
+                onExplorer: onExplorer,
                 onAccountName: onAccountName,
                 onProfilePicture: onProfilePicture,
                 onAddressBook: onAddressBook,
@@ -418,12 +433,14 @@ class _SettingsList extends StatelessWidget {
     required this.profilePictureLabel,
     required this.activeAccountIsHardware,
     required this.endpointLabel,
+    required this.explorerLabel,
     required this.themeLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onViewingKey,
     required this.onChangePassword,
     required this.onEndpoint,
+    required this.onExplorer,
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onAddressBook,
@@ -440,12 +457,14 @@ class _SettingsList extends StatelessWidget {
   final String profilePictureLabel;
   final bool activeAccountIsHardware;
   final String endpointLabel;
+  final String explorerLabel;
   final String themeLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onViewingKey;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
+  final VoidCallback onExplorer;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onAddressBook;
@@ -533,6 +552,12 @@ class _SettingsList extends StatelessWidget {
               label: 'Endpoint',
               value: endpointLabel,
               onTap: onEndpoint,
+            ),
+            _SettingsRow(
+              iconName: AppIcons.globe,
+              label: 'Explorer',
+              value: explorerLabel,
+              onTap: onExplorer,
             ),
             _SettingsRow(
               iconName: AppIcons.theme,

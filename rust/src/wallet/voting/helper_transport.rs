@@ -7,9 +7,9 @@
 //!
 //! The route is decided **per request** through
 //! [`network_privacy::tor_client_for_route`], the same primitive the wallet's
-//! gRPC path uses. That call fails closed while Tor is starting or broken, so a
-//! helper request never silently downgrades to the clearnet — a leaked voting
-//! request is worse than a failed one.
+//! gRPC path uses. That call waits out a bootstrap in flight and fails closed
+//! when Tor is broken, so a helper request never silently downgrades to the
+//! clearnet — a leaked voting request is worse than a failed one.
 //!
 //! Direct requests are made on a leased connection
 //! ([`network_privacy::DirectRouteLease`]) so that enabling Tor drains and then
@@ -82,16 +82,30 @@ impl VotingHelperTransport {
         body: Vec<u8>,
         timeout: Duration,
     ) -> Result<HelperResponse, HelperTransportError> {
-        // Fails closed: a broken or half-started Tor route is an error here,
-        // never a fallback to a direct connection.
-        match network_privacy::tor_client_for_route(true)
-            .map_err(HelperTransportError::Transport)?
-        {
+        // Fails closed: a broken Tor route is an error, never a direct fallback.
+        // A bootstrap in flight is waited out, but only inside this request's
+        // own budget; nothing has been sent yet, so running out is a timeout.
+        // Nothing has been dispatched when the wait runs out, so for a POST
+        // this is a definite failure the SDK may retry, not an ambiguous one.
+        let is_post = method == Method::POST;
+        let started = tokio::time::Instant::now();
+        let route = tokio::time::timeout(
+            timeout,
+            network_privacy::tor_client_for_route(true, || false),
+        )
+        .await
+        .map_err(|_| classify_tor_outer_timeout(is_post, false))?
+        .map_err(HelperTransportError::Transport)?;
+        let remaining = timeout.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return Err(classify_tor_outer_timeout(is_post, false));
+        }
+        match route {
             Some(tor) => {
-                self.request_over_tor(&tor, method, url, body, timeout)
+                self.request_over_tor(&tor, method, url, body, remaining)
                     .await
             }
-            None => request_direct(&self.direct, method, url, body, timeout).await,
+            None => request_direct(&self.direct, method, url, body, remaining).await,
         }
     }
 
@@ -513,5 +527,58 @@ mod tests {
 
         assert!(matches!(result, Err(HelperTransportError::Transport(_))));
         server.join().unwrap();
+    }
+
+    /// The route wait is charged to the same budget as the request. A
+    /// helper call sized for seconds must not sit behind a Tor bootstrap for
+    /// its full deadline; nothing has been dispatched, so it is a timeout.
+    #[tokio::test]
+    async fn route_resolution_is_bounded_by_the_request_timeout() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::begin_tor_enable();
+        let transport = VotingHelperTransport::new();
+
+        let started = std::time::Instant::now();
+        let result = transport
+            .request(
+                Method::GET,
+                "https://helper.invalid/shielded-vote/v1/status",
+                Vec::new(),
+                Duration::from_millis(200),
+            )
+            .await;
+        let waited = started.elapsed();
+
+        assert!(
+            matches!(result, Err(HelperTransportError::Timeout)),
+            "{result:?}"
+        );
+        assert!(
+            waited < Duration::from_secs(1),
+            "the route wait outlived the request timeout: {waited:?}"
+        );
+    }
+
+    /// A POST that never left the app is a definite pre-dispatch failure the
+    /// SDK may retry, not an ambiguous submission.
+    #[tokio::test]
+    async fn route_wait_expiry_before_a_post_is_safe_to_retry() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::begin_tor_enable();
+        let transport = VotingHelperTransport::new();
+
+        let result = transport
+            .request(
+                Method::POST,
+                "https://helper.invalid/shielded-vote/v1/shares",
+                br#"{"share_index":0}"#.to_vec(),
+                Duration::from_millis(200),
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(HelperTransportError::Transport(_))),
+            "{result:?}"
+        );
     }
 }

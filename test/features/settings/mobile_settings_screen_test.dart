@@ -821,6 +821,8 @@ void main() {
       find.text(defaultRpcEndpointConfig('main').hostPort),
       findsOneWidget,
     );
+    expect(find.text('Explorer'), findsOneWidget);
+    expect(find.text('CipherScan'), findsOneWidget);
   });
 
   testWidgets('Gift Cards settings row opens the feature', (tester) async {

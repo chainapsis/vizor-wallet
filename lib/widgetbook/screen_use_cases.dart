@@ -56,6 +56,7 @@ import '../src/features/onboarding/create/onboarding_split_view.dart';
 import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/features/settings/screens/settings_change_password_screen.dart';
 import '../src/features/settings/screens/settings_endpoint_screen.dart';
+import '../src/features/settings/screens/settings_explorer_screen.dart';
 import '../src/features/settings/screens/settings_screen.dart';
 import '../src/features/settings/screens/settings_seed_phrase_screen.dart';
 import '../src/features/settings/screens/settings_uninstall_screen.dart';
@@ -64,6 +65,7 @@ import '../src/features/wallet_link/models/wallet_link_models.dart';
 import '../src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
+import '../src/features/settings/screens/mobile/mobile_explorer_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
@@ -774,6 +776,67 @@ class _MobileSettingsFooterPreviewState
   }
 }
 
+class _MobileSettingsExplorerPreview extends StatefulWidget {
+  const _MobileSettingsExplorerPreview();
+
+  @override
+  State<_MobileSettingsExplorerPreview> createState() =>
+      _MobileSettingsExplorerPreviewState();
+}
+
+class _MobileSettingsExplorerPreviewState
+    extends State<_MobileSettingsExplorerPreview> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _scrollExplorerRowIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Element? found;
+      void visitor(Element element) {
+        if (found != null) return;
+        if (element.widget.key ==
+            const ValueKey('mobile_settings_explorer_row')) {
+          found = element;
+          return;
+        }
+        element.visitChildren(visitor);
+      }
+
+      context.visitChildElements(visitor);
+      final rowContext = found;
+      if (rowContext == null) return;
+      Scrollable.ensureVisible(rowContext, alignment: 0.4);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppMobileShell(
+      body: NotificationListener<ScrollMetricsNotification>(
+        onNotification: (_) {
+          _scrollExplorerRowIntoView();
+          return false;
+        },
+        child: PrimaryScrollController(
+          controller: _controller,
+          child: const MobileSettingsScreen(),
+        ),
+      ),
+      tabBar: AppMobileTabBar(
+        items: _mobileHomeTabItems,
+        currentIndex: 3,
+        onSelect: (_) {},
+      ),
+    );
+  }
+}
+
 Widget buildSettingsTorConnectingUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(
     const NetworkPrivacyState(
@@ -846,6 +909,77 @@ Widget buildSettingsEndpointUseCase(BuildContext context) {
   return _buildSettingsSubScreenUseCase(
     '/settings/endpoint',
     const SettingsEndpointScreen(),
+  );
+}
+
+Widget buildSettingsExplorerUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/explorer',
+    const SettingsExplorerScreen(),
+  );
+}
+
+Widget buildSettingsExplorerCustomUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/explorer',
+    const SettingsExplorerScreen(),
+    explorerUrlTemplate: 'https://zcashblockexplorer.com/tx/{txid}',
+  );
+}
+
+Widget buildMobileExplorerUseCase(BuildContext context) {
+  return _buildMobileExplorerUseCase();
+}
+
+Widget buildMobileExplorerCustomUseCase(BuildContext context) {
+  return _buildMobileExplorerUseCase(
+    explorerUrlTemplate: 'https://zcashblockexplorer.com/tx/{txid}',
+  );
+}
+
+Widget buildMobileSettingsExplorerUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+      ),
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      constrainToDesignSize: false,
+      child: IgnorePointer(child: _MobileSettingsExplorerPreview()),
+    ),
+  );
+}
+
+Widget _buildMobileExplorerUseCase({String explorerUrlTemplate = ''}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(
+          _accountsDesignState,
+          initialLocation: '/settings/explorer',
+          explorerUrlTemplate: explorerUrlTemplate,
+        ),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(_accountsDesignState.activeAccountUuid),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      child: IgnorePointer(child: MobileExplorerScreen()),
+    ),
   );
 }
 
@@ -966,11 +1100,19 @@ Widget _buildSettingsWalletLinkUseCase(WalletLinkState state) {
   );
 }
 
-Widget _buildSettingsSubScreenUseCase(String path, Widget screen) {
+Widget _buildSettingsSubScreenUseCase(
+  String path,
+  Widget screen, {
+  String explorerUrlTemplate = '',
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
-        _accountsBootstrap(_accountsDesignState, initialLocation: path),
+        _accountsBootstrap(
+          _accountsDesignState,
+          initialLocation: path,
+          explorerUrlTemplate: explorerUrlTemplate,
+        ),
       ),
       accountProvider.overrideWith(
         () => _PreviewAccountNotifier(_accountsDesignState),
@@ -1359,6 +1501,69 @@ Widget buildDesktopHomeSidebarSyncNetworkErrorUseCase(BuildContext context) {
       ),
     ),
     migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+  );
+}
+
+const _previewTorConnecting = NetworkPrivacyState(
+  torEnabled: true,
+  status: NetworkPrivacyConnectionStatus.connecting,
+);
+
+const _previewTorFailed = NetworkPrivacyState(
+  torEnabled: true,
+  status: NetworkPrivacyConnectionStatus.failed,
+  error: 'Preview Tor bootstrap failure',
+);
+
+/// A sync that has started but has not heard from Rust yet: the preflight
+/// window the status row spends on "Connecting to Tor…" while the first
+/// lightwalletd connection over Tor is still being made.
+SyncState _homeTorConnectingSyncState() => _homeSyncedState(
+  orchardBalance: BigInt.from(14_223_000_000),
+  recentTransactions: [_homeTx(1), _homeTx(2)],
+).copyWith(isSyncing: true, phase: kSyncPhasePreflight, percentage: 0.01);
+
+SyncState _homeTorFailedSyncState() =>
+    _homeSyncedState(
+      orchardBalance: BigInt.from(14_223_000_000),
+      recentTransactions: [_homeTx(1), _homeTx(2)],
+    ).copyWith(
+      failure: classifySyncFailure(
+        'network: network privacy blocked lightwalletd: Tor connection failed',
+      ),
+    );
+
+Widget buildDesktopHomeTorConnectingUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeTorConnectingSyncState(),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    networkPrivacyState: _previewTorConnecting,
+  );
+}
+
+Widget buildDesktopHomeTorFailedUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeTorFailedSyncState(),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    networkPrivacyState: _previewTorFailed,
+  );
+}
+
+Widget buildMobileHomeTorConnectingUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeTorConnectingSyncState(),
+    networkPrivacyState: _previewTorConnecting,
+  );
+}
+
+Widget buildMobileHomeTorFailedUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeTorFailedSyncState(),
+    networkPrivacyState: _previewTorFailed,
   );
 }
 
@@ -2070,6 +2275,7 @@ Widget _buildMobileHomeUseCase({
   bool showStaticIronwoodAnnouncement = false,
   bool constrainToPreviewFrame = true,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
+  NetworkPrivacyState? networkPrivacyState,
 }) {
   final harness = _MobileHomeHarness(
     openAccountsSheet: openAccountsSheet,
@@ -2077,6 +2283,10 @@ Widget _buildMobileHomeUseCase({
   );
   return ProviderScope(
     overrides: [
+      if (networkPrivacyState != null)
+        networkPrivacyProvider.overrideWith(
+          () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
+        ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
       receiveAddressServiceProvider.overrideWithValue(
@@ -2124,9 +2334,14 @@ Widget _buildDesktopHomeUseCase({
       const IronwoodMigrationAnnouncementState.hidden(),
   double zecUsdPrice = 1.20012,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
+  NetworkPrivacyState? networkPrivacyState,
 }) {
   return ProviderScope(
     overrides: [
+      if (networkPrivacyState != null)
+        networkPrivacyProvider.overrideWith(
+          () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
+        ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
       syncProvider.overrideWith(
@@ -2554,6 +2769,7 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
           '/settings/secret-passphrase',
           '/settings/change-password',
           '/settings/endpoint',
+          '/settings/explorer',
           '/settings/uninstall',
           '/address-book',
           '/about',
@@ -2882,6 +3098,11 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
           path: '/settings/endpoint',
           builder: (_, _) =>
               const _PreviewRoutePlaceholder(label: '/settings/endpoint'),
+        ),
+        GoRoute(
+          path: '/settings/explorer',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/settings/explorer'),
         ),
         GoRoute(
           path: '/migration',
@@ -3699,6 +3920,7 @@ const _mobileHomeTabItems = [
 AppBootstrapState _accountsBootstrap(
   AccountState accountState, {
   String initialLocation = '/accounts',
+  String explorerUrlTemplate = '',
 }) {
   return AppBootstrapState(
     initialLocation: initialLocation,
@@ -3706,6 +3928,7 @@ AppBootstrapState _accountsBootstrap(
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: 'main',
     rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+    explorerUrlTemplate: explorerUrlTemplate,
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,

@@ -28,6 +28,7 @@ const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
 const kPaymentLinkRecoveryStorageKey = 'zcash_gift_card_recovery_v1';
 const kPaymentLinkReceivedStorageKey = 'zcash_gift_card_received_v1';
+const kZcashExplorerUrlKey = 'zcash_explorer_url';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';

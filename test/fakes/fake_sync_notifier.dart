@@ -7,6 +7,7 @@ class FakeSyncNotifier extends SyncNotifier {
   final SyncState? initialState;
   int balanceRefreshes = 0;
   int accountSwitchRefreshes = 0;
+  int startSyncs = 0;
 
   @override
   Future<SyncState> build() async => initialState ?? SyncState();
@@ -17,6 +18,13 @@ class FakeSyncNotifier extends SyncNotifier {
 
   void setSyncState(SyncState nextState) {
     state = AsyncData(nextState);
+  }
+
+  /// Recorded rather than run: the real start reaches Rust, which is not
+  /// initialised under widget tests.
+  @override
+  void startSync({int? latestTipHeight}) {
+    startSyncs++;
   }
 
   @override

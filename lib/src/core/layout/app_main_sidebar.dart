@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../../../main.dart' show log;
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
+import '../../providers/network_privacy_provider.dart';
 import '../../providers/privacy_mode_provider.dart';
 import '../../providers/receive_address_provider.dart';
 import '../../providers/sync_display_progress_provider.dart';
@@ -412,6 +413,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     }
     final accountName = activeAccount?.name ?? 'Username';
     final sync = ref.watch(syncProvider).value ?? SyncState();
+    final networkPrivacy = ref.watch(networkPrivacyProvider);
     final accountSync = sync.scopedToAccount(activeAccountUuid);
     final isImporting =
         activeAccountUuid != null &&
@@ -590,7 +592,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     SizedBox(height: bottomSyncGap),
                     Align(
                       alignment: Alignment.centerLeft,
-                      child: _SidebarSyncStatus(sync: sync),
+                      child: _SidebarSyncStatus(
+                        sync: sync,
+                        networkPrivacy: networkPrivacy,
+                      ),
                     ),
                   ],
                 ),
@@ -1482,9 +1487,10 @@ class _SidebarPopoverHoverTargetState
 /// small shimmer/motion helpers are intentionally duplicated rather than
 /// shared so the two surfaces ship as independent changes.)
 class _SidebarSyncStatus extends ConsumerStatefulWidget {
-  const _SidebarSyncStatus({required this.sync});
+  const _SidebarSyncStatus({required this.sync, required this.networkPrivacy});
 
   final SyncState sync;
+  final NetworkPrivacyState networkPrivacy;
 
   @override
   ConsumerState<_SidebarSyncStatus> createState() => _SidebarSyncStatusState();
@@ -1508,7 +1514,11 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
   }
 
   bool get _isSyncing =>
-      SyncStatusLabel.from(widget.sync).kind == SyncStatusKind.syncing;
+      SyncStatusLabel.from(
+        widget.sync,
+        networkPrivacy: widget.networkPrivacy,
+      ).kind ==
+      SyncStatusKind.syncing;
 
   bool get _shouldAnimate {
     if (!_isSyncing) {
@@ -1556,6 +1566,7 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
     final status = SyncStatusLabel.from(
       widget.sync,
       displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
+      networkPrivacy: widget.networkPrivacy,
     );
     final syncedHeight =
         status.kind == SyncStatusKind.synced &&

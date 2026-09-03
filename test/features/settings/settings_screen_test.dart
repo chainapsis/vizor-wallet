@@ -49,6 +49,8 @@ void main() {
     await tester.pump();
 
     expect(_rowBackgroundColor(tester, 'Password'), isNull);
+    expect(find.text('Explorer'), findsOneWidget);
+    expect(find.text('CipherScan'), findsOneWidget);
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
