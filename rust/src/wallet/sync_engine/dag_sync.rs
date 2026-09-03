@@ -53,8 +53,9 @@ const MAX_PASSES_AT_TIP: usize = 8;
 const MAX_PASSES_WHILE_SCANNING: usize = 1;
 
 /// Queries of one envelope in flight at once. The envelope is fixed either
-/// way; concurrency changes only how long a pass takes.
-const QUERY_CONCURRENCY: usize = 8;
+/// way; concurrency changes only how long a pass takes. Matches the
+/// coordinator's per-table query slots so a burst is queued, not refused.
+const QUERY_CONCURRENCY: usize = 2;
 
 #[derive(Default)]
 struct PassStats {

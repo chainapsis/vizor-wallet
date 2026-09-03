@@ -181,6 +181,20 @@ pub(crate) fn elapsed() -> String {
         .unwrap_or_default()
 }
 
+/// PIR is an accelerator for privacy, not a dependency of the scan: a
+/// refused or malformed response leaves the work queued for a later pass,
+/// so it is logged and the sync goes on. Wallet database failures stay fatal.
+fn tolerate_pir_failure(pass: &str, result: Result<(), SyncError>) -> Result<(), SyncError> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(error @ (SyncError::Network(_) | SyncError::Parse(_))) => {
+            log::warn!("sync: {pass} deferred to a later pass: {error}");
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn planned_batch_end(
     base_batch_size: u32,
     start: BlockHeight,
@@ -2656,8 +2670,8 @@ async fn run_sync_impl(
     // DAG pass runs first: spends it finds and change it discovers never
     // need memo completion, and witnesses it stores make notes spendable
     // before the local shard tree completes.
-    Box::pin(dag_sync.run(&mut db)).await?;
-    Box::pin(memo_pir.run(&mut db)).await?;
+    tolerate_pir_failure("DAG pass", Box::pin(dag_sync.run(&mut db)).await)?;
+    tolerate_pir_failure("memo PIR", Box::pin(memo_pir.run(&mut db)).await)?;
     // While history is pending, scan the block holding the PIR generation's
     // anchor before it, so the DAG pass can authenticate the generation and
     // cover the history privately while the compact scan catches up.
@@ -3415,8 +3429,8 @@ async fn run_sync_impl(
         // independent position queue is populated atomically by compact scan.
         // Box this transport-heavy future so its Hyper/Tor connector state does
         // not inflate the already-large sync future exported through FRB.
-        Box::pin(dag_sync.run(&mut db)).await?;
-        Box::pin(memo_pir.run(&mut db)).await?;
+        tolerate_pir_failure("DAG pass", Box::pin(dag_sync.run(&mut db)).await)?;
+        tolerate_pir_failure("memo PIR", Box::pin(memo_pir.run(&mut db)).await)?;
 
         // Legacy enhancement remains available for status and transparent
         // history. On mainnet, transaction enhancement itself is deliberately
