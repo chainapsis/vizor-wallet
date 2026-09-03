@@ -22,6 +22,12 @@ const _contactRecipient = SendReviewContactRecipient(
   profilePictureId: 'pfp-02',
 );
 
+const _requestContactRecipient = SendReviewContactRecipient(
+  address: _sampleAddress,
+  name: 'Blue Door Coffee',
+  profilePictureId: 'pfp-02',
+);
+
 /// Review send — raw shielded address recipient. (Toggle the Widgetbook
 /// theme for dark mode.)
 Widget buildSendReviewAddressUseCase(BuildContext context) {
@@ -51,6 +57,46 @@ Widget buildSendReviewContactUseCase(BuildContext context) {
       recipient: _contactRecipient,
       memoText: _sampleMemo,
       feeText: '0.012 ZEC',
+      onConfirm: () {},
+      onCancel: () {},
+      onShowFullAddress: () {},
+      onExpandMemo: () {},
+      onFeeHelp: () {},
+    ),
+  );
+}
+
+/// Review payment request — the recipient is a saved contact. Only the row
+/// title changes; the link's own `label=` is never shown on the review.
+Widget buildSendReviewPaymentRequestContactUseCase(BuildContext context) {
+  return _SendReviewStatusFrame(
+    child: SendReviewContentView(
+      amountText: '0.50 ZEC',
+      fiatText: r'$35.00',
+      recipient: _requestContactRecipient,
+      memoText: _sampleMemo,
+      feeText: '0.012 ZEC',
+      isPaymentRequest: true,
+      onConfirm: () {},
+      onCancel: () {},
+      onShowFullAddress: () {},
+      onExpandMemo: () {},
+      onFeeHelp: () {},
+    ),
+  );
+}
+
+/// Review payment request — no address-book match, so the truncated address
+/// and its pool badge head the "Requested by" row.
+Widget buildSendReviewPaymentRequestAddressUseCase(BuildContext context) {
+  return _SendReviewStatusFrame(
+    child: SendReviewContentView(
+      amountText: '0.50 ZEC',
+      fiatText: r'$35.00',
+      recipient: _addressRecipient,
+      memoText: _sampleMemo,
+      feeText: '0.012 ZEC',
+      isPaymentRequest: true,
       onConfirm: () {},
       onCancel: () {},
       onShowFullAddress: () {},

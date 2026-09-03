@@ -1202,6 +1202,14 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Contact',
                       builder: buildSendReviewContactUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Payment request, contact',
+                      builder: buildSendReviewPaymentRequestContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Payment request, address',
+                      builder: buildSendReviewPaymentRequestAddressUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(

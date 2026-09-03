@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
+import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
@@ -121,7 +122,11 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Requested by'), findsOneWidget);
-    expect(find.text('Acme coffee'), findsOneWidget);
+    expect(
+      find.text('Acme coffee'),
+      findsNothing,
+      reason: "the link's own label never reaches the review",
+    );
     expect(
       find.byKey(const ValueKey('send_review_requested_amount')),
       findsOneWidget,
@@ -151,12 +156,52 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Review payment request'), findsOneWidget);
-    expect(find.text('Acme coffee'), findsOneWidget);
+    expect(find.text('Acme coffee'), findsNothing);
     expect(
       find.byKey(const ValueKey('send_review_requested_amount')),
       findsNothing,
       reason: 'nothing differs, so there is nothing to restate',
     );
+  });
+
+  // A labelled request paying someone the wallet already knows: the contact
+  // heads the row and the link's own name is nowhere on the screen.
+  testWidgets('a labelled request keeps the contact as the recipient', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(
+          addressType: 'unified',
+          isPaymentRequest: true,
+          requestedBy: 'Coinbase Support',
+        ),
+        addressBookRepository: _FakeAddressBookRepository([
+          _contact(
+            id: 'coffee',
+            label: 'Blue Door Coffee',
+            address: _longAddress,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final row = tester.widget<ReviewInfoRow>(
+      find.byKey(const ValueKey('send_review_requested_by')),
+    );
+    expect(row.label, 'Requested by');
+    expect(row.value, 'Blue Door Coffee');
+    expect(
+      find.descendant(
+        of: find.byType(SendReviewContentView),
+        matching: find.byType(AppProfilePicture),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Coinbase Support'), findsNothing);
+    expect(find.text('Label from link'), findsNothing);
   });
 
   testWidgets('renders the contact variant for an address-book match', (

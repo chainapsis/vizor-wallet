@@ -18,6 +18,7 @@ import '../src/features/send/models/send_prefill_args.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
 import '../src/features/send/screens/send_screen.dart';
 import '../src/features/send/services/send_proving_key_warmup.dart';
+import '../src/features/send/widgets/send_recipient_resolver.dart';
 import '../src/providers/account_models.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
@@ -79,6 +80,12 @@ Widget buildZip321MobileSendAmountStepUseCase(BuildContext context) {
 
 Widget buildZip321MobileSendRecipientFallbackUseCase(BuildContext context) {
   return const _MobileSendPrefillHarness(addressValidates: false);
+}
+
+// --- (e) mobile /send review answering a labelled payment request ----------
+
+Widget buildZip321MobileSendReviewRequestUseCase(BuildContext context) {
+  return const _MobileSendReviewRequestHarness();
 }
 
 // --- harnesses --------------------------------------------------------------
@@ -143,6 +150,7 @@ Widget _captureScope({required Widget child}) => ProviderScope(
     addressBookRepositoryProvider.overrideWithValue(
       const _CaptureAddressBookRepository(),
     ),
+    ownAccountAddressesProvider.overrideWith((ref) async => const {}),
   ],
   child: child,
 );
@@ -219,6 +227,39 @@ class _MobileSendPrefillHarness extends StatelessWidget {
           validateAddress: addressValidates
               ? _captureValidateAddress
               : _captureRejectAddress,
+          estimateFee: _captureEstimateFee,
+        ),
+      ),
+    );
+  }
+}
+
+/// The mobile review step of a send that answers a ZIP-321 request.
+///
+/// `initialReview` is the screen's own preview seam, so the whole step is
+/// reachable from a single static frame — no taps, storage, network, or Rust.
+class _MobileSendReviewRequestHarness extends StatelessWidget {
+  const _MobileSendReviewRequestHarness();
+
+  @override
+  Widget build(BuildContext context) {
+    return _captureScope(
+      child: SizedBox(
+        width: 393,
+        height: 852,
+        child: MobileSendScreen(
+          initialReview: true,
+          initialAmountReady: true,
+          refreshReviewFeeOnInit: false,
+          initialRecipient: _zip321Prefill.address,
+          initialAddressType: 'unified',
+          initialAmount: _zip321Prefill.amountText,
+          initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coinbase Support',
+          requestedAmountZatoshi: BigInt.from(50000000),
+          loadWalletDbPath: () async => '/tmp/capture.db',
+          validateAddress: _captureValidateAddress,
           estimateFee: _captureEstimateFee,
         ),
       ),

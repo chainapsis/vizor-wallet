@@ -11,6 +11,7 @@ import '../widgetbook/receive_use_cases.dart';
 import '../widgetbook/request_amount_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
+import '../widgetbook/send_review_status_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
@@ -805,6 +806,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'zip321-mobile-send-recipient-fallback',
     description: 'Mobile /send bounced back to the recipient step',
     builder: buildZip321MobileSendRecipientFallbackUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'send-review-payment-request-contact',
+    description:
+        'Desktop review of a payment request paying a saved contact, with '
+        'the link label on its own row',
+    builder: buildSendReviewPaymentRequestContactUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'send-review-payment-request-address',
+    description:
+        'Desktop review of a payment request paying a raw address, with the '
+        'link label on its own row',
+    builder: buildSendReviewPaymentRequestAddressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-review-payment-request',
+    description: 'Mobile review of a payment request with the link label row',
+    builder: buildZip321MobileSendReviewRequestUseCase,
     desktop: false,
     mobile: true,
   ),

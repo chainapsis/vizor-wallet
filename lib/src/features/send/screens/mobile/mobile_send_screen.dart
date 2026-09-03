@@ -431,7 +431,8 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   /// broadcast or the receipt changes.
   final bool isPaymentRequest;
 
-  /// Sanitised requester label; null renders the ordinary "To" row.
+  /// Sanitised `label=` from the request. Carried through to the proposal
+  /// and the status receipt; the review UI never renders it.
   final String? paymentRequestLabel;
 
   /// The amount the request asked for. Rendered under the review info block
@@ -2948,13 +2949,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           ),
                           const SizedBox(height: AppSpacing.xs),
                           _ReviewInfoRow(
+                            // A request only retitles the row. The headline
+                            // stays the recipient the wallet resolved, so an
+                            // unverified link label never stands in for the
+                            // identity being paid.
                             leading: recipient.buildReviewLeading(),
-                            title: _activePaymentRequestLabel == null
-                                ? 'To'
-                                : 'Requested by',
-                            headline:
-                                _activePaymentRequestLabel ??
-                                recipient.headline,
+                            title: _isAnsweringPaymentRequest
+                                ? 'Requested by'
+                                : 'To',
+                            headline: recipient.headline,
                             bottom: _ReviewAddressLine(
                               address: _compactReviewAddress(address),
                               addressType: _addressType,

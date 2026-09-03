@@ -460,6 +460,7 @@ Widget _reviewApp({
   bool isPaymentRequest = false,
   String? paymentRequestLabel,
   BigInt? requestedAmountZatoshi,
+  List<AddressBookContact> contacts = const [],
 }) {
   return ProviderScope(
     overrides: [
@@ -471,7 +472,7 @@ Widget _reviewApp({
       ),
       zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
-        _FakeAddressBookRepository(const []),
+        _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => const {}),
     ],
@@ -1165,7 +1166,11 @@ void main() {
 
     expect(find.text('Review payment request'), findsOneWidget);
     expect(find.text('Requested by'), findsOneWidget);
-    expect(find.text('Blue Door Coffee'), findsOneWidget);
+    expect(
+      find.text('Blue Door Coffee'),
+      findsNothing,
+      reason: "the link's own label is card-only, never on the review",
+    );
 
     // Editing the amount on the way keeps the framing and surfaces what was
     // asked for; the pushed amount page carries the request forward too.
@@ -1182,7 +1187,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Review payment request'), findsOneWidget);
-    expect(find.text('Blue Door Coffee'), findsOneWidget);
+    expect(find.text('Requested by'), findsOneWidget);
     expect(find.textContaining('1.5'), findsWidgets);
   });
 
@@ -3109,8 +3114,49 @@ void main() {
       expect(find.text('Review payment request'), findsOneWidget);
       expect(find.text('Review Send'), findsNothing);
       expect(find.text('Requested by'), findsOneWidget);
-      expect(find.text('Coffee shop'), findsOneWidget);
       expect(find.text('To'), findsNothing);
+      expect(
+        find.text('Shielded address'),
+        findsOneWidget,
+        reason: 'the recipient heads the row, not the link label',
+      );
+      expect(
+        find.text('Coffee shop'),
+        findsNothing,
+        reason: "the link's own label never reaches the review",
+      );
+      expect(find.text('Label from link'), findsNothing);
+    });
+
+    testWidgets('a saved contact heads the request row', (tester) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.5',
+          initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coinbase Support',
+          estimateFee: _fixedFeeEstimator,
+          contacts: [
+            AddressBookContact(
+              id: 'coffee',
+              label: 'Blue Door Coffee',
+              network: AddressBookNetwork.zcash,
+              address: _shieldedAddress,
+              profilePictureId: 'pfp-02',
+              createdAtMs: 0,
+              updatedAtMs: 0,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Requested by'), findsOneWidget);
+      expect(find.text('Blue Door Coffee'), findsOneWidget);
+      expect(find.text('Coinbase Support'), findsNothing);
+      expect(find.text('Label from link'), findsNothing);
     });
 
     testWidgets('states the requested amount only when it was edited', (
@@ -3148,7 +3194,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Requested'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_send_review_requested')),
+        findsNothing,
+      );
+      expect(find.textContaining('Requested 0.50'), findsNothing);
     });
 
     testWidgets('survives editing the amount but not the recipient', (

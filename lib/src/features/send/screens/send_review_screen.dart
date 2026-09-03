@@ -417,7 +417,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
               child: SendReviewContentView(
                 isPaymentRequest: widget.args.isPaymentRequest,
-                requestedByLabel: widget.args.requestedBy,
                 requestedAmountText: requestedAmountZatoshi == null
                     ? null
                     : _formatAmount(requestedAmountZatoshi),
