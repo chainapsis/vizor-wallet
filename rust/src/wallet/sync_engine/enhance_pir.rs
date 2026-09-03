@@ -14,7 +14,10 @@ use hyper::body::Incoming;
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use zakura_pir_enhance::client::record_in_row;
-use zakura_pir_enhance::{ClientError, EnhanceGeneration, QuerySession, RECORDS_PER_ROW};
+use zakura_pir_enhance::{
+    AcceptedAnchor, ClientError, ClientResourceLimits, EnhanceGeneration, EnhanceSession,
+    GenerationAcceptance, QuerySession, RECORDS_PER_ROW,
+};
 use zcash_client_backend::data_api::enhance_pir::{
     decrypt_and_store_ironwood_memo, recover_and_store_ironwood_outgoing, EnhancePirRead,
     EnhancePirSnapshotAnchor, EnhancePirSnapshotStatus, EnhancePirStoreResult,
@@ -31,9 +34,10 @@ const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 const ENDPOINT_ENV: &str = "VIZOR_ENHANCE_PIR_URL";
 const LEGACY_ENDPOINT_ENV: &str = "VIZOR_MEMO_PIR_URL";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-const MAX_GENERATION_BYTES: usize = 1024 * 1024;
-const MAX_PARAMS_BYTES: usize = 64 * 1024;
+const MAX_SESSION_BYTES: usize = 1024 * 1024;
 const MAX_PIR_BODY_BYTES: usize = 16 * 1024 * 1024;
+/// Bounds deterministic PIR setup work on the least-capable supported client.
+const MAX_LOGICAL_ROWS: u64 = 65_536;
 
 /// Per-sync cached PIR state. A validated immutable generation is reused while
 /// the wallet scans toward its anchor instead of redownloading parameters for
@@ -70,26 +74,21 @@ impl EnhancePirSync {
 
         if self.session.is_none() {
             let endpoint = self.endpoint.as_deref().expect("checked above");
-            self.session = Some(connect(endpoint).await?);
+            let init = fetch_init(endpoint).await?;
+            match snapshot_status(db, &init.generation)? {
+                EnhancePirSnapshotStatus::NotYetScanned => return Ok(()),
+                EnhancePirSnapshotStatus::Mismatch => return Err(snapshot_mismatch()),
+                EnhancePirSnapshotStatus::Accepted => {}
+            }
+            let acceptance = generation_acceptance(&init.generation)?;
+            self.session =
+                Some(QuerySession::from_session(init, &acceptance).map_err(client_protocol_error)?);
         }
         let session = self.session.as_ref().expect("initialized above");
         let generation = session.generation();
-        match db
-            .enhance_pir_snapshot_status(EnhancePirSnapshotAnchor {
-                height: BlockHeight::from(u32::try_from(generation.anchor_height).map_err(
-                    |_| SyncError::parse("Enhance PIR anchor height exceeds the supported range"),
-                )?),
-                block_hash: parse_display_block_hash(&generation.anchor_block_hash)?,
-                ironwood_tree_size: generation.ironwood_tree_size,
-            })
-            .map_err(|error| SyncError::db(format!("enhance_pir_snapshot_status: {error}")))?
-        {
+        match snapshot_status(db, generation)? {
             EnhancePirSnapshotStatus::NotYetScanned => return Ok(()),
-            EnhancePirSnapshotStatus::Mismatch => {
-                return Err(SyncError::parse(
-                    "Enhance PIR snapshot anchor disagrees with the locally scanned chain",
-                ));
-            }
+            EnhancePirSnapshotStatus::Mismatch => return Err(snapshot_mismatch()),
             EnhancePirSnapshotStatus::Accepted => {}
         }
 
@@ -170,45 +169,57 @@ impl EnhancePirSync {
     }
 }
 
-async fn connect(endpoint: &str) -> Result<QuerySession, SyncError> {
+async fn fetch_init(endpoint: &str) -> Result<EnhanceSession, SyncError> {
     if !endpoint.starts_with("https://") {
         return Err(SyncError::parse(
             "Enhance PIR endpoint must use an https:// URL",
         ));
     }
-    let generation = routed_request(
+    let session = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/v1/enhance/generation")?,
+        &endpoint_path(endpoint, "/v1/enhance/init")?,
         Vec::new(),
-        MAX_GENERATION_BYTES,
+        MAX_SESSION_BYTES,
     )
     .await?;
-    let generation: EnhanceGeneration = serde_json::from_slice(&generation)
-        .map_err(|error| SyncError::parse(format!("Enhance PIR generation JSON: {error}")))?;
-    let generation_id = generation.generation;
-    let params = routed_request(
-        Method::GET,
-        &endpoint_path(
-            endpoint,
-            &format!("/v1/enhance/params?generation={generation_id}"),
-        )?,
-        Vec::new(),
-        MAX_PARAMS_BYTES,
-    )
-    .await?;
-    let params = serde_json::from_slice(&params)
-        .map_err(|error| SyncError::parse(format!("Enhance PIR params JSON: {error}")))?;
-    let public_params = routed_request(
-        Method::GET,
-        &endpoint_path(
-            endpoint,
-            &format!("/v1/enhance/public-params?generation={generation_id}"),
-        )?,
-        Vec::new(),
-        MAX_PIR_BODY_BYTES,
-    )
-    .await?;
-    QuerySession::new(generation, params, &public_params).map_err(client_protocol_error)
+    let session: EnhanceSession = serde_json::from_slice(&session)
+        .map_err(|error| SyncError::parse(format!("Enhance PIR session JSON: {error}")))?;
+    Ok(session)
+}
+
+fn snapshot_status(
+    db: &WalletDatabase,
+    generation: &EnhanceGeneration,
+) -> Result<EnhancePirSnapshotStatus, SyncError> {
+    db.enhance_pir_snapshot_status(EnhancePirSnapshotAnchor {
+        height: BlockHeight::from(u32::try_from(generation.anchor_height).map_err(|_| {
+            SyncError::parse("Enhance PIR anchor height exceeds the supported range")
+        })?),
+        block_hash: parse_display_block_hash(&generation.anchor_block_hash)?,
+        ironwood_tree_size: generation.ironwood_tree_size,
+    })
+    .map_err(|error| SyncError::db(format!("enhance_pir_snapshot_status: {error}")))
+}
+
+fn generation_acceptance(
+    generation: &EnhanceGeneration,
+) -> Result<GenerationAcceptance, SyncError> {
+    let block_hash: [u8; 32] = hex::decode(&generation.anchor_block_hash)
+        .map_err(|error| SyncError::parse(format!("invalid Enhance PIR anchor hash: {error}")))?
+        .try_into()
+        .map_err(|_| SyncError::parse("invalid Enhance PIR anchor hash length"))?;
+    Ok(GenerationAcceptance::new(
+        AcceptedAnchor::new(
+            generation.anchor_height,
+            block_hash,
+            generation.ironwood_tree_size,
+        ),
+        ClientResourceLimits::new(MAX_LOGICAL_ROWS),
+    ))
+}
+
+fn snapshot_mismatch() -> SyncError {
+    SyncError::parse("Enhance PIR snapshot anchor disagrees with the locally scanned chain")
 }
 
 fn parse_display_block_hash(hash: &str) -> Result<BlockHash, SyncError> {
@@ -242,7 +253,8 @@ async fn routed_request(
     body_limit: usize,
 ) -> Result<Vec<u8>, SyncError> {
     if crate::network_privacy::is_tor_desired() {
-        let client = crate::network_privacy::tor_client_for_route(true)
+        let client = crate::network_privacy::tor_client_for_route(true, || false)
+            .await
             .map_err(|error| {
                 SyncError::net(format!("network privacy blocked Enhance PIR: {error}"))
             })?
@@ -379,10 +391,10 @@ mod tests {
 
     #[test]
     fn endpoint_requires_https() {
-        assert!(endpoint_path("http://example.test", "/v1/enhance/generation").is_err());
+        assert!(endpoint_path("http://example.test", "/v1/enhance/init").is_err());
         assert_eq!(
-            endpoint_path("https://example.test/", "/v1/enhance/generation").unwrap(),
-            "https://example.test/v1/enhance/generation"
+            endpoint_path("https://example.test/", "/v1/enhance/init").unwrap(),
+            "https://example.test/v1/enhance/init"
         );
     }
 
@@ -404,7 +416,9 @@ mod tests {
         // Production sync installs this while opening lightwalletd; this test
         // intentionally exercises the PIR transport in isolation.
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let session = connect(DEFAULT_MAINNET_ENDPOINT).await.unwrap();
+        let init = fetch_init(DEFAULT_MAINNET_ENDPOINT).await.unwrap();
+        let acceptance = generation_acceptance(&init.generation).unwrap();
+        let session = QuerySession::from_session(init, &acceptance).unwrap();
         let query = session.prepare_dummy().unwrap();
         let response = routed_request(
             Method::POST,
