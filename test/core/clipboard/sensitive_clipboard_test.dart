@@ -225,6 +225,82 @@ void main() {
     expect(clipboardText, isEmpty);
   });
 
+  test('an expiry clear waits for an in-flight copy write', () async {
+    final expirations = <Completer<void>>[];
+    final writeReached = Completer<void>();
+    final releaseWrite = Completer<void>();
+    var stallNextWrite = false;
+    var writeInFlight = false;
+    var clearedDuringWrite = false;
+    String? clipboardText;
+
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = false;
+    SensitiveClipboard.debugExpirationDelay = (_) {
+      final completer = Completer<void>();
+      expirations.add(completer);
+      return completer.future;
+    };
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            final text = (call.arguments as Map)['text'] as String;
+            // The platform applies writes in the order they arrive, so a clear
+            // issued while an earlier write is still in flight lands on top of
+            // it. Record that rather than the end state: whichever mock write
+            // happens to assign last would otherwise hide the race.
+            if (text.isEmpty && writeInFlight) {
+              clearedDuringWrite = true;
+            }
+            if (stallNextWrite) {
+              stallNextWrite = false;
+              writeInFlight = true;
+              writeReached.complete();
+              await releaseWrite.future;
+              writeInFlight = false;
+            }
+            clipboardText = text;
+          } else if (call.method == 'Clipboard.getData') {
+            return {'text': clipboardText};
+          }
+          return null;
+        });
+
+    await SensitiveClipboard.copyText('first secret');
+    expect(clipboardText, 'first secret');
+
+    // A second copy whose platform write has not come back yet. Its generation
+    // is therefore not installed, so the first secret's expiry still looks
+    // current to every check made before the write completes.
+    stallNextWrite = true;
+    final secondCopy = SensitiveClipboard.copyText('second secret');
+    await writeReached.future;
+
+    expirations.first.complete();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      clearedDuringWrite,
+      isFalse,
+      reason: 'a clear issued now would be applied after the copy it raced',
+    );
+
+    releaseWrite.complete();
+    await secondCopy;
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(clipboardText, 'second secret');
+
+    // The superseded expiry is spent, and the new secret is cleared by its own.
+    expirations.last.complete();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(clipboardText, isEmpty);
+  });
+
   test('an expired copy retries after background clipboard denial', () async {
     final expiration = Completer<void>();
     String? clipboardText;
