@@ -68,7 +68,8 @@ class VotingProposalDetailView extends ConsumerStatefulWidget {
 }
 
 class _VotingProposalDetailViewState
-    extends ConsumerState<VotingProposalDetailView> {
+    extends ConsumerState<VotingProposalDetailView>
+    with WidgetsBindingObserver {
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
@@ -77,10 +78,16 @@ class _VotingProposalDetailViewState
   Timer? _shareStatusDeadlineTimer;
   DateTime? _shareStatusDeadline;
   bool _shareStatusDeadlinePassed = false;
+  ProviderSubscription<AsyncValue<VotingSessionState>>?
+  _visibleRoundSubscription;
+  VotingSessionKey? _visibleShareRefreshKey;
+  ModalRoute<dynamic>? _modalRoute;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _listenForVisibleShareRefresh();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // Second entry point for the background nullifier-proof warm-up, for
@@ -99,14 +106,83 @@ class _VotingProposalDetailViewState
       _votingPowerPreparationKey = null;
       _snapshotBundlePrecomputeKey = null;
       _resultsRedirectRoundId = null;
+      _visibleShareRefreshKey = null;
+      _listenForVisibleShareRefresh();
       _clearShareStatusDeadline();
     }
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _modalRoute = ModalRoute.of(context);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    _visibleShareRefreshKey = null;
+    final session = ref.read(votingSessionProvider(widget.roundId)).value;
+    if (session != null) _maybeRefreshVisibleShareStatus(session);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _visibleRoundSubscription?.close();
     _shareStatusDeadlineTimer?.cancel();
     super.dispose();
+  }
+
+  void _listenForVisibleShareRefresh() {
+    _visibleRoundSubscription?.close();
+    _visibleRoundSubscription = ref.listenManual(
+      votingSessionProvider(widget.roundId),
+      (_, next) => next.whenData(_maybeRefreshVisibleShareStatus),
+      fireImmediately: true,
+    );
+  }
+
+  void _maybeRefreshVisibleShareStatus(VotingSessionState session) {
+    final accountUuid = session.accountUuid;
+    final round = session.round;
+    final hasUnconfirmedShares =
+        session.resumePlan?.unconfirmedShareDelegations.isNotEmpty ?? false;
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    if (!mounted ||
+        (lifecycleState != null &&
+            lifecycleState != AppLifecycleState.resumed) ||
+        (_modalRoute != null && !_modalRoute!.isCurrent) ||
+        accountUuid == null ||
+        round == null ||
+        !hasUnconfirmedShares ||
+        !shouldTrackPendingVotingShares(round)) {
+      return;
+    }
+
+    final key = VotingSessionKey(
+      roundId: widget.roundId,
+      accountUuid: accountUuid,
+    );
+    if (_visibleShareRefreshKey == key) return;
+    _visibleShareRefreshKey = key;
+    unawaited(_refreshVisibleShareStatus(key));
+  }
+
+  Future<void> _refreshVisibleShareStatus(VotingSessionKey key) async {
+    try {
+      await ref.read(votingSubmissionSessionProvider(key).future);
+      if (!mounted || _visibleShareRefreshKey != key) return;
+      await ref
+          .read(votingSubmissionSessionProvider(key).notifier)
+          .runShareTrackingPassIfStale();
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[zcash] Voting: visible share status refresh failed '
+        'round=${key.roundId} account=${key.accountUuid} '
+        'error=$error\n$stackTrace',
+      );
+    }
   }
 
   @override
@@ -118,25 +194,32 @@ class _VotingProposalDetailViewState
     final round = roundState?.round;
     final hasPersistedShares =
         roundState?.resumePlan?.shareDelegations.isNotEmpty ?? false;
-    final shareTrackingOpen =
+    final hasUnconfirmedShares =
+        roundState?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ?? false;
+    final cachedRoundTrackingOpen =
         round != null && shouldTrackPendingVotingShares(round);
-    _syncShareStatusDeadline(
-      shareTrackingOpen && hasPersistedShares ? round.voteEndTime : null,
-    );
-    final hasShareStatus =
-        shareTrackingOpen && !_shareStatusDeadlinePassed && hasPersistedShares;
-    final trackedSession = accountUuid == null || !hasShareStatus
+    final shouldWatchTrackedSession =
+        hasPersistedShares && (cachedRoundTrackingOpen || hasUnconfirmedShares);
+    final trackedSession = accountUuid == null || !shouldWatchTrackedSession
         ? null
         : ref.watch(
             votingSubmissionJobSessionProvider(
               VotingSessionKey(roundId: roundId, accountUuid: accountUuid),
             ),
           );
-    // The submission session owns background share tracking, but its other
-    // fields can carry an unrelated transient error. Keep the round session
-    // authoritative for this screen and project only the live share records.
-    final trackedShareDelegations =
-        trackedSession?.value?.resumePlan?.shareDelegations;
+    final trackedState = trackedSession?.value;
+    final trackedRound = trackedState?.round ?? round;
+    final shareTrackingOpen =
+        trackedRound != null && shouldTrackPendingVotingShares(trackedRound);
+    _syncShareStatusDeadline(
+      shareTrackingOpen && hasPersistedShares ? trackedRound.voteEndTime : null,
+    );
+    final hasShareStatus =
+        shareTrackingOpen && !_shareStatusDeadlinePassed && hasPersistedShares;
+    // The round session remains authoritative for the screen, while the
+    // submission session supplies live tracking metadata: share records plus
+    // the round status/deadline that controls their visibility.
+    final trackedShareDelegations = trackedState?.resumePlan?.shareDelegations;
     return roundSession.when(
       skipLoadingOnRefresh: false,
       loading: () => _stateView(const VotingPaneLoading()),
