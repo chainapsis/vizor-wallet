@@ -699,9 +699,9 @@ class _RequesterDetailsCard extends StatelessWidget {
     final labelStyle = AppTypography.bodyMediumStrong;
     final valueStyle = AppTypography.bodyMediumStrong;
     final summaryHeight =
-        (scaler.scale(labelStyle.fontSize! * labelStyle.height!) +
+        (scaler.scale(labelStyle.fontSize!) * labelStyle.height! +
                 AppSpacing.xxs +
-                scaler.scale(valueStyle.fontSize! * valueStyle.height!))
+                scaler.scale(valueStyle.fontSize!) * valueStyle.height!)
             .ceilToDouble() +
         1;
     final summaryRow = Row(
@@ -1324,7 +1324,7 @@ class _ProseRows extends StatelessWidget {
     // 46 on desktop, so it clears the 44px touch floor by itself instead
     // of padding an oversized box around the value line.
     final controlHeight =
-        (scaler.scale(valueStyle.fontSize! * valueStyle.height!) * 2 +
+        (scaler.scale(valueStyle.fontSize!) * valueStyle.height! * 2 +
                 AppSpacing.xxs)
             .ceilToDouble() +
         1;
