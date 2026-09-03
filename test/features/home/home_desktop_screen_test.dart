@@ -1114,6 +1114,47 @@ void main() {
     expect(privacy.retryCalls, 1);
   });
 
+  testWidgets('home desktop does not re-run a pending Tor disable from Retry', (
+    tester,
+  ) async {
+    // A disable that failed before the runtime switched leaves Tor running
+    // with a direct target pending; `retry()` would retry the disable, not
+    // the connection the notice is about, so Retry falls back to the sync.
+    final privacy = _FakeNetworkPrivacyNotifier(
+      initialState: const NetworkPrivacyState(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.failed,
+        targetTorEnabled: false,
+      ),
+    );
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        networkPrivacy: privacy,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          failure: classifySyncFailure(
+            'network: network privacy blocked lightwalletd: '
+            'Tor connection failed',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+
+    expect(privacy.retryCalls, 0);
+    final sync =
+        ProviderScope.containerOf(
+              tester.element(find.byType(HomeScreen)),
+            ).read(syncProvider.notifier)
+            as FakeSyncNotifier;
+    expect(sync.startSyncs, 1);
+  });
+
   testWidgets('home desktop scrolls notice and activity together', (
     tester,
   ) async {
@@ -1600,13 +1641,18 @@ class _FakeSwapProvider implements SwapProvider, SwapPricingProvider {
 /// Stands in for the live route so the notice's Retry can be observed
 /// without a Tor bootstrap: the real `retry()` would call `setTorEnabled`.
 class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  _FakeNetworkPrivacyNotifier({
+    this.initialState = const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.failed,
+    ),
+  });
+
+  final NetworkPrivacyState initialState;
   var retryCalls = 0;
 
   @override
-  NetworkPrivacyState build() => const NetworkPrivacyState(
-    torEnabled: true,
-    status: NetworkPrivacyConnectionStatus.failed,
-  );
+  NetworkPrivacyState build() => initialState;
 
   @override
   Future<void> retry() async {

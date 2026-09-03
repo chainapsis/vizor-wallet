@@ -50,8 +50,7 @@ class SyncStatusLabel {
       // (`torEnabled` true, target false); in both the sync state is the
       // truth. Only a runtime that is on Tor, and was not on its way off it,
       // has a Tor connection failure to report.
-      if (networkPrivacy.torEnabled &&
-          (networkPrivacy.targetTorEnabled ?? true) &&
+      if (networkPrivacy.torRouteRetained &&
           networkPrivacy.status == NetworkPrivacyConnectionStatus.failed) {
         return const SyncStatusLabel(
           kind: SyncStatusKind.failed,

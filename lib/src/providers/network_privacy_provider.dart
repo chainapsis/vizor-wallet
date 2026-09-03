@@ -56,6 +56,14 @@ class NetworkPrivacyState {
   final String? startupNotice;
 
   bool get isBusy => status == NetworkPrivacyConnectionStatus.connecting;
+
+  /// Whether the runtime is on Tor and not on its way off it. This is the
+  /// state in which a `failed` status means the Tor connection itself failed
+  /// and a retry means a new bootstrap: an enable that never reached the
+  /// runtime (`torEnabled` false, target true) and a disable that could not
+  /// quiesce (`torEnabled` true, target false) both publish `failed` while
+  /// the live route is something else.
+  bool get torRouteRetained => torEnabled && (targetTorEnabled ?? true);
 }
 
 abstract interface class NetworkPrivacyPreferenceStore {
