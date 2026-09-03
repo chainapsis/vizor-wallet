@@ -549,11 +549,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
+    final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     try {
+      // Gift Card claims first, and before the in-flight count below: that
+      // count is a one-shot read, and a claim that enters `submitting` right
+      // after it returned zero would revalidate its destination against an
+      // account this method is still several awaits away from deleting — and
+      // then broadcast to an address the wallet can no longer recover. Pausing
+      // new claims and draining the running ones here means a claim already
+      // under way finishes first, and the count then sees it and refuses the
+      // deletion. The pause holds until the wallet rows are gone.
+      await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain(accountUuid: uuid);
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
+      claimLifecycle.resume();
       shareTracking.resume(accountUuid: uuid);
       shareTracking.requestRestore();
     }

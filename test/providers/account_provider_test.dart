@@ -576,6 +576,66 @@ void main() {
     },
   );
 
+  test('account removal drains Gift Card claims before counting the in-flight '
+      'ones', () async {
+    final receivedStorage = _AccountTestPaymentLinkReceivedStorage();
+    final receivedStore = PaymentLinkReceivedStore(receivedStorage);
+    final link = VizorPaymentLink(
+      network: 'main',
+      address: 'u1accountremovaldrainpaymentlink',
+      amountZatoshi: BigInt.from(100000),
+      mnemonic: List.filled(24, 'abandon').join(' '),
+      birthdayHeight: 3_456_789,
+      label: 'Payment link',
+      createdAt: DateTime.utc(2026, 9, 3),
+    );
+    await receivedStore.saveReady(link);
+
+    // A claim into account-2 that was already submitting when the deletion
+    // started: it finishes while the drain waits, so the record turns
+    // `receiving` only after the count would have read zero.
+    final lifecycle = PaymentLinkClaimLifecycleRegistry();
+    var resumeCalls = 0;
+    lifecycle.register(
+      owner: Object(),
+      quiesceAndDrain: () async {
+        await receivedStore.markReceiving(
+          address: link.address,
+          destinationAccountUuid: 'account-2',
+          claimTxids: 'claim-txid',
+        );
+      },
+      resume: () => resumeCalls++,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
+        paymentLinkClaimLifecycleRegistryProvider.overrideWithValue(lifecycle),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    await expectLater(
+      container.read(accountProvider.notifier).removeAccount('account-2'),
+      throwsA(
+        isA<PaymentLinkInFlightClaimsException>().having(
+          (error) => error.count,
+          'count',
+          1,
+        ),
+      ),
+    );
+    expect(container.read(accountProvider).value!.accounts, hasLength(2));
+    expect(
+      _rustApi.deletedAccountUuids,
+      isEmpty,
+      reason: 'the account a finished claim paid into must not be deleted',
+    );
+    expect(resumeCalls, 1);
+  });
+
   test(
     'account removal is rejected while it owns an unshared Gift Card',
     () async {

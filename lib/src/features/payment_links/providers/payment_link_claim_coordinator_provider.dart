@@ -64,7 +64,9 @@ class PaymentLinkClaimCoordinator {
   Future<PaymentLinkClaimResult> submit(PaymentLinkClaimSession session) {
     if (_resetQuiesced) {
       return Future.error(
-        StateError('Gift Card claims are paused while the wallet resets.'),
+        StateError(
+          'Gift Card claims are paused while the wallet is being changed.',
+        ),
       );
     }
     final claimId = session.link.address;
