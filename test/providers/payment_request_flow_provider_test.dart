@@ -543,6 +543,37 @@ void main() {
     expect(api.discarded, [BigInt.one]);
   });
 
+  test('a mobile hand-back overtaken by a newer link opens nothing', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1first'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    final pending = notifier.reviewHandingBack();
+    await pumpEventQueue();
+    expect(container.read(paymentRequestFlowProvider), isNull);
+
+    // A second link lands while the first proposal is still being released.
+    notifier.present(request('u1second'), source: PaymentRequestSource.link);
+    api.discardGate!.complete();
+    await pumpEventQueue();
+
+    expect(
+      await pending,
+      isNull,
+      reason:
+          'the review of a request the user is no longer looking at must '
+          'not open under the newer card',
+    );
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.prefill.address, 'u1second');
+    expect(state.reviewArgs!.proposalId, BigInt.two);
+    expect(api.events, ['propose 1', 'discard 1', 'propose 2']);
+  });
+
   test('a memo a transparent recipient cannot receive leaves the '
       'card', () async {
     final api = _FakeSendApi(addressType: 'tex');

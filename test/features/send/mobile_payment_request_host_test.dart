@@ -220,4 +220,42 @@ void main() {
       expect(draft.requestedBy, 'Coffee shop');
     },
   );
+
+  testWidgets('a newer link during the hand-back keeps the wizard closed', (
+    tester,
+  ) async {
+    final harness = await _pumpHost(tester);
+    final notifier = harness.container.read(
+      paymentRequestFlowProvider.notifier,
+    );
+    notifier.present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    _discardGate = Completer<void>();
+    await tester.tap(find.byKey(const ValueKey('payment_request_continue')));
+    await tester.pumpAndSettle();
+
+    notifier.present(
+      const SendPrefillArgs(
+        id: 'payment-uri-2',
+        source: kPaymentUriPrefillSource,
+        address: _address,
+        amountText: '0.75',
+        label: 'Bakery',
+      ),
+      source: PaymentRequestSource.link,
+    );
+    _discardGate!.complete();
+    await tester.pumpAndSettle();
+
+    // The first proposal was still handed back, but its review never opened:
+    // the user is answering the second request now.
+    expect(_discarded, [BigInt.from(11)]);
+    expect(harness.location, '/home');
+    expect(harness.reviewExtra, isNull);
+    expect(
+      harness.container.read(paymentRequestFlowProvider)!.prefill.id,
+      'payment-uri-2',
+    );
+  });
 }

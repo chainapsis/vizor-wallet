@@ -265,18 +265,22 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// proposal: the review step re-quotes the fee as it mounts, and a quote
   /// asked while the card's proposal still holds its inputs can come back
   /// short for the very payment the card just found affordable. Returns null
-  /// when there is nothing to review — see [review].
+  /// when there is nothing to review — see [review] — and when a newer link
+  /// took the card over during the wait: the user is now looking at that
+  /// request, and opening the first one's review underneath it would leave a
+  /// send they did not choose behind the card they dismiss.
   Future<SendReviewArgs?> reviewHandingBack() async {
     final current = state;
     if (current == null || !current.canReview) return null;
     final proposal = current.proposal!;
-    _generation++;
+    final generation = ++_generation;
     _publish(null);
     final release = proposal.discard(
       logContext: 'PaymentRequest(mobile review handoff)',
     );
     _track(release);
     await release;
+    if (generation != _generation) return null;
     return proposal.reviewArgs;
   }
 
