@@ -16,6 +16,8 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -161,6 +163,10 @@ Future<ProviderContainer> _pumpUnlock(
         path: '/home',
         builder: (_, _) => const Scaffold(body: Text('home-route')),
       ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, _) => const Scaffold(body: Text('payment-links-route')),
+      ),
     ],
   );
   addTearDown(_router.dispose);
@@ -251,4 +257,60 @@ void main() {
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(container.read(paymentUriPrefillProvider), isNotNull);
   });
+
+  // Both link kinds can be waiting on the same unlock: a `zcash:` request
+  // parked in the prefill and a Gift Card queued in the intake. They do not
+  // compete for one destination — the Gift Card owns the route, the request
+  // card is an overlay that lands on top of it — so the unlock delivers both.
+  testWidgets('a Gift Card picks the destination and the request card lands '
+      'over it', (tester) async {
+    final container = await _pumpUnlock(tester);
+    container.read(paymentUriPrefillProvider.notifier).set(_parkedRequest);
+    expect(
+      container
+          .read(paymentLinkIntakeProvider.notifier)
+          .receive(_pendingPaymentLink.toUri().toString()),
+      PaymentLinkIntakeResult.accepted,
+    );
+
+    await _enterPasscode(tester, _passcode);
+
+    expect(_location(), '/payment-links');
+    final flow = container.read(paymentRequestFlowProvider);
+    expect(flow, isNotNull);
+    expect(flow!.prefill.id, _parkedRequest.id);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    expect(
+      container.read(paymentLinkIntakeProvider).pendingLink,
+      isNotNull,
+      reason: 'the Payment Links screen claims the Gift Card, not the unlock',
+    );
+  });
+
+  testWidgets('a Gift Card alone routes to the Payment Links screen', (
+    tester,
+  ) async {
+    final container = await _pumpUnlock(tester);
+    expect(
+      container
+          .read(paymentLinkIntakeProvider.notifier)
+          .receive(_pendingPaymentLink.toUri().toString()),
+      PaymentLinkIntakeResult.accepted,
+    );
+
+    await _enterPasscode(tester, _passcode);
+
+    expect(_location(), '/payment-links');
+    expect(container.read(paymentRequestFlowProvider), isNull);
+  });
 }
+
+final _pendingPaymentLink = VizorPaymentLink(
+  network: 'main',
+  address: 'u1pendinggiftcardaddress',
+  amountZatoshi: BigInt.from(100000000),
+  mnemonic: List.filled(24, 'abandon').join(' '),
+  birthdayHeight: 3000000,
+  label: 'Gift Card',
+  createdAt: DateTime.utc(2026, 8, 28),
+);

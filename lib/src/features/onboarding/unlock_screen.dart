@@ -1,15 +1,16 @@
-import 'package:flutter/material.dart' show Colors, Scaffold, ScaffoldMessenger;
+import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../main.dart' show log;
 import '../../core/navigation/payment_uri_unlock_claim.dart';
-import '../../core/navigation/payment_uri_notice.dart';
 import '../../core/security/password_policy.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/password_text_field.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
@@ -81,9 +82,9 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
         // and the drain policy inside the claim reads state those awaits
         // settle.
         final claimed = claimParkedPaymentUriAfterUnlock(ref);
-        // Captured before the go(): this screen is gone by the time a notice's
-        // post-frame callback runs, the app-level messenger is not.
-        final messenger = ScaffoldMessenger.maybeOf(context);
+        // Desktop has no Gift Card branch here: the desktop runners never
+        // register the HTTPS deeplink, so `/payment-links` is only ever
+        // reached from inside the app.
         context.go('/home');
         final pendingPrefill = claimed.prefill;
         final notice = claimed.notice;
@@ -93,12 +94,19 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
           ref
               .read(paymentRequestFlowProvider.notifier)
               .present(pendingPrefill, source: PaymentRequestSource.link);
-        } else if (notice != null && messenger != null) {
+        } else if (notice != null) {
           // The link outlived its park window while the user was finding their
           // password, or the wallet it landed on cannot open it. Landing on
           // /home with no card and no word is the one silent loss of something
-          // the user deliberately asked for.
-          showPaymentUriNotice(messenger, notice);
+          // the user deliberately asked for. The toast is asked for before this
+          // screen is torn down; `showAppToast` renders it on the app-level
+          // host, which outlives the navigation.
+          showAppToast(
+            context,
+            notice,
+            duration: const Duration(seconds: 4),
+            iconName: AppIcons.warning,
+          );
         }
       });
     } catch (e, st) {

@@ -6,7 +6,7 @@ import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 // The prefill parks one `zcash:` link at a time — latest wins, no queue — so
 // `set` is the only place that can tell a first arrival from one that
 // displaced a link the user has not seen yet. Its return value is what
-// `_PaymentUriLinkListener` uses to surface `kPaymentUriReplacedMessage`
+// `_IncomingLinkHost` uses to surface `kPaymentUriReplacedMessage`
 // instead of dropping the earlier link in silence.
 void main() {
   const first = SendPrefillArgs(

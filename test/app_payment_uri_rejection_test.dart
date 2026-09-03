@@ -8,11 +8,11 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
-import 'package:zcash_wallet/src/services/payment_uri_service.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 
@@ -67,16 +67,19 @@ void main() {
             container = ProviderScope.containerOf(context, listen: false);
             return MaterialApp.router(
               routerConfig: router,
-              builder: (context, child) => buildPaymentUriLinkListenerForTest(
-                router: router,
-                child: child!,
+              // AppTheme, because the host's notices render as app toasts.
+              builder: (context, child) => AppTheme(
+                data: AppThemeData.dark,
+                child: buildIncomingLinkHostForTest(
+                  router: router,
+                  child: child!,
+                ),
               ),
             );
           },
         ),
       ),
     );
-    await PaymentUriService.initialize();
     await tester.pumpAndSettle();
     return container;
   }
@@ -131,7 +134,8 @@ void main() {
 }
 
 /// Delivers [uris] the way the native runner does: an `onUris` method call on
-/// the payment-URI channel, which PaymentUriService forwards to its stream.
+/// the incoming-link channel, which `IncomingUriService` — installed by the
+/// host under test in its `initState` — forwards to its stream.
 Future<void> _pushNativeUris(WidgetTester tester, List<String> uris) async {
   const codec = StandardMethodCodec();
   await tester.binding.defaultBinaryMessenger.handlePlatformMessage(

@@ -1,7 +1,7 @@
 /// The post-unlock claim of a `zcash:` link parked while the wallet was locked.
 ///
 /// `decidePaymentUriDrain` deliberately answers `wait` on `/unlock`, so the
-/// unlock screens — not `_PaymentUriLinkListener` — own the handoff. This is
+/// unlock screens — not `_IncomingLinkHost` — own the handoff. This is
 /// the provider-reading half of that: the two unlock screens (desktop and
 /// mobile) call it so they cannot drift into two different claims.
 library;

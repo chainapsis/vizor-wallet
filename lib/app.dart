@@ -15,10 +15,9 @@ import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
-import 'src/core/navigation/vizor_deep_link.dart';
+import 'src/core/navigation/incoming_link_dispatch.dart';
 import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
-import 'src/core/navigation/payment_uri_notice.dart';
 import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
@@ -122,7 +121,6 @@ import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
 import 'src/services/incoming_uri_service.dart';
 import 'src/providers/payment_request_flow_provider.dart';
-import 'src/services/payment_uri_service.dart';
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -1218,7 +1216,7 @@ class ZcashWalletApp extends ConsumerWidget {
             child: _WindowsUpdateStartupCheck(
               child: _WindowsUpdatePromptHost(
                 router: router,
-                child: _IncomingDeepLinkHost(
+                child: _IncomingLinkHost(
                   router: router,
                   child: _RpcEndpointFailoverToastListener(
                     child: _DesktopOpaqueWindowBackground(
@@ -1245,13 +1243,12 @@ class ZcashWalletApp extends ConsumerWidget {
                                   // Innermost app-level layer: the payment
                                   // request card sits directly over the
                                   // router's content, under the privacy lock
-                                  // and the keep-awake hosts above it.
-                                  child: _PaymentUriLinkListener(
+                                  // and the keep-awake hosts above it. The
+                                  // link intake that feeds it lives further
+                                  // up, in `_IncomingLinkHost`.
+                                  child: PaymentRequestHost(
                                     router: router,
-                                    child: PaymentRequestHost(
-                                      router: router,
-                                      child: child!,
-                                    ),
+                                    child: child!,
                                   ),
                                 ),
                               ),
@@ -1310,173 +1307,61 @@ class _MacOSUpdatePrivacyChoiceHostState
   Widget build(BuildContext context) => widget.child;
 }
 
-class _IncomingDeepLinkHost extends ConsumerStatefulWidget {
-  const _IncomingDeepLinkHost({required this.router, required this.child});
+/// Builds the app-level incoming-link host in isolation.
+///
+/// The host is private because nothing outside [ZcashWalletApp] builds one;
+/// tests need it without the whole app tree so the wallet-reset transition and
+/// the native pushes can be driven directly from provider overrides.
+@visibleForTesting
+Widget buildIncomingLinkHostForTest({
+  required GoRouter router,
+  required Widget child,
+}) => _IncomingLinkHost(router: router, child: child);
+
+/// The single subscriber to the native incoming-link stream.
+///
+/// Both products that arrive on `com.zcash.wallet/payment_uri` are dispatched
+/// from here, because there is only one method-call handler to go around and
+/// because two independent listeners would each hand every link to their own
+/// parser — which is how a Gift Card link's mnemonic-bearing fragment ends up
+/// in the ZIP-321 rejection snackbar. `classifyIncomingLink` picks the lane;
+/// everything below is per-lane and unchanged from the two hosts this replaced:
+///
+/// * **payment request** (`zcash:`) — parks in `paymentUriPrefillProvider` and
+///   drains through `decidePaymentUriDrain` into a card over the current
+///   screen. Route-agnostic: it never navigates on delivery.
+/// * **gift card** (`https://` on the Vizor origin) — queues in
+///   `paymentLinkIntakeProvider` and navigates to `/payment-links`.
+/// * **vizor home** — brings an unlocked wallet to `/home`.
+///
+/// The two intakes defer to each other: a Gift Card waits while a request card
+/// is up (`paymentLinkEntryDeferredMessageAtLocation`), and a request waits
+/// while a Gift Card signing round holds the busy-surface latch.
+class _IncomingLinkHost extends ConsumerStatefulWidget {
+  const _IncomingLinkHost({required this.router, required this.child});
 
   final GoRouter router;
   final Widget child;
 
   @override
-  ConsumerState<_IncomingDeepLinkHost> createState() =>
-      _IncomingDeepLinkHostState();
+  ConsumerState<_IncomingLinkHost> createState() => _IncomingLinkHostState();
 }
 
-class _IncomingDeepLinkHostState extends ConsumerState<_IncomingDeepLinkHost> {
+/// How long an incoming-link notice stays up. Longer than the default toast:
+/// every one of these sentences tells the user something they have to act on
+/// (open the link again, finish setup) rather than confirming something they
+/// just did.
+const _kIncomingLinkNoticeDuration = Duration(seconds: 4);
+
+class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   StreamSubscription<String>? _subscription;
   ProviderSubscription<VizorPaymentLink?>? _intakeSubscription;
+
+  // --- gift card lane ---
   VizorPaymentLink? _lastDeferredLink;
   bool _navigationScheduled = false;
 
-  @override
-  void initState() {
-    super.initState();
-    widget.router.routerDelegate.addListener(_handleRouteChanged);
-    _intakeSubscription = ref.listenManual(
-      paymentLinkIntakeProvider.select((state) => state.pendingLink),
-      (_, link) {
-        if (link != null) _openPendingPaymentLink();
-      },
-    );
-    final service = ref.read(incomingUriServiceProvider);
-    _subscription = service.uriStream.listen(_handleIncomingUri);
-    unawaited(service.initialize());
-  }
-
-  @override
-  void didUpdateWidget(covariant _IncomingDeepLinkHost oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.router == widget.router) return;
-    oldWidget.router.routerDelegate.removeListener(_handleRouteChanged);
-    widget.router.routerDelegate.addListener(_handleRouteChanged);
-  }
-
-  void _handleRouteChanged() {
-    _openPendingPaymentLink();
-  }
-
-  void _handleIncomingUri(String rawUri) {
-    final uri = Uri.tryParse(rawUri.trim());
-    if (uri == null) return;
-
-    switch (VizorDeepLink.routeFor(uri)) {
-      case VizorDeepLinkRoute.home:
-        if (!ref.read(appSecurityProvider).requiresUnlock) {
-          widget.router.go('/home');
-        }
-      case VizorDeepLinkRoute.paymentLink:
-        final result = ref
-            .read(paymentLinkIntakeProvider.notifier)
-            .receive(rawUri);
-        if (result == PaymentLinkIntakeResult.rejected) {
-          _showRejectedPaymentLinkMessage();
-        }
-      case null:
-        return;
-    }
-  }
-
-  void _showRejectedPaymentLinkMessage() {
-    final message = ref.read(paymentLinkIntakeProvider).errorMessage;
-    if (message == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      showAppToast(
-        context,
-        message,
-        iconName: AppIcons.warning,
-        tone: AppToastTone.destructive,
-      );
-      ref.read(paymentLinkIntakeProvider.notifier).clearError();
-    });
-  }
-
-  @override
-  void dispose() {
-    widget.router.routerDelegate.removeListener(_handleRouteChanged);
-    unawaited(_subscription?.cancel());
-    _intakeSubscription?.close();
-    super.dispose();
-  }
-
-  void _openPendingPaymentLink() {
-    final pendingLink = ref.read(paymentLinkIntakeProvider).pendingLink;
-    if (_navigationScheduled ||
-        ref.read(appSecurityProvider).requiresUnlock ||
-        pendingLink == null) {
-      return;
-    }
-    final location = widget.router.state.matchedLocation;
-    // Unlock owns post-authentication navigation. The Payment Links screen
-    // owns intake while it is already visible, including its local wizard.
-    if (location == '/' ||
-        location == '/unlock' ||
-        location == '/payment-links') {
-      return;
-    }
-    final deferredMessage = paymentLinkEntryDeferredMessageAtLocation(location);
-    if (deferredMessage != null) {
-      _showDeferredPaymentLinkMessage(pendingLink, deferredMessage);
-      return;
-    }
-    _lastDeferredLink = null;
-    _navigationScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _navigationScheduled = false;
-      if (!mounted ||
-          ref.read(appSecurityProvider).requiresUnlock ||
-          ref.read(paymentLinkIntakeProvider).pendingLink == null) {
-        return;
-      }
-      final currentLocation = widget.router.state.matchedLocation;
-      if (currentLocation == '/' ||
-          currentLocation == '/unlock' ||
-          currentLocation == '/payment-links' ||
-          paymentLinkEntryBlockedAtLocation(currentLocation)) {
-        _openPendingPaymentLink();
-        return;
-      }
-      widget.router.go('/payment-links');
-    });
-  }
-
-  void _showDeferredPaymentLinkMessage(VizorPaymentLink link, String message) {
-    if (identical(_lastDeferredLink, link)) return;
-    _lastDeferredLink = link;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      showAppToast(context, message, iconName: AppIcons.warning);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) => AppToastHost(child: widget.child);
-}
-
-/// Builds the parked-payment-URI listener in isolation.
-///
-/// The listener is private because nothing outside [ZcashWalletApp] builds
-/// one; tests need it without the whole app tree so the wallet-reset
-/// transition can be driven directly from provider overrides.
-@visibleForTesting
-Widget buildPaymentUriLinkListenerForTest({
-  required GoRouter router,
-  required Widget child,
-}) => _PaymentUriLinkListener(router: router, child: child);
-
-class _PaymentUriLinkListener extends ConsumerStatefulWidget {
-  const _PaymentUriLinkListener({required this.router, required this.child});
-
-  final GoRouter router;
-  final Widget child;
-
-  @override
-  ConsumerState<_PaymentUriLinkListener> createState() =>
-      _PaymentUriLinkListenerState();
-}
-
-class _PaymentUriLinkListenerState
-    extends ConsumerState<_PaymentUriLinkListener> {
-  StreamSubscription<String>? _subscription;
+  // --- payment request lane ---
   var _paymentSequence = 0;
 
   /// Last wallet-existence value seen from [walletProvider]. Used to spot the
@@ -1498,13 +1383,31 @@ class _PaymentUriLinkListenerState
     _lastKnownHasWallet =
         ref.read(walletProvider).value?.hasWallet ??
         ref.read(appBootstrapProvider).hasWallet;
-    unawaited(PaymentUriService.initialize());
-    _subscription = PaymentUriService.uriStream.listen(_handlePaymentUri);
+    widget.router.routerDelegate.addListener(_handleRouteChanged);
+    _intakeSubscription = ref.listenManual(
+      paymentLinkIntakeProvider.select((state) => state.pendingLink),
+      (_, link) {
+        if (link != null) _openPendingPaymentLink();
+      },
+    );
+    final service = ref.read(incomingUriServiceProvider);
+    _subscription = service.uriStream.listen(_handleIncomingUri);
+    unawaited(service.initialize());
+  }
+
+  @override
+  void didUpdateWidget(covariant _IncomingLinkHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.router == widget.router) return;
+    oldWidget.router.routerDelegate.removeListener(_handleRouteChanged);
+    widget.router.routerDelegate.addListener(_handleRouteChanged);
   }
 
   @override
   void dispose() {
+    widget.router.routerDelegate.removeListener(_handleRouteChanged);
     unawaited(_subscription?.cancel());
+    _intakeSubscription?.close();
     super.dispose();
   }
 
@@ -1520,8 +1423,12 @@ class _PaymentUriLinkListenerState
           hasWallet: wallet.hasWallet,
         )) {
           // Wallet reset (uninstall, lost-password reset). Drop the parked
-          // link quietly: draining it here would follow the wipe with a
-          // "Set up or import a wallet" snackbar and a jump to /welcome.
+          // ZIP-321 link quietly: draining it here would follow the wipe with
+          // a "Set up or import a wallet" notice and a jump to /welcome.
+          //
+          // Only the ZIP-321 park and its card. A Gift Card is a bearer claim
+          // on funds that do not belong to this wallet, so it survives a reset
+          // by design — see `paymentLinkIntakeProvider`.
           ref.read(paymentUriPrefillProvider.notifier).clear();
           ref.read(paymentRequestFlowProvider.notifier).clear();
           return;
@@ -1539,14 +1446,131 @@ class _PaymentUriLinkListenerState
     ref.listen<bool>(sendStatusTerminalProvider, (previous, next) {
       if (next && !(previous ?? false)) _schedulePendingDrain();
     });
+    // The reciprocal of the busy-surface hold: a Gift Card waits while a
+    // request card is up, so answering the card releases it.
+    ref.listen<PaymentRequestFlowState?>(paymentRequestFlowProvider, (
+      previous,
+      next,
+    ) {
+      if (next == null && previous != null) _openPendingPaymentLink();
+    });
     // No appSecurityProvider listener: the unlock screens own the post-unlock
-    // navigation for a parked prefill (claim + go to /send). Draining here on
-    // unlock too would race and clobber that navigation. The wallet listener
-    // still covers the loading -> loaded transition.
-    return widget.child;
+    // navigation for a parked prefill (claim + present the card). Draining
+    // here on unlock too would race and clobber that navigation. The wallet
+    // listener still covers the loading -> loaded transition.
+    return AppToastHost(child: widget.child);
   }
 
-  void _handlePaymentUri(String rawUri) {
+  void _handleIncomingUri(String rawUri) {
+    switch (classifyIncomingLink(rawUri)) {
+      case IncomingPaymentRequestLink(:final raw):
+        _handlePaymentRequestLink(raw);
+      case IncomingGiftCardLink():
+        _handleGiftCardLink(rawUri);
+      case IncomingVizorHomeLink():
+        if (!ref.read(appSecurityProvider).requiresUnlock) {
+          widget.router.go('/home');
+        }
+      case IncomingLinkUnknown():
+        // Silent by contract — see `classifyIncomingLink`.
+        return;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Gift card lane
+  // ---------------------------------------------------------------------
+
+  void _handleGiftCardLink(String rawUri) {
+    final result = ref.read(paymentLinkIntakeProvider.notifier).receive(rawUri);
+    if (result == PaymentLinkIntakeResult.rejected) {
+      _showRejectedPaymentLinkMessage();
+    }
+  }
+
+  void _handleRouteChanged() {
+    _openPendingPaymentLink();
+  }
+
+  void _showRejectedPaymentLinkMessage() {
+    final message = ref.read(paymentLinkIntakeProvider).errorMessage;
+    if (message == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        message,
+        iconName: AppIcons.warning,
+        tone: AppToastTone.destructive,
+      );
+      ref.read(paymentLinkIntakeProvider.notifier).clearError();
+    });
+  }
+
+  void _openPendingPaymentLink() {
+    final pendingLink = ref.read(paymentLinkIntakeProvider).pendingLink;
+    if (_navigationScheduled ||
+        ref.read(appSecurityProvider).requiresUnlock ||
+        pendingLink == null) {
+      return;
+    }
+    final location = widget.router.state.matchedLocation;
+    // Unlock owns post-authentication navigation. The Payment Links screen
+    // owns intake while it is already visible, including its local wizard.
+    if (location == '/' ||
+        location == '/unlock' ||
+        location == '/payment-links') {
+      return;
+    }
+    final deferredMessage = paymentLinkEntryDeferredMessageAtLocation(
+      location,
+      paymentRequestCardPresented: _paymentRequestCardPresented,
+    );
+    if (deferredMessage != null) {
+      _showDeferredPaymentLinkMessage(pendingLink, deferredMessage);
+      return;
+    }
+    _lastDeferredLink = null;
+    _navigationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigationScheduled = false;
+      if (!mounted ||
+          ref.read(appSecurityProvider).requiresUnlock ||
+          ref.read(paymentLinkIntakeProvider).pendingLink == null) {
+        return;
+      }
+      final currentLocation = widget.router.state.matchedLocation;
+      if (currentLocation == '/' ||
+          currentLocation == '/unlock' ||
+          currentLocation == '/payment-links' ||
+          paymentLinkEntryBlockedAtLocation(
+            currentLocation,
+            paymentRequestCardPresented: _paymentRequestCardPresented,
+          )) {
+        _openPendingPaymentLink();
+        return;
+      }
+      widget.router.go('/payment-links');
+    });
+  }
+
+  bool get _paymentRequestCardPresented =>
+      ref.read(paymentRequestFlowProvider) != null;
+
+  void _showDeferredPaymentLinkMessage(VizorPaymentLink link, String message) {
+    if (identical(_lastDeferredLink, link)) return;
+    _lastDeferredLink = link;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showAppToast(context, message, iconName: AppIcons.warning);
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Payment request lane
+  // ---------------------------------------------------------------------
+
+  void _handlePaymentRequestLink(String rawUri) {
     try {
       final replacedParkedPrefill = ref
           .read(paymentUriPrefillProvider.notifier)
@@ -1574,6 +1598,8 @@ class _PaymentUriLinkListenerState
       // Defensive: no current parse path reaches this. It shares the drain
       // policy's constant rather than a literal of its own so the two cannot
       // drift into two different sentences for the same "the link is gone".
+      // Only `zcash:` links reach this lane, so `$e` cannot carry a Gift
+      // Card's mnemonic fragment.
       log('Payment URI: failed to parse: $e');
       _showPaymentUriMessage(kPaymentUriUnavailableMessage);
     }
@@ -1630,8 +1656,9 @@ class _PaymentUriLinkListenerState
       hasWallet: walletAsync.value?.hasWallet ?? bootstrap.hasWallet,
       isUnlocked: security.isUnlocked,
       matchedLocation: widget.router.state.matchedLocation,
-      // In-progress surfaces that own no route of their own — today the
-      // desktop Keystone shield signing overlay, which sits on `/home`.
+      // In-progress surfaces that own no route of their own — the desktop
+      // Keystone shield signing overlay on `/home`, and the Gift Card funding
+      // overlay on `/payment-links`.
       hasBusySurface: ref.read(paymentUriBusySurfaceProvider) > 0,
       // Desktop review owns a live Rust proposal whose selected inputs stay
       // locked until the screen is disposed. The review also takes a busy hold
@@ -1655,7 +1682,7 @@ class _PaymentUriLinkListenerState
         _showPaymentUriMessage(decision.message!);
       case PaymentUriDrainAction.routeToUnlock:
         // Leave the prefill parked in paymentUriPrefillProvider. The unlock
-        // flow claims it and routes to /send, so the payment intent is not
+        // flow claims it and presents the card, so the payment intent is not
         // lost when the link is opened while the wallet is locked.
         widget.router.go('/unlock');
       case PaymentUriDrainAction.routeToWelcome:
@@ -1671,10 +1698,25 @@ class _PaymentUriLinkListenerState
     }
   }
 
+  /// Shows one payment-link notice on the app-level toast host.
+  ///
+  /// The host outlives the screen that asked for the notice, which matters on
+  /// the unlock path: the unlock screen navigates in the same turn, so a
+  /// notice tied to its own `BuildContext` would never arrive.
   void _showPaymentUriMessage(String message) {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-    showPaymentUriNotice(messenger, message);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        message,
+        duration: _kIncomingLinkNoticeDuration,
+        iconName: AppIcons.warning,
+      );
+    });
+    // addPostFrameCallback does not request a frame on its own. An idle app
+    // (locked, nothing animating) would otherwise sit on the notice until some
+    // unrelated frame happens to be scheduled.
+    WidgetsBinding.instance.scheduleFrame();
   }
 }
 

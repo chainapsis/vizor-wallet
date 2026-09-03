@@ -46,6 +46,34 @@ void main() {
     }
   });
 
+  test('defers an incoming Gift Card while a payment-request card is up', () {
+    // The card owns no route, so no location test can see it. Opening the
+    // Payment Links screen underneath would unmount a request the user is
+    // part-way through answering.
+    expect(
+      paymentLinkEntryBlockedAtLocation(
+        '/home',
+        paymentRequestCardPresented: true,
+      ),
+      isTrue,
+    );
+    expect(
+      paymentLinkEntryDeferredMessageAtLocation(
+        '/home',
+        paymentRequestCardPresented: true,
+      ),
+      kPaymentLinkDeferredByActiveFlowMessage,
+    );
+    // Setup still wins: its message is the more specific one.
+    expect(
+      paymentLinkEntryDeferredMessageAtLocation(
+        '/welcome',
+        paymentRequestCardPresented: true,
+      ),
+      kPaymentLinkDeferredByAccountSetupMessage,
+    );
+  });
+
   test('allows incoming Gift Cards on neutral routes', () {
     for (final location in [
       '/home',

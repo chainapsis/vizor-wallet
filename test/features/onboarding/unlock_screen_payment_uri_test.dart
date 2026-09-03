@@ -19,6 +19,8 @@ import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/password_text_field.dart';
 import 'package:zcash_wallet/src/features/onboarding/unlock_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -159,6 +161,10 @@ Future<ProviderContainer> _pumpUnlock(
         path: '/lost-password',
         builder: (_, _) => const Scaffold(body: Text('lost-password-route')),
       ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, _) => const Scaffold(body: Text('payment-links-route')),
+      ),
     ],
   );
   addTearDown(_router.dispose);
@@ -252,4 +258,33 @@ void main() {
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(container.read(paymentUriPrefillProvider), isNotNull);
   });
+
+  // The desktop runners never register the HTTPS deeplink, so a queued Gift
+  // Card here can only have come from inside the app. Desktop unlock keeps its
+  // single destination; the mobile sibling is the one with the branch.
+  testWidgets('a queued Gift Card does not divert the desktop unlock', (
+    tester,
+  ) async {
+    final container = await _pumpUnlock(tester);
+    expect(
+      container
+          .read(paymentLinkIntakeProvider.notifier)
+          .receive(_pendingPaymentLink.toUri().toString()),
+      PaymentLinkIntakeResult.accepted,
+    );
+
+    await _unlock(tester);
+
+    expect(_location(), '/home');
+  });
 }
+
+final _pendingPaymentLink = VizorPaymentLink(
+  network: 'main',
+  address: 'u1pendinggiftcardaddress',
+  amountZatoshi: BigInt.from(100000000),
+  mnemonic: List.filled(24, 'abandon').join(' '),
+  birthdayHeight: 3000000,
+  label: 'Gift Card',
+  createdAt: DateTime.utc(2026, 8, 28),
+);

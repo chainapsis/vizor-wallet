@@ -5,14 +5,24 @@ import '../core/navigation/payment_uri_drain_policy.dart';
 import '../features/send/models/send_prefill_args.dart';
 
 /// Holds a ZIP-321 payment-URI prefill that has been parsed from a `zcash:`
-/// link but not yet delivered to the send screen.
+/// link but not yet delivered.
 ///
 /// This exists so the prefill survives the lock screen. A `zcash:` link opened
 /// while the wallet is locked routes to `/unlock` and parks the prefill here;
 /// the unlock flow then claims it (via [PaymentUriPrefillNotifier.takeIfFresh])
-/// and navigates straight to `/send` instead of the default `/home`, so the
-/// payment intent is not lost. When the wallet is already unlocked the
-/// `_PaymentUriLinkListener` drains it directly.
+/// and presents it as a card over the wallet it just unlocked, so the payment
+/// intent is not lost. When the wallet is already unlocked the app-level
+/// `_IncomingLinkHost` drains it directly.
+///
+/// **Deliberately not the same store as `paymentLinkIntakeProvider`**, even
+/// though both hold links that arrived on the same native channel. A payment
+/// request is an *instruction to spend this wallet's money*: one at a time
+/// (latest wins, no queue), stale after [kPaymentUriParkTtl] because paying a
+/// forgotten request later is worse than losing it, and dropped by a wallet
+/// reset because the wallet it was going to pay from no longer exists. A Gift
+/// Card is a bearer claim on funds held elsewhere, so it queues, never
+/// expires, and outlives a reset. Merging the two would have to pick one set
+/// of those answers and would be wrong for the other product.
 class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
   /// A parked prefill older than this is treated as stale and dropped on the
   /// next unlock. Without it, a link opened then left parked (the user never

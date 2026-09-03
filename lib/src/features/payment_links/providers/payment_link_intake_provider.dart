@@ -4,6 +4,17 @@ import '../models/vizor_payment_link.dart';
 
 enum PaymentLinkIntakeResult { accepted, ignored, rejected }
 
+/// The queue of Gift Card links that arrived but have not been opened yet.
+///
+/// **Deliberately not the same store as `paymentUriPrefillProvider`**, even
+/// though both hold links delivered by the same native channel. A Gift Card is
+/// a bearer claim on funds that are *not* in this wallet: losing one loses the
+/// money, so up to [kPaymentLinkIntakeQueueCapacity] of them queue instead of
+/// displacing each other, they never expire, and they survive a wallet reset —
+/// the claim is still good on whatever wallet the user sets up next. A ZIP-321
+/// request is the opposite on all three counts (one at a time, a 10-minute
+/// TTL, dropped on reset) because it spends *this* wallet's money.
+
 const kPaymentLinkIntakeQueueCapacity = 16;
 
 class PaymentLinkIntakeState {

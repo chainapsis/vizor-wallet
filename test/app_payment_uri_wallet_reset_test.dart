@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -18,7 +19,6 @@ import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
-import 'package:zcash_wallet/src/services/payment_uri_service.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 
@@ -87,9 +87,13 @@ void main() {
               container = ProviderScope.containerOf(context, listen: false);
               return MaterialApp.router(
                 routerConfig: router,
-                builder: (context, child) => buildPaymentUriLinkListenerForTest(
-                  router: router,
-                  child: child!,
+                // AppTheme, because the host's notices render as app toasts.
+                builder: (context, child) => AppTheme(
+                  data: AppThemeData.dark,
+                  child: buildIncomingLinkHostForTest(
+                    router: router,
+                    child: child!,
+                  ),
                 ),
               );
             },
@@ -181,19 +185,19 @@ void main() {
               container = ProviderScope.containerOf(context, listen: false);
               return MaterialApp.router(
                 routerConfig: router,
-                builder: (context, child) => buildPaymentUriLinkListenerForTest(
-                  router: router,
-                  child: child!,
+                // AppTheme, because the host's notices render as app toasts.
+                builder: (context, child) => AppTheme(
+                  data: AppThemeData.dark,
+                  child: buildIncomingLinkHostForTest(
+                    router: router,
+                    child: child!,
+                  ),
                 ),
               );
             },
           ),
         ),
       );
-      // The listener installs the PaymentUriService method-call handler in
-      // initState; initialize() is idempotent and only awaited here so the
-      // handler is guaranteed to be in place before the native push below.
-      await PaymentUriService.initialize();
       await tester.pumpAndSettle();
 
       // The native side flushes both links in one batch — the cold-start
@@ -253,9 +257,13 @@ void main() {
             container = ProviderScope.containerOf(context, listen: false);
             return MaterialApp.router(
               routerConfig: router,
-              builder: (context, child) => buildPaymentUriLinkListenerForTest(
-                router: router,
-                child: child!,
+              // AppTheme, because the host's notices render as app toasts.
+              builder: (context, child) => AppTheme(
+                data: AppThemeData.dark,
+                child: buildIncomingLinkHostForTest(
+                  router: router,
+                  child: child!,
+                ),
               ),
             );
           },
@@ -264,7 +272,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await PaymentUriService.initialize();
     await _pushNativeUris(tester, const ['zcash:u1parked?amount=0.5']);
     await tester.pumpAndSettle();
 
@@ -313,9 +320,13 @@ void main() {
               container = ProviderScope.containerOf(context, listen: false);
               return MaterialApp.router(
                 routerConfig: router,
-                builder: (context, child) => buildPaymentUriLinkListenerForTest(
-                  router: router,
-                  child: child!,
+                // AppTheme, because the host's notices render as app toasts.
+                builder: (context, child) => AppTheme(
+                  data: AppThemeData.dark,
+                  child: buildIncomingLinkHostForTest(
+                    router: router,
+                    child: child!,
+                  ),
                 ),
               );
             },
@@ -339,7 +350,6 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await PaymentUriService.initialize();
       await _pushNativeUris(tester, const ['zcash:u1parked?amount=0.5']);
       await tester.pumpAndSettle();
 
@@ -405,9 +415,13 @@ void main() {
             container = ProviderScope.containerOf(context, listen: false);
             return MaterialApp.router(
               routerConfig: router,
-              builder: (context, child) => buildPaymentUriLinkListenerForTest(
-                router: router,
-                child: child!,
+              // AppTheme, because the host's notices render as app toasts.
+              builder: (context, child) => AppTheme(
+                data: AppThemeData.dark,
+                child: buildIncomingLinkHostForTest(
+                  router: router,
+                  child: child!,
+                ),
               ),
             );
           },
@@ -420,7 +434,6 @@ void main() {
     // progress reads as.
     expect(container.read(sendStatusTerminalProvider), isFalse);
 
-    await PaymentUriService.initialize();
     await _pushNativeUris(tester, const ['zcash:u1parked?amount=0.5']);
     await tester.pumpAndSettle();
 
@@ -490,7 +503,8 @@ PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
 );
 
 /// Delivers [uris] the way the native runner does: an `onUris` method call on
-/// the payment-URI channel, which PaymentUriService forwards to its stream.
+/// the incoming-link channel, which `IncomingUriService` — installed by the
+/// host under test in its `initState` — forwards to its stream.
 Future<void> _pushNativeUris(WidgetTester tester, List<String> uris) async {
   const codec = StandardMethodCodec();
   await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
