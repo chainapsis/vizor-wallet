@@ -10,6 +10,11 @@ import 'app_tooltip.dart';
 const kTxFeeHelpTooltip =
     'Fee paid to the Zcash network to process this transaction.';
 
+/// Tooltip for the requester name on a payment-request card. The name is
+/// supplied by the payment link, not verified by Vizor.
+const kPaymentRequestRequesterTooltip =
+    "Name supplied by the payment link. Vizor can't verify who sent it.";
+
 /// One 32px "List Item" row inside a `ReviewWrapCard`: left label, right
 /// value cluster with optional 16px leading/trailing icons.
 ///

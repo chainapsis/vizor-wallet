@@ -180,6 +180,9 @@ class SyncState {
   bool get isUsingCompletedSpendableSnapshot =>
       displaySpendableFreshness == SpendableBalanceFreshness.lastCompletedSync;
 
+  bool get hasSettledSpendableBalance =>
+      hasBalanceData && isSyncedToTip && !isUsingCompletedSpendableSnapshot;
+
   static bool shouldPreserveCompletedSpendable(SyncState? previous) {
     if (previous?.isUsingCompletedSpendableSnapshot ?? false) return true;
     return (previous?.hasBalanceData ?? false) &&
@@ -2953,4 +2956,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
 final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(
   () => SyncNotifier(),
+);
+
+bool spendableIsSettledForAccount(SyncState? sync, String? accountUuid) =>
+    sync != null &&
+    sync.scopedToAccount(accountUuid).hasSettledSpendableBalance;
+
+bool activeAccountSpendableIsSettled(Ref ref) => spendableIsSettledForAccount(
+  ref.read(syncProvider).value,
+  ref.read(accountProvider).value?.activeAccountUuid,
 );

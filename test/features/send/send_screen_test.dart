@@ -1459,17 +1459,19 @@ class _RustApiFake implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) async {
     if (address == _texAddress) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex');
+      return const AddressValidationResult(isValid: true, addressType: 'tex', wrongNetwork: false);
     }
     if (address == _transparentAddress) {
       return const AddressValidationResult(
         isValid: true,
         addressType: 'transparent',
+        wrongNetwork: false,
       );
     }
-    return const AddressValidationResult(isValid: true, addressType: 'unified');
+    return const AddressValidationResult(isValid: true, addressType: 'unified', wrongNetwork: false);
   }
 
   @override

@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -104,6 +105,7 @@ class _ReviewRecipientPresentation {
 typedef MobileSendAddressValidator =
     Future<rust_sync.AddressValidationResult> Function({
       required String address,
+      required String network,
     });
 
 typedef MobileSendFeeEstimator =
@@ -527,6 +529,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final result =
           await (widget.validateAddress ?? rust_sync.validateAddress)(
             address: address,
+            network: kZcashDefaultNetworkName,
           );
       if (!mounted || seq != _addressSeq) return;
       setState(

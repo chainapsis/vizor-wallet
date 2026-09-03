@@ -56,20 +56,22 @@ class _RustApiFake implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) async {
     if (address == _invalidAddress) {
-      return const AddressValidationResult(isValid: false, addressType: '');
+      return const AddressValidationResult(isValid: false, addressType: '', wrongNetwork: false);
     }
     if (address.startsWith('tex')) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex');
+      return const AddressValidationResult(isValid: true, addressType: 'tex', wrongNetwork: false);
     }
     if (address.startsWith('t1')) {
       return const AddressValidationResult(
         isValid: true,
         addressType: 'transparent',
+        wrongNetwork: false,
       );
     }
-    return const AddressValidationResult(isValid: true, addressType: 'unified');
+    return const AddressValidationResult(isValid: true, addressType: 'unified', wrongNetwork: false);
   }
 
   @override
@@ -646,7 +648,7 @@ void main() {
     await tester.pumpWidget(
       _app(
         initialRecipient: _texAddress,
-        validateAddress: ({required address}) => validation.future,
+        validateAddress: ({required address, required network}) => validation.future,
         accountState: const AccountState(
           accounts: [
             AccountInfo(
@@ -673,7 +675,7 @@ void main() {
     expect(find.text('Enter Amount'), findsNothing);
 
     validation.complete(
-      const AddressValidationResult(isValid: true, addressType: 'tex'),
+      const AddressValidationResult(isValid: true, addressType: 'tex', wrongNetwork: false),
     );
     await tester.pumpAndSettle();
 

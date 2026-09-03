@@ -77,7 +77,7 @@ void main() {
       final senderAccountUuid = await _accountUuidAtOrder(0);
       final receiverAccountUuid = await _accountUuidAtOrder(1);
 
-      final validation = await rust_sync.validateAddress(address: _texAddress);
+      final validation = await rust_sync.validateAddress(address: _texAddress, network: _network);
       expect(validation.isValid, isTrue);
       expect(validation.addressType, 'tex');
       expect(_texAddress, startsWith('texregtest1'));

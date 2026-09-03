@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../core/config/network_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_scan/domain/address_scan_payload.dart';
@@ -34,7 +35,7 @@ Future<MobileScanOutcome> _resolveZcashAddress(String raw) async {
       "This QR code isn't a Zcash address.",
     );
   }
-  final result = await rust_sync.validateAddress(address: address);
+  final result = await rust_sync.validateAddress(address: address, network: kZcashDefaultNetworkName);
   if (result.isValid) return MobileScanOutcome.accepted(address);
   return const MobileScanOutcome.rejected(
     "This QR code isn't a Zcash address.",

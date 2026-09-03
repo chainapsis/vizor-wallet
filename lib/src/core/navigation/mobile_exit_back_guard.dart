@@ -82,10 +82,12 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
     required GlobalKey<NavigatorState> navigatorKey,
     required bool Function() canPop,
     required String Function() currentLocation,
+    bool Function()? handleBackAboveRouter,
   }) : _exitBackGuard = exitBackGuard,
        _navigatorKey = navigatorKey,
        _canPop = canPop,
-       _currentLocation = currentLocation {
+       _currentLocation = currentLocation,
+       _handleBackAboveRouter = handleBackAboveRouter {
     if (_exitBackGuard.enabled) {
       _lifecycleListener = AppLifecycleListener(
         onInactive: _clearExitBackGuard,
@@ -101,6 +103,16 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
   final GlobalKey<NavigatorState> _navigatorKey;
   final bool Function() _canPop;
   final String Function() _currentLocation;
+
+  /// Modal layers mounted *above* the `Router`, given the back press first.
+  ///
+  /// A `PopScope` only works below a `ModalRoute`, so anything hosted from
+  /// `MaterialApp.router`'s `builder` — the payment-request card — is
+  /// invisible to the route layer and would otherwise let a back press
+  /// navigate, or exit the app, underneath itself. Returns true when the
+  /// layer consumed the press.
+  final bool Function()? _handleBackAboveRouter;
+
   AppLifecycleListener? _lifecycleListener;
 
   bool handleNavigationNotification(NavigationNotification notification) {
@@ -117,19 +129,26 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
 
   @override
   Future<bool> invokeCallback(Future<bool> defaultValue) async {
+    // Above-router modals answer first, on every platform this dispatcher
+    // runs on: they are drawn over the whole route stack, so a press that
+    // reached anything underneath them would act on a screen the user cannot
+    // even see.
+    if (_handleBackAboveRouter?.call() ?? false) {
+      _clearExitBackGuard();
+      return true;
+    }
     if (!_exitBackGuard.enabled) {
       return super.invokeCallback(defaultValue);
     }
 
-    // The migration flow is a set of flat, top-level routes that replace each
-    // other with `go`, so its screens routinely sit on a stack that cannot
-    // pop. Offering the route layer the back press first is what lets their
-    // `PopScope` handlers run at all; without it a mid-flow back press skips
-    // straight to the exit hint and a second press quits the app. The check is
-    // pinned to `/migration` on purpose: every other screen keeps the existing
-    // "root back means exit" behaviour, which has not been audited for
-    // `PopScope` dependencies.
-    if (_canPop() || _isMigrationLocation(_currentLocation())) {
+    // Some flows are flat, top-level routes that replace each other with `go`,
+    // so their screens routinely sit on a stack that cannot pop. Offering the
+    // route layer the back press first is what lets their `PopScope` handlers
+    // run at all; without it a mid-flow back press skips straight to the exit
+    // hint and a second press quits the app. The list is pinned on purpose:
+    // every other screen keeps the existing "root back means exit" behaviour,
+    // which has not been audited for `PopScope` dependencies.
+    if (_canPop() || _routeLayerHandlesRootBack(_currentLocation())) {
       final handledByRoute = await super.invokeCallback(
         Future<bool>.value(false),
       );
@@ -154,9 +173,21 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
     return true;
   }
 
-  static bool _isMigrationLocation(String location) {
+  /// Flows whose screens own the root back press through their own
+  /// `PopScope`.
+  ///
+  /// `/migration` replaces its steps with `go`. `/send` is normally pushed
+  /// from home (so `_canPop()` already covers it), but a `zcash:` payment URI
+  /// opens it with `go` as well, which makes `/send` the entire stack: the
+  /// send screen's `PopScope` is then the only thing that can send the press
+  /// to its own step fallback instead of exiting the app.
+  static const _rootBackFlowPrefixes = ['/migration', '/send'];
+
+  static bool _routeLayerHandlesRootBack(String location) {
     final path = Uri.tryParse(location)?.path ?? location;
-    return path == '/migration' || path.startsWith('/migration/');
+    return _rootBackFlowPrefixes.any(
+      (prefix) => path == prefix || path.startsWith('$prefix/'),
+    );
   }
 
   void dispose() {

@@ -1244,6 +1244,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   });
 
   bool crateApiWalletValidateMnemonic({required String mnemonic});
@@ -8933,12 +8934,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(address, serializer);
+          sse_encode_String(network, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8951,14 +8954,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncValidateAddressConstMeta,
-        argValues: [address],
+        argValues: [address, network],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiSyncValidateAddressConstMeta =>
-      const TaskConstMeta(debugName: "validate_address", argNames: ["address"]);
+      const TaskConstMeta(
+        debugName: "validate_address",
+        argNames: ["address", "network"],
+      );
 
   @override
   bool crateApiWalletValidateMnemonic({required String mnemonic}) {
@@ -9412,11 +9418,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   AddressValidationResult dco_decode_address_validation_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return AddressValidationResult(
       isValid: dco_decode_bool(arr[0]),
       addressType: dco_decode_String(arr[1]),
+      wrongNetwork: dco_decode_bool(arr[2]),
     );
   }
 
@@ -12215,9 +12222,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_isValid = sse_decode_bool(deserializer);
     var var_addressType = sse_decode_String(deserializer);
+    var var_wrongNetwork = sse_decode_bool(deserializer);
     return AddressValidationResult(
       isValid: var_isValid,
       addressType: var_addressType,
+      wrongNetwork: var_wrongNetwork,
     );
   }
 
@@ -15871,6 +15880,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bool(self.isValid, serializer);
     sse_encode_String(self.addressType, serializer);
+    sse_encode_bool(self.wrongNetwork, serializer);
   }
 
   @protected
