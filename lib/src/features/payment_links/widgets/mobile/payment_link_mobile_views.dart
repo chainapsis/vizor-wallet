@@ -19,12 +19,15 @@ export '../payment_link_cards_layout.dart'
     show PaymentLinkCardsSection, PaymentLinkCardsTab;
 
 const _referenceContentHeight = 773.0;
-const _topInset = 12.0;
-const _navHeight = 74.0;
+// The top nav sits where every other pushed mobile page puts it: flush with
+// the safe area, at the shared height. The absolute tops below are the Figma
+// frame values shifted up by the 14px that difference used to add.
+const _topInset = 0.0;
+const _navHeight = kMobileTopNavHeight;
 const _sideInset = 16.0;
-const _subtitleTop = 102.0;
-const _cardTop = 207.0;
-const _redeemSurfaceTop = 232.0;
+const _subtitleTop = 88.0;
+const _cardTop = 193.0;
+const _redeemSurfaceTop = 218.0;
 const _redeemCheckingCardWidth = 320.0;
 const _redeemCheckingCardHeight = 200.0;
 const kPaymentLinkMobileReceivedCardTop = 221.0;

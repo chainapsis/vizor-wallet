@@ -100,7 +100,7 @@ void main() {
     await _pumpAmount(tester);
 
     final selector = find.byKey(const ValueKey('mobile_selector_probe'));
-    expect(tester.getTopLeft(selector).dy, closeTo(466.625, 0.01));
+    expect(tester.getTopLeft(selector).dy, closeTo(452.625, 0.01));
   });
 
   testWidgets('redeem states match paste, checking, and invalid surfaces', (
@@ -111,7 +111,7 @@ void main() {
       const ValueKey('payment_link_mobile_redeem_drop_zone'),
     );
     expect(tester.getSize(pasteZone), const Size(361, 225.625));
-    expect(tester.getTopLeft(pasteZone), const Offset(16, 232));
+    expect(tester.getTopLeft(pasteZone), const Offset(16, 218));
     expect(find.text('Paste card link'), findsOneWidget);
 
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.loading);
@@ -119,7 +119,7 @@ void main() {
       const ValueKey('payment_link_mobile_loading_card'),
     );
     expect(tester.getSize(loadingCard), const Size(320, 200));
-    expect(tester.getTopLeft(loadingCard), const Offset(36.5, 232));
+    expect(tester.getTopLeft(loadingCard), const Offset(36.5, 218));
     expect(find.text('Checking ...'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('payment_link_mobile_paste_button')),
@@ -127,7 +127,7 @@ void main() {
     );
 
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.invalid);
-    expect(tester.getTopLeft(pasteZone), const Offset(16, 232));
+    expect(tester.getTopLeft(pasteZone), const Offset(16, 218));
     expect(find.text('The link doesn’t look legit.'), findsOneWidget);
     expect(find.text('Clear clipboard'), findsOneWidget);
   });
