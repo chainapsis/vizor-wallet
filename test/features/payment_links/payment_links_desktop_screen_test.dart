@@ -986,6 +986,40 @@ void main() {
     );
   });
 
+  testWidgets('account switch during a claim releases the prepared session', (
+    tester,
+  ) async {
+    final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+    final operations = _FakePaymentLinkOperations();
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+      accountNotifier: accountNotifier,
+      bootstrap: _twoAccountBootstrap,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('You\u2019ve received\na gift card!'), findsOneWidget);
+    expect(operations.discardedClaimAddresses, isEmpty);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('You\u2019ve received\na gift card!'), findsNothing);
+    expect(find.text('Paste card link'), findsOneWidget);
+    expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+    expect(find.textContaining('Active account changed.'), findsOneWidget);
+  });
+
   testWidgets('enables manual redeem intake', (tester) async {
     final operations = _FakePaymentLinkOperations();
     final clipboard = _FakePaymentLinkClipboard(

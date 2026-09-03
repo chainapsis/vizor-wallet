@@ -660,6 +660,7 @@ class _PaymentLinksDesktopScreenState
   }
 
   void _handleActiveAccountChanged(String? previous, String? current) {
+    if (current != null) _handleClaimDestinationAccountChanged(current);
     final quotedAccount = _fundingQuote?.sourceAccountUuid;
     final priorAccount =
         previous ?? quotedAccount ?? _fundingQuoteRequestedAccountUuid;
@@ -699,6 +700,36 @@ class _PaymentLinksDesktopScreenState
         iconName: AppIcons.warning,
       );
     }
+  }
+
+  /// A prepared claim session is bound to the account it was prepared for:
+  /// its destination address, and the revalidation that runs just before the
+  /// broadcast, both belong to that account. Switching the active account
+  /// while the session is on screen would otherwise pay the previous account
+  /// without saying so, so the session is released and the redeem entry is
+  /// reopened for the account now in front of the user.
+  void _handleClaimDestinationAccountChanged(String current) {
+    final session = _receivedClaimSession;
+    if (session == null || session.destinationAccountUuid == current) return;
+    setState(() {
+      _receivedClaimSession = null;
+      _receivedLink = null;
+      _receivedShowsBack = false;
+      _retryLink = null;
+      _longSyncLink = null;
+      _showHelp = false;
+      _redeemState = PaymentLinkRedeemVisualState.paste;
+      _page = _PaymentLinksLocalPage.redeem;
+    });
+    unawaited(
+      ref.read(paymentLinkOperationsProvider).discardClaimSession(session),
+    );
+    showAppToast(
+      context,
+      'Active account changed. Redeem this Gift Card again to receive it in '
+      'the new account.',
+      iconName: AppIcons.warning,
+    );
   }
 
   Future<void> _loadFundingQuote({
