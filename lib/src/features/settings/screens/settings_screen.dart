@@ -29,6 +29,7 @@ import '../../accounts/widgets/account_profile_picture_modal.dart';
 import '../../payment_links/providers/payment_link_cards_provider.dart';
 import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
+import '../widgets/settings_new_badge.dart';
 import '../widgets/windows_update_download_flow.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
@@ -481,6 +482,24 @@ class _SettingsList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SettingsBlock(
+          title: 'Personal',
+          rows: [
+            _SettingsRow(
+              key: const ValueKey('settings_gift_cards_row'),
+              iconName: AppIcons.giftCardOutline,
+              label: 'My Gift Cards',
+              labelBadge: const SettingsNewBadge(),
+              onTap: onGiftCards,
+            ),
+            _SettingsRow(
+              iconName: AppIcons.users,
+              label: 'Address book',
+              onTap: onAddressBook,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _SettingsBlock(
           title: 'Account',
           rows: [
             _SettingsRow(
@@ -515,31 +534,9 @@ class _SettingsList extends StatelessWidget {
               onTap: onAccountName,
             ),
             _SettingsRow(
-              iconName: AppIcons.users,
-              label: 'Contacts',
-              onTap: onAddressBook,
-            ),
-            _SettingsRow(
               iconName: AppIcons.link,
-              label: 'Link mobile',
+              label: 'Link Vizor mobile',
               onTap: onLinkMobile,
-            ),
-            _SettingsRow(
-              key: const ValueKey('settings_gift_cards_row'),
-              iconName: AppIcons.giftCardOutline,
-              label: 'My Gift Cards',
-              labelBadge: const _SettingsNewBadge(),
-              onTap: onGiftCards,
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _SettingsBlock(
-          title: 'Privacy',
-          rows: const [
-            NetworkPrivacyControl(
-              key: ValueKey('settings_tor_control'),
-              showSurface: false,
             ),
           ],
         ),
@@ -572,6 +569,16 @@ class _SettingsList extends StatelessWidget {
                 value: updateLabel,
                 onTap: onUpdates,
               ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _SettingsBlock(
+          title: 'Privacy',
+          rows: const [
+            NetworkPrivacyControl(
+              key: ValueKey('settings_tor_control'),
+              showSurface: false,
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
@@ -1237,31 +1244,6 @@ class _SettingsRowState extends State<_SettingsRow> {
             child: row,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SettingsNewBadge extends StatelessWidget {
-  const _SettingsNewBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final brandColor = context.colors.text.brandCrimson;
-
-    return Container(
-      key: const ValueKey('settings_gift_cards_new_badge'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xxs,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: brandColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        'New',
-        style: AppTypography.labelLarge.copyWith(color: brandColor),
       ),
     );
   }

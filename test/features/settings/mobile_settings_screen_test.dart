@@ -316,8 +316,10 @@ void main() {
               tester.getTopLeft(footer).dy -
                   tester
                       .getBottomLeft(
+                        // The privacy card is the last card above the
+                        // footer.
                         find.ancestor(
-                          of: find.text('Theme'),
+                          of: find.text('Privacy'),
                           matching: find.byType(MobileSurfaceCard),
                         ),
                       )
@@ -612,6 +614,8 @@ void main() {
     );
     expect(find.text('Try again'), findsOneWidget);
 
+    await tester.ensureVisible(retry);
+    await tester.pumpAndSettle();
     await tester.tap(retry);
     await tester.pumpAndSettle();
 
@@ -647,6 +651,8 @@ void main() {
     expect(description, isNot(contains('Requests stay blocked')));
     expect(find.text('Try direct connection'), findsOneWidget);
 
+    await tester.ensureVisible(retry);
+    await tester.pumpAndSettle();
     await tester.tap(retry);
     await tester.pumpAndSettle();
 
@@ -781,7 +787,8 @@ void main() {
       find.byKey(const ValueKey('mobile_settings_gift_cards_row')),
       findsOneWidget,
     );
-    expect(find.text('Gift Cards'), findsOneWidget);
+    expect(find.text('My Gift Cards'), findsOneWidget);
+    expect(find.text('New'), findsOneWidget);
     expect(find.text('John'), findsOneWidget);
     expect(find.text('Knight'), findsOneWidget);
     final pfpRow = find.byKey(const ValueKey('mobile_settings_pfp_row'));
@@ -831,6 +838,37 @@ void main() {
     );
     expect(find.text('Explorer'), findsOneWidget);
     expect(find.text('CipherScan'), findsOneWidget);
+  });
+
+  testWidgets('settings groups run Personal, Account, System, Privacy', (
+    tester,
+  ) async {
+    // Tall viewport so every group is laid out and comparable at once.
+    await tester.binding.setSurfaceSize(const Size(800, 2000));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    double top(String text) => tester.getTopLeft(find.text(text)).dy;
+
+    // The System group is located by its first row because "System" is
+    // also a theme value.
+    expect(top('Personal'), lessThan(top('Account')));
+    expect(top('Account'), lessThan(top('Endpoint')));
+    expect(top('Endpoint'), lessThan(top('Privacy')));
+
+    // Personal owns the gift cards and address book entries.
+    expect(find.text('Address Book'), findsOneWidget);
+    expect(find.text('Contacts'), findsNothing);
+    expect(top('My Gift Cards'), lessThan(top('Address Book')));
+    expect(top('Address Book'), lessThan(top('Account')));
+
+    // Mobile keeps its own pieces and never offers to link to itself.
+    expect(find.text('Syncing'), findsOneWidget);
+    expect(find.textContaining('Link Vizor'), findsNothing);
   });
 
   testWidgets('Gift Cards settings row opens the feature', (tester) async {
@@ -990,7 +1028,7 @@ void main() {
     await tester.pump();
 
     for (final label in [
-      'Contacts',
+      'Address Book',
       'Secret Passphrase',
       'Viewing Key',
       'Keep screen awake',

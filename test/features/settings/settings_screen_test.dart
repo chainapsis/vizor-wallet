@@ -102,7 +102,7 @@ void main() {
     expect(find.text('New'), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('My Gift Cards')).dy,
-      greaterThan(tester.getTopLeft(find.text('Link mobile')).dy),
+      lessThan(tester.getTopLeft(find.text('Link Vizor mobile')).dy),
     );
 
     await tester.tap(row);
@@ -115,6 +115,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('payment links route with data'), findsOneWidget);
+  });
+
+  testWidgets('settings sections are grouped Personal to Danger zone', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_settingsHarness());
+    await tester.pump();
+
+    double sectionTop(String title) => tester.getTopLeft(find.text(title)).dy;
+
+    // Personal leads, and Privacy sits after System (not between Account
+    // and System as it used to). The System block is located by its first
+    // row because "System" is also the theme value.
+    expect(sectionTop('Personal'), lessThan(sectionTop('Account')));
+    expect(sectionTop('Account'), lessThan(sectionTop('Endpoint')));
+    expect(sectionTop('Endpoint'), lessThan(sectionTop('Privacy')));
+    expect(sectionTop('Privacy'), lessThan(sectionTop('Misc')));
+
+    // Personal owns the gift cards and address book entries.
+    expect(find.text('Address book'), findsOneWidget);
+    expect(find.text('Contacts'), findsNothing);
+    expect(sectionTop('My Gift Cards'), lessThan(sectionTop('Address book')));
+    expect(sectionTop('Address book'), lessThan(sectionTop('Account')));
+
+    // Account keeps the renamed mobile-link row.
+    expect(find.text('Link Vizor mobile'), findsOneWidget);
+    expect(find.text('Link mobile'), findsNothing);
   });
 
   testWidgets('uninstall setting is hidden on Windows', (tester) async {

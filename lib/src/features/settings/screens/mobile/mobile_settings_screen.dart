@@ -33,6 +33,7 @@ import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
 import '../../../onboarding/shared/onboarding_welcome_art.dart'
     show VizorWordmark;
 import '../../widgets/mobile/mobile_network_privacy_card.dart';
+import '../../widgets/settings_new_badge.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
 ///
@@ -88,6 +89,26 @@ class MobileSettingsScreen extends ConsumerWidget {
                 ),
               ),
               children: [
+                _SettingsGroup(
+                  title: 'Personal',
+                  rows: [
+                    _GiftCardsRow(
+                      textStyle: settingsRowStyle,
+                      chevronColor: settingsChevronColor,
+                    ),
+                    MobileListRow(
+                      key: const ValueKey('mobile_settings_address_book_row'),
+                      leading: _RowIcon(AppIcons.users),
+                      label: 'Address Book',
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      chevronColor: settingsChevronColor,
+                      showChevron: true,
+                      onTap: () => context.push('/settings/address-book'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
                 _SettingsGroup(
                   title: 'Account',
                   rows: [
@@ -186,20 +207,6 @@ class MobileSettingsScreen extends ConsumerWidget {
                           ? null
                           : () => _editAccount(context, ref, account),
                     ),
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_address_book_row'),
-                      leading: _RowIcon(AppIcons.users),
-                      label: 'Contacts',
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      onTap: () => context.push('/settings/address-book'),
-                    ),
-                    _GiftCardsRow(
-                      textStyle: settingsRowStyle,
-                      chevronColor: settingsChevronColor,
-                    ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -213,8 +220,6 @@ class MobileSettingsScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                const MobileNetworkPrivacyCard(),
                 const SizedBox(height: AppSpacing.md),
                 _SettingsGroup(
                   title: 'System',
@@ -277,6 +282,8 @@ class MobileSettingsScreen extends ConsumerWidget {
                       ),
                   ],
                 ),
+                const SizedBox(height: AppSpacing.md),
+                const MobileNetworkPrivacyCard(),
                 // The About row stays hidden until the legal documents
                 // are ready — the /about screen exists but must not be
                 // user-reachable (product decision, 2026-06).
@@ -901,7 +908,8 @@ class _GiftCardsRowState extends ConsumerState<_GiftCardsRow> {
     return MobileListRow(
       key: const ValueKey('mobile_settings_gift_cards_row'),
       leading: _RowIcon(AppIcons.giftCard),
-      label: 'Gift Cards',
+      label: 'My Gift Cards',
+      labelBadge: const SettingsNewBadge(),
       minRowHeight: _settingsRowHeight,
       textStyle: widget.textStyle,
       chevronColor: widget.chevronColor,
