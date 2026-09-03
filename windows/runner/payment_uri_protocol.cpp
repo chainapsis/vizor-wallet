@@ -171,27 +171,103 @@ bool IsAbsoluteWindowsPath(const std::wstring& value) {
          (value[2] == L'\\' || value[2] == L'/');
 }
 
-// Returns whether |command| still names an executable that exists. Only a
-// rooted path that Windows reports as genuinely missing counts as gone:
-// GetFileAttributesW must fail with ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND
-// or ERROR_INVALID_NAME. Anything else -- a command we cannot parse, a
-// PATH-relative token, a removable drive that is unplugged (ERROR_NOT_READY),
-// an ACL-restricted directory (ERROR_ACCESS_DENIED), an unreachable UNC share
-// (ERROR_BAD_NETPATH) -- is reported as existing. A handler that is merely
-// unreachable right now is still the user's chosen handler, and stealing the
+// Returns whether |path| is present, or absent for a reason that is not "it is
+// not there". Only ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND and
+// ERROR_INVALID_NAME count as gone. A removable drive that is unplugged
+// (ERROR_NOT_READY), an ACL-restricted directory (ERROR_ACCESS_DENIED) and an
+// unreachable UNC share (ERROR_BAD_NETPATH) all leave a handler that is merely
+// unreachable right now, which is still the user's chosen handler; stealing the
 // zcash: scheme from it is not something the user can undo by plugging the
 // drive back in.
-bool CommandExecutableExists(const std::wstring& command) {
-  const std::wstring executable = CommandExecutable(command);
-  if (executable.empty() || !IsAbsoluteWindowsPath(executable)) {
-    return true;
-  }
-  if (::GetFileAttributesW(executable.c_str()) != INVALID_FILE_ATTRIBUTES) {
+bool PathExistsOrIsUnreachable(const std::wstring& path) {
+  if (::GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) {
     return true;
   }
   const DWORD error = ::GetLastError();
   return error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND &&
          error != ERROR_INVALID_NAME;
+}
+
+// Whether |path|'s last segment already carries an extension. CreateProcess
+// appends .exe only when it does not.
+bool HasFileExtension(const std::wstring& path) {
+  const std::wstring::size_type slash = path.find_last_of(L"\\/");
+  const std::wstring::size_type dot = path.find_last_of(L'.');
+  return dot != std::wstring::npos &&
+         (slash == std::wstring::npos || dot > slash);
+}
+
+// Whether any executable an *unquoted* command could resolve to exists.
+//
+// CreateProcess does not stop at the first space. It tries progressively
+// longer whitespace-delimited prefixes, so
+//   C:\Program Files\OtherWallet\wallet.exe "%1"
+// is resolved by trying C:\Program, then
+// C:\Program Files\OtherWallet\wallet.exe, and so on -- appending .exe to a
+// candidate that has no extension. Testing only the first token read every
+// competitor installed under a path with a space as a dangling registration,
+// and overwrote a live association on the next launch.
+//
+// Any candidate that exists means the handler is live. When no candidate is
+// even a rooted path the command resolves through PATH and the working
+// directory, which cannot be reproduced here, so it is reported as existing.
+bool AnyUnquotedPrefixExists(const std::wstring& command,
+                             std::wstring::size_type start) {
+  constexpr wchar_t kWhitespace[] = L" \t";
+  std::wstring::size_type end = command.find_first_of(kWhitespace, start);
+  bool saw_rooted_candidate = false;
+  while (true) {
+    const std::wstring candidate = end == std::wstring::npos
+                                       ? command.substr(start)
+                                       : command.substr(start, end - start);
+    if (IsAbsoluteWindowsPath(candidate)) {
+      saw_rooted_candidate = true;
+      if (PathExistsOrIsUnreachable(candidate)) {
+        return true;
+      }
+      if (!HasFileExtension(candidate) &&
+          PathExistsOrIsUnreachable(candidate + L".exe")) {
+        return true;
+      }
+    }
+    if (end == std::wstring::npos) {
+      break;
+    }
+    // Extend past this whitespace run to the end of the next token.
+    const std::wstring::size_type next =
+        command.find_first_not_of(kWhitespace, end);
+    if (next == std::wstring::npos) {
+      break;
+    }
+    end = command.find_first_of(kWhitespace, next);
+  }
+  return !saw_rooted_candidate;
+}
+
+// Returns whether |command| still names an executable that exists. Anything we
+// cannot resolve -- a command we cannot parse, a PATH-relative token, a path
+// that is unreachable rather than absent -- is reported as existing, because
+// the cost of being wrong is one-sided: leaving a stale registration alone is
+// harmless, while overwriting a live one silently takes the scheme away from
+// the wallet the user chose.
+bool CommandExecutableExists(const std::wstring& command) {
+  constexpr wchar_t kWhitespace[] = L" \t";
+  const std::wstring::size_type start = command.find_first_not_of(kWhitespace);
+  if (start == std::wstring::npos) {
+    return true;
+  }
+
+  // Quoted: the shell takes exactly the quoted token, so there is one
+  // candidate and no ambiguity about where the path ends.
+  if (command[start] == L'"') {
+    const std::wstring executable = CommandExecutable(command);
+    if (executable.empty() || !IsAbsoluteWindowsPath(executable)) {
+      return true;
+    }
+    return PathExistsOrIsUnreachable(executable);
+  }
+
+  return AnyUnquotedPrefixExists(command, start);
 }
 
 // Returns whether |command| launches this module: its executable token, read
