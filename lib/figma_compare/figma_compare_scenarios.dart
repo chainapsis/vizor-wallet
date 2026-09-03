@@ -42,8 +42,9 @@ class FigmaCompareScenario {
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
     id: 'voting-share-status',
-    description: 'Desktop encrypted vote-share progress',
-    builder: buildVotingShareStatusUseCase,
+    description: 'Desktop completed vote with shares still submitting',
+    builder: buildDesktopVotingVotedUseCase,
+    scrollToEnd: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-voting-share-in-progress',
