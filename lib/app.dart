@@ -31,6 +31,8 @@ import 'src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
+import 'src/features/donation/donation_config.dart';
+import 'src/features/donation/screens/donation_screen.dart';
 import 'src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
@@ -95,6 +97,7 @@ import 'src/providers/app_security_provider.dart';
 import 'src/providers/linux_update_provider.dart';
 import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
+import 'src/providers/rpc_endpoint_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
@@ -925,6 +928,17 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
       final extra = state.extra;
       return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
     },
+  ),
+  GoRoute(
+    path: '/donation',
+    redirect: (_, _) =>
+        kAppFormFactor == AppFormFactor.desktop &&
+            donationFeatureEnabledForNetwork(
+              ref.read(rpcEndpointProvider).networkName,
+            )
+        ? null
+        : '/settings',
+    builder: (_, _) => const DonationScreen(),
   ),
   GoRoute(
     path: '/pay',

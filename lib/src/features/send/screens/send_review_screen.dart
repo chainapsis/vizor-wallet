@@ -12,6 +12,7 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
@@ -23,6 +24,7 @@ import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../keystone/services/keystone_batch_signing.dart';
+import '../../donation/widgets/donation_views.dart';
 import '../services/sapling_params.dart';
 import '../services/send_flow.dart';
 import 'keystone_send_scan_screen.dart';
@@ -126,7 +128,19 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   void _handleCancel() {
     _scheduleDiscard();
     if (!mounted) return;
-    context.go('/send');
+    context.go(
+      widget.args.flowKind == SendFlowKind.donation ? '/donation' : '/send',
+    );
+  }
+
+  void _handleDonationBack() {
+    _scheduleDiscard();
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/donation');
+    }
   }
 
   void _showKeystoneSigningModal() {
@@ -305,7 +319,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   Future<void> _cancelKeystoneSigning() async {
     _scheduleDiscard();
     if (!mounted) return;
-    context.go('/send');
+    context.go(
+      widget.args.flowKind == SendFlowKind.donation ? '/donation' : '/send',
+    );
   }
 
   Future<void> _getKeystoneSignature() async {
@@ -392,34 +408,55 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           children: [
             AppPaneScrollScaffold(
               toolbar: AppPaneToolbar(
+                leading: widget.args.flowKind == SendFlowKind.donation
+                    ? AppBackLink(
+                        label: 'Send',
+                        minWidth: 60,
+                        onTap: _handleDonationBack,
+                      )
+                    : null,
                 onBeforeNavigate: _scheduleDiscard,
                 backLinkMinWidth: 60,
               ),
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: SendReviewContentView(
-                amountText: _formatAmount(widget.args.amountZatoshi),
-                fiatText: fiatTextForZatoshi(
-                  widget.args.amountZatoshi,
-                  zecUsdUnitPrice: zecUsdUnitPrice,
-                ),
-                recipient: recipient,
-                feeText: _formatFee(widget.args.feeZatoshi),
-                isShieldedRecipient: widget.args.isShielded,
-                recipientAddressType: widget.args.addressType,
-                memoText: hasMemo ? memo : null,
-                memoExpanded: _messageExpanded,
-                confirmLabel: isHardware
-                    ? 'Confirm with Keystone'
-                    : 'Confirm & send',
-                confirmLeadingIconName: isHardware
-                    ? AppIcons.qr
-                    : AppIcons.plane,
-                onConfirm: () => unawaited(_handleSend()),
-                onCancel: _handleCancel,
-                onShowFullAddress: () =>
-                    setState(() => _showVerifyAddress = true),
-                onExpandMemo: _toggleMessageExpanded,
-              ),
+              child: widget.args.flowKind == SendFlowKind.donation
+                  ? DonationReviewContentView(
+                      amountText: _formatAmount(widget.args.amountZatoshi),
+                      fiatText: fiatTextForZatoshi(
+                        widget.args.amountZatoshi,
+                        zecUsdUnitPrice: zecUsdUnitPrice,
+                      ),
+                      feeText: _formatFee(widget.args.feeZatoshi),
+                      confirmLabel: isHardware
+                          ? 'Confirm with Keystone'
+                          : 'Confirm donation',
+                      confirmIcon: isHardware ? AppIcons.qr : AppIcons.donation,
+                      onConfirm: () => unawaited(_handleSend()),
+                    )
+                  : SendReviewContentView(
+                      amountText: _formatAmount(widget.args.amountZatoshi),
+                      fiatText: fiatTextForZatoshi(
+                        widget.args.amountZatoshi,
+                        zecUsdUnitPrice: zecUsdUnitPrice,
+                      ),
+                      recipient: recipient,
+                      feeText: _formatFee(widget.args.feeZatoshi),
+                      isShieldedRecipient: widget.args.isShielded,
+                      recipientAddressType: widget.args.addressType,
+                      memoText: hasMemo ? memo : null,
+                      memoExpanded: _messageExpanded,
+                      confirmLabel: isHardware
+                          ? 'Confirm with Keystone'
+                          : 'Confirm & send',
+                      confirmLeadingIconName: isHardware
+                          ? AppIcons.qr
+                          : AppIcons.plane,
+                      onConfirm: () => unawaited(_handleSend()),
+                      onCancel: _handleCancel,
+                      onShowFullAddress: () =>
+                          setState(() => _showVerifyAddress = true),
+                      onExpandMemo: _toggleMessageExpanded,
+                    ),
             ),
             if (_showVerifyAddress && keystonePhase == null)
               SendVerifyAddressOverlay(

@@ -121,10 +121,10 @@ class SendReviewInfoSection extends StatelessWidget {
           ReviewInfoRow(
             label: 'Amount',
             value: amountText,
-            leading: const _ZecCoinImage(),
+            leading: const ReviewZecCoinImage(),
             bottomLeftText: fiatText,
           ),
-          _ReviewConnectorIcon(iconName: connectorIconName),
+          ReviewConnectorIcon(iconName: connectorIconName),
           _recipientRow(context),
         ],
       ),
@@ -289,8 +289,8 @@ class ReviewMemoRows extends StatelessWidget {
 }
 
 /// 32px round ZEC coin image leading the Amount row.
-class _ZecCoinImage extends StatelessWidget {
-  const _ZecCoinImage();
+class ReviewZecCoinImage extends StatelessWidget {
+  const ReviewZecCoinImage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -307,8 +307,8 @@ class _ZecCoinImage extends StatelessWidget {
 
 /// 24px connector glyph centered in the 32px leading column, between the
 /// Amount and To rows.
-class _ReviewConnectorIcon extends StatelessWidget {
-  const _ReviewConnectorIcon({required this.iconName});
+class ReviewConnectorIcon extends StatelessWidget {
+  const ReviewConnectorIcon({required this.iconName, super.key});
 
   final String iconName;
 

@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
     show
         resolveSendStatusRoutePayload,
+        SendFlowKind,
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider;
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
@@ -87,6 +88,20 @@ void main() {
     expect(find.text('0.00012 ZEC'), findsOneWidget);
     expect(find.text('Confirm & send'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
+  });
+
+  testWidgets('donation review uses the Figma Send back label', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', flowKind: SendFlowKind.donation),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Donation'), findsOneWidget);
+    expect(find.text('Send'), findsOneWidget);
+    expect(find.text('Donation'), findsNothing);
   });
 
   testWidgets('renders the contact variant for an address-book match', (
@@ -900,6 +915,7 @@ SendReviewArgs _reviewArgs({
   String? memo,
   String address = _longAddress,
   BigInt? amountZatoshi,
+  SendFlowKind flowKind = SendFlowKind.send,
 }) {
   return SendReviewArgs(
     proposalId: BigInt.one,
@@ -911,6 +927,7 @@ SendReviewArgs _reviewArgs({
     feeZatoshi: BigInt.from(12000),
     needsSaplingParams: false,
     memo: memo,
+    flowKind: flowKind,
   );
 }
 

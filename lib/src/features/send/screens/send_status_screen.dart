@@ -22,6 +22,7 @@ import '../../../providers/zcash_explorer_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
+import '../../donation/widgets/donation_views.dart';
 import '../services/send_flow.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/send_recipient_resolver.dart';
@@ -257,6 +258,15 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       },
       child: isKeystoneSubmitting
           ? _buildKeystoneSubmittingScreen(context)
+          : widget.args.flowKind == SendFlowKind.donation &&
+                _phase == _SendStatusPhase.succeeded
+          ? AppDesktopShell(
+              sidebar: const AppMainSidebar(),
+              pane: AppDesktopPane(
+                padding: EdgeInsets.zero,
+                child: DonationSuccessView(onDone: () => unawaited(_goHome())),
+              ),
+            )
           : AppDesktopShell(
               sidebar: const AppMainSidebar(),
               pane: AppDesktopPane(

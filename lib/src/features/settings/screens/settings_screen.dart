@@ -25,6 +25,7 @@ import '../../../providers/windows_update_provider.dart';
 import '../../accounts/widgets/account_modal_card.dart';
 import '../../accounts/widgets/account_edit_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
+import '../../donation/donation_config.dart';
 import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
 import '../widgets/windows_update_download_flow.dart';
@@ -201,6 +202,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ? null
                     : () => _showModal(_SettingsModalType.updates),
                 onAbout: () => context.push('/about'),
+                onDonation:
+                    donationFeatureEnabledForNetwork(endpoint.networkName)
+                    ? () => context.push('/donation')
+                    : null,
                 onUninstall: showUninstall
                     ? () => context.go('/settings/uninstall')
                     : null,
@@ -309,6 +314,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onTheme,
     required this.onUpdates,
     required this.onAbout,
+    required this.onDonation,
     required this.onUninstall,
   });
 
@@ -332,6 +338,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onTheme;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
+  final VoidCallback? onDonation;
   final VoidCallback? onUninstall;
 
   @override
@@ -378,6 +385,7 @@ class _SettingsPane extends StatelessWidget {
                 onTheme: onTheme,
                 onUpdates: onUpdates,
                 onAbout: onAbout,
+                onDonation: onDonation,
                 onUninstall: onUninstall,
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -411,6 +419,7 @@ class _SettingsList extends StatelessWidget {
     required this.onTheme,
     required this.onUpdates,
     required this.onAbout,
+    required this.onDonation,
     required this.onUninstall,
   });
 
@@ -434,6 +443,7 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback onTheme;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
+  final VoidCallback? onDonation;
   final VoidCallback? onUninstall;
 
   @override
@@ -534,9 +544,17 @@ class _SettingsList extends StatelessWidget {
           rows: [
             _SettingsRow(
               iconName: AppIcons.vizor,
+              iconGlyphSize: 16.5,
               label: 'About Vizor',
               onTap: onAbout,
             ),
+            if (onDonation != null)
+              _SettingsRow(
+                iconName: AppIcons.donation,
+                iconGlyphSize: 16.5,
+                label: 'Donation',
+                onTap: onDonation!,
+              ),
           ],
         ),
         if (onUninstall != null) ...[
@@ -1022,6 +1040,7 @@ class _SettingsRow extends StatefulWidget {
   const _SettingsRow({
     required this.iconName,
     required this.label,
+    this.iconGlyphSize = 20,
     this.value,
     this.valueLeading,
     this.destructive = false,
@@ -1030,6 +1049,7 @@ class _SettingsRow extends StatefulWidget {
 
   final String iconName;
   final String label;
+  final double iconGlyphSize;
   final String? value;
   final Widget? valueLeading;
   final bool destructive;
@@ -1086,7 +1106,16 @@ class _SettingsRowState extends State<_SettingsRow> {
 
     Widget content = Row(
       children: [
-        AppIcon(widget.iconName, size: 20, color: iconColor),
+        SizedBox.square(
+          dimension: 20,
+          child: Center(
+            child: AppIcon(
+              widget.iconName,
+              size: widget.iconGlyphSize,
+              color: iconColor,
+            ),
+          ),
+        ),
         const SizedBox(width: AppSpacing.xs),
         Expanded(
           child: Text(
