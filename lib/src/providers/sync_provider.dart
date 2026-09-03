@@ -1141,10 +1141,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             return;
           }
 
+          // The preflight can sit inside Rust for as long as a Tor bootstrap
+          // takes. A lock or transport change in that window has already
+          // moved the generation and drained what was running; starting Rust
+          // work now would resurrect the stopped sync behind that drain.
+          if (gen != _syncGen) {
+            log('Sync: preflight finished after stop; not starting');
+            return;
+          }
           final endpoint = _endpointConfig;
           log('Sync: starting foreground sync via ${endpoint.hostPort}');
           final readyState = state.value;
-          if (readyState != null && gen == _syncGen) {
+          if (readyState != null) {
             state = AsyncData(
               readyState.copyWith(
                 phase: kSyncPhaseSetup,
