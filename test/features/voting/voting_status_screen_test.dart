@@ -40,6 +40,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
+import 'package:zcash_wallet/src/rust/api/voting_session.dart' as rust_session;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
@@ -59,6 +60,7 @@ import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
 
+import 'fake_voting_round_session.dart';
 import 'round_plan_test_utils.dart';
 import '../../services/voting/fake_voting_http.dart';
 
@@ -5281,7 +5283,8 @@ class _VotingStatusChainPassHandle implements VotingChainSubmissionPassHandle {
   void setOperationEpoch(BigInt operationEpoch) {}
 }
 
-class _VotingStatusRustApi extends _NoopVotingRustApi {
+class _VotingStatusRustApi extends _NoopVotingRustApi
+    implements FakeRoundSessionDriver {
   _VotingStatusRustApi(
     this.recoveryApi, {
     this.bundleCount = 1,
@@ -5297,6 +5300,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   final BigInt? setupWeightPerBundle;
   final BigInt? shareTrackingDelaySeconds;
   final Map<int, String> keystoneMemoZecByBundle;
+  @override
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int _persistedBundleCount;
   int setupDelegationBundleCalls = 0;
@@ -5311,6 +5315,70 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   int chainVoteAdvanceCalls = 0;
   final Map<int, List<int>> _batchProposalIdsByBundle = {};
   final _preparedHelperUrls = <String, List<String>>{};
+  @override
+  final roundSessionSteps = <String>[];
+  @override
+  final sessionBallotIntents = <String>[];
+  @override
+  final provenVoteKeys = <String>{};
+  @override
+  final handledVoteKeys = <String>{};
+
+  @override
+  VotingRustApi get api => this;
+
+  @override
+  Map<int, List<int>> get batchProposalIdsByBundle => _batchProposalIdsByBundle;
+
+  @override
+  int get planBundleCount => _persistedBundleCount;
+
+  @override
+  Future<rust_wire.RoundPlanView?> peekRoundPlan({
+    required String roundId,
+    required List<int> proposalIds,
+  }) {
+    return recoveryApi.getRoundPlan(
+      dbPath: '',
+      accountUuid: '',
+      roundId: roundId,
+      proposalIds: proposalIds,
+    );
+  }
+
+  @override
+  Future<rust_wire.RoundPlanView?> loadRoundPlan({
+    required String roundId,
+    required List<int> proposalIds,
+  }) => peekRoundPlan(roundId: roundId, proposalIds: proposalIds);
+
+  @override
+  Set<String> get recordedVoteKeys => {
+    for (final vote in recoveryApi.state.votes)
+      if (vote.phase != rust_wire.WorkflowPhaseView.prepared ||
+          vote.txHash != null)
+        '${vote.bundleIndex}:${vote.proposalId}',
+  };
+
+  @override
+  VotingRoundSession openRoundSession({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<String> chainEndpoints,
+    required List<String> pirServerUrls,
+    required List<rust_session.ApiProposalRosterEntry> proposals,
+    List<int>? storedHotkeySecret,
+    required BigInt operationEpoch,
+  }) {
+    return FakeVotingRoundSession(
+      driver: this,
+      ctx: ctx,
+      chainEndpoints: chainEndpoints,
+      pirServerUrls: pirServerUrls,
+      proposals: proposals,
+      storedHotkeySecret: storedHotkeySecret,
+      operationEpoch: operationEpoch,
+    );
+  }
 
   @override
   VotingChainSubmissionPassHandle beginChainSubmissionPass({
@@ -5733,6 +5801,9 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     _batchProposalIdsByBundle[bundleIndex] = [
       for (final draft in draftVotes) draft.proposalId,
     ];
+    provenVoteKeys.addAll([
+      for (final draft in draftVotes) '$bundleIndex:${draft.proposalId}',
+    ]);
     for (final draft in draftVotes) {
       yield rust_api.ApiVoteCommitEvent(
         phase: 'proving',

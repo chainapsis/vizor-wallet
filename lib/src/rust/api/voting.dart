@@ -11,8 +11,7 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `bounded_chain_message`, `build_vote_commitments_result`, `catch`, `chain_submission_client_config`, `chain_submission_client`, `chain_submission_round_id`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `failure`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `local`, `log_sink_closed`, `outcome`, `share_record`, `vote_recovery_progress_event`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PreparedVoteWork`
+// These functions are ignored because they are not marked as `pub`: `bounded_chain_message`, `build_vote_commitments_result`, `catch`, `chain_submission_client_config`, `chain_submission_client`, `chain_submission_round_id`, `delegation_static_inputs_for`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `failure`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `local`, `log_sink_closed`, `outcome`, `round_inputs`, `routed_transport`, `share_record`, `share_tracking_pass_for`, `signed_vote_commitments_view`, `vote_recovery_progress_event`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`, `try_from`, `try_from`, `try_from`, `try_from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
@@ -336,13 +335,10 @@ Future<Uint8List> generateVotingHotkey({required String network}) =>
 
 /// Select notes and persist bundle rows for the delegation pipeline.
 ///
-/// Reuses existing bundle rows for the same round/wallet, so callers can safely
-/// retry setup before proving a specific bundle.
-///
 /// # Errors
 ///
-/// Returns an error if bundle policy parsing, opening the sidecar DB, round
-/// initialization, note selection, or bundle layout persistence fails.
+/// Returns an error if bundle policy parsing, opening the sidecar DB, note
+/// selection, or bundle setup fails.
 Future<ApiBundleLayout> setupDelegationBundles({
   required ApiVotingRoundContext ctx,
 }) => RustLib.instance.api.crateApiVotingSetupDelegationBundles(ctx: ctx);
@@ -427,24 +423,10 @@ Future<bool> precomputeDelegationProof({
 void warmVotingProvingCaches() =>
     RustLib.instance.api.crateApiVotingWarmVotingProvingCaches();
 
-/// Warm the bundle-independent PIR proof cache for one account.
+/// Warm the bundle-independent PIR proof cache for one account and snapshot.
 ///
-/// Fetches and caches IMT non-membership proofs for the account's eligible
-/// notes at `snapshot_height` against whatever snapshot the PIR endpoint
-/// currently serves. Notes are planned with the same whale-protected default
-/// bundle policy round setup uses. The library prunes cache rows older than
-/// four weeks; `keep_roots` is accepted for FRB compatibility.
-///
-/// This is a background warm-up path: it needs no hotkey, no round rows, and
-/// no bundles, so it can run as soon as the wallet is scanned to the snapshot
-/// height. The delegation prove path reads the same cache and still fetches
-/// anything missing, so skipping or failing this call only costs latency.
-///
-/// # Errors
-///
-/// Returns an error if the network string is invalid, the sidecar cannot be
-/// opened, the wallet is not scanned to the snapshot height, note selection
-/// fails, the PIR handshake fails, or a fetched proof does not verify.
+/// `keep_roots` is accepted for FRB compatibility; the SDK prunes cache rows
+/// by age and does not take a keep list.
 Future<ApiPirCacheWarmupResult> warmPirProofCache({
   required String dbPath,
   required String accountUuid,
@@ -568,8 +550,7 @@ Future<List<KeystoneSignatureRecord>> getKeystoneSignatures({
   roundId: roundId,
 );
 
-/// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
-/// `pir_server_urls` follows the same exact-snapshot failover contract.
+/// Streaming variant of `build_prove_delegation_payload_with_keystone_signature`.
 ///
 /// # Errors
 ///
@@ -708,10 +689,10 @@ Future<int> deleteVotingAccountState({
   accountUuid: accountUuid,
 );
 
-/// Lists account/round pairs with durable unconfirmed helper shares.
+/// List rounds with durable unconfirmed helper shares for the given accounts.
 ///
-/// The opaque session JSON is returned for caller-owned deadline checks. The
-/// sidecar is not created when the wallet has never persisted voting state.
+/// Accounts with no pending rounds contribute nothing. The result is sorted by
+/// account and round.
 Future<List<ApiPendingShareRound>> listPendingShareRounds({
   required String dbPath,
   required List<String> accountUuids,

@@ -7,8 +7,129 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `ChainConfirmationSourceView`, `ChainDiagnosticKindView`, `ChainDiagnosticView`, `ChainSubmissionFailureStateView`, `ChainSubmissionOutcomeKind`, `ChainSubmissionOutcomeView`, `ChainSubmissionStateEvidenceView`, `ChainSubmissionStateView`, `DelegationProgressKind`, `PendingShareRoundView`, `RoundStepDispositionView`, `RoundStepFailureKindView`, `RoundStepFailureView`, `RoundStepOutcomeView`, `RoundStepProgressKind`, `RoundStepProgressView`, `ShareBatchDeliveryReportView`, `ShareDeliveryOutcomeView`, `ShareKeyView`, `SignedVoteBatchView`, `SignedVoteCommitmentsView`, `VoteCommitStageKind`, `VoteCommitmentBatchWire`, `VoteKeyView`, `VoteRecord`, `VoteShareWire`, `VotingErrorKindView`, `VotingErrorView`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `PendingShareRoundView`, `SignedVoteBatchView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteRecord`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
+
+/// How a confirmation was established.
+enum ChainConfirmationSourceView { hash, tree }
+
+/// Category of a chain submission diagnostic.
+enum ChainDiagnosticKindView {
+  ambiguousDispatch,
+  ambiguousAttemptsExhausted,
+  nullifierAlreadySpent,
+  trackingWindowExpired,
+  chainRejected,
+  reconciliationPending,
+  invalidProtocolResponse,
+  storageFailure,
+}
+
+class ChainDiagnosticView {
+  final ChainDiagnosticKindView kind;
+  final String message;
+
+  const ChainDiagnosticView({required this.kind, required this.message});
+
+  @override
+  int get hashCode => kind.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChainDiagnosticView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          message == other.message;
+}
+
+class ChainSubmissionFailureStateView {
+  final ChainSubmissionStateView state;
+  final ChainSubmissionStateEvidenceView evidence;
+
+  const ChainSubmissionFailureStateView({
+    required this.state,
+    required this.evidence,
+  });
+
+  @override
+  int get hashCode => state.hashCode ^ evidence.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChainSubmissionFailureStateView &&
+          runtimeType == other.runtimeType &&
+          state == other.state &&
+          evidence == other.evidence;
+}
+
+/// Discriminator of a [`ChainSubmissionOutcomeView`].
+enum ChainSubmissionOutcomeKind {
+  confirmed,
+  tracking,
+  recovering,
+  submittedWithoutHash,
+  rejected,
+  cancelled,
+}
+
+/// Flat view of one chain submission result.
+class ChainSubmissionOutcomeView {
+  final ChainSubmissionOutcomeKind kind;
+  final ChainConfirmationSourceView? confirmationSource;
+  final String? transactionHash;
+  final String? candidateTransactionHash;
+  final BigInt? finalVanPosition;
+  final Uint64List voteCommitmentPositions;
+  final ChainDiagnosticView? diagnostic;
+
+  const ChainSubmissionOutcomeView({
+    required this.kind,
+    this.confirmationSource,
+    this.transactionHash,
+    this.candidateTransactionHash,
+    this.finalVanPosition,
+    required this.voteCommitmentPositions,
+    this.diagnostic,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      confirmationSource.hashCode ^
+      transactionHash.hashCode ^
+      candidateTransactionHash.hashCode ^
+      finalVanPosition.hashCode ^
+      voteCommitmentPositions.hashCode ^
+      diagnostic.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChainSubmissionOutcomeView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          confirmationSource == other.confirmationSource &&
+          transactionHash == other.transactionHash &&
+          candidateTransactionHash == other.candidateTransactionHash &&
+          finalVanPosition == other.finalVanPosition &&
+          voteCommitmentPositions == other.voteCommitmentPositions &&
+          diagnostic == other.diagnostic;
+}
+
+/// How strongly a failure's state is known.
+enum ChainSubmissionStateEvidenceView { durable, knownPossiblyDispatched }
+
+/// Durable chain submission state.
+enum ChainSubmissionStateView {
+  submitting,
+  tracking,
+  recovering,
+  submittedWithoutHash,
+  confirmed,
+  rejected,
+}
 
 class CompletedVoteChoiceView {
   final int proposalId;
@@ -75,6 +196,19 @@ class DelegationPirPrecomputeResultView {
           fetchedCount == other.fetchedCount &&
           bundleCount == other.bundleCount &&
           bundleIndex == other.bundleIndex;
+}
+
+/// Delegation proving and signing stages.
+enum DelegationProgressKind {
+  selectingNotes,
+  pcztBuilding,
+  pcztBuilt,
+  proofStarting,
+  waitingForExistingProof,
+  proofProgress,
+  proofComplete,
+  signingPayload,
+  payloadReady,
 }
 
 class DelegationRecoveryView {
@@ -540,6 +674,234 @@ class RoundRecoveryStateView {
           unconfirmedShareDelegations == other.unconfirmedShareDelegations;
 }
 
+/// What one round step call accomplished.
+enum RoundStepDispositionView {
+  noWork,
+  advanced,
+  pending,
+  cancelled,
+  chainTerminal,
+}
+
+/// Stable category of a round step failure.
+enum RoundStepFailureKindView {
+  invalidInput,
+  busy,
+  storage,
+  invariantViolation,
+  transport,
+  protocol,
+  proofFailed,
+  signing,
+  helperDeliveryIncomplete,
+}
+
+/// Failure of one round step with the refreshed plan when it could be read.
+class RoundStepFailureView {
+  final RoundStepFailureKindView kind;
+  final NextStepView? step;
+  final ChainSubmissionFailureStateView? strongestChainState;
+  final ChainSubmissionOutcomeView? chainOutcome;
+  final String message;
+  final RoundPlanView? plan;
+
+  const RoundStepFailureView({
+    required this.kind,
+    this.step,
+    this.strongestChainState,
+    this.chainOutcome,
+    required this.message,
+    this.plan,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      step.hashCode ^
+      strongestChainState.hashCode ^
+      chainOutcome.hashCode ^
+      message.hashCode ^
+      plan.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundStepFailureView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          step == other.step &&
+          strongestChainState == other.strongestChainState &&
+          chainOutcome == other.chainOutcome &&
+          message == other.message &&
+          plan == other.plan;
+}
+
+/// Outcome of one round step.
+class RoundStepOutcomeView {
+  final NextStepView? step;
+  final RoundStepDispositionView disposition;
+  final ChainSubmissionOutcomeView? chainOutcome;
+  final List<ShareBatchDeliveryReportView> shareDeliveries;
+  final SignedDelegationPayloadView? delegation;
+  final RoundPlanView plan;
+
+  const RoundStepOutcomeView({
+    this.step,
+    required this.disposition,
+    this.chainOutcome,
+    required this.shareDeliveries,
+    this.delegation,
+    required this.plan,
+  });
+
+  @override
+  int get hashCode =>
+      step.hashCode ^
+      disposition.hashCode ^
+      chainOutcome.hashCode ^
+      shareDeliveries.hashCode ^
+      delegation.hashCode ^
+      plan.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundStepOutcomeView &&
+          runtimeType == other.runtimeType &&
+          step == other.step &&
+          disposition == other.disposition &&
+          chainOutcome == other.chainOutcome &&
+          shareDeliveries == other.shareDeliveries &&
+          delegation == other.delegation &&
+          plan == other.plan;
+}
+
+/// Discriminator of a [`RoundStepProgressView`].
+enum RoundStepProgressKind {
+  selected,
+  delegation,
+  treeSynced,
+  voteCommit,
+  helperPlansPrepared,
+  chainOutcome,
+  shareOutcome,
+  shareConfirmed,
+}
+
+/// One progress event from a round step, flattened for the host boundary.
+///
+/// `kind` says which optional payload fields are populated: `step` for
+/// `Selected`; `bundle_index`, `delegation_progress`, and `proof_progress`
+/// for `Delegation`; `tree_height` for `TreeSynced`; `bundle_index`,
+/// `proposal_id`, `vote_commit_stage`, and `proof_progress` for
+/// `VoteCommit`; `vote_keys` for `HelperPlansPrepared`; `chain_outcome` for
+/// `ChainOutcome`; `share_delivery` for `ShareOutcome`; `share` and
+/// `share_confirmed` for `ShareConfirmed`.
+class RoundStepProgressView {
+  final RoundStepProgressKind kind;
+  final NextStepView? step;
+  final int? bundleIndex;
+  final int? proposalId;
+  final DelegationProgressKind? delegationProgress;
+  final VoteCommitStageKind? voteCommitStage;
+  final double? proofProgress;
+  final int? treeHeight;
+  final List<VoteKeyView> voteKeys;
+  final ChainSubmissionOutcomeView? chainOutcome;
+  final ShareBatchDeliveryReportView? shareDelivery;
+  final ShareKeyView? share;
+  final bool? shareConfirmed;
+
+  const RoundStepProgressView({
+    required this.kind,
+    this.step,
+    this.bundleIndex,
+    this.proposalId,
+    this.delegationProgress,
+    this.voteCommitStage,
+    this.proofProgress,
+    this.treeHeight,
+    required this.voteKeys,
+    this.chainOutcome,
+    this.shareDelivery,
+    this.share,
+    this.shareConfirmed,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      step.hashCode ^
+      bundleIndex.hashCode ^
+      proposalId.hashCode ^
+      delegationProgress.hashCode ^
+      voteCommitStage.hashCode ^
+      proofProgress.hashCode ^
+      treeHeight.hashCode ^
+      voteKeys.hashCode ^
+      chainOutcome.hashCode ^
+      shareDelivery.hashCode ^
+      share.hashCode ^
+      shareConfirmed.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundStepProgressView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          step == other.step &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          delegationProgress == other.delegationProgress &&
+          voteCommitStage == other.voteCommitStage &&
+          proofProgress == other.proofProgress &&
+          treeHeight == other.treeHeight &&
+          voteKeys == other.voteKeys &&
+          chainOutcome == other.chainOutcome &&
+          shareDelivery == other.shareDelivery &&
+          share == other.share &&
+          shareConfirmed == other.shareConfirmed;
+}
+
+/// Result of one initial helper delivery for a confirmed vote.
+class ShareBatchDeliveryReportView {
+  final VoteKeyView vote;
+  final List<ShareDeliveryOutcomeView> deliveries;
+  final Uint32List pendingShareIndices;
+  final bool cancelled;
+
+  /// True when the persisted plan predates complete-plan persistence.
+  final bool legacyBestEffort;
+
+  const ShareBatchDeliveryReportView({
+    required this.vote,
+    required this.deliveries,
+    required this.pendingShareIndices,
+    required this.cancelled,
+    required this.legacyBestEffort,
+  });
+
+  @override
+  int get hashCode =>
+      vote.hashCode ^
+      deliveries.hashCode ^
+      pendingShareIndices.hashCode ^
+      cancelled.hashCode ^
+      legacyBestEffort.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareBatchDeliveryReportView &&
+          runtimeType == other.runtimeType &&
+          vote == other.vote &&
+          deliveries == other.deliveries &&
+          pendingShareIndices == other.pendingShareIndices &&
+          cancelled == other.cancelled &&
+          legacyBestEffort == other.legacyBestEffort;
+}
+
 class ShareDelegationRecordView {
   final String roundId;
   final int bundleIndex;
@@ -601,6 +963,64 @@ class ShareDelegationRecordView {
           confirmed == other.confirmed &&
           submitAt == other.submitAt &&
           createdAt == other.createdAt;
+}
+
+/// Delivery result for one share of a batch.
+class ShareDeliveryOutcomeView {
+  final int shareIndex;
+  final List<String> acceptedUrls;
+  final List<String> ambiguousUrls;
+  final int targetCount;
+
+  const ShareDeliveryOutcomeView({
+    required this.shareIndex,
+    required this.acceptedUrls,
+    required this.ambiguousUrls,
+    required this.targetCount,
+  });
+
+  @override
+  int get hashCode =>
+      shareIndex.hashCode ^
+      acceptedUrls.hashCode ^
+      ambiguousUrls.hashCode ^
+      targetCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareDeliveryOutcomeView &&
+          runtimeType == other.runtimeType &&
+          shareIndex == other.shareIndex &&
+          acceptedUrls == other.acceptedUrls &&
+          ambiguousUrls == other.ambiguousUrls &&
+          targetCount == other.targetCount;
+}
+
+/// Durable identity of one helper share.
+class ShareKeyView {
+  final int bundleIndex;
+  final int proposalId;
+  final int shareIndex;
+
+  const ShareKeyView({
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.shareIndex,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ proposalId.hashCode ^ shareIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareKeyView &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          shareIndex == other.shareIndex;
 }
 
 class ShareWorkflowRecoveryView {
@@ -702,6 +1122,14 @@ class SignedVoteCommitmentView {
           wire == other.wire;
 }
 
+/// Vote proving and signing stages.
+enum VoteCommitStageKind {
+  proofStarting,
+  proofProgress,
+  sharePayloadsBuilding,
+  signing,
+}
+
 class VoteCommitmentWire {
   final String vanNullifier;
   final String voteAuthorityNoteNew;
@@ -751,6 +1179,25 @@ class VoteCommitmentWire {
           anchorHeight == other.anchorHeight &&
           rVpk == other.rVpk &&
           voteAuthSig == other.voteAuthSig;
+}
+
+/// Durable identity of one committed vote.
+class VoteKeyView {
+  final int bundleIndex;
+  final int proposalId;
+
+  const VoteKeyView({required this.bundleIndex, required this.proposalId});
+
+  @override
+  int get hashCode => bundleIndex.hashCode ^ proposalId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VoteKeyView &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId;
 }
 
 class VoteRecoveryView {
@@ -836,6 +1283,92 @@ class VoteRecoveryWorkView {
           txHash == other.txHash &&
           vcTreePosition == other.vcTreePosition &&
           shareIndexes == other.shareIndexes;
+}
+
+/// Stable error category exposed across the wallet boundary.
+///
+/// Mirrors [`crate::VotingErrorKind`]; `Other` covers categories added to the
+/// crate after this view was generated for a host.
+enum VotingErrorKindView {
+  invalidInput,
+  keystoneSignatureConflict,
+  proofFailed,
+  busy,
+  storage,
+  internal,
+  insufficientEligibility,
+  noSpendableNotes,
+  setupAlreadyPersisted,
+  dbBusy,
+  pirUnavailable,
+  other,
+}
+
+/// Wallet-facing view of a [`crate::VotingError`].
+///
+/// `kind`, `retryable`, and `message` are always populated. The remaining
+/// fields carry the structured payload of the kinds that have one:
+/// `bundle_index` for `KeystoneSignatureConflict` and `SetupAlreadyPersisted`;
+/// `snapshot_height`, the weight fields, and the note counts for
+/// `InsufficientEligibility` and `NoSpendableNotes`; `http_status` and
+/// `endpoint` for `PirUnavailable`.
+class VotingErrorView implements FrbException {
+  final VotingErrorKindView kind;
+  final bool retryable;
+  final String message;
+  final int? bundleIndex;
+  final BigInt? snapshotHeight;
+  final BigInt? requiredWeightZatoshi;
+  final BigInt? selectedWeightZatoshi;
+  final int? requiredNotes;
+  final int? selectedNotes;
+  final int? httpStatus;
+  final String? endpoint;
+
+  const VotingErrorView({
+    required this.kind,
+    required this.retryable,
+    required this.message,
+    this.bundleIndex,
+    this.snapshotHeight,
+    this.requiredWeightZatoshi,
+    this.selectedWeightZatoshi,
+    this.requiredNotes,
+    this.selectedNotes,
+    this.httpStatus,
+    this.endpoint,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      retryable.hashCode ^
+      message.hashCode ^
+      bundleIndex.hashCode ^
+      snapshotHeight.hashCode ^
+      requiredWeightZatoshi.hashCode ^
+      selectedWeightZatoshi.hashCode ^
+      requiredNotes.hashCode ^
+      selectedNotes.hashCode ^
+      httpStatus.hashCode ^
+      endpoint.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VotingErrorView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          retryable == other.retryable &&
+          message == other.message &&
+          bundleIndex == other.bundleIndex &&
+          snapshotHeight == other.snapshotHeight &&
+          requiredWeightZatoshi == other.requiredWeightZatoshi &&
+          selectedWeightZatoshi == other.selectedWeightZatoshi &&
+          requiredNotes == other.requiredNotes &&
+          selectedNotes == other.selectedNotes &&
+          httpStatus == other.httpStatus &&
+          endpoint == other.endpoint;
 }
 
 /// Parameters for a voting round, sourced from vote chain.

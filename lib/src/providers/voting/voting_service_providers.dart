@@ -12,6 +12,7 @@ import '../../providers/rpc_endpoint_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../../rust/api/voting.dart' as rust_api;
+import '../../rust/api/voting_session.dart' as rust_session;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/vote.dart' as rust_vote;
@@ -419,11 +420,62 @@ abstract interface class VotingVoteRecoveryPassHandle {
   void dispose();
 }
 
+/// SDK-owned execution of one round for one account.
+///
+/// The SDK interprets the plan and runs each step (proving, chain episodes,
+/// confirmation, helper delivery); Dart keeps scheduling, cancellation, the
+/// network route, and secret custody. Every method throws
+/// `VotingErrorView` for SDK failures.
+abstract interface class VotingRoundSession {
+  String get accountUuid;
+
+  String get roundId;
+
+  bool get isDisposed;
+
+  void setOperationEpoch(BigInt operationEpoch);
+
+  /// Cancels every step in flight or queued on this session.
+  void cancel();
+
+  void dispose();
+
+  Future<rust_voting.RoundPlanView> plan();
+
+  Future<rust_voting.RoundPlanView> setBallotIntents(
+    List<rust_session.ApiBallotIntent> intents,
+  );
+
+  /// Runs one planned step, streaming progress and then exactly one result.
+  Stream<rust_session.ApiRoundStepEvent> advanceStep({
+    required rust_voting.NextStepView step,
+    required rust_session.ApiRoundHostContext host,
+    rust_session.ApiDelegationSignerInput? signer,
+  });
+
+  Future<List<rust_delegate.KeystoneSigningRequest>> keystoneSigningRequests(
+    List<int> bundleIndices,
+  );
+
+  VotingShareTrackingPassHandle beginShareTrackingPass();
+}
+
 /// Narrow interface over Rust voting work used by the session state machine.
 ///
 /// Keeping this boundary explicit lets tests verify sequencing, recovery skips,
 /// and progress forwarding without invoking FRB or cryptographic proof work.
 abstract interface class VotingRustApi {
+  /// Opens an SDK round session bound to the given account, round, roster,
+  /// transports, and (when votes may be cast) hotkey.
+  VotingRoundSession openRoundSession({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<String> chainEndpoints,
+    required List<String> pirServerUrls,
+    required List<rust_session.ApiProposalRosterEntry> proposals,
+    List<int>? storedHotkeySecret,
+    required BigInt operationEpoch,
+  });
+
   VotingVoteRecoveryPassHandle beginVoteRecoveryPass({
     required VotingHelperDeliveryContext context,
     required String network,
@@ -893,9 +945,107 @@ final class _FrbVotingVoteRecoveryPassHandle
   }
 }
 
+final class _FrbVotingRoundSession implements VotingRoundSession {
+  _FrbVotingRoundSession({
+    required this.accountUuid,
+    required this.roundId,
+    required rust_session.VotingRoundSession inner,
+  }) : _inner = inner;
+
+  @override
+  final String accountUuid;
+
+  @override
+  final String roundId;
+
+  final rust_session.VotingRoundSession _inner;
+
+  @override
+  bool get isDisposed => _inner.isDisposed;
+
+  rust_session.VotingRoundSession get inner {
+    if (isDisposed) {
+      throw StateError('Voting round session has been disposed.');
+    }
+    return _inner;
+  }
+
+  @override
+  void setOperationEpoch(BigInt operationEpoch) {
+    if (isDisposed) return;
+    _inner.setOperationEpoch(operationEpoch: operationEpoch);
+  }
+
+  @override
+  void cancel() {
+    if (isDisposed) return;
+    _inner.cancel();
+  }
+
+  @override
+  void dispose() {
+    if (isDisposed) return;
+    _inner.dispose();
+  }
+
+  @override
+  Future<rust_voting.RoundPlanView> plan() => inner.plan();
+
+  @override
+  Future<rust_voting.RoundPlanView> setBallotIntents(
+    List<rust_session.ApiBallotIntent> intents,
+  ) => inner.setBallotIntents(intents: intents);
+
+  @override
+  Stream<rust_session.ApiRoundStepEvent> advanceStep({
+    required rust_voting.NextStepView step,
+    required rust_session.ApiRoundHostContext host,
+    rust_session.ApiDelegationSignerInput? signer,
+  }) => inner.advanceStep(step: step, host: host, signer: signer);
+
+  @override
+  Future<List<rust_delegate.KeystoneSigningRequest>> keystoneSigningRequests(
+    List<int> bundleIndices,
+  ) => inner.keystoneSigningRequests(bundleIndices: bundleIndices);
+
+  @override
+  VotingShareTrackingPassHandle beginShareTrackingPass() {
+    return _FrbVotingShareTrackingPassHandle(
+      accountUuid: accountUuid,
+      roundId: roundId,
+      inner: inner.beginShareTrackingPass(),
+    );
+  }
+}
+
 /// Production implementation backed by generated FRB calls.
 class FrbVotingRustApi implements VotingRustApi {
   const FrbVotingRustApi();
+
+  @override
+  VotingRoundSession openRoundSession({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<String> chainEndpoints,
+    required List<String> pirServerUrls,
+    required List<rust_session.ApiProposalRosterEntry> proposals,
+    List<int>? storedHotkeySecret,
+    required BigInt operationEpoch,
+  }) {
+    return _FrbVotingRoundSession(
+      accountUuid: ctx.accountUuid,
+      roundId: ctx.roundParams.voteRoundId,
+      inner: rust_session.openVotingRoundSession(
+        ctx: ctx,
+        chainEndpoints: chainEndpoints,
+        pirServerUrls: pirServerUrls,
+        proposals: proposals,
+        storedHotkeySecret: storedHotkeySecret == null
+            ? null
+            : Uint8List.fromList(storedHotkeySecret),
+        operationEpoch: operationEpoch,
+      ),
+    );
+  }
 
   @override
   VotingVoteRecoveryPassHandle beginVoteRecoveryPass({
