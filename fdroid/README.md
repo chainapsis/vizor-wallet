@@ -63,6 +63,14 @@ fails if the stable version and ABI-specific version code do not agree. After
 building, it also verifies the package ID, version name, version code, single
 ABI contents, and absence of an APK signature using Android Build Tools 36.0.0.
 
+Both Direct Release and F-Droid call
+`scripts/build-android-reproducible.sh`. The shared entry point exports the
+source commit into `/tmp/vizor-android-reproducible/source`, uses fixed Pub,
+Cargo, and Gradle cache paths, pins the source timestamp, and remaps Rust source
+paths. Builds on one host are serialized because the canonical directory is
+shared. The directory is private to its owner and symlinks are rejected before
+it is cleaned or used.
+
 The Direct Release workflow must use the same public endpoint values embedded
 by this script:
 

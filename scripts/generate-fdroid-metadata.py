@@ -25,6 +25,11 @@ ABI_CONFIG = (
     ("x86_64", 4000, "app-x86_64-release.apk", "Vizor-android-x86_64.apk"),
 )
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent.parent
+FLUTTER_VERSION = json.loads(
+    (REPOSITORY_ROOT / ".fvmrc").read_text(encoding="utf-8")
+)["flutter"]
+if re.fullmatch(r"\d+\.\d+\.\d+", FLUTTER_VERSION) is None:
+    raise RuntimeError(".fvmrc must pin Flutter to an exact X.Y.Z version.")
 RELEASE_RUST_TOOLCHAIN = (
     REPOSITORY_ROOT
     / "scripts"
@@ -142,7 +147,7 @@ def render(metadata: dict[str, Any]) -> str:
             f"    output: build/app/outputs/flutter-apk/{output_name}",
             f"    binary: {BINARY_BASE}/{release_name}",
             "    srclibs:",
-            "      - flutter@stable",
+            f"      - flutter@{FLUTTER_VERSION}",
             "      - rustup@1.28.2",
             "    rm:",
             "      - ios",
@@ -151,19 +156,22 @@ def render(metadata: dict[str, Any]) -> str:
             "      - windows",
             "    prebuild:",
             "      - git -C $$flutter$$ checkout -f db50e20168db8fee486b9abf32fc912de3bc5b6a",
-            "      - export PUB_CACHE=$(pwd)/.pub-cache",
+            "      - export PUB_CACHE=/tmp/vizor-android-reproducible/pub-cache",
+            "      - export CARGO_HOME=/tmp/vizor-android-reproducible/cargo-home",
+            "      - export GRADLE_USER_HOME=/tmp/vizor-android-reproducible/gradle-home",
+            "      - install -d -m 700 /tmp/vizor-android-reproducible $PUB_CACHE $CARGO_HOME $GRADLE_USER_HOME",
             "      - $$flutter$$/bin/flutter config --no-analytics",
             "      - $$flutter$$/bin/flutter pub get --enforce-lockfile",
             f"      - $$rustup$$/rustup-init.sh -y --profile minimal --default-toolchain {RELEASE_RUST_TOOLCHAIN}",
             "        --target armv7-linux-androideabi --target aarch64-linux-android",
             "        --target x86_64-linux-android",
-            "      - source $HOME/.cargo/env",
+            "      - source $CARGO_HOME/env",
             "      - cargo fetch --locked --manifest-path rust/Cargo.toml",
-            "    scandelete:",
-            "      - .pub-cache",
             "    build:",
-            "      - export PUB_CACHE=$(pwd)/.pub-cache",
-            "      - source $HOME/.cargo/env",
+            "      - export PUB_CACHE=/tmp/vizor-android-reproducible/pub-cache",
+            "      - export CARGO_HOME=/tmp/vizor-android-reproducible/cargo-home",
+            "      - export GRADLE_USER_HOME=/tmp/vizor-android-reproducible/gradle-home",
+            "      - source $CARGO_HOME/env",
             f"      - FLUTTER_BIN=$$flutter$$/bin/flutter ./scripts/build-android-fdroid.sh --version $$VERSION$$ --expected-abi {abi}",
             "        --expected-version-code $$VERCODE$$",
             "    ndk: 28.2.13676358",
