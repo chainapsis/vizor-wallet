@@ -76,6 +76,38 @@ void main() {
     expect(_enabledArgs(calls), [true]);
   });
 
+  testWidgets('enables during preflight then disables when sync is near tip', (
+    tester,
+  ) async {
+    final calls = _recordScreenAwakeCalls();
+    final startedAt = DateTime(2026, 7, 9, 12);
+    final syncNotifier = FakeSyncNotifier(
+      _sync(
+        percentage: 0,
+        scannedHeight: 0,
+        chainTipHeight: 0,
+        lastSyncStartedAt: startedAt,
+        phase: kSyncPhasePreflight,
+      ),
+    );
+
+    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    syncNotifier.emit(
+      _sync(
+        percentage: 0,
+        scannedHeight: 100,
+        chainTipHeight: 102,
+        lastSyncStartedAt: startedAt,
+      ),
+    );
+    await _drainNativeQueue(tester);
+
+    expect(_enabledArgs(calls), [true, false]);
+  });
+
   testWidgets('disables native keep-awake while the app is not foreground', (
     tester,
   ) async {
@@ -202,6 +234,7 @@ SyncState _sync({
   int scannedHeight = 100,
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
+  String phase = '',
 }) {
   return SyncState(
     isSyncing: isSyncing,
@@ -211,5 +244,6 @@ SyncState _sync({
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
     lastSyncStartedAt: lastSyncStartedAt,
+    phase: phase,
   );
 }
