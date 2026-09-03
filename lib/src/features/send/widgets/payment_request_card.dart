@@ -789,7 +789,9 @@ class _RequesterDetailsCard extends StatelessWidget {
                 child: _FadingScrollRegion(
                   scrollViewKey: kPaymentRequestRequesterNoteScrollViewKey,
                   scrollbarKey: kPaymentRequestRequesterNoteScrollbarKey,
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: const EdgeInsetsDirectional.only(
+                    end: kPaymentRequestGutter,
+                  ),
                   child: Text(
                     note!,
                     key: const ValueKey('payment_request_requester_note'),

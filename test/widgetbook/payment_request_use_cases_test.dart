@@ -169,6 +169,23 @@ void main() {
     expect(find.text('Review'), findsOneWidget);
     expect(find.text('Edit'), findsOneWidget);
     expect(_requesterNoteMaxScrollExtent(tester), greaterThan(0));
+    expect(
+      tester
+          .widget<SingleChildScrollView>(
+            find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+          )
+          .padding,
+      const EdgeInsetsDirectional.only(end: kPaymentRequestGutter),
+      reason: 'the overlay scrollbar needs its own trailing gutter',
+    );
+    final noteViewport = tester.getRect(
+      find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+    );
+    final noteText = tester.getRect(_key('payment_request_requester_note'));
+    expect(
+      noteViewport.right - noteText.right,
+      greaterThanOrEqualTo(kPaymentRequestGutter),
+    );
 
     await tester.drag(
       find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
