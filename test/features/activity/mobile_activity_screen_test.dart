@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -97,6 +98,7 @@ SwapIntentRecord _payActivityRecord({
 Widget _app(
   MobileActivityHistoryLoader loader, {
   SwapActivityStore? swapActivityStore,
+  GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
 }) {
   return ProviderScope(
     overrides: [
@@ -108,6 +110,9 @@ Widget _app(
       ),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
+      giftCardActivityIndexProvider.overrideWith((ref, accountUuid) async {
+        return giftCardActivityIndex;
+      }),
     ],
     child: MaterialApp(
       home: AppTheme(
@@ -229,6 +234,35 @@ void main() {
       moreOrLessEquals(kMobileTopNavHeight + AppSpacing.s),
     );
     expect(find.text('No activity yet'), findsOneWidget);
+  });
+
+  testWidgets('renders Gift Card creation and redemption rows', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        (_) async => [
+          _tx(txidHex: 'gift-redeemed', blockTime: BigInt.from(1800000001)),
+          _tx(
+            txidHex: 'gift-created',
+            blockTime: BigInt.from(1800000000),
+            kind: 'sent',
+          ),
+        ],
+        giftCardActivityIndex: const GiftCardActivityIndex(
+          createdTxids: {'gift-created'},
+          redeemedTxids: {'gift-redeemed'},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Redeemed a Gift Card'), findsOneWidget);
+    expect(find.text('Created a Gift Card'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.giftCard,
+      ),
+      findsNWidgets(2),
+    );
   });
 
   testWidgets('surfaces a friendly error when loading fails', (tester) async {

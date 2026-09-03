@@ -21,6 +21,7 @@ import '../../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../../services/camera_permission_settings.dart';
 import '../../../../services/qr_scanner.dart';
+import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanCameraErrorOverlay, MobileScanViewfinderCorners;
 import '../../../keystone/widgets/keystone_pczt_qr_stage.dart';
@@ -58,6 +59,8 @@ class MobileKeystoneShieldScreen extends ConsumerStatefulWidget {
       _MobileKeystoneShieldScreenState();
 }
 
+// Shows the shield PCZT QR and then scans the signed result, so the whole
+// screen is a live Keystone session.
 class _MobileKeystoneShieldScreenState
     extends ConsumerState<MobileKeystoneShieldScreen>
     with WidgetsBindingObserver, PaymentUriBusySurfaceHoldMixin {
