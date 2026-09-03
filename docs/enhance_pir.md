@@ -9,7 +9,7 @@ When enabled, Vizor queries by Ironwood commitment-tree position through iPIR+SP
 The Cargo manifest pins [`zakura-core/wallet-libraries#18`](https://github.com/zakura-core/wallet-libraries/pull/18) at:
 
 ```text
-97553d530618d90219949c5df19c4a506b20731b
+ec25ebdf5161491495be086f5c0364b90e4cbcbf
 ```
 
 The wallet dependency exposes the `zakura-pir-enhance` client, incoming memo authentication, outgoing OVK recovery, durable recovery queues, and selective transaction-protection markers.
@@ -24,9 +24,12 @@ Set `VIZOR_ENHANCE_PIR_URL` to use another HTTPS deployment. `VIZOR_MEMO_PIR_URL
 
 ## Behavior
 
-1. Vizor loads and validates one immutable `/v1/enhance/generation`.
-2. Parameter and public-parameter requests are pinned to that generation.
-3. No private query is sent until the advertised block hash and Ironwood tree size agree with the locally scanned chain.
+1. Vizor loads and validates one atomic `/v1/enhance/init` response containing the
+   immutable generation, scheme parameters, and published setup material.
+2. The generation remains pinned in every query and response, and Vizor rejects
+   initialization above its local 65,536-row setup budget.
+3. No PIR setup is allocated and no private query is sent until the advertised
+   block hash and Ironwood tree size agree with the locally scanned chain.
 4. Requests sharing a packed row are coalesced locally.
 5. Returned records are authenticated against compact-scanned state. Incoming details use the incoming viewing key; outgoing details use candidate funding accounts' external outgoing viewing keys.
 6. Successful work is logged only as aggregate counts.
