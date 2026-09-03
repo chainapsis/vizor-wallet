@@ -110,9 +110,22 @@ abstract final class SensitiveClipboard {
 
     try {
       final current = await Clipboard.getData(Clipboard.kTextPlain);
+      // Revalidate before acting on the answer. The read is asynchronous, and a
+      // copy that lands while it is in flight puts a *newer* secret on the
+      // clipboard and installs a newer generation. `current` is then a snapshot
+      // from before that copy, so a stale continuation would find its own old
+      // text, conclude the clipboard still held it, and erase the secret the
+      // user just copied. Only the entry that is still the current one may
+      // clear.
+      if (!identical(_pendingFallbackExpiration, pending) ||
+          pending.copyGeneration != _copyGeneration) {
+        return;
+      }
       if (current?.text == pending.text) {
         await Clipboard.setData(const ClipboardData(text: ''));
       }
+      // Re-checked rather than assumed: the clear above is awaited too, so a
+      // copy can land during it and install the entry this must not drop.
       if (identical(_pendingFallbackExpiration, pending)) {
         _pendingFallbackExpiration = null;
       }

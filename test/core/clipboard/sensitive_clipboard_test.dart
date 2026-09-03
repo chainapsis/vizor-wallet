@@ -165,6 +165,66 @@ void main() {
     expect(clipboardText, isEmpty);
   });
 
+  test('a late expiry read does not erase a newer secret', () async {
+    final expirations = <Completer<void>>[];
+    final stalledRead = Completer<void>();
+    var stallNextRead = false;
+    String? clipboardText;
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = false;
+    SensitiveClipboard.debugExpirationDelay = (_) {
+      final completer = Completer<void>();
+      expirations.add(completer);
+      return completer.future;
+    };
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            clipboardText = (call.arguments as Map)['text'] as String;
+          } else if (call.method == 'Clipboard.getData') {
+            // Answer with the clipboard as it was when the read *started*,
+            // which is what a slow platform read really reports.
+            final snapshot = clipboardText;
+            if (stallNextRead) {
+              stallNextRead = false;
+              await stalledRead.future;
+            }
+            return {'text': snapshot};
+          }
+          return null;
+        });
+
+    await SensitiveClipboard.copyText('first secret');
+    expect(clipboardText, 'first secret');
+
+    // The first expiry elapses and its clipboard read stalls mid-flight.
+    stallNextRead = true;
+    expirations.first.complete();
+    await Future<void>.delayed(Duration.zero);
+
+    // A newer copy lands while that read is still outstanding.
+    await SensitiveClipboard.copyText('second secret');
+    expect(clipboardText, 'second secret');
+
+    // The stalled read now returns 'first secret' -- true when it was issued,
+    // stale by the time it arrives.
+    stalledRead.complete();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      clipboardText,
+      'second secret',
+      reason: 'a superseded expiry must not erase the secret that replaced it',
+    );
+
+    // The newer secret is still cleared, by its own expiry.
+    expirations.last.complete();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(clipboardText, isEmpty);
+  });
+
   test('an expired copy retries after background clipboard denial', () async {
     final expiration = Completer<void>();
     String? clipboardText;
