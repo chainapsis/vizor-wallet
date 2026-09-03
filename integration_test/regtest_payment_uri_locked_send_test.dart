@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -12,9 +13,15 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
-
-import 'support/desktop_activity_flow.dart';
 import 'support/desktop_onboarding_flow.dart';
+
+// End-to-end regtest coverage for the ZIP-321 payment-URI LOCKED path — the
+// regression guard for delivering a parked request after unlock instead of
+// dropping it. Imports a faucet-funded wallet, signs out to lock it, injects a
+// `zcash:<address>?amount=...` link over the `com.zcash.wallet/payment_uri`
+// MethodChannel while locked, then unlocks and asserts the payment-request card
+// is raised over the unlocked wallet and that the send it drives mines on the
+// live regtest network.
 
 const _network = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
@@ -28,10 +35,10 @@ const _zcashdRpcUrl = String.fromEnvironment(
   'ZCASH_E2E_ZCASHD_RPC_URL',
   defaultValue: 'http://127.0.0.1:18232',
 );
-const _texAddress = String.fromEnvironment('ZCASH_E2E_TEX_ADDRESS');
 const _zcashdRpcUser = 'zcash';
 const _zcashdRpcPassword = 'zcash';
 const _accountsKey = 'zcash_accounts';
+const _paymentUriChannel = 'com.zcash.wallet/payment_uri';
 const _firstMnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
     'roast miracle ethics found child scare curve congress renew salute pig '
@@ -41,8 +48,6 @@ const _secondMnemonic =
     'range neck proof gauge east rifle swim tray twin venue fossil will '
     'version';
 const _password = 'Vizor123!';
-const _sendAmount = '0.25';
-final _sendZatoshi = BigInt.from(25_000_000);
 final _currencyTicker = kZcashDefaultCurrencyTicker;
 
 void main() {
@@ -53,12 +58,8 @@ void main() {
   });
 
   testWidgets(
-    'sends shielded funds to a regtest TEX address',
+    'a zcash: payment URI opened while locked survives unlock and sends',
     (tester) async {
-      if (_texAddress.isEmpty) {
-        fail('Set ZCASH_E2E_TEX_ADDRESS for the regtest TEX send test.');
-      }
-
       addTearDown(() async {
         await _cleanupE2eWalletState();
       });
@@ -74,79 +75,152 @@ void main() {
       await _openAddAccountFlow(tester);
       await _importAdditionalWallet(tester);
       await _waitForHome(tester);
-      final senderAccountUuid = await _accountUuidAtOrder(0);
-      final receiverAccountUuid = await _accountUuidAtOrder(1);
 
-      final validation = await rust_sync.validateAddress(
-        address: _texAddress,
-        network: _network,
-      );
-      expect(validation.isValid, isTrue);
-      expect(validation.addressType, 'tex');
-      // The same address on the wrong network is well-formed but refused.
-      final mainnetTex = await rust_sync.validateAddress(
-        address: 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte',
-        network: _network,
-      );
-      expect(mainnetTex.isValid, isFalse);
-      expect(mainnetTex.wrongNetwork, isTrue);
-      expect(_texAddress, startsWith('texregtest1'));
-      _log('validated receiver TEX address $_texAddress');
+      _log('copying second account shielded address');
+      final secondAddress = await _copyActiveShieldedAddress(tester);
+      expect(secondAddress, startsWith('uregtest1'));
+      final secondAccountUuid = await _accountUuidAtOrder(1);
 
       await _openWallet(tester);
       await _switchAccount(tester, 0);
       await _waitForBalance(tester, shielded: '1.25');
-      final expectedSenderFee = await _estimateSendFee(
-        accountUuid: senderAccountUuid,
-        toAddress: _texAddress,
-        amountZatoshi: _sendZatoshi,
-      );
+      await _waitForMempoolObserver();
 
-      await _sendToAddress(tester, _texAddress, _sendAmount);
-      await _waitForHistoryEntry(
-        tester,
-        accountUuid: senderAccountUuid,
-        txKind: 'sent',
-        displayAmount: _sendZatoshi,
-        pending: true,
-        expectedFee: expectedSenderFee,
-      );
-      await _mineRegtestBlocks(10);
+      // The heart of this test: a zcash: URI opened while the wallet is locked
+      // must survive the unlock screen and come back as the payment-request
+      // card over the unlocked wallet, then send for real.
+      await _sendViaLockedPaymentUri(tester, secondAddress, '0.25');
 
       await _openWallet(tester);
       await _switchAccount(tester, 1);
-      await _waitForBalance(
-        tester,
-        transparent: 'Transparent: $_sendAmount $_currencyTicker',
-        timeout: const Duration(minutes: 5),
-      );
       await _waitForHistoryEntry(
         tester,
-        accountUuid: receiverAccountUuid,
-        txKind: 'received',
-        displayAmount: _sendZatoshi,
-        pending: false,
-        timeout: const Duration(minutes: 5),
+        accountUuid: secondAccountUuid,
+        txKind: 'receiving',
+        displayAmount: BigInt.from(25_000_000),
+        pending: true,
       );
+      _log('second account observed the incoming payment-URI transaction');
+
+      await _mineRegtestBlocks(10);
+
+      await _openWallet(tester);
+      await _waitForBalance(
+        tester,
+        shielded: '0.25',
+        timeout: const Duration(minutes: 4),
+      );
+      _log('second account received the payment-URI funds');
+
+      await _openWallet(tester);
+      await _switchAccount(tester, 0);
       await _expectActivityRow(
         tester,
         const ValueKey('home_desktop_activity_row_0'),
-        title: 'Received',
-        amount: '+$_sendAmount $_currencyTicker',
+        title: 'Sent',
+        amount: '-0.25 $_currencyTicker',
         status: 'Completed',
       );
-      await _openActivity(tester);
-      await _expectActivityRow(
-        tester,
-        const ValueKey('activity_screen_row_0'),
-        title: 'Received',
-        amount: '+$_sendAmount $_currencyTicker',
-        status: 'Completed',
-      );
-      _log('receiver transparent TEX activity matched');
+      _log('first account sent activity matched');
     },
-    timeout: const Timeout(Duration(minutes: 12)),
+    timeout: const Timeout(Duration(minutes: 10)),
   );
+}
+
+/// Locks the wallet, opens a `zcash:` link while locked, unlocks, and asserts
+/// the parked request comes back as the payment-request card over the wallet
+/// before driving Review -> Confirm to completion.
+Future<void> _sendViaLockedPaymentUri(
+  WidgetTester tester,
+  String address,
+  String amount,
+) async {
+  // Lock the wallet first, then open the link while locked.
+  await _signOut(tester);
+
+  final uri = 'zcash:$address?amount=$amount';
+  _log('injecting payment URI while locked: $uri');
+  await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    _paymentUriChannel,
+    const StandardMethodCodec().encodeMethodCall(
+      MethodCall('onUris', <String>[uri]),
+    ),
+    (_) {},
+  );
+  await tester.pump(const Duration(milliseconds: 250));
+
+  // The link must not bypass the lock screen: we stay on /unlock with the
+  // prefill parked.
+  expect(
+    tester.any(find.byKey(const ValueKey('unlock_password_field'))),
+    isTrue,
+    reason:
+        'a payment URI opened while locked must keep the unlock screen showing',
+  );
+
+  // Unlock. The unlock flow must claim the parked prefill and raise it as the
+  // payment-request card over the wallet it just opened (regression guard for
+  // the locked-path fix).
+  await _enterText(tester, const ValueKey('unlock_password_field'), _password);
+  await _tapAppButton(
+    tester,
+    const ValueKey('unlock_submit_button'),
+    timeout: const Duration(minutes: 1),
+  );
+
+  await _pumpUntil(
+    tester,
+    () =>
+        tester.any(find.byKey(const ValueKey('payment_request_continue'))) &&
+        _keyedTextEquals(
+          tester,
+          const ValueKey('payment_request_amount'),
+          '$amount ${_currencyTicker.toUpperCase()}',
+        ),
+    description:
+        'unlock to deliver the parked payment URI to the payment-request card',
+    timeout: const Duration(minutes: 1),
+  );
+  _log('locked-path: unlock raised the payment-request card');
+
+  await _tapAppButton(
+    tester,
+    const ValueKey('payment_request_continue'),
+    timeout: const Duration(minutes: 1),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Review payment request')),
+    description: 'the payment-request review screen',
+    timeout: const Duration(minutes: 1),
+  );
+  await _tapAppButton(
+    tester,
+    const ValueKey('send_confirm_button'),
+    timeout: const Duration(minutes: 1),
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.byKey(const ValueKey('send_status_completed'))),
+    description: 'send status to succeed',
+    timeout: const Duration(minutes: 4),
+  );
+  _log('payment-URI send succeeded');
+}
+
+/// Locks the wallet via the sidebar "Sign out" action and waits for the unlock
+/// screen. `_handleSignOut` calls `securityNotifier.lock()` and routes to
+/// /unlock with no confirmation dialog.
+Future<void> _signOut(WidgetTester tester) async {
+  _log('signing out to lock the wallet');
+  await _tapWidget(tester, const ValueKey('sidebar_sign_out_button'));
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.byKey(const ValueKey('unlock_password_field'))),
+    description: 'unlock screen to show after sign out',
+    timeout: const Duration(minutes: 1),
+  );
+  _log('wallet locked; unlock screen shown');
 }
 
 Future<void> _importFirstWallet(WidgetTester tester) async {
@@ -200,8 +274,6 @@ Future<void> _importAdditionalWallet(WidgetTester tester) async {
 
 Future<void> _openAddAccountFlow(WidgetTester tester) async {
   _log('opening add-account flow');
-  // The redesigned sidebar account header opens a popover; "Add account"
-  // lives inside it and routes to /add-account.
   await _tapWidget(tester, const ValueKey('sidebar_accounts_button'));
   await _tapWidget(tester, const ValueKey('sidebar_accounts_add'));
   await _pumpUntil(
@@ -212,47 +284,25 @@ Future<void> _openAddAccountFlow(WidgetTester tester) async {
   );
 }
 
-Future<void> _sendToAddress(
-  WidgetTester tester,
-  String address,
-  String amount,
-) async {
-  _log('sending $amount $_currencyTicker to TEX recipient');
-  await _tapWidget(tester, const ValueKey('home_desktop_send_button'));
-  await _enterText(tester, const ValueKey('send_address_field'), address);
-  await _enterText(tester, const ValueKey('send_amount_field'), amount);
-  await _tapAppButton(
-    tester,
-    const ValueKey('send_review_button'),
-    timeout: const Duration(minutes: 1),
-  );
-  await _tapAppButton(
-    tester,
-    const ValueKey('send_confirm_button'),
-    timeout: const Duration(minutes: 1),
-  );
+Future<String> _copyActiveShieldedAddress(WidgetTester tester) async {
+  await _tapReceiveButton(tester);
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('send_status_completed'))),
-    description: 'send status to succeed',
-    timeout: const Duration(minutes: 4),
+    () => tester.any(
+      find.byKey(const ValueKey('receive_copy_shielded_address_button')),
+    ),
+    description: 'shielded receive copy button',
   );
-  _log('TEX send succeeded');
-}
-
-Future<BigInt> _estimateSendFee({
-  required String accountUuid,
-  required String toAddress,
-  required BigInt amountZatoshi,
-}) async {
-  final dbPath = await getWalletDbPath();
-  return rust_sync.estimateFee(
-    dbPath: dbPath,
-    network: _network,
-    accountUuid: accountUuid,
-    toAddress: toAddress,
-    amountZatoshi: amountZatoshi,
+  await _tapWidget(
+    tester,
+    const ValueKey('receive_copy_shielded_address_button'),
   );
+  final data = await Clipboard.getData('text/plain');
+  final address = data?.text?.trim() ?? '';
+  if (address.isEmpty) {
+    fail('Shielded address was not copied to the clipboard.');
+  }
+  return address;
 }
 
 Future<void> _mineRegtestBlocks(int blocks) async {
@@ -293,7 +343,7 @@ Future<T> _zcashdRpc<T>(
     request.write(
       jsonEncode({
         'jsonrpc': '1.0',
-        'id': 'regtest-tex-e2e',
+        'id': 'regtest-e2e',
         'method': method,
         'params': params,
       }),
@@ -319,23 +369,8 @@ Future<T> _zcashdRpc<T>(
 }
 
 Future<void> _openWallet(WidgetTester tester) async {
-  if (tester.any(
-    find.byKey(const ValueKey('home_desktop_balance_amount_text')),
-  )) {
-    return;
-  }
   await _tapWidget(tester, const ValueKey('sidebar_home_button'));
   await _waitForHome(tester);
-}
-
-Future<void> _openActivity(WidgetTester tester) async {
-  await _tapWidget(tester, const ValueKey('sidebar_activity_button'));
-  await _pumpUntil(
-    tester,
-    () => tester.any(desktopActivityRowFinder('activity_screen', 0)),
-    description: 'activity screen rows to render',
-    timeout: const Duration(minutes: 1),
-  );
 }
 
 Future<void> _switchAccount(WidgetTester tester, int accountOrder) async {
@@ -358,6 +393,15 @@ Future<void> _waitForHome(WidgetTester tester) async {
     description: 'home balance card to render',
     timeout: const Duration(minutes: 1),
   );
+}
+
+Future<void> _waitForMempoolObserver() async {
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  while (DateTime.now().isBefore(deadline)) {
+    if (rust_sync.isMempoolObserverRunning()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  fail('Timed out waiting for mempool observer to run.');
 }
 
 Future<String> _accountUuidAtOrder(int order) async {
@@ -392,11 +436,9 @@ Future<void> _waitForHistoryEntry(
   required String txKind,
   required BigInt displayAmount,
   required bool pending,
-  BigInt? expectedFee,
-  Duration timeout = const Duration(minutes: 2),
 }) async {
   final dbPath = await getWalletDbPath();
-  final deadline = DateTime.now().add(timeout);
+  final deadline = DateTime.now().add(const Duration(minutes: 2));
   Object? lastError;
   var lastHistorySummary = '<not read>';
 
@@ -412,20 +454,17 @@ Future<void> _waitForHistoryEntry(
           .map(
             (tx) =>
                 '${tx.txidHex}:${tx.txKind}:${tx.displayAmount}:'
-                'fee=${tx.fee}:mined=${tx.minedHeight}:'
-                'expired=${tx.expiredUnmined}',
+                'mined=${tx.minedHeight}:expired=${tx.expiredUnmined}',
           )
           .join(', ');
       if (history.any(
         (tx) =>
             tx.txKind == txKind &&
             tx.displayAmount == displayAmount &&
-            (expectedFee == null || tx.fee == expectedFee) &&
             (tx.minedHeight == BigInt.zero) == pending &&
             !tx.expiredUnmined,
       )) {
-        final feeText = expectedFee == null ? '' : ' fee=$expectedFee';
-        _log('history matched $txKind tx amount=$displayAmount$feeText');
+        _log('history matched $txKind tx amount=$displayAmount');
         return;
       }
     } catch (e) {
@@ -439,15 +478,13 @@ Future<void> _waitForHistoryEntry(
   final error = lastError == null ? '' : ' Last error: $lastError';
   fail(
     'Timed out waiting for history $txKind amount=$displayAmount '
-    'fee=$expectedFee pending=$pending. '
-    'Observed history: $lastHistorySummary.$error',
+    'pending=$pending. Observed history: $lastHistorySummary.$error',
   );
 }
 
 Future<void> _waitForBalance(
   WidgetTester tester, {
   String? shielded,
-  String? transparent,
   Duration timeout = const Duration(minutes: 4),
 }) async {
   if (shielded != null) {
@@ -463,26 +500,8 @@ Future<void> _waitForBalance(
     );
     _log('shielded balance matched: $shielded');
   }
-  if (transparent != null) {
-    await _pumpUntil(
-      tester,
-      () => _keyedTextEquals(
-        tester,
-        const ValueKey('home_transparent_balance_text'),
-        transparent,
-      ),
-      description: 'transparent balance to show $transparent',
-      timeout: timeout,
-    );
-    _log('transparent balance matched: $transparent');
-  }
 }
 
-/// Pending rows append an ellipsis to the action title ("Receiving ...");
-/// completed/other rows use the plain title. Compact home rows convey status
-/// via the title/icon and omit the status label, while the full activity
-/// screen rows render it. Accept either title form and only enforce the status
-/// text when the row actually shows one.
 bool _activityRowMatches(
   Set<String> texts,
   String title,
@@ -507,7 +526,7 @@ Future<void> _expectActivityRow(
   await _pumpUntil(
     tester,
     () => _activityRowMatches(
-      _textSetIn(tester, desktopActivityRowFinderForKey(key)),
+      _textSetIn(tester, find.byKey(key)),
       title,
       amount,
       status,
@@ -600,6 +619,17 @@ Future<void> _tapWidget(
   _log('tapped $key');
 }
 
+Future<void> _tapReceiveButton(WidgetTester tester) async {
+  const regular = ValueKey('home_desktop_receive_button');
+  const first = ValueKey('home_desktop_receive_first_button');
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.byKey(regular)) || tester.any(find.byKey(first)),
+    description: 'a home receive button to render',
+  );
+  await _tapWidget(tester, tester.any(find.byKey(regular)) ? regular : first);
+}
+
 Future<void> _enterText(WidgetTester tester, Key key, String text) async {
   final editable = find.descendant(
     of: find.byKey(key),
@@ -617,14 +647,9 @@ Future<void> _enterText(WidgetTester tester, Key key, String text) async {
 }
 
 bool _keyedTextEquals(WidgetTester tester, Key key, String expected) {
-  return _textForKey(tester, key) == expected;
-}
-
-String? _textForKey(WidgetTester tester, Key key) {
   final finder = find.byKey(key);
-  if (!tester.any(finder)) return null;
-  final widget = tester.widget<Text>(finder);
-  return widget.data;
+  if (!tester.any(finder)) return false;
+  return tester.widget<Text>(finder).data == expected;
 }
 
 Set<String> _textSetIn(WidgetTester tester, Finder finder) {
@@ -665,5 +690,5 @@ Future<void> _pumpUntil(
 }
 
 void _log(String message) {
-  debugPrint('[regtest-tex-e2e] $message');
+  debugPrint('[regtest-payment-uri-locked-e2e] $message');
 }

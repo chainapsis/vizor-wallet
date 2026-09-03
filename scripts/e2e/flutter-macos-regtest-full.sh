@@ -27,47 +27,56 @@ require_cmd python3
 cd "$ROOT_DIR"
 
 # Keep this ordered from the narrowest smoke test to broader user flows.
-run_test "1/14 import funded wallet and sync balances" \
+run_test "1/17 import funded wallet and sync balances" \
   "scripts/e2e/flutter-macos-regtest-import-sync.sh"
 
-run_test "2/14 fallback from unavailable endpoint and sync balances" \
+run_test "2/17 fallback from unavailable endpoint and sync balances" \
   "scripts/e2e/flutter-macos-regtest-fallback-endpoint.sh"
 
-run_test "3/14 keep custom endpoint failures private" \
+run_test "3/17 keep custom endpoint failures private" \
   "scripts/e2e/flutter-macos-regtest-custom-endpoint-no-fallback.sh"
 
-run_test "4/14 recover from a stalled startup stream" \
+run_test "4/17 recover from a stalled startup stream" \
   "scripts/e2e/flutter-macos-regtest-sync-startup-stall-recovery.sh"
 
-run_test "5/14 fallback from slow-height primary and recover" \
+run_test "5/17 fallback from slow-height primary and recover" \
   "scripts/e2e/flutter-macos-regtest-slow-height-fallback.sh"
 
-run_test "6/14 create wallet and shield transparent funds" \
+run_test "6/17 create wallet and shield transparent funds" \
   "scripts/e2e/flutter-macos-regtest-shield-transparent.sh"
 
-run_test "7/14 retry shield transparent broadcast failure" \
+run_test "7/17 retry shield transparent broadcast failure" \
   "scripts/e2e/flutter-macos-regtest-shield-transparent-retry.sh"
 
-run_test "8/14 import two accounts and send shielded funds" \
+run_test "8/17 import two accounts and send shielded funds" \
   "scripts/e2e/flutter-macos-regtest-multi-account-send.sh"
 
-run_test "9/14 send shielded funds to a TEX address" \
+run_test "9/17 send shielded funds to a TEX address" \
   "scripts/e2e/flutter-macos-regtest-tex-send.sh"
 
-run_test "10/14 show mempool receives in activity history" \
+run_test "10/17 show mempool receives in activity history" \
   "scripts/e2e/flutter-macos-regtest-mempool-receive-history.sh"
 
-run_test "11/14 show mempool receives while sync is running" \
+run_test "11/17 show mempool receives while sync is running" \
   "scripts/e2e/flutter-macos-regtest-mempool-during-sync.sh"
 
-run_test "12/14 expire unmined mempool receives" \
+run_test "12/17 expire unmined mempool receives" \
   "scripts/e2e/flutter-macos-regtest-mempool-expiry.sh"
 
-run_test "13/14 complete a real Ironwood vote" \
+run_test "13/17 complete a real Ironwood vote" \
   "scripts/e2e/flutter-macos-regtest-voting.sh"
 
-run_test "14/14 keep voting concurrent with a slow helper" \
+run_test "14/17 keep voting concurrent with a slow helper" \
   "scripts/e2e/flutter-macos-regtest-voting-slow-helper.sh"
+
+run_test "15/17 open a zcash: payment URI and send from the card" \
+  "scripts/e2e/flutter-macos-regtest-payment-uri-send.sh"
+
+run_test "16/17 pay a payment URI opened while the wallet is locked" \
+  "scripts/e2e/flutter-macos-regtest-payment-uri-locked-send.sh"
+
+run_test "17/17 compose a payment request and pay it round-trip" \
+  "scripts/e2e/flutter-macos-regtest-payment-request-round-trip.sh"
 
 echo
 echo "all macOS regtest E2E tests passed"
