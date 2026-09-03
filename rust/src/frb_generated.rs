@@ -7446,6 +7446,8 @@ const _: fn() = || {
         let _: zcash_voting::wire::WorkflowPhaseView = DelegationRecoveryView.phase;
         let _: Option<String> = DelegationRecoveryView.tx_hash;
         let _: Option<u64> = DelegationRecoveryView.van_leaf_position;
+        let _: Option<zcash_voting::wire::SubmissionDiagnosticView> =
+            DelegationRecoveryView.submission_diagnostic;
     }
     {
         let DelegationRecoveryWorkView =
@@ -7460,6 +7462,8 @@ const _: fn() = || {
         let _: u32 = DelegationStatusView.bundle_index;
         let _: zcash_voting::wire::WorkflowPhaseView = DelegationStatusView.phase;
         let _: Option<String> = DelegationStatusView.tx_hash;
+        let _: Option<zcash_voting::wire::SubmissionDiagnosticView> =
+            DelegationStatusView.submission_diagnostic;
     }
     {
         let DelegationSubmissionWire =
@@ -7692,6 +7696,12 @@ const _: fn() = || {
         let _: u32 = SignedDelegationPayloadView.bundle_index;
     }
     {
+        let SubmissionDiagnosticView =
+            None::<zcash_voting::wire::SubmissionDiagnosticView>.unwrap();
+        let _: String = SubmissionDiagnosticView.kind;
+        let _: String = SubmissionDiagnosticView.message;
+    }
+    {
         let SupportedVersions = None::<zcash_voting::config::SupportedVersions>.unwrap();
         let _: Vec<String> = SupportedVersions.pir;
         let _: String = SupportedVersions.vote_protocol;
@@ -7712,6 +7722,8 @@ const _: fn() = || {
         let _: Option<String> = VoteRecoveryView.tx_hash;
         let _: Option<u64> = VoteRecoveryView.vc_tree_position;
         let _: bool = VoteRecoveryView.has_commitment_bundle;
+        let _: Option<zcash_voting::wire::SubmissionDiagnosticView> =
+            VoteRecoveryView.submission_diagnostic;
     }
     {
         let VoteRecoveryWorkView = None::<zcash_voting::wire::VoteRecoveryWorkView>.unwrap();
@@ -8665,11 +8677,14 @@ impl SseDecode for zcash_voting::wire::DelegationRecoveryView {
         let mut var_phase = <zcash_voting::wire::WorkflowPhaseView>::sse_decode(deserializer);
         let mut var_txHash = <Option<String>>::sse_decode(deserializer);
         let mut var_vanLeafPosition = <Option<u64>>::sse_decode(deserializer);
+        let mut var_submissionDiagnostic =
+            <Option<zcash_voting::wire::SubmissionDiagnosticView>>::sse_decode(deserializer);
         return zcash_voting::wire::DelegationRecoveryView {
             bundle_index: var_bundleIndex,
             phase: var_phase,
             tx_hash: var_txHash,
             van_leaf_position: var_vanLeafPosition,
+            submission_diagnostic: var_submissionDiagnostic,
         };
     }
 }
@@ -8713,10 +8728,13 @@ impl SseDecode for zcash_voting::wire::DelegationStatusView {
         let mut var_bundleIndex = <u32>::sse_decode(deserializer);
         let mut var_phase = <zcash_voting::wire::WorkflowPhaseView>::sse_decode(deserializer);
         let mut var_txHash = <Option<String>>::sse_decode(deserializer);
+        let mut var_submissionDiagnostic =
+            <Option<zcash_voting::wire::SubmissionDiagnosticView>>::sse_decode(deserializer);
         return zcash_voting::wire::DelegationStatusView {
             bundle_index: var_bundleIndex,
             phase: var_phase,
             tx_hash: var_txHash,
+            submission_diagnostic: var_submissionDiagnostic,
         };
     }
 }
@@ -10476,6 +10494,19 @@ impl SseDecode for Option<zcash_voting::wire::SignedDelegationPayloadView> {
     }
 }
 
+impl SseDecode for Option<zcash_voting::wire::SubmissionDiagnosticView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<zcash_voting::wire::SubmissionDiagnosticView>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u16> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -11237,6 +11268,18 @@ impl SseDecode for crate::api::sync::StoreAndBroadcastPcztsResult {
     }
 }
 
+impl SseDecode for zcash_voting::wire::SubmissionDiagnosticView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_message = <String>::sse_decode(deserializer);
+        return zcash_voting::wire::SubmissionDiagnosticView {
+            kind: var_kind,
+            message: var_message,
+        };
+    }
+}
+
 impl SseDecode for crate::api::sync::SubtreeIndices {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -11484,6 +11527,8 @@ impl SseDecode for zcash_voting::wire::VoteRecoveryView {
         let mut var_txHash = <Option<String>>::sse_decode(deserializer);
         let mut var_vcTreePosition = <Option<u64>>::sse_decode(deserializer);
         let mut var_hasCommitmentBundle = <bool>::sse_decode(deserializer);
+        let mut var_submissionDiagnostic =
+            <Option<zcash_voting::wire::SubmissionDiagnosticView>>::sse_decode(deserializer);
         return zcash_voting::wire::VoteRecoveryView {
             bundle_index: var_bundleIndex,
             proposal_id: var_proposalId,
@@ -11492,6 +11537,7 @@ impl SseDecode for zcash_voting::wire::VoteRecoveryView {
             tx_hash: var_txHash,
             vc_tree_position: var_vcTreePosition,
             has_commitment_bundle: var_hasCommitmentBundle,
+            submission_diagnostic: var_submissionDiagnostic,
         };
     }
 }
@@ -13230,6 +13276,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::Delegation
             self.0.phase.into_into_dart().into_dart(),
             self.0.tx_hash.into_into_dart().into_dart(),
             self.0.van_leaf_position.into_into_dart().into_dart(),
+            self.0.submission_diagnostic.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -13303,6 +13350,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::Delegation
             self.0.bundle_index.into_into_dart().into_dart(),
             self.0.phase.into_into_dart().into_dart(),
             self.0.tx_hash.into_into_dart().into_dart(),
+            self.0.submission_diagnostic.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -15053,6 +15101,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::StoreAndBroadcastPcztsR
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::SubmissionDiagnosticView> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.kind.into_into_dart().into_dart(),
+            self.0.message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::wire::SubmissionDiagnosticView>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::SubmissionDiagnosticView>>
+    for zcash_voting::wire::SubmissionDiagnosticView
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::SubmissionDiagnosticView> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::sync::SubtreeIndices {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -15339,6 +15408,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VoteRecove
             self.0.tx_hash.into_into_dart().into_dart(),
             self.0.vc_tree_position.into_into_dart().into_dart(),
             self.0.has_commitment_bundle.into_into_dart().into_dart(),
+            self.0.submission_diagnostic.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -16421,6 +16491,10 @@ impl SseEncode for zcash_voting::wire::DelegationRecoveryView {
         <zcash_voting::wire::WorkflowPhaseView>::sse_encode(self.phase, serializer);
         <Option<String>>::sse_encode(self.tx_hash, serializer);
         <Option<u64>>::sse_encode(self.van_leaf_position, serializer);
+        <Option<zcash_voting::wire::SubmissionDiagnosticView>>::sse_encode(
+            self.submission_diagnostic,
+            serializer,
+        );
     }
 }
 
@@ -16457,6 +16531,10 @@ impl SseEncode for zcash_voting::wire::DelegationStatusView {
         <u32>::sse_encode(self.bundle_index, serializer);
         <zcash_voting::wire::WorkflowPhaseView>::sse_encode(self.phase, serializer);
         <Option<String>>::sse_encode(self.tx_hash, serializer);
+        <Option<zcash_voting::wire::SubmissionDiagnosticView>>::sse_encode(
+            self.submission_diagnostic,
+            serializer,
+        );
     }
 }
 
@@ -17757,6 +17835,16 @@ impl SseEncode for Option<zcash_voting::wire::SignedDelegationPayloadView> {
     }
 }
 
+impl SseEncode for Option<zcash_voting::wire::SubmissionDiagnosticView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <zcash_voting::wire::SubmissionDiagnosticView>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<u16> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -18326,6 +18414,14 @@ impl SseEncode for crate::api::sync::StoreAndBroadcastPcztsResult {
     }
 }
 
+impl SseEncode for zcash_voting::wire::SubmissionDiagnosticView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.message, serializer);
+    }
+}
+
 impl SseEncode for crate::api::sync::SubtreeIndices {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -18510,6 +18606,10 @@ impl SseEncode for zcash_voting::wire::VoteRecoveryView {
         <Option<String>>::sse_encode(self.tx_hash, serializer);
         <Option<u64>>::sse_encode(self.vc_tree_position, serializer);
         <bool>::sse_encode(self.has_commitment_bundle, serializer);
+        <Option<zcash_voting::wire::SubmissionDiagnosticView>>::sse_encode(
+            self.submission_diagnostic,
+            serializer,
+        );
     }
 }
 

@@ -1340,6 +1340,64 @@ mod tests {
     use zcash_client_backend::proto::service::TreeState;
     use zcash_voting::BundlePolicy;
 
+    /// Sets a bundle's delegation transaction hash directly.
+    ///
+    /// The SDK's writer for this is crate-private: only its chain-submission
+    /// lifecycle may record submissions. These fixtures set up durable state
+    /// for adapter tests, so they write the row the same way.
+    fn fixture_delegation_tx_hash(db: &zcash_voting::round::VotingDb, bundle_index: u32, tx_hash: &str) {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE bundles SET delegation_tx_hash = ?1
+             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4",
+            rusqlite::params![tx_hash, ROUND_ID, db.wallet_id(), i64::from(bundle_index)],
+        )
+        .unwrap();
+    }
+
+    /// Sets a vote's transaction hash directly. See `fixture_delegation_tx_hash`.
+    fn fixture_vote_tx_hash(
+        db: &zcash_voting::round::VotingDb,
+        bundle_index: u32,
+        proposal_id: u32,
+        tx_hash: &str,
+    ) {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE votes SET tx_hash = ?1
+             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4 AND proposal_id = ?5",
+            rusqlite::params![
+                tx_hash,
+                ROUND_ID,
+                db.wallet_id(),
+                i64::from(bundle_index),
+                i64::from(proposal_id)
+            ],
+        )
+        .unwrap();
+    }
+
+    /// Sets a bundle's VAN leaf position directly. See `fixture_delegation_tx_hash`.
+    fn fixture_van_position(
+        db: &zcash_voting::round::VotingDb,
+        round_id: &str,
+        bundle_index: u32,
+        position: u32,
+    ) {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE bundles SET van_leaf_position = ?1
+             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4",
+            rusqlite::params![
+                i64::from(position),
+                round_id,
+                db.wallet_id(),
+                i64::from(bundle_index)
+            ],
+        )
+        .unwrap();
+    }
+
     fn b64(bytes: impl AsRef<[u8]>) -> String {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
@@ -2052,8 +2110,7 @@ mod tests {
         .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
-        db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx-0")
-            .unwrap();
+        fixture_delegation_tx_hash(&db, 0, "delegation-tx-0");
         let conn = db.conn();
         zcash_voting::storage::queries::store_vote(
             &conn,
@@ -2066,8 +2123,7 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        db.mark_vote_submitted(ROUND_ID, 1, 2, "vote-tx-1-2")
-            .unwrap();
+        fixture_vote_tx_hash(&db, 1, 2, "vote-tx-1-2");
         {
             let conn = db.conn();
             conn.execute(
@@ -2529,8 +2585,7 @@ mod tests {
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
-        db.mark_delegation_submitted(ROUND_ID, 0, "delegation-submitted-tx")
-            .unwrap();
+        fixture_delegation_tx_hash(&db, 0, "delegation-submitted-tx");
 
         let snapshot = get_round_recovery_state(
             db_path.to_str().unwrap().to_string(),
@@ -3022,7 +3077,6 @@ mod tests {
                 ],
             )
             .unwrap();
-        db.store_van_position(round_id, bundle_index, position)
-            .unwrap();
+        fixture_van_position(db, round_id, bundle_index, position);
     }
 }

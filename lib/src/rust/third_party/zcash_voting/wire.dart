@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegationPirPrecomputeResultView`, `DraftVote`, `PendingShareRoundView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
 
 /// How a confirmation was established.
 enum ChainConfirmationSourceView { hash, tree }
@@ -187,12 +187,14 @@ class DelegationRecoveryView {
 
   /// Confirmed VAN leaf position, if delegation has been projected.
   final BigInt? vanLeafPosition;
+  final SubmissionDiagnosticView? submissionDiagnostic;
 
   const DelegationRecoveryView({
     required this.bundleIndex,
     required this.phase,
     this.txHash,
     this.vanLeafPosition,
+    this.submissionDiagnostic,
   });
 
   @override
@@ -200,7 +202,8 @@ class DelegationRecoveryView {
       bundleIndex.hashCode ^
       phase.hashCode ^
       txHash.hashCode ^
-      vanLeafPosition.hashCode;
+      vanLeafPosition.hashCode ^
+      submissionDiagnostic.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -210,7 +213,8 @@ class DelegationRecoveryView {
           bundleIndex == other.bundleIndex &&
           phase == other.phase &&
           txHash == other.txHash &&
-          vanLeafPosition == other.vanLeafPosition;
+          vanLeafPosition == other.vanLeafPosition &&
+          submissionDiagnostic == other.submissionDiagnostic;
 }
 
 /// Kind of grouped delegation recovery work.
@@ -252,15 +256,21 @@ class DelegationStatusView {
   final int bundleIndex;
   final WorkflowPhaseView phase;
   final String? txHash;
+  final SubmissionDiagnosticView? submissionDiagnostic;
 
   const DelegationStatusView({
     required this.bundleIndex,
     required this.phase,
     this.txHash,
+    this.submissionDiagnostic,
   });
 
   @override
-  int get hashCode => bundleIndex.hashCode ^ phase.hashCode ^ txHash.hashCode;
+  int get hashCode =>
+      bundleIndex.hashCode ^
+      phase.hashCode ^
+      txHash.hashCode ^
+      submissionDiagnostic.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -269,7 +279,8 @@ class DelegationStatusView {
           runtimeType == other.runtimeType &&
           bundleIndex == other.bundleIndex &&
           phase == other.phase &&
-          txHash == other.txHash;
+          txHash == other.txHash &&
+          submissionDiagnostic == other.submissionDiagnostic;
 }
 
 class DelegationSubmissionWire {
@@ -1042,6 +1053,31 @@ class SignedDelegationPayloadView {
           bundleIndex == other.bundleIndex;
 }
 
+/// Stored lifecycle diagnostic of an authoritative chain-submission row.
+///
+/// `kind` is the stable discriminator from
+/// `ChainSubmissionDiagnosticKind::as_str`; `message` is the bounded,
+/// redacted text the lifecycle persisted. Present on terminal
+/// `submitted_without_hash` and `rejected` rows, which schedule no further
+/// lifecycle call, so this is what a host shows for manual handling.
+class SubmissionDiagnosticView {
+  final String kind;
+  final String message;
+
+  const SubmissionDiagnosticView({required this.kind, required this.message});
+
+  @override
+  int get hashCode => kind.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SubmissionDiagnosticView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          message == other.message;
+}
+
 /// Vote proving and signing stages.
 enum VoteCommitStageKind {
   proofStarting,
@@ -1077,6 +1113,7 @@ class VoteRecoveryView {
   final String? txHash;
   final BigInt? vcTreePosition;
   final bool hasCommitmentBundle;
+  final SubmissionDiagnosticView? submissionDiagnostic;
 
   const VoteRecoveryView({
     required this.bundleIndex,
@@ -1086,6 +1123,7 @@ class VoteRecoveryView {
     this.txHash,
     this.vcTreePosition,
     required this.hasCommitmentBundle,
+    this.submissionDiagnostic,
   });
 
   @override
@@ -1096,7 +1134,8 @@ class VoteRecoveryView {
       phase.hashCode ^
       txHash.hashCode ^
       vcTreePosition.hashCode ^
-      hasCommitmentBundle.hashCode;
+      hasCommitmentBundle.hashCode ^
+      submissionDiagnostic.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1109,7 +1148,8 @@ class VoteRecoveryView {
           phase == other.phase &&
           txHash == other.txHash &&
           vcTreePosition == other.vcTreePosition &&
-          hasCommitmentBundle == other.hasCommitmentBundle;
+          hasCommitmentBundle == other.hasCommitmentBundle &&
+          submissionDiagnostic == other.submissionDiagnostic;
 }
 
 /// Kind of grouped vote recovery work.

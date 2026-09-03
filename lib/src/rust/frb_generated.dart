@@ -9473,6 +9473,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView dco_decode_box_autoadd_submission_diagnostic_view(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_submission_diagnostic_view(raw);
+  }
+
+  @protected
   int dco_decode_box_autoadd_u_16(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -9674,13 +9682,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   DelegationRecoveryView dco_decode_delegation_recovery_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return DelegationRecoveryView(
       bundleIndex: dco_decode_u_32(arr[0]),
       phase: dco_decode_workflow_phase_view(arr[1]),
       txHash: dco_decode_opt_String(arr[2]),
       vanLeafPosition: dco_decode_opt_box_autoadd_u_64(arr[3]),
+      submissionDiagnostic:
+          dco_decode_opt_box_autoadd_submission_diagnostic_view(arr[4]),
     );
   }
 
@@ -9712,12 +9722,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   DelegationStatusView dco_decode_delegation_status_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return DelegationStatusView(
       bundleIndex: dco_decode_u_32(arr[0]),
       phase: dco_decode_workflow_phase_view(arr[1]),
       txHash: dco_decode_opt_String(arr[2]),
+      submissionDiagnostic:
+          dco_decode_opt_box_autoadd_submission_diagnostic_view(arr[3]),
     );
   }
 
@@ -10945,6 +10957,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView?
+  dco_decode_opt_box_autoadd_submission_diagnostic_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_submission_diagnostic_view(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_16(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_16(raw);
@@ -11529,6 +11550,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView dco_decode_submission_diagnostic_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return SubmissionDiagnosticView(
+      kind: dco_decode_String(arr[0]),
+      message: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
   SubtreeIndices dco_decode_subtree_indices(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -11731,8 +11764,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   VoteRecoveryView dco_decode_vote_recovery_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return VoteRecoveryView(
       bundleIndex: dco_decode_u_32(arr[0]),
       proposalId: dco_decode_u_32(arr[1]),
@@ -11741,6 +11774,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txHash: dco_decode_opt_String(arr[4]),
       vcTreePosition: dco_decode_opt_box_autoadd_u_64(arr[5]),
       hasCommitmentBundle: dco_decode_bool(arr[6]),
+      submissionDiagnostic:
+          dco_decode_opt_box_autoadd_submission_diagnostic_view(arr[7]),
     );
   }
 
@@ -12796,6 +12831,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView sse_decode_box_autoadd_submission_diagnostic_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_submission_diagnostic_view(deserializer));
+  }
+
+  @protected
   int sse_decode_box_autoadd_u_16(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_16(deserializer));
@@ -13041,11 +13084,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_phase = sse_decode_workflow_phase_view(deserializer);
     var var_txHash = sse_decode_opt_String(deserializer);
     var var_vanLeafPosition = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_submissionDiagnostic =
+        sse_decode_opt_box_autoadd_submission_diagnostic_view(deserializer);
     return DelegationRecoveryView(
       bundleIndex: var_bundleIndex,
       phase: var_phase,
       txHash: var_txHash,
       vanLeafPosition: var_vanLeafPosition,
+      submissionDiagnostic: var_submissionDiagnostic,
     );
   }
 
@@ -13083,10 +13129,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_bundleIndex = sse_decode_u_32(deserializer);
     var var_phase = sse_decode_workflow_phase_view(deserializer);
     var var_txHash = sse_decode_opt_String(deserializer);
+    var var_submissionDiagnostic =
+        sse_decode_opt_box_autoadd_submission_diagnostic_view(deserializer);
     return DelegationStatusView(
       bundleIndex: var_bundleIndex,
       phase: var_phase,
       txHash: var_txHash,
+      submissionDiagnostic: var_submissionDiagnostic,
     );
   }
 
@@ -14904,6 +14953,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView?
+  sse_decode_opt_box_autoadd_submission_diagnostic_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_submission_diagnostic_view(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -15664,6 +15727,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView sse_decode_submission_diagnostic_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_String(deserializer);
+    var var_message = sse_decode_String(deserializer);
+    return SubmissionDiagnosticView(kind: var_kind, message: var_message);
+  }
+
+  @protected
   SubtreeIndices sse_decode_subtree_indices(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_nextSapling = sse_decode_u_64(deserializer);
@@ -15893,6 +15966,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_txHash = sse_decode_opt_String(deserializer);
     var var_vcTreePosition = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_hasCommitmentBundle = sse_decode_bool(deserializer);
+    var var_submissionDiagnostic =
+        sse_decode_opt_box_autoadd_submission_diagnostic_view(deserializer);
     return VoteRecoveryView(
       bundleIndex: var_bundleIndex,
       proposalId: var_proposalId,
@@ -15901,6 +15976,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txHash: var_txHash,
       vcTreePosition: var_vcTreePosition,
       hasCommitmentBundle: var_hasCommitmentBundle,
+      submissionDiagnostic: var_submissionDiagnostic,
     );
   }
 
@@ -16951,6 +17027,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_submission_diagnostic_view(
+    SubmissionDiagnosticView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_submission_diagnostic_view(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_16(self, serializer);
@@ -17162,6 +17247,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_workflow_phase_view(self.phase, serializer);
     sse_encode_opt_String(self.txHash, serializer);
     sse_encode_opt_box_autoadd_u_64(self.vanLeafPosition, serializer);
+    sse_encode_opt_box_autoadd_submission_diagnostic_view(
+      self.submissionDiagnostic,
+      serializer,
+    );
   }
 
   @protected
@@ -17194,6 +17283,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.bundleIndex, serializer);
     sse_encode_workflow_phase_view(self.phase, serializer);
     sse_encode_opt_String(self.txHash, serializer);
+    sse_encode_opt_box_autoadd_submission_diagnostic_view(
+      self.submissionDiagnostic,
+      serializer,
+    );
   }
 
   @protected
@@ -18698,6 +18791,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_submission_diagnostic_view(
+    SubmissionDiagnosticView? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_submission_diagnostic_view(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -19267,6 +19373,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_submission_diagnostic_view(
+    SubmissionDiagnosticView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.kind, serializer);
+    sse_encode_String(self.message, serializer);
+  }
+
+  @protected
   void sse_encode_subtree_indices(
     SubtreeIndices self,
     SseSerializer serializer,
@@ -19449,6 +19565,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.txHash, serializer);
     sse_encode_opt_box_autoadd_u_64(self.vcTreePosition, serializer);
     sse_encode_bool(self.hasCommitmentBundle, serializer);
+    sse_encode_opt_box_autoadd_submission_diagnostic_view(
+      self.submissionDiagnostic,
+      serializer,
+    );
   }
 
   @protected

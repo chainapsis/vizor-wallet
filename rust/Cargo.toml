@@ -117,9 +117,8 @@ version = "=0.1.0-rc4"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-# cont-vote-refactor development loop: local SDK worktree. Restore the git rev
-# pin before merge.
-path = "/Users/roman/projects-copy/zcash_voting-cont-vote-refactor/zcash_voting"
+git = "https://github.com/valargroup/zcash_voting.git"
+rev = "d126ca17b7b8005ebcd3bdf3d832bcbae1d45e8b"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -166,11 +165,14 @@ rusqlite = "0.37"
 zcash_note_encryption = "0.4"
 
 [dev-dependencies.zcash_voting]
-path = "/Users/roman/projects-copy/zcash_voting-cont-vote-refactor/zcash_voting"
+git = "https://github.com/valargroup/zcash_voting.git"
+rev = "d126ca17b7b8005ebcd3bdf3d832bcbae1d45e8b"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
-path = "/Users/roman/projects-copy/zcash_voting-cont-vote-refactor/vote-commitment-tree"
+version = "=0.6.0"
+git = "https://github.com/valargroup/zcash_voting.git"
+rev = "d126ca17b7b8005ebcd3bdf3d832bcbae1d45e8b"
 default-features = false
 features = ["zakura"]
 

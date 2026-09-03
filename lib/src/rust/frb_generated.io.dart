@@ -328,6 +328,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_box_autoadd_signed_delegation_payload_view(dynamic raw);
 
   @protected
+  SubmissionDiagnosticView dco_decode_box_autoadd_submission_diagnostic_view(
+    dynamic raw,
+  );
+
+  @protected
   int dco_decode_box_autoadd_u_16(dynamic raw);
 
   @protected
@@ -877,6 +882,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_signed_delegation_payload_view(dynamic raw);
 
   @protected
+  SubmissionDiagnosticView?
+  dco_decode_opt_box_autoadd_submission_diagnostic_view(dynamic raw);
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
 
   @protected
@@ -1022,6 +1031,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   StoreAndBroadcastPcztsResult dco_decode_store_and_broadcast_pczts_result(
     dynamic raw,
   );
+
+  @protected
+  SubmissionDiagnosticView dco_decode_submission_diagnostic_view(dynamic raw);
 
   @protected
   SubtreeIndices dco_decode_subtree_indices(dynamic raw);
@@ -1471,6 +1483,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   SignedDelegationPayloadView
   sse_decode_box_autoadd_signed_delegation_payload_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SubmissionDiagnosticView sse_decode_box_autoadd_submission_diagnostic_view(
     SseDeserializer deserializer,
   );
 
@@ -2166,6 +2183,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SubmissionDiagnosticView?
+  sse_decode_opt_box_autoadd_submission_diagnostic_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
@@ -2343,6 +2366,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   StoreAndBroadcastPcztsResult sse_decode_store_and_broadcast_pczts_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SubmissionDiagnosticView sse_decode_submission_diagnostic_view(
     SseDeserializer deserializer,
   );
 
@@ -2892,6 +2920,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_signed_delegation_payload_view(
     SignedDelegationPayloadView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_submission_diagnostic_view(
+    SubmissionDiagnosticView self,
     SseSerializer serializer,
   );
 
@@ -3733,6 +3767,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_submission_diagnostic_view(
+    SubmissionDiagnosticView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
 
   @protected
@@ -3945,6 +3985,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_store_and_broadcast_pczts_result(
     StoreAndBroadcastPcztsResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_submission_diagnostic_view(
+    SubmissionDiagnosticView self,
     SseSerializer serializer,
   );
 
