@@ -402,11 +402,44 @@ abstract interface class VotingChainSubmissionPassHandle {
   void dispose();
 }
 
+/// Cancellable host-epoch token for one SDK-owned persisted vote-work pass.
+abstract interface class VotingVoteRecoveryPassHandle {
+  String get accountUuid;
+
+  String get roundId;
+
+  bool get isCancelled;
+
+  bool get isDisposed;
+
+  void setOperationEpoch(BigInt operationEpoch);
+
+  void cancel();
+
+  void dispose();
+}
+
 /// Narrow interface over Rust voting work used by the session state machine.
 ///
 /// Keeping this boundary explicit lets tests verify sequencing, recovery skips,
 /// and progress forwarding without invoking FRB or cryptographic proof work.
 abstract interface class VotingRustApi {
+  VotingVoteRecoveryPassHandle beginVoteRecoveryPass({
+    required VotingHelperDeliveryContext context,
+    required String network,
+    required List<String> endpoints,
+    required BigInt operationEpoch,
+  });
+
+  Stream<rust_api.ApiVoteRecoveryEvent> advanceVoteRecoveryWork({
+    required VotingVoteRecoveryPassHandle passHandle,
+    required List<int> proposalIds,
+    required List<String> configuredHelperUrls,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    BigInt? lastMomentBufferSeconds,
+  });
+
   VotingChainSubmissionPassHandle beginChainSubmissionPass({
     required String dbPath,
     required String accountUuid,
@@ -810,9 +843,105 @@ final class _FrbVotingChainSubmissionPassHandle
   }
 }
 
+final class _FrbVotingVoteRecoveryPassHandle
+    implements VotingVoteRecoveryPassHandle {
+  _FrbVotingVoteRecoveryPassHandle({
+    required this.accountUuid,
+    required this.roundId,
+    required rust_api.VotingVoteRecoveryPassHandle inner,
+  }) : _inner = inner;
+
+  @override
+  final String accountUuid;
+
+  @override
+  final String roundId;
+
+  final rust_api.VotingVoteRecoveryPassHandle _inner;
+  bool _isCancelled = false;
+
+  @override
+  bool get isCancelled => _isCancelled;
+
+  @override
+  bool get isDisposed => _inner.isDisposed;
+
+  rust_api.VotingVoteRecoveryPassHandle get inner {
+    if (isDisposed) {
+      throw StateError('Vote recovery pass handle has been disposed.');
+    }
+    return _inner;
+  }
+
+  @override
+  void setOperationEpoch(BigInt operationEpoch) {
+    if (isDisposed) return;
+    _inner.setOperationEpoch(operationEpoch: operationEpoch);
+  }
+
+  @override
+  void cancel() {
+    if (_isCancelled || isDisposed) return;
+    _inner.cancel();
+    _isCancelled = true;
+  }
+
+  @override
+  void dispose() {
+    if (isDisposed) return;
+    _inner.dispose();
+  }
+}
+
 /// Production implementation backed by generated FRB calls.
 class FrbVotingRustApi implements VotingRustApi {
   const FrbVotingRustApi();
+
+  @override
+  VotingVoteRecoveryPassHandle beginVoteRecoveryPass({
+    required VotingHelperDeliveryContext context,
+    required String network,
+    required List<String> endpoints,
+    required BigInt operationEpoch,
+  }) {
+    if (context is! _FrbVotingHelperDeliveryContext) {
+      throw ArgumentError.value(
+        context,
+        'context',
+        'Expected an FRB voting helper delivery context',
+      );
+    }
+    return _FrbVotingVoteRecoveryPassHandle(
+      accountUuid: context.accountUuid,
+      roundId: context.roundId,
+      inner: rust_api.beginVoteRecoveryPass(
+        context: context.inner,
+        network: network,
+        endpoints: endpoints,
+        operationEpoch: operationEpoch,
+      ),
+    );
+  }
+
+  @override
+  Stream<rust_api.ApiVoteRecoveryEvent> advanceVoteRecoveryWork({
+    required VotingVoteRecoveryPassHandle passHandle,
+    required List<int> proposalIds,
+    required List<String> configuredHelperUrls,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    BigInt? lastMomentBufferSeconds,
+  }) {
+    final handle = passHandle as _FrbVotingVoteRecoveryPassHandle;
+    return rust_api.advanceVoteRecoveryWork(
+      handle: handle.inner,
+      proposalIds: proposalIds,
+      configuredHelperUrls: configuredHelperUrls,
+      nowSeconds: nowSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+      lastMomentBufferSeconds: lastMomentBufferSeconds,
+    );
+  }
 
   @override
   VotingChainSubmissionPassHandle beginChainSubmissionPass({

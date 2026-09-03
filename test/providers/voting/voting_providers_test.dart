@@ -12027,6 +12027,68 @@ class _FakeChainSubmissionPassHandle
   }
 }
 
+class _FakeVoteRecoveryPassHandle
+    implements VotingVoteRecoveryPassHandle, VotingChainSubmissionPassHandle {
+  _FakeVoteRecoveryPassHandle({
+    required this.context,
+    required this.accountUuid,
+    required this.roundId,
+    required this.operationEpoch,
+  });
+
+  final VotingHelperDeliveryContext context;
+
+  @override
+  final String accountUuid;
+  @override
+  final String roundId;
+  BigInt operationEpoch;
+  @override
+  bool isCancelled = false;
+  @override
+  bool isDisposed = false;
+
+  @override
+  void cancel() => isCancelled = true;
+
+  @override
+  void dispose() => isDisposed = true;
+
+  @override
+  void setOperationEpoch(BigInt operationEpoch) {
+    this.operationEpoch = operationEpoch;
+  }
+}
+
+rust_api.ApiVoteRecoveryEvent _fakeVoteRecoveryResult({
+  required VotingVoteRecoveryPassHandle passHandle,
+  required rust_api.ApiVoteRecoveryDisposition disposition,
+  rust_api.ApiChainSubmissionOutcome? chainOutcome,
+  List<rust_api.ApiVoteShareDeliveryReport> shareDeliveries = const [],
+}) {
+  return rust_api.ApiVoteRecoveryEvent(
+    kind: rust_api.ApiVoteRecoveryEventKind.result,
+    voteKeys: const [],
+    result: rust_api.ApiVoteRecoveryCallResult(
+      advance: rust_api.ApiVoteRecoveryAdvance(
+        attemptedWork: null,
+        disposition: disposition,
+        chainOutcome: chainOutcome,
+        shareDeliveries: shareDeliveries,
+        roundPlan: apiRoundPlan(
+          roundId: passHandle.roundId,
+          pendingRecovery:
+              disposition != rust_api.ApiVoteRecoveryDisposition.noWork,
+          nextSteps: const [],
+          openProposals: Uint32List(0),
+          allDecided: false,
+        ),
+      ),
+      failure: null,
+    ),
+  );
+}
+
 rust_api.ApiChainSubmissionCallResult _confirmedChainSubmission({
   required String txHash,
   required int vanPosition,
@@ -12339,6 +12401,176 @@ class FakeVotingRustApi implements VotingRustApi {
   final voteChainAdvanceStartedKeys = <String>[];
   final Map<int, List<int>> _batchProposalIdsByBundle = {};
   final chainSubmissionPassHandles = <_FakeChainSubmissionPassHandle>[];
+  final Set<String> _sdkHandledVoteKeys = {};
+  final Set<String> _sdkClaimedVoteKeys = {};
+
+  @override
+  VotingVoteRecoveryPassHandle beginVoteRecoveryPass({
+    required VotingHelperDeliveryContext context,
+    required String network,
+    required List<String> endpoints,
+    required BigInt operationEpoch,
+  }) => _FakeVoteRecoveryPassHandle(
+    context: context,
+    accountUuid: context.accountUuid,
+    roundId: context.roundId,
+    operationEpoch: operationEpoch,
+  );
+
+  @override
+  Stream<rust_api.ApiVoteRecoveryEvent> advanceVoteRecoveryWork({
+    required VotingVoteRecoveryPassHandle passHandle,
+    required List<int> proposalIds,
+    required List<String> configuredHelperUrls,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    BigInt? lastMomentBufferSeconds,
+  }) async* {
+    final handle = passHandle as _FakeVoteRecoveryPassHandle;
+    String? key;
+    for (final candidate in voteCommitmentKeys) {
+      if (!_sdkHandledVoteKeys.contains(candidate) &&
+          !_sdkClaimedVoteKeys.contains(candidate)) {
+        key = candidate;
+        break;
+      }
+    }
+    if (key != null) {
+      final parts = key.split(':');
+      final bundleIndex = int.parse(parts[0]);
+      final proposalId = int.parse(parts[1]);
+      final batchProposalIds =
+          _batchProposalIdsByBundle[bundleIndex] ?? [proposalId];
+      _sdkClaimedVoteKeys.addAll(
+        batchProposalIds.map((id) => '$bundleIndex:$id'),
+      );
+      final preflight = await preflightVotingHelpers(
+        context: handle.context,
+        configuredHelperUrls: configuredHelperUrls,
+      );
+      for (final id in batchProposalIds) {
+        await prepareCommittedShareDelivery(
+          context: handle.context,
+          bundleIndex: bundleIndex,
+          proposalId: id,
+          preflight: preflight,
+          nowSeconds: nowSeconds,
+          voteEndTimeSeconds: voteEndTimeSeconds,
+          proposalIds: proposalIds,
+          lastMomentBufferSeconds: lastMomentBufferSeconds,
+        );
+      }
+      final chain = batchProposalIds.length > 1
+          ? await advanceChainVoteBatch(
+              passHandle: handle,
+              bundleIndex: bundleIndex,
+              proposalId: proposalId,
+              recoveryMode: rust_api.ApiChainRecoveryMode.exactTree,
+            )
+          : await advanceChainVote(
+              passHandle: handle,
+              bundleIndex: bundleIndex,
+              proposalId: proposalId,
+              recoveryMode: rust_api.ApiChainRecoveryMode.exactTree,
+            );
+      final outcome = chain.outcome;
+      if (chain.failure != null ||
+          outcome == null ||
+          outcome.kind == rust_api.ApiChainSubmissionOutcomeKind.rejected ||
+          outcome.kind ==
+              rust_api.ApiChainSubmissionOutcomeKind.submittedWithoutHash) {
+        yield rust_api.ApiVoteRecoveryEvent(
+          kind: rust_api.ApiVoteRecoveryEventKind.result,
+          voteKeys: const [],
+          result: rust_api.ApiVoteRecoveryCallResult(
+            advance: null,
+            failure: rust_api.ApiVoteRecoveryFailure(
+              kind: rust_api.ApiVoteRecoveryFailureKind.chainTerminal,
+              message:
+                  chain.failure?.message ??
+                  outcome?.diagnostic?.message ??
+                  'vote chain submission failed',
+            ),
+          ),
+        );
+        return;
+      }
+      if (outcome.kind == rust_api.ApiChainSubmissionOutcomeKind.tracking ||
+          outcome.kind == rust_api.ApiChainSubmissionOutcomeKind.recovering) {
+        _sdkClaimedVoteKeys.removeAll(
+          batchProposalIds.map((id) => '$bundleIndex:$id'),
+        );
+        yield _fakeVoteRecoveryResult(
+          passHandle: passHandle,
+          disposition: rust_api.ApiVoteRecoveryDisposition.pending,
+          chainOutcome: outcome,
+        );
+        return;
+      }
+      if (outcome.kind == rust_api.ApiChainSubmissionOutcomeKind.cancelled) {
+        _sdkClaimedVoteKeys.removeAll(
+          batchProposalIds.map((id) => '$bundleIndex:$id'),
+        );
+        yield _fakeVoteRecoveryResult(
+          passHandle: passHandle,
+          disposition: rust_api.ApiVoteRecoveryDisposition.cancelled,
+          chainOutcome: outcome,
+        );
+        return;
+      }
+      final deliveries = <rust_api.ApiVoteShareDeliveryReport>[];
+      for (final id in batchProposalIds) {
+        final delivery = await submitPreparedSharesToHelpers(
+          context: handle.context,
+          bundleIndex: bundleIndex,
+          proposalId: id,
+          configuredHelperUrls: configuredHelperUrls,
+          nowSeconds: nowSeconds,
+        );
+        final report = rust_api.ApiVoteShareDeliveryReport(
+          vote: rust_api.ApiVoteRecoveryKey(
+            bundleIndex: bundleIndex,
+            proposalId: id,
+          ),
+          delivery: delivery,
+        );
+        deliveries.add(report);
+        yield rust_api.ApiVoteRecoveryEvent(
+          kind: rust_api.ApiVoteRecoveryEventKind.shareOutcome,
+          voteKeys: const [],
+          shareDelivery: report,
+        );
+        _sdkHandledVoteKeys.add('$bundleIndex:$id');
+      }
+      yield _fakeVoteRecoveryResult(
+        passHandle: passHandle,
+        disposition: rust_api.ApiVoteRecoveryDisposition.advanced,
+        chainOutcome: outcome,
+        shareDeliveries: deliveries,
+      );
+      return;
+    }
+    yield rust_api.ApiVoteRecoveryEvent(
+      kind: rust_api.ApiVoteRecoveryEventKind.result,
+      voteKeys: const [],
+      result: rust_api.ApiVoteRecoveryCallResult(
+        advance: rust_api.ApiVoteRecoveryAdvance(
+          attemptedWork: null,
+          disposition: rust_api.ApiVoteRecoveryDisposition.noWork,
+          chainOutcome: null,
+          shareDeliveries: const [],
+          roundPlan: apiRoundPlan(
+            roundId: passHandle.roundId,
+            pendingRecovery: false,
+            nextSteps: const [],
+            openProposals: Uint32List(0),
+            allDecided: false,
+          ),
+        ),
+        failure: null,
+      ),
+    );
+  }
 
   @override
   VotingChainSubmissionPassHandle beginChainSubmissionPass({

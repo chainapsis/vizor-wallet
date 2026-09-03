@@ -43,6 +43,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   get rust_arc_decrement_strong_count_VotingShareTrackingPassHandlePtr => wire
       ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandlePtr;
 
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_VotingVoteRecoveryPassHandlePtr => wire
+      ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandlePtr;
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
@@ -65,6 +69,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  VotingVoteRecoveryPassHandle
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+    dynamic raw,
+  );
+
+  @protected
   VotingChainSubmissionPassHandle
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingChainSubmissionPassHandle(
     dynamic raw,
@@ -79,6 +89,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   VotingShareTrackingPassHandle
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    dynamic raw,
+  );
+
+  @protected
+  VotingVoteRecoveryPassHandle
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
     dynamic raw,
   );
 
@@ -101,6 +117,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  VotingVoteRecoveryPassHandle
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+    dynamic raw,
+  );
+
+  @protected
   RustStreamSink<ApiDelegationProofEvent>
   dco_decode_StreamSink_api_delegation_proof_event_Sse(dynamic raw);
 
@@ -115,6 +137,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   RustStreamSink<ApiVoteCommitEvent>
   dco_decode_StreamSink_api_vote_commit_event_Sse(dynamic raw);
+
+  @protected
+  RustStreamSink<ApiVoteRecoveryEvent>
+  dco_decode_StreamSink_api_vote_recovery_event_Sse(dynamic raw);
 
   @protected
   String dco_decode_String(dynamic raw);
@@ -262,6 +288,41 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiVoteCommitEvent dco_decode_api_vote_commit_event(dynamic raw);
 
   @protected
+  ApiVoteRecoveryAdvance dco_decode_api_vote_recovery_advance(dynamic raw);
+
+  @protected
+  ApiVoteRecoveryCallResult dco_decode_api_vote_recovery_call_result(
+    dynamic raw,
+  );
+
+  @protected
+  ApiVoteRecoveryDisposition dco_decode_api_vote_recovery_disposition(
+    dynamic raw,
+  );
+
+  @protected
+  ApiVoteRecoveryEvent dco_decode_api_vote_recovery_event(dynamic raw);
+
+  @protected
+  ApiVoteRecoveryEventKind dco_decode_api_vote_recovery_event_kind(dynamic raw);
+
+  @protected
+  ApiVoteRecoveryFailure dco_decode_api_vote_recovery_failure(dynamic raw);
+
+  @protected
+  ApiVoteRecoveryFailureKind dco_decode_api_vote_recovery_failure_kind(
+    dynamic raw,
+  );
+
+  @protected
+  ApiVoteRecoveryKey dco_decode_api_vote_recovery_key(dynamic raw);
+
+  @protected
+  ApiVoteShareDeliveryReport dco_decode_api_vote_share_delivery_report(
+    dynamic raw,
+  );
+
+  @protected
   ApiVotingEligibility dco_decode_api_voting_eligibility(dynamic raw);
 
   @protected
@@ -304,6 +365,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiSignedVoteCommitments dco_decode_box_autoadd_api_signed_vote_commitments(
     dynamic raw,
   );
+
+  @protected
+  ApiVoteRecoveryAdvance dco_decode_box_autoadd_api_vote_recovery_advance(
+    dynamic raw,
+  );
+
+  @protected
+  ApiVoteRecoveryCallResult
+  dco_decode_box_autoadd_api_vote_recovery_call_result(dynamic raw);
+
+  @protected
+  ApiVoteRecoveryFailure dco_decode_box_autoadd_api_vote_recovery_failure(
+    dynamic raw,
+  );
+
+  @protected
+  ApiVoteShareDeliveryReport
+  dco_decode_box_autoadd_api_vote_share_delivery_report(dynamic raw);
 
   @protected
   ApiVotingHelperPreflight dco_decode_box_autoadd_api_voting_helper_preflight(
@@ -354,6 +433,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundPlanView dco_decode_box_autoadd_round_plan_view(dynamic raw);
+
+  @protected
   SignedDelegationPayloadView
   dco_decode_box_autoadd_signed_delegation_payload_view(dynamic raw);
 
@@ -368,6 +450,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VanWitness dco_decode_box_autoadd_van_witness(dynamic raw);
+
+  @protected
+  VoteRecoveryWorkView dco_decode_box_autoadd_vote_recovery_work_view(
+    dynamic raw,
+  );
 
   @protected
   ChainUpgradeActivationStatus dco_decode_chain_upgrade_activation_status(
@@ -521,6 +608,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   List<ApiSnapshotBundlePirResult>
   dco_decode_list_api_snapshot_bundle_pir_result(dynamic raw);
+
+  @protected
+  List<ApiVoteRecoveryKey> dco_decode_list_api_vote_recovery_key(dynamic raw);
+
+  @protected
+  List<ApiVoteShareDeliveryReport>
+  dco_decode_list_api_vote_share_delivery_report(dynamic raw);
 
   @protected
   List<AuthenticatedRound> dco_decode_list_authenticated_round(dynamic raw);
@@ -793,6 +887,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_api_signed_vote_commitments(dynamic raw);
 
   @protected
+  ApiVoteRecoveryAdvance? dco_decode_opt_box_autoadd_api_vote_recovery_advance(
+    dynamic raw,
+  );
+
+  @protected
+  ApiVoteRecoveryCallResult?
+  dco_decode_opt_box_autoadd_api_vote_recovery_call_result(dynamic raw);
+
+  @protected
+  ApiVoteRecoveryFailure? dco_decode_opt_box_autoadd_api_vote_recovery_failure(
+    dynamic raw,
+  );
+
+  @protected
+  ApiVoteShareDeliveryReport?
+  dco_decode_opt_box_autoadd_api_vote_share_delivery_report(dynamic raw);
+
+  @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
@@ -829,6 +941,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundPlanView? dco_decode_opt_box_autoadd_round_plan_view(dynamic raw);
+
+  @protected
   SignedDelegationPayloadView?
   dco_decode_opt_box_autoadd_signed_delegation_payload_view(dynamic raw);
 
@@ -840,6 +955,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  VoteRecoveryWorkView? dco_decode_opt_box_autoadd_vote_recovery_work_view(
+    dynamic raw,
+  );
 
   @protected
   List<MigrationPreparationTransactionStatus>?
@@ -1054,6 +1174,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  VotingVoteRecoveryPassHandle
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   VotingChainSubmissionPassHandle
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingChainSubmissionPassHandle(
     SseDeserializer deserializer,
@@ -1068,6 +1194,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   VotingShareTrackingPassHandle
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VotingVoteRecoveryPassHandle
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
     SseDeserializer deserializer,
   );
 
@@ -1090,6 +1222,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  VotingVoteRecoveryPassHandle
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RustStreamSink<ApiDelegationProofEvent>
   sse_decode_StreamSink_api_delegation_proof_event_Sse(
     SseDeserializer deserializer,
@@ -1108,6 +1246,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   RustStreamSink<ApiVoteCommitEvent>
   sse_decode_StreamSink_api_vote_commit_event_Sse(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<ApiVoteRecoveryEvent>
+  sse_decode_StreamSink_api_vote_recovery_event_Sse(
+    SseDeserializer deserializer,
+  );
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -1295,6 +1439,51 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiVoteRecoveryAdvance sse_decode_api_vote_recovery_advance(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryCallResult sse_decode_api_vote_recovery_call_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryDisposition sse_decode_api_vote_recovery_disposition(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryEvent sse_decode_api_vote_recovery_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryEventKind sse_decode_api_vote_recovery_event_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryFailure sse_decode_api_vote_recovery_failure(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryFailureKind sse_decode_api_vote_recovery_failure_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryKey sse_decode_api_vote_recovery_key(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteShareDeliveryReport sse_decode_api_vote_share_delivery_report(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiVotingEligibility sse_decode_api_voting_eligibility(
     SseDeserializer deserializer,
   );
@@ -1349,6 +1538,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiSignedVoteCommitments sse_decode_box_autoadd_api_signed_vote_commitments(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryAdvance sse_decode_box_autoadd_api_vote_recovery_advance(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryCallResult
+  sse_decode_box_autoadd_api_vote_recovery_call_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryFailure sse_decode_box_autoadd_api_vote_recovery_failure(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteShareDeliveryReport
+  sse_decode_box_autoadd_api_vote_share_delivery_report(
     SseDeserializer deserializer,
   );
 
@@ -1409,6 +1620,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundPlanView sse_decode_box_autoadd_round_plan_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   SignedDelegationPayloadView
   sse_decode_box_autoadd_signed_delegation_payload_view(
     SseDeserializer deserializer,
@@ -1425,6 +1641,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VanWitness sse_decode_box_autoadd_van_witness(SseDeserializer deserializer);
+
+  @protected
+  VoteRecoveryWorkView sse_decode_box_autoadd_vote_recovery_work_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ChainUpgradeActivationStatus sse_decode_chain_upgrade_activation_status(
@@ -1622,6 +1843,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   List<ApiSnapshotBundlePirResult>
   sse_decode_list_api_snapshot_bundle_pir_result(SseDeserializer deserializer);
+
+  @protected
+  List<ApiVoteRecoveryKey> sse_decode_list_api_vote_recovery_key(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiVoteShareDeliveryReport>
+  sse_decode_list_api_vote_share_delivery_report(SseDeserializer deserializer);
 
   @protected
   List<AuthenticatedRound> sse_decode_list_authenticated_round(
@@ -1966,6 +2196,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiVoteRecoveryAdvance? sse_decode_opt_box_autoadd_api_vote_recovery_advance(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryCallResult?
+  sse_decode_opt_box_autoadd_api_vote_recovery_call_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecoveryFailure? sse_decode_opt_box_autoadd_api_vote_recovery_failure(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteShareDeliveryReport?
+  sse_decode_opt_box_autoadd_api_vote_share_delivery_report(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
@@ -2010,6 +2262,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundPlanView? sse_decode_opt_box_autoadd_round_plan_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   SignedDelegationPayloadView?
   sse_decode_opt_box_autoadd_signed_delegation_payload_view(
     SseDeserializer deserializer,
@@ -2023,6 +2280,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  VoteRecoveryWorkView? sse_decode_opt_box_autoadd_vote_recovery_work_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<MigrationPreparationTransactionStatus>?
@@ -2288,6 +2550,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+    VotingVoteRecoveryPassHandle self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingChainSubmissionPassHandle(
     VotingChainSubmissionPassHandle self,
     SseSerializer serializer,
@@ -2304,6 +2573,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle(
     VotingShareTrackingPassHandle self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+    VotingVoteRecoveryPassHandle self,
     SseSerializer serializer,
   );
 
@@ -2329,6 +2605,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+    VotingVoteRecoveryPassHandle self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_StreamSink_api_delegation_proof_event_Sse(
     RustStreamSink<ApiDelegationProofEvent> self,
     SseSerializer serializer,
@@ -2349,6 +2632,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_StreamSink_api_vote_commit_event_Sse(
     RustStreamSink<ApiVoteCommitEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_StreamSink_api_vote_recovery_event_Sse(
+    RustStreamSink<ApiVoteRecoveryEvent> self,
     SseSerializer serializer,
   );
 
@@ -2578,6 +2867,60 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_vote_recovery_advance(
+    ApiVoteRecoveryAdvance self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_recovery_call_result(
+    ApiVoteRecoveryCallResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_recovery_disposition(
+    ApiVoteRecoveryDisposition self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_recovery_event(
+    ApiVoteRecoveryEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_recovery_event_kind(
+    ApiVoteRecoveryEventKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_recovery_failure(
+    ApiVoteRecoveryFailure self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_recovery_failure_kind(
+    ApiVoteRecoveryFailureKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_recovery_key(
+    ApiVoteRecoveryKey self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_share_delivery_report(
+    ApiVoteShareDeliveryReport self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_voting_eligibility(
     ApiVotingEligibility self,
     SseSerializer serializer,
@@ -2640,6 +2983,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_api_signed_vote_commitments(
     ApiSignedVoteCommitments self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_vote_recovery_advance(
+    ApiVoteRecoveryAdvance self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_vote_recovery_call_result(
+    ApiVoteRecoveryCallResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_vote_recovery_failure(
+    ApiVoteRecoveryFailure self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_vote_share_delivery_report(
+    ApiVoteShareDeliveryReport self,
     SseSerializer serializer,
   );
 
@@ -2710,6 +3077,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_round_plan_view(
+    RoundPlanView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_signed_delegation_payload_view(
     SignedDelegationPayloadView self,
     SseSerializer serializer,
@@ -2727,6 +3100,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_van_witness(
     VanWitness self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_vote_recovery_work_view(
+    VoteRecoveryWorkView self,
     SseSerializer serializer,
   );
 
@@ -2970,6 +3349,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_api_snapshot_bundle_pir_result(
     List<ApiSnapshotBundlePirResult> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_vote_recovery_key(
+    List<ApiVoteRecoveryKey> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_vote_share_delivery_report(
+    List<ApiVoteShareDeliveryReport> self,
     SseSerializer serializer,
   );
 
@@ -3391,6 +3782,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_api_vote_recovery_advance(
+    ApiVoteRecoveryAdvance? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_vote_recovery_call_result(
+    ApiVoteRecoveryCallResult? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_vote_recovery_failure(
+    ApiVoteRecoveryFailure? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_vote_share_delivery_report(
+    ApiVoteShareDeliveryReport? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
@@ -3439,6 +3854,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_round_plan_view(
+    RoundPlanView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_signed_delegation_payload_view(
     SignedDelegationPayloadView? self,
     SseSerializer serializer,
@@ -3452,6 +3873,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_vote_recovery_work_view(
+    VoteRecoveryWorkView? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_list_migration_preparation_transaction_status(
@@ -3859,5 +4286,39 @@ class RustLibWire implements BaseWire {
       );
   late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandle =
       _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingShareTrackingPassHandlePtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandlePtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_zcash_wallet_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle',
+      );
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle =
+      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandlePtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandlePtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_zcash_wallet_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle',
+      );
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle =
+      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandlePtr
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 }

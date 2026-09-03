@@ -266,6 +266,22 @@ impl From<zcash_voting::ChainSubmissionState> for ApiChainSubmissionState {
     }
 }
 
+impl From<zcash_voting::ChainSubmissionFailureState> for ApiChainSubmissionFailureState {
+    fn from(state: zcash_voting::ChainSubmissionFailureState) -> Self {
+        Self {
+            state: state.state().into(),
+            evidence: match state.evidence() {
+                zcash_voting::ChainSubmissionStateEvidence::Durable => {
+                    ApiChainSubmissionStateEvidence::Durable
+                }
+                zcash_voting::ChainSubmissionStateEvidence::KnownPossiblyDispatched => {
+                    ApiChainSubmissionStateEvidence::KnownPossiblyDispatched
+                }
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiChainConfirmationSource {
     Hash,
@@ -992,6 +1008,36 @@ pub struct ApiShareBatchDeliveryReport {
     pub legacy_best_effort: bool,
 }
 
+impl TryFrom<zcash_voting::share_tracking::ShareBatchDeliveryReport>
+    for ApiShareBatchDeliveryReport
+{
+    type Error = String;
+
+    fn try_from(
+        report: zcash_voting::share_tracking::ShareBatchDeliveryReport,
+    ) -> Result<Self, Self::Error> {
+        let deliveries = report
+            .deliveries
+            .into_iter()
+            .map(|delivery| {
+                Ok(ApiShareDeliveryOutcome {
+                    share_index: delivery.share_index,
+                    submission: delivery.submission.try_into()?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Self {
+            deliveries,
+            pending_share_indices: report.pending_share_indices,
+            cancelled: report.cancelled,
+            legacy_best_effort: matches!(
+                report.placement_guarantee,
+                zcash_voting::share_tracking::SharePlacementGuarantee::LegacyBestEffort
+            ),
+        })
+    }
+}
+
 impl TryFrom<zcash_voting::share_tracking::ShareSubmissionReport> for ApiShareSubmissionReport {
     type Error = String;
 
@@ -1009,6 +1055,173 @@ impl TryFrom<zcash_voting::share_tracking::ShareSubmissionReport> for ApiShareSu
             })?,
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiVoteRecoveryDisposition {
+    NoWork,
+    Advanced,
+    Pending,
+    Cancelled,
+    Unsupported,
+}
+
+impl From<zcash_voting::VoteRecoveryDisposition> for ApiVoteRecoveryDisposition {
+    fn from(disposition: zcash_voting::VoteRecoveryDisposition) -> Self {
+        match disposition {
+            zcash_voting::VoteRecoveryDisposition::NoWork => Self::NoWork,
+            zcash_voting::VoteRecoveryDisposition::Advanced => Self::Advanced,
+            zcash_voting::VoteRecoveryDisposition::Pending => Self::Pending,
+            zcash_voting::VoteRecoveryDisposition::Cancelled => Self::Cancelled,
+            _ => Self::Unsupported,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiVoteRecoveryFailureKind {
+    InvalidInput,
+    Busy,
+    Storage,
+    InvariantViolation,
+    Transport,
+    Protocol,
+    ChainTerminal,
+    HelperDeliveryIncomplete,
+}
+
+impl From<zcash_voting::VoteRecoveryFailureKind> for ApiVoteRecoveryFailureKind {
+    fn from(kind: zcash_voting::VoteRecoveryFailureKind) -> Self {
+        match kind {
+            zcash_voting::VoteRecoveryFailureKind::InvalidInput => Self::InvalidInput,
+            zcash_voting::VoteRecoveryFailureKind::Busy => Self::Busy,
+            zcash_voting::VoteRecoveryFailureKind::Storage => Self::Storage,
+            zcash_voting::VoteRecoveryFailureKind::InvariantViolation => Self::InvariantViolation,
+            zcash_voting::VoteRecoveryFailureKind::Transport => Self::Transport,
+            zcash_voting::VoteRecoveryFailureKind::Protocol => Self::Protocol,
+            zcash_voting::VoteRecoveryFailureKind::ChainTerminal => Self::ChainTerminal,
+            zcash_voting::VoteRecoveryFailureKind::HelperDeliveryIncomplete => {
+                Self::HelperDeliveryIncomplete
+            }
+            _ => Self::InvariantViolation,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiVoteRecoveryKey {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+}
+
+impl From<zcash_voting::VoteRecoveryKey> for ApiVoteRecoveryKey {
+    fn from(key: zcash_voting::VoteRecoveryKey) -> Self {
+        Self {
+            bundle_index: key.bundle_index,
+            proposal_id: key.proposal_id,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteShareDeliveryReport {
+    pub vote: ApiVoteRecoveryKey,
+    pub delivery: ApiShareBatchDeliveryReport,
+}
+
+impl TryFrom<zcash_voting::VoteShareDeliveryReport> for ApiVoteShareDeliveryReport {
+    type Error = String;
+
+    fn try_from(report: zcash_voting::VoteShareDeliveryReport) -> Result<Self, Self::Error> {
+        Ok(Self {
+            vote: report.vote.into(),
+            delivery: report.delivery.try_into()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteRecoveryAdvance {
+    pub attempted_work: Option<zcash_voting::wire::VoteRecoveryWorkView>,
+    pub disposition: ApiVoteRecoveryDisposition,
+    pub chain_outcome: Option<ApiChainSubmissionOutcome>,
+    pub share_deliveries: Vec<ApiVoteShareDeliveryReport>,
+    pub round_plan: zcash_voting::wire::RoundPlanView,
+}
+
+impl TryFrom<zcash_voting::VoteRecoveryAdvance> for ApiVoteRecoveryAdvance {
+    type Error = String;
+
+    fn try_from(advance: zcash_voting::VoteRecoveryAdvance) -> Result<Self, Self::Error> {
+        Ok(Self {
+            attempted_work: advance.attempted_work.map(Into::into),
+            disposition: advance.disposition.into(),
+            chain_outcome: advance.chain_outcome.map(Into::into),
+            share_deliveries: advance
+                .share_deliveries
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<Vec<_>, _>>()?,
+            round_plan: advance
+                .round_plan
+                .try_into()
+                .map_err(|error: zcash_voting::VotingError| error.to_string())?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteRecoveryFailure {
+    pub kind: ApiVoteRecoveryFailureKind,
+    pub attempted_work: Option<zcash_voting::wire::VoteRecoveryWorkView>,
+    pub strongest_chain_state: Option<ApiChainSubmissionFailureState>,
+    pub chain_outcome: Option<ApiChainSubmissionOutcome>,
+    pub message: String,
+    pub round_plan: Option<zcash_voting::wire::RoundPlanView>,
+}
+
+impl TryFrom<zcash_voting::VoteRecoveryFailure> for ApiVoteRecoveryFailure {
+    type Error = String;
+
+    fn try_from(failure: zcash_voting::VoteRecoveryFailure) -> Result<Self, Self::Error> {
+        Ok(Self {
+            kind: failure.kind.into(),
+            attempted_work: failure.attempted_work.map(Into::into),
+            strongest_chain_state: failure.strongest_chain_state.map(Into::into),
+            chain_outcome: failure.chain_outcome.map(Into::into),
+            message: failure.message,
+            round_plan: failure
+                .round_plan
+                .map(|plan| (*plan).try_into())
+                .transpose()
+                .map_err(|error: zcash_voting::VotingError| error.to_string())?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteRecoveryCallResult {
+    pub advance: Option<ApiVoteRecoveryAdvance>,
+    pub failure: Option<ApiVoteRecoveryFailure>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiVoteRecoveryEventKind {
+    Selected,
+    HelperPlansPrepared,
+    ChainOutcome,
+    ShareOutcome,
+    Result,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteRecoveryEvent {
+    pub kind: ApiVoteRecoveryEventKind,
+    pub work: Option<zcash_voting::wire::VoteRecoveryWorkView>,
+    pub vote_keys: Vec<ApiVoteRecoveryKey>,
+    pub chain_outcome: Option<ApiChainSubmissionOutcome>,
+    pub share_delivery: Option<ApiVoteShareDeliveryReport>,
+    pub result: Option<ApiVoteRecoveryCallResult>,
 }
 
 /// What one helper share-tracking pass did.
@@ -1060,6 +1273,189 @@ pub struct VotingHelperDeliveryContext {
     round_id: String,
     health: zcash_voting::HelperHealth,
     database: Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
+}
+
+/// One cancellable SDK-owned persisted-vote pass for an account and round.
+#[flutter_rust_bridge::frb(opaque)]
+pub struct VotingVoteRecoveryPassHandle {
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    health: zcash_voting::HelperHealth,
+    database: Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
+    network: zcash_voting::Network,
+    vote_chain_id: String,
+    endpoints: Vec<String>,
+    control: zcash_voting::ChainSubmissionControl,
+}
+
+impl VotingVoteRecoveryPassHandle {
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn cancel(&self) {
+        self.control.cancel();
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn set_operation_epoch(&self, operation_epoch: u64) {
+        self.control.set_operation_epoch(operation_epoch);
+    }
+}
+
+/// Creates a pass that shares the helper context's exact wallet and round scope.
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_vote_recovery_pass(
+    context: &VotingHelperDeliveryContext,
+    network: String,
+    endpoints: Vec<String>,
+    operation_epoch: u64,
+) -> Result<VotingVoteRecoveryPassHandle, String> {
+    if endpoints.is_empty() {
+        return Err("vote-chain endpoint list must not be empty".to_string());
+    }
+    let network = voting_network(keys::parse_network(&network)?);
+    let vote_chain_id = match network {
+        zcash_voting::Network::Mainnet => "zvote-1",
+        zcash_voting::Network::Testnet | zcash_voting::Network::Regtest => "svote-1",
+    }
+    .to_string();
+    Ok(VotingVoteRecoveryPassHandle {
+        db_path: context.db_path.clone(),
+        account_uuid: context.account_uuid.clone(),
+        round_id: context.round_id.clone(),
+        health: context.health.clone(),
+        database: context.database.clone(),
+        network,
+        vote_chain_id,
+        endpoints,
+        control: zcash_voting::ChainSubmissionControl::new(operation_epoch),
+    })
+}
+
+fn vote_recovery_progress_event(
+    progress: zcash_voting::VoteRecoveryProgress,
+) -> Option<ApiVoteRecoveryEvent> {
+    let event = match progress {
+        zcash_voting::VoteRecoveryProgress::Selected(work) => ApiVoteRecoveryEvent {
+            kind: ApiVoteRecoveryEventKind::Selected,
+            work: Some(work.into()),
+            vote_keys: Vec::new(),
+            chain_outcome: None,
+            share_delivery: None,
+            result: None,
+        },
+        zcash_voting::VoteRecoveryProgress::HelperPlansPrepared(keys) => ApiVoteRecoveryEvent {
+            kind: ApiVoteRecoveryEventKind::HelperPlansPrepared,
+            work: None,
+            vote_keys: keys.into_iter().map(Into::into).collect(),
+            chain_outcome: None,
+            share_delivery: None,
+            result: None,
+        },
+        zcash_voting::VoteRecoveryProgress::ChainOutcome(outcome) => ApiVoteRecoveryEvent {
+            kind: ApiVoteRecoveryEventKind::ChainOutcome,
+            work: None,
+            vote_keys: Vec::new(),
+            chain_outcome: Some(outcome.into()),
+            share_delivery: None,
+            result: None,
+        },
+        zcash_voting::VoteRecoveryProgress::ShareOutcome(delivery) => {
+            let Ok(delivery) = delivery.try_into() else {
+                log::error!("{VOTING_VOTE_LOG} failed to convert helper delivery progress");
+                return None;
+            };
+            ApiVoteRecoveryEvent {
+                kind: ApiVoteRecoveryEventKind::ShareOutcome,
+                work: None,
+                vote_keys: Vec::new(),
+                chain_outcome: None,
+                share_delivery: Some(delivery),
+                result: None,
+            }
+        }
+        _ => {
+            log::error!("{VOTING_VOTE_LOG} unsupported SDK vote recovery progress");
+            return None;
+        }
+    };
+    Some(event)
+}
+
+/// Advances one SDK-selected persisted vote-work unit and emits one terminal result.
+pub async fn advance_vote_recovery_work(
+    handle: &VotingVoteRecoveryPassHandle,
+    proposal_ids: Vec<u32>,
+    configured_helper_urls: Vec<String>,
+    now_seconds: u64,
+    vote_end_time_seconds: u64,
+    last_moment_buffer_seconds: Option<u64>,
+    sink: StreamSink<ApiVoteRecoveryEvent>,
+) -> Result<(), String> {
+    let sink = Arc::new(sink);
+    let database = helper_delivery_db(&handle.db_path, &handle.account_uuid, &handle.database)?;
+    let helper_client = helper_client(&handle.health);
+    let chain_config = zcash_voting::ChainSubmissionClientConfig {
+        network: handle.network,
+        vote_chain_id: handle.vote_chain_id.clone(),
+        endpoints: handle.endpoints.clone(),
+        tracking_window: Duration::from_secs(90),
+        maximum_post_attempts: 3,
+        retry_backoffs: vec![Duration::from_secs(2), Duration::from_secs(4)],
+    };
+    let executor = zcash_voting::VoteRecoveryExecutor::with_transport(
+        database,
+        crate::wallet::voting::helper_transport::VotingHelperTransport::new(),
+        chain_config,
+        helper_client,
+    )
+    .map_err(|error| format!("create vote recovery executor failed: {}", error.message()))?;
+    let progress_sink = sink.clone();
+    let reporter = zcash_voting::VoteRecoveryProgressBridge::new(move |progress| {
+        let Some(event) = vote_recovery_progress_event(progress) else {
+            return;
+        };
+        if progress_sink.add(event).is_err() {
+            log_sink_closed(VOTE_STREAM_CONTEXT, SINK_PROGRESS_NOT_DELIVERED);
+        }
+    });
+    let result = executor
+        .advance(
+            zcash_voting::VoteRecoveryRequest {
+                round_id: &handle.round_id,
+                proposal_ids: &proposal_ids,
+                configured_helper_urls: &configured_helper_urls,
+                now_seconds,
+                vote_end_time_seconds,
+                last_moment_buffer_seconds,
+            },
+            &handle.control,
+            &reporter,
+        )
+        .await;
+    let result = match result {
+        Ok(advance) => ApiVoteRecoveryCallResult {
+            advance: Some(advance.try_into()?),
+            failure: None,
+        },
+        Err(failure) => ApiVoteRecoveryCallResult {
+            advance: None,
+            failure: Some(failure.try_into()?),
+        },
+    };
+    if sink
+        .add(ApiVoteRecoveryEvent {
+            kind: ApiVoteRecoveryEventKind::Result,
+            work: None,
+            vote_keys: Vec::new(),
+            chain_outcome: None,
+            share_delivery: None,
+            result: Some(result),
+        })
+        .is_err()
+    {
+        log_sink_closed(VOTE_STREAM_CONTEXT, SINK_RESULT_NOT_DELIVERED);
+    }
+    Ok(())
 }
 
 /// One account-and-round-bound cancellation handle for helper-share tracking.

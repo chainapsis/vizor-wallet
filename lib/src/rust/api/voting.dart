@@ -11,9 +11,9 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `bounded_chain_message`, `build_vote_commitments_result`, `catch`, `chain_submission_client_config`, `chain_submission_client`, `chain_submission_round_id`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `failure`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `local`, `log_sink_closed`, `outcome`, `share_record`
+// These functions are ignored because they are not marked as `pub`: `bounded_chain_message`, `build_vote_commitments_result`, `catch`, `chain_submission_client_config`, `chain_submission_client`, `chain_submission_round_id`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `failure`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `local`, `log_sink_closed`, `outcome`, `share_record`, `vote_recovery_progress_event`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PreparedVoteWork`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`, `try_from`, `try_from`, `try_from`, `try_from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
 ///
@@ -143,6 +143,36 @@ Future<VotingRoundParams> trustedVotingRoundParamsFromConfig({
   snapshotHeight: snapshotHeight,
   ncRoot: ncRoot,
   nullifierImtRoot: nullifierImtRoot,
+);
+
+/// Creates a pass that shares the helper context's exact wallet and round scope.
+VotingVoteRecoveryPassHandle beginVoteRecoveryPass({
+  required VotingHelperDeliveryContext context,
+  required String network,
+  required List<String> endpoints,
+  required BigInt operationEpoch,
+}) => RustLib.instance.api.crateApiVotingBeginVoteRecoveryPass(
+  context: context,
+  network: network,
+  endpoints: endpoints,
+  operationEpoch: operationEpoch,
+);
+
+/// Advances one SDK-selected persisted vote-work unit and emits one terminal result.
+Stream<ApiVoteRecoveryEvent> advanceVoteRecoveryWork({
+  required VotingVoteRecoveryPassHandle handle,
+  required List<int> proposalIds,
+  required List<String> configuredHelperUrls,
+  required BigInt nowSeconds,
+  required BigInt voteEndTimeSeconds,
+  BigInt? lastMomentBufferSeconds,
+}) => RustLib.instance.api.crateApiVotingAdvanceVoteRecoveryWork(
+  handle: handle,
+  proposalIds: proposalIds,
+  configuredHelperUrls: configuredHelperUrls,
+  nowSeconds: nowSeconds,
+  voteEndTimeSeconds: voteEndTimeSeconds,
+  lastMomentBufferSeconds: lastMomentBufferSeconds,
 );
 
 /// Creates helper delivery state for one account-and-round voting workflow.
@@ -843,6 +873,13 @@ abstract class VotingHelperDeliveryContext implements RustOpaqueInterface {}
 abstract class VotingShareTrackingPassHandle implements RustOpaqueInterface {
   /// Stops this tracking pass at its next cancellation check.
   void cancel();
+}
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>>
+abstract class VotingVoteRecoveryPassHandle implements RustOpaqueInterface {
+  void cancel();
+
+  void setOperationEpoch({required BigInt operationEpoch});
 }
 
 /// FRB-facing bundle layout for [`setup_delegation_bundles`].
@@ -1630,6 +1667,206 @@ class ApiVoteCommitEvent {
           bundleIndex == other.bundleIndex &&
           proofProgress == other.proofProgress &&
           commitments == other.commitments;
+}
+
+class ApiVoteRecoveryAdvance {
+  final VoteRecoveryWorkView? attemptedWork;
+  final ApiVoteRecoveryDisposition disposition;
+  final ApiChainSubmissionOutcome? chainOutcome;
+  final List<ApiVoteShareDeliveryReport> shareDeliveries;
+  final RoundPlanView roundPlan;
+
+  const ApiVoteRecoveryAdvance({
+    this.attemptedWork,
+    required this.disposition,
+    this.chainOutcome,
+    required this.shareDeliveries,
+    required this.roundPlan,
+  });
+
+  @override
+  int get hashCode =>
+      attemptedWork.hashCode ^
+      disposition.hashCode ^
+      chainOutcome.hashCode ^
+      shareDeliveries.hashCode ^
+      roundPlan.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteRecoveryAdvance &&
+          runtimeType == other.runtimeType &&
+          attemptedWork == other.attemptedWork &&
+          disposition == other.disposition &&
+          chainOutcome == other.chainOutcome &&
+          shareDeliveries == other.shareDeliveries &&
+          roundPlan == other.roundPlan;
+}
+
+class ApiVoteRecoveryCallResult {
+  final ApiVoteRecoveryAdvance? advance;
+  final ApiVoteRecoveryFailure? failure;
+
+  const ApiVoteRecoveryCallResult({this.advance, this.failure});
+
+  @override
+  int get hashCode => advance.hashCode ^ failure.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteRecoveryCallResult &&
+          runtimeType == other.runtimeType &&
+          advance == other.advance &&
+          failure == other.failure;
+}
+
+enum ApiVoteRecoveryDisposition {
+  noWork,
+  advanced,
+  pending,
+  cancelled,
+  unsupported,
+}
+
+class ApiVoteRecoveryEvent {
+  final ApiVoteRecoveryEventKind kind;
+  final VoteRecoveryWorkView? work;
+  final List<ApiVoteRecoveryKey> voteKeys;
+  final ApiChainSubmissionOutcome? chainOutcome;
+  final ApiVoteShareDeliveryReport? shareDelivery;
+  final ApiVoteRecoveryCallResult? result;
+
+  const ApiVoteRecoveryEvent({
+    required this.kind,
+    this.work,
+    required this.voteKeys,
+    this.chainOutcome,
+    this.shareDelivery,
+    this.result,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      work.hashCode ^
+      voteKeys.hashCode ^
+      chainOutcome.hashCode ^
+      shareDelivery.hashCode ^
+      result.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteRecoveryEvent &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          work == other.work &&
+          voteKeys == other.voteKeys &&
+          chainOutcome == other.chainOutcome &&
+          shareDelivery == other.shareDelivery &&
+          result == other.result;
+}
+
+enum ApiVoteRecoveryEventKind {
+  selected,
+  helperPlansPrepared,
+  chainOutcome,
+  shareOutcome,
+  result,
+}
+
+class ApiVoteRecoveryFailure {
+  final ApiVoteRecoveryFailureKind kind;
+  final VoteRecoveryWorkView? attemptedWork;
+  final ApiChainSubmissionFailureState? strongestChainState;
+  final ApiChainSubmissionOutcome? chainOutcome;
+  final String message;
+  final RoundPlanView? roundPlan;
+
+  const ApiVoteRecoveryFailure({
+    required this.kind,
+    this.attemptedWork,
+    this.strongestChainState,
+    this.chainOutcome,
+    required this.message,
+    this.roundPlan,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      attemptedWork.hashCode ^
+      strongestChainState.hashCode ^
+      chainOutcome.hashCode ^
+      message.hashCode ^
+      roundPlan.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteRecoveryFailure &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          attemptedWork == other.attemptedWork &&
+          strongestChainState == other.strongestChainState &&
+          chainOutcome == other.chainOutcome &&
+          message == other.message &&
+          roundPlan == other.roundPlan;
+}
+
+enum ApiVoteRecoveryFailureKind {
+  invalidInput,
+  busy,
+  storage,
+  invariantViolation,
+  transport,
+  protocol,
+  chainTerminal,
+  helperDeliveryIncomplete,
+}
+
+class ApiVoteRecoveryKey {
+  final int bundleIndex;
+  final int proposalId;
+
+  const ApiVoteRecoveryKey({
+    required this.bundleIndex,
+    required this.proposalId,
+  });
+
+  @override
+  int get hashCode => bundleIndex.hashCode ^ proposalId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteRecoveryKey &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId;
+}
+
+class ApiVoteShareDeliveryReport {
+  final ApiVoteRecoveryKey vote;
+  final ApiShareBatchDeliveryReport delivery;
+
+  const ApiVoteShareDeliveryReport({
+    required this.vote,
+    required this.delivery,
+  });
+
+  @override
+  int get hashCode => vote.hashCode ^ delivery.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteShareDeliveryReport &&
+          runtimeType == other.runtimeType &&
+          vote == other.vote &&
+          delivery == other.delivery;
 }
 
 /// Read-only minimum voting eligibility status for one round/account.

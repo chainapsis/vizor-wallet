@@ -100,6 +100,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Set<VotingShareTrackingPassHandle> _activeShareTrackingPassHandles = {};
   final Set<VotingChainSubmissionPassHandle> _activeChainSubmissionPassHandles =
       {};
+  final Set<VotingVoteRecoveryPassHandle> _activeVoteRecoveryPassHandles = {};
   bool _automaticShareTrackingStopped = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
@@ -1116,6 +1117,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return true;
       }
 
+      // Persisted vote execution belongs to the SDK. Drain it before deriving
+      // fresh proof work so Dart never classifies recovery strings or rebuilds
+      // the chain/helper sequence from a stale plan.
+      final sdkRecoveredVoteCount =
+          (roundPlan?.recoveredVoteWork.isNotEmpty ?? false)
+          ? await _drainPersistedVoteWork(context, progress: progress)
+          : 0;
+      if (sdkRecoveredVoteCount > 0) {
+        plan = await _loadResumePlan(context);
+        roundPlan = await _loadRoundPlan(context);
+      }
+
       final pendingVotePolling = _pendingVotePollingWork(roundPlan);
       final pollingOutcomes = await _runBoundedBundleWork(
         List<int>.generate(pendingVotePolling.length, (index) => index),
@@ -1535,6 +1548,116 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         plan.submittedVoteConfirmationKeys.isNotEmpty ||
         plan.commitmentBundlesByKey.isNotEmpty ||
         plan.shareDelegations.isNotEmpty;
+  }
+
+  /// Lets the SDK select and execute persisted vote work until the round has
+  /// no immediately actionable item. Vizor owns only scheduling, cancellation,
+  /// endpoint configuration, and projection of typed progress into UI state.
+  Future<int> _drainPersistedVoteWork(
+    _VotingSessionContext context, {
+    Map<VotingVoteKey, VotingSessionProgress>? progress,
+    void Function(VotingSessionProgress progress)? publishProgress,
+  }) async {
+    final rust = ref.read(votingRustApiProvider);
+    final passHandle = rust.beginVoteRecoveryPass(
+      context: _helperDeliveryContextFor(rust, context),
+      network: context.network,
+      endpoints: context.config.apiServers.all
+          .map(_transportUrl)
+          .toList(growable: false),
+      operationEpoch: BigInt.from(context.sessionGeneration),
+    );
+    _activeVoteRecoveryPassHandles.add(passHandle);
+    final completed = <VotingVoteKey>{};
+    try {
+      while (true) {
+        _throwIfContextStale(context, 'vote-recovery-advance');
+        final timing = _roundShareTiming(context, _nowSeconds());
+        rust_api.ApiVoteRecoveryCallResult? terminal;
+        await for (final event in rust.advanceVoteRecoveryWork(
+          passHandle: passHandle,
+          proposalIds: proposalsFromRound(
+            context.round,
+          ).map((proposal) => proposal.id).toList(growable: false),
+          configuredHelperUrls: _configuredHelperTransportUrls(context),
+          nowSeconds: BigInt.from(timing.nowSeconds),
+          voteEndTimeSeconds: BigInt.from(timing.voteEndSeconds),
+          lastMomentBufferSeconds: timing.lastMomentBufferSeconds,
+        )) {
+          _throwIfContextStale(context, 'vote-recovery-progress');
+          final work = event.work;
+          if (work != null) {
+            final update = VotingSessionProgress(
+              phase: switch (event.kind) {
+                rust_api.ApiVoteRecoveryEventKind.selected => 'recovering',
+                rust_api.ApiVoteRecoveryEventKind.helperPlansPrepared =>
+                  'submitting',
+                rust_api.ApiVoteRecoveryEventKind.chainOutcome => 'submitted',
+                rust_api.ApiVoteRecoveryEventKind.shareOutcome =>
+                  'submitting_shares',
+                rust_api.ApiVoteRecoveryEventKind.result => 'recovering',
+              },
+              bundleIndex: work.bundleIndex,
+              proposalId: work.proposalId,
+            );
+            progress?[VotingVoteKey(
+                  bundleIndex: work.bundleIndex,
+                  proposalId: work.proposalId,
+                )] =
+                update;
+            publishProgress?.call(update);
+          }
+          final delivery = event.shareDelivery;
+          if (delivery != null) {
+            final key = VotingVoteKey(
+              bundleIndex: delivery.vote.bundleIndex,
+              proposalId: delivery.vote.proposalId,
+            );
+            completed.add(key);
+            final update = VotingSessionProgress(
+              phase: 'completed',
+              bundleIndex: key.bundleIndex,
+              proposalId: key.proposalId,
+              proofProgress: 1,
+            );
+            progress?[key] = update;
+            publishProgress?.call(update);
+          }
+          terminal = event.result ?? terminal;
+        }
+        if (terminal == null) {
+          throw StateError('Vote recovery completed without a result.');
+        }
+        final failure = terminal.failure;
+        if (failure != null) {
+          throw StateError(failure.message);
+        }
+        final advance = terminal.advance;
+        if (advance == null) {
+          throw StateError('Vote recovery returned no advance result.');
+        }
+        switch (advance.disposition) {
+          case rust_api.ApiVoteRecoveryDisposition.noWork:
+            return completed.length;
+          case rust_api.ApiVoteRecoveryDisposition.advanced:
+            continue;
+          case rust_api.ApiVoteRecoveryDisposition.pending:
+            await Future.any<void>([
+              Future<void>.delayed(const Duration(seconds: 2)),
+              _sessionInvalidated.future,
+            ]);
+            continue;
+          case rust_api.ApiVoteRecoveryDisposition.cancelled:
+            _throwIfContextStale(context, 'vote-recovery-cancelled');
+            throw const _ChainSubmissionCancelled();
+          case rust_api.ApiVoteRecoveryDisposition.unsupported:
+            throw StateError('Unsupported SDK vote recovery disposition.');
+        }
+      }
+    } finally {
+      _activeVoteRecoveryPassHandles.remove(passHandle);
+      passHandle.dispose();
+    }
   }
 
   Future<void> _prepareCommitmentShares(
@@ -4002,6 +4125,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _sessionGeneration++;
     final operationEpoch = BigInt.from(_sessionGeneration);
     for (final passHandle in _activeChainSubmissionPassHandles.toList()) {
+      passHandle.setOperationEpoch(operationEpoch);
+      passHandle.cancel();
+    }
+    for (final passHandle in _activeVoteRecoveryPassHandles.toList()) {
       passHandle.setOperationEpoch(operationEpoch);
       passHandle.cancel();
     }
