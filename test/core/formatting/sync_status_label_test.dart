@@ -84,6 +84,18 @@ void main() {
     expect(status.label, '1% Syncing...');
   });
 
+  test('a failed enable with Tor still off leaves the sync state alone', () {
+    final status = SyncStatusLabel.from(
+      SyncState(percentage: 1.0, isSyncing: false),
+      networkPrivacy: const NetworkPrivacyState(
+        torEnabled: false,
+        status: NetworkPrivacyConnectionStatus.failed,
+      ),
+    );
+    expect(status.kind, SyncStatusKind.synced);
+    expect(status.label, 'Vizor is synced');
+  });
+
   test('a failed Tor route is a paused state that outranks sync state', () {
     final status = SyncStatusLabel.from(
       SyncState(percentage: 1.0, isSyncing: false),

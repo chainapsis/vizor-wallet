@@ -16,7 +16,11 @@ void main() {
         bodyBytes: utf8.encode('through tor'),
       ),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     final response = await client.request(
@@ -35,7 +39,11 @@ void main() {
     final bridge = _RecordingTorBridge([
       NetworkHttpResponse(statusCode: 200, bodyBytes: Uint8List(0)),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     await client.request(
@@ -83,6 +91,7 @@ void main() {
   test('Tor errors do not fall back to the direct client', () async {
     final client = NetworkHttpClient(
       torDesired: () => true,
+      torBootstrapping: () => false,
       torBridge: const _FailingTorBridge(),
     );
     addTearDown(() => client.close());
@@ -96,6 +105,7 @@ void main() {
   test('unsupported methods are blocked while Tor is desired', () async {
     final client = NetworkHttpClient(
       torDesired: () => true,
+      torBootstrapping: () => false,
       torBridge: _RecordingTorBridge(const []),
     );
     addTearDown(() => client.close());
@@ -117,7 +127,11 @@ void main() {
       ),
       NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     final response = await client.request(
@@ -148,7 +162,11 @@ void main() {
       ),
       NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => true,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     final pending = client.request(
@@ -168,6 +186,44 @@ void main() {
     );
   });
 
+  test(
+    'a slow first hop on a ready Tor route is charged to the budget',
+    () async {
+      // Once Tor is up there is nothing to wait for: the first exchange is a
+      // hop like any other, and a redirect after a slow one must not get the
+      // whole timeout again.
+      const timeout = Duration(milliseconds: 200);
+      final bridge = _HeldFirstResponseTorBridge([
+        NetworkHttpResponse(
+          statusCode: 302,
+          bodyBytes: Uint8List(0),
+          headers: const {
+            'location': ['/final'],
+          },
+        ),
+        NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
+      ]);
+      final client = NetworkHttpClient(
+        torDesired: () => true,
+        torBootstrapping: () => false,
+        torBridge: bridge,
+      );
+      addTearDown(() => client.close());
+
+      final pending = client.request(
+        'GET',
+        Uri.parse('https://example.com/start'),
+        timeout: timeout,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      bridge.releaseFirstResponse();
+
+      await pending;
+      expect(bridge.timeouts, hasLength(2));
+      expect(bridge.timeouts[1]!.inMilliseconds, lessThanOrEqualTo(110));
+    },
+  );
+
   test('cross-origin redirects strip credentials', () async {
     final bridge = _RecordingTorBridge([
       NetworkHttpResponse(
@@ -179,7 +235,11 @@ void main() {
       ),
       NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     await client.request(
@@ -207,7 +267,11 @@ void main() {
         },
       ),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     await expectLater(
@@ -227,7 +291,11 @@ void main() {
       ),
       NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     await client.request(
@@ -252,7 +320,11 @@ void main() {
         bodyBytes: Uint8List.fromList([0, 1, 2, 3]),
       ),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     final response = await client.downloadToFile(

@@ -448,6 +448,7 @@ void main() {
         final source = HttpSwapEnabledOverrideSource(
           networkClient: NetworkHttpClient(
             torDesired: () => true,
+            torBootstrapping: () => false,
             torBridge: bridge,
           ),
           endpoint: Uri.parse('https://example.com/swap.json'),

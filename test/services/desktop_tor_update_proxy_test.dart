@@ -38,8 +38,11 @@ length: 321
     addTearDown(() => relay.close(force: true));
     var relayStopped = false;
     final proxy = DesktopTorUpdateProxy(
-      clientFactory: () =>
-          NetworkHttpClient(torDesired: () => true, torBridge: bridge),
+      clientFactory: () => NetworkHttpClient(
+        torDesired: () => true,
+        torBootstrapping: () => false,
+        torBridge: bridge,
+      ),
       torRelayStarter: () async => Uri(
         scheme: 'http',
         host: InternetAddress.loopbackIPv4.address,
@@ -94,8 +97,11 @@ length: 321
     addTearDown(() => relay.close(force: true));
     var relayStopped = false;
     final proxy = DesktopTorUpdateProxy(
-      clientFactory: () =>
-          NetworkHttpClient(torDesired: () => true, torBridge: bridge),
+      clientFactory: () => NetworkHttpClient(
+        torDesired: () => true,
+        torBootstrapping: () => false,
+        torBridge: bridge,
+      ),
       torRelayStarter: () async => Uri(
         scheme: 'http',
         host: InternetAddress.loopbackIPv4.address,

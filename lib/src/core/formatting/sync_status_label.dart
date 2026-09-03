@@ -43,7 +43,11 @@ class SyncStatusLabel {
     NetworkPrivacyState? networkPrivacy,
   }) {
     if (networkPrivacy != null) {
-      if (networkPrivacy.status == NetworkPrivacyConnectionStatus.failed) {
+      // `failed` alone is not a failed Tor route: an enable that failed while
+      // saving the preference publishes `failed` with Tor still off and
+      // direct networking intact, and the sync state is then the truth.
+      if (networkPrivacy.torEnabled &&
+          networkPrivacy.status == NetworkPrivacyConnectionStatus.failed) {
         return const SyncStatusLabel(
           kind: SyncStatusKind.failed,
           label: kSyncStatusTorFailedLabel,

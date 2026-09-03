@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../../rust/api/network_privacy.dart' as rust_network_privacy;
+import '../../rust/network_privacy.dart' as rust_types;
 
 class NetworkHttpResponse {
   const NetworkHttpResponse({
@@ -226,18 +227,25 @@ class NetworkHttpClient {
   NetworkHttpClient({
     HttpClient? directClient,
     bool Function()? torDesired,
+    bool Function()? torBootstrapping,
     TorHttpBridge? torBridge,
   }) : _directClient = directClient ?? HttpClient(),
        _torDesired = torDesired ?? rust_network_privacy.isTorEnabled,
+       _torBootstrapping = torBootstrapping ?? _rustTorBootstrapping,
        _torBridge = torBridge ?? const RustTorHttpBridge() {
     _instances.add(this);
   }
+
+  static bool _rustTorBootstrapping() =>
+      rust_network_privacy.getNetworkPrivacyStatus() ==
+      rust_types.NetworkPrivacyStatus.bootstrapping;
 
   static final Set<NetworkHttpClient> _instances = {};
   static bool _directRequestsBlocked = false;
 
   HttpClient _directClient;
   final bool Function() _torDesired;
+  final bool Function() _torBootstrapping;
   final TorHttpBridge _torBridge;
   var _activeDirectRequests = 0;
   var _directClientNeedsReset = false;
@@ -384,12 +392,15 @@ class NetworkHttpClient {
     var currentUri = initialUri;
     var currentHeaders = Map<String, String>.of(headers);
     var currentBody = bodyBytes;
-    // Only the hops themselves are charged to the redirect budget, so the
-    // clock starts when the first response arrives. The first hop can spend an
-    // unbounded stretch inside Rust waiting for Tor to bootstrap — a wait the
-    // per-request timeout does not cover either — and billing that here would
-    // leave a redirect with no budget at all.
+    // The redirect budget charges every hop, including the first — except
+    // when that first hop is about to park inside Rust waiting for Tor to
+    // bootstrap. That wait is not covered by the per-request timeout either,
+    // and billing it here would leave a redirect with no budget at all, so
+    // for a request made mid-bootstrap the clock starts at the first
+    // response instead. Dart cannot see when the wait ended, and the exchange
+    // itself stays bounded by the Rust-side timeout on that hop.
     final stopwatch = Stopwatch();
+    if (!_torBootstrapping()) stopwatch.start();
     for (var redirectCount = 0; redirectCount <= 5; redirectCount++) {
       final remainingTimeout = _remainingTimeout(timeout, stopwatch);
       final response = destinationPath != null
