@@ -270,14 +270,38 @@ void main() {
       expect(decision.message, kPaymentUriMigrationSendGateMessage);
     });
 
-    test('outranks the no-wallet and locked rows', () {
-      final decision = decide(
-        sendGatedByMigration: true,
-        hasWallet: false,
-        isUnlocked: false,
+    test('is not read until the wallet is unlocked and past /unlock', () {
+      // The gate cannot be trusted before that point: lock resets the sync
+      // state, so its `ironwoodBalance <= 0` half is unconditionally true
+      // while locked, and the Home CTA cache keeps answering `resume` across
+      // the gap (measured in `payment_uri_migration_gate_test.dart`). The
+      // link stays parked and `claimParkedPaymentUriAfterUnlock` runs this
+      // same table once the wallet is open.
+      expect(
+        decide(sendGatedByMigration: true, isUnlocked: false).action,
+        PaymentUriDrainAction.routeToUnlock,
       );
-      expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriMigrationSendGateMessage);
+      expect(
+        decide(
+          sendGatedByMigration: true,
+          isUnlocked: false,
+          matchedLocation: '/unlock',
+        ).action,
+        PaymentUriDrainAction.wait,
+      );
+      expect(
+        decide(sendGatedByMigration: true, matchedLocation: '/unlock').action,
+        PaymentUriDrainAction.wait,
+        reason: 'the unlock screen owns the handoff on its own route',
+      );
+    });
+
+    test('the no-wallet row still outranks it', () {
+      // The gate needs an active account to mean anything, so a wallet-less
+      // app must not answer a link with the migration sentence.
+      final decision = decide(sendGatedByMigration: true, hasWallet: false);
+      expect(decision.action, PaymentUriDrainAction.routeToWelcome);
+      expect(decision.message, kPaymentUriNoWalletMessage);
     });
   });
 

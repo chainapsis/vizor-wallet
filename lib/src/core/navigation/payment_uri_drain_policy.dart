@@ -180,11 +180,11 @@ bool paymentUriShouldDropOnWalletTransition({
 /// | a busy overlay is up                         | wait (present when it goes)|
 /// | another send proposal owns inputs            | wait (present when freed)  |
 /// | a broadcast is running on `/send/status`      | wait (present on receipt) |
-/// | migration disables sending                   | drop + migration msg      |
 /// | no wallet, anywhere else                     | `/welcome` + no-wallet msg|
 /// | locked, already on `/unlock`/`/lost-password`| wait (stay parked)        |
 /// | locked, anywhere else                        | `/unlock` (stay parked)   |
 /// | unlocked but still on `/unlock`              | wait (unlock screen owns) |
+/// | migration disables sending                   | drop + migration msg      |
 /// | otherwise                                    | present the card          |
 ///
 /// [parkedFor] is how long the prefill has been parked (null when nothing is
@@ -198,7 +198,8 @@ bool paymentUriShouldDropOnWalletTransition({
 /// [isSendStatusLocation], because the flag is also false when no send has run
 /// at all. [sendGatedByMigration] is true when the product disables sending
 /// because a Private migration holds the whole spendable balance — see
-/// `migrationSendGateProvider`.
+/// `migrationSendGateProvider`. It is deliberately the last row: the gate is
+/// only meaningful for an unlocked wallet (see the comment on that row).
 PaymentUriDrainDecision decidePaymentUriDrain({
   required bool hasParkedPrefill,
   required Duration? parkedFor,
@@ -279,16 +280,6 @@ PaymentUriDrainDecision decidePaymentUriDrain({
     return _waitDecision;
   }
 
-  // The send the card offers is one the product has already taken away, so
-  // the user needs the migration explanation rather than a card whose Review
-  // and Edit both lead nowhere.
-  if (sendGatedByMigration) {
-    return const PaymentUriDrainDecision(
-      PaymentUriDrainAction.dropWithMessage,
-      message: kPaymentUriMigrationSendGateMessage,
-    );
-  }
-
   if (!hasWallet) {
     return const PaymentUriDrainDecision(
       PaymentUriDrainAction.routeToWelcome,
@@ -306,6 +297,28 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   // Unlocked but still on the unlock screen: the unlock flow's own claim owns
   // the handoff. Presenting here too would race it.
   if (matchedLocation == '/unlock') return _waitDecision;
+
+  // The send the card offers is one the product has already taken away, so
+  // the user needs the migration explanation rather than a card whose Review
+  // and Edit both lead nowhere.
+  //
+  // Read last, and only for an unlocked wallet that is past the unlock flow,
+  // because the gate cannot be trusted before that point:
+  // `migrationSendGateProvider` is `cta == resume && ironwoodBalance <= 0`,
+  // and locking resets `syncProvider` to a bare `SyncState()`, so the balance
+  // half is unconditionally true while locked and the Home CTA cache keeps
+  // answering `resume` across that gap
+  // (`test/core/navigation/payment_uri_migration_gate_test.dart` measures
+  // both). Dropping a parked link on that reading would refuse a payment on
+  // the strength of a balance the lock itself zeroed. Nothing is lost by
+  // waiting: `claimParkedPaymentUriAfterUnlock` runs this same table once the
+  // wallet is open, when the gate is answering about a real balance.
+  if (sendGatedByMigration) {
+    return const PaymentUriDrainDecision(
+      PaymentUriDrainAction.dropWithMessage,
+      message: kPaymentUriMigrationSendGateMessage,
+    );
+  }
 
   return const PaymentUriDrainDecision(PaymentUriDrainAction.deliver);
 }
