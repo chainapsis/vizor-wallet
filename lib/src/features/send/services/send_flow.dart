@@ -24,6 +24,8 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import 'sapling_params.dart';
 
 /// Route-extra payload for the review/status legs of the send flow.
+enum SendFlowKind { send, donation }
+
 class SendReviewArgs {
   const SendReviewArgs({
     required this.proposalId,
@@ -35,6 +37,7 @@ class SendReviewArgs {
     required this.feeZatoshi,
     required this.needsSaplingParams,
     this.memo,
+    this.flowKind = SendFlowKind.send,
   });
 
   final BigInt proposalId;
@@ -46,6 +49,7 @@ class SendReviewArgs {
   final BigInt feeZatoshi;
   final bool needsSaplingParams;
   final String? memo;
+  final SendFlowKind flowKind;
 
   bool get isShielded => addressType == 'unified' || addressType == 'sapling';
 }
@@ -171,6 +175,7 @@ Future<SendReviewArgs> proposeSendTransfer({
   required String addressType,
   required BigInt amountZatoshi,
   String? memo,
+  SendFlowKind flowKind = SendFlowKind.send,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
   final proposal = await ref
@@ -201,6 +206,7 @@ Future<SendReviewArgs> proposeSendTransfer({
     feeZatoshi: proposal.feeZatoshi,
     memo: (memo != null && memo.isNotEmpty) ? memo : null,
     needsSaplingParams: proposal.needsSaplingParams,
+    flowKind: flowKind,
   );
 }
 

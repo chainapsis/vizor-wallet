@@ -394,6 +394,32 @@ void main() {
     expect(find.text('send route'), findsNothing);
   });
 
+  testWidgets('selection suppression keeps navigation active', (tester) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        initialLocation: '/send',
+        suppressActiveSelection: true,
+      ),
+    );
+    await tester.pump();
+
+    final homeItem = tester.widget<AppSidebarItem>(
+      find.byKey(const ValueKey('sidebar_home_button')),
+    );
+    final settingsItem = tester.widget<AppSidebarItem>(
+      find.byKey(const ValueKey('sidebar_settings_button')),
+    );
+    expect(homeItem.active, isFalse);
+    expect(settingsItem.active, isFalse);
+    expect(homeItem.onTap, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_home_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+  });
+
   testWidgets('sidebar keeps Home active and clickable on receive routes', (
     tester,
   ) async {
@@ -1188,6 +1214,7 @@ Widget _sidebarHarness(
   IronwoodMigrationCoordinatorState migrationCoordinatorState =
       const IronwoodMigrationCoordinatorState(),
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
+  bool suppressActiveSelection = false,
 }) {
   final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
@@ -1204,9 +1231,11 @@ Widget _sidebarHarness(
       GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
       GoRoute(
         path: '/send',
-        builder: (_, _) => const AppDesktopShell(
-          sidebar: AppMainSidebar(),
-          pane: AppDesktopPane(child: Text('send route')),
+        builder: (_, _) => AppDesktopShell(
+          sidebar: AppMainSidebar(
+            suppressActiveSelection: suppressActiveSelection,
+          ),
+          pane: const AppDesktopPane(child: Text('send route')),
         ),
       ),
       GoRoute(

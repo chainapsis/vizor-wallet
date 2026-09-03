@@ -32,6 +32,7 @@ const _iconNames = <String>[
   AppIcons.cross,
   AppIcons.crystalBall,
   AppIcons.day,
+  AppIcons.donation,
   AppIcons.dragon,
   AppIcons.edit,
   AppIcons.endpoint,

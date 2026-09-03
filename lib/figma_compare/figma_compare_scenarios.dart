@@ -4,8 +4,10 @@
 import 'package:flutter/widgets.dart';
 
 import '../widgetbook/home_use_cases.dart';
+import '../widgetbook/donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
+import '../widgetbook/send_review_status_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
@@ -36,6 +38,46 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'donation-zec-empty',
+    description: 'Desktop donation composer with an empty ZEC amount',
+    builder: buildDonationZecEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'donation-zec-selected',
+    description: 'Desktop donation composer with 0.02 ZEC selected',
+    builder: buildDonationZecSelectedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'donation-usd-selected',
+    description: 'Desktop donation composer with 15 USD selected',
+    builder: buildDonationUsdSelectedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'donation-review',
+    description: 'Desktop donation review',
+    builder: buildDonationReviewUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'send-review-address',
+    description: 'Desktop send review with an address recipient',
+    builder: buildSendReviewAddressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'send-status-in-progress',
+    description: 'Desktop send status in progress',
+    builder: buildSendStatusInProgressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'donation-status-in-progress',
+    description: 'Desktop donation status in progress',
+    builder: buildDonationStatusInProgressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'donation-success',
+    description: 'Desktop donation thank-you screen',
+    builder: buildDonationSuccessUseCase,
+  ),
   FigmaCompareScenario(
     id: 'settings-secret-passphrase-reveal',
     description: 'Desktop secret passphrase recovery with BIP39 passphrase',
@@ -149,6 +191,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'settings-main',
     description: 'Desktop settings with Tor privacy control',
     builder: buildSettingsMainUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-support-vizor',
+    description: 'Desktop settings scrolled to Support Vizor',
+    builder: buildSettingsSupportVizorUseCase,
   ),
   FigmaCompareScenario(
     id: 'settings-explorer',

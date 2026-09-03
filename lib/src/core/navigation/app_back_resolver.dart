@@ -42,6 +42,7 @@ abstract final class AppBackResolver {
     '/send/review': 'Review',
     '/send/keystone/scan': 'Keystone',
     '/send/status': 'Status',
+    '/donation': 'Donation',
     '/swap': 'Swap',
     '/swap/review': 'Review',
     '/receive': 'Receive',
