@@ -1298,7 +1298,7 @@ void main() {
           ),
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'confirm_share',
+              kind: rust_frb_types.NextStepKind.confirmShare,
               bundleIndex: 0,
               proposalId: 7,
               choice: 0,
@@ -1514,7 +1514,7 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'vote',
+              kind: rust_frb_types.NextStepKind.castVote,
               bundleIndex: 0,
               proposalId: 7,
               choice: 1,
@@ -3708,7 +3708,7 @@ void main() {
       const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
       await draftPersistence.save(key, const VotingDraftState(choices: {7: 1}));
       const castStep = rust_wire.NextStepView(
-        kind: 'cast_vote',
+        kind: rust_frb_types.NextStepKind.castVote,
         bundleIndex: 0,
         proposalId: 7,
         choice: 1,
@@ -3782,7 +3782,7 @@ void main() {
         needsDraftSetup: true,
       );
       const delegateStep = rust_wire.NextStepView(
-        kind: 'delegate',
+        kind: rust_frb_types.NextStepKind.delegate,
         bundleIndex: 0,
         proposalId: 0,
         choice: 0,
@@ -3797,7 +3797,7 @@ void main() {
         needsDraftSetup: false,
       );
       const castStep = rust_wire.NextStepView(
-        kind: 'cast_vote',
+        kind: rust_frb_types.NextStepKind.castVote,
         bundleIndex: 0,
         proposalId: 7,
         choice: 1,
@@ -5821,7 +5821,9 @@ void main() {
             .read(votingSessionProvider(kRoundId))
             .value
             ?.voteProgress[fourthKey];
-        if (fourthProgress?.phase == 'confirmed') break;
+        if (fourthProgress?.phase == 'confirmed') {
+          break;
+        }
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
 
@@ -6370,21 +6372,21 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'advance_vote',
+              kind: rust_frb_types.NextStepKind.advanceVote,
               bundleIndex: 1,
               proposalId: 7,
               shareIndex: 0,
               choice: 0,
             ),
             rust_wire.NextStepView(
-              kind: 'cast_vote',
+              kind: rust_frb_types.NextStepKind.castVote,
               bundleIndex: 0,
               proposalId: 8,
               shareIndex: 0,
               choice: 1,
             ),
             rust_wire.NextStepView(
-              kind: 'cast_vote',
+              kind: rust_frb_types.NextStepKind.castVote,
               bundleIndex: 1,
               proposalId: 8,
               shareIndex: 0,
@@ -6506,21 +6508,21 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'submit_shares',
+            kind: rust_frb_types.NextStepKind.submitShares,
             bundleIndex: 1,
             proposalId: 7,
             shareIndex: 1,
             choice: 0,
           ),
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 8,
             shareIndex: 0,
             choice: 1,
           ),
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 1,
             proposalId: 8,
             shareIndex: 0,
@@ -6628,14 +6630,14 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'submit_shares',
+              kind: rust_frb_types.NextStepKind.submitShares,
               bundleIndex: 0,
               proposalId: 7,
               shareIndex: 2,
               choice: 0,
             ),
             rust_wire.NextStepView(
-              kind: 'submit_shares',
+              kind: rust_frb_types.NextStepKind.submitShares,
               bundleIndex: 0,
               proposalId: 7,
               shareIndex: 0,
@@ -6742,7 +6744,7 @@ void main() {
         // recorded transaction hash is what marks it as on the wire.
         recoveredVoteWork: [
           rust_wire.VoteRecoveryWorkView(
-            kind: 'advance_vote',
+            kind: rust_frb_types.VoteRecoveryWorkKindView.advanceVote,
             bundleIndex: 1,
             proposalId: 7,
             txHash: 'submitted-vote-tx',
@@ -6751,21 +6753,21 @@ void main() {
         ],
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'advance_vote',
+            kind: rust_frb_types.NextStepKind.advanceVote,
             bundleIndex: 1,
             proposalId: 7,
             shareIndex: 0,
             choice: 0,
           ),
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 8,
             shareIndex: 0,
             choice: 1,
           ),
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 1,
             proposalId: 8,
             shareIndex: 0,
@@ -6780,28 +6782,28 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'submit_shares',
+            kind: rust_frb_types.NextStepKind.submitShares,
             bundleIndex: 1,
             proposalId: 7,
             shareIndex: 0,
             choice: 0,
           ),
           rust_wire.NextStepView(
-            kind: 'submit_shares',
+            kind: rust_frb_types.NextStepKind.submitShares,
             bundleIndex: 1,
             proposalId: 7,
             shareIndex: 1,
             choice: 0,
           ),
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 8,
             shareIndex: 0,
             choice: 1,
           ),
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 1,
             proposalId: 8,
             shareIndex: 0,
@@ -7418,7 +7420,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'submit_shares',
+            kind: rust_frb_types.NextStepKind.submitShares,
             bundleIndex: 0,
             proposalId: 7,
             shareIndex: 1,
@@ -10569,7 +10571,7 @@ FakeVotingRecoveryApi _submittedDelegationWithShareRecoveryApi(
     ),
     nextSteps: const [
       rust_wire.NextStepView(
-        kind: 'confirm_share',
+        kind: rust_frb_types.NextStepKind.confirmShare,
         bundleIndex: 0,
         proposalId: 7,
         shareIndex: 0,

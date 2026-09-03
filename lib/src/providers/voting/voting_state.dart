@@ -422,7 +422,9 @@ int resolvedKeystoneBundlePrefixCount({
       resolved.add(bundleIndex);
     }
   }
-  final phases = plan?.delegationPhasesByIndex ?? const <int, String>{};
+  final phases =
+      plan?.delegationPhasesByIndex ??
+      const <int, rust_wire.WorkflowPhaseView>{};
   for (final entry in phases.entries) {
     if (entry.key >= 0 &&
         entry.key < bundleCount &&
@@ -438,7 +440,7 @@ int resolvedKeystoneBundlePrefixCount({
   return count;
 }
 
-bool _isResolvedKeystoneDelegationPhase(String phase) {
+bool _isResolvedKeystoneDelegationPhase(rust_wire.WorkflowPhaseView phase) {
   return phase == VotingWorkflowPhase.submittedDelegation ||
       phase == VotingWorkflowPhase.confirmed;
 }

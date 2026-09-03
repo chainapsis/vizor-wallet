@@ -487,6 +487,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DelegationRecoveryView dco_decode_delegation_recovery_view(dynamic raw);
 
   @protected
+  DelegationRecoveryWorkKindView dco_decode_delegation_recovery_work_kind_view(
+    dynamic raw,
+  );
+
+  @protected
   DelegationRecoveryWorkView dco_decode_delegation_recovery_work_view(
     dynamic raw,
   );
@@ -856,6 +861,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NetworkPrivacyStatus dco_decode_network_privacy_status(dynamic raw);
 
   @protected
+  NextStepKind dco_decode_next_step_kind(dynamic raw);
+
+  @protected
   NextStepView dco_decode_next_step_view(dynamic raw);
 
   @protected
@@ -996,6 +1004,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ResolvedVotingConfig dco_decode_resolved_voting_config(dynamic raw);
 
   @protected
+  RoundPlanActionKind dco_decode_round_plan_action_kind(dynamic raw);
+
+  @protected
   RoundPlanView dco_decode_round_plan_view(dynamic raw);
 
   @protected
@@ -1123,6 +1134,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VoteRecoveryView dco_decode_vote_recovery_view(dynamic raw);
 
   @protected
+  VoteRecoveryWorkKindView dco_decode_vote_recovery_work_kind_view(dynamic raw);
+
+  @protected
   VoteRecoveryWorkView dco_decode_vote_recovery_work_view(dynamic raw);
 
   @protected
@@ -1142,6 +1156,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   WalletImportResult dco_decode_wallet_import_result(dynamic raw);
+
+  @protected
+  WorkflowPhaseView dco_decode_workflow_phase_view(dynamic raw);
 
   @protected
   ZcashBatchMessageInput dco_decode_zcash_batch_message_input(dynamic raw);
@@ -1690,6 +1707,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  DelegationRecoveryWorkKindView sse_decode_delegation_recovery_work_kind_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   DelegationRecoveryWorkView sse_decode_delegation_recovery_work_view(
     SseDeserializer deserializer,
   );
@@ -2155,6 +2177,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  NextStepKind sse_decode_next_step_kind(SseDeserializer deserializer);
+
+  @protected
   NextStepView sse_decode_next_step_view(SseDeserializer deserializer);
 
   @protected
@@ -2327,6 +2352,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundPlanActionKind sse_decode_round_plan_action_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RoundPlanView sse_decode_round_plan_view(SseDeserializer deserializer);
 
   @protected
@@ -2474,6 +2504,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VoteRecoveryView sse_decode_vote_recovery_view(SseDeserializer deserializer);
 
   @protected
+  VoteRecoveryWorkKindView sse_decode_vote_recovery_work_kind_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   VoteRecoveryWorkView sse_decode_vote_recovery_work_view(
     SseDeserializer deserializer,
   );
@@ -2503,6 +2538,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   WalletImportResult sse_decode_wallet_import_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  WorkflowPhaseView sse_decode_workflow_phase_view(
     SseDeserializer deserializer,
   );
 
@@ -3164,6 +3204,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_delegation_recovery_work_kind_view(
+    DelegationRecoveryWorkKindView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_delegation_recovery_work_view(
     DelegationRecoveryWorkView self,
     SseSerializer serializer,
@@ -3740,6 +3786,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_next_step_kind(NextStepKind self, SseSerializer serializer);
+
+  @protected
   void sse_encode_next_step_view(NextStepView self, SseSerializer serializer);
 
   @protected
@@ -3932,6 +3981,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_round_plan_action_kind(
+    RoundPlanActionKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_round_plan_view(RoundPlanView self, SseSerializer serializer);
 
   @protected
@@ -4115,6 +4170,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_vote_recovery_work_kind_view(
+    VoteRecoveryWorkKindView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_vote_recovery_work_view(
     VoteRecoveryWorkView self,
     SseSerializer serializer,
@@ -4150,6 +4211,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_wallet_import_result(
     WalletImportResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_workflow_phase_view(
+    WorkflowPhaseView self,
     SseSerializer serializer,
   );
 

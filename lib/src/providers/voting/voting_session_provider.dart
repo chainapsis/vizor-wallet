@@ -3455,7 +3455,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (roundPlan == null) return false;
     return roundPlanNeedsDraftSetup(roundPlan) ||
         roundPlan.recoveredDelegationWork.any(
-          (work) => work.kind == 'delegate',
+          (work) =>
+              work.kind == rust_wire.DelegationRecoveryWorkKindView.delegate,
         );
   }
 
@@ -4221,17 +4222,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   static VotingSessionPhase _phaseForPlans(rust_wire.RoundPlanView? roundPlan) {
-    switch (roundPlan?.primaryAction) {
-      case 'done':
-        return VotingSessionPhase.done;
-      case 'delegate':
-        return VotingSessionPhase.readyToDelegate;
-      case 'vote':
-        return VotingSessionPhase.readyToVote;
-      case 'submit_shares':
-        return VotingSessionPhase.submittingShares;
-    }
-    return VotingSessionPhase.idle;
+    return switch (roundPlan?.primaryAction) {
+      rust_wire.RoundPlanActionKind.done => VotingSessionPhase.done,
+      rust_wire.RoundPlanActionKind.delegate =>
+        VotingSessionPhase.readyToDelegate,
+      rust_wire.RoundPlanActionKind.vote => VotingSessionPhase.readyToVote,
+      rust_wire.RoundPlanActionKind.submitShares =>
+        VotingSessionPhase.submittingShares,
+      rust_wire.RoundPlanActionKind.idle || null => VotingSessionPhase.idle,
+    };
   }
 
   Future<void> _clearPersistedDraftChoices(
@@ -4283,8 +4282,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       for (final work
           in roundPlan?.recoveredVoteWork ??
               const <rust_wire.VoteRecoveryWorkView>[])
-        if ((work.kind == 'advance_vote' ||
-                work.kind == 'advance_vote_batch') &&
+        if ((work.kind == rust_wire.VoteRecoveryWorkKindView.advanceVote ||
+                work.kind ==
+                    rust_wire.VoteRecoveryWorkKindView.advanceVoteBatch) &&
             work.txHash != null)
           work,
     ];
@@ -4296,13 +4296,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (roundPlan == null) return const [];
     return [
       for (final work in roundPlan.recoveredVoteWork)
-        if (((work.kind == 'advance_vote' ||
-                    work.kind == 'advance_vote_batch') &&
+        if (((work.kind == rust_wire.VoteRecoveryWorkKindView.advanceVote ||
+                    work.kind ==
+                        rust_wire.VoteRecoveryWorkKindView.advanceVoteBatch) &&
                 work.txHash == null) ||
-            work.kind == 'submit_shares')
+            work.kind == rust_wire.VoteRecoveryWorkKindView.submitShares)
           _RecoveredVoteWork(
             kind:
-                work.kind == 'advance_vote' || work.kind == 'advance_vote_batch'
+                work.kind == rust_wire.VoteRecoveryWorkKindView.advanceVote ||
+                    work.kind ==
+                        rust_wire.VoteRecoveryWorkKindView.advanceVoteBatch
                 ? _RecoveredVoteWorkKind.submitVote
                 : _RecoveredVoteWorkKind.submitShares,
             key: VotingVoteKey(

@@ -7,8 +7,8 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `SignedVoteBatchView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteRecord`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `ChainConfirmationSourceView`, `ChainDiagnosticKindView`, `ChainDiagnosticView`, `ChainSubmissionFailureStateView`, `ChainSubmissionOutcomeKind`, `ChainSubmissionOutcomeView`, `ChainSubmissionStateEvidenceView`, `ChainSubmissionStateView`, `DelegationProgressKind`, `PendingShareRoundView`, `RoundStepDispositionView`, `RoundStepFailureKindView`, `RoundStepFailureView`, `RoundStepOutcomeView`, `RoundStepProgressKind`, `RoundStepProgressView`, `ShareBatchDeliveryReportView`, `ShareDeliveryOutcomeView`, `ShareKeyView`, `SignedVoteBatchView`, `SignedVoteCommitmentsView`, `VoteCommitStageKind`, `VoteCommitmentBatchWire`, `VoteKeyView`, `VoteRecord`, `VoteShareWire`, `VotingErrorKindView`, `VotingErrorView`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
 
 class CompletedVoteChoiceView {
   final int proposalId;
@@ -79,7 +79,7 @@ class DelegationPirPrecomputeResultView {
 
 class DelegationRecoveryView {
   final int bundleIndex;
-  final String phase;
+  final WorkflowPhaseView phase;
   final String? txHash;
 
   /// Confirmed VAN leaf position, if delegation has been projected.
@@ -110,10 +110,17 @@ class DelegationRecoveryView {
           vanLeafPosition == other.vanLeafPosition;
 }
 
+/// Kind of grouped delegation recovery work.
+enum DelegationRecoveryWorkKindView {
+  delegate,
+  advanceDelegation,
+  advanceImportedDelegation,
+}
+
 class DelegationRecoveryWorkView {
-  final String kind;
+  final DelegationRecoveryWorkKindView kind;
   final int bundleIndex;
-  final String phase;
+  final WorkflowPhaseView phase;
   final String? txHash;
 
   const DelegationRecoveryWorkView({
@@ -140,7 +147,7 @@ class DelegationRecoveryWorkView {
 
 class DelegationStatusView {
   final int bundleIndex;
-  final String phase;
+  final WorkflowPhaseView phase;
   final String? txHash;
 
   const DelegationStatusView({
@@ -278,8 +285,20 @@ class KeystoneSignatureRecord {
           rk == other.rk;
 }
 
+/// Discriminator of a [`NextStepView`].
+enum NextStepKind {
+  delegate,
+  advanceDelegation,
+  advanceImportedDelegation,
+  castVote,
+  advanceVote,
+  advanceVoteBatch,
+  submitShares,
+  confirmShare,
+}
+
 class NextStepView {
-  final String kind;
+  final NextStepKind kind;
   final int bundleIndex;
   final int proposalId;
   final int choice;
@@ -344,6 +363,9 @@ class RecoverableCommitmentBundle {
           vcTreePosition == other.vcTreePosition;
 }
 
+/// High-level work area a wallet should show or resume for a round.
+enum RoundPlanActionKind { idle, delegate, vote, submitShares, done }
+
 class RoundPlanView {
   final String roundId;
   final bool pendingRecovery;
@@ -376,7 +398,7 @@ class RoundPlanView {
   /// True when any vote or share work remains, counting share confirmation
   /// unconditionally.
   final bool hasRecoverableVoteOrShareWork;
-  final String primaryAction;
+  final RoundPlanActionKind primaryAction;
   final List<NextStepView> nextSteps;
   final List<DelegationStatusView> delegationStatuses;
   final List<DelegationRecoveryWorkView> recoveredDelegationWork;
@@ -527,7 +549,7 @@ class ShareDelegationRecordView {
   final List<String> ambiguousUrls;
   final int targetCount;
   final Uint8List nullifier;
-  final String phase;
+  final WorkflowPhaseView phase;
   final bool confirmed;
   final BigInt submitAt;
   final BigInt createdAt;
@@ -585,7 +607,7 @@ class ShareWorkflowRecoveryView {
   final int bundleIndex;
   final int proposalId;
   final int shareIndex;
-  final String phase;
+  final WorkflowPhaseView phase;
 
   const ShareWorkflowRecoveryView({
     required this.bundleIndex,
@@ -735,7 +757,7 @@ class VoteRecoveryView {
   final int bundleIndex;
   final int proposalId;
   final int choice;
-  final String phase;
+  final WorkflowPhaseView phase;
   final String? txHash;
   final BigInt? vcTreePosition;
   final bool hasCommitmentBundle;
@@ -774,8 +796,11 @@ class VoteRecoveryView {
           hasCommitmentBundle == other.hasCommitmentBundle;
 }
 
+/// Kind of grouped vote recovery work.
+enum VoteRecoveryWorkKindView { advanceVote, advanceVoteBatch, submitShares }
+
 class VoteRecoveryWorkView {
-  final String kind;
+  final VoteRecoveryWorkKindView kind;
   final int bundleIndex;
   final int proposalId;
   final String? txHash;
@@ -847,4 +872,16 @@ class VotingRoundParams {
           eaPk == other.eaPk &&
           ncRoot == other.ncRoot &&
           nullifierImtRoot == other.nullifierImtRoot;
+}
+
+/// Cross-stage workflow phase of a delegation, vote, or share record.
+enum WorkflowPhaseView {
+  prepared,
+  signed,
+  submittedDelegation,
+  submittedVote,
+  submittedShare,
+  submissionManaged,
+  submissionRejected,
+  confirmed,
 }

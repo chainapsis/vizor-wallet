@@ -10648,10 +10648,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return DelegationRecoveryView(
       bundleIndex: dco_decode_u_32(arr[0]),
-      phase: dco_decode_String(arr[1]),
+      phase: dco_decode_workflow_phase_view(arr[1]),
       txHash: dco_decode_opt_String(arr[2]),
       vanLeafPosition: dco_decode_opt_box_autoadd_u_64(arr[3]),
     );
+  }
+
+  @protected
+  DelegationRecoveryWorkKindView dco_decode_delegation_recovery_work_kind_view(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return DelegationRecoveryWorkKindView.values[raw as int];
   }
 
   @protected
@@ -10663,9 +10671,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (arr.length != 4)
       throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return DelegationRecoveryWorkView(
-      kind: dco_decode_String(arr[0]),
+      kind: dco_decode_delegation_recovery_work_kind_view(arr[0]),
       bundleIndex: dco_decode_u_32(arr[1]),
-      phase: dco_decode_String(arr[2]),
+      phase: dco_decode_workflow_phase_view(arr[2]),
       txHash: dco_decode_opt_String(arr[3]),
     );
   }
@@ -10678,7 +10686,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return DelegationStatusView(
       bundleIndex: dco_decode_u_32(arr[0]),
-      phase: dco_decode_String(arr[1]),
+      phase: dco_decode_workflow_phase_view(arr[1]),
       txHash: dco_decode_opt_String(arr[2]),
     );
   }
@@ -11702,13 +11710,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NextStepKind dco_decode_next_step_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return NextStepKind.values[raw as int];
+  }
+
+  @protected
   NextStepView dco_decode_next_step_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 5)
       throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return NextStepView(
-      kind: dco_decode_String(arr[0]),
+      kind: dco_decode_next_step_kind(arr[0]),
       bundleIndex: dco_decode_u_32(arr[1]),
       proposalId: dco_decode_u_32(arr[2]),
       choice: dco_decode_u_32(arr[3]),
@@ -12060,6 +12074,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RoundPlanActionKind dco_decode_round_plan_action_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RoundPlanActionKind.values[raw as int];
+  }
+
+  @protected
   RoundPlanView dco_decode_round_plan_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -12081,7 +12101,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       needsVotePolling: dco_decode_bool(arr[11]),
       hasRemainingVoteOrShareWork: dco_decode_bool(arr[12]),
       hasRecoverableVoteOrShareWork: dco_decode_bool(arr[13]),
-      primaryAction: dco_decode_String(arr[14]),
+      primaryAction: dco_decode_round_plan_action_kind(arr[14]),
       nextSteps: dco_decode_list_next_step_view(arr[15]),
       delegationStatuses: dco_decode_list_delegation_status_view(arr[16]),
       recoveredDelegationWork: dco_decode_list_delegation_recovery_work_view(
@@ -12181,7 +12201,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ambiguousUrls: dco_decode_list_String(arr[5]),
       targetCount: dco_decode_u_32(arr[6]),
       nullifier: dco_decode_list_prim_u_8_strict(arr[7]),
-      phase: dco_decode_String(arr[8]),
+      phase: dco_decode_workflow_phase_view(arr[8]),
       confirmed: dco_decode_bool(arr[9]),
       submitAt: dco_decode_u_64(arr[10]),
       createdAt: dco_decode_u_64(arr[11]),
@@ -12200,7 +12220,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       bundleIndex: dco_decode_u_32(arr[0]),
       proposalId: dco_decode_u_32(arr[1]),
       shareIndex: dco_decode_u_32(arr[2]),
-      phase: dco_decode_String(arr[3]),
+      phase: dco_decode_workflow_phase_view(arr[3]),
     );
   }
 
@@ -12580,11 +12600,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       bundleIndex: dco_decode_u_32(arr[0]),
       proposalId: dco_decode_u_32(arr[1]),
       choice: dco_decode_u_32(arr[2]),
-      phase: dco_decode_String(arr[3]),
+      phase: dco_decode_workflow_phase_view(arr[3]),
       txHash: dco_decode_opt_String(arr[4]),
       vcTreePosition: dco_decode_opt_box_autoadd_u_64(arr[5]),
       hasCommitmentBundle: dco_decode_bool(arr[6]),
     );
+  }
+
+  @protected
+  VoteRecoveryWorkKindView dco_decode_vote_recovery_work_kind_view(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return VoteRecoveryWorkKindView.values[raw as int];
   }
 
   @protected
@@ -12594,7 +12622,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (arr.length != 6)
       throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return VoteRecoveryWorkView(
-      kind: dco_decode_String(arr[0]),
+      kind: dco_decode_vote_recovery_work_kind_view(arr[0]),
       bundleIndex: dco_decode_u_32(arr[1]),
       proposalId: dco_decode_u_32(arr[2]),
       txHash: dco_decode_opt_String(arr[3]),
@@ -12691,6 +12719,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       unifiedAddress: dco_decode_String(arr[0]),
       accountUuid: dco_decode_String(arr[1]),
     );
+  }
+
+  @protected
+  WorkflowPhaseView dco_decode_workflow_phase_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return WorkflowPhaseView.values[raw as int];
   }
 
   @protected
@@ -14108,7 +14142,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_bundleIndex = sse_decode_u_32(deserializer);
-    var var_phase = sse_decode_String(deserializer);
+    var var_phase = sse_decode_workflow_phase_view(deserializer);
     var var_txHash = sse_decode_opt_String(deserializer);
     var var_vanLeafPosition = sse_decode_opt_box_autoadd_u_64(deserializer);
     return DelegationRecoveryView(
@@ -14120,13 +14154,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DelegationRecoveryWorkKindView sse_decode_delegation_recovery_work_kind_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return DelegationRecoveryWorkKindView.values[inner];
+  }
+
+  @protected
   DelegationRecoveryWorkView sse_decode_delegation_recovery_work_view(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_kind = sse_decode_String(deserializer);
+    var var_kind = sse_decode_delegation_recovery_work_kind_view(deserializer);
     var var_bundleIndex = sse_decode_u_32(deserializer);
-    var var_phase = sse_decode_String(deserializer);
+    var var_phase = sse_decode_workflow_phase_view(deserializer);
     var var_txHash = sse_decode_opt_String(deserializer);
     return DelegationRecoveryWorkView(
       kind: var_kind,
@@ -14142,7 +14185,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_bundleIndex = sse_decode_u_32(deserializer);
-    var var_phase = sse_decode_String(deserializer);
+    var var_phase = sse_decode_workflow_phase_view(deserializer);
     var var_txHash = sse_decode_opt_String(deserializer);
     return DelegationStatusView(
       bundleIndex: var_bundleIndex,
@@ -15625,9 +15668,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NextStepKind sse_decode_next_step_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return NextStepKind.values[inner];
+  }
+
+  @protected
   NextStepView sse_decode_next_step_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_kind = sse_decode_String(deserializer);
+    var var_kind = sse_decode_next_step_kind(deserializer);
     var var_bundleIndex = sse_decode_u_32(deserializer);
     var var_proposalId = sse_decode_u_32(deserializer);
     var var_choice = sse_decode_u_32(deserializer);
@@ -16179,6 +16229,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RoundPlanActionKind sse_decode_round_plan_action_kind(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RoundPlanActionKind.values[inner];
+  }
+
+  @protected
   RoundPlanView sse_decode_round_plan_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_roundId = sse_decode_String(deserializer);
@@ -16196,7 +16255,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_needsVotePolling = sse_decode_bool(deserializer);
     var var_hasRemainingVoteOrShareWork = sse_decode_bool(deserializer);
     var var_hasRecoverableVoteOrShareWork = sse_decode_bool(deserializer);
-    var var_primaryAction = sse_decode_String(deserializer);
+    var var_primaryAction = sse_decode_round_plan_action_kind(deserializer);
     var var_nextSteps = sse_decode_list_next_step_view(deserializer);
     var var_delegationStatuses = sse_decode_list_delegation_status_view(
       deserializer,
@@ -16325,7 +16384,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_ambiguousUrls = sse_decode_list_String(deserializer);
     var var_targetCount = sse_decode_u_32(deserializer);
     var var_nullifier = sse_decode_list_prim_u_8_strict(deserializer);
-    var var_phase = sse_decode_String(deserializer);
+    var var_phase = sse_decode_workflow_phase_view(deserializer);
     var var_confirmed = sse_decode_bool(deserializer);
     var var_submitAt = sse_decode_u_64(deserializer);
     var var_createdAt = sse_decode_u_64(deserializer);
@@ -16353,7 +16412,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_bundleIndex = sse_decode_u_32(deserializer);
     var var_proposalId = sse_decode_u_32(deserializer);
     var var_shareIndex = sse_decode_u_32(deserializer);
-    var var_phase = sse_decode_String(deserializer);
+    var var_phase = sse_decode_workflow_phase_view(deserializer);
     return ShareWorkflowRecoveryView(
       bundleIndex: var_bundleIndex,
       proposalId: var_proposalId,
@@ -16783,7 +16842,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_bundleIndex = sse_decode_u_32(deserializer);
     var var_proposalId = sse_decode_u_32(deserializer);
     var var_choice = sse_decode_u_32(deserializer);
-    var var_phase = sse_decode_String(deserializer);
+    var var_phase = sse_decode_workflow_phase_view(deserializer);
     var var_txHash = sse_decode_opt_String(deserializer);
     var var_vcTreePosition = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_hasCommitmentBundle = sse_decode_bool(deserializer);
@@ -16799,11 +16858,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  VoteRecoveryWorkKindView sse_decode_vote_recovery_work_kind_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return VoteRecoveryWorkKindView.values[inner];
+  }
+
+  @protected
   VoteRecoveryWorkView sse_decode_vote_recovery_work_view(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_kind = sse_decode_String(deserializer);
+    var var_kind = sse_decode_vote_recovery_work_kind_view(deserializer);
     var var_bundleIndex = sse_decode_u_32(deserializer);
     var var_proposalId = sse_decode_u_32(deserializer);
     var var_txHash = sse_decode_opt_String(deserializer);
@@ -16935,6 +17003,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       unifiedAddress: var_unifiedAddress,
       accountUuid: var_accountUuid,
     );
+  }
+
+  @protected
+  WorkflowPhaseView sse_decode_workflow_phase_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return WorkflowPhaseView.values[inner];
   }
 
   @protected
@@ -18250,9 +18327,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.bundleIndex, serializer);
-    sse_encode_String(self.phase, serializer);
+    sse_encode_workflow_phase_view(self.phase, serializer);
     sse_encode_opt_String(self.txHash, serializer);
     sse_encode_opt_box_autoadd_u_64(self.vanLeafPosition, serializer);
+  }
+
+  @protected
+  void sse_encode_delegation_recovery_work_kind_view(
+    DelegationRecoveryWorkKindView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -18261,9 +18347,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.kind, serializer);
+    sse_encode_delegation_recovery_work_kind_view(self.kind, serializer);
     sse_encode_u_32(self.bundleIndex, serializer);
-    sse_encode_String(self.phase, serializer);
+    sse_encode_workflow_phase_view(self.phase, serializer);
     sse_encode_opt_String(self.txHash, serializer);
   }
 
@@ -18274,7 +18360,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.bundleIndex, serializer);
-    sse_encode_String(self.phase, serializer);
+    sse_encode_workflow_phase_view(self.phase, serializer);
     sse_encode_opt_String(self.txHash, serializer);
   }
 
@@ -19468,9 +19554,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_next_step_kind(NextStepKind self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_next_step_view(NextStepView self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.kind, serializer);
+    sse_encode_next_step_kind(self.kind, serializer);
     sse_encode_u_32(self.bundleIndex, serializer);
     sse_encode_u_32(self.proposalId, serializer);
     sse_encode_u_32(self.choice, serializer);
@@ -19932,6 +20024,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_round_plan_action_kind(
+    RoundPlanActionKind self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_round_plan_view(
     RoundPlanView self,
     SseSerializer serializer,
@@ -19954,7 +20055,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.needsVotePolling, serializer);
     sse_encode_bool(self.hasRemainingVoteOrShareWork, serializer);
     sse_encode_bool(self.hasRecoverableVoteOrShareWork, serializer);
-    sse_encode_String(self.primaryAction, serializer);
+    sse_encode_round_plan_action_kind(self.primaryAction, serializer);
     sse_encode_list_next_step_view(self.nextSteps, serializer);
     sse_encode_list_delegation_status_view(self.delegationStatuses, serializer);
     sse_encode_list_delegation_recovery_work_view(
@@ -20048,7 +20149,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_String(self.ambiguousUrls, serializer);
     sse_encode_u_32(self.targetCount, serializer);
     sse_encode_list_prim_u_8_strict(self.nullifier, serializer);
-    sse_encode_String(self.phase, serializer);
+    sse_encode_workflow_phase_view(self.phase, serializer);
     sse_encode_bool(self.confirmed, serializer);
     sse_encode_u_64(self.submitAt, serializer);
     sse_encode_u_64(self.createdAt, serializer);
@@ -20063,7 +20164,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.bundleIndex, serializer);
     sse_encode_u_32(self.proposalId, serializer);
     sse_encode_u_32(self.shareIndex, serializer);
-    sse_encode_String(self.phase, serializer);
+    sse_encode_workflow_phase_view(self.phase, serializer);
   }
 
   @protected
@@ -20378,10 +20479,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.bundleIndex, serializer);
     sse_encode_u_32(self.proposalId, serializer);
     sse_encode_u_32(self.choice, serializer);
-    sse_encode_String(self.phase, serializer);
+    sse_encode_workflow_phase_view(self.phase, serializer);
     sse_encode_opt_String(self.txHash, serializer);
     sse_encode_opt_box_autoadd_u_64(self.vcTreePosition, serializer);
     sse_encode_bool(self.hasCommitmentBundle, serializer);
+  }
+
+  @protected
+  void sse_encode_vote_recovery_work_kind_view(
+    VoteRecoveryWorkKindView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -20390,7 +20500,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.kind, serializer);
+    sse_encode_vote_recovery_work_kind_view(self.kind, serializer);
     sse_encode_u_32(self.bundleIndex, serializer);
     sse_encode_u_32(self.proposalId, serializer);
     sse_encode_opt_String(self.txHash, serializer);
@@ -20477,6 +20587,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.unifiedAddress, serializer);
     sse_encode_String(self.accountUuid, serializer);
+  }
+
+  @protected
+  void sse_encode_workflow_phase_view(
+    WorkflowPhaseView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected

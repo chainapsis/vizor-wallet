@@ -1509,7 +1509,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (roundPlan == null) return const [];
     final choicesByProposal = <int, int>{};
     for (final step in roundPlan.nextSteps) {
-      if (step.kind != 'cast_vote') continue;
+      if (step.kind != rust_wire.NextStepKind.castVote) continue;
       choicesByProposal.putIfAbsent(step.proposalId, () => step.choice);
     }
     if (choicesByProposal.isEmpty) return const [];

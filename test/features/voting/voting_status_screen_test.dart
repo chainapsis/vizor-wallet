@@ -277,7 +277,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -459,7 +459,7 @@ void main() {
       blockingRecovery: false,
       nextSteps: const [
         rust_wire.NextStepView(
-          kind: 'confirm_share',
+          kind: rust_frb_types.NextStepKind.confirmShare,
           bundleIndex: 0,
           proposalId: 1,
           choice: 0,
@@ -785,7 +785,7 @@ void main() {
           delegationWorkflows: [
             rust_frb_types.DelegationRecoveryView(
               bundleIndex: 0,
-              phase: 'submitted_delegation',
+              phase: rust_frb_types.WorkflowPhaseView.submittedDelegation,
               txHash: 'delegation-tx',
               vanLeafPosition: null,
             ),
@@ -796,7 +796,7 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'advance_delegation',
+              kind: rust_frb_types.NextStepKind.advanceDelegation,
               bundleIndex: 0,
               proposalId: 0,
               choice: 0,
@@ -869,7 +869,7 @@ void main() {
         delegationWorkflows: const [
           rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
-            phase: 'submitted_delegation',
+            phase: rust_frb_types.WorkflowPhaseView.submittedDelegation,
             txHash: 'delegation-tx',
             vanLeafPosition: null,
           ),
@@ -880,14 +880,14 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'advance_delegation',
+            kind: rust_frb_types.NextStepKind.advanceDelegation,
             bundleIndex: 0,
             proposalId: 0,
             choice: 0,
             shareIndex: 0,
           ),
           rust_wire.NextStepView(
-            kind: 'delegate',
+            kind: rust_frb_types.NextStepKind.delegate,
             bundleIndex: 1,
             proposalId: 0,
             choice: 0,
@@ -941,7 +941,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'confirm_share',
+            kind: rust_frb_types.NextStepKind.confirmShare,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -991,7 +991,7 @@ void main() {
         ambiguousUrls: const [],
         targetCount: 1,
         nullifier: shareNullifier,
-        phase: 'submitted_share',
+        phase: rust_frb_types.WorkflowPhaseView.submittedShare,
         confirmed: false,
         submitAt: BigInt.zero,
         createdAt: BigInt.zero,
@@ -1014,7 +1014,7 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'confirm_share',
+              kind: rust_frb_types.NextStepKind.confirmShare,
               bundleIndex: 0,
               proposalId: 1,
               choice: 0,
@@ -1088,7 +1088,7 @@ void main() {
         ambiguousUrls: const [],
         targetCount: 1,
         nullifier: shareNullifier,
-        phase: 'submitted_share',
+        phase: rust_frb_types.WorkflowPhaseView.submittedShare,
         confirmed: false,
         submitAt: BigInt.zero,
         createdAt: BigInt.zero,
@@ -1111,7 +1111,7 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'confirm_share',
+              kind: rust_frb_types.NextStepKind.confirmShare,
               bundleIndex: 0,
               proposalId: 1,
               choice: 0,
@@ -1226,7 +1226,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -2274,7 +2274,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -2593,7 +2593,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -3352,7 +3352,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -5679,7 +5679,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         .where(
           (step) =>
               step.bundleIndex != bundleIndex ||
-              (step.kind != 'delegate' && step.kind != 'advance_delegation'),
+              (step.kind != rust_frb_types.NextStepKind.delegate &&
+                  step.kind != rust_frb_types.NextStepKind.advanceDelegation),
         )
         .toList(growable: false);
     recoveryApi.roundPlan = apiRoundPlan(
@@ -6212,7 +6213,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         ambiguousUrls: share.ambiguousUrls,
         targetCount: share.targetCount,
         nullifier: share.nullifier,
-        phase: 'confirmed',
+        phase: rust_frb_types.WorkflowPhaseView.confirmed,
         confirmed: true,
         submitAt: share.submitAt,
         createdAt: share.createdAt,

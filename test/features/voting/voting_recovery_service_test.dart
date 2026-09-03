@@ -289,7 +289,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_frb_types.NextStepView(
-            kind: 'confirm_share',
+            kind: rust_frb_types.NextStepKind.confirmShare,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -310,7 +310,7 @@ void main() {
       pendingRecovery: true,
       nextSteps: const [
         rust_frb_types.NextStepView(
-          kind: 'advance_vote',
+          kind: rust_frb_types.NextStepKind.advanceVote,
           bundleIndex: 0,
           proposalId: 1,
           choice: 0,
@@ -456,7 +456,7 @@ rust_frb_types.RoundRecoveryStateView recoveryState({
 
 rust_frb_types.DelegationRecoveryView delegationWorkflow({
   required int bundleIndex,
-  required String phase,
+  required rust_frb_types.WorkflowPhaseView phase,
   String? txHash,
   BigInt? vanLeafPosition,
 }) {
@@ -512,7 +512,7 @@ rust_frb_types.VoteRecoveryView voteTx({
 rust_frb_types.VoteRecoveryView voteWorkflow({
   required int bundleIndex,
   required int proposalId,
-  required String phase,
+  required rust_frb_types.WorkflowPhaseView phase,
   String? txHash,
   int? vcTreePosition,
   bool hasCommitmentBundle = false,

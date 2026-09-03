@@ -8020,22 +8020,22 @@ const _: fn() = || {
     {
         let DelegationRecoveryView = None::<zcash_voting::wire::DelegationRecoveryView>.unwrap();
         let _: u32 = DelegationRecoveryView.bundle_index;
-        let _: String = DelegationRecoveryView.phase;
+        let _: zcash_voting::wire::WorkflowPhaseView = DelegationRecoveryView.phase;
         let _: Option<String> = DelegationRecoveryView.tx_hash;
         let _: Option<u64> = DelegationRecoveryView.van_leaf_position;
     }
     {
         let DelegationRecoveryWorkView =
             None::<zcash_voting::wire::DelegationRecoveryWorkView>.unwrap();
-        let _: String = DelegationRecoveryWorkView.kind;
+        let _: zcash_voting::wire::DelegationRecoveryWorkKindView = DelegationRecoveryWorkView.kind;
         let _: u32 = DelegationRecoveryWorkView.bundle_index;
-        let _: String = DelegationRecoveryWorkView.phase;
+        let _: zcash_voting::wire::WorkflowPhaseView = DelegationRecoveryWorkView.phase;
         let _: Option<String> = DelegationRecoveryWorkView.tx_hash;
     }
     {
         let DelegationStatusView = None::<zcash_voting::wire::DelegationStatusView>.unwrap();
         let _: u32 = DelegationStatusView.bundle_index;
-        let _: String = DelegationStatusView.phase;
+        let _: zcash_voting::wire::WorkflowPhaseView = DelegationStatusView.phase;
         let _: Option<String> = DelegationStatusView.tx_hash;
     }
     {
@@ -8088,7 +8088,7 @@ const _: fn() = || {
     }
     {
         let NextStepView = None::<zcash_voting::wire::NextStepView>.unwrap();
-        let _: String = NextStepView.kind;
+        let _: zcash_voting::wire::NextStepKind = NextStepView.kind;
         let _: u32 = NextStepView.bundle_index;
         let _: u32 = NextStepView.proposal_id;
         let _: u32 = NextStepView.choice;
@@ -8140,7 +8140,7 @@ const _: fn() = || {
         let _: bool = RoundPlanView.needs_vote_polling;
         let _: bool = RoundPlanView.has_remaining_vote_or_share_work;
         let _: bool = RoundPlanView.has_recoverable_vote_or_share_work;
-        let _: String = RoundPlanView.primary_action;
+        let _: zcash_voting::wire::RoundPlanActionKind = RoundPlanView.primary_action;
         let _: Vec<zcash_voting::wire::NextStepView> = RoundPlanView.next_steps;
         let _: Vec<zcash_voting::wire::DelegationStatusView> = RoundPlanView.delegation_statuses;
         let _: Vec<zcash_voting::wire::DelegationRecoveryWorkView> =
@@ -8182,7 +8182,7 @@ const _: fn() = || {
         let _: Vec<String> = ShareDelegationRecordView.ambiguous_urls;
         let _: u32 = ShareDelegationRecordView.target_count;
         let _: Vec<u8> = ShareDelegationRecordView.nullifier;
-        let _: String = ShareDelegationRecordView.phase;
+        let _: zcash_voting::wire::WorkflowPhaseView = ShareDelegationRecordView.phase;
         let _: bool = ShareDelegationRecordView.confirmed;
         let _: u64 = ShareDelegationRecordView.submit_at;
         let _: u64 = ShareDelegationRecordView.created_at;
@@ -8193,7 +8193,7 @@ const _: fn() = || {
         let _: u32 = ShareWorkflowRecoveryView.bundle_index;
         let _: u32 = ShareWorkflowRecoveryView.proposal_id;
         let _: u32 = ShareWorkflowRecoveryView.share_index;
-        let _: String = ShareWorkflowRecoveryView.phase;
+        let _: zcash_voting::wire::WorkflowPhaseView = ShareWorkflowRecoveryView.phase;
     }
     {
         let SignedDelegationPayloadView =
@@ -8244,14 +8244,14 @@ const _: fn() = || {
         let _: u32 = VoteRecoveryView.bundle_index;
         let _: u32 = VoteRecoveryView.proposal_id;
         let _: u32 = VoteRecoveryView.choice;
-        let _: String = VoteRecoveryView.phase;
+        let _: zcash_voting::wire::WorkflowPhaseView = VoteRecoveryView.phase;
         let _: Option<String> = VoteRecoveryView.tx_hash;
         let _: Option<u64> = VoteRecoveryView.vc_tree_position;
         let _: bool = VoteRecoveryView.has_commitment_bundle;
     }
     {
         let VoteRecoveryWorkView = None::<zcash_voting::wire::VoteRecoveryWorkView>.unwrap();
-        let _: String = VoteRecoveryWorkView.kind;
+        let _: zcash_voting::wire::VoteRecoveryWorkKindView = VoteRecoveryWorkView.kind;
         let _: u32 = VoteRecoveryWorkView.bundle_index;
         let _: u32 = VoteRecoveryWorkView.proposal_id;
         let _: Option<String> = VoteRecoveryWorkView.tx_hash;
@@ -9460,7 +9460,7 @@ impl SseDecode for zcash_voting::wire::DelegationRecoveryView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_bundleIndex = <u32>::sse_decode(deserializer);
-        let mut var_phase = <String>::sse_decode(deserializer);
+        let mut var_phase = <zcash_voting::wire::WorkflowPhaseView>::sse_decode(deserializer);
         let mut var_txHash = <Option<String>>::sse_decode(deserializer);
         let mut var_vanLeafPosition = <Option<u64>>::sse_decode(deserializer);
         return zcash_voting::wire::DelegationRecoveryView {
@@ -9472,12 +9472,29 @@ impl SseDecode for zcash_voting::wire::DelegationRecoveryView {
     }
 }
 
+impl SseDecode for zcash_voting::wire::DelegationRecoveryWorkKindView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => zcash_voting::wire::DelegationRecoveryWorkKindView::Delegate,
+            1 => zcash_voting::wire::DelegationRecoveryWorkKindView::AdvanceDelegation,
+            2 => zcash_voting::wire::DelegationRecoveryWorkKindView::AdvanceImportedDelegation,
+            _ => unreachable!(
+                "Invalid variant for DelegationRecoveryWorkKindView: {}",
+                inner
+            ),
+        };
+    }
+}
+
 impl SseDecode for zcash_voting::wire::DelegationRecoveryWorkView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_kind =
+            <zcash_voting::wire::DelegationRecoveryWorkKindView>::sse_decode(deserializer);
         let mut var_bundleIndex = <u32>::sse_decode(deserializer);
-        let mut var_phase = <String>::sse_decode(deserializer);
+        let mut var_phase = <zcash_voting::wire::WorkflowPhaseView>::sse_decode(deserializer);
         let mut var_txHash = <Option<String>>::sse_decode(deserializer);
         return zcash_voting::wire::DelegationRecoveryWorkView {
             kind: var_kind,
@@ -9492,7 +9509,7 @@ impl SseDecode for zcash_voting::wire::DelegationStatusView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_bundleIndex = <u32>::sse_decode(deserializer);
-        let mut var_phase = <String>::sse_decode(deserializer);
+        let mut var_phase = <zcash_voting::wire::WorkflowPhaseView>::sse_decode(deserializer);
         let mut var_txHash = <Option<String>>::sse_decode(deserializer);
         return zcash_voting::wire::DelegationStatusView {
             bundle_index: var_bundleIndex,
@@ -10937,10 +10954,28 @@ impl SseDecode for crate::network_privacy::NetworkPrivacyStatus {
     }
 }
 
+impl SseDecode for zcash_voting::wire::NextStepKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => zcash_voting::wire::NextStepKind::Delegate,
+            1 => zcash_voting::wire::NextStepKind::AdvanceDelegation,
+            2 => zcash_voting::wire::NextStepKind::AdvanceImportedDelegation,
+            3 => zcash_voting::wire::NextStepKind::CastVote,
+            4 => zcash_voting::wire::NextStepKind::AdvanceVote,
+            5 => zcash_voting::wire::NextStepKind::AdvanceVoteBatch,
+            6 => zcash_voting::wire::NextStepKind::SubmitShares,
+            7 => zcash_voting::wire::NextStepKind::ConfirmShare,
+            _ => unreachable!("Invalid variant for NextStepKind: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for zcash_voting::wire::NextStepView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_kind = <zcash_voting::wire::NextStepKind>::sse_decode(deserializer);
         let mut var_bundleIndex = <u32>::sse_decode(deserializer);
         let mut var_proposalId = <u32>::sse_decode(deserializer);
         let mut var_choice = <u32>::sse_decode(deserializer);
@@ -11454,6 +11489,21 @@ impl SseDecode for zcash_voting::config::ResolvedVotingConfig {
     }
 }
 
+impl SseDecode for zcash_voting::wire::RoundPlanActionKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => zcash_voting::wire::RoundPlanActionKind::Idle,
+            1 => zcash_voting::wire::RoundPlanActionKind::Delegate,
+            2 => zcash_voting::wire::RoundPlanActionKind::Vote,
+            3 => zcash_voting::wire::RoundPlanActionKind::SubmitShares,
+            4 => zcash_voting::wire::RoundPlanActionKind::Done,
+            _ => unreachable!("Invalid variant for RoundPlanActionKind: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for zcash_voting::wire::RoundPlanView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -11472,7 +11522,8 @@ impl SseDecode for zcash_voting::wire::RoundPlanView {
         let mut var_needsVotePolling = <bool>::sse_decode(deserializer);
         let mut var_hasRemainingVoteOrShareWork = <bool>::sse_decode(deserializer);
         let mut var_hasRecoverableVoteOrShareWork = <bool>::sse_decode(deserializer);
-        let mut var_primaryAction = <String>::sse_decode(deserializer);
+        let mut var_primaryAction =
+            <zcash_voting::wire::RoundPlanActionKind>::sse_decode(deserializer);
         let mut var_nextSteps = <Vec<zcash_voting::wire::NextStepView>>::sse_decode(deserializer);
         let mut var_delegationStatuses =
             <Vec<zcash_voting::wire::DelegationStatusView>>::sse_decode(deserializer);
@@ -11603,7 +11654,7 @@ impl SseDecode for zcash_voting::wire::ShareDelegationRecordView {
         let mut var_ambiguousUrls = <Vec<String>>::sse_decode(deserializer);
         let mut var_targetCount = <u32>::sse_decode(deserializer);
         let mut var_nullifier = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_phase = <String>::sse_decode(deserializer);
+        let mut var_phase = <zcash_voting::wire::WorkflowPhaseView>::sse_decode(deserializer);
         let mut var_confirmed = <bool>::sse_decode(deserializer);
         let mut var_submitAt = <u64>::sse_decode(deserializer);
         let mut var_createdAt = <u64>::sse_decode(deserializer);
@@ -11630,7 +11681,7 @@ impl SseDecode for zcash_voting::wire::ShareWorkflowRecoveryView {
         let mut var_bundleIndex = <u32>::sse_decode(deserializer);
         let mut var_proposalId = <u32>::sse_decode(deserializer);
         let mut var_shareIndex = <u32>::sse_decode(deserializer);
-        let mut var_phase = <String>::sse_decode(deserializer);
+        let mut var_phase = <zcash_voting::wire::WorkflowPhaseView>::sse_decode(deserializer);
         return zcash_voting::wire::ShareWorkflowRecoveryView {
             bundle_index: var_bundleIndex,
             proposal_id: var_proposalId,
@@ -12062,7 +12113,7 @@ impl SseDecode for zcash_voting::wire::VoteRecoveryView {
         let mut var_bundleIndex = <u32>::sse_decode(deserializer);
         let mut var_proposalId = <u32>::sse_decode(deserializer);
         let mut var_choice = <u32>::sse_decode(deserializer);
-        let mut var_phase = <String>::sse_decode(deserializer);
+        let mut var_phase = <zcash_voting::wire::WorkflowPhaseView>::sse_decode(deserializer);
         let mut var_txHash = <Option<String>>::sse_decode(deserializer);
         let mut var_vcTreePosition = <Option<u64>>::sse_decode(deserializer);
         let mut var_hasCommitmentBundle = <bool>::sse_decode(deserializer);
@@ -12078,10 +12129,23 @@ impl SseDecode for zcash_voting::wire::VoteRecoveryView {
     }
 }
 
+impl SseDecode for zcash_voting::wire::VoteRecoveryWorkKindView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => zcash_voting::wire::VoteRecoveryWorkKindView::AdvanceVote,
+            1 => zcash_voting::wire::VoteRecoveryWorkKindView::AdvanceVoteBatch,
+            2 => zcash_voting::wire::VoteRecoveryWorkKindView::SubmitShares,
+            _ => unreachable!("Invalid variant for VoteRecoveryWorkKindView: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for zcash_voting::wire::VoteRecoveryWorkView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_kind = <zcash_voting::wire::VoteRecoveryWorkKindView>::sse_decode(deserializer);
         let mut var_bundleIndex = <u32>::sse_decode(deserializer);
         let mut var_proposalId = <u32>::sse_decode(deserializer);
         let mut var_txHash = <Option<String>>::sse_decode(deserializer);
@@ -12213,6 +12277,24 @@ impl SseDecode for crate::api::wallet::WalletImportResult {
         return crate::api::wallet::WalletImportResult {
             unified_address: var_unifiedAddress,
             account_uuid: var_accountUuid,
+        };
+    }
+}
+
+impl SseDecode for zcash_voting::wire::WorkflowPhaseView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => zcash_voting::wire::WorkflowPhaseView::Prepared,
+            1 => zcash_voting::wire::WorkflowPhaseView::Signed,
+            2 => zcash_voting::wire::WorkflowPhaseView::SubmittedDelegation,
+            3 => zcash_voting::wire::WorkflowPhaseView::SubmittedVote,
+            4 => zcash_voting::wire::WorkflowPhaseView::SubmittedShare,
+            5 => zcash_voting::wire::WorkflowPhaseView::SubmissionManaged,
+            6 => zcash_voting::wire::WorkflowPhaseView::SubmissionRejected,
+            7 => zcash_voting::wire::WorkflowPhaseView::Confirmed,
+            _ => unreachable!("Invalid variant for WorkflowPhaseView: {}", inner),
         };
     }
 }
@@ -14064,6 +14146,34 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::Delegation
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart
+    for FrbWrapper<zcash_voting::wire::DelegationRecoveryWorkKindView>
+{
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            zcash_voting::wire::DelegationRecoveryWorkKindView::Delegate => 0.into_dart(),
+            zcash_voting::wire::DelegationRecoveryWorkKindView::AdvanceDelegation => 1.into_dart(),
+            zcash_voting::wire::DelegationRecoveryWorkKindView::AdvanceImportedDelegation => {
+                2.into_dart()
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::wire::DelegationRecoveryWorkKindView>
+{
+}
+impl
+    flutter_rust_bridge::IntoIntoDart<
+        FrbWrapper<zcash_voting::wire::DelegationRecoveryWorkKindView>,
+    > for zcash_voting::wire::DelegationRecoveryWorkKindView
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::DelegationRecoveryWorkKindView> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::DelegationRecoveryWorkView> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -14960,6 +15070,33 @@ impl flutter_rust_bridge::IntoIntoDart<crate::network_privacy::NetworkPrivacySta
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::NextStepKind> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            zcash_voting::wire::NextStepKind::Delegate => 0.into_dart(),
+            zcash_voting::wire::NextStepKind::AdvanceDelegation => 1.into_dart(),
+            zcash_voting::wire::NextStepKind::AdvanceImportedDelegation => 2.into_dart(),
+            zcash_voting::wire::NextStepKind::CastVote => 3.into_dart(),
+            zcash_voting::wire::NextStepKind::AdvanceVote => 4.into_dart(),
+            zcash_voting::wire::NextStepKind::AdvanceVoteBatch => 5.into_dart(),
+            zcash_voting::wire::NextStepKind::SubmitShares => 6.into_dart(),
+            zcash_voting::wire::NextStepKind::ConfirmShare => 7.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::wire::NextStepKind>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::NextStepKind>>
+    for zcash_voting::wire::NextStepKind
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::NextStepKind> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::NextStepView> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -15150,6 +15287,30 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::config::Resolved
     for zcash_voting::config::ResolvedVotingConfig
 {
     fn into_into_dart(self) -> FrbWrapper<zcash_voting::config::ResolvedVotingConfig> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundPlanActionKind> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            zcash_voting::wire::RoundPlanActionKind::Idle => 0.into_dart(),
+            zcash_voting::wire::RoundPlanActionKind::Delegate => 1.into_dart(),
+            zcash_voting::wire::RoundPlanActionKind::Vote => 2.into_dart(),
+            zcash_voting::wire::RoundPlanActionKind::SubmitShares => 3.into_dart(),
+            zcash_voting::wire::RoundPlanActionKind::Done => 4.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::wire::RoundPlanActionKind>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::RoundPlanActionKind>>
+    for zcash_voting::wire::RoundPlanActionKind
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::RoundPlanActionKind> {
         self.into()
     }
 }
@@ -15912,6 +16073,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::VoteRecove
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VoteRecoveryWorkKindView> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            zcash_voting::wire::VoteRecoveryWorkKindView::AdvanceVote => 0.into_dart(),
+            zcash_voting::wire::VoteRecoveryWorkKindView::AdvanceVoteBatch => 1.into_dart(),
+            zcash_voting::wire::VoteRecoveryWorkKindView::SubmitShares => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::wire::VoteRecoveryWorkKindView>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::VoteRecoveryWorkKindView>>
+    for zcash_voting::wire::VoteRecoveryWorkKindView
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::VoteRecoveryWorkKindView> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VoteRecoveryWorkView> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -16085,6 +16268,33 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::wallet::WalletImportResult>
 {
     fn into_into_dart(self) -> crate::api::wallet::WalletImportResult {
         self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::WorkflowPhaseView> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            zcash_voting::wire::WorkflowPhaseView::Prepared => 0.into_dart(),
+            zcash_voting::wire::WorkflowPhaseView::Signed => 1.into_dart(),
+            zcash_voting::wire::WorkflowPhaseView::SubmittedDelegation => 2.into_dart(),
+            zcash_voting::wire::WorkflowPhaseView::SubmittedVote => 3.into_dart(),
+            zcash_voting::wire::WorkflowPhaseView::SubmittedShare => 4.into_dart(),
+            zcash_voting::wire::WorkflowPhaseView::SubmissionManaged => 5.into_dart(),
+            zcash_voting::wire::WorkflowPhaseView::SubmissionRejected => 6.into_dart(),
+            zcash_voting::wire::WorkflowPhaseView::Confirmed => 7.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::wire::WorkflowPhaseView>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::WorkflowPhaseView>>
+    for zcash_voting::wire::WorkflowPhaseView
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::WorkflowPhaseView> {
+        self.into()
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -17113,18 +17323,35 @@ impl SseEncode for zcash_voting::wire::DelegationRecoveryView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.bundle_index, serializer);
-        <String>::sse_encode(self.phase, serializer);
+        <zcash_voting::wire::WorkflowPhaseView>::sse_encode(self.phase, serializer);
         <Option<String>>::sse_encode(self.tx_hash, serializer);
         <Option<u64>>::sse_encode(self.van_leaf_position, serializer);
+    }
+}
+
+impl SseEncode for zcash_voting::wire::DelegationRecoveryWorkKindView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                zcash_voting::wire::DelegationRecoveryWorkKindView::Delegate => 0,
+                zcash_voting::wire::DelegationRecoveryWorkKindView::AdvanceDelegation => 1,
+                zcash_voting::wire::DelegationRecoveryWorkKindView::AdvanceImportedDelegation => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
 impl SseEncode for zcash_voting::wire::DelegationRecoveryWorkView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.kind, serializer);
+        <zcash_voting::wire::DelegationRecoveryWorkKindView>::sse_encode(self.kind, serializer);
         <u32>::sse_encode(self.bundle_index, serializer);
-        <String>::sse_encode(self.phase, serializer);
+        <zcash_voting::wire::WorkflowPhaseView>::sse_encode(self.phase, serializer);
         <Option<String>>::sse_encode(self.tx_hash, serializer);
     }
 }
@@ -17133,7 +17360,7 @@ impl SseEncode for zcash_voting::wire::DelegationStatusView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.bundle_index, serializer);
-        <String>::sse_encode(self.phase, serializer);
+        <zcash_voting::wire::WorkflowPhaseView>::sse_encode(self.phase, serializer);
         <Option<String>>::sse_encode(self.tx_hash, serializer);
     }
 }
@@ -18173,10 +18400,32 @@ impl SseEncode for crate::network_privacy::NetworkPrivacyStatus {
     }
 }
 
+impl SseEncode for zcash_voting::wire::NextStepKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                zcash_voting::wire::NextStepKind::Delegate => 0,
+                zcash_voting::wire::NextStepKind::AdvanceDelegation => 1,
+                zcash_voting::wire::NextStepKind::AdvanceImportedDelegation => 2,
+                zcash_voting::wire::NextStepKind::CastVote => 3,
+                zcash_voting::wire::NextStepKind::AdvanceVote => 4,
+                zcash_voting::wire::NextStepKind::AdvanceVoteBatch => 5,
+                zcash_voting::wire::NextStepKind::SubmitShares => 6,
+                zcash_voting::wire::NextStepKind::ConfirmShare => 7,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for zcash_voting::wire::NextStepView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.kind, serializer);
+        <zcash_voting::wire::NextStepKind>::sse_encode(self.kind, serializer);
         <u32>::sse_encode(self.bundle_index, serializer);
         <u32>::sse_encode(self.proposal_id, serializer);
         <u32>::sse_encode(self.choice, serializer);
@@ -18559,6 +18808,25 @@ impl SseEncode for zcash_voting::config::ResolvedVotingConfig {
     }
 }
 
+impl SseEncode for zcash_voting::wire::RoundPlanActionKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                zcash_voting::wire::RoundPlanActionKind::Idle => 0,
+                zcash_voting::wire::RoundPlanActionKind::Delegate => 1,
+                zcash_voting::wire::RoundPlanActionKind::Vote => 2,
+                zcash_voting::wire::RoundPlanActionKind::SubmitShares => 3,
+                zcash_voting::wire::RoundPlanActionKind::Done => 4,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for zcash_voting::wire::RoundPlanView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -18579,7 +18847,7 @@ impl SseEncode for zcash_voting::wire::RoundPlanView {
         <bool>::sse_encode(self.needs_vote_polling, serializer);
         <bool>::sse_encode(self.has_remaining_vote_or_share_work, serializer);
         <bool>::sse_encode(self.has_recoverable_vote_or_share_work, serializer);
-        <String>::sse_encode(self.primary_action, serializer);
+        <zcash_voting::wire::RoundPlanActionKind>::sse_encode(self.primary_action, serializer);
         <Vec<zcash_voting::wire::NextStepView>>::sse_encode(self.next_steps, serializer);
         <Vec<zcash_voting::wire::DelegationStatusView>>::sse_encode(
             self.delegation_statuses,
@@ -18670,7 +18938,7 @@ impl SseEncode for zcash_voting::wire::ShareDelegationRecordView {
         <Vec<String>>::sse_encode(self.ambiguous_urls, serializer);
         <u32>::sse_encode(self.target_count, serializer);
         <Vec<u8>>::sse_encode(self.nullifier, serializer);
-        <String>::sse_encode(self.phase, serializer);
+        <zcash_voting::wire::WorkflowPhaseView>::sse_encode(self.phase, serializer);
         <bool>::sse_encode(self.confirmed, serializer);
         <u64>::sse_encode(self.submit_at, serializer);
         <u64>::sse_encode(self.created_at, serializer);
@@ -18683,7 +18951,7 @@ impl SseEncode for zcash_voting::wire::ShareWorkflowRecoveryView {
         <u32>::sse_encode(self.bundle_index, serializer);
         <u32>::sse_encode(self.proposal_id, serializer);
         <u32>::sse_encode(self.share_index, serializer);
-        <String>::sse_encode(self.phase, serializer);
+        <zcash_voting::wire::WorkflowPhaseView>::sse_encode(self.phase, serializer);
     }
 }
 
@@ -18972,17 +19240,34 @@ impl SseEncode for zcash_voting::wire::VoteRecoveryView {
         <u32>::sse_encode(self.bundle_index, serializer);
         <u32>::sse_encode(self.proposal_id, serializer);
         <u32>::sse_encode(self.choice, serializer);
-        <String>::sse_encode(self.phase, serializer);
+        <zcash_voting::wire::WorkflowPhaseView>::sse_encode(self.phase, serializer);
         <Option<String>>::sse_encode(self.tx_hash, serializer);
         <Option<u64>>::sse_encode(self.vc_tree_position, serializer);
         <bool>::sse_encode(self.has_commitment_bundle, serializer);
     }
 }
 
+impl SseEncode for zcash_voting::wire::VoteRecoveryWorkKindView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                zcash_voting::wire::VoteRecoveryWorkKindView::AdvanceVote => 0,
+                zcash_voting::wire::VoteRecoveryWorkKindView::AdvanceVoteBatch => 1,
+                zcash_voting::wire::VoteRecoveryWorkKindView::SubmitShares => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for zcash_voting::wire::VoteRecoveryWorkView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.kind, serializer);
+        <zcash_voting::wire::VoteRecoveryWorkKindView>::sse_encode(self.kind, serializer);
         <u32>::sse_encode(self.bundle_index, serializer);
         <u32>::sse_encode(self.proposal_id, serializer);
         <Option<String>>::sse_encode(self.tx_hash, serializer);
@@ -19070,6 +19355,28 @@ impl SseEncode for crate::api::wallet::WalletImportResult {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.unified_address, serializer);
         <String>::sse_encode(self.account_uuid, serializer);
+    }
+}
+
+impl SseEncode for zcash_voting::wire::WorkflowPhaseView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                zcash_voting::wire::WorkflowPhaseView::Prepared => 0,
+                zcash_voting::wire::WorkflowPhaseView::Signed => 1,
+                zcash_voting::wire::WorkflowPhaseView::SubmittedDelegation => 2,
+                zcash_voting::wire::WorkflowPhaseView::SubmittedVote => 3,
+                zcash_voting::wire::WorkflowPhaseView::SubmittedShare => 4,
+                zcash_voting::wire::WorkflowPhaseView::SubmissionManaged => 5,
+                zcash_voting::wire::WorkflowPhaseView::SubmissionRejected => 6,
+                zcash_voting::wire::WorkflowPhaseView::Confirmed => 7,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
