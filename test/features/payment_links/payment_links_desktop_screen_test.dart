@@ -1861,6 +1861,71 @@ void main() {
     expect(operations.sharedLinks, [_incomingLink]);
   });
 
+  testWidgets('mobile home lists a funded card and copies its link', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(records: [_sharedRecovery]);
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+    // Mobile opens on Redeem; the Card list is the screen behind it.
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+
+    // Before this list existed the mobile home only offered Create/Redeem,
+    // so a funded link was unreachable once the Ready page was left.
+    expect(
+      find.byKey(
+        const ValueKey('payment_link_mobile_recovery_u1paymentlinkaddress'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('4.45 ZEC'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_mobile_card_copy_action')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(operations.sharedLinks, [_incomingLink]);
+  }, tags: ['mobile']);
+
+  testWidgets('mobile received tab lists an in-flight claim', (tester) async {
+    final operations = _FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord(
+          network: _incomingLink.network,
+          address: _incomingLink.address,
+          amountZatoshi: _incomingLink.amountZatoshi,
+          createdAt: _incomingLink.createdAt,
+          artworkId: _incomingLink.presentation?.artworkId,
+          message: _incomingLink.presentation?.message,
+          status: PaymentLinkReceivedStatus.receiving,
+          claimLink: _incomingLink,
+          destinationAccountUuid: 'account-1',
+          claimTxids: 'claim-txid',
+          updatedAt: DateTime.utc(2026, 8, 6, 2),
+        ),
+      ],
+    );
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_links_mobile_received_tab')),
+    );
+    // The receiving row spins a loader, so this never settles.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(
+      find.byKey(
+        const ValueKey('payment_link_mobile_received_u1paymentlinkaddress'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Receiving...'), findsOneWidget);
+  }, tags: ['mobile']);
+
   testWidgets('shows an interrupted funding draft without reclaim controls', (
     tester,
   ) async {
@@ -2582,6 +2647,7 @@ class _FakePaymentLinkHardwareSigningService
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
     String? outputParamsPath,
+    void Function()? onSubmissionStarted,
   }) async {
     return const PaymentLinkHardwareFundingResult(
       txids: 'hardware-funding-txid',

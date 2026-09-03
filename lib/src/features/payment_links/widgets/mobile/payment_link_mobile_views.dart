@@ -1,3 +1,4 @@
+import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -6,11 +7,16 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../payment_link_action.dart';
 import '../payment_link_card_motion.dart';
+import '../payment_link_cards_layout.dart';
 import '../payment_link_copy.dart';
 import '../payment_link_dashed_border_painter.dart';
 import '../payment_link_skeleton.dart';
+
+export '../payment_link_cards_layout.dart'
+    show PaymentLinkCardsSection, PaymentLinkCardsTab;
 
 const _referenceContentHeight = 773.0;
 const _topInset = 12.0;
@@ -299,6 +305,382 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The mobile Gift Card list.
+///
+/// This is the mobile counterpart of `PaymentLinkCardsDesktopView`: the same
+/// two tabs over the same created/received sections, so a funded Card link
+/// stays reachable after the user leaves the Ready page and received Cards
+/// are visible at all. The Create/Redeem footer keeps the geometry of
+/// [PaymentLinksHomeMobileView] so the buttons do not move when the empty
+/// home turns into the list.
+///
+/// Rows are mobile-shaped ([PaymentLinkCardListMobileRow]); the state machine
+/// deciding which row is copyable lives in the screen, shared with desktop.
+class PaymentLinkCardsMobileView extends StatelessWidget {
+  const PaymentLinkCardsMobileView({
+    required this.sections,
+    required this.onBack,
+    required this.onCreate,
+    required this.onRedeem,
+    this.activeTab = PaymentLinkCardsTab.created,
+    this.onTabSelected,
+    this.emptyLabel,
+    this.screenTitle = 'Gift Cards',
+    this.createLabel = kPaymentLinkCreateCardLabel,
+    this.redeemLabel = kPaymentLinkRedeemCardLabel,
+    super.key,
+  });
+
+  final List<PaymentLinkCardsSection> sections;
+  final VoidCallback onBack;
+  final VoidCallback onCreate;
+  final VoidCallback onRedeem;
+  final PaymentLinkCardsTab activeTab;
+  final ValueChanged<PaymentLinkCardsTab>? onTabSelected;
+
+  /// Shown centered when the selected tab has no rows.
+  final String? emptyLabel;
+  final String screenTitle;
+  final String createLabel;
+  final String redeemLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCards = sections.any((section) => section.cards.isNotEmpty);
+    return _MobilePaymentLinkFrame(
+      title: screenTitle,
+      onBack: onBack,
+      body: Padding(
+        padding: const EdgeInsets.only(
+          top: _topInset + _navHeight,
+          left: _sideInset,
+          right: _sideInset,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: AppSpacing.s),
+            Semantics(
+              role: SemanticsRole.tabBar,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _MobileCardsTab(
+                    key: const ValueKey('payment_links_mobile_created_tab'),
+                    icon: AppIcons.plane,
+                    label: kPaymentLinkCreatedTabLabel,
+                    selected: activeTab == PaymentLinkCardsTab.created,
+                    onTap: onTabSelected == null
+                        ? null
+                        : () => onTabSelected!(PaymentLinkCardsTab.created),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  _MobileCardsTab(
+                    key: const ValueKey('payment_links_mobile_received_tab'),
+                    icon: AppIcons.arrowDownward,
+                    label: kPaymentLinkReceivedTabLabel,
+                    selected: activeTab == PaymentLinkCardsTab.received,
+                    onTap: onTabSelected == null
+                        ? null
+                        : () => onTabSelected!(PaymentLinkCardsTab.received),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.base),
+            Expanded(
+              child: hasCards
+                  ? ListView(
+                      key: const ValueKey('payment_links_mobile_cards_list'),
+                      padding: const EdgeInsets.only(bottom: AppSpacing.base),
+                      children: [
+                        for (final (index, section) in sections.indexed)
+                          if (section.cards.isNotEmpty) ...[
+                            if (index > 0)
+                              const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              section.label,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: context.colors.text.secondary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xxs),
+                            MobileSurfaceCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  for (final (rowIndex, card)
+                                      in section.cards.indexed) ...[
+                                    if (rowIndex > 0)
+                                      const SizedBox(height: AppSpacing.xxs),
+                                    card,
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                      ],
+                    )
+                  : Center(
+                      child: Text(
+                        emptyLabel ?? kPaymentLinkNoReceivedCardsText,
+                        key: const ValueKey(
+                          'payment_links_mobile_cards_empty_label',
+                        ),
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: context.colors.text.secondary,
+                        ),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: AppSpacing.base),
+            AppButton(
+              key: const ValueKey('payment_links_mobile_redeem_button'),
+              onPressed: onRedeem,
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.large,
+              height: _buttonHeight,
+              expand: true,
+              child: Text(redeemLabel),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            AppButton(
+              key: const ValueKey('payment_links_mobile_create_button'),
+              onPressed: onCreate,
+              size: AppButtonSize.large,
+              height: _buttonHeight,
+              expand: true,
+              leading: const AppIcon(
+                AppIcons.giftCardOutline,
+                size: AppIconSize.medium,
+              ),
+              child: Text(createLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One Gift Card row on the mobile list.
+///
+/// Same information as the desktop `PaymentLinkCardListRow` — artwork,
+/// amount, date, and either a status or the copy-link action — on the mobile
+/// 64px row pitch with a touch-sized copy target. The mobile list has no QR
+/// page, so the link actions collapse to copy alone.
+class PaymentLinkCardListMobileRow extends StatelessWidget {
+  const PaymentLinkCardListMobileRow({
+    required this.thumbnail,
+    required this.amountText,
+    required this.dateText,
+    this.statusText,
+    this.onAction,
+    this.showLoader = false,
+    this.showCopyAction = false,
+    this.onCopyLink,
+    super.key,
+  }) : assert(
+         statusText != null || showCopyAction,
+         'A status or the Gift Card copy action must be provided.',
+       );
+
+  final Widget thumbnail;
+  final String amountText;
+  final String dateText;
+  final String? statusText;
+  final VoidCallback? onAction;
+  final bool showLoader;
+  final bool showCopyAction;
+  final VoidCallback? onCopyLink;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      height: 64,
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadii.small),
+            child: SizedBox(width: 60, height: 44, child: thumbnail),
+          ),
+          const SizedBox(width: AppSpacing.s),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  amountText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+                Text(
+                  dateText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          if (showCopyAction)
+            PaymentLinkAction(
+              key: const ValueKey('payment_link_mobile_card_copy_action'),
+              semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
+              onPressed: onCopyLink,
+              builder: (context, _, focused) => DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  border: focused
+                      ? Border.all(color: colors.state.focusRing, width: 2)
+                      : null,
+                ),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Center(
+                    child: AppIcon(
+                      AppIcons.copy,
+                      size: AppIconSize.medium,
+                      color: onCopyLink == null
+                          ? colors.icon.disabled
+                          : colors.icon.regular,
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else if (statusText case final label?)
+            _MobileCardStatus(
+              label: label,
+              onTap: onAction,
+              showLoader: showLoader,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileCardStatus extends StatelessWidget {
+  const _MobileCardStatus({
+    required this.label,
+    required this.showLoader,
+    this.onTap,
+  });
+
+  final String label;
+  final bool showLoader;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = onTap == null ? colors.text.muted : colors.text.secondary;
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          key: ValueKey('payment_link_mobile_card_status_$label'),
+          style: AppTypography.bodyMedium.copyWith(color: color),
+        ),
+        if (showLoader) ...[
+          const SizedBox(width: AppSpacing.xxs),
+          AppIcon(AppIcons.loader, size: 16, color: colors.icon.regular),
+        ],
+      ],
+    );
+    if (onTap == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+        child: content,
+      );
+    }
+    return PaymentLinkAction(
+      onPressed: onTap,
+      semanticLabel: label,
+      builder: (context, _, focused) => DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          border: focused
+              ? Border.all(color: colors.state.focusRing, width: 2)
+              : null,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xs,
+            vertical: AppSpacing.xs,
+          ),
+          child: content,
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileCardsTab extends StatelessWidget {
+  const _MobileCardsTab({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final String icon;
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected
+        ? context.colors.text.primary
+        : context.colors.text.muted;
+    return PaymentLinkAction(
+      onPressed: onTap,
+      selected: selected,
+      role: SemanticsRole.tab,
+      semanticLabel: label,
+      builder: (context, _, focused) => DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadii.small),
+          border: focused
+              ? Border.all(color: context.colors.state.focusRing, width: 2)
+              : null,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xs,
+            vertical: AppSpacing.xs,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(icon, size: 16, color: color),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                label,
+                style: AppTypography.labelLarge.copyWith(color: color),
+              ),
+            ],
+          ),
         ),
       ),
     );

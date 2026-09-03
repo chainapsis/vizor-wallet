@@ -33,6 +33,7 @@ import '../services/payment_link_service.dart';
 import '../widgets/payment_link_card_flip.dart';
 import '../widgets/payment_link_card_selector_rail.dart';
 import '../widgets/payment_link_confetti.dart';
+import '../widgets/payment_link_copy.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_keystone_signing_overlay.dart';
@@ -1562,6 +1563,9 @@ class _PaymentLinksDesktopScreenState
   void _returnHomeFromReceivedGift() => context.go('/home');
 
   Widget _buildMobileHome() {
+    if (_recoveries.isNotEmpty || _receivedCards.isNotEmpty) {
+      return _buildMobileCardsList();
+    }
     return PaymentLinksHomeMobileView(
       illustration: Image.asset(
         'assets/illustrations/payment_links/payment_link_empty_card.png',
@@ -1572,6 +1576,23 @@ class _PaymentLinksDesktopScreenState
       onShowHelp: _showMobileHelpSheet,
       onCreate: _startCreate,
       onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
+    );
+  }
+
+  Widget _buildMobileCardsList() {
+    return PaymentLinkCardsMobileView(
+      sections: _cardsSections(
+        recoveryRow: _buildMobileRecoveryRow,
+        receivedRow: _buildMobileReceivedRow,
+      ),
+      emptyLabel: _activeCardsTab == PaymentLinkCardsTab.created
+          ? kPaymentLinkNoCreatedCardsText
+          : kPaymentLinkNoReceivedCardsText,
+      onBack: _leaveMobilePaymentLinks,
+      onCreate: _startCreate,
+      onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
+      activeTab: _activeCardsTab,
+      onTabSelected: (tab) => setState(() => _activeCardsTab = tab),
     );
   }
 
@@ -1872,50 +1893,23 @@ class _PaymentLinksDesktopScreenState
   }
 
   Widget _buildCardsList() {
-    final showingCreated = _activeCardsTab == PaymentLinkCardsTab.created;
-    final creatingCards = _recoveries
-        .where(
-          (record) =>
-              !(_fundingProgressByAddress[record.link.address]?.isReady ??
-                  false),
-        )
-        .map(_buildRecoveryRow)
-        .toList();
-    final pendingCards = _recoveries
-        .where(
-          (record) =>
-              _fundingProgressByAddress[record.link.address]?.isReady ?? false,
-        )
-        .map(_buildRecoveryRow)
-        .toList();
-    final available = showingCreated
-        ? creatingCards
-        : _receivedCards.isNotEmpty
-        ? _receivedCards.map(_buildReceivedRow).toList()
-        : <Widget>[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              child: Text(
-                'No received cards yet.',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: context.colors.text.secondary,
-                ),
+    return PaymentLinkCardsDesktopView(
+      sections: _cardsSections(
+        recoveryRow: _buildRecoveryRow,
+        receivedRow: _buildReceivedRow,
+        emptyReceivedCards: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            child: Text(
+              kPaymentLinkNoReceivedCardsText,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.secondary,
               ),
             ),
-          ];
-    final sections = showingCreated
-        ? <PaymentLinkCardsSection>[
-            if (creatingCards.isNotEmpty)
-              PaymentLinkCardsSection(label: 'Creating', cards: creatingCards),
-            if (pendingCards.isNotEmpty)
-              PaymentLinkCardsSection(label: 'Pending', cards: pendingCards),
-          ]
-        : <PaymentLinkCardsSection>[
-            PaymentLinkCardsSection(label: 'Received', cards: available),
-          ];
-    return PaymentLinkCardsDesktopView(
-      sections: sections,
+          ),
+        ],
+      ),
       onBack: () => context.go('/home'),
       onCreate: _startCreate,
       onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
@@ -1924,34 +1918,133 @@ class _PaymentLinksDesktopScreenState
     );
   }
 
-  Widget _buildRecoveryRow(PaymentLinkRecoveryRecord record) {
+  /// The Gift Card grouping both form factors render.
+  ///
+  /// Created Cards split into `Creating` / `Pending` by funding readiness and
+  /// received Cards form one list; only the row widgets differ per form
+  /// factor, so the grouping and the tab selection stay here rather than
+  /// being restated in the mobile view.
+  List<PaymentLinkCardsSection> _cardsSections({
+    required Widget Function(PaymentLinkRecoveryRecord record) recoveryRow,
+    required Widget Function(PaymentLinkReceivedRecord record) receivedRow,
+    List<Widget> emptyReceivedCards = const <Widget>[],
+  }) {
+    if (_activeCardsTab == PaymentLinkCardsTab.created) {
+      final creatingCards = <Widget>[];
+      final pendingCards = <Widget>[];
+      for (final record in _recoveries) {
+        final fundingReady =
+            _fundingProgressByAddress[record.link.address]?.isReady ?? false;
+        (fundingReady ? pendingCards : creatingCards).add(recoveryRow(record));
+      }
+      return <PaymentLinkCardsSection>[
+        if (creatingCards.isNotEmpty)
+          PaymentLinkCardsSection(
+            label: kPaymentLinkCreatingSectionLabel,
+            cards: creatingCards,
+          ),
+        if (pendingCards.isNotEmpty)
+          PaymentLinkCardsSection(
+            label: kPaymentLinkPendingSectionLabel,
+            cards: pendingCards,
+          ),
+      ];
+    }
+    return <PaymentLinkCardsSection>[
+      PaymentLinkCardsSection(
+        label: kPaymentLinkReceivedTabLabel,
+        cards: _receivedCards.isNotEmpty
+            ? _receivedCards.map(receivedRow).toList()
+            : emptyReceivedCards,
+      ),
+    ];
+  }
+
+  /// Whether a created Card's link can be shared yet, plus the status the row
+  /// shows while it cannot. Shared by the desktop and mobile rows.
+  ({bool canUseLink, String statusText, bool showLoader}) _recoveryRowState(
+    PaymentLinkRecoveryRecord record,
+  ) {
     final fundingReady =
         _fundingProgressByAddress[record.link.address]?.isReady ?? false;
     final canUseLink =
         fundingReady &&
         (record.state == PaymentLinkRecoveryState.funded ||
             record.state == PaymentLinkRecoveryState.shared);
-    final copyEnabled = canUseLink && !_operationInProgress;
-    final statusText = record.state == PaymentLinkRecoveryState.draft
-        ? 'Funding incomplete'
-        : 'Preparing...';
+    return (
+      canUseLink: canUseLink,
+      statusText: record.state == PaymentLinkRecoveryState.draft
+          ? kPaymentLinkFundingIncompleteStatus
+          : kPaymentLinkPreparingStatus,
+      showLoader: !canUseLink && record.state != PaymentLinkRecoveryState.draft,
+    );
+  }
+
+  /// The received Card's effective status, folding an in-flight submission
+  /// the store has not caught up with into `Receiving...`.
+  ({String statusText, bool canClaim, bool showLoader}) _receivedRowState(
+    PaymentLinkReceivedRecord record,
+  ) {
+    final submissionInProgress = ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .isSubmitting(record.address);
+    final effectiveStatus = submissionInProgress
+        ? PaymentLinkReceivedStatus.receiving
+        : record.status;
+    return (
+      statusText: switch (effectiveStatus) {
+        PaymentLinkReceivedStatus.readyToClaim => 'Claim',
+        PaymentLinkReceivedStatus.submitting => 'Receiving...',
+        PaymentLinkReceivedStatus.receiving => 'Receiving...',
+        PaymentLinkReceivedStatus.received => 'Received',
+      },
+      canClaim:
+          effectiveStatus == PaymentLinkReceivedStatus.readyToClaim &&
+          record.claimLink != null &&
+          !_operationInProgress,
+      showLoader:
+          effectiveStatus == PaymentLinkReceivedStatus.submitting ||
+          effectiveStatus == PaymentLinkReceivedStatus.receiving,
+    );
+  }
+
+  Widget _buildRecoveryRow(PaymentLinkRecoveryRecord record) {
+    final state = _recoveryRowState(record);
+    final copyEnabled = state.canUseLink && !_operationInProgress;
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_recovery_${record.link.address}'),
-      thumbnail: Image.asset(
-        PaymentLinkCardArtwork.fromProtocolId(
-          record.link.presentation?.artworkId,
-        ).assetPath,
-        fit: BoxFit.cover,
-        excludeFromSemantics: true,
-      ),
+      thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
       amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
       dateText: _formatCardDate(record.link.createdAt),
-      statusText: canUseLink ? null : statusText,
+      statusText: state.canUseLink ? null : state.statusText,
       onAction: null,
-      showLinkActions: canUseLink,
+      showLinkActions: state.canUseLink,
       onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
       onShowQr: copyEnabled ? () => _openShareQr(record) : null,
-      showLoader: !canUseLink && record.state != PaymentLinkRecoveryState.draft,
+      showLoader: state.showLoader,
+    );
+  }
+
+  Widget _buildMobileRecoveryRow(PaymentLinkRecoveryRecord record) {
+    final state = _recoveryRowState(record);
+    final copyEnabled = state.canUseLink && !_operationInProgress;
+    return PaymentLinkCardListMobileRow(
+      key: ValueKey('payment_link_mobile_recovery_${record.link.address}'),
+      thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
+      amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+      dateText: _formatCardDate(record.link.createdAt),
+      statusText: state.canUseLink ? null : state.statusText,
+      showCopyAction: state.canUseLink,
+      onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
+      showLoader: state.showLoader,
+    );
+  }
+
+  Widget _cardThumbnail(String? artworkId) {
+    return Image.asset(
+      PaymentLinkCardArtwork.fromProtocolId(artworkId).assetPath,
+      fit: BoxFit.cover,
+      excludeFromSemantics: true,
     );
   }
 
@@ -2034,36 +2127,28 @@ class _PaymentLinksDesktopScreenState
   }
 
   Widget _buildReceivedRow(PaymentLinkReceivedRecord record) {
-    final submissionInProgress = ref
-        .read(paymentLinkClaimCoordinatorProvider)
-        .isSubmitting(record.address);
-    final effectiveStatus = submissionInProgress
-        ? PaymentLinkReceivedStatus.receiving
-        : record.status;
-    final statusText = switch (effectiveStatus) {
-      PaymentLinkReceivedStatus.readyToClaim => 'Claim',
-      PaymentLinkReceivedStatus.submitting => 'Receiving...',
-      PaymentLinkReceivedStatus.receiving => 'Receiving...',
-      PaymentLinkReceivedStatus.received => 'Received',
-    };
-    final canClaim =
-        effectiveStatus == PaymentLinkReceivedStatus.readyToClaim &&
-        record.claimLink != null &&
-        !_operationInProgress;
+    final state = _receivedRowState(record);
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_received_${record.address}'),
-      thumbnail: Image.asset(
-        PaymentLinkCardArtwork.fromProtocolId(record.artworkId).assetPath,
-        fit: BoxFit.cover,
-        excludeFromSemantics: true,
-      ),
+      thumbnail: _cardThumbnail(record.artworkId),
       amountText: '${formatZecAmount(record.amountZatoshi)} ZEC',
       dateText: _formatCardDate(record.createdAt),
-      statusText: statusText,
-      onAction: canClaim ? () => _openReceivedCard(record) : null,
-      showLoader:
-          effectiveStatus == PaymentLinkReceivedStatus.submitting ||
-          effectiveStatus == PaymentLinkReceivedStatus.receiving,
+      statusText: state.statusText,
+      onAction: state.canClaim ? () => _openReceivedCard(record) : null,
+      showLoader: state.showLoader,
+    );
+  }
+
+  Widget _buildMobileReceivedRow(PaymentLinkReceivedRecord record) {
+    final state = _receivedRowState(record);
+    return PaymentLinkCardListMobileRow(
+      key: ValueKey('payment_link_mobile_received_${record.address}'),
+      thumbnail: _cardThumbnail(record.artworkId),
+      amountText: '${formatZecAmount(record.amountZatoshi)} ZEC',
+      dateText: _formatCardDate(record.createdAt),
+      statusText: state.statusText,
+      onAction: state.canClaim ? () => _openReceivedCard(record) : null,
+      showLoader: state.showLoader,
     );
   }
 

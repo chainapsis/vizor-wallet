@@ -999,6 +999,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobilePaymentLinkHomeEmptyUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Home - Cards',
+                      builder: buildMobilePaymentLinkHomeCardsUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Amount - Empty',
                       builder: buildMobilePaymentLinkAmountEmptyUseCase,
                     ),

@@ -311,6 +311,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-payment-links-home-cards',
+    description: 'Mobile Gift Card list with created and received cards',
+    builder: buildMobilePaymentLinkHomeCardsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-payment-link-amount-empty',
     description: 'Mobile Gift Card amount step without an amount',
     builder: buildMobilePaymentLinkAmountEmptyUseCase,

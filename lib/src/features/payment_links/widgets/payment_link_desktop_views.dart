@@ -15,9 +15,13 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
+import 'payment_link_cards_layout.dart';
 import 'payment_link_copy.dart';
 import 'payment_link_dashed_border_painter.dart';
 import 'payment_link_gift_card.dart';
+
+export 'payment_link_cards_layout.dart'
+    show PaymentLinkCardsSection, PaymentLinkCardsTab;
 
 const kPaymentLinkMessageTooLargeText =
     'This message is too large. Try using fewer complex emoji.';
@@ -40,8 +44,6 @@ enum PaymentLinkMessageVisualState { empty, filled }
 enum PaymentLinkReadyVisualState { waiting, ready }
 
 enum PaymentLinkRedeemVisualState { paste, loading, invalid, unavailable }
-
-enum PaymentLinkCardsTab { created, received }
 
 /// Empty Gift Cards landing surface.
 class PaymentLinksHomeDesktopView extends StatelessWidget {
@@ -1146,7 +1148,7 @@ class PaymentLinkCardListRow extends StatelessWidget {
                 _CardListIconAction(
                   key: const ValueKey('payment_link_card_copy_action'),
                   icon: AppIcons.copy,
-                  semanticLabel: 'Copy Gift Card link',
+                  semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
                   onPressed: onCopyLink,
                 ),
                 const SizedBox(width: AppSpacing.xxs),
@@ -1350,7 +1352,7 @@ class _PaymentLinkCardsDesktopViewState
                   children: [
                     _TabAction(
                       icon: AppIcons.plane,
-                      label: 'Created',
+                      label: kPaymentLinkCreatedTabLabel,
                       selected: widget.activeTab == PaymentLinkCardsTab.created,
                       onTap: widget.onTabSelected == null
                           ? null
@@ -1361,7 +1363,7 @@ class _PaymentLinkCardsDesktopViewState
                     const SizedBox(width: AppSpacing.sm),
                     _TabAction(
                       icon: AppIcons.arrowDownward,
-                      label: 'Received',
+                      label: kPaymentLinkReceivedTabLabel,
                       selected:
                           widget.activeTab == PaymentLinkCardsTab.received,
                       onTap: widget.onTabSelected == null
@@ -1391,13 +1393,6 @@ class _PaymentLinkCardsDesktopViewState
       ),
     );
   }
-}
-
-class PaymentLinkCardsSection {
-  const PaymentLinkCardsSection({required this.label, required this.cards});
-
-  final String label;
-  final List<Widget> cards;
 }
 
 class PaymentLinkRedeemDesktopView extends StatelessWidget {

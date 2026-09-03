@@ -15,6 +15,7 @@ import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.d
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
 import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
+import '../src/features/payment_links/widgets/payment_link_copy.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 
@@ -32,6 +33,10 @@ const kMobilePaymentLinkPreviewFiatDelay = Duration(milliseconds: 1200);
 
 Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(child: _PaymentLinkHomeFixture());
+}
+
+Widget buildMobilePaymentLinkHomeCardsUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(child: _PaymentLinkCardsFixture());
 }
 
 Widget buildMobilePaymentLinkAmountEmptyUseCase(BuildContext context) {
@@ -269,6 +274,122 @@ class _PaymentLinkHomeFixture extends StatelessWidget {
       ),
       onCreate: _noop,
       onRedeem: _noop,
+    );
+  }
+}
+
+/// The mobile Gift Card list with one card in each row state.
+///
+/// Deterministic: artwork, amounts, and dates are literals, and the tab
+/// selection is local state — nothing here reads payment-link storage, the
+/// wallet, or the network.
+class _PaymentLinkCardsFixture extends StatefulWidget {
+  const _PaymentLinkCardsFixture();
+
+  @override
+  State<_PaymentLinkCardsFixture> createState() =>
+      _PaymentLinkCardsFixtureState();
+}
+
+class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
+  var _activeTab = PaymentLinkCardsTab.created;
+
+  @override
+  Widget build(BuildContext context) {
+    return PaymentLinkCardsMobileView(
+      activeTab: _activeTab,
+      onTabSelected: (tab) => setState(() => _activeTab = tab),
+      sections: _activeTab == PaymentLinkCardsTab.created
+          ? const [
+              PaymentLinkCardsSection(
+                label: kPaymentLinkCreatingSectionLabel,
+                cards: [
+                  PaymentLinkCardListMobileRow(
+                    thumbnail: _PaymentLinkThumbnail(
+                      PaymentLinkCardArtwork.chestLava,
+                    ),
+                    amountText: '0.25 ZEC',
+                    dateText: 'July 2',
+                    statusText: kPaymentLinkFundingIncompleteStatus,
+                  ),
+                  PaymentLinkCardListMobileRow(
+                    thumbnail: _PaymentLinkThumbnail(
+                      PaymentLinkCardArtwork.dragon,
+                    ),
+                    amountText: '1.10 ZEC',
+                    dateText: 'July 18',
+                    statusText: kPaymentLinkPreparingStatus,
+                    showLoader: true,
+                  ),
+                ],
+              ),
+              PaymentLinkCardsSection(
+                label: kPaymentLinkPendingSectionLabel,
+                cards: [
+                  PaymentLinkCardListMobileRow(
+                    thumbnail: _PaymentLinkThumbnail(
+                      PaymentLinkCardArtwork.ruby,
+                    ),
+                    amountText: '4.45 ZEC',
+                    dateText: 'August 7',
+                    showCopyAction: true,
+                    onCopyLink: _noop,
+                  ),
+                  PaymentLinkCardListMobileRow(
+                    thumbnail: _PaymentLinkThumbnail(
+                      PaymentLinkCardArtwork.diamond,
+                    ),
+                    amountText: '2.50 ZEC',
+                    dateText: 'August 2',
+                    showCopyAction: true,
+                    onCopyLink: _noop,
+                  ),
+                ],
+              ),
+            ]
+          : const [
+              PaymentLinkCardsSection(
+                label: kPaymentLinkReceivedTabLabel,
+                cards: [
+                  PaymentLinkCardListMobileRow(
+                    thumbnail: _PaymentLinkThumbnail(
+                      PaymentLinkCardArtwork.gift,
+                    ),
+                    amountText: '1.00 ZEC',
+                    dateText: 'August 9',
+                    statusText: 'Claim',
+                    onAction: _noop,
+                  ),
+                  PaymentLinkCardListMobileRow(
+                    thumbnail: _PaymentLinkThumbnail(
+                      PaymentLinkCardArtwork.ruby,
+                    ),
+                    amountText: '0.75 ZEC',
+                    dateText: 'August 4',
+                    statusText: 'Receiving...',
+                    showLoader: true,
+                  ),
+                ],
+              ),
+            ],
+      onBack: _noop,
+      onCreate: _noop,
+      onRedeem: _noop,
+    );
+  }
+}
+
+class _PaymentLinkThumbnail extends StatelessWidget {
+  const _PaymentLinkThumbnail(this.artwork);
+
+  final PaymentLinkCardArtwork artwork;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      artwork.assetPath,
+      fit: BoxFit.cover,
+      excludeFromSemantics: true,
     );
   }
 }
