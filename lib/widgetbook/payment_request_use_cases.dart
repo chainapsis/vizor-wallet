@@ -196,6 +196,12 @@ Widget buildPaymentRequestInsufficientUseCase(BuildContext context) =>
 Widget buildPaymentRequestSyncingUseCase(BuildContext context) =>
     _desktop(_statusRequest(PaymentRequestStatus.syncing));
 
+/// The syncing card once it has run out of ways to answer itself: same
+/// blocked request, but the primary action becomes an enabled "Check again"
+/// rather than a Review that can never fire.
+Widget buildPaymentRequestSyncStalledUseCase(BuildContext context) =>
+    _desktop(_statusRequest(PaymentRequestStatus.syncStalled));
+
 Widget buildPaymentRequestFailedUseCase(BuildContext context) => _desktop(
   _statusRequest(
     PaymentRequestStatus.failed,
@@ -317,6 +323,10 @@ Widget _desktop(
       onContinue: () {},
       onEdit: () {},
       onCancel: () {},
+      // Non-null so the stalled card's primary renders the way it does in the
+      // app — enabled. A preview that left it null would show the one status
+      // whose whole point is an actionable button with a dead one.
+      onRecheck: () {},
     ),
   );
 }
@@ -340,6 +350,10 @@ Widget _mobile(
       onContinue: () {},
       onEdit: () {},
       onCancel: () {},
+      // Non-null so the stalled card's primary renders the way it does in the
+      // app — enabled. A preview that left it null would show the one status
+      // whose whole point is an actionable button with a dead one.
+      onRecheck: () {},
     ),
   );
 }

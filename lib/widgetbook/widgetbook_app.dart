@@ -1562,6 +1562,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentRequestSyncingUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Error - syncing stalled',
+                      builder: buildPaymentRequestSyncStalledUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Error - check failed',
                       builder: buildPaymentRequestFailedUseCase,
                     ),

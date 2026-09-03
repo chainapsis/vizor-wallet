@@ -1221,6 +1221,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentRequestSyncingUseCase,
   ),
   FigmaCompareScenario(
+    id: 'payment-request-sync-stalled',
+    description:
+        'Desktop payment request card once the sync re-check budget is spent',
+    builder: buildPaymentRequestSyncStalledUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-request-replaced',
     description: 'Desktop payment request card with the replaced-link notice',
     builder: buildPaymentRequestReplacedUseCase,
