@@ -47,6 +47,40 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testIncomingDeeplinkAcceptsZcashPaymentUris() {
+    let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
+    let address =
+      "u1qwerty0000000000000000000000000000000000000000000000000000000000"
+
+    // A ZIP-321 request is an opaque `zcash:` URL: no authority component, so
+    // the host checks that gate the HTTPS routes cannot apply to it.
+    XCTAssertTrue(
+      bridge.handles(URL(string: "zcash:\(address)?amount=1")!)
+    )
+    XCTAssertTrue(
+      bridge.handles(
+        URL(
+          string: "zcash:\(address)?amount=1.5&memo=aGk#gift"
+        )!
+      )
+    )
+    // Schemes are case-insensitive per RFC 3986, and iOS hands back whatever
+    // casing the sender used.
+    XCTAssertTrue(
+      bridge.handles(URL(string: "ZCASH:\(address)?amount=1")!)
+    )
+
+    XCTAssertFalse(
+      bridge.handles(URL(string: "vizor://payment-link?p=test")!)
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(string: "https://\(host)/gift-cards/redeem#v1=test")!
+      )
+    )
+  }
+
   func testMigrationNotificationAuthorizationStatusIsFailClosed() {
     XCTAssertEqual(
       IronwoodMigrationNotificationAuthorizationStatus(.notDetermined),
