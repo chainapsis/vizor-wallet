@@ -7,6 +7,7 @@ import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
+import '../widgetbook/send_review_status_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
@@ -56,6 +57,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'donation-review',
     description: 'Desktop donation review',
     builder: buildDonationReviewUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'send-review-address',
+    description: 'Desktop send review with an address recipient',
+    builder: buildSendReviewAddressUseCase,
   ),
   FigmaCompareScenario(
     id: 'donation-success',

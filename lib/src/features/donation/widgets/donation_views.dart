@@ -546,16 +546,20 @@ class DonationVizorBadge extends StatelessWidget {
         children: [
           SvgPicture.asset(
             'assets/illustrations/donation_vizor_badge_bg.svg',
-            width: size,
-            height: size,
+            width: size * .9375,
+            height: size * .9375,
           ),
-          ClipOval(
-            child: Image.asset(
-              'assets/illustrations/donation_vizor_knight.png',
-              width: size * .72,
-              height: size * .78,
-              fit: BoxFit.cover,
-              alignment: Alignment.topCenter,
+          Positioned(
+            left: size * .125,
+            top: size * .0625,
+            child: ClipOval(
+              child: Image.asset(
+                'assets/illustrations/donation_vizor_knight.png',
+                width: size * .71875,
+                height: size * .78125,
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+              ),
             ),
           ),
         ],
@@ -608,6 +612,7 @@ class DonationReviewContentView extends StatelessWidget {
                       label: 'Donating to',
                       value: 'Vizor Wallet',
                       leading: DonationVizorBadge(),
+                      reserveBottomRow: false,
                     ),
                   ],
                 ),
