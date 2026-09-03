@@ -155,6 +155,47 @@ void main() {
     );
   });
 
+  test('preparation phases preserve the known near-tip exclusion', () {
+    final startedAt = DateTime(2026, 7, 9, 12);
+    const settings = SyncKeepAwakeSettings(enabled: true, promptSeen: true);
+
+    for (final phase in [
+      kSyncPhasePreflight,
+      kSyncPhaseSetup,
+      kSyncPhaseActiveUtxo,
+      kSyncPhaseChainPrepare,
+    ]) {
+      expect(
+        shouldKeepScreenAwakeForSync(
+          settings: settings,
+          sync: _sync(
+            percentage: 0,
+            scannedHeight: 100,
+            chainTipHeight: 102,
+            lastSyncStartedAt: startedAt,
+            phase: phase,
+          ),
+        ),
+        isFalse,
+        reason: 'known near-tip $phase should not keep the screen awake',
+      );
+      expect(
+        shouldKeepScreenAwakeForSync(
+          settings: settings,
+          sync: _sync(
+            percentage: 0,
+            scannedHeight: 100,
+            chainTipHeight: 103,
+            lastSyncStartedAt: startedAt,
+            phase: phase,
+          ),
+        ),
+        isTrue,
+        reason: '$phase with more than two blocks should stay awake',
+      );
+    }
+  });
+
   test(
     'screen keep-awake active provider combines settings and sync state',
     () async {

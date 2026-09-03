@@ -245,15 +245,17 @@ bool isSyncKeepAwakeActiveSync(SyncState sync) {
     return false;
   }
 
-  // The foreground sync has started, but Rust has not necessarily emitted
+  final hasKnownHeights = sync.chainTipHeight > 0 && sync.scannedHeight > 0;
+
+  // A fresh foreground sync has started, but Rust has not necessarily emitted
   // enough progress metadata to describe the remaining work yet. Keep the
   // screen awake during this discovery window so a slow endpoint/Tor preflight
-  // cannot let the device sleep before the first progress event arrives.
-  if (isSyncPreparationPhase(sync.phase)) {
+  // cannot let the device sleep before the first progress event arrives. When
+  // heights are already known, preserve the near-tip catch-up exclusion.
+  if (isSyncPreparationPhase(sync.phase) && !hasKnownHeights) {
     return true;
   }
 
-  final hasKnownHeights = sync.chainTipHeight > 0 && sync.scannedHeight > 0;
   if (hasKnownHeights) {
     return !isNearTipCatchUp(sync);
   }

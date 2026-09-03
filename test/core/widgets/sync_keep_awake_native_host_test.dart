@@ -39,6 +39,26 @@ void main() {
     expect(calls, isEmpty);
   });
 
+  testWidgets('does not enable native keep-awake for known near-tip setup', (
+    tester,
+  ) async {
+    final calls = _recordScreenAwakeCalls();
+    final syncNotifier = FakeSyncNotifier(
+      _sync(
+        percentage: 0,
+        scannedHeight: 100,
+        chainTipHeight: 102,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+        phase: kSyncPhasePreflight,
+      ),
+    );
+
+    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+    await _drainNativeQueue(tester);
+
+    expect(calls, isEmpty);
+  });
+
   testWidgets('enables native keep-awake only while sync is eligible', (
     tester,
   ) async {
