@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
@@ -127,6 +128,19 @@ double _stepsProgress(WidgetTester tester) {
 }
 
 void main() {
+  setUp(() {
+    // Copying a secret schedules the real one-minute clipboard auto-clear
+    // timer, which would outlive the widget tree. Hold the expiry open for the
+    // duration of each test; the clearing itself is covered by
+    // test/core/clipboard/sensitive_clipboard_test.dart.
+    SensitiveClipboard.debugExpirationDelay = (_) => Completer<void>().future;
+  });
+
+  tearDown(() {
+    SensitiveClipboard.debugExpirationDelay = null;
+    SensitiveClipboard.debugCancelPendingExpiration();
+  });
+
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first

@@ -10,6 +10,7 @@ void main() {
   const nativeChannel = MethodChannel('com.zcash.wallet/sensitive_clipboard');
 
   tearDown(() {
+    SensitiveClipboard.debugCancelPendingExpiration();
     SensitiveClipboard.debugSupportsNativeClipboardOverride = null;
     SensitiveClipboard.debugExpirationDelay = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -152,5 +153,54 @@ void main() {
     await SensitiveClipboard.debugRetryExpiredFallbackClear();
 
     expect(clipboardText, isEmpty);
+  });
+
+  testWidgets('a cancelled fallback expiry leaves no pending timer', (
+    tester,
+  ) async {
+    String? clipboardText;
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = false;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            clipboardText = (call.arguments as Map)['text'] as String;
+          } else if (call.method == 'Clipboard.getData') {
+            return {'text': clipboardText};
+          }
+          return null;
+        });
+
+    // No debugExpirationDelay override: this exercises the real timer that
+    // production schedules, which must be cancellable so it cannot outlive the
+    // screen that copied.
+    await SensitiveClipboard.copyText('gift card secret');
+    expect(clipboardText, 'gift card secret');
+
+    SensitiveClipboard.debugCancelPendingExpiration();
+
+    // The widget-tree teardown that follows asserts no timer is still pending.
+  });
+
+  testWidgets('a repeated copy cancels the earlier real expiry timer', (
+    tester,
+  ) async {
+    String? clipboardText;
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = false;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            clipboardText = (call.arguments as Map)['text'] as String;
+          } else if (call.method == 'Clipboard.getData') {
+            return {'text': clipboardText};
+          }
+          return null;
+        });
+
+    await SensitiveClipboard.copyText('first secret');
+    await SensitiveClipboard.copyText('second secret');
+    SensitiveClipboard.debugCancelPendingExpiration();
+
+    // Only the latest copy may hold a timer; if the first one survived, the
+    // widget-tree teardown would report a pending timer here.
   });
 }

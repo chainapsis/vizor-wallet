@@ -25,6 +25,9 @@ abstract final class SensitiveClipboard {
     Duration expiration = sensitiveClipboardDefaultExpiration,
   }) async {
     final copyGeneration = ++_copyGeneration;
+    // A newer copy always supersedes the previous expiry: drop its timer and
+    // the secret it retained instead of leaving both alive for up to a minute.
+    _cancelPendingExpiration();
     if (_supportsNativeClipboard) {
       await _channel.invokeMethod<void>('copyText', {
         'text': text,
@@ -35,32 +38,39 @@ abstract final class SensitiveClipboard {
 
     _ensureLifecycleObserver();
     await Clipboard.setData(ClipboardData(text: text));
-    _pendingFallbackExpiration = _PendingClipboardExpiration(
+    final pending = _PendingClipboardExpiration(
       text: text,
       copyGeneration: copyGeneration,
     );
-    unawaited(
-      _clearFallbackAfterExpiration(
-        text: text,
-        expiration: expiration,
-        copyGeneration: copyGeneration,
-      ),
-    );
-  }
-
-  static Future<void> _clearFallbackAfterExpiration({
-    required String text,
-    required Duration expiration,
-    required int copyGeneration,
-  }) async {
+    _pendingFallbackExpiration = pending;
     final delay = debugExpirationDelay;
     if (delay == null) {
-      await Future<void>.delayed(expiration);
+      pending.timer = Timer(
+        expiration,
+        () => unawaited(_onExpirationElapsed(pending)),
+      );
     } else {
-      await delay(expiration);
+      unawaited(delay(expiration).then((_) => _onExpirationElapsed(pending)));
     }
-    final pending = _pendingFallbackExpiration;
-    if (pending == null || pending.copyGeneration != copyGeneration) return;
+  }
+
+  /// Drops any scheduled fallback auto-clear together with the plaintext it
+  /// holds, leaving the clipboard itself untouched.
+  ///
+  /// Widget tests that exercise a copy need this so the pending expiry timer
+  /// does not outlive the widget tree.
+  @visibleForTesting
+  static void debugCancelPendingExpiration() => _cancelPendingExpiration();
+
+  static void _cancelPendingExpiration() {
+    _pendingFallbackExpiration?.timer?.cancel();
+    _pendingFallbackExpiration = null;
+  }
+
+  static Future<void> _onExpirationElapsed(
+    _PendingClipboardExpiration pending,
+  ) async {
+    if (!identical(_pendingFallbackExpiration, pending)) return;
     pending.expirationElapsed = true;
     await _tryClearExpiredFallback();
   }
@@ -112,6 +122,7 @@ final class _PendingClipboardExpiration {
 
   final String text;
   final int copyGeneration;
+  Timer? timer;
   bool expirationElapsed = false;
 }
 
