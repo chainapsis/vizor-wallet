@@ -673,7 +673,7 @@ pub(crate) async fn tor_client_for_route(
     tor_client_for_route_with_deadline(isolated, TOR_BOOTSTRAP_TIMEOUT, cancelled).await
 }
 
-const TOR_WAIT_CANCELLED_MESSAGE: &str = "Tor wait cancelled";
+const ROUTE_WAIT_CANCELLED_MESSAGE: &str = "Route wait cancelled";
 
 async fn tor_client_for_route_with_deadline(
     isolated: bool,
@@ -690,13 +690,16 @@ async fn tor_client_for_route_with_deadline(
         tokio::pin!(status_changed);
         status_changed.as_mut().enable();
 
+        // Cancellation wins ties. A sync stopped in the same instant Tor came
+        // up must not be handed a route and go on to open a connection the
+        // lock or toggle that stopped it is already waiting out.
+        if cancelled() {
+            return Err(ROUTE_WAIT_CANCELLED_MESSAGE.to_string());
+        }
         match try_tor_client_for_route(isolated) {
             Ok(client) => return Ok(client),
             Err(RouteBlocked::Bootstrapping) => {}
             Err(blocked) => return Err(blocked.to_string()),
-        }
-        if cancelled() {
-            return Err(TOR_WAIT_CANCELLED_MESSAGE.to_string());
         }
         if tokio::time::Instant::now() >= expires_at {
             return Err(TOR_BOOTSTRAP_TIMEOUT_MESSAGE.to_string());
@@ -1076,6 +1079,22 @@ mod tests {
             waited < Duration::from_secs(1),
             "cancellation was not observed within a poll tick: {waited:?}"
         );
+    }
+
+    /// A caller that is already cancelled gets no route even when one is
+    /// ready: otherwise a sync stopped in the same instant Tor came up would
+    /// open a connection its stopper is already waiting out.
+    #[tokio::test]
+    async fn a_cancelled_caller_is_refused_a_route_that_is_already_resolved() {
+        let _policy = lock_route_policy();
+        disable_tor();
+
+        let error = tor_client_for_route(false, || true)
+            .await
+            .map(|client| client.is_some())
+            .expect_err("a cancelled caller must not be handed a route");
+
+        assert!(error.contains("cancelled"), "{error}");
     }
 
     /// Running out of patience is not a reason to reach the network another
