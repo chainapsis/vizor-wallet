@@ -23,7 +23,6 @@ import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../screens/mobile/mobile_send_screen.dart'
     show MobileSendReviewDraftArgs;
-import '../services/payment_request_precheck.dart';
 import '../services/send_flow.dart';
 import 'payment_request_surface.dart';
 import 'send_recipient_resolver.dart';
@@ -100,22 +99,25 @@ class PaymentRequestHost extends ConsumerWidget {
         edit();
         return;
       }
-      final args = notifier.review();
-      if (args == null) return;
-      _releaseRetainedSendStatus(ref);
       if (_isMobile) {
         // Mobile's review step owns proposal creation, so the proposal the
         // pre-check made would be a second one. Hand it back and give the
-        // wizard the fee it already computed.
-        unawaited(
-          PaymentRequestProposalHandle(
-            reviewArgs: args,
-            discardProposal: discardSendProposal,
-          ).discard(logContext: 'PaymentRequest(mobile review handoff)'),
-        );
-        router.go('/send/review', extra: _mobileDraftFor(args));
+        // wizard the fee it already computed — but only navigate once it is
+        // back: the review step re-quotes the fee as it mounts, and Rust
+        // cannot select inputs a proposal still holds, so a wallet whose
+        // funds sit in those inputs would answer that quote with "not enough
+        // ZEC" for the very payment the card just found affordable.
+        unawaited(() async {
+          final args = await notifier.reviewHandingBack();
+          if (args == null) return;
+          _releaseRetainedSendStatus(ref);
+          router.go('/send/review', extra: _mobileDraftFor(args));
+        }());
         return;
       }
+      final args = notifier.review();
+      if (args == null) return;
+      _releaseRetainedSendStatus(ref);
       router.go('/send/review', extra: args);
     }
 
