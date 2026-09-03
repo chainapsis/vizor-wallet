@@ -33,6 +33,7 @@ class ZecRequestDraft {
     this.inputIsUsd = false,
     this.message,
     this.usdModeZecInput = '',
+    this.usdInputIsDerived = false,
   });
 
   /// The address the request pays to, snapshotted when the flow opened: a
@@ -60,12 +61,25 @@ class ZecRequestDraft {
   /// switch for the same reason.
   final String usdModeZecInput;
 
+  /// True while the USD field shows a number the draft wrote there itself —
+  /// the ZEC amount converted on a unit switch — rather than one the user
+  /// typed.
+  ///
+  /// The distinction decides what the request means. Dollars the user typed
+  /// are the amount, and the ZEC they buy floats with the live price until
+  /// the request is created. Dollars the switch derived are only a rendering
+  /// of the ZEC the user typed, rounded to a cent, so the request keeps that
+  /// ZEC exactly rather than converting the rounding back. The first
+  /// keystroke on the USD field ends the derived state.
+  final bool usdInputIsDerived;
+
   ZecRequestDraft copyWith({
     String? address,
     String? input,
     bool? inputIsUsd,
     String? message,
     String? usdModeZecInput,
+    bool? usdInputIsDerived,
     bool clearMessage = false,
   }) {
     return ZecRequestDraft(
@@ -73,6 +87,7 @@ class ZecRequestDraft {
       input: input ?? this.input,
       inputIsUsd: inputIsUsd ?? this.inputIsUsd,
       usdModeZecInput: usdModeZecInput ?? this.usdModeZecInput,
+      usdInputIsDerived: usdInputIsDerived ?? this.usdInputIsDerived,
       // Invisible bidi/control characters cannot travel in a ZIP-321 memo,
       // so they are dropped at the input boundary; the visible text is
       // unchanged and the request the composer hands out always parses.
@@ -106,11 +121,13 @@ class ZecRequestDraft {
       return copyWith(
         input: value,
         usdModeZecInput: ZecAmount.fromZatoshi(zatoshi).pretty().amountText,
+        usdInputIsDerived: false,
       );
     }
     return copyWith(
       input: value,
       usdModeZecInput: value.trim().isEmpty ? '' : usdModeZecInput,
+      usdInputIsDerived: false,
     );
   }
 
@@ -126,13 +143,22 @@ class ZecRequestDraft {
     if (!canToggleUnit(zecUsdUnitPrice)) return this;
 
     if (inputIsUsd) {
-      final zatoshi = sendZatoshiFromUsdText(input, zecUsdUnitPrice);
-      // Without a price there is nothing to convert, so the switch restores
-      // the ZEC the draft has been carrying rather than emptying the field.
-      final next = zatoshi == null
+      // Dollars the switch itself wrote are a rounding of the ZEC the user
+      // typed (0.5 ZEC at $35.123 shows as $17.56, which converts back to
+      // 0.49995729), so the switch back restores that ZEC rather than the
+      // rounding. Dollars the user typed convert at the live price; without
+      // one, the switch restores the ZEC the draft has been carrying rather
+      // than emptying the field.
+      final converted = _convertedZec(zecUsdUnitPrice);
+      final next = usdInputIsDerived || converted.isEmpty
           ? usdModeZecInput
-          : ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
-      return copyWith(inputIsUsd: false, input: next, usdModeZecInput: '');
+          : converted;
+      return copyWith(
+        inputIsUsd: false,
+        input: next,
+        usdModeZecInput: '',
+        usdInputIsDerived: false,
+      );
     }
 
     final zatoshi = parseZecAmount(input.trim());
@@ -142,14 +168,29 @@ class ZecRequestDraft {
           ? ''
           : sendSendableUsdInputTextForZatoshi(zatoshi, zecUsdUnitPrice!),
       usdModeZecInput: input.trim(),
+      usdInputIsDerived: true,
     );
   }
 
   /// The canonical ZEC amount this draft encodes, empty when there is not one
-  /// yet. In USD mode it is converted at [zecUsdUnitPrice]; in ZEC mode it is
-  /// what was typed.
+  /// yet. In ZEC mode it is what was typed. In USD mode it is what the
+  /// dollars in the field mean: typed dollars convert at [zecUsdUnitPrice],
+  /// dollars a unit switch derived stand for the ZEC that was typed before
+  /// it ([usdModeZecInput]), so that merely switching units never changes
+  /// the request — the field shows a cent rounding, and converting *that*
+  /// back would encode a payment a few zatoshi away from the typed one.
   String amountZec({required double? zecUsdUnitPrice}) {
     if (!inputIsUsd) return input.trim();
+    final converted = _convertedZec(zecUsdUnitPrice);
+    if (converted.isEmpty) return '';
+    return usdInputIsDerived && usdModeZecInput.isNotEmpty
+        ? usdModeZecInput
+        : converted;
+  }
+
+  /// [input] converted from dollars at [zecUsdUnitPrice], empty when it does
+  /// not convert.
+  String _convertedZec(double? zecUsdUnitPrice) {
     final zatoshi = sendZatoshiFromUsdText(input, zecUsdUnitPrice);
     if (zatoshi == null) return '';
     return ZecAmount.fromZatoshi(zatoshi).pretty().amountText;

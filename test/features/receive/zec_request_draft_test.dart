@@ -94,6 +94,53 @@ void main() {
       expect(backToZec.input, '0.5');
     });
 
+    test('a unit switch never changes the ZEC the request asks for', () {
+      // $35.123 does not divide 0.5 ZEC into whole cents: the field shows
+      // the rounding, the request must keep the number that was typed.
+      const price = 35.123;
+      const zecDraft = ZecRequestDraft(address: _shielded, input: '0.5');
+      final usdDraft = zecDraft.toggledUnit(zecUsdUnitPrice: price);
+      expect(usdDraft.input, '17.56');
+
+      final view = usdDraft.resolve(zecUsdUnitPrice: price);
+      expect(view.amountZec, '0.5');
+      expect(view.conversionText, '0.5 ZEC');
+      expect(view.requestUri, 'zcash:$_shielded?amount=0.5');
+
+      // The market moves while the derived dollars are on screen: they still
+      // stand for the ZEC that was typed, so the request does not drift.
+      expect(usdDraft.resolve(zecUsdUnitPrice: 40).amountZec, '0.5');
+
+      final backToZec = usdDraft.toggledUnit(zecUsdUnitPrice: price);
+      expect(backToZec.input, '0.5');
+      expect(
+        backToZec.resolve(zecUsdUnitPrice: price).requestUri,
+        'zcash:$_shielded?amount=0.5',
+      );
+    });
+
+    test('an edited USD field re-derives the ZEC the request asks for', () {
+      const price = 35.123;
+      final usdDraft = const ZecRequestDraft(address: _shielded, input: '0.5')
+          .toggledUnit(zecUsdUnitPrice: price)
+          .withInput('20', zecUsdUnitPrice: price);
+
+      // Typed dollars mean dollars: the carried ZEC follows the field.
+      final view = usdDraft.resolve(zecUsdUnitPrice: price);
+      expect(view.amountZec, usdDraft.zecInput);
+      expect(view.amountZec, isNot('0.5'));
+      expect(view.requestUri, 'zcash:$_shielded?amount=${view.amountZec}');
+
+      // Text that does not convert encodes nothing, whatever was carried.
+      expect(
+        usdDraft
+            .withInput('abc', zecUsdUnitPrice: price)
+            .resolve(zecUsdUnitPrice: price)
+            .amountZec,
+        '',
+      );
+    });
+
     test('USD mode is refused while there is no price to convert at', () {
       const draft = ZecRequestDraft(address: _shielded, input: '0.5');
       expect(draft.canToggleUnit(null), isFalse);
