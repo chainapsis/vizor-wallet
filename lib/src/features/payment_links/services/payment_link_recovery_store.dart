@@ -47,7 +47,6 @@ class PaymentLinkRecoveryRecord {
     required this.updatedAt,
     this.fundingTxids,
     this.preparedExpiryHeight,
-    this.archivedAt,
   });
 
   final VizorPaymentLink link;
@@ -56,16 +55,12 @@ class PaymentLinkRecoveryRecord {
   final DateTime updatedAt;
   final String? fundingTxids;
   final int? preparedExpiryHeight;
-  final DateTime? archivedAt;
-
-  bool get isArchived => archivedAt != null;
 
   PaymentLinkRecoveryRecord copyWith({
     required PaymentLinkRecoveryState state,
     required DateTime updatedAt,
     Object? fundingTxids = _fieldNotProvided,
     Object? preparedExpiryHeight = _fieldNotProvided,
-    Object? archivedAt = _fieldNotProvided,
   }) {
     return PaymentLinkRecoveryRecord(
       link: link,
@@ -78,9 +73,6 @@ class PaymentLinkRecoveryRecord {
       preparedExpiryHeight: identical(preparedExpiryHeight, _fieldNotProvided)
           ? this.preparedExpiryHeight
           : preparedExpiryHeight as int?,
-      archivedAt: identical(archivedAt, _fieldNotProvided)
-          ? this.archivedAt
-          : archivedAt as DateTime?,
     );
   }
 }
@@ -345,25 +337,6 @@ class PaymentLinkRecoveryStore {
     });
   }
 
-  Future<PaymentLinkRecoveryRecord> setArchived({
-    required String address,
-    required bool archived,
-    DateTime? updatedAt,
-  }) {
-    return _runExclusive(() async {
-      final records = await _loadUnlocked();
-      final existing = _findRequired(records, address);
-      final now = (updatedAt ?? DateTime.now()).toUtc();
-      final updated = existing.copyWith(
-        state: existing.state,
-        updatedAt: now,
-        archivedAt: archived ? now : null,
-      );
-      await _writeRecords(_replaceByAddress(records, updated));
-      return updated;
-    });
-  }
-
   Future<void> removeUnsubmittedDraft({required String address}) {
     return _runExclusive(() async {
       final records = await _loadUnlocked();
@@ -601,7 +574,6 @@ Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
     'state': record.state.name,
     'fundingTxids': record.fundingTxids,
     'preparedExpiryHeight': record.preparedExpiryHeight,
-    'archivedAt': record.archivedAt?.toUtc().toIso8601String(),
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
   };
 }
@@ -617,7 +589,6 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   final stateRaw = value['state'];
   final fundingTxids = value['fundingTxids'];
   final preparedExpiryHeight = value['preparedExpiryHeight'];
-  final archivedAtRaw = value['archivedAt'];
   final updatedAtRaw = value['updatedAt'];
   if (linkRaw is! String ||
       sourceAccountUuid is! String ||
@@ -626,7 +597,6 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
       (fundingTxids != null && fundingTxids is! String) ||
       (preparedExpiryHeight != null &&
           (preparedExpiryHeight is! int || preparedExpiryHeight <= 0)) ||
-      (archivedAtRaw != null && archivedAtRaw is! String) ||
       updatedAtRaw is! String) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Recovery record fields are invalid.',
@@ -636,14 +606,6 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   if (updatedAt == null) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Recovery record timestamp is invalid.',
-    );
-  }
-  final archivedAt = archivedAtRaw == null
-      ? null
-      : DateTime.tryParse(archivedAtRaw);
-  if (archivedAtRaw != null && archivedAt == null) {
-    throw const PaymentLinkRecoveryStoreFormatException(
-      'Recovery record archive timestamp is invalid.',
     );
   }
   late final PaymentLinkRecoveryState state;
@@ -675,7 +637,6 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     state: state,
     fundingTxids: fundingTxids,
     preparedExpiryHeight: preparedExpiryHeight as int?,
-    archivedAt: archivedAt?.toUtc(),
     updatedAt: updatedAt.toUtc(),
   );
 }

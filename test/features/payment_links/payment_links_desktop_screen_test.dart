@@ -2411,7 +2411,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
       );
     }
     try {
-      final result = await claimLink(session.link);
+      final result = await _claimLink(session.link);
       _replaceReceivedRecord(
         session.link.address,
         (record) => record.copyWith(
@@ -2441,8 +2441,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     discardedClaimAddresses.add(session.link.address);
   }
 
-  @override
-  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
+  Future<PaymentLinkClaimResult> _claimLink(VizorPaymentLink link) async {
     claimedLinks.add(link);
     return claimCompleters[link.address]?.future ??
         claimCompleter?.future ??

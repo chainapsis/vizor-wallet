@@ -376,10 +376,6 @@ class _PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
   Future<PaymentLinkClaimResult> claimPreparedLink(
     PaymentLinkClaimSession session,
   ) => throw UnimplementedError();
-
-  @override
-  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) =>
-      throw UnimplementedError();
 }
 
 Future<void> _pumpUntilPresent(WidgetTester tester, Finder finder) async {

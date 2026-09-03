@@ -32,7 +32,7 @@ Future<PaymentLinkCardsSnapshot> loadPaymentLinkCardsSnapshot(
   ]);
   final created = List<PaymentLinkRecoveryRecord>.of(
     results[0] as List<PaymentLinkRecoveryRecord>,
-  )..removeWhere((record) => record.isArchived);
+  );
   final received = List<PaymentLinkReceivedRecord>.of(
     results[1] as List<PaymentLinkReceivedRecord>,
   );

@@ -344,33 +344,28 @@ void main() {
       );
     });
 
-    test('archiving a shared record keeps its recovery secret', () async {
-      final storage = _FakePaymentLinkRecoveryStorage();
-      final store = PaymentLinkRecoveryStore(storage);
+    test('ignores record fields outside the v1 schema', () async {
       final link = _link();
+      final storage = _FakePaymentLinkRecoveryStorage()
+        ..value = jsonEncode({
+          'version': 1,
+          'records': [
+            {
+              'link': link.toUri().toString(),
+              'sourceAccountUuid': 'source-account',
+              'state': 'shared',
+              'fundingTxids': 'funding-txid',
+              'archivedAt': '2026-08-05T00:00:00.000Z',
+              'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+            },
+          ],
+        });
 
-      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
-      await store.markFunded(
-        address: link.address,
-        fundingTxids: 'funding-txid',
-      );
-      await store.markShared(address: link.address);
-      await store.setArchived(address: link.address, archived: true);
+      final record = (await PaymentLinkRecoveryStore(storage).load()).single;
 
-      final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
-      expect(restartedRecords.single.state, PaymentLinkRecoveryState.shared);
-      expect(restartedRecords.single.fundingTxids, 'funding-txid');
-      expect(restartedRecords.single.isArchived, isTrue);
-      expect(restartedRecords.single.archivedAt, isNotNull);
-      expect(restartedRecords.single.link.mnemonic, link.mnemonic);
-
-      await PaymentLinkRecoveryStore(
-        storage,
-      ).setArchived(address: link.address, archived: false);
-      final restored = await PaymentLinkRecoveryStore(storage).load();
-      expect(restored.single.isArchived, isFalse);
-      expect(restored.single.archivedAt, isNull);
-      expect(restored.single.link.mnemonic, link.mnemonic);
+      expect(record.state, PaymentLinkRecoveryState.shared);
+      expect(record.fundingTxids, 'funding-txid');
+      expect(record.link.mnemonic, link.mnemonic);
     });
 
     test('rejects recovery states outside the v1 schema', () async {
@@ -384,7 +379,6 @@ void main() {
               'sourceAccountUuid': 'source-account',
               'state': 'unsupported',
               'fundingTxids': 'funding-txid',
-              'archivedAt': null,
               'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
             },
           ],
@@ -408,7 +402,6 @@ void main() {
               'state': 'draft',
               'fundingTxids': null,
               'preparedExpiryHeight': 120,
-              'archivedAt': null,
               'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
             },
           ],
@@ -432,7 +425,6 @@ void main() {
               'state': 'draft',
               'fundingTxids': 'submitted-software-txid',
               'preparedExpiryHeight': null,
-              'archivedAt': null,
               'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
             },
           ],

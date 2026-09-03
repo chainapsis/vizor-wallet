@@ -354,8 +354,6 @@ abstract interface class PaymentLinkOperations {
   );
 
   Future<void> discardClaimSession(PaymentLinkClaimSession session);
-
-  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link);
 }
 
 final paymentLinkOperationsProvider = Provider<PaymentLinkOperations>((ref) {
@@ -522,9 +520,6 @@ class PaymentLinkClaimResult {
 
   final String txids;
   final PaymentLinkClaimBroadcastStatus status;
-
-  bool get isBroadcasted =>
-      status == PaymentLinkClaimBroadcastStatus.broadcasted;
 }
 
 /// A fully broadcast payment-link funding result.
@@ -1032,16 +1027,6 @@ class PaymentLinkService implements PaymentLinkOperations {
     );
   }
 
-  Future<PaymentLinkRecoveryRecord> setCreatedLinkArchived(
-    VizorPaymentLink link, {
-    required bool archived,
-  }) {
-    return _recoveryStore.setArchived(
-      address: link.address,
-      archived: archived,
-    );
-  }
-
   @override
   Future<PaymentLinkClaimSession> prepareClaim(
     VizorPaymentLink link, {
@@ -1371,12 +1356,6 @@ class PaymentLinkService implements PaymentLinkOperations {
     } catch (_) {
       throw const PaymentLinkClaimDestinationChangedException();
     }
-  }
-
-  @override
-  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
-    final session = await prepareClaim(link);
-    return claimPreparedLink(session);
   }
 
   @override

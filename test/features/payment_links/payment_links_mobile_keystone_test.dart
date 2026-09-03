@@ -310,11 +310,6 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
 
   @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {}
-
-  @override
-  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
-    throw UnimplementedError();
-  }
 }
 
 class _FakePaymentLinkHardwareSigningService

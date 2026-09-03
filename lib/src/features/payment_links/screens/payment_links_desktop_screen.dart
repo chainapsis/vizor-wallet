@@ -330,7 +330,7 @@ class _PaymentLinksDesktopScreenState
           .read(paymentLinkOperationsProvider)
           .loadCreatedLinkRecoveries();
       if (!mounted) return;
-      final visible = records.where((record) => !record.isArchived).toList()
+      final visible = records.toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       setState(() => _recoveries = visible);
       unawaited(_refreshFundingProgress(records: visible));
