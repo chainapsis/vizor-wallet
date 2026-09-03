@@ -5,7 +5,16 @@
 #include <string>
 #include <vector>
 
-constexpr size_t kMaxZcashUriBytes = 16 * 1024;
+// Sanity ceiling, set far above every link this app actually accepts.
+//
+// Dart owns the product-facing 16 KB payment-URI limit and rejects an oversize
+// link with a message the payer can read. Capping here at that same 16 KB
+// dropped exactly the links Dart had copy for, before they ever reached it, so
+// the rejection never rendered and the user was told nothing. Forward anything
+// up to this bound and let Dart explain; the bound exists only so a
+// pathological multi-megabyte payload still cannot travel. Matches
+// MAX_INCOMING_URI_BYTES on Android and maxIncomingUriBytes on iOS.
+constexpr size_t kMaxZcashUriBytes = 64 * 1024;
 
 // Creates a console for the process, and redirects stdout and stderr to
 // it for both the runner and the Flutter library.
