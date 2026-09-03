@@ -517,6 +517,7 @@ Widget _sendFlowRouterApp({
   bool isPaymentRequest = false,
   String? paymentRequestLabel,
   BigInt? requestedAmountZatoshi,
+  AccountState? accountState,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -613,11 +614,24 @@ Widget _sendFlowRouterApp({
           ),
         ),
       ),
+      // Stands in for MobileKeystoneSignScreen: the send screen awaits this
+      // route's result, so what matters here is only that it is pushed and
+      // that the test decides when — and with what — it pops.
+      GoRoute(
+        path: '/send/keystone-sign',
+        builder: (context, _) => TextButton(
+          key: const ValueKey('mobile_send_keystone_cancel'),
+          onPressed: () => context.pop(),
+          child: const Text('keystone sign'),
+        ),
+      ),
     ],
   );
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(accountState: accountState),
+      ),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
@@ -1530,6 +1544,67 @@ void main() {
       );
     },
   );
+
+  // The hold has to span the device round trip too. The Keystone branch
+  // awaits a pushed route, so the window between Confirm and `/send/status`
+  // is as long as the signing takes — and a card delivered into it would
+  // outlive the route change and dispose the status screen mid-broadcast.
+  testWidgets('the confirm hold spans the Keystone signing push', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = true;
+
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Keystone',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+    );
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('keystone sign'),
+      findsOneWidget,
+      reason: 'the proposal is made and handed to the signing route',
+    );
+    expect(
+      container.read(paymentUriBusySurfaceProvider),
+      1,
+      reason:
+          'a `zcash:` link arriving while the device is signing must park, '
+          'not land as a card over the QR',
+    );
+
+    // Cancelling on the device is one of the two ways out; both give the
+    // hold back rather than stranding the link until the park TTL.
+    await tester.tap(find.byKey(const ValueKey('mobile_send_keystone_cancel')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+  });
 
   testWidgets('a failed proposal gives the busy-surface hold back', (
     tester,

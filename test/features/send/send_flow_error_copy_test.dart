@@ -71,6 +71,36 @@ void main() {
       );
     });
 
+    test('strips the control characters a memo may not carry either', () {
+      // The same rule `stripUnsupportedZip321MemoText` applies to a memo: C0
+      // and C1 controls out, tab/LF/CR left for the whitespace collapse to
+      // fold. A label is rendered text like any other, and these are exactly
+      // the code points that let a link's own string reorder or truncate the
+      // row it sits in.
+      expect(
+        sanitisePaymentRequestLabel('Cof\u0000fee\u0007 shop\u009B'),
+        'Coffee shop',
+      );
+      expect(sanitisePaymentRequestLabel('Coffee\tshop'), 'Coffee shop');
+    });
+
+    test('nothing to show reads as nothing, not as an empty name', () {
+      // Null renders no requester row at all. An empty string would render
+      // the row with nothing in it, which is worse than not naming a
+      // requester the link never named.
+      expect(sanitisePaymentRequestLabel(null), isNull);
+      expect(sanitisePaymentRequestLabel(''), isNull);
+      expect(sanitisePaymentRequestLabel('   \n  '), isNull);
+    });
+
+    test('one grapheme past the limit is the first one clamped', () {
+      final justOver = 'a' * (kPaymentRequestLabelMaxLength + 1);
+      final clamped = sanitisePaymentRequestLabel(justOver)!;
+
+      expect(clamped.characters.length, kPaymentRequestLabelMaxLength);
+      expect(clamped, '${'a' * (kPaymentRequestLabelMaxLength - 1)}…');
+    });
+
     test('counts a label the way the payer reads it', () {
       // Exactly at the limit in grapheme clusters, twice it in code units:
       // nothing to clamp, so nothing is cut and no ellipsis is invented.
