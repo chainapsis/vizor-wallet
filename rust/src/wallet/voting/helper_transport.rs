@@ -409,7 +409,8 @@ impl HelperTransport for VotingHelperTransport {
 impl ChainTransport for VotingHelperTransport {
     fn chain_get<'a>(&'a self, request: ChainHttpRequest) -> ChainTransportFuture<'a> {
         Box::pin(async move {
-            match network_privacy::tor_client_for_route(true)
+            match network_privacy::tor_client_for_route(true, || false)
+                .await
                 .map_err(ChainTransportError::definitely_unsent)?
             {
                 Some(tor) => {
@@ -427,7 +428,8 @@ impl ChainTransport for VotingHelperTransport {
         json: Vec<u8>,
     ) -> ChainTransportFuture<'a> {
         Box::pin(async move {
-            match network_privacy::tor_client_for_route(true)
+            match network_privacy::tor_client_for_route(true, || false)
+                .await
                 .map_err(ChainTransportError::definitely_unsent)?
             {
                 Some(tor) => {
@@ -446,7 +448,8 @@ impl ChainTransport for VotingHelperTransport {
         dispatch: ChainPostDispatch,
     ) -> ChainTransportFuture<'a> {
         Box::pin(async move {
-            match network_privacy::tor_client_for_route(true)
+            match network_privacy::tor_client_for_route(true, || false)
+                .await
                 .map_err(ChainTransportError::definitely_unsent)?
             {
                 Some(tor) => {

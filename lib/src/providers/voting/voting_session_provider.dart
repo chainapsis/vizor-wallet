@@ -523,7 +523,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
       var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
-      if (_needsFreshDelegationWork(plan, roundPlan) &&
+      if (_needsFreshDelegationPreparation(plan, roundPlan) &&
           _needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
         current = await future;
@@ -541,8 +541,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundPlan,
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
+      final needsPir = _needsFreshDelegationPreparation(plan, roundPlan);
       var pirEndpoint = current.pirEndpoint;
-      if (hasPendingBundles && pirEndpoint == null) {
+      if (needsPir && pirEndpoint == null) {
         pirEndpoint = await _resolvePirEndpoint(context);
         _throwIfContextStale(context, 'delegation-pir-resolution');
         if (pirEndpoint != null) {
@@ -551,7 +552,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
       }
       if (hasPendingBundles) {
-        if (pirEndpoint == null) {
+        if (needsPir && pirEndpoint == null) {
           _setError('PIR endpoint has not been resolved.', context: context);
           return;
         }
@@ -901,7 +902,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
       var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
-      if (_needsFreshDelegationWork(plan, roundPlan) &&
+      if (_needsFreshDelegationPreparation(plan, roundPlan) &&
           _needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
         current = await future;
@@ -922,6 +923,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundPlan,
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
+      final needsPir = _needsFreshDelegationPreparation(plan, roundPlan);
       final signatures = hasPendingBundles
           ? await _loadKeystoneSignatures(context)
           : current.keystoneSignatures;
@@ -935,7 +937,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         storedHotkeySecret = null;
       }
       var pirEndpoint = current.pirEndpoint;
-      if (hasPendingBundles && pirEndpoint == null) {
+      if (needsPir && pirEndpoint == null) {
         pirEndpoint = await _resolvePirEndpoint(context);
         _throwIfContextStale(context, 'keystone-delegation-pir-resolution');
         if (pirEndpoint != null) {
@@ -943,7 +945,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           _setStateForContext(context, current);
         }
       }
-      if (hasPendingBundles && pirEndpoint == null) {
+      if (needsPir && pirEndpoint == null) {
         _setError('PIR endpoint has not been resolved.', context: context);
         return;
       }
@@ -3266,14 +3268,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return state.pirEndpoint == null || state.eligibleWeightZatoshi == null;
   }
 
-  static bool _needsFreshDelegationWork(
+  static bool _needsFreshDelegationPreparation(
     VotingResumePlan plan,
     rust_wire.RoundPlanView? roundPlan,
   ) {
     if (plan.pendingDelegationBundleIndexes.isNotEmpty) return true;
     if (roundPlan == null) return false;
-    return roundPlan.needsDelegationSigning ||
-        roundPlanNeedsDraftSetup(roundPlan);
+    return roundPlanNeedsDraftSetup(roundPlan) ||
+        roundPlan.recoveredDelegationWork.any(
+          (work) => work.kind == 'delegate',
+        );
   }
 
   static List<int> _chainDelegationBundleIndexes(

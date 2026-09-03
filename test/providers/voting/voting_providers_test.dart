@@ -1987,82 +1987,84 @@ void main() {
     ]);
   });
 
-  test(
-    'submitted delegation resumes through the SDK after app restart',
-    () async {
-      final rust = FakeVotingRustApi(
-        delegationChainResultsByBundle: {
-          0: [
-            _recoveringChainSubmission(
-              txHash: 'submitted-delegation-tx',
-              diagnosticKind:
-                  rust_api.ApiChainDiagnosticKind.recoveryUnavailable,
-            ),
-            _confirmedChainSubmission(
-              txHash: 'submitted-delegation-tx',
-              vanPosition: 12,
-            ),
-          ],
-        },
-      );
-      final recoveryApi = FakeVotingRecoveryApi(
-        state: recoveryState(
-          bundleCount: 1,
-          delegationWorkflows: [
-            rust_frb_types.DelegationRecoveryView(
-              bundleIndex: 0,
-              phase: VotingWorkflowPhase.submittedDelegation,
-              txHash: 'submitted-delegation-tx',
-              vanLeafPosition: null,
-            ),
-          ],
-        ),
-      );
-      final http = FakeVotingHttpClient(responses: votingHttpResponses());
-      final firstContainer = _sessionContainer(
-        http: http,
-        rust: rust,
-        recoveryApi: recoveryApi,
-      );
-      await firstContainer.read(votingSessionProvider(kRoundId).future);
-      await firstContainer
-          .read(votingSessionProvider(kRoundId).notifier)
-          .delegatePendingBundles(mnemonic: kTestMnemonic);
-      expect(
-        firstContainer.read(votingSessionProvider(kRoundId)).value!.phase,
-        VotingSessionPhase.error,
-      );
-      firstContainer.dispose();
+  test('submitted delegation resumes without PIR after app restart', () async {
+    final unavailablePir = FakePirResolver(
+      error: StateError('PIR unavailable'),
+    );
+    final rust = FakeVotingRustApi(
+      delegationChainResultsByBundle: {
+        0: [
+          _recoveringChainSubmission(
+            txHash: 'submitted-delegation-tx',
+            diagnosticKind: rust_api.ApiChainDiagnosticKind.recoveryUnavailable,
+          ),
+          _confirmedChainSubmission(
+            txHash: 'submitted-delegation-tx',
+            vanPosition: 12,
+          ),
+        ],
+      },
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationWorkflows: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'submitted-delegation-tx',
+            vanLeafPosition: null,
+          ),
+        ],
+      ),
+    );
+    final http = FakeVotingHttpClient(responses: votingHttpResponses());
+    final firstContainer = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+      pirResolver: unavailablePir,
+    );
+    await firstContainer.read(votingSessionProvider(kRoundId).future);
+    await firstContainer
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundles(mnemonic: kTestMnemonic);
+    expect(
+      firstContainer.read(votingSessionProvider(kRoundId)).value!.phase,
+      VotingSessionPhase.error,
+    );
+    firstContainer.dispose();
 
-      final restartedContainer = _sessionContainer(
-        http: http,
-        rust: rust,
-        recoveryApi: recoveryApi,
-      );
-      addTearDown(restartedContainer.dispose);
-      await restartedContainer.read(votingSessionProvider(kRoundId).future);
-      await restartedContainer
-          .read(votingSessionProvider(kRoundId).notifier)
-          .delegatePendingBundles(mnemonic: kTestMnemonic);
+    final restartedContainer = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: recoveryApi,
+      pirResolver: unavailablePir,
+    );
+    addTearDown(restartedContainer.dispose);
+    await restartedContainer.read(votingSessionProvider(kRoundId).future);
+    await restartedContainer
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundles(mnemonic: kTestMnemonic);
 
-      expect(
-        restartedContainer.read(votingSessionProvider(kRoundId)).value!.phase,
-        VotingSessionPhase.delegated,
-      );
-      expect(rust.delegationRecoveryModes, [
-        rust_api.ApiChainRecoveryMode.statusOnly,
-        rust_api.ApiChainRecoveryMode.statusOnly,
-      ]);
-      expect(rust.chainSubmissionPassHandles, hasLength(2));
-      expect(
-        rust.chainSubmissionPassHandles.every((handle) => handle.isDisposed),
-        isTrue,
-      );
-      expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
-      expect(rust.storedDelegationTxHashes, ['0:submitted-delegation-tx']);
-      expect(rust.storedVanPositions, ['0:12']);
-    },
-  );
+    expect(
+      restartedContainer.read(votingSessionProvider(kRoundId)).value!.phase,
+      VotingSessionPhase.delegated,
+    );
+    expect(rust.delegationRecoveryModes, [
+      rust_api.ApiChainRecoveryMode.statusOnly,
+      rust_api.ApiChainRecoveryMode.statusOnly,
+    ]);
+    expect(rust.chainSubmissionPassHandles, hasLength(2));
+    expect(
+      rust.chainSubmissionPassHandles.every((handle) => handle.isDisposed),
+      isTrue,
+    );
+    expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
+    expect(rust.delegationPirServerUrlBatches, [<String>[], <String>[]]);
+    expect(rust.storedDelegationTxHashes, ['0:submitted-delegation-tx']);
+    expect(rust.storedVanPositions, ['0:12']);
+  });
 
   test('delegation submits chain payload and stores recovery state', () async {
     final rust = FakeVotingRustApi();

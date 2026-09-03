@@ -585,24 +585,27 @@ fn chain_submission_client(
     .map_err(|error| {
         ApiChainSubmissionFailure::local(ApiChainSubmissionFailureKind::Storage, error)
     })?;
-    let maximum_post_attempts = handle.endpoints.len().min(3);
-    let retry_backoffs = [Duration::from_secs(2), Duration::from_secs(4)]
-        .into_iter()
-        .take(maximum_post_attempts.saturating_sub(1))
-        .collect();
     zcash_voting::ChainSubmissionClient::with_transport(
         Arc::new(database),
         crate::wallet::voting::helper_transport::VotingHelperTransport::new(),
-        zcash_voting::ChainSubmissionClientConfig {
-            network: handle.network,
-            vote_chain_id: handle.vote_chain_id.clone(),
-            endpoints: handle.endpoints.clone(),
-            tracking_window: Duration::from_secs(90),
-            maximum_post_attempts,
-            retry_backoffs,
-        },
+        chain_submission_client_config(handle),
     )
     .map_err(Into::into)
+}
+
+fn chain_submission_client_config(
+    handle: &VotingChainSubmissionPassHandle,
+) -> zcash_voting::ChainSubmissionClientConfig {
+    zcash_voting::ChainSubmissionClientConfig {
+        network: handle.network,
+        vote_chain_id: handle.vote_chain_id.clone(),
+        endpoints: handle.endpoints.clone(),
+        tracking_window: Duration::from_secs(90),
+        // Attempts cycle through the endpoint list, so keep transient retries
+        // even when an authenticated configuration has only one endpoint.
+        maximum_post_attempts: 3,
+        retry_backoffs: vec![Duration::from_secs(2), Duration::from_secs(4)],
+    }
 }
 
 pub async fn advance_chain_delegation(
@@ -2807,6 +2810,26 @@ mod tests {
     }
 
     #[test]
+    fn chain_submission_pass_retries_a_single_endpoint() {
+        let handle = begin_chain_submission_pass(
+            "voting.sqlite".to_string(),
+            TEST_ACCOUNT_UUID.to_string(),
+            ROUND_ID.to_string(),
+            "regtest".to_string(),
+            vec!["https://vote.example".to_string()],
+            0,
+        )
+        .unwrap();
+
+        let config = chain_submission_client_config(&handle);
+        assert_eq!(config.maximum_post_attempts, 3);
+        assert_eq!(
+            config.retry_backoffs,
+            vec![Duration::from_secs(2), Duration::from_secs(4)]
+        );
+    }
+
+    #[test]
     fn hashless_submission_remains_terminal_and_diagnostic_at_the_api_boundary() {
         let diagnostic = zcash_voting::ChainSubmissionDiagnostic::from_redacted_message(
             zcash_voting::ChainSubmissionDiagnosticKind::AmbiguousAttemptsExhausted,
@@ -2829,9 +2852,7 @@ mod tests {
             })
         );
         assert_eq!(
-            ApiChainSubmissionState::from(
-                zcash_voting::ChainSubmissionState::SubmittedWithoutHash
-            ),
+            ApiChainSubmissionState::from(zcash_voting::ChainSubmissionState::SubmittedWithoutHash),
             ApiChainSubmissionState::SubmittedWithoutHash
         );
     }
