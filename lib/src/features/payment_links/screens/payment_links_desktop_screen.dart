@@ -13,7 +13,6 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
@@ -39,17 +38,8 @@ import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_keystone_signing_overlay.dart';
 import '../widgets/payment_link_long_sync_warning.dart';
 import '../widgets/mobile/payment_link_mobile_views.dart';
-
-enum _PaymentLinksLocalPage {
-  home,
-  amount,
-  message,
-  review,
-  ready,
-  shareQr,
-  redeem,
-  received,
-}
+import 'payment_links_local_page.dart';
+import 'payment_links_mobile_body.dart';
 
 /// Desktop Payment Link lifecycle.
 ///
@@ -126,7 +116,7 @@ class _PaymentLinksDesktopScreenState
   Timer? _fundingQuoteDebounce;
   Timer? _fundingProgressTimer;
 
-  _PaymentLinksLocalPage _page = _PaymentLinksLocalPage.home;
+  PaymentLinksLocalPage _page = PaymentLinksLocalPage.home;
   PaymentLinkCardArtwork _selectedArtwork = PaymentLinkCardArtwork.gift;
   PaymentLinkRedeemVisualState _redeemState =
       PaymentLinkRedeemVisualState.paste;
@@ -171,7 +161,7 @@ class _PaymentLinksDesktopScreenState
     super.initState();
     _paymentLinkOperations = ref.read(paymentLinkOperationsProvider);
     if (kAppFormFactor == AppFormFactor.mobile) {
-      _page = _PaymentLinksLocalPage.redeem;
+      _page = PaymentLinksLocalPage.redeem;
       if (ref.read(paymentLinkIntakeProvider).pendingLink != null) {
         _redeemState = PaymentLinkRedeemVisualState.loading;
       }
@@ -219,25 +209,25 @@ class _PaymentLinksDesktopScreenState
     setState(() => _amountFocused = _amountFocusNode.hasFocus);
   }
 
-  void _showPage(_PaymentLinksLocalPage page) {
+  void _showPage(PaymentLinksLocalPage page) {
     if (_pendingFundingMetadata != null &&
-        page != _PaymentLinksLocalPage.review) {
+        page != PaymentLinksLocalPage.review) {
       _showError('Save this Gift Card before leaving this screen.');
       return;
     }
     _amountFocusNode.unfocus();
     _messageFocusNode.unfocus();
     setState(() {
-      if (page == _PaymentLinksLocalPage.message &&
-          _page != _PaymentLinksLocalPage.message) {
+      if (page == PaymentLinksLocalPage.message &&
+          _page != PaymentLinksLocalPage.message) {
         _messageEditorRevealed = _hasMessage;
       }
-      if (page == _PaymentLinksLocalPage.review &&
-          _page != _PaymentLinksLocalPage.review) {
+      if (page == PaymentLinksLocalPage.review &&
+          _page != PaymentLinksLocalPage.review) {
         _reviewShowsBack = false;
       }
       _page = page;
-      if (page != _PaymentLinksLocalPage.shareQr) _shareQrRecord = null;
+      if (page != PaymentLinksLocalPage.shareQr) _shareQrRecord = null;
       _showHelp = false;
       _longSyncLink = null;
     });
@@ -262,7 +252,7 @@ class _PaymentLinksDesktopScreenState
       _reviewShowsBack = false;
       _readyShowsBack = false;
       _messageEditorRevealed = false;
-      _page = _PaymentLinksLocalPage.amount;
+      _page = PaymentLinksLocalPage.amount;
       _showHelp = false;
       _longSyncLink = null;
     });
@@ -286,8 +276,8 @@ class _PaymentLinksDesktopScreenState
     if (!_initialCardsLoaded || _operationInProgress) return;
     final pendingLink = ref.read(paymentLinkIntakeProvider).pendingLink;
     if (pendingLink == null) return;
-    if (_page != _PaymentLinksLocalPage.home &&
-        _page != _PaymentLinksLocalPage.redeem) {
+    if (_page != PaymentLinksLocalPage.home &&
+        _page != PaymentLinksLocalPage.redeem) {
       if (!identical(_lastDeferredPendingLink, pendingLink)) {
         _lastDeferredPendingLink = pendingLink;
         _showDeferredPendingLinkMessage();
@@ -383,7 +373,7 @@ class _PaymentLinksDesktopScreenState
         };
         if (readyFundingExpired) {
           _readyLink = null;
-          _page = _PaymentLinksLocalPage.home;
+          _page = PaymentLinksLocalPage.home;
         }
       });
       if (readyFundingExpired) {
@@ -537,7 +527,7 @@ class _PaymentLinksDesktopScreenState
         _fundingQuoteRetryScheduled) {
       return;
     }
-    if (_page != _PaymentLinksLocalPage.amount || next.accountUuid == null) {
+    if (_page != PaymentLinksLocalPage.amount || next.accountUuid == null) {
       return;
     }
     final shouldLoadMax =
@@ -553,7 +543,7 @@ class _PaymentLinksDesktopScreenState
     _fundingQuoteRetryScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fundingQuoteRetryScheduled = false;
-      if (!mounted || _page != _PaymentLinksLocalPage.amount) return;
+      if (!mounted || _page != PaymentLinksLocalPage.amount) return;
       final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
       final sync = ref.read(syncProvider).value;
       if (accountUuid != next.accountUuid ||
@@ -668,13 +658,13 @@ class _PaymentLinksDesktopScreenState
     if (current == null || priorAccount == null || priorAccount == current) {
       return;
     }
-    if (_page != _PaymentLinksLocalPage.amount &&
-        _page != _PaymentLinksLocalPage.message &&
-        _page != _PaymentLinksLocalPage.review) {
+    if (_page != PaymentLinksLocalPage.amount &&
+        _page != PaymentLinksLocalPage.message &&
+        _page != PaymentLinksLocalPage.review) {
       return;
     }
 
-    final wasPastAmountStep = _page != _PaymentLinksLocalPage.amount;
+    final wasPastAmountStep = _page != PaymentLinksLocalPage.amount;
     final hadKeystoneRequest = _keystoneFundingRequest != null;
     _fundingQuoteDebounce?.cancel();
     _fundingQuoteGeneration += 1;
@@ -690,7 +680,7 @@ class _PaymentLinksDesktopScreenState
       }
       _amountSupportingText = null;
       _amountSupportingTextIsError = false;
-      _page = _PaymentLinksLocalPage.amount;
+      _page = PaymentLinksLocalPage.amount;
     });
     unawaited(_loadMaxFundingQuote());
     _handleAmountChanged(_amountController.text);
@@ -720,7 +710,7 @@ class _PaymentLinksDesktopScreenState
       _longSyncLink = null;
       _showHelp = false;
       _redeemState = PaymentLinkRedeemVisualState.paste;
-      _page = _PaymentLinksLocalPage.redeem;
+      _page = PaymentLinksLocalPage.redeem;
     });
     unawaited(
       ref.read(paymentLinkOperationsProvider).discardClaimSession(session),
@@ -816,7 +806,7 @@ class _PaymentLinksDesktopScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
           !_messageEditorRevealed ||
-          _page != _PaymentLinksLocalPage.message ||
+          _page != PaymentLinksLocalPage.message ||
           _messageFocusNode.context == null) {
         return;
       }
@@ -827,7 +817,7 @@ class _PaymentLinksDesktopScreenState
   void _focusMessageEditorAfterFlip() {
     if (!mounted ||
         !_messageEditorRevealed ||
-        _page != _PaymentLinksLocalPage.message) {
+        _page != PaymentLinksLocalPage.message) {
       return;
     }
     _messageFocusNode.requestFocus();
@@ -841,7 +831,7 @@ class _PaymentLinksDesktopScreenState
 
   void _skipMessage() {
     _messageController.clear();
-    _showPage(_PaymentLinksLocalPage.review);
+    _showPage(PaymentLinksLocalPage.review);
   }
 
   void _selectWizardStep(int step) {
@@ -851,10 +841,10 @@ class _PaymentLinksDesktopScreenState
     }
     switch (step) {
       case 0:
-        _showPage(_PaymentLinksLocalPage.amount);
+        _showPage(PaymentLinksLocalPage.amount);
       case 1:
         if (_canContinueAmount) {
-          _showPage(_PaymentLinksLocalPage.message);
+          _showPage(PaymentLinksLocalPage.message);
         }
     }
   }
@@ -934,7 +924,7 @@ class _PaymentLinksDesktopScreenState
           ),
         };
         _readyShowsBack = false;
-        _page = _PaymentLinksLocalPage.ready;
+        _page = PaymentLinksLocalPage.ready;
       });
     } catch (_) {
       if (mounted) _showError('Gift Card creation failed. Try again.');
@@ -970,7 +960,7 @@ class _PaymentLinksDesktopScreenState
           ),
         };
         _readyShowsBack = false;
-        _page = _PaymentLinksLocalPage.ready;
+        _page = PaymentLinksLocalPage.ready;
       });
     } catch (_) {
       if (mounted) {
@@ -1033,7 +1023,7 @@ class _PaymentLinksDesktopScreenState
         ),
       };
       _readyShowsBack = false;
-      _page = _PaymentLinksLocalPage.ready;
+      _page = PaymentLinksLocalPage.ready;
     });
     unawaited(_refreshFundingProgress());
     if (result.status == 'broadcasted_storage_failed' ||
@@ -1113,7 +1103,7 @@ class _PaymentLinksDesktopScreenState
           PaymentLinkReceivedStatus.receiving,
         );
         _activeCardsTab = PaymentLinkCardsTab.received;
-        _page = _PaymentLinksLocalPage.home;
+        _page = PaymentLinksLocalPage.home;
       });
       if (kAppFormFactor == AppFormFactor.mobile) context.go('/home');
       return;
@@ -1121,7 +1111,7 @@ class _PaymentLinksDesktopScreenState
     setState(() {
       _operationInProgress = true;
       _redeemState = PaymentLinkRedeemVisualState.loading;
-      _page = _PaymentLinksLocalPage.redeem;
+      _page = PaymentLinksLocalPage.redeem;
       _showHelp = false;
       _longSyncLink = null;
     });
@@ -1163,7 +1153,7 @@ class _PaymentLinksDesktopScreenState
           _retryLink = null;
           _receivedShowsBack = false;
           _redeemState = PaymentLinkRedeemVisualState.paste;
-          _page = _PaymentLinksLocalPage.received;
+          _page = PaymentLinksLocalPage.received;
         });
         return;
       }
@@ -1176,7 +1166,7 @@ class _PaymentLinksDesktopScreenState
           _longSyncLink = null;
           _retryLink = null;
           _redeemState = PaymentLinkRedeemVisualState.unavailable;
-          _page = _PaymentLinksLocalPage.redeem;
+          _page = PaymentLinksLocalPage.redeem;
         });
         return;
       }
@@ -1187,7 +1177,7 @@ class _PaymentLinksDesktopScreenState
         _retryLink = null;
         _receivedShowsBack = false;
         _redeemState = PaymentLinkRedeemVisualState.paste;
-        _page = _PaymentLinksLocalPage.received;
+        _page = PaymentLinksLocalPage.received;
       });
       log('PaymentLinkClaim: preview ready');
     } on PaymentLinkLongSyncConfirmationRequired {
@@ -1213,7 +1203,7 @@ class _PaymentLinksDesktopScreenState
         _longSyncLink = null;
         _retryLink = null;
         _redeemState = PaymentLinkRedeemVisualState.paste;
-        _page = _PaymentLinksLocalPage.home;
+        _page = PaymentLinksLocalPage.home;
       });
       _showError(error.toString());
     } on PaymentLinkNetworkMismatchException catch (error) {
@@ -1258,7 +1248,7 @@ class _PaymentLinksDesktopScreenState
   Future<void> _refreshPendingClaimConfirmations() async {
     final currentSession = _receivedClaimSession;
     final link = _receivedLink;
-    if (_page != _PaymentLinksLocalPage.received ||
+    if (_page != PaymentLinksLocalPage.received ||
         currentSession == null ||
         link == null ||
         !currentSession.waitingForFundingConfirmations ||
@@ -1278,7 +1268,7 @@ class _PaymentLinksDesktopScreenState
         return;
       }
       final stillWaitingForThisLink =
-          _page == _PaymentLinksLocalPage.received &&
+          _page == PaymentLinksLocalPage.received &&
           _receivedLink?.address == link.address &&
           identical(_receivedClaimSession, currentSession);
       if (!stillWaitingForThisLink) {
@@ -1295,7 +1285,7 @@ class _PaymentLinksDesktopScreenState
           _receivedClaimSession = null;
           _receivedLink = null;
           _redeemState = PaymentLinkRedeemVisualState.unavailable;
-          _page = _PaymentLinksLocalPage.redeem;
+          _page = PaymentLinksLocalPage.redeem;
         });
         return;
       }
@@ -1325,7 +1315,7 @@ class _PaymentLinksDesktopScreenState
     if (kAppFormFactor == AppFormFactor.mobile) {
       context.go('/home');
     } else {
-      _showPage(_PaymentLinksLocalPage.home);
+      _showPage(PaymentLinksLocalPage.home);
     }
   }
 
@@ -1399,7 +1389,7 @@ class _PaymentLinksDesktopScreenState
       _activeCardsTab = PaymentLinkCardsTab.received;
       _receivedClaimSession = null;
       _receivedLink = null;
-      if (!mobile) _page = _PaymentLinksLocalPage.home;
+      if (!mobile) _page = PaymentLinksLocalPage.home;
       _showHelp = false;
     });
     unawaited(_finishClaimSubmission(link, submission));
@@ -1423,7 +1413,7 @@ class _PaymentLinksDesktopScreenState
             PaymentLinkReceivedStatus.readyToClaim,
           );
           _redeemState = PaymentLinkRedeemVisualState.paste;
-          _page = _PaymentLinksLocalPage.redeem;
+          _page = PaymentLinksLocalPage.redeem;
         });
         _showError(
           'Receiving account changed. Open the Gift Card again to continue.',
@@ -1472,7 +1462,76 @@ class _PaymentLinksDesktopScreenState
     if (pendingLink != null) _schedulePendingPaymentLink();
 
     if (kAppFormFactor == AppFormFactor.mobile) {
-      return _buildMobileScreen();
+      final mobileKeystoneRequest = _keystoneFundingRequest;
+      return PaymentLinksMobileBody(
+        page: _page,
+        redeemState: _redeemState,
+        operationInProgress: _operationInProgress,
+        redeemActionLabel: _redeemActionLabel,
+        keystoneOverlay: mobileKeystoneRequest == null
+            ? null
+            : PaymentLinkKeystoneSigningOverlay(
+                amountZatoshi: mobileKeystoneRequest.amountZatoshi,
+                sourceAccountUuid: mobileKeystoneRequest.sourceAccountUuid,
+                presentation: mobileKeystoneRequest.presentation,
+                onCancel: _cancelKeystoneFunding,
+                onFundingBroadcast: _completeKeystoneFunding,
+              ),
+        hasCards: _recoveries.isNotEmpty || _receivedCards.isNotEmpty,
+        cardsSections: () => _cardsSections(
+          recoveryRow: _buildMobileRecoveryRow,
+          receivedRow: _buildMobileReceivedRow,
+        ),
+        activeCardsTab: _activeCardsTab,
+        selectedArtwork: _selectedArtwork,
+        amountController: _amountController,
+        amountFocusNode: _amountFocusNode,
+        amountInputFormatters: [_amountFormatter],
+        maxAmountText: _maxAmountText,
+        canContinueAmount: _canContinueAmount,
+        amountSupportingText: _amountSupportingText,
+        amountSupportingTextIsError: _amountSupportingTextIsError,
+        messageController: _messageController,
+        messageFocusNode: _messageFocusNode,
+        hasMessage: _hasMessage,
+        messageExceedsByteLimit: _messageExceedsByteLimit,
+        fundingQuote: _fundingQuote,
+        reviewShowsBack: _reviewShowsBack,
+        hasPendingFundingMetadata: _pendingFundingMetadata != null,
+        readyLink: _readyLink,
+        fundingProgressByAddress: _fundingProgressByAddress,
+        readyShowsBack: _readyShowsBack,
+        receivedLink: _receivedLink,
+        receivedShowsBack: _receivedShowsBack,
+        receivedClaimSession: _receivedClaimSession,
+        linkWaitLabel: _estimatedLinkWaitLabel,
+        claimWaitLabel: _estimatedClaimWaitLabel,
+        availableSoonRemainingConfirmations:
+            _linkAvailableSoonRemainingConfirmations,
+        onShowPage: _showPage,
+        onStartCreate: _startCreate,
+        onRunRedeemAction: _runRedeemAction,
+        onClearClipboard: _clearClipboard,
+        onTabSelected: (tab) => setState(() => _activeCardsTab = tab),
+        onArtworkSelected: (artwork) =>
+            setState(() => _selectedArtwork = artwork),
+        onAmountChanged: _handleAmountChanged,
+        onUseMax: _useMaxAmount,
+        onMessageChanged: _handleMessageChanged,
+        onClearMessage: _clearMessage,
+        onSkipMessage: _skipMessage,
+        onReviewShowsBackChanged: (showBack) =>
+            setState(() => _reviewShowsBack = showBack),
+        onCreateFundedLink: _createFundedLink,
+        onRetryFundingMetadata: _retryFundingMetadata,
+        onCopyLink: _copyPaymentLink,
+        onToggleReadyBack: () =>
+            setState(() => _readyShowsBack = !_readyShowsBack),
+        onToggleReceivedBack: () =>
+            setState(() => _receivedShowsBack = !_receivedShowsBack),
+        onLeavePendingClaim: _leavePendingClaim,
+        onClaimReceivedLink: _claimReceivedLink,
+      );
     }
 
     final currentPage = _buildCurrentPage();
@@ -1519,371 +1578,22 @@ class _PaymentLinksDesktopScreenState
     );
   }
 
-  Widget _buildMobileScreen() {
-    final page = switch (_page) {
-      _PaymentLinksLocalPage.home => _buildMobileHome(),
-      _PaymentLinksLocalPage.amount => _buildMobileAmount(),
-      _PaymentLinksLocalPage.message => _buildMobileMessage(),
-      _PaymentLinksLocalPage.review => _buildMobileReview(),
-      _PaymentLinksLocalPage.ready => _buildMobileReady(),
-      _PaymentLinksLocalPage.shareQr => _buildMobileHome(),
-      _PaymentLinksLocalPage.redeem => PaymentLinkRedeemMobileView(
-        state: PaymentLinkRedeemMobileState.values.byName(_redeemState.name),
-        onBack: () => _showPage(_PaymentLinksLocalPage.home),
-        onPaste: _operationInProgress ? null : _runRedeemAction,
-        onClearClipboard: _operationInProgress ? null : _clearClipboard,
-        pasteLabel: _redeemActionLabel,
-      ),
-      _PaymentLinksLocalPage.received => _buildMobileReceived(),
-    };
-
-    // A hardware account funds its Card through the same Keystone round trip
-    // the desktop pane runs; without this stack the mobile review CTA would
-    // sit on "Creating..." forever.
-    final keystoneRequest = _keystoneFundingRequest;
-    final body = keystoneRequest == null
-        ? page
-        : Stack(
-            fit: StackFit.expand,
-            children: [
-              page,
-              Positioned.fill(
-                child: PaymentLinkKeystoneSigningOverlay(
-                  amountZatoshi: keystoneRequest.amountZatoshi,
-                  sourceAccountUuid: keystoneRequest.sourceAccountUuid,
-                  presentation: keystoneRequest.presentation,
-                  onCancel: _cancelKeystoneFunding,
-                  onFundingBroadcast: _completeKeystoneFunding,
-                ),
-              ),
-            ],
-          );
-
-    return Scaffold(
-      key: const ValueKey('payment_links_mobile_screen'),
-      backgroundColor: context.colors.background.window,
-      body: AppToastHost(child: SafeArea(child: body)),
-    );
-  }
-
-  void _leaveMobilePaymentLinks() {
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/home');
-    }
-  }
-
-  void _returnHomeFromReceivedGift() => context.go('/home');
-
-  Widget _buildMobileHome() {
-    if (_recoveries.isNotEmpty || _receivedCards.isNotEmpty) {
-      return _buildMobileCardsList();
-    }
-    return PaymentLinksHomeMobileView(
-      illustration: Image.asset(
-        'assets/illustrations/payment_links/payment_link_empty_card.png',
-        fit: BoxFit.contain,
-        semanticLabel: 'Gift box',
-      ),
-      onBack: _leaveMobilePaymentLinks,
-      onShowHelp: _showMobileHelpSheet,
-      onCreate: _startCreate,
-      onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
-    );
-  }
-
-  Widget _buildMobileCardsList() {
-    return PaymentLinkCardsMobileView(
-      sections: _cardsSections(
-        recoveryRow: _buildMobileRecoveryRow,
-        receivedRow: _buildMobileReceivedRow,
-      ),
-      emptyLabel: _activeCardsTab == PaymentLinkCardsTab.created
-          ? kPaymentLinkNoCreatedCardsText
-          : kPaymentLinkNoReceivedCardsText,
-      onBack: _leaveMobilePaymentLinks,
-      onCreate: _startCreate,
-      onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
-      activeTab: _activeCardsTab,
-      onTabSelected: (tab) => setState(() => _activeCardsTab = tab),
-    );
-  }
-
-  void _showMobileHelpSheet() {
-    showAppMobileSheet<void>(
-      context: context,
-      builder: (sheetContext) => PaymentLinkHowItWorksMobileSheet(
-        onClose: () => Navigator.of(sheetContext).pop(),
-      ),
-    );
-  }
-
-  Widget _buildMobileAmount() {
-    final maxAmountText = _maxAmountText;
-    return PaymentLinkAmountMobileView(
-      card: PaymentLinkGiftCard(
-        artwork: _selectedArtwork,
-        cardWidth: kPaymentLinkMobileCardWidth,
-        cardHeight: kPaymentLinkMobileCardHeight,
-        amountController: _amountController,
-        amountFocusNode: _amountFocusNode,
-        amountEditorKey: const ValueKey('payment_link_amount_editor'),
-        amountInputFormatters: [_amountFormatter],
-        onAmountChanged: _handleAmountChanged,
-        maxAmountText: maxAmountText,
-        onUseMax: maxAmountText == null ? null : _useMaxAmount,
-        showMaxButton: true,
-        semanticLabel: 'Gift card amount input',
-      ),
-      cardSelector: PaymentLinkCardSelectorRail(
-        artworks: PaymentLinkCardArtwork.values,
-        selected: _selectedArtwork,
-        width: 393,
-        itemWidth: 80,
-        itemHeight: 60,
-        artworkWidth: 76,
-        artworkHeight: 56,
-        edgeMaskInset: AppSpacing.sm,
-        edgeFadeFraction: 0.3,
-        inactiveOpacity: 1,
-        onSelected: (artwork) => setState(() => _selectedArtwork = artwork),
-      ),
-      onBack: () => _showPage(_PaymentLinksLocalPage.home),
-      onContinue: _canContinueAmount
-          ? () => _showPage(_PaymentLinksLocalPage.message)
-          : null,
-      supportingText: _amountSupportingText,
-      supportingTextIsError: _amountSupportingTextIsError,
-    );
-  }
-
-  Widget _buildMobileMessage() {
-    return PaymentLinkMessageMobileView(
-      card: PaymentLinkGiftCard(
-        artwork: _selectedArtwork,
-        cardWidth: kPaymentLinkMobileCardWidth,
-        cardHeight: kPaymentLinkMobileCardHeight,
-        showBack: true,
-        messageController: _messageController,
-        messageFocusNode: _messageFocusNode,
-        messageEditorKey: const ValueKey('payment_link_message_editor'),
-        messageInputFormatters: [
-          LengthLimitingTextInputFormatter(
-            PaymentLinkPresentation.maxMessageCharacters,
-          ),
-        ],
-        onMessageChanged: _handleMessageChanged,
-        onDeleteMessage: _hasMessage ? _clearMessage : null,
-        semanticLabel: 'Gift card message input',
-      ),
-      onBack: () => _showPage(_PaymentLinksLocalPage.amount),
-      onSkip: _skipMessage,
-      onContinue: _hasMessage && !_messageExceedsByteLimit
-          ? () => _showPage(_PaymentLinksLocalPage.review)
-          : null,
-      errorText: _messageExceedsByteLimit
-          ? kPaymentLinkMessageTooLargeText
-          : null,
-    );
-  }
-
-  Widget _buildMobileReview() {
-    final quote = _fundingQuote!;
-    final message = _messageController.text.trim();
-    final front = PaymentLinkGiftCard(
-      artwork: _selectedArtwork,
-      cardWidth: kPaymentLinkMobileCardWidth,
-      cardHeight: kPaymentLinkMobileCardHeight,
-      amountText: _amountController.text,
-      showCaret: false,
-      onTap: message.isEmpty
-          ? null
-          : () => setState(() => _reviewShowsBack = true),
-      semanticLabel: message.isEmpty ? null : 'Reveal gift card message',
-    );
-    final card = message.isEmpty
-        ? front
-        : PaymentLinkCardFlip(
-            showBack: _reviewShowsBack,
-            front: front,
-            back: PaymentLinkGiftCard(
-              artwork: _selectedArtwork,
-              cardWidth: kPaymentLinkMobileCardWidth,
-              cardHeight: kPaymentLinkMobileCardHeight,
-              showBack: true,
-              message: message,
-              onTap: () => setState(() => _reviewShowsBack = false),
-              semanticLabel: 'Show gift card front',
-            ),
-          );
-    return PaymentLinkReviewMobileView(
-      card: card,
-      onBack: () => _showPage(_PaymentLinksLocalPage.message),
-      cardAmountText: '${formatZecAmount(quote.recipientAmountZatoshi)} ZEC',
-      cardFeeText: '${formatZecAmount(quote.cardFeeZatoshi)} ZEC',
-      totalAmountText: '${formatZecAmount(quote.totalDeductedZatoshi)} ZEC',
-      onContinue: _operationInProgress
-          ? null
-          : _pendingFundingMetadata == null
-          ? _createFundedLink
-          : _retryFundingMetadata,
-      onFeeHelp: () {},
-      continueLabel: _operationInProgress
-          ? _pendingFundingMetadata == null
-                ? 'Creating...'
-                : 'Saving...'
-          : _pendingFundingMetadata == null
-          ? 'Approve & create'
-          : 'Try saving again',
-    );
-  }
-
-  Widget _buildMobileReady() {
-    final link = _readyLink;
-    if (link == null) return _buildMobileHome();
-    final artwork = PaymentLinkCardArtwork.fromProtocolId(
-      link.presentation?.artworkId,
-    );
-    final message = link.presentation?.message ?? '';
-    final progress =
-        _fundingProgressByAddress[link.address] ??
-        const PaymentLinkFundingProgress(confirmationCount: 0);
-    final remaining = progress.confirmationTarget - progress.confirmationCount;
-    final ready = progress.isReady;
-    final soon =
-        progress.confirmationCount > 0 &&
-        remaining <= _linkAvailableSoonRemainingConfirmations;
-    final front = PaymentLinkGiftCard(
-      artwork: artwork,
-      cardWidth: kPaymentLinkMobileCardWidth,
-      cardHeight: kPaymentLinkMobileCardHeight,
-      amountText: formatZecAmount(link.amountZatoshi),
-      showCaret: false,
-    );
-    final card = message.isEmpty
-        ? front
-        : PaymentLinkCardFlip(
-            showBack: _readyShowsBack,
-            front: front,
-            back: PaymentLinkGiftCard(
-              artwork: artwork,
-              cardWidth: kPaymentLinkMobileCardWidth,
-              cardHeight: kPaymentLinkMobileCardHeight,
-              showBack: true,
-              message: message,
-            ),
-          );
-    return PaymentLinkReadyMobileView(
-      state: ready
-          ? PaymentLinkReadyMobileState.ready
-          : soon
-          ? PaymentLinkReadyMobileState.soon
-          : PaymentLinkReadyMobileState.waiting,
-      card: card,
-      decoration: ready || progress.confirmationCount == 0
-          ? const PaymentLinkConfetti()
-          : null,
-      onHome: () => _showPage(_PaymentLinksLocalPage.home),
-      onCopy: ready && !_operationInProgress
-          ? () => _copyPaymentLink(link)
-          : null,
-      onCardTap: ready && message.isNotEmpty
-          ? () => setState(() => _readyShowsBack = !_readyShowsBack)
-          : null,
-      waitingStatusLabel: _estimatedLinkWaitLabel(progress),
-      copyLabel: _operationInProgress ? 'Copying...' : 'Copy link',
-    );
-  }
-
-  Widget _buildMobileReceived() {
-    final link = _receivedLink;
-    if (link == null) {
-      return PaymentLinkRedeemMobileView(
-        state: PaymentLinkRedeemMobileState.paste,
-        onBack: _leaveMobilePaymentLinks,
-        onPaste: _operationInProgress ? null : _runRedeemAction,
-        onClearClipboard: _operationInProgress ? null : _clearClipboard,
-        pasteLabel: _redeemActionLabel,
-      );
-    }
-    final artwork = PaymentLinkCardArtwork.fromProtocolId(
-      link.presentation?.artworkId,
-    );
-    final message = link.presentation?.message ?? '';
-    final hasMessage = message.isNotEmpty;
-    final front = PaymentLinkGiftCard(
-      artwork: artwork,
-      cardWidth: kPaymentLinkMobileCardWidth,
-      cardHeight: kPaymentLinkMobileCardHeight,
-      amountText: formatZecAmount(link.amountZatoshi),
-      showCaret: false,
-    );
-    final card = hasMessage
-        ? PaymentLinkCardFlip(
-            showBack: _receivedShowsBack,
-            front: front,
-            back: PaymentLinkGiftCard(
-              artwork: artwork,
-              cardWidth: kPaymentLinkMobileCardWidth,
-              cardHeight: kPaymentLinkMobileCardHeight,
-              showBack: true,
-              message: message,
-            ),
-          )
-        : front;
-    final session = _receivedClaimSession;
-    if (session?.waitingForFundingConfirmations ?? false) {
-      final remaining =
-          kPaymentLinkClaimConfirmationTarget -
-          session!.fundingConfirmationCount;
-      return PaymentLinkReadyMobileView(
-        state:
-            session.fundingConfirmationCount > 0 &&
-                remaining <= _linkAvailableSoonRemainingConfirmations
-            ? PaymentLinkReadyMobileState.soon
-            : PaymentLinkReadyMobileState.waiting,
-        card: card,
-        cardTop: kPaymentLinkMobileReceivedCardTop,
-        onHome: _leavePendingClaim,
-        waitingHeading: 'Your Gift Card\nis almost ready!',
-        waitingDescription:
-            'Waiting for 6 confirmations. Vizor will keep checking, and you '
-            'can claim the card as soon as the funds are ready.',
-        waitingIcon: AppIcons.time,
-        waitingStatusLabel: _estimatedClaimWaitLabel(session),
-        homeLabel: 'Go home',
-      );
-    }
-    return PaymentLinkReceivedMobileView(
-      card: card,
-      hasMessage: hasMessage,
-      onClose: _returnHomeFromReceivedGift,
-      decoration: const PaymentLinkConfetti(),
-      onRevealMessage: hasMessage
-          ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
-          : null,
-      onClaim: _operationInProgress ? null : _claimReceivedLink,
-      claimLabel: _operationInProgress ? 'Claiming...' : 'Claim the gift',
-    );
-  }
-
   Widget _buildCurrentPage() {
     return switch (_page) {
-      _PaymentLinksLocalPage.home => _buildHome(),
-      _PaymentLinksLocalPage.amount => _buildAmount(),
-      _PaymentLinksLocalPage.message => _buildMessage(),
-      _PaymentLinksLocalPage.review => _buildReview(),
-      _PaymentLinksLocalPage.ready => _buildReady(),
-      _PaymentLinksLocalPage.shareQr => _buildShareQr(),
-      _PaymentLinksLocalPage.redeem => PaymentLinkRedeemDesktopView(
+      PaymentLinksLocalPage.home => _buildHome(),
+      PaymentLinksLocalPage.amount => _buildAmount(),
+      PaymentLinksLocalPage.message => _buildMessage(),
+      PaymentLinksLocalPage.review => _buildReview(),
+      PaymentLinksLocalPage.ready => _buildReady(),
+      PaymentLinksLocalPage.shareQr => _buildShareQr(),
+      PaymentLinksLocalPage.redeem => PaymentLinkRedeemDesktopView(
         state: _redeemState,
-        onBack: () => _showPage(_PaymentLinksLocalPage.home),
+        onBack: () => _showPage(PaymentLinksLocalPage.home),
         onPaste: _operationInProgress ? null : _runRedeemAction,
         onClearClipboard: _operationInProgress ? null : _clearClipboard,
         pasteLabel: _redeemActionLabel,
       ),
-      _PaymentLinksLocalPage.received => _buildReceived(),
+      PaymentLinksLocalPage.received => _buildReceived(),
     };
   }
 
@@ -1902,7 +1612,7 @@ class _PaymentLinksDesktopScreenState
       onBack: () => context.go('/home'),
       onShowHelp: _showHelpOverlay,
       onCreate: _startCreate,
-      onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
+      onRedeem: () => _showPage(PaymentLinksLocalPage.redeem),
     );
   }
 
@@ -1926,7 +1636,7 @@ class _PaymentLinksDesktopScreenState
       ),
       onBack: () => context.go('/home'),
       onCreate: _startCreate,
-      onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
+      onRedeem: () => _showPage(PaymentLinksLocalPage.redeem),
       activeTab: _activeCardsTab,
       onTabSelected: (tab) => setState(() => _activeCardsTab = tab),
     );
@@ -2066,7 +1776,7 @@ class _PaymentLinksDesktopScreenState
     if (_operationInProgress) return;
     setState(() {
       _shareQrRecord = record;
-      _page = _PaymentLinksLocalPage.shareQr;
+      _page = PaymentLinksLocalPage.shareQr;
       _showHelp = false;
       _longSyncLink = null;
     });
@@ -2081,7 +1791,7 @@ class _PaymentLinksDesktopScreenState
         record.link.presentation?.artworkId,
       ),
       qrData: record.link.toUri().toString(),
-      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      onBack: () => _showPage(PaymentLinksLocalPage.home),
       onSaveQr: _operationInProgress ? null : () => _savePaymentLinkQr(record),
       onCopyLink: _operationInProgress
           ? null
@@ -2187,9 +1897,9 @@ class _PaymentLinksDesktopScreenState
         selected: _selectedArtwork,
         onSelected: (artwork) => setState(() => _selectedArtwork = artwork),
       ),
-      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      onBack: () => _showPage(PaymentLinksLocalPage.home),
       onCreate: _canContinueAmount
-          ? () => _showPage(_PaymentLinksLocalPage.message)
+          ? () => _showPage(PaymentLinksLocalPage.message)
           : null,
       supportingText: _amountSupportingText,
       supportingTextIsError: _amountSupportingTextIsError,
@@ -2232,10 +1942,10 @@ class _PaymentLinksDesktopScreenState
         back: messageEditorCard,
         onAnimationEnd: _focusMessageEditorAfterFlip,
       ),
-      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      onBack: () => _showPage(PaymentLinksLocalPage.home),
       onSkip: _skipMessage,
       onContinue: _hasMessage && !_messageExceedsByteLimit
-          ? () => _showPage(_PaymentLinksLocalPage.review)
+          ? () => _showPage(PaymentLinksLocalPage.review)
           : null,
       onStepSelected: _selectWizardStep,
       errorText: _messageExceedsByteLimit
@@ -2270,7 +1980,7 @@ class _PaymentLinksDesktopScreenState
           );
     return PaymentLinkReviewDesktopView(
       card: card,
-      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      onBack: () => _showPage(PaymentLinksLocalPage.home),
       cardAmountText:
           '${formatZecAmount(_fundingQuote!.recipientAmountZatoshi)} ZEC',
       cardFeeText: '${formatZecAmount(_fundingQuote!.cardFeeZatoshi)} ZEC',
@@ -2330,14 +2040,14 @@ class _PaymentLinksDesktopScreenState
           : PaymentLinkReadyVisualState.ready,
       card: card,
       decoration: const PaymentLinkConfetti(),
-      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      onBack: () => _showPage(PaymentLinksLocalPage.home),
       onCopy: !readyToShare || _operationInProgress
           ? null
           : () => _copyPaymentLink(link),
       onCardTap: readyToShare && hasMessage
           ? () => setState(() => _readyShowsBack = !_readyShowsBack)
           : null,
-      onReturnHome: () => _showPage(_PaymentLinksLocalPage.home),
+      onReturnHome: () => _showPage(PaymentLinksLocalPage.home),
       waitingStatusLabel: _estimatedLinkWaitLabel(fundingProgress),
       copyLabel: _operationInProgress ? 'Copying...' : 'Copy link',
     );
@@ -2388,7 +2098,7 @@ class _PaymentLinksDesktopScreenState
     return PaymentLinkReceivedDesktopView(
       card: card,
       decoration: const PaymentLinkConfetti(),
-      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      onBack: () => _showPage(PaymentLinksLocalPage.home),
       onClaim: _operationInProgress ? null : _claimReceivedLink,
       onRevealMessage: hasMessage
           ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
