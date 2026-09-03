@@ -430,6 +430,13 @@ abstract interface class VotingRustApi {
     required rust_api.ApiChainRecoveryMode recoveryMode,
   });
 
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVoteBatch({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  });
+
   /// Selects an exact-height PIR endpoint using the SDK's protocol policy.
   String? selectPirSnapshotEndpoint({
     required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
@@ -583,9 +590,10 @@ abstract interface class VotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   });
 
-  Future<rust_voting.SignedVoteCommitmentsView> recoverVoteCommitment({
+  Future<rust_api.ApiSignedVoteCommitments> recoverVoteCommitment({
     required String dbPath,
     required String accountUuid,
     required String roundId,
@@ -862,6 +870,22 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVoteBatch({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  }) {
+    final handle = passHandle as _FrbVotingChainSubmissionPassHandle;
+    return rust_api.advanceChainVoteBatch(
+      handle: handle.inner,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      recoveryMode: recoveryMode,
+    );
+  }
+
+  @override
   String? selectPirSnapshotEndpoint({
     required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
     required BigInt expectedSnapshotHeight,
@@ -1129,6 +1153,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) {
     return rust_api.buildVoteCommitmentsWithProgress(
       dbPath: dbPath,
@@ -1139,11 +1164,12 @@ class FrbVotingRustApi implements VotingRustApi {
       storedHotkeySecret: storedHotkeySecret,
       vanWitness: vanWitness,
       draftVotes: draftVotes,
+      maxProofConcurrency: maxProofConcurrency,
     );
   }
 
   @override
-  Future<rust_voting.SignedVoteCommitmentsView> recoverVoteCommitment({
+  Future<rust_api.ApiSignedVoteCommitments> recoverVoteCommitment({
     required String dbPath,
     required String accountUuid,
     required String roundId,

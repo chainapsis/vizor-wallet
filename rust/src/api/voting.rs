@@ -120,17 +120,6 @@ const PHASE_VOTE_COMMIT_STAGE: &str = "vote_commit_stage";
 /// Prefix for coarse cast-vote stage timings (`log show` subsystem `frb_user`).
 const VOTING_VOTE_LOG: &str = "[VOTING_VOTE]";
 
-/// Stable marker for every path that refuses multi-proposal atomic batches.
-///
-/// This app casts one vote per transaction. The SDK also supports an atomic
-/// batch that carries several proposals in one transaction, but Vizor does not
-/// build, submit, confirm, or resume batches yet. Every boundary that could
-/// encounter one fails loudly with this marker rather than silently treating a
-/// batch as "no work", which would strand a round mid-submission.
-///
-/// Remove these guards together when batch support is implemented.
-const VOTING_BATCH_UNSUPPORTED: &str = "[VOTING_BATCH_UNSUPPORTED]";
-
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
 #[flutter_rust_bridge::frb(sync)]
 pub fn last_moment_buffer_seconds(
@@ -193,7 +182,39 @@ pub struct ApiVoteCommitEvent {
     pub proposal_id: Option<u32>,
     pub bundle_index: Option<u32>,
     pub proof_progress: Option<f64>,
-    pub commitments: Option<zcash_voting::wire::SignedVoteCommitmentsView>,
+    pub commitments: Option<ApiSignedVoteCommitments>,
+}
+
+/// Prepared singleton or atomic-batch commitments without chain wire payloads.
+///
+/// `batch_digest` is present only when every commitment belongs to one atomic
+/// batch. Chain submission reloads the canonical request body from durable SDK
+/// state, so neither that body nor individual submission payloads cross FRB.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiSignedVoteCommitments {
+    pub bundle_index: u32,
+    pub commitments: Vec<zcash_voting::wire::SignedVoteCommitmentView>,
+    pub batch_digest: Option<Vec<u8>>,
+}
+
+impl From<zcash_voting::wire::SignedVoteCommitmentsView> for ApiSignedVoteCommitments {
+    fn from(commitments: zcash_voting::wire::SignedVoteCommitmentsView) -> Self {
+        Self {
+            bundle_index: commitments.bundle_index,
+            commitments: commitments.commitments,
+            batch_digest: None,
+        }
+    }
+}
+
+impl From<zcash_voting::wire::SignedVoteBatchView> for ApiSignedVoteCommitments {
+    fn from(batch: zcash_voting::wire::SignedVoteBatchView) -> Self {
+        Self {
+            bundle_index: batch.bundle_index,
+            commitments: batch.commitments,
+            batch_digest: Some(batch.batch_digest),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -678,6 +699,67 @@ pub async fn advance_chain_vote(
             recovery_mode.into(),
             &handle.control,
         )
+        .await
+    {
+        Ok(outcome) => ApiChainSubmissionCallResult::outcome(outcome),
+        Err(failure) => ApiChainSubmissionCallResult::failure(failure),
+    }
+}
+
+/// Advances the complete durable atomic batch containing `proposal_id`.
+///
+/// The proposal is only a recovery anchor. The SDK reloads and validates the
+/// authoritative ordered roster and digest before constructing or dispatching
+/// the chain request.
+pub async fn advance_chain_vote_batch(
+    handle: &VotingChainSubmissionPassHandle,
+    bundle_index: u32,
+    proposal_id: u32,
+    recovery_mode: ApiChainRecoveryMode,
+) -> ApiChainSubmissionCallResult {
+    let vote_round_id = match chain_submission_round_id(handle) {
+        Ok(round_id) => round_id,
+        Err(failure) => return ApiChainSubmissionCallResult::failure(failure),
+    };
+    let database = match db::open_voting_db(&handle.db_path, &handle.account_uuid) {
+        Ok(database) => database,
+        Err(error) => {
+            return ApiChainSubmissionCallResult::failure(ApiChainSubmissionFailure::local(
+                ApiChainSubmissionFailureKind::Storage,
+                error,
+            ));
+        }
+    };
+    let batch = match zcash_voting::vote::recover_atomic_vote_batch(
+        &database,
+        &handle.round_id,
+        bundle_index,
+        proposal_id,
+    ) {
+        Ok(batch) => batch,
+        Err(error) => {
+            return ApiChainSubmissionCallResult::failure(ApiChainSubmissionFailure::local(
+                ApiChainSubmissionFailureKind::InvalidInput,
+                error.to_string(),
+            ));
+        }
+    };
+    let request = zcash_voting::AdvanceVoteBatch {
+        vote_round_id,
+        bundle_index,
+        ordered_batch_digest: batch.batch_digest,
+        ordered_proposal_ids: batch
+            .commitments
+            .iter()
+            .map(|commitment| commitment.proposal_id)
+            .collect(),
+    };
+    let client = match chain_submission_client(handle) {
+        Ok(client) => client,
+        Err(failure) => return ApiChainSubmissionCallResult::failure(failure),
+    };
+    match client
+        .advance_vote_batch_with_recovery(request, recovery_mode.into(), &handle.control)
         .await
     {
         Ok(outcome) => ApiChainSubmissionCallResult::outcome(outcome),
@@ -1539,7 +1621,7 @@ fn emit_signed_delegation_result(
 
 fn emit_signed_vote_result(
     sink: &StreamSink<ApiVoteCommitEvent>,
-    signed_result: Result<zcash_voting::wire::SignedVoteCommitmentsView, String>,
+    signed_result: Result<ApiSignedVoteCommitments, String>,
 ) -> Result<(), String> {
     // Surface computation/signing errors through stream errors.
     let commitments = match signed_result {
@@ -2380,16 +2462,46 @@ pub fn recover_vote_commitment(
     round_id: String,
     bundle_index: u32,
     proposal_id: u32,
-) -> Result<zcash_voting::wire::SignedVoteCommitmentsView, String> {
+) -> Result<ApiSignedVoteCommitments, String> {
     catch(|| {
-        // Recover persisted commitments and convert to public wire view.
+        // Submit-shares resume steps do not say whether their vote belongs to
+        // an atomic batch. Inspect the SDK's durable recovery metadata and use
+        // the matching typed recovery path.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::vote::recover_signed_commitments(&db, &round_id, bundle_index, proposal_id)
+        let recovery = zcash_voting::vote::recovery_bundle(
+            &db,
+            &round_id,
+            bundle_index,
+            proposal_id,
+        )
+        .map_err(|e| format!("vote recovery inspection failed: {e}"))?
+        .ok_or_else(|| {
+            format!(
+                "vote recovery bundle not found for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
+            )
+        })?;
+        if recovery.batch.is_some() {
+            zcash_voting::vote::recover_atomic_vote_batch(&db, &round_id, bundle_index, proposal_id)
+                .map_err(|e| format!("vote batch recovery failed: {e}"))
+                .and_then(|batch| {
+                    zcash_voting::wire::SignedVoteBatchView::try_from(batch)
+                        .map(ApiSignedVoteCommitments::from)
+                        .map_err(|e| e.to_string())
+                })
+        } else {
+            zcash_voting::vote::recover_signed_commitments(
+                &db,
+                &round_id,
+                bundle_index,
+                proposal_id,
+            )
             .map_err(|e| format!("vote commitment recovery failed: {e}"))
             .and_then(|commitments| {
                 zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
+                    .map(ApiSignedVoteCommitments::from)
                     .map_err(|e| e.to_string())
             })
+        }
     })
 }
 
@@ -2403,25 +2515,17 @@ async fn build_vote_commitments_result<F>(
     stored_hotkey_secret: Vec<u8>,
     van_witness: zcash_voting::wire::VanWitness,
     draft_votes: Vec<zcash_voting::wire::DraftVote>,
+    max_proof_concurrency: u32,
     on_stage: F,
-) -> Result<zcash_voting::wire::SignedVoteCommitmentsView, String>
+) -> Result<ApiSignedVoteCommitments, String>
 where
     F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
-    // Vizor is singleton-only: one cast-vote transaction per proposal.
-    //
-    // Multi-proposal atomic batches are supported by the SDK but not wired up
-    // here, and a batch changes durable state in ways this app does not yet
-    // handle (shared transaction hash, batch-scoped recovery, and
-    // `submit_vote_batch`/`poll_vote_batch` resume steps). Reject more than one
-    // draft up front rather than letting `prepare_commit_batch` fail deeper in
-    // the SDK after the hotkey has been reconstructed. See
-    // `VOTING_BATCH_UNSUPPORTED`.
-    if draft_votes.len() != 1 {
-        return Err(format!(
-            "{VOTING_BATCH_UNSUPPORTED}: expected exactly one draft vote, got {}",
-            draft_votes.len()
-        ));
+    if draft_votes.is_empty() {
+        return Err("vote batch must contain at least one draft".to_string());
+    }
+    if max_proof_concurrency == 0 {
+        return Err("max_proof_concurrency must be at least 1".to_string());
     }
 
     // Parse network once and keep hotkey bytes in a secrecy wrapper.
@@ -2446,26 +2550,63 @@ where
         .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
 
         let prepare_started = Instant::now();
-        let prepared = zcash_voting::vote::prepare_commit_batch(
-            &voting_db,
-            zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
-            zcash_voting::vote::VoteCommitBatch {
-                round_id: &round_id,
+        let signer = zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey);
+        let prepared = if draft_votes.len() == 1 {
+            let prepared = zcash_voting::vote::prepare_commit_batch(
+                &voting_db,
+                signer,
+                zcash_voting::vote::VoteCommitBatch {
+                    round_id: &round_id,
+                    bundle_index,
+                    drafts: &draft_votes,
+                    witness: &van_witness,
+                    stages: &reporter,
+                },
+            )
+            .map_err(|e| format!("vote commit preparation failed: {e}"))?;
+            PreparedVoteWork::Singleton(prepared)
+        } else {
+            let batch = zcash_voting::vote::AtomicVoteBatch::new(
+                &round_id,
                 bundle_index,
-                drafts: &draft_votes,
-                witness: &van_witness,
-                stages: &reporter,
-            },
-        )
-        .map_err(|e| format!("vote commit batch preparation failed: {e}"))?;
+                &draft_votes,
+                &van_witness,
+                &reporter,
+            )
+            .with_max_proof_concurrency(max_proof_concurrency as usize)
+            .map_err(|e| format!("vote batch configuration failed: {e}"))?;
+            let prepared = zcash_voting::vote::prepare_atomic_vote_batch(
+                &voting_db,
+                signer,
+                batch,
+            )
+            .map_err(|e| format!("atomic vote batch preparation failed: {e}"))?;
+            PreparedVoteWork::Atomic(prepared)
+        };
         log::info!(
             "{VOTING_VOTE_LOG} bundle={bundle_index} prepare-batch elapsed={:.3}s",
             prepare_started.elapsed().as_secs_f64()
         );
         let persist_started = Instant::now();
-        let persisted = db::with_voting_sidecar_write_lock(&db_path, || {
-            zcash_voting::vote::persist_prepared_commit_batch(&voting_db, prepared)
-                .map_err(|e| format!("vote commit batch persistence failed: {e}"))
+        let persisted = db::with_voting_sidecar_write_lock(&db_path, || match prepared {
+            PreparedVoteWork::Singleton(prepared) => {
+                zcash_voting::vote::persist_prepared_commit_batch(&voting_db, prepared)
+                    .map_err(|e| format!("vote commit persistence failed: {e}"))
+                    .and_then(|commitments| {
+                        zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
+                            .map(ApiSignedVoteCommitments::from)
+                            .map_err(|e| e.to_string())
+                    })
+            }
+            PreparedVoteWork::Atomic(prepared) => {
+                zcash_voting::vote::persist_prepared_atomic_vote_batch(&voting_db, prepared)
+                    .map_err(|e| format!("atomic vote batch persistence failed: {e}"))
+                    .and_then(|batch| {
+                        zcash_voting::wire::SignedVoteBatchView::try_from(batch)
+                            .map(ApiSignedVoteCommitments::from)
+                            .map_err(|e| e.to_string())
+                    })
+            }
         })?;
         log::info!(
             "{VOTING_VOTE_LOG} bundle={bundle_index} persist-batch elapsed={:.3}s worker_total={:.3}s",
@@ -2477,17 +2618,19 @@ where
     .await
     .map_err(|e| format!("vote commitment task failed: {e}"))
     .and_then(|result| result);
-    let commitments = commitment_result?;
+    commitment_result
+}
 
-    // Convert internal commitment type into the FRB wire view.
-    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
+enum PreparedVoteWork {
+    Singleton(zcash_voting::vote::PreparedVoteCommitments),
+    Atomic(zcash_voting::vote::PreparedAtomicVoteBatch),
 }
 
 #[allow(clippy::too_many_arguments)]
 /// Streaming variant of `build_vote_commitments`.
 ///
 /// Emits per-proposal progress events, then a terminal `"result"` event carrying
-/// `SignedVoteCommitmentsView`.
+/// the persisted singleton or atomic-batch commitment roster.
 pub async fn build_vote_commitments_with_progress(
     db_path: String,
     account_uuid: String,
@@ -2497,6 +2640,7 @@ pub async fn build_vote_commitments_with_progress(
     stored_hotkey_secret: Vec<u8>,
     van_witness: zcash_voting::wire::VanWitness,
     draft_votes: Vec<zcash_voting::wire::DraftVote>,
+    max_proof_concurrency: u32,
     sink: StreamSink<ApiVoteCommitEvent>,
 ) -> Result<(), String> {
     // Bridge stage callbacks into stream events for UI progress updates.
@@ -2511,6 +2655,7 @@ pub async fn build_vote_commitments_with_progress(
         stored_hotkey_secret,
         van_witness,
         draft_votes,
+        max_proof_concurrency,
         move |stage| {
             if progress_sink.add(stage.into()).is_err() {
                 log_sink_closed(VOTE_STREAM_CONTEXT, SINK_PROGRESS_NOT_DELIVERED);
@@ -2537,37 +2682,6 @@ pub fn get_round_recovery_state(
     })
 }
 
-/// Refuses a round plan containing work this app cannot perform.
-///
-/// `get_round_plan` is the only place a plan crosses into the app, so it is the
-/// one place that has to notice unsupported work. Dart consumes `next_steps`
-/// through allowlist predicates that return false for any kind they do not
-/// recognise, which makes "a batch is waiting to be submitted" indistinguishable
-/// from "there is nothing to do" and would strand the round with no symptom.
-/// Vizor can neither build nor advance an atomic vote batch, so surface it as a
-/// diagnosable error instead.
-///
-/// This is unreachable today: `build_vote_commitments_result` refuses more than
-/// one draft, and only the SDK's atomic-batch APIs write the batch recovery that
-/// produces these steps. Delete this guard when batch support lands. See
-/// [`VOTING_BATCH_UNSUPPORTED`].
-fn reject_unsupported_batch_steps(
-    next_steps: &[zcash_voting::session::NextStep],
-) -> Result<(), String> {
-    match next_steps.iter().find(|step| {
-        matches!(
-            step,
-            zcash_voting::session::NextStep::AdvanceVoteBatch { .. }
-        )
-    }) {
-        Some(step) => Err(format!(
-            "{VOTING_BATCH_UNSUPPORTED}: round plan contains step '{}', which requires atomic vote batch support",
-            step.kind()
-        )),
-        None => Ok(()),
-    }
-}
-
 /// Compute the resumable voting-session plan for a round. The plan reports the
 /// ordered remaining work (`next_steps`) and which proposals are still open.
 pub fn get_round_plan(
@@ -2581,7 +2695,6 @@ pub fn get_round_plan(
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)
             .map_err(|e| format!("resume_plan failed: {e}"))?;
-        reject_unsupported_batch_steps(&plan.next_steps)?;
         zcash_voting::wire::RoundPlanView::try_from(plan).map_err(|e| e.to_string())
     })
 }
@@ -3604,9 +3717,10 @@ mod tests {
             proposal_id: None,
             bundle_index: Some(2),
             proof_progress: None,
-            commitments: Some(zcash_voting::wire::SignedVoteCommitmentsView {
+            commitments: Some(ApiSignedVoteCommitments {
                 bundle_index: 2,
                 commitments: vec![],
+                batch_digest: None,
             }),
         };
         assert_eq!(result.phase, "result");
@@ -3646,6 +3760,42 @@ mod tests {
         assert_eq!(api.commitments[0].proposal_id, 2);
         assert_eq!(api.commitments[0].wire.proposal_id, 2);
         assert_eq!(api.commitments[0].wire.vote_auth_sig, b64(vec![9; 64]));
+    }
+
+    #[test]
+    fn api_atomic_vote_batch_preserves_roster_and_digest_without_request_body() {
+        let singleton = zcash_voting::wire::SignedVoteCommitmentsView::try_from(
+            zcash_voting::vote::SignedVoteCommitments {
+                bundle_index: 1,
+                commitments: vec![zcash_voting::vote::SignedVoteCommitment {
+                    proposal_id: 2,
+                    choice: 1,
+                    vote_round_id: ROUND_ID.to_string(),
+                    van_nullifier: [1; 32],
+                    vote_authority_note_new: [2; 32],
+                    vote_commitment: [3; 32],
+                    proof: vec![4; 10],
+                    encrypted_shares: vec![],
+                    anchor_height: 100,
+                    shares_hash: [7; 32],
+                    share_comms: full_share_comms(),
+                    r_vpk: [10; 32],
+                    vote_auth_sig: [9; 64],
+                    commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
+                }],
+            },
+        )
+        .unwrap();
+        let api = ApiSignedVoteCommitments::from(zcash_voting::wire::SignedVoteBatchView {
+            bundle_index: singleton.bundle_index,
+            commitments: singleton.commitments,
+            batch_digest: vec![11; 32],
+            batch_json: "sensitive canonical request body".to_string(),
+        });
+
+        assert_eq!(api.bundle_index, 1);
+        assert_eq!(api.commitments[0].proposal_id, 2);
+        assert_eq!(api.batch_digest, Some(vec![11; 32]));
     }
 
     #[test]
@@ -4424,105 +4574,6 @@ mod tests {
 
         assert_eq!(plan.round_id, ROUND_ID);
         assert_eq!(plan.open_proposals, vec![1, 2]);
-    }
-
-    #[tokio::test]
-    async fn building_more_than_one_draft_is_refused_as_unsupported_batch() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(
-            zcash_voting::Network::Regtest,
-            &test_api_round_params(),
-            None,
-        )
-        .unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-
-        let draft = |proposal_id| zcash_voting::wire::DraftVote {
-            proposal_id,
-            choice: 1,
-            num_options: 2,
-            single_share: false,
-            vc_tree_position: 0,
-        };
-
-        let error = build_vote_commitments_result(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            "regtest".to_string(),
-            ROUND_ID.to_string(),
-            0,
-            vec![0x11; 64],
-            zcash_voting::wire::VanWitness {
-                auth_path: Vec::new(),
-                position: 0,
-                anchor_height: 0,
-            },
-            vec![draft(7), draft(8)],
-            |_| {},
-        )
-        .await
-        .expect_err("two drafts must be refused before any commit work");
-
-        assert!(
-            error.contains(VOTING_BATCH_UNSUPPORTED),
-            "unexpected error: {error}"
-        );
-        // Refused before touching durable state.
-        assert_eq!(
-            zcash_voting::session::resume_plan(&db, ROUND_ID, &[7, 8])
-                .unwrap()
-                .next_steps
-                .len(),
-            0
-        );
-    }
-
-    #[test]
-    fn batch_steps_are_refused_and_singleton_steps_pass_through() {
-        use zcash_voting::session::NextStep;
-
-        for step in [NextStep::AdvanceVoteBatch {
-            bundle_index: 0,
-            proposal_id: 7,
-        }] {
-            let kind = step.kind();
-            let error =
-                reject_unsupported_batch_steps(&[NextStep::Delegate { bundle_index: 0 }, step])
-                    .expect_err("a batch step must not be reported as runnable work");
-            assert!(
-                error.contains(VOTING_BATCH_UNSUPPORTED),
-                "unexpected error: {error}"
-            );
-            assert!(error.contains(kind), "unexpected error: {error}");
-        }
-
-        // Every step this app does support still passes through untouched.
-        reject_unsupported_batch_steps(&[
-            NextStep::Delegate { bundle_index: 0 },
-            NextStep::AdvanceDelegation { bundle_index: 0 },
-            NextStep::CastVote {
-                bundle_index: 0,
-                proposal_id: 7,
-                choice: 1,
-            },
-            NextStep::AdvanceVote {
-                bundle_index: 0,
-                proposal_id: 7,
-            },
-            NextStep::SubmitShares {
-                bundle_index: 0,
-                proposal_id: 7,
-                share_index: 0,
-            },
-            NextStep::ConfirmShare {
-                bundle_index: 0,
-                proposal_id: 7,
-                share_index: 0,
-            },
-        ])
-        .unwrap();
     }
 
     #[test]

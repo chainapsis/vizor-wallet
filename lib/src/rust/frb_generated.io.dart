@@ -244,6 +244,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiShareTrackingReport dco_decode_api_share_tracking_report(dynamic raw);
 
   @protected
+  ApiSignedVoteCommitments dco_decode_api_signed_vote_commitments(dynamic raw);
+
+  @protected
   ApiSnapshotBundlePirResult dco_decode_api_snapshot_bundle_pir_result(
     dynamic raw,
   );
@@ -298,6 +301,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiSignedVoteCommitments dco_decode_box_autoadd_api_signed_vote_commitments(
+    dynamic raw,
+  );
+
+  @protected
   ApiVotingHelperPreflight dco_decode_box_autoadd_api_voting_helper_preflight(
     dynamic raw,
   );
@@ -348,11 +356,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   SignedDelegationPayloadView
   dco_decode_box_autoadd_signed_delegation_payload_view(dynamic raw);
-
-  @protected
-  SignedVoteCommitmentsView dco_decode_box_autoadd_signed_vote_commitments_view(
-    dynamic raw,
-  );
 
   @protected
   int dco_decode_box_autoadd_u_16(dynamic raw);
@@ -786,6 +789,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_api_chain_submission_outcome(dynamic raw);
 
   @protected
+  ApiSignedVoteCommitments?
+  dco_decode_opt_box_autoadd_api_signed_vote_commitments(dynamic raw);
+
+  @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
@@ -824,10 +831,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   SignedDelegationPayloadView?
   dco_decode_opt_box_autoadd_signed_delegation_payload_view(dynamic raw);
-
-  @protected
-  SignedVoteCommitmentsView?
-  dco_decode_opt_box_autoadd_signed_vote_commitments_view(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
@@ -918,11 +921,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentView dco_decode_signed_vote_commitment_view(dynamic raw);
-
-  @protected
-  SignedVoteCommitmentsView dco_decode_signed_vote_commitments_view(
-    dynamic raw,
-  );
 
   @protected
   SoftwareWalletDiscoveredAccount dco_decode_software_wallet_discovered_account(
@@ -1271,6 +1269,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiSignedVoteCommitments sse_decode_api_signed_vote_commitments(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiSnapshotBundlePirResult sse_decode_api_snapshot_bundle_pir_result(
     SseDeserializer deserializer,
   );
@@ -1345,6 +1348,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiSignedVoteCommitments sse_decode_box_autoadd_api_signed_vote_commitments(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiVotingHelperPreflight sse_decode_box_autoadd_api_voting_helper_preflight(
     SseDeserializer deserializer,
   );
@@ -1403,11 +1411,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   SignedDelegationPayloadView
   sse_decode_box_autoadd_signed_delegation_payload_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  SignedVoteCommitmentsView sse_decode_box_autoadd_signed_vote_commitments_view(
     SseDeserializer deserializer,
   );
 
@@ -1957,6 +1960,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiSignedVoteCommitments?
+  sse_decode_opt_box_autoadd_api_signed_vote_commitments(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
@@ -2003,12 +2012,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   SignedDelegationPayloadView?
   sse_decode_opt_box_autoadd_signed_delegation_payload_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  SignedVoteCommitmentsView?
-  sse_decode_opt_box_autoadd_signed_vote_commitments_view(
     SseDeserializer deserializer,
   );
 
@@ -2115,11 +2118,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentView sse_decode_signed_vote_commitment_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  SignedVoteCommitmentsView sse_decode_signed_vote_commitments_view(
     SseDeserializer deserializer,
   );
 
@@ -2550,6 +2548,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_signed_vote_commitments(
+    ApiSignedVoteCommitments self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_snapshot_bundle_pir_result(
     ApiSnapshotBundlePirResult self,
     SseSerializer serializer,
@@ -2634,6 +2638,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_api_signed_vote_commitments(
+    ApiSignedVoteCommitments self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_api_voting_helper_preflight(
     ApiVotingHelperPreflight self,
     SseSerializer serializer,
@@ -2702,12 +2712,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_signed_delegation_payload_view(
     SignedDelegationPayloadView self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_signed_vote_commitments_view(
-    SignedVoteCommitmentsView self,
     SseSerializer serializer,
   );
 
@@ -3381,6 +3385,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_api_signed_vote_commitments(
+    ApiSignedVoteCommitments? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
@@ -3431,12 +3441,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_signed_delegation_payload_view(
     SignedDelegationPayloadView? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_signed_vote_commitments_view(
-    SignedVoteCommitmentsView? self,
     SseSerializer serializer,
   );
 
@@ -3566,12 +3570,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_signed_vote_commitment_view(
     SignedVoteCommitmentView self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_signed_vote_commitments_view(
-    SignedVoteCommitmentsView self,
     SseSerializer serializer,
   );
 

@@ -5455,7 +5455,8 @@ void main() {
       expect(state.voteSubmissionCompletedCount, 2);
       expect(state.voteSubmissionTotalCount, 2);
       expect(state.voteSubmissionProgress, 1);
-      expect(rust.voteCommitBundleCalls, [0, 1, 0, 1]);
+      // One atomic proof/persistence call per bundle covers both proposals.
+      expect(rust.voteCommitBundleCalls, [0, 1]);
 
       final activeProgressCounts = observed
           .where((state) => state.voteSubmissionTotalCount == 2)
@@ -5489,77 +5490,80 @@ void main() {
     },
   );
 
-  test('proposal wave proves at most three bundles concurrently', () async {
-    final proofGate = Completer<void>();
-    final rust = FakeVotingRustApi(
-      emitCommitments: true,
-      bundleCount: 4,
-      voteCommitmentGate: proofGate,
-    );
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(
+  test(
+    'SDK batch proof concurrency is not multiplied across bundles',
+    () async {
+      final proofGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
         bundleCount: 4,
-        delegationTxHashes: [
-          for (var bundleIndex = 0; bundleIndex < 4; bundleIndex++)
-            rust_frb_types.DelegationRecoveryView(
-              bundleIndex: bundleIndex,
-              phase: VotingWorkflowPhase.submittedDelegation,
-              txHash: 'delegation-$bundleIndex',
-              vanLeafPosition: null,
-            ),
-        ],
-        votes: [
-          for (var bundleIndex = 0; bundleIndex < 4; bundleIndex++)
-            vote(bundleIndex: bundleIndex, proposalId: 7),
-        ],
-      ),
-    );
-    final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
-    addTearDown(container.dispose);
-
-    await container.read(votingSessionProvider(kRoundId).future);
-    final cast = container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .castVotes(
-          draftVotes: [
-            rust_wire.DraftVote(
-              proposalId: 7,
-              choice: 1,
-              numOptions: 2,
-              vcTreePosition: BigInt.zero,
-              singleShare: false,
-            ),
+        voteCommitmentGate: proofGate,
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 4,
+          delegationTxHashes: [
+            for (var bundleIndex = 0; bundleIndex < 4; bundleIndex++)
+              rust_frb_types.DelegationRecoveryView(
+                bundleIndex: bundleIndex,
+                phase: VotingWorkflowPhase.submittedDelegation,
+                txHash: 'delegation-$bundleIndex',
+                vanLeafPosition: null,
+              ),
           ],
-        );
-    while (rust.voteCommitBundleCalls.length < 3 ||
-        (container
-                    .read(votingSessionProvider(kRoundId))
-                    .value
-                    ?.voteProgress
-                    .length ??
-                0) <
-            3) {
-      await Future<void>.delayed(Duration.zero);
-    }
+          votes: [
+            for (var bundleIndex = 0; bundleIndex < 4; bundleIndex++)
+              vote(bundleIndex: bundleIndex, proposalId: 7),
+          ],
+        ),
+      );
+      final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+      addTearDown(container.dispose);
 
-    expect(rust.voteCommitBundleCalls, [0, 1, 2]);
-    expect(rust.maxConcurrentVoteCommitments, 3);
-    expect(rust.syncedVoteTrees, [kRoundId]);
-    expect(
-      container.read(votingSessionProvider(kRoundId)).value!.voteProgress.keys,
-      {
-        const VotingVoteKey(bundleIndex: 0, proposalId: 7),
-        const VotingVoteKey(bundleIndex: 1, proposalId: 7),
-        const VotingVoteKey(bundleIndex: 2, proposalId: 7),
-      },
-    );
+      await container.read(votingSessionProvider(kRoundId).future);
+      final cast = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              rust_wire.DraftVote(
+                proposalId: 7,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+            ],
+          );
+      while (rust.voteCommitBundleCalls.isEmpty ||
+          (container
+                      .read(votingSessionProvider(kRoundId))
+                      .value
+                      ?.voteProgress
+                      .length ??
+                  0) <
+              1) {
+        await Future<void>.delayed(Duration.zero);
+      }
 
-    proofGate.complete();
-    await cast;
+      expect(rust.voteCommitBundleCalls, [0]);
+      expect(rust.maxConcurrentVoteCommitments, 1);
+      expect(rust.syncedVoteTrees, [kRoundId]);
+      expect(
+        container
+            .read(votingSessionProvider(kRoundId))
+            .value!
+            .voteProgress
+            .keys,
+        {const VotingVoteKey(bundleIndex: 0, proposalId: 7)},
+      );
 
-    expect(rust.voteCommitBundleCalls, [0, 1, 2, 3]);
-    expect(rust.maxConcurrentVoteCommitments, 3);
-  });
+      proofGate.complete();
+      await cast;
+
+      expect(rust.voteCommitBundleCalls, [0, 1, 2, 3]);
+      expect(rust.maxConcurrentVoteCommitments, 1);
+    },
+  );
 
   test(
     'proposal wave preserves successful bundles after proof failure',
@@ -5901,7 +5905,7 @@ void main() {
     expect(http.maxConcurrentConfirmationGets, 0);
   });
 
-  test('each bundle confirms a proposal before proving the next one', () async {
+  test('each bundle advances all proposals as one atomic batch', () async {
     final confirmationResponse =
         votingHttpResponses()['/shielded-vote/v1/tx/vote-tx']!;
     final http = _UniqueVoteTxHttpClient(
@@ -5944,8 +5948,8 @@ void main() {
         .read(votingSessionProvider(kRoundId).notifier)
         .castVotes(draftVotes: _twoProposalDrafts());
 
-    // The fake rejects a vote proved against an already-spent vote authority
-    // note, so reaching four submissions is itself the ordering proof.
+    // Every proposal is persisted and confirmed, but each bundle advances its
+    // VAN only once for the complete ordered batch.
     expect(
       rust.operationLog
           .where((entry) => entry.startsWith('mark_vote_submitted:'))
@@ -5960,25 +5964,21 @@ void main() {
     for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++) {
       expect(
         rust.operationLog.indexOf('build_vote:$bundleIndex:8'),
-        greaterThan(
+        lessThan(
           rust.operationLog.indexOf('mark_vote_confirmed:$bundleIndex:7'),
         ),
         reason:
-            'bundle $bundleIndex must confirm proposal 7 before proving '
-            'proposal 8 — the confirmation is what advances its VAN',
+            'bundle $bundleIndex must prepare the complete atomic roster '
+            'before advancing it',
       );
     }
-    // At least one sync per proposal step, and never more than one per
-    // (bundle, proposal) pair. How many of the four collapse depends on
-    // whether the bundles reach a step together; the deterministic
-    // coalescing case is pinned by the 4-bundle single-proposal test.
-    expect(rust.syncedVoteTrees.length, greaterThanOrEqualTo(2));
-    expect(rust.syncedVoteTrees.length, lessThanOrEqualTo(4));
+    expect(rust.voteChainAdvanceStartedKeys.toSet(), {'0:7', '1:7'});
+    expect(rust.syncedVoteTrees, [kRoundId]);
     expect(rust.maxConcurrentVoteTreeSyncs, 1);
     expect(rust.syncedVoteTrees.toSet(), {kRoundId});
   });
 
-  test('vote tree failover waits for prior sync witnesses', () async {
+  test('atomic batches share one coalesced tree sync safely', () async {
     final rust = _WitnessHandoffVotingRustApi();
     final http = FakeVotingHttpClient(
       responses: votingHttpResponses(
@@ -6024,15 +6024,8 @@ void main() {
         .castVotes(draftVotes: _twoProposalDrafts());
 
     await rust.firstWitnessStarted.future;
-    for (var attempt = 0; attempt < 100; attempt++) {
-      if (rust.operationLog.contains('mark_vote_confirmed:1:7')) break;
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
-    expect(rust.operationLog, contains('mark_vote_confirmed:1:7'));
-
-    // Bundle 1 has requested its next fresh sync, but bundle 0 is still using
-    // the tree produced by the first sync. Starting failover now would clear
-    // bundle 0's witness source before it can materialize the witness.
+    // While one consumer still materializes its witness, no second sync or
+    // failover reset may invalidate the shared tree.
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(rust.syncedVoteTreeNodeUrls, ['https://voting.example']);
     expect(rust.resetVoteTreeCalls, isEmpty);
@@ -6040,15 +6033,8 @@ void main() {
     rust.releaseFirstWitness();
     await cast;
 
-    expect(
-      rust.syncedVoteTreeNodeUrls,
-      containsAllInOrder([
-        'https://voting.example',
-        'https://voting.example',
-        'https://voting-failover.example',
-      ]),
-    );
-    expect(rust.resetVoteTreeCalls, ['account-1:$kRoundId']);
+    expect(rust.syncedVoteTreeNodeUrls, ['https://voting.example']);
+    expect(rust.resetVoteTreeCalls, isEmpty);
     expect(rust.resetVotingSessionStateCalls, isEmpty);
     expect(
       rust.operationLog
@@ -6113,18 +6099,23 @@ void main() {
     const gatedBundle = 0;
     const freeBundle = 1;
 
-    // The unblocked bundle must reach its second proposal while the gated one
-    // is still waiting on its first confirmation.
+    // The unblocked bundle must confirm its complete batch while the other
+    // bundle is still waiting on chain advancement.
     for (var attempt = 0; attempt < 200; attempt++) {
-      if (rust.operationLog.contains('build_vote:$freeBundle:8')) break;
+      if (rust.operationLog.contains('mark_vote_confirmed:$freeBundle:8')) {
+        break;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
     expect(
       rust.operationLog,
-      contains('build_vote:$freeBundle:8'),
+      contains('mark_vote_confirmed:$freeBundle:8'),
       reason: 'bundle $freeBundle must not wait on bundle $gatedBundle',
     );
-    expect(rust.operationLog, isNot(contains('build_vote:$gatedBundle:8')));
+    expect(
+      rust.operationLog,
+      isNot(contains('mark_vote_confirmed:$gatedBundle:8')),
+    );
 
     slowAdvance.complete();
     await cast;
@@ -6246,6 +6237,7 @@ void main() {
               bundleIndex: 0,
               storedHotkeySecret: const [42, 43, 44],
               vanWitness: witness,
+              maxProofConcurrency: 1,
               draftVotes: [
                 rust_wire.DraftVote(
                   proposalId: proposalId,
@@ -7240,7 +7232,7 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
-  test('vote tree sync runs before each proposal', () async {
+  test('vote tree sync runs once before each atomic bundle batch', () async {
     final rust = FakeVotingRustApi(emitCommitments: true);
     final container = _sessionContainer(rust: rust);
     addTearDown(container.dispose);
@@ -7250,10 +7242,8 @@ void main() {
         .read(votingSessionProvider(kRoundId).notifier)
         .castVotes(draftVotes: _twoProposalDrafts());
 
-    // A bundle's second vote needs the VAN leaf its first vote created, and
-    // that leaf is only witnessable after another sync.
-    expect(rust.syncedVoteTrees, [kRoundId, kRoundId]);
-    expect(rust.voteCommitBundleCalls, [0, 0]);
+    expect(rust.syncedVoteTrees, [kRoundId]);
+    expect(rust.voteCommitBundleCalls, [0]);
   });
 
   test('cast-time vote tree sync retries failover servers', () async {
@@ -12347,6 +12337,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final delegationChainAdvanceStartedBundles = <int>[];
   final List<rust_api.ApiChainRecoveryMode> voteRecoveryModes = [];
   final voteChainAdvanceStartedKeys = <String>[];
+  final Map<int, List<int>> _batchProposalIdsByBundle = {};
   final chainSubmissionPassHandles = <_FakeChainSubmissionPassHandle>[];
 
   @override
@@ -12484,6 +12475,62 @@ class FakeVotingRustApi implements VotingRustApi {
       txHash: txHash,
       vanPosition: _bundleVanPosition[bundleIndex]!,
       votePositions: [vcTreePosition.toInt()],
+    );
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVoteBatch({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  }) async {
+    voteRecoveryModes.add(recoveryMode);
+    final proposalIds = _batchProposalIdsByBundle[bundleIndex] ?? [proposalId];
+    final anchorKey = '$bundleIndex:$proposalId';
+    voteChainAdvanceStartedKeys.add(anchorKey);
+    await voteChainGatesByKey[anchorKey]?.future;
+    if (passHandle.isCancelled) return _cancelledChainSubmission();
+    final authority = _authorityFor(bundleIndex);
+    final vanPosition = _vanPositionFor(bundleIndex);
+    for (final id in proposalIds) {
+      final key = '$bundleIndex:$id';
+      if (_capturedAuthority[key] != authority ||
+          _capturedVanPosition[key] != vanPosition) {
+        throw StateError(
+          'atomic cast-vote rejected: inconsistent VAN generation for $key',
+        );
+      }
+      if (failingVoteConfirmationKeys.contains(key)) {
+        throw StateError('injected vote confirmation persistence failure $key');
+      }
+    }
+    const txHash = 'vote-batch-tx';
+    var nextAuthority = authority;
+    for (final id in proposalIds) {
+      nextAuthority &= ~(1 << id);
+      _addUnique(storedVoteTxHashes, '$bundleIndex:$id:$txHash');
+      operationLog.add('mark_vote_submitted:$bundleIndex:$id');
+    }
+    _bundleAuthority[bundleIndex] = nextAuthority;
+    _bundleVanPosition[bundleIndex] = ++_nextVanPosition;
+    _bundleMinAnchor[bundleIndex] = _voteTreeAnchor + 1;
+    final positions = <int>[];
+    for (final id in proposalIds) {
+      final position = BigInt.from(1000 + id);
+      positions.add(position.toInt());
+      _recordVoteConfirmed(
+        bundleIndex: bundleIndex,
+        proposalId: id,
+        txHash: txHash,
+        vanPosition: _bundleVanPosition[bundleIndex]!,
+        vcTreePosition: position,
+      );
+    }
+    return _confirmedChainSubmission(
+      txHash: txHash,
+      vanPosition: _bundleVanPosition[bundleIndex]!,
+      votePositions: positions,
     );
   }
 
@@ -13098,8 +13145,12 @@ class FakeVotingRustApi implements VotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) async* {
     voteCommitBundleCalls.add(bundleIndex);
+    _batchProposalIdsByBundle[bundleIndex] = [
+      for (final draft in draftVotes) draft.proposalId,
+    ];
     _activeVoteCommitments++;
     if (_activeVoteCommitments > maxConcurrentVoteCommitments) {
       maxConcurrentVoteCommitments = _activeVoteCommitments;
@@ -13108,6 +13159,7 @@ class FakeVotingRustApi implements VotingRustApi {
       if (!voteCommitmentStarted.isCompleted) {
         voteCommitmentStarted.complete();
       }
+      final signedCommitments = <rust_wire.SignedVoteCommitmentView>[];
       for (final draft in draftVotes) {
         yield rust_api.ApiVoteCommitEvent(
           phase: 'proving',
@@ -13147,21 +13199,35 @@ class FakeVotingRustApi implements VotingRustApi {
             ? 1
             : commitmentShareCount;
         _committedShareCounts[key] = committedShareCount;
-        final commitments = emitCommitments
+        final commitment = emitCommitments
             ? _commitments(
                 roundId: roundId,
                 bundleIndex: bundleIndex,
                 proposalId: draft.proposalId,
                 choice: draft.choice,
                 shareCount: committedShareCount,
-              )
+              ).commitments.single
             : null;
+        if (commitment != null) signedCommitments.add(commitment);
         yield rust_api.ApiVoteCommitEvent(
-          phase: 'result',
+          phase: 'proof_complete',
           proposalId: draft.proposalId,
           bundleIndex: bundleIndex,
+          proofProgress: 1,
+          commitments: null,
+        );
+      }
+      if (emitCommitments) {
+        yield rust_api.ApiVoteCommitEvent(
+          phase: 'result',
+          proposalId: null,
+          bundleIndex: bundleIndex,
           proofProgress: null,
-          commitments: commitments,
+          commitments: rust_api.ApiSignedVoteCommitments(
+            bundleIndex: bundleIndex,
+            commitments: signedCommitments,
+            batchDigest: draftVotes.length > 1 ? Uint8List(32) : null,
+          ),
         );
       }
     } finally {
@@ -13170,7 +13236,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_wire.SignedVoteCommitmentsView> recoverVoteCommitment({
+  Future<rust_api.ApiSignedVoteCommitments> recoverVoteCommitment({
     required String dbPath,
     required String accountUuid,
     required String roundId,
@@ -14160,7 +14226,7 @@ FakeVotingRecoveryApi _singleVoteRecoveryApi() {
   );
 }
 
-rust_wire.SignedVoteCommitmentsView _commitments({
+rust_api.ApiSignedVoteCommitments _commitments({
   required String roundId,
   required int bundleIndex,
   required int proposalId,
@@ -14168,7 +14234,7 @@ rust_wire.SignedVoteCommitmentsView _commitments({
   int shareCount = 1,
   List<int>? shareOrder,
 }) {
-  return rust_wire.SignedVoteCommitmentsView(
+  return rust_api.ApiSignedVoteCommitments(
     bundleIndex: bundleIndex,
     commitments: [
       rust_wire.SignedVoteCommitmentView(
@@ -14188,6 +14254,7 @@ rust_wire.SignedVoteCommitmentsView _commitments({
         ),
       ),
     ],
+    batchDigest: null,
   );
 }
 

@@ -11,8 +11,9 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `bounded_chain_message`, `build_vote_commitments_result`, `catch`, `chain_submission_client`, `chain_submission_round_id`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `failure`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `local`, `log_sink_closed`, `outcome`, `reject_unsupported_batch_steps`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These functions are ignored because they are not marked as `pub`: `bounded_chain_message`, `build_vote_commitments_result`, `catch`, `chain_submission_client_config`, `chain_submission_client`, `chain_submission_round_id`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `failure`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `local`, `log_sink_closed`, `outcome`, `share_record`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PreparedVoteWork`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
 ///
@@ -82,6 +83,23 @@ Future<ApiChainSubmissionCallResult> advanceChainVote({
   required int proposalId,
   required ApiChainRecoveryMode recoveryMode,
 }) => RustLib.instance.api.crateApiVotingAdvanceChainVote(
+  handle: handle,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  recoveryMode: recoveryMode,
+);
+
+/// Advances the complete durable atomic batch containing `proposal_id`.
+///
+/// The proposal is only a recovery anchor. The SDK reloads and validates the
+/// authoritative ordered roster and digest before constructing or dispatching
+/// the chain request.
+Future<ApiChainSubmissionCallResult> advanceChainVoteBatch({
+  required VotingChainSubmissionPassHandle handle,
+  required int bundleIndex,
+  required int proposalId,
+  required ApiChainRecoveryMode recoveryMode,
+}) => RustLib.instance.api.crateApiVotingAdvanceChainVoteBatch(
   handle: handle,
   bundleIndex: bundleIndex,
   proposalId: proposalId,
@@ -678,7 +696,7 @@ Future<List<ApiPendingShareRound>> listPendingShareRounds({
 ///
 /// Returns an error if opening the voting DB fails, no matching commitment is
 /// recoverable, or wire conversion fails.
-Future<SignedVoteCommitmentsView> recoverVoteCommitment({
+Future<ApiSignedVoteCommitments> recoverVoteCommitment({
   required String dbPath,
   required String accountUuid,
   required String roundId,
@@ -695,7 +713,7 @@ Future<SignedVoteCommitmentsView> recoverVoteCommitment({
 /// Streaming variant of `build_vote_commitments`.
 ///
 /// Emits per-proposal progress events, then a terminal `"result"` event carrying
-/// `SignedVoteCommitmentsView`.
+/// the persisted singleton or atomic-batch commitment roster.
 Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required String dbPath,
   required String accountUuid,
@@ -705,6 +723,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required List<int> storedHotkeySecret,
   required VanWitness vanWitness,
   required List<DraftVote> draftVotes,
+  required int maxProofConcurrency,
 }) => RustLib.instance.api.crateApiVotingBuildVoteCommitmentsWithProgress(
   dbPath: dbPath,
   accountUuid: accountUuid,
@@ -714,6 +733,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   storedHotkeySecret: storedHotkeySecret,
   vanWitness: vanWitness,
   draftVotes: draftVotes,
+  maxProofConcurrency: maxProofConcurrency,
 );
 
 /// Load the full recovery/share-tracking summary for one voting round.
@@ -1476,6 +1496,36 @@ class ApiShareTrackingReport {
           nextDelaySeconds == other.nextDelaySeconds;
 }
 
+/// Prepared singleton or atomic-batch commitments without chain wire payloads.
+///
+/// `batch_digest` is present only when every commitment belongs to one atomic
+/// batch. Chain submission reloads the canonical request body from durable SDK
+/// state, so neither that body nor individual submission payloads cross FRB.
+class ApiSignedVoteCommitments {
+  final int bundleIndex;
+  final List<SignedVoteCommitmentView> commitments;
+  final Uint8List? batchDigest;
+
+  const ApiSignedVoteCommitments({
+    required this.bundleIndex,
+    required this.commitments,
+    this.batchDigest,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ commitments.hashCode ^ batchDigest.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiSignedVoteCommitments &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          commitments == other.commitments &&
+          batchDigest == other.batchDigest;
+}
+
 /// PIR cache result for one snapshot-precomputed delegation bundle.
 class ApiSnapshotBundlePirResult {
   final int cachedCount;
@@ -1552,7 +1602,7 @@ class ApiVoteCommitEvent {
   final int? proposalId;
   final int? bundleIndex;
   final double? proofProgress;
-  final SignedVoteCommitmentsView? commitments;
+  final ApiSignedVoteCommitments? commitments;
 
   const ApiVoteCommitEvent({
     required this.phase,

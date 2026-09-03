@@ -5110,6 +5110,7 @@ class _IneligibleVotingRustApi extends _VotingStatusRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) async* {
     throw Exception(
       'Invalid input: no spendable voting notes at snapshot height 3359740',
@@ -5308,6 +5309,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   int voteCommitmentCalls = 0;
   int chainDelegationAdvanceCalls = 0;
   int chainVoteAdvanceCalls = 0;
+  final Map<int, List<int>> _batchProposalIdsByBundle = {};
   final _preparedHelperUrls = <String, List<String>>{};
 
   @override
@@ -5363,6 +5365,34 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       txHash: txHash,
       vanPosition: 0,
       votePositions: [vcTreePosition.toInt()],
+    );
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVoteBatch({
+    required VotingChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  }) async {
+    chainVoteAdvanceCalls++;
+    final proposalIds = _batchProposalIdsByBundle[bundleIndex] ?? [proposalId];
+    final positions = [
+      for (var index = 0; index < proposalIds.length; index++) 11 + index,
+    ];
+    for (var index = 0; index < proposalIds.length; index++) {
+      _recordVoteConfirmed(
+        bundleIndex: bundleIndex,
+        proposalId: proposalIds[index],
+        txHash: 'vote-batch-$bundleIndex',
+        vanPosition: 0,
+        vcTreePosition: BigInt.from(positions[index]),
+      );
+    }
+    return _statusConfirmedChainSubmission(
+      txHash: 'vote-batch-$bundleIndex',
+      vanPosition: 0,
+      votePositions: positions,
     );
   }
 
@@ -5696,22 +5726,40 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
+    required int maxProofConcurrency,
   }) async* {
     voteCommitmentCalls++;
+    _batchProposalIdsByBundle[bundleIndex] = [
+      for (final draft in draftVotes) draft.proposalId,
+    ];
     for (final draft in draftVotes) {
       yield rust_api.ApiVoteCommitEvent(
-        phase: 'result',
+        phase: 'proving',
         proposalId: draft.proposalId,
         bundleIndex: bundleIndex,
-        proofProgress: null,
-        commitments: _commitments(
-          roundId: roundId,
-          bundleIndex: bundleIndex,
-          proposalId: draft.proposalId,
-          choice: draft.choice,
-        ),
+        proofProgress: 0.5,
+        commitments: null,
       );
     }
+    yield rust_api.ApiVoteCommitEvent(
+      phase: 'result',
+      proposalId: null,
+      bundleIndex: bundleIndex,
+      proofProgress: null,
+      commitments: rust_api.ApiSignedVoteCommitments(
+        bundleIndex: bundleIndex,
+        commitments: [
+          for (final draft in draftVotes)
+            ..._commitments(
+              roundId: roundId,
+              bundleIndex: bundleIndex,
+              proposalId: draft.proposalId,
+              choice: draft.choice,
+            ).commitments,
+        ],
+        batchDigest: draftVotes.length > 1 ? Uint8List(32) : null,
+      ),
+    );
   }
 
   Future<String> voteCommitmentWireJson({
@@ -6256,13 +6304,13 @@ List<int> _bytesFromHex(String hex) {
   ];
 }
 
-rust_wire.SignedVoteCommitmentsView _commitments({
+rust_api.ApiSignedVoteCommitments _commitments({
   required String roundId,
   required int bundleIndex,
   required int proposalId,
   required int choice,
 }) {
-  return rust_wire.SignedVoteCommitmentsView(
+  return rust_api.ApiSignedVoteCommitments(
     bundleIndex: bundleIndex,
     commitments: [
       rust_wire.SignedVoteCommitmentView(
@@ -6282,6 +6330,7 @@ rust_wire.SignedVoteCommitmentsView _commitments({
         ),
       ),
     ],
+    batchDigest: null,
   );
 }
 
