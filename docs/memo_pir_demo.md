@@ -9,7 +9,7 @@ This demo depends on the wallet-library `feature/pir` branch
 The Cargo manifest pins a revision of it until the new APIs have a published release:
 
 ```text
-49f1f136622af8f3d522a744a00a8eb5d53198e8
+8a898736297c87c4c8d76eb93907a8d65a774c73
 ```
 
 The Cargo manifest enables the `zakura-pir-memo` backend and SQLite features and consumes the transport-neutral `zakura-pir-memo` client from that revision.

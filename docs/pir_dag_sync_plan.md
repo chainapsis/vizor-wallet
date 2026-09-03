@@ -1,6 +1,6 @@
 # PIR and DAG-sync: Vizor plan
 
-Status: 2026-09-03. Phases 1 and 2 deployed; Phases 3 and 4 built end to end, awaiting the server deploy and the wallet-library merge.
+Status: 2026-09-03. Phases 1 through 4 deployed: the service serves five tables under manifest schema 4; the wallet library and Vizor consume them. The program gate (restore at the Ironwood birthday) is the next check.
 
 The design and the full phased plan live in the server repository:
 
@@ -29,8 +29,8 @@ Vizor pins `wallet-libraries` by commit in `rust/Cargo.toml` (both the direct de
 | --- | --- | --- | --- | --- |
 | 1. Widen the ACTION record | merged, deployed | `feature/pir` | pinned, verified live | done |
 | 2. Parameterize the coordinator by table | merged, deployed (`/v1/*`, two generations) | `feature/pir` | `/v1` client, verified live | done |
-| 3. WITNESS as a sharded table | PR #39 (`feat/pir-witness`), CI green | PR #16 (`feat/pir-dag-sync`) | `dag_sync.rs`, pin `49f1f136` | built; merge and deploy pending |
-| 4. NULLIFIER cold/warm | same PR #39 | same PR #16 | same | built; merge and deploy pending |
+| 3. WITNESS as a sharded table | merged (#39, #42), deployed | `feature/pir` (#16, #17) | `dag_sync.rs`, pin `8a898736` | deployed; gate run pending |
+| 4. NULLIFIER cold/warm | same | same | same | deployed; gate run pending |
 | 5. Production deployment shape | — | n/a | n/a | after 3 and 4 |
 | 6. Query envelope and protocol version | folded into #39 (`envelope` in the manifest, v1: 8 / 4 / 4) | `DagSyncPlanner` issues it | `dag_sync.rs` | built with 3 and 4; packing-key batch spike deferred |
 
@@ -93,11 +93,11 @@ Demo procedure for memo retrieval is in `docs/memo_pir_demo.md`.
 
 ## Known follow-ups
 
-- Merge order for the current stage: wallet-libraries #16 into `feature/pir`, then
-  spendability-pir #39 (its deploy re-ingests the journal, about 9 minutes, and serves manifest
-  schema 4 with five tables). Vizor is already pinned to the #16 head and degrades gracefully
-  until the server serves five tables; memo completion, which is stricter, fails closed on the
-  schema bump until the app is rebuilt, which it already is.
+- The five-table deploy re-ingested about 42,000 blocks in roughly 70 minutes (sequential RPC
+  block fetches; Phase 1 took 9 minutes for the same range). A layout change is the only trigger;
+  concurrent fetches or a journal snapshot artifact would shorten the next one.
+- The witness fetch is scoped to notes the local shard tree cannot witness (`witness_stabilized`
+  is false); a synced wallet therefore issues no pass at all.
 - Frontier updates (`/v1/witness/frontier`) are served and the client can apply them, but Vizor
   does not yet refresh held witnesses; a stored witness stays bound to the anchor it was fetched
   at, which consensus accepts for Ironwood spends.

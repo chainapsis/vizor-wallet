@@ -293,7 +293,8 @@ impl DagSync {
 
 /// Queues the checks each known note still needs: a spend check while a
 /// restore is in progress and the note is old enough to be in the tables, and
-/// a witness fetch until one is stored.
+/// a witness fetch while neither the local shard tree nor a stored PIR path
+/// can witness it.
 fn enqueue_notes<A>(
     notes: &[DagNote<A>],
     tree_size: u64,
@@ -310,7 +311,7 @@ fn enqueue_notes<A>(
         if scan_pending_below_anchor && !checked.contains(&note.nullifier) {
             planner.enqueue_nullifier(note.nullifier);
         }
-        if !note.has_witness {
+        if !note.has_witness && !note.witness_stabilized {
             planner.enqueue_witness(u64::from(note.position));
         }
     }
@@ -467,6 +468,45 @@ mod tests {
             "row 0 cannot attribute a spend starting at 13"
         );
         assert_eq!(pending_in_row(&mut pending, 8, &records), Some(5));
+    }
+
+    /// Manual smoke test against the deployed service: builds all five table
+    /// sessions from one manifest, fetches the cap, and issues one full pass
+    /// of cover queries. It carries no wallet state, so it discloses nothing.
+    #[tokio::test]
+    #[ignore = "requires the deployed PIR service"]
+    async fn deployed_endpoint_serves_five_tables_and_answers_a_cover_pass() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let endpoint = endpoint_for(WalletNetwork::Main).unwrap();
+        let (sessions, cap) = connect_all(&endpoint).await.unwrap();
+        assert_eq!(cap.tree_size, sessions.action.manifest().ironwood_tree_size);
+        let envelope = sessions.action.manifest().envelope;
+        let mut planner = DagSyncPlanner::new();
+        let queries = planner.plan(&sessions).unwrap();
+        assert_eq!(
+            queries.len(),
+            (envelope.k_nf * 2 + envelope.k_act + envelope.k_wit * 2) as usize
+        );
+        for PlannedQuery {
+            table,
+            target,
+            query,
+        } in queries
+        {
+            assert_eq!(target, Target::Dummy);
+            let response = routed_request(
+                Method::POST,
+                &endpoint_path(&endpoint, &format!("/v1/{}/query", table.as_str())).unwrap(),
+                query.request_body().to_vec(),
+                MAX_PIR_BODY_BYTES,
+            )
+            .await
+            .unwrap();
+            let row = table_session(&sessions, table)
+                .decode(query, &response)
+                .unwrap();
+            assert_eq!(row.table(), table);
+        }
     }
 
     /// The row-offset arithmetic `attribute_spends` relies on, isolated from the DB.
