@@ -649,6 +649,26 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSettingsEndpointUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Explorer',
+                      builder: buildSettingsExplorerUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Explorer custom',
+                      builder: buildSettingsExplorerCustomUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile explorer',
+                      builder: buildMobileExplorerUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile explorer custom',
+                      builder: buildMobileExplorerCustomUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile settings explorer row',
+                      builder: buildMobileSettingsExplorerUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Secret passphrase gate',
                       builder: buildSettingsSecretPassphraseGateUseCase,
                     ),

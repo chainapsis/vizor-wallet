@@ -22,7 +22,9 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
+import '../../../../core/config/zcash_explorer.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
 import '../../../../services/biometric_unlock.dart';
@@ -41,7 +43,12 @@ class MobileSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final account = ref.watch(accountProvider).value?.activeAccount;
-    final endpoint = ref.watch(rpcEndpointProvider).hostPort;
+    final endpointConfig = ref.watch(rpcEndpointProvider);
+    final endpoint = endpointConfig.hostPort;
+    final explorer = explorerSettingsLabel(
+      ref.watch(zcashExplorerProvider),
+      networkName: endpointConfig.networkName,
+    );
     final themeMode = ref.watch(themeModeProvider);
     final profilePictureId =
         account?.profilePictureId ?? kDefaultProfilePictureId;
@@ -219,6 +226,19 @@ class MobileSettingsScreen extends ConsumerWidget {
                       chevronColor: settingsChevronColor,
                       showChevron: true,
                       onTap: () => context.push('/settings/endpoint'),
+                    ),
+                    MobileListRow(
+                      key: const ValueKey('mobile_settings_explorer_row'),
+                      leading: _RowIcon(AppIcons.globe),
+                      label: 'Explorer',
+                      value: explorer,
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      valueTextStyle: settingsRowStyle,
+                      valueColor: settingsValueColor,
+                      chevronColor: settingsChevronColor,
+                      showChevron: true,
+                      onTap: () => context.push('/settings/explorer'),
                     ),
                     MobileListRow(
                       key: const ValueKey('mobile_settings_theme_row'),

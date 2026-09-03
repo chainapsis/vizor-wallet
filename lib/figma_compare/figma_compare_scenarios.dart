@@ -151,6 +151,37 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsMainUseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-explorer',
+    description: 'Desktop explorer settings with CipherScan selected',
+    builder: buildSettingsExplorerUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-explorer-custom',
+    description: 'Desktop explorer settings with a custom URL template',
+    builder: buildSettingsExplorerCustomUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-explorer',
+    description: 'Mobile settings scrolled to the Explorer row',
+    builder: buildMobileSettingsExplorerUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-explorer',
+    description: 'Mobile explorer settings with CipherScan selected',
+    builder: buildMobileExplorerUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-explorer-custom',
+    description: 'Mobile explorer settings with a custom URL template',
+    builder: buildMobileExplorerCustomUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-settings-footer',
     description: 'Mobile settings scrolled to the branded version footer',
     builder: buildMobileSettingsFooterUseCase,

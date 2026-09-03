@@ -72,6 +72,7 @@ import 'src/features/send/services/send_flow.dart'
 import 'src/features/settings/screens/settings_screen.dart';
 import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
+import 'src/features/settings/screens/settings_explorer_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/features/settings/screens/settings_uninstall_screen.dart';
 import 'src/features/settings/screens/settings_viewing_key_screen.dart';
@@ -999,6 +1000,10 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(
     path: '/settings/endpoint',
     builder: (_, _) => const SettingsEndpointScreen(),
+  ),
+  GoRoute(
+    path: '/settings/explorer',
+    builder: (_, _) => const SettingsExplorerScreen(),
   ),
   GoRoute(
     path: '/settings/link-mobile',
