@@ -15,10 +15,6 @@ class PaymentLinkCardSelector extends StatelessWidget {
     this.itemHeight = height,
     this.artworkWidth = 60,
     this.artworkHeight = 44,
-    this.selectionInset = EdgeInsets.zero,
-    this.selectionBorderWidth = 2,
-    this.selectionBorderRadius = 10,
-    this.selectedCheckSize = 20,
     this.inactiveOpacity = 0.5,
     this.semanticLabel,
     super.key,
@@ -26,13 +22,14 @@ class PaymentLinkCardSelector extends StatelessWidget {
        assert(itemHeight > 0),
        assert(artworkWidth > 0 && artworkWidth <= itemWidth),
        assert(artworkHeight > 0 && artworkHeight <= itemHeight),
-       assert(selectionBorderWidth > 0),
-       assert(selectionBorderRadius >= 0),
-       assert(selectedCheckSize > 0),
        assert(inactiveOpacity >= 0 && inactiveOpacity <= 1);
 
   static const double width = 64;
   static const double height = 48;
+
+  static const double _selectionBorderWidth = 2;
+  static const double _selectionBorderRadius = 10;
+  static const double _selectedCheckSize = 20;
 
   final PaymentLinkCardArtwork artwork;
   final bool selected;
@@ -41,10 +38,6 @@ class PaymentLinkCardSelector extends StatelessWidget {
   final double itemHeight;
   final double artworkWidth;
   final double artworkHeight;
-  final EdgeInsets selectionInset;
-  final double selectionBorderWidth;
-  final double selectionBorderRadius;
-  final double selectedCheckSize;
   final double inactiveOpacity;
   final String? semanticLabel;
 
@@ -86,21 +79,17 @@ class PaymentLinkCardSelector extends StatelessWidget {
                 ),
               ),
               if (active)
-                Positioned(
-                  left: selectionInset.left,
-                  top: selectionInset.top,
-                  right: selectionInset.right,
-                  bottom: selectionInset.bottom,
+                Positioned.fill(
                   child: IgnorePointer(
                     child: DecoratedBox(
                       key: const ValueKey('payment_link_card_focus_ring'),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(
-                          selectionBorderRadius,
+                          _selectionBorderRadius,
                         ),
                         border: Border.all(
                           color: colors.state.focusRing,
-                          width: selectionBorderWidth,
+                          width: _selectionBorderWidth,
                         ),
                       ),
                     ),
@@ -112,8 +101,8 @@ class PaymentLinkCardSelector extends StatelessWidget {
                   bottom: 4,
                   child: Container(
                     key: const ValueKey('payment_link_card_check'),
-                    width: selectedCheckSize,
-                    height: selectedCheckSize,
+                    width: _selectedCheckSize,
+                    height: _selectedCheckSize,
                     decoration: BoxDecoration(
                       color: colors.background.inverse,
                       shape: BoxShape.circle,

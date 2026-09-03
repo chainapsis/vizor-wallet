@@ -9,10 +9,10 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_selector/file_selector.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+
+import '../../../core/storage/png_save_location.dart';
 
 /// Base name of an exported request QR, before the amount and the extension.
 const _requestQrFileStem = 'vizor-request';
@@ -35,28 +35,9 @@ typedef RequestShareHandler =
       required String fileName,
     });
 
-/// The platform's own save panel. On sandboxed macOS this is the only way to
-/// reach a folder outside the app container, and it is also where the user
-/// confirms replacing a file they already have.
-Future<String?> defaultRequestQrSaveLocation({
-  required String suggestedName,
-}) async {
-  final location = await getSaveLocation(
-    suggestedName: suggestedName,
-    // Open on Downloads rather than wherever the panel last was: a picture
-    // of a request is something the user is about to hand to someone else.
-    initialDirectory: await _downloadsDirectoryPath(),
-    acceptedTypeGroups: const [
-      XTypeGroup(
-        label: 'PNG image',
-        extensions: ['png'],
-        mimeTypes: ['image/png'],
-        uniformTypeIdentifiers: ['public.png'],
-      ),
-    ],
-  );
-  return location?.path;
-}
+/// The platform's own save panel, shared with the Gift Card QR export.
+Future<String?> defaultRequestQrSaveLocation({required String suggestedName}) =>
+    pickPngSaveLocation(suggestedName: suggestedName);
 
 Future<void> defaultRequestShare({
   required String text,
@@ -132,14 +113,4 @@ String _folderNameOf(String directoryPath) {
       .where((segment) => segment.isNotEmpty)
       .toList();
   return segments.isEmpty ? directoryPath : segments.last;
-}
-
-/// The platform Downloads folder, or null when the platform has none — the
-/// panel then opens wherever it would have anyway.
-Future<String?> _downloadsDirectoryPath() async {
-  try {
-    return (await getDownloadsDirectory())?.path;
-  } on Object {
-    return null;
-  }
 }

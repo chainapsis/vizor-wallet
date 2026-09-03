@@ -8,6 +8,8 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../payment_link_action.dart';
 import '../payment_link_card_motion.dart';
+import '../payment_link_copy.dart';
+import '../payment_link_dashed_border_painter.dart';
 import '../payment_link_skeleton.dart';
 
 const _referenceContentHeight = 773.0;
@@ -36,8 +38,8 @@ enum PaymentLinkReadyMobileState { waiting, soon, ready }
 class PaymentLinkHowItWorksMobileSheet extends StatelessWidget {
   const PaymentLinkHowItWorksMobileSheet({
     required this.onClose,
-    this.title = 'How Gift Cards work',
-    this.subtitle = 'A great way to celebrate anything.',
+    this.title = kPaymentLinkHowItWorksTitle,
+    this.subtitle = kPaymentLinkHowItWorksSubtitle,
     super.key,
   });
 
@@ -152,10 +154,10 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
     required this.onCreate,
     required this.onRedeem,
     this.screenTitle = 'Gift Cards',
-    this.title = 'No Gift Cards yet',
+    this.title = kPaymentLinkEmptyTitle,
     this.helpLabel = 'How the Gift Card works',
-    this.createLabel = 'Create a card',
-    this.redeemLabel = 'Redeem a card',
+    this.createLabel = kPaymentLinkCreateCardLabel,
+    this.redeemLabel = kPaymentLinkRedeemCardLabel,
     super.key,
   });
 
@@ -312,7 +314,7 @@ class PaymentLinkAmountMobileView extends StatelessWidget {
     this.onContinue,
     this.supportingText,
     this.supportingTextIsError = false,
-    this.title = 'Create Gift Card',
+    this.title = kPaymentLinkCreateGiftCardTitle,
     this.subtitle = 'Enter amount & pick a design.',
     this.continueLabel = 'Continue',
     super.key,
@@ -473,7 +475,7 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
                 children: [
                   _MobileReviewRow(label: 'Card amount', value: cardAmountText),
                   _MobileReviewRow(
-                    label: 'Card fee (deposit + redeem)',
+                    label: kPaymentLinkCardFeeLabel,
                     value: cardFeeText,
                     onHelp: onFeeHelp,
                   ),
@@ -486,7 +488,7 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   _MobileReviewRow(
-                    label: 'Total amount deducted',
+                    label: kPaymentLinkTotalDeductedLabel,
                     value: totalAmountText,
                   ),
                 ],
@@ -521,8 +523,8 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
     this.onCopy,
     this.onCardTap,
     this.decoration,
-    this.waitingStatusLabel = 'Wait 1:15 to get the link',
-    this.waitingHeading = 'Gift Card is\nalmost ready!',
+    this.waitingStatusLabel = kPaymentLinkWaitingStatusLabel,
+    this.waitingHeading = kPaymentLinkAlmostReadyHeading,
     this.waitingDescription =
         'The link becomes shareable when funding reaches the network.\n'
         'If Vizor cannot confirm that yet, one confirmation is enough.',
@@ -560,7 +562,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
     final cardContent = canFlip
         ? PaymentLinkAction(
             onPressed: onCardTap,
-            semanticLabel: 'Flip gift card',
+            semanticLabel: kPaymentLinkFlipCardSemanticLabel,
             builder: (context, _, focused) => DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(AppRadii.large),
@@ -588,7 +590,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
             left: 40,
             right: 40,
             child: Text(
-              ready ? 'Your Gift Card\nis ready!' : waitingHeading,
+              ready ? kPaymentLinkReadyHeading : waitingHeading,
               textAlign: TextAlign.center,
               style: AppTypography.displayLarge.copyWith(
                 color: context.colors.text.accent,
@@ -671,14 +673,14 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
     required this.onBack,
     this.onPaste,
     this.onClearClipboard,
-    this.title = 'Redeem the Card',
-    this.subtitle = 'Copy the card link you’ve received, and paste it below.',
-    this.pasteLabel = 'Paste card link',
-    this.invalidTitle = 'The link doesn’t look legit.',
-    this.invalidSubtitle = 'Copy the link & try again',
+    this.title = kPaymentLinkRedeemTheCardTitle,
+    this.subtitle = kPaymentLinkRedeemSubtitle,
+    this.pasteLabel = kPaymentLinkPasteLabel,
+    this.invalidTitle = kPaymentLinkInvalidTitle,
+    this.invalidSubtitle = kPaymentLinkInvalidSubtitle,
     this.unavailableTitle = 'This card has no available balance.',
-    this.unavailableSubtitle = 'It may have already been claimed.',
-    this.clearLabel = 'Clear clipboard',
+    this.unavailableSubtitle = kPaymentLinkUnavailableSubtitle,
+    this.clearLabel = kPaymentLinkClearClipboardLabel,
     super.key,
   });
 
@@ -779,7 +781,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
               left: 0,
               right: 0,
               child: Text(
-                'Checking ...',
+                kPaymentLinkCheckingLabel,
                 key: const ValueKey('payment_link_mobile_redeem_checking'),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMediumStrong.copyWith(
@@ -822,7 +824,7 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
     this.onRevealMessage,
     this.decoration,
     this.title = 'You’ve received a gift!',
-    this.messageTitle = 'Message attached.',
+    this.messageTitle = kPaymentLinkMessageAttachedTitle,
     this.messageHint = 'Tap on the card to reveal\nthe message.',
     this.claimLabel = 'Claim the gift',
     super.key,
@@ -880,7 +882,7 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
                     'payment_link_envelope.svg',
                     width: 27,
                     height: 22,
-                    semanticsLabel: 'Gift message',
+                    semanticsLabel: kPaymentLinkGiftMessageLabel,
                   ),
                   const SizedBox(height: AppSpacing.s),
                   Text(
@@ -901,7 +903,7 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
               card: hasMessage && onRevealMessage != null
                   ? PaymentLinkAction(
                       onPressed: onRevealMessage,
-                      semanticLabel: 'Reveal gift card message',
+                      semanticLabel: kPaymentLinkRevealMessageSemanticLabel,
                       builder: (context, _, focused) => DecoratedBox(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(AppRadii.large),
@@ -963,43 +965,6 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
       ),
     );
   }
-}
-
-class _MobileDashedBorderPainter extends CustomPainter {
-  const _MobileDashedBorderPainter({
-    required this.color,
-    required this.radius,
-    this.strokeWidth = 3,
-  });
-
-  final Color color;
-  final double radius;
-  final double strokeWidth;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
-    final path = Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
-      );
-    for (final metric in path.computeMetrics()) {
-      var distance = 0.0;
-      while (distance < metric.length) {
-        canvas.drawPath(metric.extractPath(distance, distance + 6), paint);
-        distance += 12;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _MobileDashedBorderPainter oldDelegate) =>
-      oldDelegate.color != color ||
-      oldDelegate.radius != radius ||
-      oldDelegate.strokeWidth != strokeWidth;
 }
 
 class _PaymentLinkLoadingMobileCard extends StatelessWidget {
@@ -1064,9 +1029,10 @@ class _MobileRedeemDropZone extends StatelessWidget {
   Widget build(BuildContext context) {
     return CustomPaint(
       key: const ValueKey('payment_link_mobile_redeem_drop_zone'),
-      painter: _MobileDashedBorderPainter(
+      painter: PaymentLinkDashedBorderPainter(
         color: context.colors.border.regular,
         radius: AppRadii.large,
+        strokeWidth: 3,
       ),
       child: SizedBox(
         width: _cardWidth,
@@ -1086,7 +1052,7 @@ class _MobileDashedStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _MobileDashedBorderPainter(
+      painter: PaymentLinkDashedBorderPainter(
         color: context.colors.border.medium,
         radius: AppRadii.full,
         strokeWidth: 2,

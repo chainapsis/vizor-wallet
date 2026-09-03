@@ -21,11 +21,6 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
     this.itemHeight = PaymentLinkCardSelector.height,
     this.artworkWidth = 60,
     this.artworkHeight = 44,
-    this.itemGap = AppSpacing.xs,
-    this.selectionInset = EdgeInsets.zero,
-    this.selectionBorderWidth = 2,
-    this.selectionBorderRadius = 10,
-    this.selectedCheckSize = 20,
     this.edgeMaskInset = 17,
     this.edgeFadeFraction = 0.15,
     this.inactiveOpacity = 0.5,
@@ -38,16 +33,15 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
        assert(itemWidth > 0),
        assert(itemHeight > 0),
        assert(height > 0),
-       assert(itemGap >= 0),
-       assert(selectionBorderWidth > 0),
-       assert(selectionBorderRadius >= 0),
-       assert(selectedCheckSize > 0),
        assert(edgeMaskInset >= 0 && edgeMaskInset < width / 2),
        assert(edgeFadeFraction >= 0 && edgeFadeFraction < 0.5),
        assert(inactiveOpacity >= 0 && inactiveOpacity <= 1);
 
   static const double defaultWidth = 396;
   static const double defaultHeight = 50;
+
+  /// Gap between two adjacent selector items.
+  static const double itemGap = AppSpacing.xs;
 
   /// Ordered artwork choices shown in the rail.
   ///
@@ -61,11 +55,6 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
   final double itemHeight;
   final double artworkWidth;
   final double artworkHeight;
-  final double itemGap;
-  final EdgeInsets selectionInset;
-  final double selectionBorderWidth;
-  final double selectionBorderRadius;
-  final double selectedCheckSize;
   final double edgeMaskInset;
   final double edgeFadeFraction;
   final double inactiveOpacity;
@@ -83,7 +72,8 @@ class _PaymentLinkCardSelectorRailState
   late final ScrollController _controller;
   late int _baseIndex;
 
-  double get _itemStride => widget.itemWidth + widget.itemGap;
+  double get _itemStride =>
+      widget.itemWidth + PaymentLinkCardSelectorRail.itemGap;
 
   int get _itemCount => widget.artworks.length * _cycleCopies;
 
@@ -274,10 +264,6 @@ class _PaymentLinkCardSelectorRailState
                     itemHeight: widget.itemHeight,
                     artworkWidth: widget.artworkWidth,
                     artworkHeight: widget.artworkHeight,
-                    selectionInset: widget.selectionInset,
-                    selectionBorderWidth: widget.selectionBorderWidth,
-                    selectionBorderRadius: widget.selectionBorderRadius,
-                    selectedCheckSize: widget.selectedCheckSize,
                     inactiveOpacity: widget.inactiveOpacity,
                   ),
                 );

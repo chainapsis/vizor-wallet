@@ -986,10 +986,6 @@ void main() {
       disableAnimations: false,
     );
     expect(find.bySemanticsLabel('Flip gift card'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('payment_link_share_arrow')),
-      findsNothing,
-    );
     expect(find.text('Click on the card to flip it.'), findsNothing);
 
     await tester.tap(find.bySemanticsLabel('Flip gift card'));

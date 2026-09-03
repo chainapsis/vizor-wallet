@@ -1,6 +1,5 @@
-import 'dart:ui' as ui;
-
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
@@ -22,6 +21,7 @@ class AppModalCard extends StatelessWidget {
     required this.child,
     this.width = kAppModalCardWidth,
     this.bottomPadding = AppSpacing.md,
+    this.highlight = false,
     super.key,
   });
 
@@ -29,28 +29,36 @@ class AppModalCard extends StatelessWidget {
   final double width;
   final double bottomPadding;
 
+  /// Paints the Figma `Shadow Overlay` inner highlight over the card edge.
+  ///
+  /// Opt-in: it is part of the Gift Card wizard's own modal treatment, not the
+  /// shared look every pane modal has.
+  final bool highlight;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final card = Container(
+      width: width,
+      clipBehavior: Clip.antiAlias,
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.sm,
+        bottomPadding,
+      ),
+      decoration: BoxDecoration(
+        color: colors.background.base,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appModalShadow,
+      ),
+      child: child,
+    );
+    if (!highlight) return card;
     return CustomPaint(
       key: const ValueKey('app_modal_inner_highlight'),
       foregroundPainter: const _AppModalInnerHighlightPainter(),
-      child: Container(
-        width: width,
-        clipBehavior: Clip.antiAlias,
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.sm,
-          AppSpacing.md,
-          AppSpacing.sm,
-          bottomPadding,
-        ),
-        decoration: BoxDecoration(
-          color: colors.background.base,
-          borderRadius: BorderRadius.circular(AppRadii.large),
-          boxShadow: appModalShadow,
-        ),
-        child: child,
-      ),
+      child: card,
     );
   }
 }

@@ -1609,8 +1609,6 @@ class _PaymentLinksDesktopScreenState
         itemHeight: 60,
         artworkWidth: 76,
         artworkHeight: 56,
-        itemGap: AppSpacing.xs,
-        selectionInset: EdgeInsets.zero,
         edgeMaskInset: AppSpacing.sm,
         edgeFadeFraction: 0.3,
         inactiveOpacity: 1,

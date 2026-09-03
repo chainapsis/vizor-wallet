@@ -15,6 +15,8 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
+import 'payment_link_copy.dart';
+import 'payment_link_dashed_border_painter.dart';
 import 'payment_link_gift_card.dart';
 
 const kPaymentLinkMessageTooLargeText =
@@ -50,10 +52,10 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
     required this.onCreate,
     required this.onRedeem,
     this.backLabel = 'Home',
-    this.title = 'No Gift Cards yet',
-    this.helpLabel = 'How Gift Cards work',
+    this.title = kPaymentLinkEmptyTitle,
+    this.helpLabel = kPaymentLinkHowItWorksTitle,
     this.createLabel = 'Create new card',
-    this.redeemLabel = 'Redeem a card',
+    this.redeemLabel = kPaymentLinkRedeemCardLabel,
     super.key,
   });
 
@@ -152,8 +154,8 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
   const PaymentLinkHowItWorksDesktopView({
     required this.background,
     required this.onClose,
-    this.title = 'How Gift Cards work',
-    this.subtitle = 'A great way to celebrate anything.',
+    this.title = kPaymentLinkHowItWorksTitle,
+    this.subtitle = kPaymentLinkHowItWorksSubtitle,
     this.createDescription =
         'Enter amount to gift, pick a design, add a message (optional) '
         'and create your Card with a single click.',
@@ -186,6 +188,7 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
         AppPaneModalOverlay(
           onDismiss: onClose,
           child: AppModalCard(
+            highlight: true,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -243,7 +246,7 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
     this.supportingText,
     this.supportingTextIsError = false,
     this.backLabel = 'Home',
-    this.title = 'Create Gift Card',
+    this.title = kPaymentLinkCreateGiftCardTitle,
     this.subtitle = 'Enter amount & select the design.',
     this.createLabel = 'Continue',
     this.emptyActionLabel = 'Continue',
@@ -327,7 +330,7 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
     this.onStepSelected,
     this.errorText,
     this.backLabel = 'Home',
-    this.title = 'Create Gift Card',
+    this.title = kPaymentLinkCreateGiftCardTitle,
     this.subtitle = 'Enter amount & select the design.',
     this.skipLabel = 'Skip message',
     this.emptyContinueLabel = 'Continue',
@@ -412,7 +415,7 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
     this.onConfirm,
     this.onStepSelected,
     this.backLabel = 'Home',
-    this.title = 'Create Gift Card',
+    this.title = kPaymentLinkCreateGiftCardTitle,
     this.subtitle = 'Enter amount & select the design.',
     this.confirmLabel = 'Create card',
     super.key,
@@ -461,7 +464,7 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
                   SizedBox(
                     height: AppSpacing.base,
                     child: _ReviewAmountRow(
-                      label: 'Card fee (deposit + redeem)',
+                      label: kPaymentLinkCardFeeLabel,
                       value: cardFeeText,
                     ),
                   ),
@@ -469,7 +472,7 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
                   SizedBox(
                     height: AppSpacing.base,
                     child: _ReviewAmountRow(
-                      label: 'Total amount deducted',
+                      label: kPaymentLinkTotalDeductedLabel,
                       value: totalAmountText,
                       emphasized: true,
                       showHelp: true,
@@ -566,8 +569,8 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
     this.onCardTap,
     this.onReturnHome,
     this.backLabel = 'Home',
-    this.waitingStatusLabel = 'Wait 1:15 to get the link',
-    this.waitingHeading = 'Gift Card is\nalmost ready!',
+    this.waitingStatusLabel = kPaymentLinkWaitingStatusLabel,
+    this.waitingHeading = kPaymentLinkAlmostReadyHeading,
     this.waitingPrimaryText =
         'The link becomes shareable when funding reaches the network.',
     this.waitingSecondaryText =
@@ -604,7 +607,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
     final cardContent = canFlip
         ? PaymentLinkAction(
             onPressed: onCardTap,
-            semanticLabel: 'Flip gift card',
+            semanticLabel: kPaymentLinkFlipCardSemanticLabel,
             builder: (context, _, focused) => _ActionFocusRing(
               focused: focused,
               borderRadius: AppRadii.large,
@@ -629,7 +632,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                 left: 0,
                 right: 0,
                 child: Text(
-                  waiting ? waitingHeading : 'Your Gift Card\nis ready!',
+                  waiting ? waitingHeading : kPaymentLinkReadyHeading,
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: context.colors.text.accent,
@@ -710,10 +713,10 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
     this.decoration,
     this.backLabel = 'Cards',
     this.title = 'You’ve received\na gift card!',
-    this.messageTitle = 'Message attached.',
+    this.messageTitle = kPaymentLinkMessageAttachedTitle,
     this.messageHint = 'Click on the card to reveal',
     this.claimLabel = 'Claim the Gift Card',
-    this.cardActionLabel = 'Reveal gift card message',
+    this.cardActionLabel = kPaymentLinkRevealMessageSemanticLabel,
     super.key,
   });
 
@@ -805,7 +808,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                                 ),
                                 width: 20,
                                 height: 16,
-                                semanticsLabel: 'Gift message',
+                                semanticsLabel: kPaymentLinkGiftMessageLabel,
                               ),
                             ),
                           ),
@@ -1316,10 +1319,13 @@ class _PaymentLinkCardsDesktopViewState
             key: const ValueKey('payment_link_create_card_button'),
             onPressed: widget.onCreate,
             size: AppButtonSize.mediumLarge,
-            child: const Text('Create a card'),
+            child: const Text(kPaymentLinkCreateCardLabel),
           ),
           const SizedBox(height: AppSpacing.s),
-          _TextAction(label: 'Redeem a card', onTap: widget.onRedeem),
+          _TextAction(
+            label: kPaymentLinkRedeemCardLabel,
+            onTap: widget.onRedeem,
+          ),
         ],
       ),
       child: Align(
@@ -1403,13 +1409,13 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
     this.loadingPlaceholder,
     this.backLabel = 'My Cards',
     this.title,
-    this.subtitle = 'Copy the card link you’ve received, and paste it below.',
-    this.pasteLabel = 'Paste card link',
-    this.invalidTitle = 'The link doesn’t look legit.',
-    this.invalidSubtitle = 'Copy the link & try again',
+    this.subtitle = kPaymentLinkRedeemSubtitle,
+    this.pasteLabel = kPaymentLinkPasteLabel,
+    this.invalidTitle = kPaymentLinkInvalidTitle,
+    this.invalidSubtitle = kPaymentLinkInvalidSubtitle,
     this.unavailableTitle = 'This Card has no available balance.',
-    this.unavailableSubtitle = 'It may have already been claimed.',
-    this.clearLabel = 'Clear clipboard',
+    this.unavailableSubtitle = kPaymentLinkUnavailableSubtitle,
+    this.clearLabel = kPaymentLinkClearClipboardLabel,
     super.key,
   });
 
@@ -1449,7 +1455,10 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
                 left: 0,
                 right: 0,
                 child: Text(
-                  title ?? (loading ? 'Checking ...' : 'Redeem the Card'),
+                  title ??
+                      (loading
+                          ? kPaymentLinkCheckingLabel
+                          : kPaymentLinkRedeemTheCardTitle),
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineLarge.copyWith(
                     color: context.colors.text.accent,
@@ -1563,7 +1572,7 @@ class _DashedDropZone extends StatelessWidget {
   Widget build(BuildContext context) {
     return CustomPaint(
       key: const ValueKey('payment_link_redeem_drop_zone'),
-      painter: _DashedBorderPainter(
+      painter: PaymentLinkDashedBorderPainter(
         color: context.colors.border.medium,
         radius: AppRadii.large,
         strokeWidth: 3,
@@ -1877,7 +1886,7 @@ class _DashedStatusPill extends StatelessWidget {
       label: label,
       enabled: false,
       child: CustomPaint(
-        painter: _DashedBorderPainter(
+        painter: PaymentLinkDashedBorderPainter(
           color: context.colors.border.medium,
           radius: AppRadii.full,
         ),
@@ -1907,43 +1916,6 @@ class _DashedStatusPill extends StatelessWidget {
       ),
     );
   }
-}
-
-class _DashedBorderPainter extends CustomPainter {
-  const _DashedBorderPainter({
-    required this.color,
-    required this.radius,
-    this.strokeWidth = 2,
-  });
-
-  final Color color;
-  final double radius;
-  final double strokeWidth;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
-    final path = Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
-      );
-    for (final metric in path.computeMetrics()) {
-      var distance = 0.0;
-      while (distance < metric.length) {
-        canvas.drawPath(metric.extractPath(distance, distance + 6), paint);
-        distance += 12;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) =>
-      oldDelegate.color != color ||
-      oldDelegate.radius != radius ||
-      oldDelegate.strokeWidth != strokeWidth;
 }
 
 class _PaymentLinkLoadingCard extends StatefulWidget {

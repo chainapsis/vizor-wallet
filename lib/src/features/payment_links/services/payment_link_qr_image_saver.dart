@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/storage/png_save_location.dart';
 
 final paymentLinkQrImageSaverProvider = Provider<PaymentLinkQrImageSaver>((
   ref,
@@ -20,28 +22,15 @@ class FileSelectorPaymentLinkQrImageSaver implements PaymentLinkQrImageSaver {
   const FileSelectorPaymentLinkQrImageSaver();
 
   static const _suggestedName = 'vizor-gift-card.png';
-  static const _pngType = XTypeGroup(
-    label: 'PNG image',
-    extensions: ['png'],
-    mimeTypes: ['image/png'],
-    uniformTypeIdentifiers: ['public.png'],
-  );
 
   @override
   Future<bool> savePng(Uint8List pngBytes) async {
-    final location = await getSaveLocation(
-      suggestedName: _suggestedName,
-      acceptedTypeGroups: const [_pngType],
-      canCreateDirectories: true,
-    );
-    if (location == null) return false;
+    final path = await pickPngSaveLocation(suggestedName: _suggestedName);
+    if (path == null) return false;
 
-    final image = XFile.fromData(
-      pngBytes,
-      mimeType: 'image/png',
-      name: _suggestedName,
-    );
-    await image.saveTo(location.path);
+    final file = File(path);
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(pngBytes, flush: true);
     return true;
   }
 }

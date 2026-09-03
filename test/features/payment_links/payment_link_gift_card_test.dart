@@ -765,7 +765,7 @@ void main() {
     );
   });
 
-  testWidgets('selector rail accepts the mobile item gap', (tester) async {
+  testWidgets('selector rail lays items out on the item gap', (tester) async {
     await _pump(
       tester,
       PaymentLinkCardSelectorRail(
@@ -773,7 +773,6 @@ void main() {
         selected: PaymentLinkCardArtwork.knight,
         itemWidth: 80,
         itemHeight: 60,
-        itemGap: AppSpacing.xs,
         onSelected: (_) {},
       ),
     );
