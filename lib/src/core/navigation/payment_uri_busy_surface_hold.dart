@@ -4,7 +4,14 @@
 /// post-frame callback after mount, give exactly that hold back from
 /// `dispose` via `releaseAfterNavigation`, and guard both ends with a
 /// per-holder bit so a surface disposed before its callback ran cannot
-/// decrement a hold it never took. Writing that by hand in a dozen Keystone
+/// decrement a hold it never took.
+///
+/// The post-frame acquire is early enough only because the drain in
+/// `app.dart` runs *after* every post-frame callback of a frame
+/// (`WidgetsBinding.endOfFrame`), not as one of them: a link that arrives in
+/// the same turn as the navigation that mounts a holder schedules its drain
+/// before this `initState` runs, and a drain that was itself a post-frame
+/// callback would run first and read a count of zero. Writing that by hand in a dozen Keystone
 /// screens is how one of them ends up releasing twice, so the pattern lives
 /// here once.
 ///

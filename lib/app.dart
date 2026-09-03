@@ -1420,13 +1420,23 @@ class _PaymentUriLinkListenerState
   }
 
   void _schedulePendingDrain() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _drainPendingPrefill();
-    });
-    // addPostFrameCallback does not request a frame on its own. An idle app
-    // (locked, nothing animating) would otherwise sit on the parked link until
-    // some unrelated frame happens to be scheduled.
+    // After the next frame's post-frame callbacks, not as one of them. A busy
+    // surface takes its hold from a post-frame callback registered in its own
+    // initState, so a signing screen whose navigation was requested in this
+    // same turn registers that callback *during* the coming frame — after a
+    // callback registered here, which would then run first, read a hold count
+    // of zero, and present the card over the signing surface. `endOfFrame`
+    // completes once every post-frame callback of the frame has run.
+    unawaited(
+      WidgetsBinding.instance.endOfFrame.then((_) {
+        if (!mounted) return;
+        _drainPendingPrefill();
+      }),
+    );
+    // endOfFrame requests a frame only while the scheduler is idle. A hold
+    // given back from dispose lands here in a post-frame phase, and an idle
+    // app (locked, nothing animating) would otherwise sit on the parked link
+    // until some unrelated frame happens to be scheduled.
     WidgetsBinding.instance.scheduleFrame();
   }
 
