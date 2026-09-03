@@ -79,11 +79,18 @@ internal class SensitiveClipboardHandler(context: Context) {
                 ?.toString()
         } catch (_: SecurityException) {
             // Android can deny clipboard reads while Vizor is in the background.
-            // Keep the pending expiration so onResume can retry it.
+            // This is the one case where the secret may still be on the
+            // clipboard and unreachable, so keep the pending expiration and let
+            // onResume retry it.
             return
         }
-        if (currentText == null) return
 
+        // A null read is not a denial: the clip is gone, empty, or not text, so
+        // the secret is already off the clipboard and there is nothing left to
+        // clear. It still has to fall through to the release below -- returning
+        // early here pinned the plaintext in `pendingExpiration` for the rest of
+        // the activity's life, with the timer already fired and no one left to
+        // retire it.
         if (currentText == pending.text) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 clipboardManager.clearPrimaryClip()
