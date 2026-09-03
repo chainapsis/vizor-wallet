@@ -6165,7 +6165,9 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
 
   @override
   Future<BigInt?> nextShareTrackingDelaySeconds({
-    required List<rust_frb_types.ShareDelegationRecordView> shares,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required BigInt nowSeconds,
   }) async => shareTrackingDelaySeconds;
 

@@ -11,7 +11,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'voting.dart';
 
-// These functions are ignored because they are not marked as `pub`: `advance`, `delegation_inputs`, `internal`, `invalid_input`, `pipeline`, `storage`
+// These functions are ignored because they are not marked as `pub`: `advance`, `delegation_inputs`, `internal`, `invalid_input`, `pipeline`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Opens a session bound to `ctx`'s account and round.

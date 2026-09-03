@@ -70,6 +70,7 @@ rust_wire.RoundPlanView apiRoundPlan({
   required bool allDecided,
   bool? blockingRecovery,
   bool blockingShareWork = false,
+  bool? hasUnconfirmedShares,
   bool hotkeyBound = false,
   bool completedVoteArtifact = false,
   bool? completedForDisplay,
@@ -109,6 +110,14 @@ rust_wire.RoundPlanView apiRoundPlan({
     pendingRecovery: pendingRecovery,
     blockingRecovery: resolvedBlockingRecovery,
     blockingShareWork: blockingShareWork,
+    // Every `ConfirmShare` step stands for one unconfirmed share, so a plan
+    // that lists any of them still has share tracking to do.
+    hasUnconfirmedShares:
+        hasUnconfirmedShares ??
+        (blockingShareWork ||
+            nextSteps.any(
+              (step) => step.kind == rust_wire.NextStepKind.confirmShare,
+            )),
     hotkeyBound: hotkeyBound,
     completedVoteArtifact: completedVoteArtifact,
     completedForDisplay: resolvedCompletedForDisplay,
@@ -287,6 +296,9 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     pendingRecovery: nextSteps.isNotEmpty,
     blockingRecovery: blockingRecovery,
     blockingShareWork: blockingShareWork,
+    hasUnconfirmedShares: state.unconfirmedShareDelegations.any(
+      (share) => !share.confirmed,
+    ),
     hotkeyBound:
         recoveredDelegationWork.any(
           (work) => work.phase != rust_wire.WorkflowPhaseView.prepared,

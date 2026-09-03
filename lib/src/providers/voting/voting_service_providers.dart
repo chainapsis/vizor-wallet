@@ -604,8 +604,12 @@ abstract interface class VotingRustApi {
     required VotingHelperDeliveryContext context,
   });
 
+  /// Seconds until this round's next share-tracking pass, or null when no
+  /// share is left unconfirmed. The SDK reads the durable rows itself.
   Future<BigInt?> nextShareTrackingDelaySeconds({
-    required List<rust_voting.ShareDelegationRecordView> shares,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required BigInt nowSeconds,
   });
 }
@@ -1164,12 +1168,16 @@ class FrbVotingRustApi implements VotingRustApi {
 
   @override
   Future<BigInt?> nextShareTrackingDelaySeconds({
-    required List<rust_voting.ShareDelegationRecordView> shares,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required BigInt nowSeconds,
   }) {
     return _typed(
       () => rust_api.nextShareTrackingDelaySeconds(
-        shares: shares,
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
         nowSeconds: nowSeconds,
       ),
     );

@@ -302,26 +302,6 @@ pub fn trusted_voting_round_params_from_config(
     })
 }
 
-fn share_record(
-    share: zcash_voting::wire::ShareDelegationRecordView,
-) -> zcash_voting::ShareDelegationRecord {
-    // Convert API view type into core share-tracking record shape.
-    zcash_voting::ShareDelegationRecord {
-        round_id: share.round_id,
-        bundle_index: share.bundle_index,
-        proposal_id: share.proposal_id,
-        share_index: share.share_index,
-        sent_to_urls: share.sent_to_urls,
-        ambiguous_urls: share.ambiguous_urls,
-        attempting_urls: Vec::new(),
-        target_count: share.target_count,
-        nullifier: share.nullifier,
-        confirmed: share.confirmed,
-        submit_at: share.submit_at,
-        created_at: share.created_at,
-    }
-}
-
 /// One helper share identified within its round.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ApiShareKey {
@@ -615,19 +595,25 @@ pub async fn confirm_share_with_helpers(
     Ok(report.confirmed)
 }
 
-/// Return the next share-tracking delay in seconds using crate policy.
+/// Seconds until this round's next helper-share tracking pass should run.
+///
+/// `None` means the round has no unconfirmed shares left, which is also the
+/// signal to stop background tracking. The SDK reads the durable share rows
+/// itself, so they never cross this boundary.
 pub fn next_share_tracking_delay_seconds(
-    shares: Vec<zcash_voting::wire::ShareDelegationRecordView>,
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
     now_seconds: u64,
 ) -> Result<Option<u64>, VotingErrorView> {
     catch(|| {
-        // Convert wire views into core records consumed by share policy.
-        let shares = shares.into_iter().map(share_record).collect::<Vec<_>>();
-        Ok(zcash_voting::share::policy::next_tracking_delay_seconds(
-            &shares,
+        let db = db::open_voting_db(&db_path, &account_uuid)?;
+        zcash_voting::share::next_tracking_delay_for_round(
+            &db,
+            &round_id,
             now_seconds,
             zcash_voting::share::ShareTimingPolicy::default(),
-        ))
+        )
     })
 }
 
@@ -1159,13 +1145,15 @@ pub fn list_pending_share_rounds(
 }
 
 /// Load the full recovery/share-tracking summary for one voting round.
+///
+/// The round plan is the decision surface; this is the raw snapshot behind it,
+/// used for restart indexing and diagnostics.
 pub fn get_round_recovery_state(
     db_path: String,
     account_uuid: String,
     round_id: String,
 ) -> Result<zcash_voting::wire::RoundRecoveryStateView, VotingErrorView> {
     catch(|| {
-        // Load persisted round snapshot and expose wire-safe view fields.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::recovery::round_snapshot(&db, &round_id)
             .map(zcash_voting::wire::RoundRecoveryStateView::from)
@@ -1770,33 +1758,29 @@ mod tests {
     }
 
     #[test]
-    fn next_share_tracking_delay_uses_crate_ready_interval() {
-        let ready = zcash_voting::wire::ShareDelegationRecordView {
-            round_id: ROUND_ID.to_string(),
-            bundle_index: 0,
-            proposal_id: 7,
-            share_index: 0,
-            sent_to_urls: vec!["https://helper.example".to_string()],
-            ambiguous_urls: vec![],
-            target_count: 1,
-            nullifier: vec![1; 32],
-            phase: zcash_voting::wire::WorkflowPhaseView::SubmittedShare,
-            confirmed: false,
-            submit_at: 100,
-            created_at: 50,
-        };
-        let future = zcash_voting::wire::ShareDelegationRecordView {
-            submit_at: 140,
-            ..ready.clone()
-        };
+    fn next_share_tracking_delay_reports_nothing_to_track_for_a_fresh_round() {
+        // Delay policy itself is the SDK's; this checks the wrapper opens the
+        // round's sidecar and reports "stop tracking" when no share is pending.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
         assert_eq!(
-            next_share_tracking_delay_seconds(vec![ready], 130).unwrap(),
-            Some(15)
-        );
-        assert_eq!(
-            next_share_tracking_delay_seconds(vec![future], 120).unwrap(),
-            Some(30)
+            next_share_tracking_delay_seconds(
+                db_path.to_str().unwrap().to_string(),
+                TEST_ACCOUNT_UUID.to_string(),
+                ROUND_ID.to_string(),
+                130,
+            )
+            .unwrap(),
+            None
         );
     }
 

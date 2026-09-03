@@ -439,6 +439,10 @@ class RoundPlanView {
   final bool pendingRecovery;
   final bool blockingRecovery;
   final bool blockingShareWork;
+
+  /// True when any helper-share row is still unconfirmed. Schedule
+  /// background share tracking from this instead of holding share rows.
+  final bool hasUnconfirmedShares;
   final bool hotkeyBound;
   final bool completedVoteArtifact;
   final bool completedForDisplay;
@@ -483,6 +487,7 @@ class RoundPlanView {
     required this.pendingRecovery,
     required this.blockingRecovery,
     required this.blockingShareWork,
+    required this.hasUnconfirmedShares,
     required this.hotkeyBound,
     required this.completedVoteArtifact,
     required this.completedForDisplay,
@@ -510,6 +515,7 @@ class RoundPlanView {
       pendingRecovery.hashCode ^
       blockingRecovery.hashCode ^
       blockingShareWork.hashCode ^
+      hasUnconfirmedShares.hashCode ^
       hotkeyBound.hashCode ^
       completedVoteArtifact.hashCode ^
       completedForDisplay.hashCode ^
@@ -539,6 +545,7 @@ class RoundPlanView {
           pendingRecovery == other.pendingRecovery &&
           blockingRecovery == other.blockingRecovery &&
           blockingShareWork == other.blockingShareWork &&
+          hasUnconfirmedShares == other.hasUnconfirmedShares &&
           hotkeyBound == other.hotkeyBound &&
           completedVoteArtifact == other.completedVoteArtifact &&
           completedForDisplay == other.completedForDisplay &&

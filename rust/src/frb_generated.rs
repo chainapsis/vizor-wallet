@@ -4901,14 +4901,17 @@ fn wire__crate__api__voting__next_share_tracking_delay_seconds_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_shares =
-                <Vec<zcash_voting::wire::ShareDelegationRecordView>>::sse_decode(&mut deserializer);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_round_id = <String>::sse_decode(&mut deserializer);
             let api_now_seconds = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
                     let output_ok = crate::api::voting::next_share_tracking_delay_seconds(
-                        api_shares,
+                        api_db_path,
+                        api_account_uuid,
+                        api_round_id,
                         api_now_seconds,
                     )?;
                     Ok(output_ok)
@@ -7541,6 +7544,7 @@ const _: fn() = || {
         let _: bool = RoundPlanView.pending_recovery;
         let _: bool = RoundPlanView.blocking_recovery;
         let _: bool = RoundPlanView.blocking_share_work;
+        let _: bool = RoundPlanView.has_unconfirmed_shares;
         let _: bool = RoundPlanView.hotkey_bound;
         let _: bool = RoundPlanView.completed_vote_artifact;
         let _: bool = RoundPlanView.completed_for_display;
@@ -10713,6 +10717,7 @@ impl SseDecode for zcash_voting::wire::RoundPlanView {
         let mut var_pendingRecovery = <bool>::sse_decode(deserializer);
         let mut var_blockingRecovery = <bool>::sse_decode(deserializer);
         let mut var_blockingShareWork = <bool>::sse_decode(deserializer);
+        let mut var_hasUnconfirmedShares = <bool>::sse_decode(deserializer);
         let mut var_hotkeyBound = <bool>::sse_decode(deserializer);
         let mut var_completedVoteArtifact = <bool>::sse_decode(deserializer);
         let mut var_completedForDisplay = <bool>::sse_decode(deserializer);
@@ -10743,6 +10748,7 @@ impl SseDecode for zcash_voting::wire::RoundPlanView {
             pending_recovery: var_pendingRecovery,
             blocking_recovery: var_blockingRecovery,
             blocking_share_work: var_blockingShareWork,
+            has_unconfirmed_shares: var_hasUnconfirmedShares,
             hotkey_bound: var_hotkeyBound,
             completed_vote_artifact: var_completedVoteArtifact,
             completed_for_display: var_completedForDisplay,
@@ -14392,6 +14398,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundPlanV
             self.0.pending_recovery.into_into_dart().into_dart(),
             self.0.blocking_recovery.into_into_dart().into_dart(),
             self.0.blocking_share_work.into_into_dart().into_dart(),
+            self.0.has_unconfirmed_shares.into_into_dart().into_dart(),
             self.0.hotkey_bound.into_into_dart().into_dart(),
             self.0.completed_vote_artifact.into_into_dart().into_dart(),
             self.0.completed_for_display.into_into_dart().into_dart(),
@@ -17931,6 +17938,7 @@ impl SseEncode for zcash_voting::wire::RoundPlanView {
         <bool>::sse_encode(self.pending_recovery, serializer);
         <bool>::sse_encode(self.blocking_recovery, serializer);
         <bool>::sse_encode(self.blocking_share_work, serializer);
+        <bool>::sse_encode(self.has_unconfirmed_shares, serializer);
         <bool>::sse_encode(self.hotkey_bound, serializer);
         <bool>::sse_encode(self.completed_vote_artifact, serializer);
         <bool>::sse_encode(self.completed_for_display, serializer);

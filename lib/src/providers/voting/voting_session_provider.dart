@@ -2280,7 +2280,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final delaySeconds = await ref
         .read(votingRustApiProvider)
         .nextShareTrackingDelaySeconds(
-          shares: plan.unconfirmedShareDelegations,
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
           nowSeconds: BigInt.from(
             DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
           ),

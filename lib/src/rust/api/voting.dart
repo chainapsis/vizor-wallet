@@ -10,7 +10,7 @@ import '../third_party/zcash_voting/share_policy.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `internal`, `invalid_input`, `is_cancelled`, `round_inputs`, `routed_transport`, `share_record`, `share_tracking_pass_for`, `view`
+// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `internal`, `invalid_input`, `is_cancelled`, `round_inputs`, `routed_transport`, `share_tracking_pass_for`, `view`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
@@ -158,12 +158,20 @@ Future<bool> confirmShareWithHelpers({
   nowSeconds: nowSeconds,
 );
 
-/// Return the next share-tracking delay in seconds using crate policy.
+/// Seconds until this round's next helper-share tracking pass should run.
+///
+/// `None` means the round has no unconfirmed shares left, which is also the
+/// signal to stop background tracking. The SDK reads the durable share rows
+/// itself, so they never cross this boundary.
 Future<BigInt?> nextShareTrackingDelaySeconds({
-  required List<ShareDelegationRecordView> shares,
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
   required BigInt nowSeconds,
 }) => RustLib.instance.api.crateApiVotingNextShareTrackingDelaySeconds(
-  shares: shares,
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
   nowSeconds: nowSeconds,
 );
 
@@ -425,6 +433,9 @@ Future<List<ApiPendingShareRound>> listPendingShareRounds({
 );
 
 /// Load the full recovery/share-tracking summary for one voting round.
+///
+/// The round plan is the decision surface; this is the raw snapshot behind it,
+/// used for restart indexing and diagnostics.
 Future<RoundRecoveryStateView> getRoundRecoveryState({
   required String dbPath,
   required String accountUuid,

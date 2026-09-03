@@ -10774,6 +10774,7 @@ rust_wire.RoundPlanView _withImmediateShareConfirmed(
     pendingRecovery: plan.pendingRecovery,
     blockingRecovery: plan.blockingRecovery,
     blockingShareWork: plan.blockingShareWork,
+    hasUnconfirmedShares: plan.hasUnconfirmedShares,
     hotkeyBound: plan.hotkeyBound,
     completedVoteArtifact: plan.completedVoteArtifact,
     completedForDisplay: plan.completedForDisplay,
@@ -13281,13 +13282,20 @@ class FakeVotingRustApi
 
   @override
   Future<BigInt?> nextShareTrackingDelaySeconds({
-    required List<rust_frb_types.ShareDelegationRecordView> shares,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required BigInt nowSeconds,
   }) async {
     if (!nextShareTrackingDelayStarted.isCompleted) {
       nextShareTrackingDelayStarted.complete();
     }
     await nextShareTrackingDelayGate?.future;
+    // The SDK reads the round's own share rows; the fake reads the ones its
+    // recovery double holds.
+    final shares =
+        helperRecoveryApi?.state.shareDelegations ??
+        const <rust_frb_types.ShareDelegationRecordView>[];
     final now = nowSeconds.toInt();
     int? nextSecond;
     var hasUnconfirmed = false;

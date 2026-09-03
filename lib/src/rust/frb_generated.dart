@@ -810,7 +810,9 @@ abstract class RustLibApi extends BaseApi {
   List<String> crateApiWalletMnemonicWordList();
 
   Future<BigInt?> crateApiVotingNextShareTrackingDelaySeconds({
-    required List<ShareDelegationRecordView> shares,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required BigInt nowSeconds,
   });
 
@@ -6059,14 +6061,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<BigInt?> crateApiVotingNextShareTrackingDelaySeconds({
-    required List<ShareDelegationRecordView> shares,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required BigInt nowSeconds,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_list_share_delegation_record_view(shares, serializer);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(roundId, serializer);
           sse_encode_u_64(nowSeconds, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -6080,7 +6086,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingNextShareTrackingDelaySecondsConstMeta,
-        argValues: [shares, nowSeconds],
+        argValues: [dbPath, accountUuid, roundId, nowSeconds],
         apiImpl: this,
       ),
     );
@@ -6089,7 +6095,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiVotingNextShareTrackingDelaySecondsConstMeta =>
       const TaskConstMeta(
         debugName: "next_share_tracking_delay_seconds",
-        argNames: ["shares", "nowSeconds"],
+        argNames: ["dbPath", "accountUuid", "roundId", "nowSeconds"],
       );
 
   @override
@@ -11104,37 +11110,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RoundPlanView dco_decode_round_plan_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 23)
-      throw Exception('unexpected arr length: expect 23 but see ${arr.length}');
+    if (arr.length != 24)
+      throw Exception('unexpected arr length: expect 24 but see ${arr.length}');
     return RoundPlanView(
       roundId: dco_decode_String(arr[0]),
       pendingRecovery: dco_decode_bool(arr[1]),
       blockingRecovery: dco_decode_bool(arr[2]),
       blockingShareWork: dco_decode_bool(arr[3]),
-      hotkeyBound: dco_decode_bool(arr[4]),
-      completedVoteArtifact: dco_decode_bool(arr[5]),
-      completedForDisplay: dco_decode_bool(arr[6]),
+      hasUnconfirmedShares: dco_decode_bool(arr[4]),
+      hotkeyBound: dco_decode_bool(arr[5]),
+      completedVoteArtifact: dco_decode_bool(arr[6]),
+      completedForDisplay: dco_decode_bool(arr[7]),
       completedVoteDisplay:
-          dco_decode_opt_box_autoadd_completed_vote_display_view(arr[7]),
-      needsDraftSetup: dco_decode_bool(arr[8]),
-      needsDelegationSigning: dco_decode_bool(arr[9]),
-      hasInFlightDelegation: dco_decode_bool(arr[10]),
-      needsVotePolling: dco_decode_bool(arr[11]),
-      hasRemainingVoteOrShareWork: dco_decode_bool(arr[12]),
-      hasRecoverableVoteOrShareWork: dco_decode_bool(arr[13]),
-      primaryAction: dco_decode_round_plan_action_kind(arr[14]),
-      nextSteps: dco_decode_list_next_step_view(arr[15]),
-      delegationStatuses: dco_decode_list_delegation_status_view(arr[16]),
+          dco_decode_opt_box_autoadd_completed_vote_display_view(arr[8]),
+      needsDraftSetup: dco_decode_bool(arr[9]),
+      needsDelegationSigning: dco_decode_bool(arr[10]),
+      hasInFlightDelegation: dco_decode_bool(arr[11]),
+      needsVotePolling: dco_decode_bool(arr[12]),
+      hasRemainingVoteOrShareWork: dco_decode_bool(arr[13]),
+      hasRecoverableVoteOrShareWork: dco_decode_bool(arr[14]),
+      primaryAction: dco_decode_round_plan_action_kind(arr[15]),
+      nextSteps: dco_decode_list_next_step_view(arr[16]),
+      delegationStatuses: dco_decode_list_delegation_status_view(arr[17]),
       recoveredDelegationWork: dco_decode_list_delegation_recovery_work_view(
-        arr[17],
+        arr[18],
       ),
-      recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[18]),
-      openProposals: dco_decode_list_prim_u_32_strict(arr[19]),
+      recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[19]),
+      openProposals: dco_decode_list_prim_u_32_strict(arr[20]),
       immediateShareKey: dco_decode_opt_box_autoadd_immediate_share_key(
-        arr[20],
+        arr[21],
       ),
-      immediateShareConfirmed: dco_decode_bool(arr[21]),
-      allDecided: dco_decode_bool(arr[22]),
+      immediateShareConfirmed: dco_decode_bool(arr[22]),
+      allDecided: dco_decode_bool(arr[23]),
     );
   }
 
@@ -15140,6 +15147,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_pendingRecovery = sse_decode_bool(deserializer);
     var var_blockingRecovery = sse_decode_bool(deserializer);
     var var_blockingShareWork = sse_decode_bool(deserializer);
+    var var_hasUnconfirmedShares = sse_decode_bool(deserializer);
     var var_hotkeyBound = sse_decode_bool(deserializer);
     var var_completedVoteArtifact = sse_decode_bool(deserializer);
     var var_completedForDisplay = sse_decode_bool(deserializer);
@@ -15172,6 +15180,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       pendingRecovery: var_pendingRecovery,
       blockingRecovery: var_blockingRecovery,
       blockingShareWork: var_blockingShareWork,
+      hasUnconfirmedShares: var_hasUnconfirmedShares,
       hotkeyBound: var_hotkeyBound,
       completedVoteArtifact: var_completedVoteArtifact,
       completedForDisplay: var_completedForDisplay,
@@ -18881,6 +18890,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.pendingRecovery, serializer);
     sse_encode_bool(self.blockingRecovery, serializer);
     sse_encode_bool(self.blockingShareWork, serializer);
+    sse_encode_bool(self.hasUnconfirmedShares, serializer);
     sse_encode_bool(self.hotkeyBound, serializer);
     sse_encode_bool(self.completedVoteArtifact, serializer);
     sse_encode_bool(self.completedForDisplay, serializer);
