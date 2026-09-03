@@ -42,7 +42,9 @@ void main() {
     expect(find.byKey(const ValueKey('payment_request_close')), findsOneWidget);
   });
 
-  testWidgets('the card carries no help affordances at all', (tester) async {
+  testWidgets('the only help affordance is the requester caveat', (
+    tester,
+  ) async {
     for (final (builder, size) in <(WidgetBuilder, Size)>[
       (buildPaymentRequestFullUseCase, _desktopSize),
       (buildMobilePaymentRequestFullUseCase, _mobileSize),
@@ -50,11 +52,55 @@ void main() {
       await _pumpUseCase(tester, builder, size: size);
 
       expect(tester.takeException(), isNull);
-      // No ⓘ beside requester or transaction content: the labels carry the
-      // meaning on their own.
-      expect(find.byType(AppTooltip), findsNothing);
-      expect(find.bySemanticsLabel('About this name'), findsNothing);
+      // The requester name is text the link supplied, so it carries the one
+      // ⓘ on the card. Transaction content still carries none.
+      expect(find.byType(AppTooltip), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('payment_request_requester_group')),
+          matching: find.byType(AppTooltip),
+        ),
+        findsOneWidget,
+      );
     }
+  });
+
+  testWidgets('the requester help shows the caveat without toggling', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
+
+    expect(_key('payment_request_requester_note'), findsNothing);
+
+    await tester.tap(_key('payment_request_requester_help'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        "Name supplied by the payment link. Vizor can't verify who sent it.",
+      ),
+      findsOneWidget,
+    );
+    expect(
+      _key('payment_request_requester_note'),
+      findsNothing,
+      reason: 'the help affordance must not open the requester disclosure',
+    );
+
+    // The rest of the summary row still toggles the group.
+    await tester.tap(_key('payment_request_requester_toggle'));
+    await tester.pumpAndSettle();
+    expect(_key('payment_request_requester_note'), findsOneWidget);
+  });
+
+  testWidgets('a note-only requester group carries no name caveat', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildPaymentRequestNoteOnlyUseCase);
+
+    expect(tester.takeException(), isNull);
+    expect(_key('payment_request_requester_help'), findsNothing);
+    expect(find.byType(AppTooltip), findsNothing);
   });
 
   testWidgets('the title and requester group stay separate', (tester) async {

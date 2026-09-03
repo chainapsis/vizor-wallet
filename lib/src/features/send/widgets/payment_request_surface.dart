@@ -85,53 +85,96 @@ class PaymentRequestSurface extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         background ?? ColoredBox(color: colors.background.window),
-        if (_isMobile)
-          Stack(
-            fit: StackFit.expand,
-            children: [
-              // Same dismissal contract as the desktop branch, which gets
-              // scrim-tap and Escape from `AppPaneModalOverlay`. The Android
-              // back gesture belongs to the route host — `showAppMobileSheet`
-              // already provides it, and a `PopScope` here would also swallow
-              // back for whatever route embeds this inline.
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onCancel,
-                child: ColoredBox(color: colors.background.neutralScrim),
-              ),
-              // `showAppMobileSheet` gets this from `useSafeArea`; the inline
-              // presentation has to keep the same clearance itself so a tall
-              // request never runs into the status bar.
-              SafeArea(
-                bottom: false,
-                minimum: const EdgeInsets.only(top: AppSpacing.base),
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: MobileModalCard(
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: paymentRequestSheetBody(card, onClose: onCancel),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          )
-        else
-          AppPaneModalOverlay(
-            onDismiss: onCancel,
-            // The card is hosted above the router, so its scrim covers the
-            // whole window — but the request is content, and content belongs
-            // over the content pane. The shell's published pane insets move
-            // the card off the sidebar's half of the window; with no shell
-            // mounted they are zero and this centers on the window as before.
-            child: ContentPaneCenteringPadding(
-              child: AppModalCard(width: kPaymentRequestCardWidth, child: card),
-            ),
-          ),
+        _ModalOverlayScope(
+          child: _isMobile
+              ? _mobileModal(context, card)
+              : _desktopModal(context, card),
+        ),
       ],
     );
   }
+
+  Widget _mobileModal(BuildContext context, Widget card) {
+    final colors = context.colors;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Same dismissal contract as the desktop branch, which gets
+        // scrim-tap and Escape from `AppPaneModalOverlay`. The Android
+        // back gesture belongs to the route host — `showAppMobileSheet`
+        // already provides it, and a `PopScope` here would also swallow
+        // back for whatever route embeds this inline.
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onCancel,
+          child: ColoredBox(color: colors.background.neutralScrim),
+        ),
+        // `showAppMobileSheet` gets this from `useSafeArea`; the inline
+        // presentation has to keep the same clearance itself so a tall
+        // request never runs into the status bar.
+        SafeArea(
+          bottom: false,
+          minimum: const EdgeInsets.only(top: AppSpacing.base),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: MobileModalCard(
+              child: Material(
+                type: MaterialType.transparency,
+                child: paymentRequestSheetBody(card, onClose: onCancel),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _desktopModal(BuildContext context, Widget card) {
+    return AppPaneModalOverlay(
+      onDismiss: onCancel,
+      // The card is hosted above the router, so its scrim covers the
+      // whole window — but the request is content, and content belongs
+      // over the content pane. The shell's published pane insets move
+      // the card off the sidebar's half of the window; with no shell
+      // mounted they are zero and this centers on the window as before.
+      child: ContentPaneCenteringPadding(
+        child: AppModalCard(width: kPaymentRequestCardWidth, child: card),
+      ),
+    );
+  }
+}
+
+/// Gives the scrim-and-card branch an [Overlay] ancestor.
+///
+/// The live host mounts this surface from `MaterialApp.router`'s `builder`,
+/// above the `Router` — so there is no `Navigator`, and therefore no
+/// `Overlay`, anywhere above the card. The requester help tooltip needs one,
+/// for the same reason the card needs its transparent [Material].
+///
+/// Only the modal branch goes inside. The background stays where it was in
+/// the outer stack, so the app underneath is not re-parented.
+class _ModalOverlayScope extends StatefulWidget {
+  const _ModalOverlayScope({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ModalOverlayScope> createState() => _ModalOverlayScopeState();
+}
+
+class _ModalOverlayScopeState extends State<_ModalOverlayScope> {
+  // `initialEntries` is read once, so the entry has to read `widget.child`
+  // at build time and be told when a new request replaces it.
+  late final OverlayEntry _entry = OverlayEntry(builder: (_) => widget.child);
+
+  @override
+  void didUpdateWidget(covariant _ModalOverlayScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.child, widget.child)) _entry.markNeedsBuild();
+  }
+
+  @override
+  Widget build(BuildContext context) => Overlay(initialEntries: [_entry]);
 }
 
 /// The mobile sheet body: the app's shared modal chrome around the card.

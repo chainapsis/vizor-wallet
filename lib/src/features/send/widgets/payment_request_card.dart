@@ -8,7 +8,10 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../core/widgets/app_tooltip.dart';
 import '../../../core/widgets/pool_badge.dart';
+import '../../../core/widgets/review_list_row.dart'
+    show kPaymentRequestRequesterTooltip;
 import '../../../core/widgets/review_wrap_card.dart';
 
 /// Desktop width of the payment-request modal card.
@@ -711,11 +714,33 @@ class _RequesterDetailsCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Requester',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: labelStyle.copyWith(color: colors.text.secondary),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      'Requester',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: labelStyle.copyWith(color: colors.text.secondary),
+                    ),
+                  ),
+                  // Only a link-supplied name needs the caveat; a note-only
+                  // card has no name to be mistaken for a verified sender.
+                  if (requester != null) ...[
+                    const SizedBox(width: AppSpacing.xxs),
+                    AppTooltip(
+                      tapToShow: true,
+                      message: kPaymentRequestRequesterTooltip,
+                      child: AppIcon(
+                        AppIcons.help,
+                        key: const ValueKey('payment_request_requester_help'),
+                        size: AppIconSize.medium,
+                        color: colors.icon.regular,
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: AppSpacing.xxs),
               Text(
@@ -748,7 +773,9 @@ class _RequesterDetailsCard extends StatelessWidget {
             label: expanded
                 ? 'Hide requester details'
                 : 'Show requester details',
-            value: 'Requester, $summary',
+            value: requester == null
+                ? 'Requester, $summary'
+                : 'Label from link, $summary',
             onTap: toggle,
             child: AppButton(
               key: const ValueKey('payment_request_requester_toggle'),

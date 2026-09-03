@@ -232,6 +232,39 @@ void main() {
     expect(_location(container), '/home');
   });
 
+  // Hosted above the router there is no `Navigator`, so the caveat tooltip
+  // only works because the surface carries its own `Overlay`.
+  testWidgets('the requester caveat opens over the live host', (tester) async {
+    final container = await _pumpHost(tester);
+    final semantics = tester.ensureSemantics();
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_replacementRequest, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .getSemantics(find.bySemanticsLabel('Show requester details'))
+          .value,
+      'Label from link, Bakery',
+      reason: 'the summary announces a link label, not a verified sender',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_request_requester_help')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        "Name supplied by the payment link. Vizor can't verify who sent it.",
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
+
   testWidgets('a replacement request starts with disclosures collapsed', (
     tester,
   ) async {
