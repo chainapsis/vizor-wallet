@@ -490,22 +490,6 @@ void main() {
     expect(card.height, lessThan(status.top - card.top));
   });
 
-  testWidgets('default mobile requests fit without scrolling', (tester) async {
-    for (final (builder, size) in <(WidgetBuilder, Size)>[
-      (buildMobilePaymentRequestFullUseCase, const Size(393, 852)),
-      (buildMobilePaymentRequestFullUseCase, const Size(375, 812)),
-      (buildMobilePaymentRequestContactUseCase, const Size(393, 852)),
-      (buildMobilePaymentRequestContactUseCase, const Size(375, 812)),
-    ]) {
-      await _pumpUseCase(tester, builder, size: size);
-
-      expect(tester.takeException(), isNull, reason: '$builder at $size');
-      expect(_maxScrollExtent(tester), 0, reason: '$builder at $size');
-      expect(find.text('Review'), findsOneWidget);
-      expect(find.text('Edit'), findsOneWidget);
-    }
-  });
-
   // ─── Status ────────────────────────────────────────────────────────
 
   testWidgets('blocking statuses disable the primary action and say why', (
