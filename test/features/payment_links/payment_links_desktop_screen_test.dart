@@ -1925,6 +1925,65 @@ void main() {
     expect(operations.sharedLinks, [_incomingLink]);
   }, tags: ['mobile']);
 
+  testWidgets('received cards show only for the account they landed in, '
+      'except unclaimed ones', (tester) async {
+    PaymentLinkReceivedRecord record({
+      required String address,
+      required PaymentLinkReceivedStatus status,
+      required String destinationAccountUuid,
+    }) => PaymentLinkReceivedRecord(
+      network: _incomingLink.network,
+      address: address,
+      amountZatoshi: _incomingLink.amountZatoshi,
+      createdAt: _incomingLink.createdAt,
+      artworkId: _incomingLink.presentation?.artworkId,
+      message: _incomingLink.presentation?.message,
+      status: status,
+      claimLink: _incomingLink,
+      destinationAccountUuid: destinationAccountUuid,
+      claimTxids: status == PaymentLinkReceivedStatus.readyToClaim
+          ? null
+          : 'claim-txid',
+      updatedAt: DateTime.utc(2026, 8, 6, 2),
+    );
+    final operations = _FakePaymentLinkOperations(
+      receivedRecords: [
+        record(
+          address: 'u1landedhere',
+          status: PaymentLinkReceivedStatus.received,
+          destinationAccountUuid: 'account-1',
+        ),
+        record(
+          address: 'u1landedelsewhere',
+          status: PaymentLinkReceivedStatus.received,
+          destinationAccountUuid: 'account-2',
+        ),
+        record(
+          address: 'u1stillclaimable',
+          status: PaymentLinkReceivedStatus.readyToClaim,
+          destinationAccountUuid: 'account-2',
+        ),
+      ],
+    );
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+
+    await tester.tap(find.text('Received'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('payment_link_received_u1landedhere')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('payment_link_received_u1stillclaimable')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('payment_link_received_u1landedelsewhere')),
+      findsNothing,
+    );
+  });
+
   testWidgets('mobile received tab lists an in-flight claim', (tester) async {
     final operations = _FakePaymentLinkOperations(
       receivedRecords: [

@@ -775,6 +775,24 @@ class _PaymentLinksDesktopScreenState
         _messageController.text,
       );
 
+  /// The received cards this account should see. A claim lands in one
+  /// account, so a card that is being received or has been received shows
+  /// only under that account — the way balances and activity are scoped.
+  /// A card that has not been claimed yet stays visible everywhere: opening
+  /// it retargets the claim to whichever account is active. So does a card
+  /// whose destination is unknown (claim metadata still to be recovered):
+  /// hiding it would hide the recovery.
+  List<PaymentLinkReceivedRecord> get _visibleReceivedCards {
+    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    return [
+      for (final record in _receivedCards)
+        if (record.status == PaymentLinkReceivedStatus.readyToClaim ||
+            record.destinationAccountUuid == null ||
+            record.destinationAccountUuid == accountUuid)
+          record,
+    ];
+  }
+
   String? get _maxAmountText {
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final quote = _maxFundingQuote;
@@ -1480,7 +1498,7 @@ class _PaymentLinksDesktopScreenState
                 onCancel: _cancelKeystoneFunding,
                 onFundingBroadcast: _completeKeystoneFunding,
               ),
-        hasCards: _recoveries.isNotEmpty || _receivedCards.isNotEmpty,
+        hasCards: _recoveries.isNotEmpty || _visibleReceivedCards.isNotEmpty,
         cardsSections: () => _cardsSections(
           recoveryRow: _buildMobileRecoveryRow,
           receivedRow: _buildMobileReceivedRow,
@@ -1601,7 +1619,7 @@ class _PaymentLinksDesktopScreenState
   }
 
   Widget _buildHome() {
-    if (_recoveries.isNotEmpty || _receivedCards.isNotEmpty) {
+    if (_recoveries.isNotEmpty || _visibleReceivedCards.isNotEmpty) {
       return _buildCardsList();
     }
     return PaymentLinksHomeDesktopView(
@@ -1680,8 +1698,8 @@ class _PaymentLinksDesktopScreenState
     return <PaymentLinkCardsSection>[
       PaymentLinkCardsSection(
         label: kPaymentLinkReceivedTabLabel,
-        cards: _receivedCards.isNotEmpty
-            ? _receivedCards.map(receivedRow).toList()
+        cards: _visibleReceivedCards.isNotEmpty
+            ? _visibleReceivedCards.map(receivedRow).toList()
             : emptyReceivedCards,
       ),
     ];
