@@ -13,6 +13,7 @@ void main() {
     ]);
     final networkClient = NetworkHttpClient(
       torDesired: () => true,
+      torBootstrapping: () => false,
       torBridge: bridge,
     );
     final client = WalletLinkApiClient(
@@ -41,6 +42,7 @@ void main() {
       ]);
       final networkClient = NetworkHttpClient(
         torDesired: () => true,
+        torBootstrapping: () => false,
         torBridge: bridge,
       );
       final client = WalletLinkApiClient(
@@ -62,6 +64,7 @@ void main() {
     ]);
     final networkClient = NetworkHttpClient(
       torDesired: () => true,
+      torBootstrapping: () => false,
       torBridge: bridge,
     );
     final client = WalletLinkApiClient(

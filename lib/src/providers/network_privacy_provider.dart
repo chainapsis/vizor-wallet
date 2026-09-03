@@ -56,6 +56,13 @@ class NetworkPrivacyState {
   final String? startupNotice;
 
   bool get isBusy => status == NetworkPrivacyConnectionStatus.connecting;
+
+  /// Whether the runtime is on Tor and not on its way off it: the only state
+  /// in which `failed` means the Tor connection failed and a retry means a new
+  /// bootstrap. An enable that never reached the runtime (`torEnabled` false,
+  /// target true) and a disable that could not quiesce (`torEnabled` true,
+  /// target false) both publish `failed` with the live route elsewhere.
+  bool get torRouteRetained => torEnabled && (targetTorEnabled ?? true);
 }
 
 abstract interface class NetworkPrivacyPreferenceStore {
@@ -86,6 +93,11 @@ class SharedPreferencesNetworkPrivacyStore
 abstract interface class NetworkPrivacyRuntime {
   void beginEnable();
 
+  /// Publishes an enable this side gave up on. Every [beginEnable] must be
+  /// followed by `configure(enabled: true)` or this, or Rust keeps holding
+  /// requests for a bootstrap nobody started, until its own deadline.
+  void failEnable();
+
   Future<void> quiesceDirectRequests();
 
   bool isTorEnabled();
@@ -111,6 +123,11 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   @override
   void beginEnable() {
     rust_network_privacy.beginNetworkPrivacyEnable();
+  }
+
+  @override
+  void failEnable() {
+    rust_network_privacy.failNetworkPrivacyEnable();
   }
 
   @override
@@ -480,6 +497,8 @@ Future<void> initializeNetworkPrivacyRuntime({
     }
     runtime.beginEnable();
     final drainFailure = await _captureDirectDrain(runtime, directRequests);
+    // No `configure` follows: turn "still connecting" into a definite failure.
+    runtime.failEnable();
     final failureDetails = [
       'Could not read the saved Tor preference: $error',
       if (drainFailure != null)
@@ -559,6 +578,9 @@ Future<NetworkPrivacyState?> _activateTorForStartup({
     );
   } catch (error) {
     if (_startupActivationSuperseded) return null;
+    // Release the waiting requests; a superseded activation leaves the route
+    // to its newer owner. Harmless when `configure` itself threw.
+    runtime.failEnable();
     return NetworkPrivacyState(
       torEnabled: true,
       status: NetworkPrivacyConnectionStatus.failed,
@@ -808,6 +830,10 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
       );
     } catch (error) {
       if (generation != _generation) return;
+      if (enabled) {
+        // `beginEnable` is in force with no `configure` to follow it.
+        runtime.failEnable();
+      }
       final effectiveTorEnabled = runtime.isTorEnabled();
       var softwareUpdatesAvailable = enabled
           ? false

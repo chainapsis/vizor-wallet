@@ -107,7 +107,9 @@ async fn handle_connection(mut stream: TcpStream, resource_path: &str) -> Result
     let (upstream, expected_length) = parse_upstream(&target, resource_path)?;
     let upstream_host = upstream.host_str().unwrap_or("unknown").to_string();
     log::info!("network privacy: Tor update relay request started for {upstream_host}");
-    let client = crate::network_privacy::tor_client_for_route(true)?
+    // Waits out a bootstrap rather than failing the updater's download.
+    let client = crate::network_privacy::tor_client_for_route(true, || false)
+        .await?
         .ok_or_else(|| "Tor is not enabled".to_string())?;
 
     // Respond to the native updater promptly while upstream resolution and

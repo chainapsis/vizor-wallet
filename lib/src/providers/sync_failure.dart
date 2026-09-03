@@ -1,5 +1,9 @@
 enum SyncFailureKind {
   network,
+
+  /// The Tor bootstrap failed. Unlike [network], nothing retries on its own:
+  /// the notice has to offer a Tor retry or turning Tor off.
+  torUnavailable,
   endpoint,
   databaseBusy,
   databaseFatal,
@@ -22,6 +26,9 @@ class SyncFailure {
   });
 
   String get actionLabel => showSettingsAction ? 'Settings' : 'Retry';
+
+  /// Whether "Retry" should re-run the Tor bootstrap rather than the sync.
+  bool get retriesTorRoute => kind == SyncFailureKind.torUnavailable;
 }
 
 SyncFailure classifySyncFailure(Object error) {
@@ -50,6 +57,9 @@ SyncFailureKind _classifySyncFailureKind(String lower) {
   if (_looksLikeEndpointFailure(lower)) {
     return SyncFailureKind.endpoint;
   }
+  if (_looksLikeTorUnavailable(lower)) {
+    return SyncFailureKind.torUnavailable;
+  }
   if (_looksLikeChainRecoveryFailure(lower)) {
     return SyncFailureKind.chainRecovery;
   }
@@ -77,6 +87,15 @@ bool _looksLikeEndpointFailure(String lower) {
       lower.contains('network mismatch') ||
       lower.contains('wrong network') ||
       lower.contains('chain name');
+}
+
+/// Rust's resolved-failure wording (`RouteBlocked`) and the bootstrap deadline
+/// message. A user-initiated abort ("turned off while connecting", "wait
+/// cancelled") is deliberately absent: the next attempt simply proceeds.
+bool _looksLikeTorUnavailable(String lower) {
+  return lower.contains('tor connection failed') ||
+      lower.contains('tor could not connect') ||
+      lower.contains('tor is enabled but unavailable');
 }
 
 bool _looksLikeChainRecoveryFailure(String lower) {
@@ -118,6 +137,8 @@ String _syncFailureUserMessage(SyncFailureKind kind) {
   return switch (kind) {
     SyncFailureKind.network =>
       "Network connection lost. We'll keep trying automatically.",
+    SyncFailureKind.torUnavailable =>
+      "Tor couldn't connect. Retry, or turn Tor off in Settings.",
     SyncFailureKind.endpoint =>
       'Cannot reach the configured Zcash endpoint. Check your endpoint settings.',
     SyncFailureKind.databaseBusy =>

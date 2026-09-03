@@ -37,6 +37,7 @@ class _MobileMigrationStatusScaffold extends ConsumerWidget {
                     displayWholePercentage: ref.watch(
                       syncDisplayWholePercentageProvider,
                     ),
+                    networkPrivacy: ref.watch(networkPrivacyProvider),
                   ).label,
                   avatar: AppProfilePicture(
                     profilePictureId: data.profilePictureId,

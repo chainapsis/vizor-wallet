@@ -217,6 +217,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-home-tor-connecting',
+    description: 'Mobile home while the Tor route is still connecting',
+    builder: buildMobileHomeTorConnectingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-tor-failed',
+    description: 'Mobile home after the Tor bootstrap failed',
+    builder: buildMobileHomeTorFailedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-voting-polls',
     description: 'Mobile coinholder voting poll list with mock rounds',
     builder: buildMobileVotingPollsUseCase,
@@ -446,6 +460,16 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'desktop-home-sidebar-sync-network-error',
     description: 'Desktop home sidebar with a network sync failure',
     builder: buildDesktopHomeSidebarSyncNetworkErrorUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-tor-connecting',
+    description: 'Desktop home while the Tor route is still connecting',
+    builder: buildDesktopHomeTorConnectingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-tor-failed',
+    description: 'Desktop home after the Tor bootstrap failed',
+    builder: buildDesktopHomeTorFailedUseCase,
   ),
   FigmaCompareScenario(
     id: 'ironwood-migration-intro',

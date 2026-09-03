@@ -1242,6 +1242,69 @@ Widget buildDesktopHomeSidebarSyncNetworkErrorUseCase(BuildContext context) {
   );
 }
 
+const _previewTorConnecting = NetworkPrivacyState(
+  torEnabled: true,
+  status: NetworkPrivacyConnectionStatus.connecting,
+);
+
+const _previewTorFailed = NetworkPrivacyState(
+  torEnabled: true,
+  status: NetworkPrivacyConnectionStatus.failed,
+  error: 'Preview Tor bootstrap failure',
+);
+
+/// A sync that has started but has not heard from Rust yet: the preflight
+/// window the status row spends on "Connecting to Tor…" while the first
+/// lightwalletd connection over Tor is still being made.
+SyncState _homeTorConnectingSyncState() => _homeSyncedState(
+  orchardBalance: BigInt.from(14_223_000_000),
+  recentTransactions: [_homeTx(1), _homeTx(2)],
+).copyWith(isSyncing: true, phase: kSyncPhasePreflight, percentage: 0.01);
+
+SyncState _homeTorFailedSyncState() =>
+    _homeSyncedState(
+      orchardBalance: BigInt.from(14_223_000_000),
+      recentTransactions: [_homeTx(1), _homeTx(2)],
+    ).copyWith(
+      failure: classifySyncFailure(
+        'network: network privacy blocked lightwalletd: Tor connection failed',
+      ),
+    );
+
+Widget buildDesktopHomeTorConnectingUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeTorConnectingSyncState(),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    networkPrivacyState: _previewTorConnecting,
+  );
+}
+
+Widget buildDesktopHomeTorFailedUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeTorFailedSyncState(),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    networkPrivacyState: _previewTorFailed,
+  );
+}
+
+Widget buildMobileHomeTorConnectingUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeTorConnectingSyncState(),
+    networkPrivacyState: _previewTorConnecting,
+  );
+}
+
+Widget buildMobileHomeTorFailedUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeTorFailedSyncState(),
+    networkPrivacyState: _previewTorFailed,
+  );
+}
+
 Widget buildDesktopHomeIronwoodMigrationAnnouncementUseCase(
   BuildContext context,
 ) {
@@ -1949,6 +2012,7 @@ Widget _buildMobileHomeUseCase({
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
   bool constrainToPreviewFrame = true,
+  NetworkPrivacyState? networkPrivacyState,
 }) {
   final harness = _MobileHomeHarness(
     openAccountsSheet: openAccountsSheet,
@@ -1956,6 +2020,10 @@ Widget _buildMobileHomeUseCase({
   );
   return ProviderScope(
     overrides: [
+      if (networkPrivacyState != null)
+        networkPrivacyProvider.overrideWith(
+          () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
+        ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
       receiveAddressServiceProvider.overrideWithValue(
@@ -1999,9 +2067,14 @@ Widget _buildDesktopHomeUseCase({
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
   double zecUsdPrice = 1.20012,
+  NetworkPrivacyState? networkPrivacyState,
 }) {
   return ProviderScope(
     overrides: [
+      if (networkPrivacyState != null)
+        networkPrivacyProvider.overrideWith(
+          () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
+        ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
       syncProvider.overrideWith(

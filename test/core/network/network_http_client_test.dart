@@ -16,7 +16,11 @@ void main() {
         bodyBytes: utf8.encode('through tor'),
       ),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     final response = await client.request(
@@ -35,7 +39,11 @@ void main() {
     final bridge = _RecordingTorBridge([
       NetworkHttpResponse(statusCode: 200, bodyBytes: Uint8List(0)),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     await client.request(
@@ -83,6 +91,7 @@ void main() {
   test('Tor errors do not fall back to the direct client', () async {
     final client = NetworkHttpClient(
       torDesired: () => true,
+      torBootstrapping: () => false,
       torBridge: const _FailingTorBridge(),
     );
     addTearDown(() => client.close());
@@ -96,6 +105,7 @@ void main() {
   test('unsupported methods are blocked while Tor is desired', () async {
     final client = NetworkHttpClient(
       torDesired: () => true,
+      torBootstrapping: () => false,
       torBridge: _RecordingTorBridge(const []),
     );
     addTearDown(() => client.close());
@@ -117,7 +127,11 @@ void main() {
       ),
       NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     final response = await client.request(
@@ -132,6 +146,84 @@ void main() {
     ]);
   });
 
+  test('a bootstrap wait is not charged to the redirect budget', () async {
+    // The Rust-side request timeout covers the HTTP exchange only: the first
+    // hop can sit inside Rust waiting for Tor to finish bootstrapping for
+    // longer than the caller's whole deadline. Billed to the redirect budget,
+    // that wait would time the redirect out before it was ever sent.
+    const timeout = Duration(milliseconds: 200);
+    final bridge = _HeldFirstResponseTorBridge([
+      NetworkHttpResponse(
+        statusCode: 302,
+        bodyBytes: Uint8List(0),
+        headers: const {
+          'location': ['/final'],
+        },
+      ),
+      NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
+    ]);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => true,
+      torBridge: bridge,
+    );
+    addTearDown(() => client.close());
+
+    final pending = client.request(
+      'GET',
+      Uri.parse('https://example.com/start'),
+      timeout: timeout,
+    );
+    await Future<void>.delayed(timeout * 2);
+    bridge.releaseFirstResponse();
+
+    final response = await pending;
+    expect(utf8.decode(response.bodyBytes), 'done');
+    expect(bridge.timeouts, hasLength(2));
+    expect(
+      bridge.timeouts[1]!.inMilliseconds,
+      inInclusiveRange(150, timeout.inMilliseconds),
+    );
+  });
+
+  test(
+    'a slow first hop on a ready Tor route is charged to the budget',
+    () async {
+      // Once Tor is up there is nothing to wait for: the first exchange is a
+      // hop like any other, and a redirect after a slow one must not get the
+      // whole timeout again.
+      const timeout = Duration(milliseconds: 200);
+      final bridge = _HeldFirstResponseTorBridge([
+        NetworkHttpResponse(
+          statusCode: 302,
+          bodyBytes: Uint8List(0),
+          headers: const {
+            'location': ['/final'],
+          },
+        ),
+        NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
+      ]);
+      final client = NetworkHttpClient(
+        torDesired: () => true,
+        torBootstrapping: () => false,
+        torBridge: bridge,
+      );
+      addTearDown(() => client.close());
+
+      final pending = client.request(
+        'GET',
+        Uri.parse('https://example.com/start'),
+        timeout: timeout,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      bridge.releaseFirstResponse();
+
+      await pending;
+      expect(bridge.timeouts, hasLength(2));
+      expect(bridge.timeouts[1]!.inMilliseconds, lessThanOrEqualTo(110));
+    },
+  );
+
   test('cross-origin redirects strip credentials', () async {
     final bridge = _RecordingTorBridge([
       NetworkHttpResponse(
@@ -143,7 +235,11 @@ void main() {
       ),
       NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     await client.request(
@@ -171,7 +267,11 @@ void main() {
         },
       ),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     await expectLater(
@@ -191,7 +291,11 @@ void main() {
       ),
       NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     await client.request(
@@ -216,7 +320,11 @@ void main() {
         bodyBytes: Uint8List.fromList([0, 1, 2, 3]),
       ),
     ]);
-    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
     addTearDown(() => client.close());
 
     final response = await client.downloadToFile(
@@ -462,6 +570,32 @@ class _RecordingTorBridge implements TorHttpBridge {
       ),
     );
     return responses[requests.length - 1];
+  }
+}
+
+/// Withholds the first response until the test releases it, standing in for a
+/// first hop that spends its time waiting for Tor to bootstrap inside Rust.
+class _HeldFirstResponseTorBridge extends _RecordingTorBridge {
+  _HeldFirstResponseTorBridge(super.responses);
+
+  final _firstResponse = Completer<void>();
+
+  void releaseFirstResponse() => _firstResponse.complete();
+
+  @override
+  Future<NetworkHttpResponse> get(
+    Uri uri, {
+    required Map<String, String> headers,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
+  }) async {
+    if (requests.isEmpty) await _firstResponse.future;
+    return super.get(
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 }
 
