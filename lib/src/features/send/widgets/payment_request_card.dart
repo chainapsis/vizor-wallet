@@ -956,6 +956,7 @@ class _AddressRow extends StatelessWidget {
                     ? null
                     : const ValueKey('payment_request_recipient_address'),
                 maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: AppTypography.codeMedium.copyWith(
                   color: identity == null
                       ? colors.text.accent

@@ -30,12 +30,14 @@ class PoolBadge extends StatelessWidget {
           color: isShielded ? colors.text.brandCrimson : colors.text.secondary,
         ),
         const SizedBox(width: AppSpacing.xxs),
-        Text(
-          isShielded ? 'Shielded' : 'Transparent',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelSmall.copyWith(
-            color: colors.text.secondary,
+        Flexible(
+          child: Text(
+            isShielded ? 'Shielded' : 'Transparent',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.text.secondary,
+            ),
           ),
         ),
       ],
