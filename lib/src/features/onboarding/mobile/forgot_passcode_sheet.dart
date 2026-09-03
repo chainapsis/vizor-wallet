@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
+import '../../payment_links/services/payment_link_received_store.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/device_owner_auth_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -22,12 +23,18 @@ const double _kForgotPasscodeButtonMinWidth = 196;
 /// shows [ForgotPasscodeLastWarningSheet] as a second, irreversible-action
 /// gate before actually wiping the wallet. Shown from the app-entry unlock
 /// screen and the settings passcode verification step.
-class ForgotPasscodeSheet extends StatelessWidget {
+class ForgotPasscodeSheet extends ConsumerWidget {
   const ForgotPasscodeSheet({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    // Warned, not blocked: this is the only way back into a wallet whose
+    // passcode is lost, and a claim cannot finish while the wallet is locked,
+    // so refusing here would never lift. `resetWallet` skips its refusal on
+    // the locked path for the same reason.
+    final claimsInFlight =
+        ref.watch(paymentLinkClaimsInFlightProvider).value ?? 0;
     return MobileModalScaffold(
       title: 'Forgot Passcode?',
       onClose: () => Navigator.of(context).pop(false),
@@ -45,6 +52,15 @@ class ForgotPasscodeSheet extends StatelessWidget {
             'permanently lost.',
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
+          if (claimsInFlight > 0) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              kWalletResetInFlightGiftCardWarningMessage,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('mobile_forgot_passcode_reset'),

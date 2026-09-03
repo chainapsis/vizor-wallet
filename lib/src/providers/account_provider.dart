@@ -70,6 +70,13 @@ class WalletCreationCurrentBlockHeightException implements Exception {
 const kWalletResetInFlightGiftCardClaimsMessage =
     'A Gift Card is still being received. Wait for it to finish.';
 
+/// Shown where the reset is not refused — the locked recovery surfaces,
+/// whose CTA stays enabled because reset is the user's only way back in.
+/// It states the cost instead of asking the user to wait, because waiting is
+/// exactly what cannot help there. Fits the same 348px line.
+const kWalletResetInFlightGiftCardWarningMessage =
+    'A Gift Card is still being received. Resetting loses it.';
+
 /// A full wallet reset was refused because a Gift Card claim is still in
 /// flight.
 ///
@@ -741,10 +748,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// drained first so they cannot keep reading or writing wallet records or
   /// secure storage during the wipe. This also clears voting state held in
   /// this process for every account before the wallet DB and voting sidecar DB
-  /// are deleted. A claim still in flight after that drain refuses the reset
-  /// outright with [WalletResetInFlightGiftCardClaimsException], the way
-  /// [removeAccount] refuses a deletion, rather than wiping the wallet the
-  /// claim just paid into.
+  /// are deleted. While the wallet is unlocked, a claim still in flight after
+  /// that drain refuses the reset outright with
+  /// [WalletResetInFlightGiftCardClaimsException], the way [removeAccount]
+  /// refuses a deletion, rather than wiping the wallet the claim just paid
+  /// into. A locked wallet does not refuse — see the comment on that check.
   ///
   /// Migration work must first stop without deleting its credential. After
   /// that fail-closed preflight, the wipe is best-effort: deletion steps remain
@@ -776,20 +784,30 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<void> _resetWalletWithShareTrackingStopped() async {
-    // Read after the drain, not before, for the reason spelled out in
-    // [removeAccount]: a one-shot count taken first can read zero and then be
-    // overtaken by a claim entering `submitting`. Draining first settles the
-    // running submissions, and a settled claim sits in `receiving` until it
-    // confirms -- which `isClaimInFlight` still counts -- so the refusal below
-    // sees it. Every account is about to go, so any in-flight claim counts,
-    // including one whose destination account is no longer listed.
-    final inFlightClaimCount = await ref
-        .read(paymentLinkReceivedStoreProvider)
-        .countClaimsInFlight();
-    if (inFlightClaimCount > 0) {
-      throw WalletResetInFlightGiftCardClaimsException(
-        count: inFlightClaimCount,
-      );
+    // Only an unlocked wallet refuses. A claim advances only while unlocked --
+    // PaymentLinkClaimCoordinator pauses on `requiresUnlock` -- so on the
+    // locked recovery path (`/lost-password`, the forgot-passcode sheet) a
+    // record frozen in `receiving` would never clear and the refusal would
+    // never lift, trapping a user whose only remaining way into the wallet is
+    // this reset. Those surfaces show
+    // [kWalletResetInFlightGiftCardWarningMessage] and let the reset through:
+    // one in-flight claim is worth less than the whole wallet.
+    if (!ref.read(appSecurityProvider).requiresUnlock) {
+      // Read after the drain, not before, for the reason spelled out in
+      // [removeAccount]: a one-shot count taken first can read zero and then
+      // be overtaken by a claim entering `submitting`. Draining first settles
+      // the running submissions, and a settled claim sits in `receiving` until
+      // it confirms -- which `isClaimInFlight` still counts -- so the refusal
+      // sees it. Every account is about to go, so any in-flight claim counts,
+      // including one whose destination account is not yet written.
+      final inFlightClaimCount = await ref
+          .read(paymentLinkReceivedStoreProvider)
+          .countClaimsInFlight();
+      if (inFlightClaimCount > 0) {
+        throw WalletResetInFlightGiftCardClaimsException(
+          count: inFlightClaimCount,
+        );
+      }
     }
 
     Object? firstError;

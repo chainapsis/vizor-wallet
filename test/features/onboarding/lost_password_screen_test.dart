@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/lost_password_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/forgot_passcode_sheet.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/device_owner_auth_provider.dart';
@@ -252,6 +254,82 @@ void main() {
     expect(auth.calls, 1);
     expect(resetCalls, 1);
     expect(find.text(kWalletResetDeviceAuthRequiredMessage), findsNothing);
+  });
+
+  testWidgets('lost-password warns about an in-flight Gift Card, unblocked', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          deviceOwnerAuthProvider.overrideWithValue(
+            _FakeDeviceOwnerAuth(result: true),
+          ),
+          paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 1),
+        ],
+        child: const MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: LostPasswordScreen(
+              initialCountdownSeconds: 0,
+              countdownEnabled: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Warned, never blocked: reset is the only way back into this wallet, and
+    // the claim cannot finish while it stays locked.
+    expect(
+      find.text(kWalletResetInFlightGiftCardWarningMessage),
+      findsOneWidget,
+    );
+    expect(find.text('This cannot be undone.'), findsNothing);
+    final resetButton = tester.widget<AppButton>(
+      find.widgetWithText(AppButton, 'Reset Vizor'),
+    );
+    expect(resetButton.onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lost-password says nothing when no Gift Card is arriving', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          deviceOwnerAuthProvider.overrideWithValue(
+            _FakeDeviceOwnerAuth(result: true),
+          ),
+          paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 0),
+        ],
+        child: const MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: LostPasswordScreen(
+              initialCountdownSeconds: 0,
+              countdownEnabled: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(kWalletResetInFlightGiftCardWarningMessage), findsNothing);
+    expect(find.text('This cannot be undone.'), findsOneWidget);
   });
 
   testWidgets('lost-password shows the in-flight Gift Card refusal in full', (

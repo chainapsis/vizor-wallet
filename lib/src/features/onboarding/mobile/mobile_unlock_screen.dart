@@ -318,6 +318,15 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
             : kWalletResetDeviceAuthFailedMessage;
       });
       return;
+    } on WalletResetInFlightGiftCardClaimsException catch (e, st) {
+      // Not a failed wipe: nothing was deleted, and the user only has to wait.
+      log('MobileUnlockScreen._resetWallet held for claim: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = kWalletResetInFlightGiftCardClaimsMessage;
+      });
+      return;
     } catch (e, st) {
       log('MobileUnlockScreen._resetWallet: ERROR: $e\n$st');
       if (!mounted) return;

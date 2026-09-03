@@ -783,6 +783,57 @@ void main() {
     },
   );
 
+  test('a locked wallet resets despite an in-flight Gift Card claim', () async {
+    // A claim cannot advance while locked, so refusing here would never lift
+    // and would trap a user whose only way back in is this reset. The DB path
+    // is the very next step after the skipped check, so its failure is the
+    // proof that the claim check did not stop the reset.
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, (call) async {
+          throw PlatformException(code: 'db-path-unavailable');
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+    });
+
+    final receivedStorage = _AccountTestPaymentLinkReceivedStorage();
+    final receivedStore = PaymentLinkReceivedStore(receivedStorage);
+    final link = VizorPaymentLink(
+      network: 'main',
+      address: 'u1lockedwalletresetpaymentlink',
+      amountZatoshi: BigInt.from(100000),
+      mnemonic: List.filled(24, 'abandon').join(' '),
+      birthdayHeight: 3_456_789,
+      label: 'Payment link',
+      createdAt: DateTime.utc(2026, 9, 3),
+    );
+    await receivedStore.saveReady(link);
+    await receivedStore.markReceiving(
+      address: link.address,
+      destinationAccountUuid: 'account-2',
+      claimTxids: 'claim-txid',
+    );
+
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrapWithAccounts(isUnlocked: false),
+        ),
+        paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(accountProvider.future);
+
+    await expectLater(
+      container.read(accountProvider.notifier).resetWallet(),
+      throwsA(isA<PlatformException>()),
+    );
+  });
+
   test(
     'account switching is allowed while voting submission is guarded',
     () async {
@@ -994,7 +1045,7 @@ class _AccountTestPaymentLinkReceivedStorage
   Future<void> write(String nextValue) async => value = nextValue;
 }
 
-AppBootstrapState _bootstrapWithAccounts() {
+AppBootstrapState _bootstrapWithAccounts({bool isUnlocked = true}) {
   const accountState = AccountState(
     accounts: [
       AccountInfo(uuid: 'account-1', name: 'Primary', order: 0),
@@ -1011,7 +1062,7 @@ AppBootstrapState _bootstrapWithAccounts() {
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,
-    isUnlocked: true,
+    isUnlocked: isUnlocked,
     passwordRotationRecoveryFailed: false,
   );
 }

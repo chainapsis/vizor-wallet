@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -23,6 +25,9 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+import 'package:zcash_wallet/src/providers/device_owner_auth_provider.dart';
+import 'package:zcash_wallet/src/services/device_owner_auth.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 /// Just enough of the Rust secret API for password verifier checks.
@@ -159,6 +164,7 @@ Widget _app({
   BiometricUnlockNotifier Function()? biometricNotifier,
   AppBootstrapState? bootstrap,
   bool autoPromptBiometric = true,
+  List<Override> extraOverrides = const [],
 }) {
   return ProviderScope(
     overrides: [
@@ -167,6 +173,7 @@ Widget _app({
         biometricUnlockProvider.overrideWith(biometricNotifier)
       else if (biometric != null)
         biometricUnlockServiceProvider.overrideWithValue(biometric),
+      ...extraOverrides,
     ],
     child: MaterialApp(
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
@@ -255,6 +262,64 @@ Future<void> _pumpUntilBiometricRead(
   }
 }
 
+class _ResetBlockedAccountNotifier extends AccountNotifier {
+  var resets = 0;
+
+  @override
+  FutureOr<AccountState> build() => const AccountState();
+
+  @override
+  Future<void> restoreAfterUnlock() async {}
+
+  @override
+  Future<void> resetWallet() async {
+    resets += 1;
+    throw const WalletResetInFlightGiftCardClaimsException(count: 1);
+  }
+}
+
+class _ResetSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  // The real snapshot asks Rust whether a sync is running, which the secret-API
+  // fake in this file does not answer.
+  @override
+  bool needsPauseForWalletMutation() => false;
+
+  @override
+  Future<WalletMutationSyncPause> pauseForWalletMutation({
+    FutureOr<void> Function()? onStoppingSync,
+  }) async {
+    return const WalletMutationSyncPause(
+      hadActiveSync: false,
+      hadPolling: false,
+      hadMempoolObserver: false,
+    );
+  }
+
+  @override
+  Future<void> clearSensitiveStateForLock() async {}
+
+  @override
+  void clearCachedWalletDbPath() {}
+}
+
+class _ResetBiometricNotifier extends BiometricUnlockNotifier {
+  @override
+  Future<BiometricUnlockState> build() async => BiometricUnlockState.initial;
+
+  @override
+  Future<void> disable() async {}
+}
+
+class _AlwaysAllowingDeviceOwnerAuth extends DeviceOwnerAuth {
+  _AlwaysAllowingDeviceOwnerAuth() : super(hasOsResetGateOverride: true);
+
+  @override
+  Future<bool> verify({required String reason}) async => true;
+}
+
 void main() {
   setUpAll(() {
     RustLib.initMock(api: _RustSecretApiFake());
@@ -282,6 +347,104 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(find.text('Forgot Passcode?'), findsNothing);
+  });
+
+  testWidgets('the reset sheet warns about an in-flight Gift Card', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [
+          paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 1),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.bySemanticsLabel('Passcode help'));
+    await tester.pumpAndSettle();
+
+    // Warned, never blocked: the claim cannot finish while the wallet stays
+    // locked, and this reset is the only way back in.
+    expect(
+      find.text(kWalletResetInFlightGiftCardWarningMessage),
+      findsOneWidget,
+    );
+    expect(find.text('Continue to reset Vizor'), findsOneWidget);
+  });
+
+  testWidgets('a refused reset reads as a Gift Card wait, not a failure', (
+    tester,
+  ) async {
+    // `resetWallet` no longer refuses on this locked path, so this pins the
+    // backstop: whatever raises the refusal, the screen must say what is
+    // happening rather than fall back to "Couldn't reset the app".
+    late _ResetBlockedAccountNotifier accountNotifier;
+    final router = GoRouter(
+      initialLocation: '/unlock',
+      routes: [
+        GoRoute(
+          path: '/unlock',
+          builder: (_, _) =>
+              const MobileUnlockScreen(autoPromptBiometric: false),
+        ),
+        GoRoute(
+          path: '/welcome',
+          builder: (_, _) => const Text(
+            'Welcome destination',
+            textDirection: TextDirection.ltr,
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _bootstrap(biometricEnabled: false),
+          ),
+          deviceOwnerAuthProvider.overrideWithValue(
+            _AlwaysAllowingDeviceOwnerAuth(),
+          ),
+          accountProvider.overrideWith(() {
+            accountNotifier = _ResetBlockedAccountNotifier();
+            return accountNotifier;
+          }),
+          syncProvider.overrideWith(_ResetSyncNotifier.new),
+          biometricUnlockProvider.overrideWith(_ResetBiometricNotifier.new),
+          paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 0),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.bySemanticsLabel('Passcode help'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continue to reset Vizor'));
+    await tester.pumpAndSettle();
+
+    // The second sheet arms after a deliberate countdown.
+    await tester.pump(kForgotPasscodeLastWarningArmDelay);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reset Vizor'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.resets, 1);
+    expect(
+      find.text(kWalletResetInFlightGiftCardClaimsMessage),
+      findsOneWidget,
+    );
+    expect(
+      find.text("Couldn't reset the app. Please try again."),
+      findsNothing,
+    );
+    expect(find.text('Welcome destination'), findsNothing);
   });
 
   testWidgets('renders the numpad and fills dots while typing', (tester) async {

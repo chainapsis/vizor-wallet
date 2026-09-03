@@ -10,6 +10,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../providers/account_provider.dart';
+import '../payment_links/services/payment_link_received_store.dart';
 import '../../providers/device_owner_auth_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/wallet_mutation_guard.dart';
@@ -192,6 +193,13 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
               remainingSeconds: _remainingSeconds,
               canReset: _canReset,
               error: _error,
+              // Warned, not blocked: reset is the only way back into a wallet
+              // whose password is lost, and a claim cannot finish while the
+              // wallet is locked, so refusing here would never lift.
+              warning:
+                  (ref.watch(paymentLinkClaimsInFlightProvider).value ?? 0) > 0
+                  ? kWalletResetInFlightGiftCardWarningMessage
+                  : null,
               onBack: _handleBack,
               onReset: _handleReset,
             ),
@@ -207,6 +215,7 @@ class _LostPasswordContent extends StatelessWidget {
     required this.remainingSeconds,
     required this.canReset,
     required this.error,
+    required this.warning,
     required this.onBack,
     required this.onReset,
   });
@@ -214,6 +223,7 @@ class _LostPasswordContent extends StatelessWidget {
   final int remainingSeconds;
   final bool canReset;
   final String? error;
+  final String? warning;
   final VoidCallback onBack;
   final VoidCallback onReset;
 
@@ -234,7 +244,7 @@ class _LostPasswordContent extends StatelessWidget {
     final buttonLabel = remainingSeconds > 0
         ? 'Reset after ${remainingSeconds}s...'
         : 'Reset Vizor';
-    final statusText = error ?? 'This cannot be undone.';
+    final statusText = error ?? warning ?? 'This cannot be undone.';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
