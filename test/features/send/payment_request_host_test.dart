@@ -33,6 +33,15 @@ const _request = SendPrefillArgs(
   label: 'Coffee shop',
 );
 
+const _replacementRequest = SendPrefillArgs(
+  id: 'payment-uri-2',
+  source: kPaymentUriPrefillSource,
+  address: _address,
+  amountText: '0.75',
+  label: 'Bakery',
+  message: 'Second request note',
+);
+
 AddressBookContact _contact(String label, String address) => AddressBookContact(
   id: 'contact-$label',
   label: label,
@@ -212,12 +221,56 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Payment request'), findsOneWidget);
-    expect(find.text('Requested by Coffee shop'), findsOneWidget);
+    expect(find.text('Requester'), findsOneWidget);
+    expect(find.text('Coffee shop'), findsOneWidget);
+    expect(find.text('Requested by Coffee shop'), findsNothing);
     expect(
       find.text('screen /home'),
       findsOneWidget,
       reason: 'the screen underneath stays mounted',
     );
+    expect(_location(container), '/home');
+  });
+
+  testWidgets('a replacement request starts with disclosures collapsed', (
+    tester,
+  ) async {
+    final container = await _pumpHost(tester);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(
+          const SendPrefillArgs(
+            id: 'payment-uri-1-with-note',
+            source: kPaymentUriPrefillSource,
+            address: _address,
+            amountText: '0.5',
+            label: 'Coffee shop',
+            message: 'First request note',
+          ),
+          source: PaymentRequestSource.link,
+        );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_request_requester_toggle')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('payment_request_requester_note')),
+      findsOneWidget,
+    );
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_replacementRequest, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bakery'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_request_requester_note')),
+      findsNothing,
+    );
+    expect(find.text('screen /home'), findsOneWidget);
     expect(_location(container), '/home');
   });
 

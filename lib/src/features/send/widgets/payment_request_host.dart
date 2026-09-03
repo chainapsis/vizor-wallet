@@ -128,6 +128,7 @@ class PaymentRequestHost extends ConsumerWidget {
     // owned by `PaymentRequestSurface`.
     return PaymentRequestSurface(
       key: const ValueKey('payment_request_host_surface'),
+      cardKey: ValueKey(flow.prefill.id),
       request: request,
       onContinue: review,
       onEdit: edit,

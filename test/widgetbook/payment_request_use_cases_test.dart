@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,7 +9,6 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
-import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_surface.dart';
@@ -20,17 +20,20 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Payment request'), findsOneWidget);
-    // One muted line under the title names the requester, nothing else.
-    expect(find.text('Requested by Blue Door Coffee'), findsOneWidget);
+    expect(find.text('Requester'), findsOneWidget);
+    expect(find.text('Blue Door Coffee'), findsOneWidget);
+    expect(find.text('Requested by Blue Door Coffee'), findsNothing);
     expect(find.textContaining('From a link'), findsNothing);
     expect(find.text('0.5 ZEC'), findsOneWidget);
     expect(find.text('u195091 ... 190591'), findsOneWidget);
     expect(find.text('Show full address'), findsOneWidget);
     expect(find.text('Shielded'), findsOneWidget);
-    // The memo row is labelled the way the composer and the review label it.
-    expect(find.text('Message'), findsOneWidget);
-    expect(find.text('Memo'), findsNothing);
-    expect(find.text('Note'), findsOneWidget);
+    expect(find.text('Transaction memo'), findsOneWidget);
+    expect(find.text('Message'), findsNothing);
+    expect(find.text('Note'), findsNothing);
+    // Requester notes are progressive disclosure and start hidden.
+    expect(find.text('Note from requester'), findsNothing);
+    expect(_key('payment_request_requester_note'), findsNothing);
     expect(find.text('Review'), findsOneWidget);
     expect(find.text('Edit'), findsOneWidget);
     // Desktop refuses through the header's close, not a third pill in the
@@ -47,16 +50,14 @@ void main() {
       await _pumpUseCase(tester, builder, size: size);
 
       expect(tester.takeException(), isNull);
-      // No ⓘ beside the requester, the message or the note: the labels
-      // carry the meaning on their own.
+      // No ⓘ beside requester or transaction content: the labels carry the
+      // meaning on their own.
       expect(find.byType(AppTooltip), findsNothing);
       expect(find.bySemanticsLabel('About this name'), findsNothing);
     }
   });
 
-  testWidgets('the header keeps one title and one requester line', (
-    tester,
-  ) async {
+  testWidgets('the title and requester group stay separate', (tester) async {
     for (final (builder, size) in <(WidgetBuilder, Size)>[
       (buildPaymentRequestFullUseCase, _desktopSize),
       (buildMobilePaymentRequestFullUseCase, _mobileSize),
@@ -66,14 +67,143 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(_titleText(tester), 'Payment request');
       expect(
-        find.byKey(const ValueKey('payment_request_requester')),
+        find.byKey(const ValueKey('payment_request_requester_group')),
         findsOneWidget,
       );
+      expect(find.text('Requested by Blue Door Coffee'), findsNothing);
       expect(
         find.byKey(const ValueKey('payment_request_eyebrow')),
         findsNothing,
       );
     }
+  });
+
+  testWidgets('requester note expands from the collapsed requester group', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
+
+    expect(_key('payment_request_requester_note'), findsNothing);
+    expect(find.bySemanticsLabel('Show requester details'), findsOneWidget);
+
+    await tester.tap(_key('payment_request_requester_toggle'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Note from requester'), findsOneWidget);
+    expect(_key('payment_request_requester_note'), findsOneWidget);
+    expect(find.bySemanticsLabel('Hide requester details'), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('requester and memo disclosures expose one semantics action', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
+
+    final requester = tester.getSemantics(
+      find.bySemanticsLabel('Show requester details'),
+    );
+    final memo = tester.getSemantics(
+      find.bySemanticsLabel('Expand transaction memo'),
+    );
+
+    expect(requester.childrenCountInTraversalOrder, 0);
+    expect(memo.childrenCountInTraversalOrder, 0);
+    semantics.dispose();
+  });
+
+  testWidgets('expanded memo is not announced by its disclosure twice', (
+    tester,
+  ) async {
+    const memoText =
+        'Table 4 — two flat whites and a pastry. Thanks for stopping by, '
+        'see you next week.';
+    final semantics = tester.ensureSemantics();
+    await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
+
+    final collapsed = tester.getSemantics(
+      find.bySemanticsLabel('Expand transaction memo'),
+    );
+    expect(collapsed.value, 'Transaction memo, $memoText');
+
+    await tester.tap(_key('payment_request_memo_toggle'));
+    await tester.pumpAndSettle();
+
+    final expanded = tester.getSemantics(
+      find.bySemanticsLabel('Collapse transaction memo'),
+    );
+    expect(expanded.value, isEmpty);
+    semantics.dispose();
+  });
+
+  testWidgets('a very long requester note scrolls inside its existing card', (
+    tester,
+  ) async {
+    final note = List.filled(12000, 'a').join();
+    await _pumpUseCase(
+      tester,
+      (_) => PaymentRequestSurface(
+        layout: PaymentRequestLayout.mobile,
+        request: PaymentRequestView(
+          source: PaymentRequestSource.link,
+          requesterLabel: 'Blue Door Coffee',
+          amountZecText: '0.5 ZEC',
+          address:
+              'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+              '73d57f73c6dc05121591a83861cd190591',
+          note: note,
+        ),
+        onContinue: () {},
+        onEdit: () {},
+        onCancel: () {},
+      ),
+      size: _mobileSize,
+    );
+
+    await tester.tap(_key('payment_request_requester_toggle'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Review'), findsOneWidget);
+    expect(find.text('Edit'), findsOneWidget);
+    expect(_requesterNoteMaxScrollExtent(tester), greaterThan(0));
+    expect(
+      tester
+          .widget<SingleChildScrollView>(
+            find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+          )
+          .padding,
+      const EdgeInsetsDirectional.only(end: kPaymentRequestGutter),
+      reason: 'the overlay scrollbar needs its own trailing gutter',
+    );
+    final noteViewport = tester.getRect(
+      find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+    );
+    final noteText = tester.getRect(_key('payment_request_requester_note'));
+    expect(
+      noteViewport.right - noteText.right,
+      greaterThanOrEqualTo(kPaymentRequestGutter),
+    );
+
+    await tester.drag(
+      find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+      const Offset(0, -80),
+    );
+    await tester.pumpAndSettle();
+
+    expect(_requesterNoteScrollOffset(tester), greaterThan(0));
+  });
+
+  testWidgets('a requester name without a note is not an empty accordion', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildPaymentRequestContactUseCase);
+
+    expect(_key('payment_request_requester_group'), findsOneWidget);
+    expect(_key('payment_request_requester_toggle'), findsNothing);
+    expect(find.text('Note from requester'), findsNothing);
   });
 
   testWidgets('the request rows use the send review row treatment', (
@@ -82,16 +212,14 @@ void main() {
     await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
 
     expect(tester.takeException(), isNull);
-    // The details block is the review's wrap card, with the review's
-    // hairline between the To / Message / Note groups.
-    expect(find.byType(ReviewWrapCard), findsOneWidget);
-    expect(find.byType(ReviewWrapDivider), findsNWidgets(2));
-    // Message and Note are the review's label-beside-value list rows; "To"
-    // stays label-above-value, as the review's own To row is.
-    expect(find.byType(ReviewListRow), findsNWidgets(2));
+    // Requester metadata and transaction content are separate visual groups.
+    expect(_key('payment_request_requester_group'), findsOneWidget);
+    expect(_key('payment_request_transaction_content'), findsOneWidget);
+    expect(find.byType(ReviewWrapCard), findsNWidgets(2));
+    expect(find.byType(ReviewWrapDivider), findsOneWidget);
 
     final labelStyle = AppTypography.bodyMediumStrong;
-    for (final label in const ['To', 'Message', 'Note']) {
+    for (final label in const ['To', 'Transaction memo']) {
       final text = tester.widget<Text>(find.text(label));
       expect(text.style!.fontSize, labelStyle.fontSize, reason: label);
       expect(text.style!.fontWeight, labelStyle.fontWeight, reason: label);
@@ -100,6 +228,44 @@ void main() {
         text.style!.color,
         AppThemeData.light.colors.text.secondary,
         reason: label,
+      );
+    }
+  });
+
+  testWidgets('disclosures do not add a hover fill', (tester) async {
+    await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+
+    for (final key in const [
+      'payment_request_requester_toggle',
+      'payment_request_memo_toggle',
+    ]) {
+      final button = _key(key);
+      await mouse.moveTo(tester.getCenter(button));
+      await tester.pump();
+
+      final decoration =
+          tester
+                  .widget<AnimatedContainer>(
+                    find.descendant(
+                      of: button,
+                      matching: find.byType(AnimatedContainer),
+                    ),
+                  )
+                  .decoration!
+              as ShapeDecoration;
+      final container = tester.widget<AnimatedContainer>(
+        find.descendant(of: button, matching: find.byType(AnimatedContainer)),
+      );
+      expect(
+        decoration.color,
+        AppThemeData.light.colors.background.ground.withValues(alpha: 0),
+      );
+      expect(
+        container.padding,
+        const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       );
     }
   });
@@ -152,18 +318,19 @@ void main() {
     }
   });
 
-  testWidgets('minimal use case omits the requester, message and note rows', (
+  testWidgets('minimal use case renders transaction content only', (
     tester,
   ) async {
     await _pumpUseCase(tester, buildPaymentRequestMinimalUseCase);
 
     expect(tester.takeException(), isNull);
     expect(find.text('Blue Door Coffee'), findsNothing);
-    // No label, no line at all.
     expect(
-      find.byKey(const ValueKey('payment_request_requester')),
+      find.byKey(const ValueKey('payment_request_requester_group')),
       findsNothing,
     );
+    expect(find.text('Transaction content'), findsOneWidget);
+    expect(_key('payment_request_transaction_content'), findsOneWidget);
     expect(find.text('Message'), findsNothing);
     expect(find.text('Note'), findsNothing);
     expect(find.byType(ReviewWrapDivider), findsNothing);
@@ -289,7 +456,7 @@ void main() {
     // It rides inside the details card, not outside it.
     final region = tester.getRect(find.byKey(kPaymentRequestScrollbarKey));
     final view = tester.getRect(find.byKey(kPaymentRequestScrollViewKey));
-    final card = tester.getRect(find.byType(ReviewWrapCard));
+    final card = tester.getRect(_transactionDetailsCard());
     expect(region.right, lessThanOrEqualTo(view.right + 0.5));
     expect(region.left, greaterThanOrEqualTo(card.left - 0.5));
     expect(region.right, lessThanOrEqualTo(card.right + 0.5));
@@ -306,7 +473,7 @@ void main() {
       size: _mobileSize,
     );
 
-    final card = find.byType(ReviewWrapCard);
+    final card = _transactionDetailsCard();
     final before = tester.getRect(card);
     expect(_maxScrollExtent(tester), greaterThan(0));
 
@@ -335,7 +502,7 @@ void main() {
     // Nothing to scroll, and the card takes only the height it needs rather
     // than stretching to the space the sheet could give it.
     expect(_maxScrollExtent(tester), 0);
-    final card = tester.getRect(find.byType(ReviewWrapCard));
+    final card = tester.getRect(_transactionDetailsCard());
     final status = tester.getRect(_key('payment_request_continue'));
     expect(card.height, lessThan(status.top - card.top));
   });
@@ -366,7 +533,7 @@ void main() {
       await _pumpUseCase(tester, builder);
 
       expect(tester.takeException(), isNull, reason: message);
-      // Exactly one status line, in the one slot above the actions.
+      // Exactly one status line, attached to the details card.
       expect(find.text(message), findsOneWidget, reason: message);
       expect(
         find.byKey(const ValueKey('payment_request_status')),
@@ -381,7 +548,7 @@ void main() {
     }
   });
 
-  testWidgets('the status line sits between the details and the actions', (
+  testWidgets('the status line sits below the card, away from the actions', (
     tester,
   ) async {
     await _pumpUseCase(tester, buildPaymentRequestInvalidAddressUseCase);
@@ -389,12 +556,13 @@ void main() {
     final status = tester.getRect(
       find.byKey(const ValueKey('payment_request_status')),
     );
-    final card = tester.getRect(find.byType(ReviewWrapCard));
+    final card = tester.getRect(_transactionDetailsCard());
     final review = tester.getRect(_key('payment_request_continue'));
 
     expect(tester.takeException(), isNull);
     expect(status.top, greaterThanOrEqualTo(card.bottom - 0.5));
     expect(status.bottom, lessThanOrEqualTo(review.top + 0.5));
+    expect(status.top - card.bottom, lessThan(review.top - status.bottom));
   });
 
   testWidgets('checking is a button state, not a status line', (tester) async {
@@ -530,15 +698,25 @@ void main() {
     expect(find.text('Shielded'), findsNothing);
   });
 
-  testWidgets('a note without a message renders only the note row', (
+  testWidgets('a requester note without a name stays collapsed', (
     tester,
   ) async {
     await _pumpUseCase(tester, buildPaymentRequestNoteOnlyUseCase);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Note'), findsOneWidget);
-    expect(find.text('Message'), findsNothing);
-    expect(find.byType(ReviewWrapDivider), findsOneWidget);
+    expect(find.text('Requester'), findsOneWidget);
+    expect(find.text('Note from requester'), findsOneWidget);
+    expect(_key('payment_request_requester_note'), findsNothing);
+    expect(find.text('Transaction memo'), findsNothing);
+
+    await tester.tap(_key('payment_request_requester_toggle'));
+    await tester.pumpAndSettle();
+
+    expect(_key('payment_request_requester_note'), findsOneWidget);
+    expect(
+      tester.widget<Text>(_key('payment_request_requester_note')).data,
+      'Saved from the invoice link you opened.',
+    );
   });
 
   testWidgets('a blocked primary action still announces why', (tester) async {
@@ -668,7 +846,7 @@ void main() {
     expect(actions.bottom, lessThanOrEqualTo(sheet.bottom - 8));
   });
 
-  testWidgets('the details card spans the full mobile content width', (
+  testWidgets('the transaction group spans the mobile action width', (
     tester,
   ) async {
     await _pumpUseCase(
@@ -678,15 +856,15 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    // The scroll region reserves no trailing gutter, so the wrap card sits
-    // the same distance from both edges of the sheet content.
-    final wrap = tester.getRect(find.byType(ReviewWrapCard));
+    final transaction = tester.getRect(
+      _key('payment_request_transaction_content'),
+    );
     final actions = tester.getRect(_key('payment_request_continue'));
     expect(
-      wrap.left - actions.left,
-      moreOrLessEquals(actions.right - wrap.right, epsilon: 0.5),
+      transaction.left - actions.left,
+      moreOrLessEquals(actions.right - transaction.right, epsilon: 0.5),
     );
-    expect(wrap.width, moreOrLessEquals(actions.width, epsilon: 0.5));
+    expect(transaction.width, moreOrLessEquals(actions.width, epsilon: 0.5));
   });
 
   // ─── A recipient the wallet can name ───────────────────────────────
@@ -842,9 +1020,9 @@ void main() {
       expect(find.text('Edit'), findsNothing);
       expect(_key('payment_request_edit'), findsNothing);
       expect(_button(tester, 'payment_request_continue').onPressed, isNotNull);
-      // The title flows straight into the details card.
+      // The amount slot is omitted inside the transaction group.
       expect(_titleText(tester), 'Payment request');
-      expect(find.byType(ReviewWrapCard), findsOneWidget);
+      expect(_key('payment_request_transaction_content'), findsOneWidget);
     }
   });
 
@@ -878,7 +1056,7 @@ void main() {
 
   // ─── Actions ───────────────────────────────────────────────────────
 
-  testWidgets('the actions are one full-width primary over a full-width Edit', (
+  testWidgets('the actions are full-width primary and ghost buttons', (
     tester,
   ) async {
     for (final (builder, size) in <(WidgetBuilder, Size)>[
@@ -895,22 +1073,15 @@ void main() {
       final review = _button(tester, 'payment_request_continue');
       final edit = _button(tester, 'payment_request_edit');
       expect(review.variant, AppButtonVariant.primary);
-      expect(edit.variant, AppButtonVariant.secondary);
+      expect(edit.variant, AppButtonVariant.ghost);
       expect(review.expand, isTrue);
       expect(edit.expand, isTrue);
 
-      // Same size and shape, Edit under Review, 8px apart.
       final reviewRect = tester.getRect(_key('payment_request_continue'));
       final editRect = tester.getRect(_key('payment_request_edit'));
-      expect(editRect.width, moreOrLessEquals(reviewRect.width, epsilon: 0.5));
-      expect(
-        editRect.height,
-        moreOrLessEquals(reviewRect.height, epsilon: 0.5),
-      );
-      expect(
-        editRect.top - reviewRect.bottom,
-        moreOrLessEquals(8, epsilon: 0.5),
-      );
+      expect(editRect.width, moreOrLessEquals(reviewRect.width));
+      expect(editRect.height, moreOrLessEquals(reviewRect.height));
+      expect(editRect.top, greaterThan(reviewRect.bottom));
 
       // Nothing edits in place any more.
       expect(
@@ -964,6 +1135,11 @@ const _mobileSize = Size(393, 852);
 
 Finder _key(String value) => find.byKey(ValueKey(value));
 
+Finder _transactionDetailsCard() => find.descendant(
+  of: _key('payment_request_transaction_content'),
+  matching: find.byType(ReviewWrapCard),
+);
+
 /// Taps the value pill of a `ReviewListRow`-shaped row. The label itself is
 /// not the tap target — the review's rows put the gesture on the pill.
 Future<void> _tapRow(WidgetTester tester, String rowKey) async {
@@ -1001,6 +1177,21 @@ double _scrollOffset(WidgetTester tester) => tester
 
 double _maxScrollExtent(WidgetTester tester) => tester
     .widget<SingleChildScrollView>(find.byKey(kPaymentRequestScrollViewKey))
+    .controller!
+    .position
+    .maxScrollExtent;
+
+double _requesterNoteScrollOffset(WidgetTester tester) => tester
+    .widget<SingleChildScrollView>(
+      find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+    )
+    .controller!
+    .offset;
+
+double _requesterNoteMaxScrollExtent(WidgetTester tester) => tester
+    .widget<SingleChildScrollView>(
+      find.byKey(kPaymentRequestRequesterNoteScrollViewKey),
+    )
     .controller!
     .position
     .maxScrollExtent;

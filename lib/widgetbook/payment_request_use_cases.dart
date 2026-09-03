@@ -158,10 +158,9 @@ const _ownAccountRequest = PaymentRequestView(
   ),
 );
 
-/// Note without a message — the pair is otherwise only ever seen together.
+/// Requester note without a requester name or transaction memo.
 const _noteOnlyRequest = PaymentRequestView(
   source: PaymentRequestSource.link,
-  requesterLabel: 'Blue Door Coffee',
   amountZecText: '0.5 ZEC',
   fiatText: r'$35.00',
   address: _sampleAddress,
