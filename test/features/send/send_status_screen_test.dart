@@ -16,10 +16,12 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/zcash_explorer.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/donation/widgets/donation_views.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -84,6 +86,56 @@ void main() {
     expect(rustApi.macosExecuteCalls, Platform.isMacOS ? 1 : 0);
     expect(rustApi.mnemonicExecuteCalls, Platform.isMacOS ? 0 : 1);
     expect(_sendStatusTerminal(tester), isTrue);
+  });
+
+  testWidgets('donation status keeps every sidebar section inactive', (
+    tester,
+  ) async {
+    rustApi.executeResult = _executeResult(status: 'broadcasted');
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(_reviewArgs(flowKind: SendFlowKind.donation)),
+    );
+    await tester.pump();
+
+    expect(_sidebarItem(tester, 'Home').active, isFalse);
+    expect(_sidebarItem(tester, 'Settings').active, isFalse);
+    expect(find.text('Donation in progress...'), findsOneWidget);
+    expect(find.text('Send in progress...'), findsNothing);
+    expect(find.text('Donating to'), findsOneWidget);
+    expect(find.text('Vizor Wallet'), findsOneWidget);
+    expect(find.byType(DonationVizorBadge), findsOneWidget);
+    expect(find.text(truncatedAddress(_address)), findsNothing);
+    expect(find.text('Shielded'), findsNothing);
+    expect(find.text('Show full address'), findsNothing);
+
+    await _flushBroadcast(tester);
+
+    expect(find.text('Thank you for supporting Vizor'), findsOneWidget);
+    expect(_sidebarItem(tester, 'Home').active, isFalse);
+    expect(_sidebarItem(tester, 'Settings').active, isFalse);
+  });
+
+  testWidgets('failed donation keeps donation-specific copy and recipient', (
+    tester,
+  ) async {
+    rustApi.executeError = Exception('broadcast rejected');
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(_reviewArgs(flowKind: SendFlowKind.donation)),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Donation failed'), findsOneWidget);
+    expect(find.text('Send failed'), findsNothing);
+    expect(find.text('Donating to'), findsOneWidget);
+    expect(find.text('Vizor Wallet'), findsOneWidget);
+    expect(find.byType(DonationVizorBadge), findsOneWidget);
+    expect(find.text(truncatedAddress(_address)), findsNothing);
   });
 
   testWidgets('tx id row opens the explorer with the display-order txid', (
@@ -756,6 +808,7 @@ SendReviewArgs _reviewArgs({
   String addressType = 'unified',
   String? memo,
   bool needsSaplingParams = false,
+  SendFlowKind flowKind = SendFlowKind.send,
 }) {
   return SendReviewArgs(
     proposalId: BigInt.one,
@@ -767,6 +820,13 @@ SendReviewArgs _reviewArgs({
     feeZatoshi: BigInt.from(12000),
     needsSaplingParams: needsSaplingParams,
     memo: memo,
+    flowKind: flowKind,
+  );
+}
+
+AppSidebarItem _sidebarItem(WidgetTester tester, String label) {
+  return tester.widget<AppSidebarItem>(
+    find.ancestor(of: find.text(label), matching: find.byType(AppSidebarItem)),
   );
 }
 

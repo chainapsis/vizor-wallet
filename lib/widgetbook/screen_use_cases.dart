@@ -703,6 +703,13 @@ class _MobileSettingsMainPreview extends StatelessWidget {
   }
 }
 
+Widget buildSettingsSupportVizorUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState.off(),
+    initialScrollOffset: 560,
+  );
+}
+
 /// Real mobile settings and tab bar, pinned to the app footer for visual review.
 /// The version still comes from VIZOR_RELEASE_VERSION, just as in a release.
 Widget buildMobileSettingsFooterUseCase(BuildContext context) {
@@ -885,7 +892,10 @@ Widget buildSettingsTorFailedUseCase(BuildContext context) {
   );
 }
 
-Widget _buildSettingsMainUseCase(NetworkPrivacyState networkPrivacyState) {
+Widget _buildSettingsMainUseCase(
+  NetworkPrivacyState networkPrivacyState, {
+  double initialScrollOffset = 0,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -901,7 +911,7 @@ Widget _buildSettingsMainUseCase(NetworkPrivacyState networkPrivacyState) {
         () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
       ),
     ],
-    child: _SettingsHarness(),
+    child: _SettingsHarness(initialScrollOffset: initialScrollOffset),
   );
 }
 
@@ -2745,20 +2755,32 @@ class _SettingsSubScreenHarnessState extends State<_SettingsSubScreenHarness> {
 }
 
 class _SettingsHarness extends StatefulWidget {
+  const _SettingsHarness({this.initialScrollOffset = 0});
+
+  final double initialScrollOffset;
+
   @override
   State<_SettingsHarness> createState() => _SettingsHarnessState();
 }
 
 class _SettingsHarnessState extends State<_SettingsHarness> {
   late final GoRouter _router;
+  late final ScrollController _scrollController;
 
   @override
   void initState() {
     super.initState();
+    _scrollController = ScrollController(
+      initialScrollOffset: widget.initialScrollOffset,
+    );
     _router = GoRouter(
       initialLocation: '/settings',
       routes: [
-        GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+        GoRoute(
+          path: '/settings',
+          builder: (_, _) =>
+              SettingsScreen(scrollController: _scrollController),
+        ),
         GoRoute(
           path: '/settings/link-mobile',
           builder: (_, _) => const WalletLinkDesktopScreen(
@@ -2794,6 +2816,7 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
   @override
   void dispose() {
     _router.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 

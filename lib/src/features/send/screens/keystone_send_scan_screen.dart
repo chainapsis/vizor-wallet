@@ -21,9 +21,10 @@ class KeystoneSendScanArgs {
     this.unexpectedUrMessage =
         'Open the signed transaction QR on Keystone, then scan again.',
     this.decodePcztResponse = true,
+    this.suppressSidebarSelection = false,
   });
 
-  const KeystoneSendScanArgs.batch()
+  const KeystoneSendScanArgs.batch({this.suppressSidebarSelection = false})
     : expectedUrType = 'zcash-batch-sig-result',
       unexpectedUrMessage =
           'Open the signature result QR on Keystone, then scan again.',
@@ -32,6 +33,7 @@ class KeystoneSendScanArgs {
   final String expectedUrType;
   final String unexpectedUrMessage;
   final bool decodePcztResponse;
+  final bool suppressSidebarSelection;
 }
 
 class KeystoneSendScanScreen extends ConsumerStatefulWidget {
@@ -114,7 +116,9 @@ class _KeystoneSendScanScreenState extends ConsumerState<KeystoneSendScanScreen>
   Widget build(BuildContext context) {
     final colors = context.colors;
     return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
+      sidebar: AppMainSidebar(
+        suppressActiveSelection: widget.args.suppressSidebarSelection,
+      ),
       pane: AppDesktopPane(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.xxs,

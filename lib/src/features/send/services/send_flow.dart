@@ -59,6 +59,8 @@ String? sanitisePaymentRequestLabel(String? raw) {
 }
 
 /// Route-extra payload for the review/status legs of the send flow.
+enum SendFlowKind { send, donation }
+
 class SendReviewArgs {
   const SendReviewArgs({
     required this.proposalId,
@@ -73,6 +75,7 @@ class SendReviewArgs {
     this.isPaymentRequest = false,
     this.requestedBy,
     this.requestedAmountZatoshi,
+    this.flowKind = SendFlowKind.send,
   });
 
   final BigInt proposalId;
@@ -84,6 +87,7 @@ class SendReviewArgs {
   final BigInt feeZatoshi;
   final bool needsSaplingParams;
   final String? memo;
+  final SendFlowKind flowKind;
 
   /// This send answers a ZIP-321 payment request rather than being composed
   /// from scratch. Only the review framing reads it — the proposal, the
@@ -291,6 +295,7 @@ Future<SendReviewArgs> proposeSendTransfer({
   bool isPaymentRequest = false,
   String? requestedBy,
   BigInt? requestedAmountZatoshi,
+  SendFlowKind flowKind = SendFlowKind.send,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) => proposeSendTransferWith(
   syncNotifier: ref.read(syncProvider.notifier),
@@ -304,6 +309,7 @@ Future<SendReviewArgs> proposeSendTransfer({
   isPaymentRequest: isPaymentRequest,
   requestedBy: requestedBy,
   requestedAmountZatoshi: requestedAmountZatoshi,
+  flowKind: flowKind,
   loadDbPath: loadDbPath,
 );
 
@@ -327,6 +333,7 @@ Future<SendReviewArgs> proposeSendTransferWith({
   bool isPaymentRequest = false,
   String? requestedBy,
   BigInt? requestedAmountZatoshi,
+  SendFlowKind flowKind = SendFlowKind.send,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
   final proposal = await syncNotifier.runWithAuthoritativeSpendable(
@@ -358,6 +365,7 @@ Future<SendReviewArgs> proposeSendTransferWith({
     isPaymentRequest: isPaymentRequest,
     requestedBy: sanitisePaymentRequestLabel(requestedBy),
     requestedAmountZatoshi: requestedAmountZatoshi,
+    flowKind: flowKind,
   );
 }
 

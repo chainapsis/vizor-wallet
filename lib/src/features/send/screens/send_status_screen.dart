@@ -22,6 +22,7 @@ import '../../../providers/zcash_explorer_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
+import '../../donation/widgets/donation_views.dart';
 import '../services/send_flow.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/send_recipient_resolver.dart';
@@ -57,6 +58,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   /// Captured in [initState] so [dispose] can release the flag without reading
   /// from `ref` after the element is gone.
   late final SendStatusTerminalNotifier _sendStatusTerminal;
+  bool get _suppressSidebarSelection =>
+      widget.args.flowKind == SendFlowKind.donation;
 
   @override
   void initState() {
@@ -197,7 +200,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   Widget _buildKeystoneSubmittingScreen(BuildContext context) {
     final colors = context.colors;
     return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
+      sidebar: AppMainSidebar(
+        suppressActiveSelection: _suppressSidebarSelection,
+      ),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
         child: Column(
@@ -239,6 +244,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       _SendStatusPhase.succeeded => SendStatusPhase.completed,
       _SendStatusPhase.failed => SendStatusPhase.failed,
     };
+    final isDonation = widget.args.flowKind == SendFlowKind.donation;
     final isKeystoneSubmitting =
         widget.keystone != null && _phase == _SendStatusPhase.sending;
     final addressBookContacts =
@@ -269,8 +275,22 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       },
       child: isKeystoneSubmitting
           ? _buildKeystoneSubmittingScreen(context)
+          : widget.args.flowKind == SendFlowKind.donation &&
+                _phase == _SendStatusPhase.succeeded
+          ? AppDesktopShell(
+              background: const DonationSuccessBackground(),
+              sidebar: AppMainSidebar(
+                suppressActiveSelection: _suppressSidebarSelection,
+              ),
+              pane: AppDesktopPane(
+                padding: EdgeInsets.zero,
+                child: DonationSuccessView(onDone: () => unawaited(_goHome())),
+              ),
+            )
           : AppDesktopShell(
-              sidebar: const AppMainSidebar(),
+              sidebar: AppMainSidebar(
+                suppressActiveSelection: _suppressSidebarSelection,
+              ),
               pane: AppDesktopPane(
                 padding: EdgeInsets.zero,
                 child: Stack(
@@ -284,6 +304,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                       child: SendStatusContentView(
                         key: ValueKey('send_status_${statusPhase.name}'),
                         phase: statusPhase,
+                        titleOverride: isDonation
+                            ? switch (_phase) {
+                                _SendStatusPhase.failed => 'Donation failed',
+                                _ => 'Donation in progress...',
+                              }
+                            : null,
                         amountText: _formatAmount(widget.args.amountZatoshi),
                         fiatText: fiatTextForZatoshi(
                           widget.args.amountZatoshi,
@@ -297,13 +323,20 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         feeText: _formatFee(widget.args.feeZatoshi),
                         isShieldedRecipient: widget.args.isShielded,
                         recipientAddressType: widget.args.addressType,
+                        recipientRow: isDonation
+                            ? DonationRecipientInfoRow(
+                                struckThrough:
+                                    _phase == _SendStatusPhase.failed,
+                              )
+                            : null,
                         memoText: hasMemo ? memo : null,
                         memoExpanded: _messageExpanded,
                         noticeText: _phase == _SendStatusPhase.failed
                             ? (_error ?? 'Send failed')
                             : _statusMessage,
-                        onShowFullAddress: () =>
-                            setState(() => _showVerifyAddress = true),
+                        onShowFullAddress: isDonation
+                            ? null
+                            : () => setState(() => _showVerifyAddress = true),
                         onExpandMemo: () => setState(
                           () => _messageExpanded = !_messageExpanded,
                         ),

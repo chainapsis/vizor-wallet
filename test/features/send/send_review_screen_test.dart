@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
@@ -31,6 +32,7 @@ import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
     show
         resolveSendStatusRoutePayload,
+        SendFlowKind,
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider;
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
@@ -202,6 +204,29 @@ void main() {
     );
     expect(find.text('Coinbase Support'), findsNothing);
     expect(find.text('Label from link'), findsNothing);
+  });
+
+  testWidgets('donation review links back to Support Vizor', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', flowKind: SendFlowKind.donation),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Amount'), findsOneWidget);
+    expect(find.text('Support Vizor'), findsOneWidget);
+    expect(find.text('Send'), findsNothing);
+    expect(find.text('Donation'), findsNothing);
+    expect(_sidebarItem(tester, 'Home').active, isFalse);
+    expect(_sidebarItem(tester, 'Settings').active, isFalse);
+
+    await tester.tap(find.text('Support Vizor'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('donation-route'), findsOneWidget);
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
   });
 
   testWidgets('renders the contact variant for an address-book match', (
@@ -737,6 +762,30 @@ void main() {
     expect(rustApi.discardCalls, isEmpty);
   });
 
+  testWidgets('donation Keystone scan preserves suppressed selection', (
+    tester,
+  ) async {
+    final scanExtras = <Object?>[];
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', flowKind: SendFlowKind.donation),
+        bootstrap: _bootstrap(isHardware: true),
+        scanExtras: scanExtras,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    await tester.tap(find.text('Get signature'));
+    await tester.pumpAndSettle();
+
+    final scanArgs = scanExtras.single as KeystoneSendScanArgs;
+    expect(scanArgs.suppressSidebarSelection, isTrue);
+  });
+
   testWidgets('Keystone TEX advances through two explicit signing rounds', (
     tester,
   ) async {
@@ -998,6 +1047,12 @@ void main() {
   );
 }
 
+AppSidebarItem _sidebarItem(WidgetTester tester, String label) {
+  return tester.widget<AppSidebarItem>(
+    find.ancestor(of: find.text(label), matching: find.byType(AppSidebarItem)),
+  );
+}
+
 Future<void> _setDesktopViewport(WidgetTester tester) async {
   await tester.binding.setSurfaceSize(const Size(1080, 720));
   addTearDown(() async {
@@ -1059,6 +1114,10 @@ Widget _harness(
     refreshListenable: routerRefresh,
     routes: [
       GoRoute(path: '/send', builder: (_, _) => const Text('send-route')),
+      GoRoute(
+        path: '/donation',
+        builder: (_, _) => const Text('donation-route'),
+      ),
       GoRoute(
         path: '/send/review',
         builder: (_, _) => SendReviewScreen(args: args),
@@ -1173,6 +1232,7 @@ SendReviewArgs _reviewArgs({
   bool isPaymentRequest = false,
   String? requestedBy,
   BigInt? requestedAmountZatoshi,
+  SendFlowKind flowKind = SendFlowKind.send,
 }) {
   return SendReviewArgs(
     proposalId: BigInt.one,
@@ -1187,6 +1247,7 @@ SendReviewArgs _reviewArgs({
     isPaymentRequest: isPaymentRequest,
     requestedBy: requestedBy,
     requestedAmountZatoshi: requestedAmountZatoshi,
+    flowKind: flowKind,
   );
 }
 

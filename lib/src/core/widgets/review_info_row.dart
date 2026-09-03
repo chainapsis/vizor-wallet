@@ -73,6 +73,7 @@ class ReviewInfoRow extends StatelessWidget {
     this.valueFit,
     this.valueStyle,
     this.rowHeight = ReviewInfoRow.height,
+    this.reserveBottomRow = true,
     super.key,
   });
 
@@ -123,6 +124,13 @@ class ReviewInfoRow extends StatelessWidget {
   /// Optional component height override. Pay review rows use the compact
   /// 76px variant; the send/status component remains 90px by default.
   final double rowHeight;
+
+  /// Keeps the 24px bottom slot even when it has no content.
+  ///
+  /// Existing send/status rows reserve this space to preserve their shared
+  /// vertical rhythm. Rows whose Figma variant contains only a label and
+  /// headline can opt out without changing the default component behavior.
+  final bool reserveBottomRow;
 
   /// Row height pinned by the Figma `_Review Info` component.
   static const height = 90.0;
@@ -182,8 +190,10 @@ class ReviewInfoRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: valueStyle,
                   ),
-                const SizedBox(height: AppSpacing.xxs),
-                SizedBox(height: AppSpacing.md, child: _bottomRow(colors)),
+                if (_hasBottomRow) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  SizedBox(height: AppSpacing.md, child: _bottomRow(colors)),
+                ],
               ],
             ),
           ),
@@ -191,6 +201,12 @@ class ReviewInfoRow extends StatelessWidget {
       ),
     );
   }
+
+  bool get _hasBottomRow =>
+      reserveBottomRow ||
+      bottomLeftIconName != null ||
+      bottomLeftText != null ||
+      trailingActionLabel != null;
 
   Widget _bottomRow(AppColors colors) {
     return Row(

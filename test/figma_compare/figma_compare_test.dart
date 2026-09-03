@@ -18,6 +18,9 @@ void main() {
     expect(
       ids,
       containsAll(<String>[
+        'donation-zec-empty',
+        'donation-review',
+        'donation-success',
         'pay-recipient',
         'pay-recipient-new-address',
         'pay-in-progress',

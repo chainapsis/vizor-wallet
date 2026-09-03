@@ -35,6 +35,8 @@ class SendStatusContentView extends StatelessWidget {
     this.memoText,
     this.memoExpanded = false,
     this.noticeText,
+    this.titleOverride,
+    this.recipientRow,
     this.onShowFullAddress,
     this.onExpandMemo,
     this.onOpenExplorer,
@@ -78,6 +80,12 @@ class SendStatusContentView extends StatelessWidget {
   /// broadcast guidance or the failure reason. Hidden when null.
   final String? noticeText;
 
+  /// Flow-specific title. Null keeps the standard Send status copy.
+  final String? titleOverride;
+
+  /// Flow-specific recipient presentation. Null keeps the standard Send row.
+  final Widget? recipientRow;
+
   final VoidCallback? onShowFullAddress;
   final VoidCallback? onExpandMemo;
   final VoidCallback? onOpenExplorer;
@@ -88,11 +96,13 @@ class SendStatusContentView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SendReviewContentColumn(
-      title: switch (phase) {
-        SendStatusPhase.inProgress => 'Send in progress...',
-        SendStatusPhase.completed => 'Sent successfully',
-        SendStatusPhase.failed => 'Send failed',
-      },
+      title:
+          titleOverride ??
+          switch (phase) {
+            SendStatusPhase.inProgress => 'Send in progress...',
+            SendStatusPhase.completed => 'Sent successfully',
+            SendStatusPhase.failed => 'Send failed',
+          },
       children: [
         SendReviewInfoSection(
           amountText: amountText,
@@ -102,6 +112,7 @@ class SendStatusContentView extends StatelessWidget {
           recipientAddressType: recipientAddressType,
           connectorIconName: _failed ? AppIcons.uturnUp : AppIcons.arrowDown,
           recipientStruckThrough: _failed,
+          recipientRow: recipientRow,
           onShowFullAddress: onShowFullAddress,
         ),
         _statusCard(),

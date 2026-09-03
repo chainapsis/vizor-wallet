@@ -46,6 +46,28 @@ void main() {
         logE2e('shot $name');
       }
 
+      Future<void> scrollTo(Finder target, double delta) async {
+        if (tester.any(target)) {
+          await tester.ensureVisible(target);
+        } else {
+          final verticalScrollable = find
+              .byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable &&
+                    widget.axisDirection == AxisDirection.down,
+              )
+              .hitTestable()
+              .first;
+          await tester.scrollUntilVisible(
+            target,
+            delta,
+            scrollable: verticalScrollable,
+            maxScrolls: 20,
+          );
+        }
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+
       logE2e('pumping app');
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
       await pumpUntil(
@@ -151,6 +173,11 @@ void main() {
       );
       await shot('07_passcode_confirm');
       await enterPasscode(tester, mobileE2ePasscode);
+      await tapAppButton(
+        tester,
+        const ValueKey('mobile_customise_account_continue'),
+        timeout: const Duration(minutes: 2),
+      );
       await pumpUntil(
         tester,
         () =>
@@ -267,7 +294,7 @@ void main() {
       );
       await pumpUntil(
         tester,
-        () => tester.any(find.text('Finish & Review')),
+        () => tester.any(find.text('Finish & review')),
         description: 'amount ready',
         timeout: const Duration(minutes: 1),
       );
@@ -302,7 +329,7 @@ void main() {
       await tapWidget(tester, const ValueKey('mobile_send_full_address'));
       await settle(tester, const Duration(milliseconds: 400));
       await shot('25b_send_full_address');
-      await tapWidget(tester, const ValueKey('mobile_send_full_address'));
+      await tester.tap(find.text('Cancel').last);
       await settle(tester, const Duration(milliseconds: 400));
       // Actually send so the in-flight and success states are captured.
       await tapAppButton(
@@ -328,8 +355,7 @@ void main() {
         timeout: const Duration(minutes: 4),
       );
       await shot('25d_send_success');
-      await tester.tap(find.bySemanticsLabel('Back').first);
-      await tester.pump(const Duration(milliseconds: 250));
+      await tapAppButton(tester, const ValueKey('mobile_send_status_button'));
       await waitForHome(tester);
 
       // ── Activity tab ───────────────────────────────────────────────
@@ -338,23 +364,24 @@ void main() {
 
       // ── Transaction status (Figma ACTIVITY & STATUS frames) ────────
       // The just-sent memo tx: sending (unmined) or sent state.
+      final transactionRows = find.byWidgetPredicate((widget) {
+        final key = widget.key;
+        return key is ValueKey<String> && key.value.startsWith('tx:');
+      });
       await tapUntilVisible(
         tester,
-        trigger: find.text('Sent').first,
-        outcome: find.text('Status'),
+        trigger: transactionRows,
+        outcome: find.byKey(const ValueKey('mobile_tx_status_scroll')),
         description: 'sent tx status screen',
       );
       await shot('26b_tx_status_sent');
       await tapWidget(
         tester,
-        const ValueKey('mobile_tx_status_toggle_address'),
+        const ValueKey('mobile_tx_status_show_full_address'),
       );
       await settle(tester, const Duration(milliseconds: 400));
       await shot('26c_tx_status_full_address');
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_tx_status_toggle_address'),
-      );
+      await tester.tap(find.text('Cancel').last);
       await settle(tester, const Duration(milliseconds: 400));
       await tapWidget(
         tester,
@@ -365,21 +392,21 @@ void main() {
       await tapUntilVisible(
         tester,
         trigger: find.bySemanticsLabel('Back'),
-        outcome: find.byKey(const ValueKey('mobile_activity_row_0')),
+        outcome: transactionRows,
         description: 'back to activity',
       );
       // A mined funding tx: the received completed state.
       await tapUntilVisible(
         tester,
         trigger: find.text('Received').first,
-        outcome: find.text('Completed'),
+        outcome: find.byKey(const ValueKey('mobile_tx_status_scroll')),
         description: 'received tx status screen',
       );
       await shot('26e_tx_status_received');
       await tapUntilVisible(
         tester,
         trigger: find.bySemanticsLabel('Back'),
-        outcome: find.byKey(const ValueKey('mobile_activity_row_0')),
+        outcome: transactionRows,
         description: 'back to activity again',
       );
 
@@ -391,14 +418,18 @@ void main() {
         description: 'settings tab',
       );
       await shot('27_settings');
+      final themeRow = find.byKey(const ValueKey('mobile_settings_theme_row'));
+      await scrollTo(themeRow, 300);
       await tapWidget(tester, const ValueKey('mobile_settings_theme_row'));
       await shot('28_theme_sheet');
-      await tapUntilVisible(
+      await tester.tap(find.text('Cancel').last);
+      await pumpUntil(
         tester,
-        trigger: find.text('Cancel'),
-        outcome: find.text('Password'),
-        description: 'theme sheet closed',
+        () => !tester.any(find.byKey(const ValueKey('mobile_theme_update'))),
+        description: 'theme sheet to close',
       );
+      final seedRow = find.byKey(const ValueKey('mobile_settings_seed_row'));
+      await scrollTo(seedRow, -300);
       await tapUntilVisible(
         tester,
         trigger: find.text('Password'),
@@ -418,10 +449,11 @@ void main() {
       await tapBack(tester);
 
       // ── Settings: secret passphrase (gate + reveal) ────────────────
+      await scrollTo(seedRow, -300);
       await tapWidget(tester, const ValueKey('mobile_settings_seed_row'));
       await pumpUntil(
         tester,
-        () => tester.any(find.text('Enter your passcode')),
+        () => tester.any(find.text('Enter Passcode')),
         description: 'seed confirm access gate',
       );
       await shot('30b_seed_confirm_access');
@@ -436,6 +468,10 @@ void main() {
       await tapBack(tester);
 
       // ── Settings: endpoint (list + custom) ─────────────────────────
+      final endpointRow = find.byKey(
+        const ValueKey('mobile_settings_endpoint_row'),
+      );
+      await scrollTo(endpointRow, 300);
       await tapWidget(tester, const ValueKey('mobile_settings_endpoint_row'));
       await pumpUntil(
         tester,
@@ -455,22 +491,22 @@ void main() {
       await tapBack(tester);
 
       // ── Settings: address book (empty → add → list) ────────────────
+      final addressBookRow = find.byKey(
+        const ValueKey('mobile_settings_address_book_row'),
+      );
+      await scrollTo(addressBookRow, -300);
       await tapWidget(
         tester,
         const ValueKey('mobile_settings_address_book_row'),
       );
       await pumpUntil(
         tester,
-        () => tester.any(
-          find.byKey(const ValueKey('mobile_address_book_add_empty')),
-        ),
+        () =>
+            tester.any(find.byKey(const ValueKey('mobile_contacts_add_empty'))),
         description: 'address book empty state',
       );
       await shot('30f_address_book_empty');
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_address_book_add_empty'),
-      );
+      await tapAppButton(tester, const ValueKey('mobile_contacts_add_empty'));
       await pumpUntil(
         tester,
         () =>
@@ -483,8 +519,7 @@ void main() {
       );
       await tester.enterText(
         find.byKey(const ValueKey('mobile_address_book_address')),
-        // Regtest transparent prefix passes the format validator.
-        'tmEEzy3GZ8bQyaQXAbtnoVHBjDPSDfWPSkE',
+        ownAddress,
       );
       await settle(tester, const Duration(milliseconds: 300));
       // Drop the keyboard so the whole form is in the shot and the save

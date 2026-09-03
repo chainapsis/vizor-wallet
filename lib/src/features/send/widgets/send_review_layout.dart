@@ -56,6 +56,7 @@ class SendReviewInfoSection extends StatelessWidget {
     this.requestedAmountText,
     this.connectorIconName = AppIcons.arrowDown,
     this.recipientStruckThrough = false,
+    this.recipientRow,
     this.onShowFullAddress,
     super.key,
   });
@@ -98,6 +99,10 @@ class SendReviewInfoSection extends StatelessWidget {
   /// Line-through on the recipient headline (failed send).
   final bool recipientStruckThrough;
 
+  /// Optional flow-specific recipient row. When omitted, the normal address
+  /// or contact recipient rendering is preserved.
+  final Widget? recipientRow;
+
   final VoidCallback? onShowFullAddress;
 
   String? get _normalizedRecipientAddressType =>
@@ -136,7 +141,7 @@ class SendReviewInfoSection extends StatelessWidget {
           ReviewInfoRow(
             label: 'Amount',
             value: amountText,
-            leading: const _ZecCoinImage(),
+            leading: const ReviewZecCoinImage(),
             bottomLeftText: fiatText,
           ),
           if (requestedAmountText != null)
@@ -150,8 +155,8 @@ class SendReviewInfoSection extends StatelessWidget {
                 ),
               ),
             ),
-          _ReviewConnectorIcon(iconName: connectorIconName),
-          _recipientRow(context),
+          ReviewConnectorIcon(iconName: connectorIconName),
+          recipientRow ?? _recipientRow(context),
         ],
       ),
     );
@@ -324,8 +329,8 @@ class ReviewMemoRows extends StatelessWidget {
 }
 
 /// 32px round ZEC coin image leading the Amount row.
-class _ZecCoinImage extends StatelessWidget {
-  const _ZecCoinImage();
+class ReviewZecCoinImage extends StatelessWidget {
+  const ReviewZecCoinImage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -342,8 +347,8 @@ class _ZecCoinImage extends StatelessWidget {
 
 /// 24px connector glyph centered in the 32px leading column, between the
 /// Amount and To rows.
-class _ReviewConnectorIcon extends StatelessWidget {
-  const _ReviewConnectorIcon({required this.iconName});
+class ReviewConnectorIcon extends StatelessWidget {
+  const ReviewConnectorIcon({required this.iconName, super.key});
 
   final String iconName;
 
