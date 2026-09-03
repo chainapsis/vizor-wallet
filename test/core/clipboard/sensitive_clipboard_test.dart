@@ -126,6 +126,45 @@ void main() {
     expect(clipboardText, isEmpty);
   });
 
+  test('a failed second copy leaves the earlier expiry armed', () async {
+    final expiration = Completer<void>();
+    String? clipboardText;
+    var denyWrite = false;
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = false;
+    SensitiveClipboard.debugExpirationDelay = (_) => expiration.future;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            if (denyWrite) throw StateError('clipboard write denied');
+            clipboardText = (call.arguments as Map)['text'] as String;
+          } else if (call.method == 'Clipboard.getData') {
+            return {'text': clipboardText};
+          }
+          return null;
+        });
+
+    await SensitiveClipboard.copyText('first secret');
+    expect(clipboardText, 'first secret');
+
+    denyWrite = true;
+    await expectLater(
+      SensitiveClipboard.copyText('second secret'),
+      throwsA(isA<PlatformException>()),
+    );
+
+    // The failed write never reached the clipboard, so the first secret is
+    // still sitting on it. Its expiry is the only thing that will ever clear
+    // it, so the failed copy must not have retired that expiry.
+    expect(clipboardText, 'first secret');
+
+    denyWrite = false;
+    expiration.complete();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(clipboardText, isEmpty);
+  });
+
   test('an expired copy retries after background clipboard denial', () async {
     final expiration = Completer<void>();
     String? clipboardText;

@@ -24,20 +24,23 @@ abstract final class SensitiveClipboard {
     String text, {
     Duration expiration = sensitiveClipboardDefaultExpiration,
   }) async {
-    final copyGeneration = ++_copyGeneration;
-    // A newer copy always supersedes the previous expiry: drop its timer and
-    // the secret it retained instead of leaving both alive for up to a minute.
-    _cancelPendingExpiration();
     if (_supportsNativeClipboard) {
       await _channel.invokeMethod<void>('copyText', {
         'text': text,
         'expirationSeconds': expiration.inSeconds,
       });
+      _supersedePendingExpiration();
       return;
     }
 
     _ensureLifecycleObserver();
     await Clipboard.setData(ClipboardData(text: text));
+    // Only now is the previous secret actually off the clipboard, so only now
+    // may its expiry be retired. Retiring it first would strand that secret
+    // there with nothing scheduled to clear it whenever the write above
+    // throws -- clipboard writes are denied often enough (backgrounded app,
+    // OS policy) that this is a real state, not a theoretical one.
+    final copyGeneration = _supersedePendingExpiration();
     final pending = _PendingClipboardExpiration(
       text: text,
       copyGeneration: copyGeneration,
@@ -61,6 +64,18 @@ abstract final class SensitiveClipboard {
   /// does not outlive the widget tree.
   @visibleForTesting
   static void debugCancelPendingExpiration() => _cancelPendingExpiration();
+
+  /// Retires the previous expiry -- its timer and the plaintext it held -- now
+  /// that a newer copy has replaced the secret it guarded, and returns the
+  /// generation that newer copy owns.
+  ///
+  /// Both the timer and the generation move together on purpose: a bumped
+  /// generation alone would make the surviving expiry a no-op in
+  /// [_tryClearExpiredFallback], which is the same leak by another route.
+  static int _supersedePendingExpiration() {
+    _cancelPendingExpiration();
+    return ++_copyGeneration;
+  }
 
   static void _cancelPendingExpiration() {
     _pendingFallbackExpiration?.timer?.cancel();
