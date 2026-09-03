@@ -797,8 +797,6 @@ MaterialPage<void> _payloadKeyedDesktopPage(
   );
 }
 
-
-
 /// Main application routes for the desktop (large-form-factor) tree.
 List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
