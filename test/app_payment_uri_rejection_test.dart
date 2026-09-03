@@ -117,6 +117,38 @@ void main() {
     expect(container.read(paymentUriPrefillProvider), isNull);
   });
 
+  // The one owner of "a transparent recipient cannot carry a memo" is the
+  // parser: ZIP-321 forbids the combination, so the link never becomes a card
+  // that could explain a dropped memo. The pre-check therefore has no
+  // memo-dropping branch, and this is the test that keeps the two halves from
+  // drifting apart again — they used to be tested only in isolation, each
+  // passing while the combination they described was impossible.
+  testWidgets('a memo on a transparent address is refused as an invalid link', (
+    tester,
+  ) async {
+    final container = await pumpApp(tester);
+
+    await _pushNativeUris(tester, const [
+      'zcash:t1RecipientAddress?amount=0.5&memo=aW52b2ljZSA0Mg',
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(find.text(kPaymentUriMalformedMessage), findsOneWidget);
+    expect(find.text(kPaymentUriUnsupportedMessage), findsNothing);
+    expect(
+      container.read(paymentUriPrefillProvider),
+      isNull,
+      reason: 'the link is refused before anything is parked',
+    );
+    expect(
+      find.textContaining('memo'),
+      findsNothing,
+      reason:
+          'no card exists to explain a dropped memo, so nothing may promise '
+          'one',
+    );
+  });
+
   testWidgets('the parser wording never reaches the payer', (tester) async {
     await pumpApp(tester);
 

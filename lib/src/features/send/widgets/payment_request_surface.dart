@@ -23,6 +23,7 @@ class PaymentRequestSurface extends StatelessWidget {
     required this.onContinue,
     required this.onEdit,
     required this.onCancel,
+    this.onRecheck,
     this.layout = PaymentRequestLayout.auto,
     this.initialAddressExpanded = false,
     this.initialMessageExpanded = false,
@@ -35,6 +36,9 @@ class PaymentRequestSurface extends StatelessWidget {
   final VoidCallback onContinue;
   final VoidCallback onEdit;
   final VoidCallback onCancel;
+
+  /// Ask the wallet again; see [PaymentRequestCard.onRecheck].
+  final VoidCallback? onRecheck;
 
   /// Tooling-only layout override; see [PaymentRequestLayout].
   final PaymentRequestLayout layout;
@@ -72,6 +76,7 @@ class PaymentRequestSurface extends StatelessWidget {
         onContinue: onContinue,
         onEdit: onEdit,
         onCancel: onCancel,
+        onRecheck: onRecheck,
         layout: layout,
         initialAddressExpanded: initialAddressExpanded,
         initialMessageExpanded: initialMessageExpanded,

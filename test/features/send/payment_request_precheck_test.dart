@@ -391,34 +391,11 @@ void main() {
     }
   });
 
-  test('a dropped memo is reported so the card can stop showing it', () async {
-    final api = FakeSendApi(addressType: 'tex');
-    final result = await run(api, request: prefill(memoText: 'invoice 42'));
-
-    expect(result.memoDropped, isTrue);
-    expect(api.lastProposedMemo, isNull);
-  });
-
-  test('a shielded recipient reports no dropped memo', () async {
-    final api = FakeSendApi();
-    final result = await run(api, request: prefill(memoText: 'invoice 42'));
-
-    expect(result.memoDropped, isFalse);
-  });
-
-  test(
-    'a transparent recipient with no memo reports nothing dropped',
-    () async {
-      final api = FakeSendApi(addressType: 'transparent');
-      expect((await run(api)).memoDropped, isFalse);
-    },
-  );
-
-  test('a transparent recipient drops the memo the link carried', () async {
-    final api = FakeSendApi(addressType: 'transparent');
-    await run(api, request: prefill(memoText: 'thanks'));
-    expect(api.lastProposedMemo, isNull);
-  });
+  // A memo on a transparent-like recipient has no branch here on purpose:
+  // `Zip321PaymentRequest.parse` refuses that combination outright, so the
+  // payer is told the link is invalid before a card is built. The end-to-end
+  // proof is `test/app_payment_uri_rejection_test.dart`, "a memo on a
+  // transparent address is refused as an invalid link".
 
   test(
     'a memo the link says to preserve reaches the proposal untouched',

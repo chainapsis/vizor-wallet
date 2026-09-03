@@ -257,5 +257,14 @@ void main() {
       harness.container.read(paymentRequestFlowProvider)!.prefill.id,
       'payment-uri-2',
     );
+    // And the dropped tap is not silent: the card that took the first
+    // request's place carries the standard replaced notice. `present` cannot
+    // raise it on its own here — the hand-back had already cleared the card
+    // it replaced, so there was nothing for it to notice.
+    expect(
+      find.byKey(const ValueKey('payment_request_replaced_notice')),
+      findsOneWidget,
+    );
+    expect(find.text('Replaced an earlier link'), findsOneWidget);
   });
 }

@@ -102,6 +102,17 @@ enum PaymentRequestStatus {
   /// Balances are not trustworthy yet because the wallet is syncing.
   syncing,
 
+  /// [syncing] that has run out of ways to answer itself.
+  ///
+  /// The card re-checks a `syncing` verdict when the wallet finishes a sync,
+  /// and — because a verdict published while the sync state is *already*
+  /// settled has no completion left to wait for — a bounded number of times
+  /// immediately. When that budget is spent and no real sync cycle follows,
+  /// the wait [syncing]'s copy promises is one the card can no longer keep.
+  /// This is that state said out loud: same blocked request, but the next
+  /// move is the user's, and the primary action becomes "Check again".
+  syncStalled,
+
   /// The check itself could not complete; the reason always comes through
   /// [PaymentRequestView.statusMessage].
   failed,
@@ -124,6 +135,13 @@ extension PaymentRequestStatusX on PaymentRequestStatus {
       this == PaymentRequestStatus.invalidAddress ||
       this == PaymentRequestStatus.insufficientFunds ||
       this == PaymentRequestStatus.failed;
+
+  /// The request cannot be reviewed, but the card can ask the wallet again.
+  ///
+  /// The only status whose primary action is neither Review nor Edit: the
+  /// request is fine, the wallet just could not answer, and re-asking is the
+  /// one thing that can change that.
+  bool get offersRecheck => this == PaymentRequestStatus.syncStalled;
 }
 
 /// Default copy for each [PaymentRequestStatus].
@@ -163,6 +181,11 @@ String? defaultPaymentRequestStatusMessage(
     // link they already opened.
     PaymentRequestStatus.syncing =>
       'Wallet is still syncing — this will update when it finishes',
+    // The card has stopped promising to update itself, so the copy stops
+    // saying it will: it names the same condition and hands the next move
+    // to the button under it.
+    PaymentRequestStatus.syncStalled =>
+      'Still syncing — check again when the wallet is up to date',
     // Always overridden in practice: every failure the pre-check publishes
     // carries its own reason. This is the floor, not the message.
     PaymentRequestStatus.failed => "Couldn't check this request",
@@ -337,22 +360,17 @@ class PaymentRequestView {
   /// Same request, different verdict. The pre-check fills the amount and the
   /// requester in once, up front; only the status (and the two fields the
   /// status line reads) change as the checks land.
-  ///
-  /// [clearMemo] drops the Message row: a transparent-like recipient cannot
-  /// receive one, so the memo the link carried is not part of the payment the
-  /// user is being asked to approve.
   PaymentRequestView copyWithStatus(
     PaymentRequestStatus status, {
     String? statusMessage,
     String? spendableText,
-    bool clearMemo = false,
   }) => PaymentRequestView(
     source: source,
     address: address,
     amountZecText: amountZecText,
     requesterLabel: requesterLabel,
     fiatText: fiatText,
-    memo: clearMemo ? null : memo,
+    memo: memo,
     note: note,
     spendableText: spendableText ?? this.spendableText,
     recipientIdentity: recipientIdentity,
@@ -360,6 +378,31 @@ class PaymentRequestView {
     statusMessage: statusMessage,
     replacedNotice: replacedNotice,
   );
+
+  /// Same request, with the "replaced an earlier link" notice shown.
+  ///
+  /// The notice normally comes from `present`, which knows it displaced a
+  /// card. It is applied after the fact for the one case `present` cannot
+  /// see: a newer link arriving while the previous card was mid-hand-back and
+  /// therefore already gone. Without this the user's Review tap disappears
+  /// with nothing on the new card to say why.
+  PaymentRequestView withReplacedNotice() {
+    if (replacedNotice) return this;
+    return PaymentRequestView(
+      source: source,
+      address: address,
+      amountZecText: amountZecText,
+      requesterLabel: requesterLabel,
+      fiatText: fiatText,
+      memo: memo,
+      note: note,
+      spendableText: spendableText,
+      recipientIdentity: recipientIdentity,
+      status: status,
+      statusMessage: statusMessage,
+      replacedNotice: true,
+    );
+  }
 
   /// Same request, with the fiat sub-line attached (or removed).
   ///
@@ -476,6 +519,7 @@ class PaymentRequestCard extends StatefulWidget {
     required this.onContinue,
     required this.onEdit,
     required this.onCancel,
+    this.onRecheck,
     this.layout = PaymentRequestLayout.auto,
     this.bottomSafeArea = false,
     this.initialAddressExpanded = false,
@@ -494,6 +538,12 @@ class PaymentRequestCard extends StatefulWidget {
 
   /// Discard the request. Also backs the desktop close affordance.
   final VoidCallback onCancel;
+
+  /// Ask the wallet again, for [PaymentRequestStatus.syncStalled].
+  ///
+  /// Null leaves that status's primary action disabled, which is the honest
+  /// answer for a preview or a host that cannot re-run the check.
+  final VoidCallback? onRecheck;
 
   /// Applies [MobileBottomSafeArea] under the mobile action stack.
   ///
@@ -635,6 +685,7 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
               bottomSafeArea: widget.bottomSafeArea,
               onContinue: widget.onContinue,
               onEdit: widget.onEdit,
+              onRecheck: widget.onRecheck,
             ),
           ],
         );
@@ -1529,6 +1580,7 @@ class _Actions extends StatelessWidget {
     required this.bottomSafeArea,
     required this.onContinue,
     required this.onEdit,
+    required this.onRecheck,
   });
 
   final PaymentRequestStatus status;
@@ -1542,13 +1594,21 @@ class _Actions extends StatelessWidget {
   final bool bottomSafeArea;
   final VoidCallback onContinue;
   final VoidCallback onEdit;
+  final VoidCallback? onRecheck;
 
   bool get _blocked => status.blocksContinue;
 
   bool get _checking => status == PaymentRequestStatus.checking;
 
+  /// The request is blocked on the wallet, not on itself, and asking again is
+  /// the move. Only meaningful with an amount: an amount-less request never
+  /// reaches the pre-check answers that can stall.
+  bool get _recheckable => status.offersRecheck && hasAmount;
+
   String get _primaryLabel => _checking
       ? 'Checking…'
+      : _recheckable
+      ? 'Check again'
       : hasAmount
       ? 'Review'
       // A blocked amount-less request is not waiting for an amount — the
@@ -1640,7 +1700,9 @@ class _Actions extends StatelessWidget {
     // second Edit under it. Blocking it too would leave the card with no
     // enabled control at all — a stated error and no way to act on it. Edit
     // is never blocked; it only waits while the checks run.
-    onPressed: hasAmount
+    onPressed: _recheckable
+        ? onRecheck
+        : hasAmount
         ? (_blocked ? null : onContinue)
         : (_checking ? null : onEdit),
     variant: AppButtonVariant.primary,

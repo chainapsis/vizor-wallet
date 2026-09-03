@@ -106,15 +106,7 @@ class PaymentRequestProposalHandle {
 
 /// What the pre-check concluded.
 sealed class PaymentRequestPrecheckResult {
-  const PaymentRequestPrecheckResult({this.memoDropped = false});
-
-  /// The request carried a memo its recipient cannot receive, so the proposal
-  /// was made without one.
-  ///
-  /// The card is the consent surface: leaving a "Message" row on it after the
-  /// memo has been dropped promises the requester a note that never travels,
-  /// which is exactly the reconciliation the memo existed for.
-  final bool memoDropped;
+  const PaymentRequestPrecheckResult();
 }
 
 /// The request can be acted on.
@@ -123,7 +115,7 @@ sealed class PaymentRequestPrecheckResult {
 /// to propose yet, so the card drops its amount hero and its primary action
 /// hands the request to the composer instead of the review screen.
 final class PaymentRequestPrecheckReady extends PaymentRequestPrecheckResult {
-  const PaymentRequestPrecheckReady({this.proposal, super.memoDropped});
+  const PaymentRequestPrecheckReady({this.proposal});
 
   final PaymentRequestProposalHandle? proposal;
 
@@ -146,10 +138,7 @@ final class PaymentRequestPrecheckInvalidAddress
 /// The requested amount is above what the account can spend.
 final class PaymentRequestPrecheckInsufficientFunds
     extends PaymentRequestPrecheckResult {
-  const PaymentRequestPrecheckInsufficientFunds({
-    this.spendableText,
-    super.memoDropped,
-  });
+  const PaymentRequestPrecheckInsufficientFunds({this.spendableText});
 
   /// Preformatted spendable balance (`0.21 ZEC`) for the card's message.
   final String? spendableText;
@@ -160,12 +149,12 @@ final class PaymentRequestPrecheckInsufficientFunds
 /// This is the VZR-42 rule: a low spendable read mid-sync must never surface as
 /// a final insufficient-funds answer.
 final class PaymentRequestPrecheckSyncing extends PaymentRequestPrecheckResult {
-  const PaymentRequestPrecheckSyncing({super.memoDropped});
+  const PaymentRequestPrecheckSyncing();
 }
 
 /// Anything else, with a message already made friendly.
 final class PaymentRequestPrecheckFailed extends PaymentRequestPrecheckResult {
-  const PaymentRequestPrecheckFailed(this.message, {super.memoDropped});
+  const PaymentRequestPrecheckFailed(this.message);
 
   final String message;
 }
@@ -187,11 +176,6 @@ class PaymentRequestPrecheck {
   /// back after the proposal has run. Like [run]'s `spendableIsAuthoritative`
   /// it has no default: getting it wrong is the bug this guards.
   final PaymentRequestSpendableIsAuthoritativeNow spendableIsAuthoritativeNow;
-
-  /// Address types the compose form refuses to attach a memo to; the request's
-  /// memo is dropped rather than carried into a proposal that would reject it.
-  static bool isTransparentLikeType(String addressType) =>
-      addressType == 'transparent' || addressType == 'tex';
 
   /// [spendableIsAuthoritative] says whether [spendableBalance] is a settled
   /// post-sync figure. It has no default on purpose: getting it wrong is the
@@ -233,48 +217,46 @@ class PaymentRequestPrecheck {
       return const PaymentRequestPrecheckInvalidAddress();
     }
 
-    // Same rule the compose form applies the moment validation settles: a
-    // transparent-like recipient cannot carry an encrypted memo.
-    //
     // A ZIP-321 memo is exact bytes the requester encoded, so it is passed
     // through untouched when the prefill says to preserve it — the compose
     // form does the same through `preserveMemoText`, and the two paths have
     // to put identical bytes on chain or "Review" and "Edit then review"
     // become different payments.
-    final rawMemo = prefill.preserveMemoText
+    //
+    // Nothing here drops a memo for a transparent-like recipient. Every
+    // request that reaches this service — link or scanned QR — was built by
+    // `Zip321PaymentRequest.parse`, which refuses `memo` on a `t`-prefixed
+    // address outright (ZIP-321 forbids the combination), so the payer is told
+    // the link is invalid before a card exists. One owner for that rule; a
+    // second, silent one here would only ever describe a request the parser
+    // already refused.
+    final memo = prefill.preserveMemoText
         ? prefill.memoText
         : prefill.memoText?.trim();
-    final memoDropped =
-        isTransparentLikeType(addressType) &&
-        rawMemo != null &&
-        rawMemo.isNotEmpty;
-    final memo = memoDropped ? null : rawMemo;
 
     final amountText = prefill.amountText?.trim();
     if (amountText == null || amountText.isEmpty) {
       // Amount-less request: nothing to propose, and nothing that could be
       // insufficient. The composer collects the amount.
-      return PaymentRequestPrecheckReady(memoDropped: memoDropped);
+      return const PaymentRequestPrecheckReady();
     }
 
     final amountZatoshi = parseZecAmount(amountText);
     if (amountZatoshi == null) {
-      return PaymentRequestPrecheckFailed(
+      return const PaymentRequestPrecheckFailed(
         "This link doesn't ask for a payable amount — enter one to continue",
-        memoDropped: memoDropped,
       );
     }
     if (amountZatoshi <= BigInt.zero) {
       // `amount=0` parses, so the wallet read it fine — it is simply not a
       // payment. Treat it as the amount-less request it is and let the
       // composer collect one, rather than dead-ending the card on it.
-      return PaymentRequestPrecheckReady(memoDropped: memoDropped);
+      return const PaymentRequestPrecheckReady();
     }
 
     if (accountUuid == null) {
-      return PaymentRequestPrecheckFailed(
+      return const PaymentRequestPrecheckFailed(
         'No active account — choose one, then open this link again',
-        memoDropped: memoDropped,
       );
     }
 
@@ -285,7 +267,6 @@ class PaymentRequestPrecheck {
     if (spendableIsAuthoritative && amountZatoshi > spendableBalance) {
       return PaymentRequestPrecheckInsufficientFunds(
         spendableText: _formatZec(spendableBalance),
-        memoDropped: memoDropped,
       );
     }
 
@@ -302,7 +283,6 @@ class PaymentRequestPrecheck {
         requestedAmountZatoshi: amountZatoshi,
       );
       return PaymentRequestPrecheckReady(
-        memoDropped: memoDropped,
         proposal: PaymentRequestProposalHandle(
           reviewArgs: reviewArgs,
           discardProposal: discardProposal,
@@ -310,11 +290,7 @@ class PaymentRequestPrecheck {
       );
     } catch (e) {
       log('PaymentRequest: proposal failed: $e');
-      return _mapProposalError(
-        e.toString(),
-        spendableBalance,
-        memoDropped: memoDropped,
-      );
+      return _mapProposalError(e.toString(), spendableBalance);
     }
   }
 
@@ -325,9 +301,8 @@ class PaymentRequestPrecheck {
   /// a sync-time shortfall must land on syncing, never on insufficient.
   PaymentRequestPrecheckResult _mapProposalError(
     String raw,
-    BigInt spendableBalance, {
-    required bool memoDropped,
-  }) {
+    BigInt spendableBalance,
+  ) {
     final lower = raw.toLowerCase();
     if (lower.contains('wallet sync is still finishing') ||
         lower.contains('wallet sync failed before balance refresh') ||
@@ -337,7 +312,7 @@ class PaymentRequestPrecheck {
         lower.contains('wallet must sync') ||
         lower.contains('sync_in_progress') ||
         lower.contains('scan_required')) {
-      return PaymentRequestPrecheckSyncing(memoDropped: memoDropped);
+      return const PaymentRequestPrecheckSyncing();
     }
     if (lower.contains('insufficientfunds') ||
         lower.contains('insufficient_funds') ||
@@ -348,11 +323,10 @@ class PaymentRequestPrecheck {
       // it decides, so a balance that is still unsettled *now* means the
       // scan moved under it and the figure the card would quote is stale.
       if (!spendableIsAuthoritativeNow()) {
-        return PaymentRequestPrecheckSyncing(memoDropped: memoDropped);
+        return const PaymentRequestPrecheckSyncing();
       }
       return PaymentRequestPrecheckInsufficientFunds(
         spendableText: _formatZec(spendableBalance),
-        memoDropped: memoDropped,
       );
     }
     // Wrong-network addresses are refused up front by the validation above;
@@ -362,10 +336,7 @@ class PaymentRequestPrecheck {
         lower.contains('bad address')) {
       return const PaymentRequestPrecheckInvalidAddress();
     }
-    return PaymentRequestPrecheckFailed(
-      friendlyPaymentRequestCheckError(raw),
-      memoDropped: memoDropped,
-    );
+    return PaymentRequestPrecheckFailed(friendlyPaymentRequestCheckError(raw));
   }
 
   static String _formatZec(BigInt zatoshi) =>

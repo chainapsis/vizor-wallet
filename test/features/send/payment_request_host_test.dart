@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
@@ -119,11 +120,69 @@ PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
       }) async => _discarded.add(proposalId),
 );
 
+/// A pre-check whose propose leg can be made to fail with the error Rust
+/// emits before it has anchor heights — the one the card maps onto its
+/// syncing statuses.
+class _StallingSendApi {
+  Object? proposeThrows = Exception('Wallet must sync before sending');
+  var proposeAttempts = 0;
+
+  PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
+    // Settled: a shortfall would be final, so the only way to `syncing` here
+    // is the propose leg — and with the sync settled there is no completion
+    // left for the card to wait for, which is what makes it stall.
+    spendableIsAuthoritativeNow: () => true,
+    validateAddress:
+        ({required String address, required String network}) async =>
+            rust_sync.AddressValidationResult(
+              isValid: true,
+              addressType: 'unified',
+              wrongNetwork: false,
+            ),
+    proposeTransfer:
+        ({
+          required String accountUuid,
+          required String sendFlowId,
+          required String address,
+          required String addressType,
+          required BigInt amountZatoshi,
+          String? memo,
+          bool isPaymentRequest = false,
+          String? requestedBy,
+          BigInt? requestedAmountZatoshi,
+        }) async {
+          proposeAttempts++;
+          final failure = proposeThrows;
+          if (failure != null) throw failure;
+          return SendReviewArgs(
+            proposalId: BigInt.from(11),
+            sendFlowId: sendFlowId,
+            proposalAccountUuid: accountUuid,
+            address: address,
+            addressType: addressType,
+            amountZatoshi: amountZatoshi,
+            feeZatoshi: BigInt.from(10000),
+            needsSaplingParams: false,
+            isPaymentRequest: isPaymentRequest,
+            requestedBy: requestedBy,
+            requestedAmountZatoshi: requestedAmountZatoshi,
+          );
+        },
+    discardProposal:
+        ({
+          required BigInt proposalId,
+          required String sendFlowId,
+          required String logContext,
+        }) async => _discarded.add(proposalId),
+  );
+}
+
 Future<ProviderContainer> _pumpHost(
   WidgetTester tester, {
   List<AddressBookContact> contacts = const [],
   Map<String, AccountInfo> ownAccounts = const {},
   bool addressBookPending = false,
+  PaymentRequestPrecheck? precheck,
 }) async {
   tester.view.physicalSize = const Size(1280, 900);
   tester.view.devicePixelRatio = 1.0;
@@ -146,13 +205,18 @@ Future<ProviderContainer> _pumpHost(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
+        paymentRequestPrecheckProvider.overrideWithValue(
+          precheck ?? _readyPrecheck(),
+        ),
         accountProvider.overrideWith(_FakeAccountNotifier.new),
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             SyncState(
               accountUuid: 'account-1',
               hasAccountScopedData: true,
+              isSyncComplete: true,
+              chainTipHeight: 3000000,
+              scannedHeight: 3000000,
               spendableBalance: BigInt.from(100000000),
             ),
           ),
@@ -499,5 +563,49 @@ void main() {
       findsNothing,
     );
     expect(find.text('u195091 ... 190591'), findsOneWidget);
+  });
+
+  // A card that has run out of ways to answer itself stops promising an
+  // update and hands the next move to the user.
+  testWidgets('a stalled check offers Check again instead of a dead Review', (
+    tester,
+  ) async {
+    final api = _StallingSendApi();
+    final container = await _pumpHost(tester, precheck: api.precheck);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Still syncing — check again when the wallet is up to date'),
+      findsOneWidget,
+    );
+    expect(find.text('Check again'), findsOneWidget);
+    expect(find.text('Review'), findsNothing);
+    final primary = tester.widget<AppButton>(
+      find.byKey(const ValueKey('payment_request_continue')),
+    );
+    expect(
+      primary.onPressed,
+      isNotNull,
+      reason: 'the one control that can change the answer must be usable',
+    );
+    final asked = api.proposeAttempts;
+
+    // The wallet caught up; the tap is what asks again.
+    api.proposeThrows = null;
+    await tester.tap(find.byKey(const ValueKey('payment_request_continue')));
+    await tester.pumpAndSettle();
+
+    expect(api.proposeAttempts, asked + 1);
+    expect(find.text('Review'), findsOneWidget);
+    expect(find.text('Check again'), findsNothing);
+    expect(
+      container.read(paymentRequestFlowProvider)!.canReview,
+      isTrue,
+      reason: 'the re-check made the proposal the review screen needs',
+    );
+    expect(_location(container), '/home');
   });
 }

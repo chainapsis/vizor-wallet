@@ -20,6 +20,7 @@ import '../features/send/widgets/payment_request_card.dart';
 import 'account_provider.dart';
 import 'app_security_provider.dart';
 import 'migration_send_gate_provider.dart' show migrationSendGateProvider;
+import 'payment_uri_prefill_provider.dart';
 import 'sync_provider.dart';
 import 'zec_price_change_provider.dart';
 
@@ -60,6 +61,40 @@ class PaymentRequestFlowState {
     view: view ?? this.view,
     proposal: proposal ?? this.proposal,
   );
+}
+
+/// What a mobile Review tap resolved to.
+///
+/// Three answers, not two: "nothing to review" and "a newer link took over
+/// while the proposal was being handed back" both leave the wizard closed,
+/// but only the second one dropped something the user asked for, and only
+/// the second one has a card left on screen to say so.
+sealed class PaymentRequestReviewHandoff {
+  const PaymentRequestReviewHandoff();
+}
+
+/// The proposal is back with Rust; the wizard can open on [args].
+final class PaymentRequestReviewReady extends PaymentRequestReviewHandoff {
+  const PaymentRequestReviewReady(this.args);
+
+  final SendReviewArgs args;
+}
+
+/// Nothing to review — no card, an amount-less request, or a status that
+/// still blocks. The caller falls back to Edit.
+final class PaymentRequestReviewUnavailable
+    extends PaymentRequestReviewHandoff {
+  const PaymentRequestReviewUnavailable();
+}
+
+/// A newer link replaced the card during the hand-back.
+///
+/// The user is looking at that request now, and opening the first one's
+/// review underneath it would leave a send they did not choose behind the
+/// card they dismiss. The newer card carries the standard replaced notice so
+/// the dropped tap is accounted for.
+final class PaymentRequestReviewOvertaken extends PaymentRequestReviewHandoff {
+  const PaymentRequestReviewOvertaken();
 }
 
 class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
@@ -128,6 +163,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     ref.listen(appSecurityProvider, (previous, next) {
       final wasUnlocked = previous?.isUnlocked ?? true;
       if (wasUnlocked && !next.isUnlocked) {
+        _reparkForUnlock();
         clear(logContext: 'PaymentRequest(locked)');
       }
     });
@@ -155,20 +191,45 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   }
 
   void _publish(PaymentRequestFlowState? next) {
-    // The watch is bound to the one status it exists for, and this is the
+    // The watch is bound to the two statuses it exists for, and this is the
     // single choke point every card change goes through: presenting a newer
     // link, every verdict the pre-check publishes, and every teardown
     // (dismiss, edit, review, lock, sign-out, account switch) land here.
-    if (next?.view.status == PaymentRequestStatus.syncing) {
-      _watchSyncForRecheck();
+    var published = next;
+    final status = published?.view.status;
+    if (_isWaitingOnSync(status)) {
+      // `syncing` copy promises the card will update itself. When the watch
+      // reports that nothing is coming — the sync state is already settled
+      // and the immediate budget is spent — that promise cannot be kept, so
+      // the card publishes the stalled status instead and hands the next
+      // move to the user through "Check again".
+      final answerIsComing = _watchSyncForRecheck();
+      if (!answerIsComing && status == PaymentRequestStatus.syncing) {
+        published = published!.copyWith(
+          view: published.view.copyWithStatus(PaymentRequestStatus.syncStalled),
+        );
+      }
     } else {
       _stopWatchingSync();
     }
-    _liveProposal = next?.proposal;
-    state = next;
+    _liveProposal = published?.proposal;
+    state = published;
   }
 
-  void _watchSyncForRecheck() {
+  /// The two statuses that are blocked on the wallet rather than on the
+  /// request, and are therefore the ones a finished sync can answer.
+  static bool _isWaitingOnSync(PaymentRequestStatus? status) =>
+      status == PaymentRequestStatus.syncing ||
+      status == PaymentRequestStatus.syncStalled;
+
+  /// Installs (or keeps) the sync watch, and spends an immediate re-check
+  /// when one is both possible and the only way the card can be answered.
+  ///
+  /// Returns whether an answer is still coming on its own: a sync that has
+  /// not settled yet will cross, and a spent budget means neither will
+  /// happen — which is what turns the card's status from `syncing` into
+  /// `syncStalled`.
+  bool _watchSyncForRecheck() {
     final settled = _spendableIsSettled(ref.read(syncProvider).value);
     if (_syncWatch == null) {
       _syncWasSettled = settled;
@@ -180,15 +241,18 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
         _recheckAfterSync();
       });
     }
+    // Not settled yet: the crossing this watch exists for is still ahead.
+    if (!settled) return true;
     // Already settled: no crossing is coming, so the wait the copy promises
     // has to be answered now instead of never.
-    if (!settled || _immediateRecheckBudget <= 0) return;
+    if (_immediateRecheckBudget <= 0) return false;
     _immediateRecheckBudget--;
     final generation = _generation;
     scheduleMicrotask(() {
       if (generation != _generation) return;
       _recheckAfterSync();
     });
+    return true;
   }
 
   void _stopWatchingSync() {
@@ -201,11 +265,10 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// answer it.
   void _recheckAfterSync() {
     final current = state;
-    // Only the status this watch was installed for. A card that has since
+    // Only the statuses this watch was installed for. A card that has since
     // moved on — to a verdict, or to a re-check already in flight, which
     // renders as `checking` — is not waiting on the sync any more.
-    if (current == null ||
-        current.view.status != PaymentRequestStatus.syncing) {
+    if (current == null || !_isWaitingOnSync(current.view.status)) {
       _stopWatchingSync();
       return;
     }
@@ -219,6 +282,20 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     );
     // No proposal to release first: a `syncing` verdict never holds one.
     unawaited(_runPrecheck(_generation));
+  }
+
+  /// The card's "Check again", for [PaymentRequestStatus.syncStalled].
+  ///
+  /// The same re-check the sync watch runs, asked for by hand. It does not
+  /// touch the immediate budget: that budget bounds what the card does on its
+  /// own, and a tap is not the card acting on its own.
+  void recheck() {
+    final current = state;
+    if (current == null ||
+        current.view.status != PaymentRequestStatus.syncStalled) {
+      return;
+    }
+    _recheckAfterSync();
   }
 
   /// Shows [prefill] as a payment request and starts the pre-check.
@@ -264,14 +341,15 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// Clears the card at once but completes only when Rust has released the
   /// proposal: the review step re-quotes the fee as it mounts, and a quote
   /// asked while the card's proposal still holds its inputs can come back
-  /// short for the very payment the card just found affordable. Returns null
-  /// when there is nothing to review — see [review] — and when a newer link
-  /// took the card over during the wait: the user is now looking at that
-  /// request, and opening the first one's review underneath it would leave a
-  /// send they did not choose behind the card they dismiss.
-  Future<SendReviewArgs?> reviewHandingBack() async {
+  /// short for the very payment the card just found affordable.
+  ///
+  /// The three outcomes are distinct on purpose — see
+  /// [PaymentRequestReviewHandoff].
+  Future<PaymentRequestReviewHandoff> reviewHandingBack() async {
     final current = state;
-    if (current == null || !current.canReview) return null;
+    if (current == null || !current.canReview) {
+      return const PaymentRequestReviewUnavailable();
+    }
     final proposal = current.proposal!;
     final generation = ++_generation;
     _publish(null);
@@ -280,8 +358,28 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     );
     _track(release);
     await release;
-    if (generation != _generation) return null;
-    return proposal.reviewArgs;
+    if (generation != _generation) {
+      // The tap is being dropped, so it is accounted for on the card that
+      // took its place rather than vanishing with the request it belonged to.
+      _noteReplacedRequest();
+      return const PaymentRequestReviewOvertaken();
+    }
+    return PaymentRequestReviewReady(proposal.reviewArgs);
+  }
+
+  /// Puts the standard "replaced an earlier link" notice on the card that is
+  /// up now.
+  ///
+  /// `present` raises the notice itself when it displaces a visible card. It
+  /// cannot see this case: the displaced card was already cleared by the
+  /// hand-back, so the replacement had nothing to replace.
+  void _noteReplacedRequest() {
+    final current = state;
+    if (current == null || current.view.replacedNotice) return;
+    // Written straight to `state`: the status is unchanged, so the sync watch
+    // that `_publish` owns must not be re-evaluated — re-entering it would
+    // spend an immediate re-check the card never asked for.
+    state = current.copyWith(view: current.view.withReplacedNotice());
   }
 
   /// Hands the proposal to the review screen and clears the card.
@@ -313,6 +411,27 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// wallet reset.
   void clear({String logContext = 'PaymentRequest(cleared)'}) =>
       _clear(logContext: logContext);
+
+  /// Puts a locked-away card's request back in the park.
+  ///
+  /// Taking the card down on lock is not negotiable — the host renders above
+  /// the router, so it would otherwise sit on the unlock screen with the
+  /// address, amount and memo on it. But the prefill was consumed when the
+  /// drain delivered it, so without this the request is gone with nothing to
+  /// say and nothing to claim: the one silent drop left in a pipeline whose
+  /// rule is that no drop is silent. Re-parking hands it back to the path
+  /// that already exists — `claimParkedPaymentUriAfterUnlock` re-presents it
+  /// after a successful unlock, under the same park TTL as a link tapped
+  /// while locked. The proposal is still discarded; only the request survives.
+  void _reparkForUnlock() {
+    final current = state;
+    if (current == null) return;
+    // Latest link wins, the same answer the park itself gives: a link that
+    // arrived while the card was up and is still parked (held behind a busy
+    // surface, say) is the newer request, so it keeps the single slot.
+    if (ref.read(paymentUriPrefillProvider) != null) return;
+    ref.read(paymentUriPrefillProvider.notifier).set(current.prefill);
+  }
 
   void _clear({required String logContext}) {
     final current = state;
@@ -412,19 +531,12 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     final live = state;
     if (live == null) return;
 
-    // A memo the recipient's address type cannot carry is not part of the
-    // payment, so the card stops showing one the moment the pre-check knows.
-    final clearMemo = result.memoDropped;
-
     switch (result) {
       case PaymentRequestPrecheckReady(:final proposal):
         _publish(
           PaymentRequestFlowState(
             prefill: live.prefill,
-            view: live.view.copyWithStatus(
-              PaymentRequestStatus.ready,
-              clearMemo: clearMemo,
-            ),
+            view: live.view.copyWithStatus(PaymentRequestStatus.ready),
             proposal: proposal,
           ),
         );
@@ -445,17 +557,13 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
             view: live.view.copyWithStatus(
               PaymentRequestStatus.insufficientFunds,
               spendableText: spendableText,
-              clearMemo: clearMemo,
             ),
           ),
         );
       case PaymentRequestPrecheckSyncing():
         _publish(
           live.copyWith(
-            view: live.view.copyWithStatus(
-              PaymentRequestStatus.syncing,
-              clearMemo: clearMemo,
-            ),
+            view: live.view.copyWithStatus(PaymentRequestStatus.syncing),
           ),
         );
       case PaymentRequestPrecheckFailed(:final message):
@@ -467,7 +575,6 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
               // always stated in its own words through `statusMessage`.
               PaymentRequestStatus.failed,
               statusMessage: message,
-              clearMemo: clearMemo,
             ),
           ),
         );

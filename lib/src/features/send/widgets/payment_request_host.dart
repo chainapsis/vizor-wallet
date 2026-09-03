@@ -89,6 +89,11 @@ class PaymentRequestHost extends ConsumerWidget {
       final prefill = notifier.edit();
       if (prefill == null) return;
       _releaseRetainedSendStatus(ref);
+      // Both `/send` pages are keyed on the prefill's id, so this remounts the
+      // composer and discards anything already typed there. That is intended:
+      // Edit is the user asking for this request to be loaded, and a composer
+      // that kept half of a different payment's fields would be the more
+      // dangerous outcome of the two.
       router.go('/send', extra: prefill);
     }
 
@@ -108,10 +113,19 @@ class PaymentRequestHost extends ConsumerWidget {
         // funds sit in those inputs would answer that quote with "not enough
         // ZEC" for the very payment the card just found affordable.
         unawaited(() async {
-          final args = await notifier.reviewHandingBack();
-          if (args == null) return;
-          _releaseRetainedSendStatus(ref);
-          router.go('/send/review', extra: _mobileDraftFor(args));
+          switch (await notifier.reviewHandingBack()) {
+            case PaymentRequestReviewReady(:final args):
+              _releaseRetainedSendStatus(ref);
+              router.go('/send/review', extra: _mobileDraftFor(args));
+            case PaymentRequestReviewOvertaken():
+              // A newer link owns the card now, and it carries the replaced
+              // notice that accounts for this tap. Opening the first
+              // request's review under it would be a send the user did not
+              // choose, behind a card they are about to dismiss.
+              break;
+            case PaymentRequestReviewUnavailable():
+              break;
+          }
         }());
         return;
       }
@@ -135,6 +149,7 @@ class PaymentRequestHost extends ConsumerWidget {
       onContinue: review,
       onEdit: edit,
       onCancel: notifier.dismiss,
+      onRecheck: notifier.recheck,
       background: child,
     );
   }

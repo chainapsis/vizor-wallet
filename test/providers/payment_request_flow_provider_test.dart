@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/migration_send_gate_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
+import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -18,14 +19,13 @@ import '../fakes/fake_sync_notifier.dart';
 /// Rust stand-in whose proposal is held open until the test releases it, so
 /// "checking" is an observable state rather than a race.
 class _FakeSendApi {
-  _FakeSendApi({
-    this.addressIsValid = true,
-    this.addressType = 'unified',
-    this.addressWrongNetwork = false,
-  });
+  _FakeSendApi({this.addressIsValid = true, this.addressWrongNetwork = false});
 
   bool addressIsValid;
-  String addressType;
+
+  /// What Rust calls the recipient. Settable so a test can stand in a
+  /// non-unified recipient; every case here uses the default.
+  var addressType = 'unified';
 
   /// The address is well-formed but belongs to another Zcash network, which
   /// Rust reports as not-valid plus a `wrongNetwork` flag.
@@ -536,9 +536,10 @@ void main() {
     expect(api.discarded, isEmpty);
 
     api.discardGate!.complete();
-    final args = await pending;
+    final handoff = await pending;
 
-    expect(args!.proposalId, BigInt.one);
+    final args = (handoff as PaymentRequestReviewReady).args;
+    expect(args.proposalId, BigInt.one);
     expect(args.isPaymentRequest, isTrue);
     expect(api.discarded, [BigInt.one]);
   });
@@ -563,40 +564,30 @@ void main() {
 
     expect(
       await pending,
-      isNull,
+      isA<PaymentRequestReviewOvertaken>(),
       reason:
           'the review of a request the user is no longer looking at must '
-          'not open under the newer card',
+          'not open under the newer card — and the caller has to be able to '
+          'tell that from "there was nothing to review"',
     );
     final state = container.read(paymentRequestFlowProvider)!;
     expect(state.prefill.address, 'u1second');
     expect(state.reviewArgs!.proposalId, BigInt.two);
+    expect(
+      state.view.replacedNotice,
+      isTrue,
+      reason:
+          'the dropped Review tap is accounted for on the card that took '
+          "its place; `present` could not raise the notice itself because "
+          'the hand-back had already cleared the card it replaced',
+    );
     expect(api.events, ['propose 1', 'discard 1', 'propose 2']);
   });
 
-  test('a memo a transparent recipient cannot receive leaves the '
-      'card', () async {
-    final api = _FakeSendApi(addressType: 'tex');
-    final container = makeContainer(api);
-
-    container
-        .read(paymentRequestFlowProvider.notifier)
-        .present(
-          request('tex1recipient', memoText: 'invoice 42'),
-          source: PaymentRequestSource.link,
-        );
-    await pumpEventQueue();
-
-    final state = container.read(paymentRequestFlowProvider)!;
-    expect(state.view.status, PaymentRequestStatus.ready);
-    expect(
-      state.view.memo,
-      isNull,
-      reason:
-          'the proposal drops it, so the consent surface must not '
-          'keep promising it',
-    );
-  });
+  // There is no "the card drops a memo the recipient cannot receive" case:
+  // `Zip321PaymentRequest.parse` refuses `memo` on a `t`-prefixed address, so
+  // no such request ever becomes a card. See
+  // `test/app_payment_uri_rejection_test.dart`.
 
   test('a memo a shielded recipient can receive stays on the card', () async {
     final api = _FakeSendApi();
@@ -781,7 +772,17 @@ void main() {
     // look, the crossing's re-check, and the two immediate ones.
     sync.emit(syncedState(spendable: BigInt.from(100000000)));
     await pumpEventQueue();
-    expect(flowState(container)!.view.status, PaymentRequestStatus.syncing);
+    expect(
+      flowState(container)!.view.status,
+      PaymentRequestStatus.syncStalled,
+      reason:
+          'the budget is spent and the wallet is settled, so nothing is '
+          'coming — the card stops promising an update it cannot make',
+    );
+    expect(
+      flowState(container)!.view.resolvedStatusMessage,
+      'Still syncing — check again when the wallet is up to date',
+    );
     expect(api.proposeAttempts, 4);
 
     // A settled state that was already settled is not a new completion, and
@@ -827,7 +828,7 @@ void main() {
     // The wallet was settled before the link arrived, so the watch has no
     // false→true crossing left to fire on. The card says it will update
     // itself when the sync finishes, so it has to ask again now.
-    expect(flowState(container)!.view.status, PaymentRequestStatus.syncing);
+    expect(flowState(container)!.view.status, PaymentRequestStatus.syncStalled);
     expect(
       api.proposeAttempts,
       3,
@@ -1018,5 +1019,155 @@ void main() {
     ).emit(syncedState(spendable: BigInt.from(100000000)));
     await pumpEventQueue();
     expect(api.proposeAttempts, 2);
+  });
+
+  test('a stalled card answers "Check again" by asking Rust again', () async {
+    final api = _FakeSendApi()..proposeThrows = walletMustSync;
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(100000000)),
+    );
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(flowState(container)!.view.status, PaymentRequestStatus.syncStalled);
+    expect(api.proposeAttempts, 3);
+
+    // The wallet caught up between the stall and the tap, which is the whole
+    // reason the card offers the tap.
+    api.proposeThrows = null;
+    notifier.recheck();
+    await pumpEventQueue();
+
+    final state = flowState(container)!;
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(state.canReview, isTrue);
+    expect(
+      api.proposeAttempts,
+      4,
+      reason: 'a tap is one more ask, and it does not need the budget',
+    );
+  });
+
+  test('a re-check that stalls again leaves the card askable', () async {
+    final api = _FakeSendApi()..proposeThrows = walletMustSync;
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(100000000)),
+    );
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(api.proposeAttempts, 3);
+
+    notifier.recheck();
+    await pumpEventQueue();
+
+    expect(
+      flowState(container)!.view.status,
+      PaymentRequestStatus.syncStalled,
+      reason: 'still nothing to answer with, and still the user\'s move',
+    );
+    expect(
+      api.proposeAttempts,
+      4,
+      reason: 'one ask per tap: the card must not spin on its own',
+    );
+  });
+
+  test('recheck does nothing for a card that is not stalled', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(flowState(container)!.view.status, PaymentRequestStatus.ready);
+
+    notifier.recheck();
+    await pumpEventQueue();
+
+    expect(flowState(container)!.view.status, PaymentRequestStatus.ready);
+    expect(api.proposeAttempts, 1);
+  });
+
+  test('a stalled card still takes the answer a real sync brings', () async {
+    final api = _FakeSendApi()..proposeThrows = walletMustSync;
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(100000000)),
+    );
+    final sync = syncNotifier(container);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(flowState(container)!.view.status, PaymentRequestStatus.syncStalled);
+
+    // The stall is not a dead end: the watch is still installed, so a real
+    // sync cycle answers the card without the user touching it.
+    sync.emit(scanningState());
+    await pumpEventQueue();
+    api.proposeThrows = null;
+    sync.emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    expect(flowState(container)!.view.status, PaymentRequestStatus.ready);
+  });
+
+  test('locking re-parks the request so the unlock claim can present it '
+      'again', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    _securityNotifier(container).lockForTest();
+    await pumpEventQueue();
+
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(
+      api.discarded,
+      [BigInt.one],
+      reason: 'the proposal is still handed back; only the request survives',
+    );
+
+    final claimed = container
+        .read(paymentUriPrefillProvider.notifier)
+        .takeIfFresh();
+    expect(
+      claimed.prefill?.address,
+      'u1a',
+      reason:
+          'the unlock claim is what re-presents it, so the request has to be '
+          'back in the park the claim reads',
+    );
+    expect(claimed.expired, isFalse);
+  });
+
+  test('a lock does not displace a newer link already parked', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1card'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    // A second link arrived while the card was up and is still parked — held
+    // behind a busy surface, say.
+    container.read(paymentUriPrefillProvider.notifier).set(request('u1newer'));
+
+    _securityNotifier(container).lockForTest();
+    await pumpEventQueue();
+
+    expect(
+      container.read(paymentUriPrefillProvider)?.address,
+      'u1newer',
+      reason: 'latest link wins, the same answer the park gives everywhere',
+    );
   });
 }
