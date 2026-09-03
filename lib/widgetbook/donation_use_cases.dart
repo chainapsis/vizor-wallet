@@ -56,7 +56,7 @@ Widget buildDonationStatusInProgressUseCase(BuildContext context) =>
     _DonationFrame(
       child: AppPaneScrollScaffold(
         toolbar: AppPaneToolbar(
-          leading: AppBackLink(label: 'Send', minWidth: 60, onTap: () {}),
+          leading: AppBackLink(label: 'Home', minWidth: 60, onTap: () {}),
         ),
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
         child: SendStatusContentView(
