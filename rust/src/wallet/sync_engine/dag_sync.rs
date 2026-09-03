@@ -107,7 +107,9 @@ impl DagSync {
                 }
             }
         }
-        let (sessions, cap) = self.sessions.as_ref().expect("connected above");
+        // Taken out of `self` for the pass so the pass can update the
+        // spend and check state; put back only if every query succeeded.
+        let (sessions, cap) = self.sessions.take().expect("connected above");
         let manifest = sessions.action.manifest();
         let anchor = sessions.action.snapshot_anchor();
         let anchor_height = BlockHeight::from(anchor.height);
@@ -119,7 +121,10 @@ impl DagSync {
             })
             .map_err(|error| SyncError::db(format!("memo_pir_snapshot_status: {error}")))?
         {
-            MemoPirSnapshotStatus::NotYetScanned => return Ok(()),
+            MemoPirSnapshotStatus::NotYetScanned => {
+                self.sessions = Some((sessions, cap));
+                return Ok(());
+            }
             MemoPirSnapshotStatus::Mismatch => {
                 return Err(SyncError::parse(
                     "PIR generation anchor disagrees with the locally scanned chain",
@@ -128,7 +133,7 @@ impl DagSync {
             MemoPirSnapshotStatus::Accepted => {}
         }
         if !self.root_verified {
-            verify_cap_root(db, cap, anchor_height)?;
+            verify_cap_root(db, &cap, anchor_height)?;
             self.root_verified = true;
         }
 
@@ -164,6 +169,52 @@ impl DagSync {
         }
 
         let mut stats = PassStats::default();
+        let result = self
+            .drain(
+                db,
+                &sessions,
+                &cap,
+                &endpoint,
+                &mut planner,
+                &mut by_nullifier,
+                &mut stats,
+                tree_size,
+                scan_pending_below_anchor,
+            )
+            .await;
+        // On failure the generation most likely aged out of retention
+        // mid-pass; leaving the session dropped makes the sync's retry
+        // reconnect to the current one instead of reusing this session.
+        result?;
+        self.sessions = Some((sessions, cap));
+
+        if stats.passes > 0 {
+            // Aggregate counts only: no positions, nullifiers, or txids.
+            log::info!(
+                "sync: DAG pass ran {} envelope(s): {} spend(s) recorded, {} change note(s) discovered, {} witness(es) stored privately",
+                stats.passes,
+                stats.spends,
+                stats.change,
+                stats.witnesses
+            );
+        }
+        Ok(())
+    }
+
+    /// Runs passes until nothing is queued or the per-run cap is reached.
+    #[allow(clippy::too_many_arguments)]
+    async fn drain(
+        &mut self,
+        db: &mut WalletDatabase,
+        sessions: &TableSessions,
+        cap: &WitnessCap,
+        endpoint: &str,
+        planner: &mut DagSyncPlanner,
+        by_nullifier: &mut HashMap<[u8; 32], Position>,
+        stats: &mut PassStats,
+        tree_size: u64,
+        scan_pending_below_anchor: bool,
+    ) -> Result<(), SyncError> {
         while planner.pending() != (0, 0, 0) && stats.passes < MAX_PASSES_PER_RUN {
             stats.passes += 1;
             let queries = planner.plan(sessions).map_err(client_protocol_error)?;
@@ -180,7 +231,7 @@ impl DagSync {
                 let session = table_session(sessions, table);
                 let response = routed_request(
                     Method::POST,
-                    &endpoint_path(&endpoint, &format!("/v1/{}/query", table.as_str()))?,
+                    &endpoint_path(endpoint, &format!("/v1/{}/query", table.as_str()))?,
                     query.request_body().to_vec(),
                     MAX_PIR_BODY_BYTES,
                 )
@@ -272,19 +323,8 @@ impl DagSync {
                 tree_size,
                 scan_pending_below_anchor,
                 &self.checked,
-                &mut planner,
-                &mut by_nullifier,
-            );
-        }
-
-        if stats.passes > 0 {
-            // Aggregate counts only: no positions, nullifiers, or txids.
-            log::info!(
-                "sync: DAG pass ran {} envelope(s): {} spend(s) recorded, {} change note(s) discovered, {} witness(es) stored privately",
-                stats.passes,
-                stats.spends,
-                stats.change,
-                stats.witnesses
+                planner,
+                by_nullifier,
             );
         }
         Ok(())
@@ -424,7 +464,10 @@ async fn connect_all(endpoint: &str) -> Result<(TableSessions, WitnessCap), Sync
     };
     let cap = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/v1/witness/cap")?,
+        &endpoint_path(
+            endpoint,
+            &format!("/v1/witness/cap?generation={}", manifest.generation),
+        )?,
         Vec::new(),
         MAX_MANIFEST_BYTES,
     )

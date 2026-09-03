@@ -110,6 +110,34 @@ impl MemoPirSync {
 
         let mut stored = 0usize;
         let row_count = rows.len();
+        let result = self.complete_rows(db, rows, &mut stored).await;
+        if result.is_err() {
+            // A refused query usually means the generation aged out of the
+            // server's retention while this pass ran; the sync's retry must
+            // reconnect rather than reuse the stale session.
+            self.session = None;
+        }
+        result?;
+
+        if row_count > 0 {
+            // Counts are useful demo evidence without recording txids or note positions.
+            log::info!(
+                "sync: memo PIR privately completed {stored} Ironwood memo(s) in {row_count} row query/queries"
+            );
+        }
+        Ok(())
+    }
+
+    async fn complete_rows(
+        &self,
+        db: &mut WalletDatabase,
+        rows: BTreeMap<u64, Vec<zcash_client_backend::data_api::memo_pir::MemoPirRequest>>,
+        stored: &mut usize,
+    ) -> Result<(), SyncError> {
+        let session = self
+            .session
+            .as_ref()
+            .expect("connected before completing rows");
         for requests in rows.into_values() {
             let position = u64::from(requests[0].position());
             let query = session
@@ -142,7 +170,7 @@ impl MemoPirSync {
                 )
                 .map_err(|error| SyncError::db(format!("store memo PIR result: {error}")))?;
                 match result {
-                    MemoPirStoreResult::Stored => stored += 1,
+                    MemoPirStoreResult::Stored => *stored += 1,
                     MemoPirStoreResult::AlreadyResolved => {}
                     MemoPirStoreResult::Rejected => {
                         return Err(SyncError::parse(
@@ -151,13 +179,6 @@ impl MemoPirSync {
                     }
                 }
             }
-        }
-
-        if row_count > 0 {
-            // Counts are useful demo evidence without recording txids or note positions.
-            log::info!(
-                "sync: memo PIR privately completed {stored} Ironwood memo(s) in {row_count} row query/queries"
-            );
         }
         Ok(())
     }
@@ -193,17 +214,26 @@ pub(super) async fn connect_table(
     manifest: &GenerationManifest,
     table: DatabaseId,
 ) -> Result<PirSession, SyncError> {
+    // Pinned to the manifest's generation: a publish between two fetches
+    // must not hand this session another generation's material.
     let name = table.as_str();
+    let generation = manifest.generation;
     let params = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, &format!("/v1/{name}/params"))?,
+        &endpoint_path(
+            endpoint,
+            &format!("/v1/{name}/params?generation={generation}"),
+        )?,
         Vec::new(),
         MAX_PARAMS_BYTES,
     )
     .await?;
     let public_params = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, &format!("/v1/{name}/public-params"))?,
+        &endpoint_path(
+            endpoint,
+            &format!("/v1/{name}/public-params?generation={generation}"),
+        )?,
         Vec::new(),
         MAX_PIR_BODY_BYTES,
     )
