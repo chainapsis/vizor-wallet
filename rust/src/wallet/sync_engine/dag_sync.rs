@@ -48,9 +48,11 @@ use super::{SyncError, WalletDatabase};
 /// per pass; the rest waits for the next run.
 const MAX_PASSES_AT_TIP: usize = 8;
 
-/// Passes per run while compact scanning still has work: the pass runs after
-/// every batch anyway, and one envelope per batch keeps the scan moving.
-const MAX_PASSES_WHILE_SCANNING: usize = 1;
+/// Passes per run while compact scanning still has work. A run happens once
+/// per [`BLOCKS_BETWEEN_PASSES`] scanned blocks, so this bounds how long the
+/// scan pauses for private work: four envelopes cover 32 spend checks, 16
+/// action rows, and 16 witnesses per window.
+const MAX_PASSES_WHILE_SCANNING: usize = 4;
 
 /// Blocks compact scanning covers between two passes while it has work. A
 /// pass costs one envelope; spending it after every small batch would hold
