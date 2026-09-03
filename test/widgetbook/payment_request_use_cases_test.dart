@@ -114,6 +114,30 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('expanded memo is not announced by its disclosure twice', (
+    tester,
+  ) async {
+    const memoText =
+        'Table 4 — two flat whites and a pastry. Thanks for stopping by, '
+        'see you next week.';
+    final semantics = tester.ensureSemantics();
+    await _pumpUseCase(tester, buildPaymentRequestFullUseCase);
+
+    final collapsed = tester.getSemantics(
+      find.bySemanticsLabel('Expand transaction memo'),
+    );
+    expect(collapsed.value, 'Transaction memo, $memoText');
+
+    await tester.tap(_key('payment_request_memo_toggle'));
+    await tester.pumpAndSettle();
+
+    final expanded = tester.getSemantics(
+      find.bySemanticsLabel('Collapse transaction memo'),
+    );
+    expect(expanded.value, isEmpty);
+    semantics.dispose();
+  });
+
   testWidgets('a very long requester note scrolls inside its existing card', (
     tester,
   ) async {

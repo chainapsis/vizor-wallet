@@ -1339,7 +1339,7 @@ class _ProseRows extends StatelessWidget {
           label: expanded
               ? 'Collapse transaction memo'
               : 'Expand transaction memo',
-          value: '$label, $text',
+          value: expanded ? null : '$label, $text',
           onTap: onToggle,
           child: AppButton(
             key: const ValueKey('payment_request_memo_toggle'),
