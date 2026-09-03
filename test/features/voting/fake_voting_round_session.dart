@@ -5,11 +5,14 @@ import 'dart:typed_data';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 
+import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
-import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
+import 'fake_rust_api_shapes.dart' as rust_api;
 import 'package:zcash_wallet/src/rust/api/voting_session.dart' as rust_session;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
     as rust_delegate;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
+    as rust_vote;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 
@@ -17,8 +20,134 @@ import 'round_plan_test_utils.dart';
 
 /// State a scripted `VotingRustApi` fake exposes so [FakeVotingRoundSession]
 /// can mirror the SDK executor on top of it.
+/// Cancellable handle for one scripted chain episode.
+abstract interface class FakeChainSubmissionPassHandle {
+  String get accountUuid;
+
+  String get roundId;
+
+  bool get isCancelled;
+
+  bool get isDisposed;
+
+  void cancel();
+
+  void dispose();
+
+  void setOperationEpoch(BigInt operationEpoch);
+}
+
+/// The per-step operations a scripted fake still exposes so
+/// [FakeVotingRoundSession] can mirror the SDK executor. Production Dart no
+/// longer sees these; the SDK runs them inside a round session step.
+abstract interface class FakeRoundStepApi {
+  Stream<rust_api.ApiDelegationProofEvent>
+  buildProveAndSignDelegationPayloadWithProgress({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<String> pirServerUrls,
+    required String mnemonic,
+    required List<int> storedHotkeySecret,
+    required int bundleIndex,
+  });
+
+  Stream<rust_api.ApiDelegationProofEvent>
+  buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<String> pirServerUrls,
+    required List<int> storedHotkeySecret,
+    required int bundleIndex,
+    required List<int> keystoneSig,
+    required List<int> keystoneSighash,
+  });
+
+  FakeChainSubmissionPassHandle beginChainSubmissionPass({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required String network,
+    required List<String> endpoints,
+    required BigInt operationEpoch,
+  });
+
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainDelegation({
+    required FakeChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required rust_wire.SignedDelegationPayloadView submission,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  });
+
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVote({
+    required FakeChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  });
+
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVoteBatch({
+    required FakeChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  });
+
+  Future<rust_vote.VanWitness> generateVanWitness({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int anchorHeight,
+  });
+
+  Stream<rust_api.ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> storedHotkeySecret,
+    required rust_vote.VanWitness vanWitness,
+    required List<VotingDraftVote> draftVotes,
+    required bool singleShare,
+    required int maxProofConcurrency,
+  });
+
+  Future<rust_api.ApiSignedVoteCommitments> recoverVoteCommitment({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+  });
+
+  Future<rust_api.ApiVotingHelperPreflight> preflightVotingHelpers({
+    required VotingHelperDeliveryContext context,
+    required List<String> configuredHelperUrls,
+  });
+
+  Future<void> prepareCommittedShareDelivery({
+    required VotingHelperDeliveryContext context,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiVotingHelperPreflight preflight,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    required List<int> proposalIds,
+    BigInt? lastMomentBufferSeconds,
+  });
+
+  Future<rust_api.ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
+    required VotingHelperDeliveryContext context,
+    required int bundleIndex,
+    required int proposalId,
+    required List<String> configuredHelperUrls,
+    required BigInt nowSeconds,
+  });
+}
+
 abstract interface class FakeRoundSessionDriver {
   VotingRustApi get api;
+
+  FakeRoundStepApi get stepApi;
 
   /// Bundle count the planner sees, from recovery state when present.
   int get planBundleCount;
@@ -87,13 +216,15 @@ class FakeVotingRoundSession implements VotingRoundSession {
   BigInt operationEpoch;
   final Map<int, rust_session.ApiBallotIntent> _intents = {};
   final Set<String> _recoveredKeys = {};
-  final Set<VotingChainSubmissionPassHandle> _passHandles = {};
+  final Set<FakeChainSubmissionPassHandle> _passHandles = {};
   final Completer<void> _cancelled = Completer<void>();
   bool isCancelled = false;
   @override
   bool isDisposed = false;
 
   VotingRustApi get _api => driver.api;
+
+  FakeRoundStepApi get _steps => driver.stepApi;
 
   @override
   String get accountUuid => ctx.accountUuid;
@@ -283,7 +414,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
     rust_wire.KeystoneSignatureRecord? expectedSignature;
     switch (signer.kind) {
       case rust_session.ApiDelegationSignerKind.mnemonic:
-        events = _api.buildProveAndSignDelegationPayloadWithProgress(
+        events = _steps.buildProveAndSignDelegationPayloadWithProgress(
           ctx: ctx,
           pirServerUrls: pirServerUrls,
           mnemonic: signer.mnemonic!,
@@ -298,7 +429,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
           );
         }
         expectedSignature = record;
-        events = _api
+        events = _steps
             .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
               ctx: ctx,
               pirServerUrls: pirServerUrls,
@@ -308,7 +439,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
               keystoneSighash: record.sighash,
             );
       case rust_session.ApiDelegationSignerKind.keystoneProvided:
-        events = _api
+        events = _steps
             .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
               ctx: ctx,
               pirServerUrls: pirServerUrls,
@@ -358,7 +489,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
     }
     final submission = payload;
     final outcome = await _chainEpisode(
-      (passHandle, recoveryMode) => _api.advanceChainDelegation(
+      (passHandle, recoveryMode) => _steps.advanceChainDelegation(
         passHandle: passHandle,
         bundleIndex: bundleIndex,
         submission: submission,
@@ -403,11 +534,11 @@ class FakeVotingRoundSession implements VotingRoundSession {
           );
       // Every planned cast step for this bundle is proven as one batch.
       final plan = await _plan();
-      final drafts = <rust_wire.DraftVote>[
+      final drafts = <VotingDraftVote>[
         for (final planned in plan.nextSteps)
           if (planned.kind == rust_wire.NextStepKind.castVote &&
               planned.bundleIndex == bundleIndex)
-            rust_wire.DraftVote(
+            VotingDraftVote(
               proposalId: planned.proposalId,
               choice: planned.choice,
               numOptions:
@@ -418,8 +549,6 @@ class FakeVotingRoundSession implements VotingRoundSession {
                       .firstOrNull
                       ?.numOptions ??
                   0,
-              vcTreePosition: BigInt.zero,
-              singleShare: singleShare,
             ),
       ];
       if (drafts.isNotEmpty) {
@@ -431,14 +560,14 @@ class FakeVotingRoundSession implements VotingRoundSession {
             treeHeight: anchorHeight,
           ),
         );
-        final witness = await _api.generateVanWitness(
+        final witness = await _steps.generateVanWitness(
           dbPath: ctx.dbPath,
           accountUuid: accountUuid,
           roundId: roundId,
           bundleIndex: bundleIndex,
           anchorHeight: anchorHeight,
         );
-        await for (final event in _api.buildVoteCommitmentsWithProgress(
+        await for (final event in _steps.buildVoteCommitmentsWithProgress(
           dbPath: ctx.dbPath,
           accountUuid: accountUuid,
           network: ctx.network,
@@ -447,6 +576,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
           storedHotkeySecret: hotkey,
           vanWitness: witness,
           draftVotes: drafts,
+          singleShare: singleShare,
           maxProofConcurrency: host.maxProofConcurrency,
         )) {
           final proposalId = event.proposalId;
@@ -480,7 +610,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
     for (final proposalId in proposalIds) {
       final key = '$bundleIndex:$proposalId';
       if (_proven(key)) continue;
-      await _api.recoverVoteCommitment(
+      await _steps.recoverVoteCommitment(
         dbPath: ctx.dbPath,
         accountUuid: accountUuid,
         roundId: roundId,
@@ -502,12 +632,12 @@ class FakeVotingRoundSession implements VotingRoundSession {
               ceremonyStartSeconds: ceremonyStart,
               voteEndTimeSeconds: voteEnd,
             );
-      final preflight = await _api.preflightVotingHelpers(
+      final preflight = await _steps.preflightVotingHelpers(
         context: context,
         configuredHelperUrls: host.configuredHelperUrls,
       );
       for (final proposalId in proposalIds) {
-        await _api.prepareCommittedShareDelivery(
+        await _steps.prepareCommittedShareDelivery(
           context: context,
           bundleIndex: bundleIndex,
           proposalId: proposalId,
@@ -536,13 +666,13 @@ class FakeVotingRoundSession implements VotingRoundSession {
       if (step.kind != rust_wire.NextStepKind.submitShares) {
         final outcome = await _chainEpisode(
           (passHandle, recoveryMode) => proposalIds.length > 1
-              ? _api.advanceChainVoteBatch(
+              ? _steps.advanceChainVoteBatch(
                   passHandle: passHandle,
                   bundleIndex: bundleIndex,
                   proposalId: proposalIds.first,
                   recoveryMode: recoveryMode,
                 )
-              : _api.advanceChainVote(
+              : _steps.advanceChainVote(
                   passHandle: passHandle,
                   bundleIndex: bundleIndex,
                   proposalId: proposalIds.single,
@@ -567,7 +697,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
 
       final deliveries = <rust_wire.ShareBatchDeliveryReportView>[];
       for (final proposalId in proposalIds) {
-        final delivery = await _api.submitPreparedSharesToHelpers(
+        final delivery = await _steps.submitPreparedSharesToHelpers(
           context: context,
           bundleIndex: bundleIndex,
           proposalId: proposalId,
@@ -659,12 +789,12 @@ class FakeVotingRoundSession implements VotingRoundSession {
 
   Future<rust_api.ApiChainSubmissionOutcome> _chainEpisode(
     Future<rust_api.ApiChainSubmissionCallResult> Function(
-      VotingChainSubmissionPassHandle passHandle,
+      FakeChainSubmissionPassHandle passHandle,
       rust_api.ApiChainRecoveryMode recoveryMode,
     )
     advance,
   ) async {
-    final passHandle = _api.beginChainSubmissionPass(
+    final passHandle = _steps.beginChainSubmissionPass(
       dbPath: ctx.dbPath,
       accountUuid: accountUuid,
       roundId: roundId,

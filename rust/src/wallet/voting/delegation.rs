@@ -11,20 +11,18 @@
 
 use std::sync::Arc;
 
-use secrecy::SecretVec;
 use zcash_voting::config::PirLayout;
 pub use zcash_voting::delegate::DelegationProgress;
 use zcash_voting::delegate::{
-    DelegationLwdInputs, DelegationProofStatus, KeystoneSigningRequest, PreparedDelegationReport,
-    SignedDelegationBundle,
+    DelegationLwdInputs, DelegationProofStatus,
 };
 use zcash_voting::precompute::SnapshotBundlePrecomputeReport;
 use zcash_voting::round::BundleLayout;
 use zcash_voting::selection::select_notes_with_wallet_db;
 pub use zcash_voting::VotingEligibilityReport;
 use zcash_voting::{
-    BundlePolicy, DelegationPipeline, DelegationProgressBridge, DelegationSigner, HyperTransport,
-    KeystoneSignatureSource, NoopProgressReporter, PirFleet, VotingError, VotingHotkey,
+    BundlePolicy, DelegationPipeline, HyperTransport,
+    NoopProgressReporter, PirFleet, VotingError, VotingHotkey,
     WalletDbOpener,
 };
 
@@ -34,7 +32,6 @@ use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
 
 use super::db::open_voting_db;
-use super::signer::SeedSpendAuthSigner;
 use super::transport::fetch_snapshot_tree_state;
 
 /// Round inputs every delegation stage needs.
@@ -204,23 +201,6 @@ pub async fn precompute_snapshot_bundles(
     .await
 }
 
-/// Warms PIR state for a single delegation bundle.
-pub async fn precompute_delegation_pir(
-    inputs: RoundInputs,
-    pir_server_url: &str,
-    pir_layout: PirLayout,
-    hotkey: VotingHotkey,
-    bundle_index: u32,
-) -> Result<PreparedDelegationReport, String> {
-    start_proving_cache_warmup();
-    let fleet = pir_fleet(&[pir_server_url.to_string()], pir_layout)?;
-    let pipeline = open_pipeline(&inputs, Some(hotkey)).await?;
-    blocking("delegation PIR precompute", move || {
-        pipeline.precompute_pir(bundle_index, &fleet)
-    })
-    .await
-}
-
 /// Prepare and persist ZKP1 for one software delegation bundle without signing.
 ///
 /// Returns `true` when this call generated the proof and `false` when a
@@ -239,78 +219,6 @@ pub async fn precompute_delegation_proof(
     })
     .await?;
     Ok(matches!(status, DelegationProofStatus::Generated))
-}
-
-/// Build, prove, and sign one delegation payload with the wallet seed.
-pub async fn build_prove_and_sign_delegation_payload<F>(
-    inputs: RoundInputs,
-    pir_server_urls: &[String],
-    pir_layout: PirLayout,
-    seed: SecretVec<u8>,
-    hotkey: VotingHotkey,
-    bundle_index: u32,
-    on_progress: F,
-) -> Result<SignedDelegationBundle, String>
-where
-    F: Fn(DelegationProgress) + Send + Sync + 'static,
-{
-    let fleet = pir_fleet(pir_server_urls, pir_layout)?;
-    let pipeline = open_pipeline(&inputs, Some(hotkey)).await?;
-    let signer = DelegationSigner::Software(Arc::new(SeedSpendAuthSigner::new(seed)));
-    pipeline
-        .prove_and_sign(
-            bundle_index,
-            signer,
-            fleet,
-            Arc::new(DelegationProgressBridge::new(on_progress)),
-        )
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Build one voting PCZT request for Keystone signing.
-pub async fn build_keystone_delegation_request(
-    inputs: RoundInputs,
-    hotkey: VotingHotkey,
-    bundle_index: u32,
-) -> Result<KeystoneSigningRequest, String> {
-    let pipeline = open_pipeline(&inputs, Some(hotkey)).await?;
-    blocking("Keystone request", move || {
-        pipeline.keystone_request(bundle_index)
-    })
-    .await
-}
-
-/// Build a delegation proof and assemble the submission using a Keystone signature.
-#[allow(clippy::too_many_arguments)]
-pub async fn build_prove_delegation_payload_with_keystone_signature<F>(
-    inputs: RoundInputs,
-    pir_server_urls: &[String],
-    pir_layout: PirLayout,
-    hotkey: VotingHotkey,
-    bundle_index: u32,
-    keystone_sig: Vec<u8>,
-    keystone_sighash: Vec<u8>,
-    on_progress: F,
-) -> Result<SignedDelegationBundle, String>
-where
-    F: Fn(DelegationProgress) + Send + Sync + 'static,
-{
-    let fleet = pir_fleet(pir_server_urls, pir_layout)?;
-    let pipeline = open_pipeline(&inputs, Some(hotkey)).await?;
-    let signer = DelegationSigner::Keystone(KeystoneSignatureSource::Provided {
-        sig: keystone_sig,
-        sighash: keystone_sighash,
-    });
-    pipeline
-        .prove_and_sign(
-            bundle_index,
-            signer,
-            fleet,
-            Arc::new(DelegationProgressBridge::new(on_progress)),
-        )
-        .await
-        .map_err(|e| e.to_string())
 }
 
 /// Outcome of the bundle-independent background PIR proof cache warm-up.

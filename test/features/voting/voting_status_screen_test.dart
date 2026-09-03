@@ -39,7 +39,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
-import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
+import 'fake_rust_api_shapes.dart' as rust_api;
 import 'package:zcash_wallet/src/rust/api/voting_session.dart' as rust_session;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
@@ -52,8 +52,7 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
     as rust_vote;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_frb_types;
-import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
-    as rust_wire;
+import 'fake_rust_wire_shapes.dart' as rust_wire;
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     as rust_keystone_wallet;
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
@@ -5111,7 +5110,8 @@ class _IneligibleVotingRustApi extends _VotingStatusRustApi {
     required int bundleIndex,
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
+    required bool singleShare,
     required int maxProofConcurrency,
   }) async* {
     throw Exception(
@@ -5260,7 +5260,7 @@ rust_api.ApiChainSubmissionCallResult _statusConfirmedChainSubmission({
   );
 }
 
-class _VotingStatusChainPassHandle implements VotingChainSubmissionPassHandle {
+class _VotingStatusChainPassHandle implements FakeChainSubmissionPassHandle {
   _VotingStatusChainPassHandle({
     required this.accountUuid,
     required this.roundId,
@@ -5284,7 +5284,7 @@ class _VotingStatusChainPassHandle implements VotingChainSubmissionPassHandle {
 }
 
 class _VotingStatusRustApi extends _NoopVotingRustApi
-    implements FakeRoundSessionDriver {
+    implements FakeRoundSessionDriver, FakeRoundStepApi {
   _VotingStatusRustApi(
     this.recoveryApi, {
     this.bundleCount = 1,
@@ -5326,6 +5326,9 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
 
   @override
   VotingRustApi get api => this;
+
+  @override
+  FakeRoundStepApi get stepApi => this;
 
   @override
   Map<int, List<int>> get batchProposalIdsByBundle => _batchProposalIdsByBundle;
@@ -5381,7 +5384,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
   }
 
   @override
-  VotingChainSubmissionPassHandle beginChainSubmissionPass({
+  FakeChainSubmissionPassHandle beginChainSubmissionPass({
     required String dbPath,
     required String accountUuid,
     required String roundId,
@@ -5397,7 +5400,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
 
   @override
   Future<rust_api.ApiChainSubmissionCallResult> advanceChainDelegation({
-    required VotingChainSubmissionPassHandle passHandle,
+    required FakeChainSubmissionPassHandle passHandle,
     required int bundleIndex,
     required rust_wire.SignedDelegationPayloadView submission,
     required rust_api.ApiChainRecoveryMode recoveryMode,
@@ -5414,7 +5417,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
 
   @override
   Future<rust_api.ApiChainSubmissionCallResult> advanceChainVote({
-    required VotingChainSubmissionPassHandle passHandle,
+    required FakeChainSubmissionPassHandle passHandle,
     required int bundleIndex,
     required int proposalId,
     required rust_api.ApiChainRecoveryMode recoveryMode,
@@ -5438,7 +5441,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
 
   @override
   Future<rust_api.ApiChainSubmissionCallResult> advanceChainVoteBatch({
-    required VotingChainSubmissionPassHandle passHandle,
+    required FakeChainSubmissionPassHandle passHandle,
     required int bundleIndex,
     required int proposalId,
     required rust_api.ApiChainRecoveryMode recoveryMode,
@@ -5794,7 +5797,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
     required int bundleIndex,
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
+    required bool singleShare,
     required int maxProofConcurrency,
   }) async* {
     voteCommitmentCalls++;

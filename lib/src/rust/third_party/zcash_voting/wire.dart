@@ -7,7 +7,7 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `PendingShareRoundView`, `SignedVoteBatchView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteRecord`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegationPirPrecomputeResultView`, `DraftVote`, `PendingShareRoundView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
 
 /// How a confirmation was established.
@@ -167,37 +167,6 @@ class CompletedVoteDisplayView {
           votedAt == other.votedAt;
 }
 
-class DelegationPirPrecomputeResultView {
-  final int cachedCount;
-  final int fetchedCount;
-  final int bundleCount;
-  final int bundleIndex;
-
-  const DelegationPirPrecomputeResultView({
-    required this.cachedCount,
-    required this.fetchedCount,
-    required this.bundleCount,
-    required this.bundleIndex,
-  });
-
-  @override
-  int get hashCode =>
-      cachedCount.hashCode ^
-      fetchedCount.hashCode ^
-      bundleCount.hashCode ^
-      bundleIndex.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is DelegationPirPrecomputeResultView &&
-          runtimeType == other.runtimeType &&
-          cachedCount == other.cachedCount &&
-          fetchedCount == other.fetchedCount &&
-          bundleCount == other.bundleCount &&
-          bundleIndex == other.bundleIndex;
-}
-
 /// Delegation proving and signing stages.
 enum DelegationProgressKind {
   selectingNotes,
@@ -354,41 +323,6 @@ class DelegationSubmissionWire {
           govNullifiers == other.govNullifiers &&
           proof == other.proof &&
           voteRoundId == other.voteRoundId;
-}
-
-class DraftVote {
-  final int proposalId;
-  final int choice;
-  final int numOptions;
-  final BigInt vcTreePosition;
-  final bool singleShare;
-
-  const DraftVote({
-    required this.proposalId,
-    required this.choice,
-    required this.numOptions,
-    required this.vcTreePosition,
-    required this.singleShare,
-  });
-
-  @override
-  int get hashCode =>
-      proposalId.hashCode ^
-      choice.hashCode ^
-      numOptions.hashCode ^
-      vcTreePosition.hashCode ^
-      singleShare.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is DraftVote &&
-          runtimeType == other.runtimeType &&
-          proposalId == other.proposalId &&
-          choice == other.choice &&
-          numOptions == other.numOptions &&
-          vcTreePosition == other.vcTreePosition &&
-          singleShare == other.singleShare;
 }
 
 class KeystoneSignatureRecord {
@@ -1101,84 +1035,12 @@ class SignedDelegationPayloadView {
           bundleIndex == other.bundleIndex;
 }
 
-class SignedVoteCommitmentView {
-  final int proposalId;
-  final VoteCommitmentWire wire;
-
-  const SignedVoteCommitmentView({
-    required this.proposalId,
-    required this.wire,
-  });
-
-  @override
-  int get hashCode => proposalId.hashCode ^ wire.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is SignedVoteCommitmentView &&
-          runtimeType == other.runtimeType &&
-          proposalId == other.proposalId &&
-          wire == other.wire;
-}
-
 /// Vote proving and signing stages.
 enum VoteCommitStageKind {
   proofStarting,
   proofProgress,
   sharePayloadsBuilding,
   signing,
-}
-
-class VoteCommitmentWire {
-  final String vanNullifier;
-  final String voteAuthorityNoteNew;
-  final String voteCommitment;
-  final int proposalId;
-  final String proof;
-  final String voteRoundId;
-  final int anchorHeight;
-  final String rVpk;
-  final String voteAuthSig;
-
-  const VoteCommitmentWire({
-    required this.vanNullifier,
-    required this.voteAuthorityNoteNew,
-    required this.voteCommitment,
-    required this.proposalId,
-    required this.proof,
-    required this.voteRoundId,
-    required this.anchorHeight,
-    required this.rVpk,
-    required this.voteAuthSig,
-  });
-
-  @override
-  int get hashCode =>
-      vanNullifier.hashCode ^
-      voteAuthorityNoteNew.hashCode ^
-      voteCommitment.hashCode ^
-      proposalId.hashCode ^
-      proof.hashCode ^
-      voteRoundId.hashCode ^
-      anchorHeight.hashCode ^
-      rVpk.hashCode ^
-      voteAuthSig.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is VoteCommitmentWire &&
-          runtimeType == other.runtimeType &&
-          vanNullifier == other.vanNullifier &&
-          voteAuthorityNoteNew == other.voteAuthorityNoteNew &&
-          voteCommitment == other.voteCommitment &&
-          proposalId == other.proposalId &&
-          proof == other.proof &&
-          voteRoundId == other.voteRoundId &&
-          anchorHeight == other.anchorHeight &&
-          rVpk == other.rVpk &&
-          voteAuthSig == other.voteAuthSig;
 }
 
 /// Durable identity of one committed vote.

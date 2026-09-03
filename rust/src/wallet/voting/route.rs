@@ -12,7 +12,7 @@
 //! immediately before the HTTP request is built, so everything before it is a
 //! definite pre-dispatch failure the SDK may retry elsewhere.
 
-use std::{future::Future, time::Duration};
+use std::future::Future;
 
 use bytes::Bytes;
 use http::{Method, Uri};

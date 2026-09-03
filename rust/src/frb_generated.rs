@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1399906301;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1540663893;
 
 // Section: executor
 
@@ -47,110 +47,6 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
-fn wire__crate__api__voting__VotingChainSubmissionPassHandle_cancel_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "VotingChainSubmissionPassHandle_cancel",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_that = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingChainSubmissionPassHandle,
-                >,
-            >>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let mut api_that_guard = None;
-                let decode_indices_ =
-                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                            &api_that, 0, false,
-                        ),
-                    ]);
-                for i in decode_indices_ {
-                    match i {
-                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
-                        _ => unreachable!(),
-                    }
-                }
-                let api_that_guard = api_that_guard.unwrap();
-                let output_ok = Result::<_, ()>::Ok({
-                    crate::api::voting::VotingChainSubmissionPassHandle::cancel(&*api_that_guard);
-                })?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__api__voting__VotingChainSubmissionPassHandle_set_operation_epoch_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "VotingChainSubmissionPassHandle_set_operation_epoch",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_that = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingChainSubmissionPassHandle,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_operation_epoch = <u64>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let mut api_that_guard = None;
-                let decode_indices_ =
-                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                            &api_that, 0, false,
-                        ),
-                    ]);
-                for i in decode_indices_ {
-                    match i {
-                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
-                        _ => unreachable!(),
-                    }
-                }
-                let api_that_guard = api_that_guard.unwrap();
-                let output_ok = Result::<_, ()>::Ok({
-                    crate::api::voting::VotingChainSubmissionPassHandle::set_operation_epoch(
-                        &*api_that_guard,
-                        api_operation_epoch,
-                    );
-                })?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__api__voting_session__VotingRoundSession_advance_next_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -641,110 +537,6 @@ fn wire__crate__api__voting__VotingShareTrackingPassHandle_cancel_impl(
         },
     )
 }
-fn wire__crate__api__voting__VotingVoteRecoveryPassHandle_cancel_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "VotingVoteRecoveryPassHandle_cancel",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_that = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingVoteRecoveryPassHandle,
-                >,
-            >>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let mut api_that_guard = None;
-                let decode_indices_ =
-                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                            &api_that, 0, false,
-                        ),
-                    ]);
-                for i in decode_indices_ {
-                    match i {
-                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
-                        _ => unreachable!(),
-                    }
-                }
-                let api_that_guard = api_that_guard.unwrap();
-                let output_ok = Result::<_, ()>::Ok({
-                    crate::api::voting::VotingVoteRecoveryPassHandle::cancel(&*api_that_guard);
-                })?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__api__voting__VotingVoteRecoveryPassHandle_set_operation_epoch_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "VotingVoteRecoveryPassHandle_set_operation_epoch",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_that = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingVoteRecoveryPassHandle,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_operation_epoch = <u64>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let mut api_that_guard = None;
-                let decode_indices_ =
-                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                            &api_that, 0, false,
-                        ),
-                    ]);
-                for i in decode_indices_ {
-                    match i {
-                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
-                        _ => unreachable!(),
-                    }
-                }
-                let api_that_guard = api_that_guard.unwrap();
-                let output_ok = Result::<_, ()>::Ok({
-                    crate::api::voting::VotingVoteRecoveryPassHandle::set_operation_epoch(
-                        &*api_that_guard,
-                        api_operation_epoch,
-                    );
-                })?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__api__sync__abandon_orchard_migration_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -874,339 +666,6 @@ fn wire__crate__api__sync__add_proofs_to_pczt_impl(
         },
     )
 }
-fn wire__crate__api__voting__advance_chain_delegation_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "advance_chain_delegation",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_handle = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingChainSubmissionPassHandle,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_submission =
-                <zcash_voting::wire::SignedDelegationPayloadView>::sse_decode(&mut deserializer);
-            let api_recovery_mode =
-                <crate::api::voting::ApiChainRecoveryMode>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, ()>(
-                    (move || async move {
-                        let mut api_handle_guard = None;
-                        let decode_indices_ =
-                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
-                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                    &api_handle,
-                                    0,
-                                    false,
-                                )],
-                            );
-                        for i in decode_indices_ {
-                            match i {
-                                0 => {
-                                    api_handle_guard =
-                                        Some(api_handle.lockable_decode_async_ref().await)
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                        let api_handle_guard = api_handle_guard.unwrap();
-                        let output_ok = Result::<_, ()>::Ok(
-                            crate::api::voting::advance_chain_delegation(
-                                &*api_handle_guard,
-                                api_bundle_index,
-                                api_submission,
-                                api_recovery_mode,
-                            )
-                            .await,
-                        )?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__voting__advance_chain_vote_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "advance_chain_vote",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_handle = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingChainSubmissionPassHandle,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_proposal_id = <u32>::sse_decode(&mut deserializer);
-            let api_recovery_mode =
-                <crate::api::voting::ApiChainRecoveryMode>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, ()>(
-                    (move || async move {
-                        let mut api_handle_guard = None;
-                        let decode_indices_ =
-                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
-                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                    &api_handle,
-                                    0,
-                                    false,
-                                )],
-                            );
-                        for i in decode_indices_ {
-                            match i {
-                                0 => {
-                                    api_handle_guard =
-                                        Some(api_handle.lockable_decode_async_ref().await)
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                        let api_handle_guard = api_handle_guard.unwrap();
-                        let output_ok = Result::<_, ()>::Ok(
-                            crate::api::voting::advance_chain_vote(
-                                &*api_handle_guard,
-                                api_bundle_index,
-                                api_proposal_id,
-                                api_recovery_mode,
-                            )
-                            .await,
-                        )?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__voting__advance_chain_vote_batch_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "advance_chain_vote_batch",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_handle = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingChainSubmissionPassHandle,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_proposal_id = <u32>::sse_decode(&mut deserializer);
-            let api_recovery_mode =
-                <crate::api::voting::ApiChainRecoveryMode>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, ()>(
-                    (move || async move {
-                        let mut api_handle_guard = None;
-                        let decode_indices_ =
-                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
-                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                    &api_handle,
-                                    0,
-                                    false,
-                                )],
-                            );
-                        for i in decode_indices_ {
-                            match i {
-                                0 => {
-                                    api_handle_guard =
-                                        Some(api_handle.lockable_decode_async_ref().await)
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                        let api_handle_guard = api_handle_guard.unwrap();
-                        let output_ok = Result::<_, ()>::Ok(
-                            crate::api::voting::advance_chain_vote_batch(
-                                &*api_handle_guard,
-                                api_bundle_index,
-                                api_proposal_id,
-                                api_recovery_mode,
-                            )
-                            .await,
-                        )?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__voting__advance_vote_recovery_work_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "advance_vote_recovery_work",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_handle = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingVoteRecoveryPassHandle,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_proposal_ids = <Vec<u32>>::sse_decode(&mut deserializer);
-            let api_configured_helper_urls = <Vec<String>>::sse_decode(&mut deserializer);
-            let api_now_seconds = <u64>::sse_decode(&mut deserializer);
-            let api_vote_end_time_seconds = <u64>::sse_decode(&mut deserializer);
-            let api_last_moment_buffer_seconds = <Option<u64>>::sse_decode(&mut deserializer);
-            let api_sink = <StreamSink<
-                crate::api::voting::ApiVoteRecoveryEvent,
-                flutter_rust_bridge::for_generated::SseCodec,
-            >>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let mut api_handle_guard = None;
-                        let decode_indices_ =
-                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
-                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                    &api_handle,
-                                    0,
-                                    false,
-                                )],
-                            );
-                        for i in decode_indices_ {
-                            match i {
-                                0 => {
-                                    api_handle_guard =
-                                        Some(api_handle.lockable_decode_async_ref().await)
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                        let api_handle_guard = api_handle_guard.unwrap();
-                        let output_ok = crate::api::voting::advance_vote_recovery_work(
-                            &*api_handle_guard,
-                            api_proposal_ids,
-                            api_configured_helper_urls,
-                            api_now_seconds,
-                            api_vote_end_time_seconds,
-                            api_last_moment_buffer_seconds,
-                            api_sink,
-                        )
-                        .await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__voting__begin_chain_submission_pass_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "begin_chain_submission_pass",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_db_path = <String>::sse_decode(&mut deserializer);
-            let api_account_uuid = <String>::sse_decode(&mut deserializer);
-            let api_round_id = <String>::sse_decode(&mut deserializer);
-            let api_network = <String>::sse_decode(&mut deserializer);
-            let api_endpoints = <Vec<String>>::sse_decode(&mut deserializer);
-            let api_operation_epoch = <u64>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::api::voting::begin_chain_submission_pass(
-                    api_db_path,
-                    api_account_uuid,
-                    api_round_id,
-                    api_network,
-                    api_endpoints,
-                    api_operation_epoch,
-                )?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__api__network_privacy__begin_network_privacy_enable_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1284,64 +743,6 @@ fn wire__crate__api__voting__begin_share_tracking_pass_impl(
                 let api_context_guard = api_context_guard.unwrap();
                 let output_ok = Result::<_, ()>::Ok(
                     crate::api::voting::begin_share_tracking_pass(&*api_context_guard),
-                )?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__api__voting__begin_vote_recovery_pass_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "begin_vote_recovery_pass",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_context = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingHelperDeliveryContext,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_network = <String>::sse_decode(&mut deserializer);
-            let api_endpoints = <Vec<String>>::sse_decode(&mut deserializer);
-            let api_operation_epoch = <u64>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let mut api_context_guard = None;
-                let decode_indices_ =
-                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                            &api_context,
-                            0,
-                            false,
-                        ),
-                    ]);
-                for i in decode_indices_ {
-                    match i {
-                        0 => api_context_guard = Some(api_context.lockable_decode_sync_ref()),
-                        _ => unreachable!(),
-                    }
-                }
-                let api_context_guard = api_context_guard.unwrap();
-                let output_ok = crate::api::voting::begin_vote_recovery_pass(
-                    &*api_context_guard,
-                    api_network,
-                    api_endpoints,
-                    api_operation_epoch,
                 )?;
                 Ok(output_ok)
             })())
@@ -1475,108 +876,6 @@ fn wire__crate__api__voting__build_keystone_delegation_requests_impl(
                             api_ctx,
                             api_stored_hotkey_secret,
                             api_bundle_indices,
-                        )
-                        .await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__voting__build_prove_and_sign_delegation_payload_with_progress_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "build_prove_and_sign_delegation_payload_with_progress", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || { 
-            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
-            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_ctx = <crate::api::voting::ApiVotingRoundContext>::sse_decode(&mut deserializer);
-let api_pir_server_urls = <Vec<String>>::sse_decode(&mut deserializer);
-let api_mnemonic = <String>::sse_decode(&mut deserializer);
-let api_stored_hotkey_secret = <Vec<u8>>::sse_decode(&mut deserializer);
-let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-let api_sink = <StreamSink<crate::api::voting::ApiDelegationProofEvent,flutter_rust_bridge::for_generated::SseCodec>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
-                    transform_result_sse::<_, String>((move || async move {
-                         let output_ok = crate::api::voting::build_prove_and_sign_delegation_payload_with_progress(api_ctx, api_pir_server_urls, api_mnemonic, api_stored_hotkey_secret, api_bundle_index, api_sink).await?;   Ok(output_ok)
-                    })().await)
-                } })
-}
-fn wire__crate__api__voting__build_prove_delegation_payload_with_keystone_signature_with_progress_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "build_prove_delegation_payload_with_keystone_signature_with_progress", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || { 
-            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
-            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_ctx = <crate::api::voting::ApiVotingRoundContext>::sse_decode(&mut deserializer);
-let api_pir_server_urls = <Vec<String>>::sse_decode(&mut deserializer);
-let api_stored_hotkey_secret = <Vec<u8>>::sse_decode(&mut deserializer);
-let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-let api_keystone_sig = <Vec<u8>>::sse_decode(&mut deserializer);
-let api_keystone_sighash = <Vec<u8>>::sse_decode(&mut deserializer);
-let api_sink = <StreamSink<crate::api::voting::ApiDelegationProofEvent,flutter_rust_bridge::for_generated::SseCodec>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
-                    transform_result_sse::<_, String>((move || async move {
-                         let output_ok = crate::api::voting::build_prove_delegation_payload_with_keystone_signature_with_progress(api_ctx, api_pir_server_urls, api_stored_hotkey_secret, api_bundle_index, api_keystone_sig, api_keystone_sighash, api_sink).await?;   Ok(output_ok)
-                    })().await)
-                } })
-}
-fn wire__crate__api__voting__build_vote_commitments_with_progress_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "build_vote_commitments_with_progress",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_db_path = <String>::sse_decode(&mut deserializer);
-            let api_account_uuid = <String>::sse_decode(&mut deserializer);
-            let api_network = <String>::sse_decode(&mut deserializer);
-            let api_round_id = <String>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_stored_hotkey_secret = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_van_witness = <zcash_voting::vote::VanWitness>::sse_decode(&mut deserializer);
-            let api_draft_votes =
-                <Vec<zcash_voting::wire::DraftVote>>::sse_decode(&mut deserializer);
-            let api_max_proof_concurrency = <u32>::sse_decode(&mut deserializer);
-            let api_sink = <StreamSink<
-                crate::api::voting::ApiVoteCommitEvent,
-                flutter_rust_bridge::for_generated::SseCodec,
-            >>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok = crate::api::voting::build_vote_commitments_with_progress(
-                            api_db_path,
-                            api_account_uuid,
-                            api_network,
-                            api_round_id,
-                            api_bundle_index,
-                            api_stored_hotkey_secret,
-                            api_van_witness,
-                            api_draft_votes,
-                            api_max_proof_concurrency,
-                            api_sink,
                         )
                         .await?;
                         Ok(output_ok)
@@ -3602,49 +2901,6 @@ fn wire__crate__api__wallet__generate_mnemonic_impl(
                 let output_ok = Result::<_, ()>::Ok(crate::api::wallet::generate_mnemonic())?;
                 Ok(output_ok)
             })())
-        },
-    )
-}
-fn wire__crate__api__voting__generate_van_witness_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "generate_van_witness",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_db_path = <String>::sse_decode(&mut deserializer);
-            let api_account_uuid = <String>::sse_decode(&mut deserializer);
-            let api_round_id = <String>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_anchor_height = <u32>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::voting::generate_van_witness(
-                        api_db_path,
-                        api_account_uuid,
-                        api_round_id,
-                        api_bundle_index,
-                        api_anchor_height,
-                    )?;
-                    Ok(output_ok)
-                })())
-            }
         },
     )
 }
@@ -5740,52 +4996,6 @@ fn wire__crate__api__keystone__pczt_spend_nullifiers_impl(
         },
     )
 }
-fn wire__crate__api__voting__precompute_delegation_pir_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "precompute_delegation_pir",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_ctx =
-                <crate::api::voting::ApiVotingRoundContext>::sse_decode(&mut deserializer);
-            let api_pir_server_url = <String>::sse_decode(&mut deserializer);
-            let api_stored_hotkey_secret = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let output_ok = crate::api::voting::precompute_delegation_pir(
-                            api_ctx,
-                            api_pir_server_url,
-                            api_stored_hotkey_secret,
-                            api_bundle_index,
-                        )
-                        .await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
 fn wire__crate__api__voting__precompute_delegation_proof_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -5870,140 +5080,6 @@ fn wire__crate__api__voting__precompute_snapshot_bundles_impl(
                     })()
                     .await,
                 )
-            }
-        },
-    )
-}
-fn wire__crate__api__voting__preflight_voting_helpers_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "preflight_voting_helpers",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_context = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingHelperDeliveryContext,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_configured_helper_urls = <Vec<String>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let mut api_context_guard = None;
-                        let decode_indices_ =
-                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
-                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                    &api_context,
-                                    0,
-                                    false,
-                                )],
-                            );
-                        for i in decode_indices_ {
-                            match i {
-                                0 => {
-                                    api_context_guard =
-                                        Some(api_context.lockable_decode_async_ref().await)
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                        let api_context_guard = api_context_guard.unwrap();
-                        let output_ok = crate::api::voting::preflight_voting_helpers(
-                            &*api_context_guard,
-                            api_configured_helper_urls,
-                        )
-                        .await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__voting__prepare_committed_share_delivery_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "prepare_committed_share_delivery",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_context = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingHelperDeliveryContext,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_proposal_id = <u32>::sse_decode(&mut deserializer);
-            let api_preflight =
-                <crate::api::voting::ApiVotingHelperPreflight>::sse_decode(&mut deserializer);
-            let api_now_seconds = <u64>::sse_decode(&mut deserializer);
-            let api_vote_end_time_seconds = <u64>::sse_decode(&mut deserializer);
-            let api_last_moment_buffer_seconds = <Option<u64>>::sse_decode(&mut deserializer);
-            let api_proposal_ids = <Vec<u32>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let mut api_context_guard = None;
-                    let decode_indices_ =
-                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                &api_context,
-                                0,
-                                false,
-                            ),
-                        ]);
-                    for i in decode_indices_ {
-                        match i {
-                            0 => api_context_guard = Some(api_context.lockable_decode_sync_ref()),
-                            _ => unreachable!(),
-                        }
-                    }
-                    let api_context_guard = api_context_guard.unwrap();
-                    let output_ok = crate::api::voting::prepare_committed_share_delivery(
-                        &*api_context_guard,
-                        api_bundle_index,
-                        api_proposal_id,
-                        api_preflight,
-                        api_now_seconds,
-                        api_vote_end_time_seconds,
-                        api_last_moment_buffer_seconds,
-                        api_proposal_ids,
-                    )?;
-                    Ok(output_ok)
-                })())
             }
         },
     )
@@ -6490,49 +5566,6 @@ fn wire__crate__api__sync__reconcile_orchard_migration_outbox_receipt_impl(
                         api_response_message,
                         api_schedule_updates,
                         api_accepted_raw_transaction,
-                    )?;
-                    Ok(output_ok)
-                })())
-            }
-        },
-    )
-}
-fn wire__crate__api__voting__recover_vote_commitment_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "recover_vote_commitment",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_db_path = <String>::sse_decode(&mut deserializer);
-            let api_account_uuid = <String>::sse_decode(&mut deserializer);
-            let api_round_id = <String>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_proposal_id = <u32>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::voting::recover_vote_commitment(
-                        api_db_path,
-                        api_account_uuid,
-                        api_round_id,
-                        api_bundle_index,
-                        api_proposal_id,
                     )?;
                     Ok(output_ok)
                 })())
@@ -7597,53 +6630,6 @@ fn wire__crate__api__sync__store_and_broadcast_signed_pczts_for_proposal_impl(
         },
     )
 }
-fn wire__crate__api__voting__store_keystone_signature_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "store_keystone_signature",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_db_path = <String>::sse_decode(&mut deserializer);
-            let api_account_uuid = <String>::sse_decode(&mut deserializer);
-            let api_round_id = <String>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_sig = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_sighash = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_rk = <Vec<u8>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::voting::store_keystone_signature(
-                        api_db_path,
-                        api_account_uuid,
-                        api_round_id,
-                        api_bundle_index,
-                        api_sig,
-                        api_sighash,
-                        api_rk,
-                    )?;
-                    Ok(output_ok)
-                })())
-            }
-        },
-    )
-}
 fn wire__crate__api__voting__store_keystone_signatures_batch_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -7682,76 +6668,6 @@ fn wire__crate__api__voting__store_keystone_signatures_batch_impl(
                     )?;
                     Ok(output_ok)
                 })())
-            }
-        },
-    )
-}
-fn wire__crate__api__voting__submit_prepared_shares_to_helpers_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "submit_prepared_shares_to_helpers",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_context = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                    VotingHelperDeliveryContext,
-                >,
-            >>::sse_decode(&mut deserializer);
-            let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_proposal_id = <u32>::sse_decode(&mut deserializer);
-            let api_configured_helper_urls = <Vec<String>>::sse_decode(&mut deserializer);
-            let api_now_seconds = <u64>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, String>(
-                    (move || async move {
-                        let mut api_context_guard = None;
-                        let decode_indices_ =
-                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
-                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                    &api_context,
-                                    0,
-                                    false,
-                                )],
-                            );
-                        for i in decode_indices_ {
-                            match i {
-                                0 => {
-                                    api_context_guard =
-                                        Some(api_context.lockable_decode_async_ref().await)
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                        let api_context_guard = api_context_guard.unwrap();
-                        let output_ok = crate::api::voting::submit_prepared_shares_to_helpers(
-                            &*api_context_guard,
-                            api_bundle_index,
-                            api_proposal_id,
-                            api_configured_helper_urls,
-                            api_now_seconds,
-                        )
-                        .await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
             }
         },
     )
@@ -8522,14 +7438,6 @@ const _: fn() = || {
         let _: String = ConfigCondition.message;
     }
     {
-        let DelegationPirPrecomputeResultView =
-            None::<zcash_voting::wire::DelegationPirPrecomputeResultView>.unwrap();
-        let _: u32 = DelegationPirPrecomputeResultView.cached_count;
-        let _: u32 = DelegationPirPrecomputeResultView.fetched_count;
-        let _: u32 = DelegationPirPrecomputeResultView.bundle_count;
-        let _: u32 = DelegationPirPrecomputeResultView.bundle_index;
-    }
-    {
         let DelegationRecoveryView = None::<zcash_voting::wire::DelegationRecoveryView>.unwrap();
         let _: u32 = DelegationRecoveryView.bundle_index;
         let _: zcash_voting::wire::WorkflowPhaseView = DelegationRecoveryView.phase;
@@ -8562,14 +7470,6 @@ const _: fn() = || {
         let _: Vec<String> = DelegationSubmissionWire.gov_nullifiers;
         let _: String = DelegationSubmissionWire.proof;
         let _: String = DelegationSubmissionWire.vote_round_id;
-    }
-    {
-        let DraftVote = None::<zcash_voting::wire::DraftVote>.unwrap();
-        let _: u32 = DraftVote.proposal_id;
-        let _: u32 = DraftVote.choice;
-        let _: u32 = DraftVote.num_options;
-        let _: u64 = DraftVote.vc_tree_position;
-        let _: bool = DraftVote.single_share;
     }
     {
         let ImmediateShareKey = None::<zcash_voting::share_policy::ImmediateShareKey>.unwrap();
@@ -8788,35 +7688,11 @@ const _: fn() = || {
         let _: u32 = SignedDelegationPayloadView.bundle_index;
     }
     {
-        let SignedVoteCommitmentView =
-            None::<zcash_voting::wire::SignedVoteCommitmentView>.unwrap();
-        let _: u32 = SignedVoteCommitmentView.proposal_id;
-        let _: zcash_voting::wire::VoteCommitmentWire = SignedVoteCommitmentView.wire;
-    }
-    {
         let SupportedVersions = None::<zcash_voting::config::SupportedVersions>.unwrap();
         let _: Vec<String> = SupportedVersions.pir;
         let _: String = SupportedVersions.vote_protocol;
         let _: String = SupportedVersions.tally;
         let _: String = SupportedVersions.vote_server;
-    }
-    {
-        let VanWitness = None::<zcash_voting::vote::VanWitness>.unwrap();
-        let _: Vec<Vec<u8>> = VanWitness.auth_path;
-        let _: u32 = VanWitness.position;
-        let _: u32 = VanWitness.anchor_height;
-    }
-    {
-        let VoteCommitmentWire = None::<zcash_voting::wire::VoteCommitmentWire>.unwrap();
-        let _: String = VoteCommitmentWire.van_nullifier;
-        let _: String = VoteCommitmentWire.vote_authority_note_new;
-        let _: String = VoteCommitmentWire.vote_commitment;
-        let _: u32 = VoteCommitmentWire.proposal_id;
-        let _: String = VoteCommitmentWire.proof;
-        let _: String = VoteCommitmentWire.vote_round_id;
-        let _: u32 = VoteCommitmentWire.anchor_height;
-        let _: String = VoteCommitmentWire.r_vpk;
-        let _: String = VoteCommitmentWire.vote_auth_sig;
     }
     {
         let VoteKeyView = None::<zcash_voting::wire::VoteKeyView>.unwrap();
@@ -8869,9 +7745,6 @@ const _: fn() = || {
 // Section: related_funcs
 
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
-    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingChainSubmissionPassHandle>
-);
-flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingHelperDeliveryContext>
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
@@ -8879,9 +7752,6 @@ flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingShareTrackingPassHandle>
-);
-flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
-    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>
 );
 
 // Section: dart2rust
@@ -8891,18 +7761,6 @@ impl SseDecode for flutter_rust_bridge::for_generated::anyhow::Error {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <String>::sse_decode(deserializer);
         return flutter_rust_bridge::for_generated::anyhow::anyhow!("{}", inner);
-    }
-}
-
-impl SseDecode for VotingChainSubmissionPassHandle {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <RustOpaqueMoi<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                VotingChainSubmissionPassHandle,
-            >,
-        >>::sse_decode(deserializer);
-        return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
     }
 }
 
@@ -8933,28 +7791,6 @@ impl SseDecode for VotingShareTrackingPassHandle {
             flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingShareTrackingPassHandle>,
         >>::sse_decode(deserializer);
         return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
-    }
-}
-
-impl SseDecode for VotingVoteRecoveryPassHandle {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <RustOpaqueMoi<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>,
-        >>::sse_decode(deserializer);
-        return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
-    }
-}
-
-impl SseDecode
-    for RustOpaqueMoi<
-        flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingChainSubmissionPassHandle>,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <usize>::sse_decode(deserializer);
-        return decode_rust_opaque_moi(inner);
     }
 }
 
@@ -8993,31 +7829,6 @@ impl SseDecode
 }
 
 impl SseDecode
-    for RustOpaqueMoi<
-        flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <usize>::sse_decode(deserializer);
-        return decode_rust_opaque_moi(inner);
-    }
-}
-
-impl SseDecode
-    for StreamSink<
-        crate::api::voting::ApiDelegationProofEvent,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <String>::sse_decode(deserializer);
-        return StreamSink::deserialize(inner);
-    }
-}
-
-impl SseDecode
     for StreamSink<
         crate::api::sync::ApiMempoolTxEvent,
         flutter_rust_bridge::for_generated::SseCodec,
@@ -9046,32 +7857,6 @@ impl SseDecode
 impl SseDecode
     for StreamSink<
         crate::api::sync::ApiSyncProgressEvent,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <String>::sse_decode(deserializer);
-        return StreamSink::deserialize(inner);
-    }
-}
-
-impl SseDecode
-    for StreamSink<
-        crate::api::voting::ApiVoteCommitEvent,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <String>::sse_decode(deserializer);
-        return StreamSink::deserialize(inner);
-    }
-}
-
-impl SseDecode
-    for StreamSink<
-        crate::api::voting::ApiVoteRecoveryEvent,
         flutter_rust_bridge::for_generated::SseCodec,
     >
 {
@@ -9176,215 +7961,6 @@ impl SseDecode for crate::api::voting::ApiBundleLayout {
             privacy_trim_dropped_bundles: var_privacyTrimDroppedBundles,
             privacy_trim_dropped_notes: var_privacyTrimDroppedNotes,
             privacy_trim_dropped_value_zatoshi: var_privacyTrimDroppedValueZatoshi,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainConfirmationSource {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiChainConfirmationSource::Hash,
-            1 => crate::api::voting::ApiChainConfirmationSource::Tree,
-            2 => crate::api::voting::ApiChainConfirmationSource::LegacyImport,
-            3 => crate::api::voting::ApiChainConfirmationSource::LegacyProjection,
-            _ => unreachable!("Invalid variant for ApiChainConfirmationSource: {}", inner),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainDiagnostic {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_kind = <crate::api::voting::ApiChainDiagnosticKind>::sse_decode(deserializer);
-        let mut var_message = <String>::sse_decode(deserializer);
-        return crate::api::voting::ApiChainDiagnostic {
-            kind: var_kind,
-            message: var_message,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainDiagnosticKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiChainDiagnosticKind::AmbiguousDispatch,
-            1 => crate::api::voting::ApiChainDiagnosticKind::AmbiguousAttemptsExhausted,
-            2 => crate::api::voting::ApiChainDiagnosticKind::NullifierAlreadySpent,
-            3 => crate::api::voting::ApiChainDiagnosticKind::TrackingWindowExpired,
-            4 => crate::api::voting::ApiChainDiagnosticKind::ChainRejected,
-            5 => crate::api::voting::ApiChainDiagnosticKind::ReconciliationPending,
-            6 => crate::api::voting::ApiChainDiagnosticKind::InvalidProtocolResponse,
-            7 => crate::api::voting::ApiChainDiagnosticKind::RecoveryUnavailable,
-            8 => crate::api::voting::ApiChainDiagnosticKind::StorageFailure,
-            _ => unreachable!("Invalid variant for ApiChainDiagnosticKind: {}", inner),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainRecoveryMode {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiChainRecoveryMode::StatusOnly,
-            1 => crate::api::voting::ApiChainRecoveryMode::ExactTree,
-            _ => unreachable!("Invalid variant for ApiChainRecoveryMode: {}", inner),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainSubmissionCallResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_outcome =
-            <Option<crate::api::voting::ApiChainSubmissionOutcome>>::sse_decode(deserializer);
-        let mut var_failure =
-            <Option<crate::api::voting::ApiChainSubmissionFailure>>::sse_decode(deserializer);
-        return crate::api::voting::ApiChainSubmissionCallResult {
-            outcome: var_outcome,
-            failure: var_failure,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainSubmissionFailure {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_kind =
-            <crate::api::voting::ApiChainSubmissionFailureKind>::sse_decode(deserializer);
-        let mut var_strongestState =
-            <Option<crate::api::voting::ApiChainSubmissionFailureState>>::sse_decode(deserializer);
-        let mut var_message = <String>::sse_decode(deserializer);
-        return crate::api::voting::ApiChainSubmissionFailure {
-            kind: var_kind,
-            strongest_state: var_strongestState,
-            message: var_message,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainSubmissionFailureKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiChainSubmissionFailureKind::InvalidInput,
-            1 => crate::api::voting::ApiChainSubmissionFailureKind::InvariantViolation,
-            2 => crate::api::voting::ApiChainSubmissionFailureKind::Storage,
-            3 => crate::api::voting::ApiChainSubmissionFailureKind::Transport,
-            4 => crate::api::voting::ApiChainSubmissionFailureKind::Protocol,
-            _ => unreachable!(
-                "Invalid variant for ApiChainSubmissionFailureKind: {}",
-                inner
-            ),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainSubmissionFailureState {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_state = <crate::api::voting::ApiChainSubmissionState>::sse_decode(deserializer);
-        let mut var_evidence =
-            <crate::api::voting::ApiChainSubmissionStateEvidence>::sse_decode(deserializer);
-        return crate::api::voting::ApiChainSubmissionFailureState {
-            state: var_state,
-            evidence: var_evidence,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainSubmissionOutcome {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_kind =
-            <crate::api::voting::ApiChainSubmissionOutcomeKind>::sse_decode(deserializer);
-        let mut var_confirmationSource =
-            <Option<crate::api::voting::ApiChainConfirmationSource>>::sse_decode(deserializer);
-        let mut var_transactionHash = <Option<String>>::sse_decode(deserializer);
-        let mut var_candidateTransactionHash = <Option<String>>::sse_decode(deserializer);
-        let mut var_finalVanPosition = <Option<u64>>::sse_decode(deserializer);
-        let mut var_voteCommitmentPositions = <Vec<u64>>::sse_decode(deserializer);
-        let mut var_diagnostic =
-            <Option<crate::api::voting::ApiChainDiagnostic>>::sse_decode(deserializer);
-        return crate::api::voting::ApiChainSubmissionOutcome {
-            kind: var_kind,
-            confirmation_source: var_confirmationSource,
-            transaction_hash: var_transactionHash,
-            candidate_transaction_hash: var_candidateTransactionHash,
-            final_van_position: var_finalVanPosition,
-            vote_commitment_positions: var_voteCommitmentPositions,
-            diagnostic: var_diagnostic,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainSubmissionOutcomeKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiChainSubmissionOutcomeKind::Confirmed,
-            1 => crate::api::voting::ApiChainSubmissionOutcomeKind::Tracking,
-            2 => crate::api::voting::ApiChainSubmissionOutcomeKind::Recovering,
-            3 => crate::api::voting::ApiChainSubmissionOutcomeKind::SubmittedWithoutHash,
-            4 => crate::api::voting::ApiChainSubmissionOutcomeKind::Rejected,
-            5 => crate::api::voting::ApiChainSubmissionOutcomeKind::Cancelled,
-            _ => unreachable!(
-                "Invalid variant for ApiChainSubmissionOutcomeKind: {}",
-                inner
-            ),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainSubmissionState {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiChainSubmissionState::Submitting,
-            1 => crate::api::voting::ApiChainSubmissionState::Tracking,
-            2 => crate::api::voting::ApiChainSubmissionState::Recovering,
-            3 => crate::api::voting::ApiChainSubmissionState::SubmittedWithoutHash,
-            4 => crate::api::voting::ApiChainSubmissionState::Confirmed,
-            5 => crate::api::voting::ApiChainSubmissionState::LegacyConfirmed,
-            6 => crate::api::voting::ApiChainSubmissionState::Rejected,
-            _ => unreachable!("Invalid variant for ApiChainSubmissionState: {}", inner),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiChainSubmissionStateEvidence {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiChainSubmissionStateEvidence::Durable,
-            1 => crate::api::voting::ApiChainSubmissionStateEvidence::KnownPossiblyDispatched,
-            _ => unreachable!(
-                "Invalid variant for ApiChainSubmissionStateEvidence: {}",
-                inner
-            ),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiDelegationProofEvent {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_phase = <String>::sse_decode(deserializer);
-        let mut var_proofProgress = <Option<f64>>::sse_decode(deserializer);
-        let mut var_signedDelegationPayload =
-            <Option<zcash_voting::wire::SignedDelegationPayloadView>>::sse_decode(deserializer);
-        return crate::api::voting::ApiDelegationProofEvent {
-            phase: var_phase,
-            proof_progress: var_proofProgress,
-            signed_delegation_payload: var_signedDelegationPayload,
         };
     }
 }
@@ -9636,36 +8212,6 @@ impl SseDecode for crate::api::voting_session::ApiRoundStepEventKind {
     }
 }
 
-impl SseDecode for crate::api::voting::ApiShareBatchDeliveryReport {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_deliveries =
-            <Vec<crate::api::voting::ApiShareDeliveryOutcome>>::sse_decode(deserializer);
-        let mut var_pendingShareIndices = <Vec<u32>>::sse_decode(deserializer);
-        let mut var_cancelled = <bool>::sse_decode(deserializer);
-        let mut var_legacyBestEffort = <bool>::sse_decode(deserializer);
-        return crate::api::voting::ApiShareBatchDeliveryReport {
-            deliveries: var_deliveries,
-            pending_share_indices: var_pendingShareIndices,
-            cancelled: var_cancelled,
-            legacy_best_effort: var_legacyBestEffort,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiShareDeliveryOutcome {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_shareIndex = <u32>::sse_decode(deserializer);
-        let mut var_submission =
-            <crate::api::voting::ApiShareSubmissionReport>::sse_decode(deserializer);
-        return crate::api::voting::ApiShareDeliveryOutcome {
-            share_index: var_shareIndex,
-            submission: var_submission,
-        };
-    }
-}
-
 impl SseDecode for crate::api::voting::ApiShareKey {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -9676,20 +8222,6 @@ impl SseDecode for crate::api::voting::ApiShareKey {
             bundle_index: var_bundleIndex,
             proposal_id: var_proposalId,
             share_index: var_shareIndex,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiShareSubmissionReport {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_acceptedUrls = <Vec<String>>::sse_decode(deserializer);
-        let mut var_ambiguousUrls = <Vec<String>>::sse_decode(deserializer);
-        let mut var_targetCount = <u32>::sse_decode(deserializer);
-        return crate::api::voting::ApiShareSubmissionReport {
-            accepted_urls: var_acceptedUrls,
-            ambiguous_urls: var_ambiguousUrls,
-            target_count: var_targetCount,
         };
     }
 }
@@ -9713,21 +8245,6 @@ impl SseDecode for crate::api::voting::ApiShareTrackingReport {
             unrecoverable: var_unrecoverable,
             cancelled: var_cancelled,
             next_delay_seconds: var_nextDelaySeconds,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiSignedVoteCommitments {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_bundleIndex = <u32>::sse_decode(deserializer);
-        let mut var_commitments =
-            <Vec<zcash_voting::wire::SignedVoteCommitmentView>>::sse_decode(deserializer);
-        let mut var_batchDigest = <Option<Vec<u8>>>::sse_decode(deserializer);
-        return crate::api::voting::ApiSignedVoteCommitments {
-            bundle_index: var_bundleIndex,
-            commitments: var_commitments,
-            batch_digest: var_batchDigest,
         };
     }
 }
@@ -9797,184 +8314,6 @@ impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
     }
 }
 
-impl SseDecode for crate::api::voting::ApiVoteCommitEvent {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_phase = <String>::sse_decode(deserializer);
-        let mut var_proposalId = <Option<u32>>::sse_decode(deserializer);
-        let mut var_bundleIndex = <Option<u32>>::sse_decode(deserializer);
-        let mut var_proofProgress = <Option<f64>>::sse_decode(deserializer);
-        let mut var_commitments =
-            <Option<crate::api::voting::ApiSignedVoteCommitments>>::sse_decode(deserializer);
-        return crate::api::voting::ApiVoteCommitEvent {
-            phase: var_phase,
-            proposal_id: var_proposalId,
-            bundle_index: var_bundleIndex,
-            proof_progress: var_proofProgress,
-            commitments: var_commitments,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVoteRecoveryAdvance {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_attemptedWork =
-            <Option<zcash_voting::wire::VoteRecoveryWorkView>>::sse_decode(deserializer);
-        let mut var_disposition =
-            <crate::api::voting::ApiVoteRecoveryDisposition>::sse_decode(deserializer);
-        let mut var_chainOutcome =
-            <Option<crate::api::voting::ApiChainSubmissionOutcome>>::sse_decode(deserializer);
-        let mut var_shareDeliveries =
-            <Vec<crate::api::voting::ApiVoteShareDeliveryReport>>::sse_decode(deserializer);
-        let mut var_roundPlan = <zcash_voting::wire::RoundPlanView>::sse_decode(deserializer);
-        return crate::api::voting::ApiVoteRecoveryAdvance {
-            attempted_work: var_attemptedWork,
-            disposition: var_disposition,
-            chain_outcome: var_chainOutcome,
-            share_deliveries: var_shareDeliveries,
-            round_plan: var_roundPlan,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVoteRecoveryCallResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_advance =
-            <Option<crate::api::voting::ApiVoteRecoveryAdvance>>::sse_decode(deserializer);
-        let mut var_failure =
-            <Option<crate::api::voting::ApiVoteRecoveryFailure>>::sse_decode(deserializer);
-        return crate::api::voting::ApiVoteRecoveryCallResult {
-            advance: var_advance,
-            failure: var_failure,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVoteRecoveryDisposition {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiVoteRecoveryDisposition::NoWork,
-            1 => crate::api::voting::ApiVoteRecoveryDisposition::Advanced,
-            2 => crate::api::voting::ApiVoteRecoveryDisposition::Pending,
-            3 => crate::api::voting::ApiVoteRecoveryDisposition::Cancelled,
-            4 => crate::api::voting::ApiVoteRecoveryDisposition::Unsupported,
-            _ => unreachable!("Invalid variant for ApiVoteRecoveryDisposition: {}", inner),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVoteRecoveryEvent {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_kind = <crate::api::voting::ApiVoteRecoveryEventKind>::sse_decode(deserializer);
-        let mut var_work =
-            <Option<zcash_voting::wire::VoteRecoveryWorkView>>::sse_decode(deserializer);
-        let mut var_voteKeys =
-            <Vec<crate::api::voting::ApiVoteRecoveryKey>>::sse_decode(deserializer);
-        let mut var_chainOutcome =
-            <Option<crate::api::voting::ApiChainSubmissionOutcome>>::sse_decode(deserializer);
-        let mut var_shareDelivery =
-            <Option<crate::api::voting::ApiVoteShareDeliveryReport>>::sse_decode(deserializer);
-        let mut var_result =
-            <Option<crate::api::voting::ApiVoteRecoveryCallResult>>::sse_decode(deserializer);
-        return crate::api::voting::ApiVoteRecoveryEvent {
-            kind: var_kind,
-            work: var_work,
-            vote_keys: var_voteKeys,
-            chain_outcome: var_chainOutcome,
-            share_delivery: var_shareDelivery,
-            result: var_result,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVoteRecoveryEventKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiVoteRecoveryEventKind::Selected,
-            1 => crate::api::voting::ApiVoteRecoveryEventKind::HelperPlansPrepared,
-            2 => crate::api::voting::ApiVoteRecoveryEventKind::ChainOutcome,
-            3 => crate::api::voting::ApiVoteRecoveryEventKind::ShareOutcome,
-            4 => crate::api::voting::ApiVoteRecoveryEventKind::Result,
-            _ => unreachable!("Invalid variant for ApiVoteRecoveryEventKind: {}", inner),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVoteRecoveryFailure {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_kind =
-            <crate::api::voting::ApiVoteRecoveryFailureKind>::sse_decode(deserializer);
-        let mut var_attemptedWork =
-            <Option<zcash_voting::wire::VoteRecoveryWorkView>>::sse_decode(deserializer);
-        let mut var_strongestChainState =
-            <Option<crate::api::voting::ApiChainSubmissionFailureState>>::sse_decode(deserializer);
-        let mut var_chainOutcome =
-            <Option<crate::api::voting::ApiChainSubmissionOutcome>>::sse_decode(deserializer);
-        let mut var_message = <String>::sse_decode(deserializer);
-        let mut var_roundPlan =
-            <Option<zcash_voting::wire::RoundPlanView>>::sse_decode(deserializer);
-        return crate::api::voting::ApiVoteRecoveryFailure {
-            kind: var_kind,
-            attempted_work: var_attemptedWork,
-            strongest_chain_state: var_strongestChainState,
-            chain_outcome: var_chainOutcome,
-            message: var_message,
-            round_plan: var_roundPlan,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVoteRecoveryFailureKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::voting::ApiVoteRecoveryFailureKind::InvalidInput,
-            1 => crate::api::voting::ApiVoteRecoveryFailureKind::Busy,
-            2 => crate::api::voting::ApiVoteRecoveryFailureKind::Storage,
-            3 => crate::api::voting::ApiVoteRecoveryFailureKind::InvariantViolation,
-            4 => crate::api::voting::ApiVoteRecoveryFailureKind::Transport,
-            5 => crate::api::voting::ApiVoteRecoveryFailureKind::Protocol,
-            6 => crate::api::voting::ApiVoteRecoveryFailureKind::ChainTerminal,
-            7 => crate::api::voting::ApiVoteRecoveryFailureKind::HelperDeliveryIncomplete,
-            _ => unreachable!("Invalid variant for ApiVoteRecoveryFailureKind: {}", inner),
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVoteRecoveryKey {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_bundleIndex = <u32>::sse_decode(deserializer);
-        let mut var_proposalId = <u32>::sse_decode(deserializer);
-        return crate::api::voting::ApiVoteRecoveryKey {
-            bundle_index: var_bundleIndex,
-            proposal_id: var_proposalId,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVoteShareDeliveryReport {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_vote = <crate::api::voting::ApiVoteRecoveryKey>::sse_decode(deserializer);
-        let mut var_delivery =
-            <crate::api::voting::ApiShareBatchDeliveryReport>::sse_decode(deserializer);
-        return crate::api::voting::ApiVoteShareDeliveryReport {
-            vote: var_vote,
-            delivery: var_delivery,
-        };
-    }
-}
-
 impl SseDecode for crate::api::voting::ApiVotingEligibility {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -9987,18 +8326,6 @@ impl SseDecode for crate::api::voting::ApiVotingEligibility {
             distinct_note_count: var_distinctNoteCount,
             eligible_weight_zatoshi: var_eligibleWeightZatoshi,
             privacy_trim_dropped_value_zatoshi: var_privacyTrimDroppedValueZatoshi,
-        };
-    }
-}
-
-impl SseDecode for crate::api::voting::ApiVotingHelperPreflight {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_configuredHelperUrls = <Vec<String>>::sse_decode(deserializer);
-        let mut var_readyHelperUrls = <Vec<String>>::sse_decode(deserializer);
-        return crate::api::voting::ApiVotingHelperPreflight {
-            configured_helper_urls: var_configuredHelperUrls,
-            ready_helper_urls: var_readyHelperUrls,
         };
     }
 }
@@ -10310,22 +8637,6 @@ impl SseDecode for zcash_voting::config::ConfigSwitchKind {
     }
 }
 
-impl SseDecode for zcash_voting::wire::DelegationPirPrecomputeResultView {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_cachedCount = <u32>::sse_decode(deserializer);
-        let mut var_fetchedCount = <u32>::sse_decode(deserializer);
-        let mut var_bundleCount = <u32>::sse_decode(deserializer);
-        let mut var_bundleIndex = <u32>::sse_decode(deserializer);
-        return zcash_voting::wire::DelegationPirPrecomputeResultView {
-            cached_count: var_cachedCount,
-            fetched_count: var_fetchedCount,
-            bundle_count: var_bundleCount,
-            bundle_index: var_bundleIndex,
-        };
-    }
-}
-
 impl SseDecode for zcash_voting::wire::DelegationProgressKind {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10430,24 +8741,6 @@ impl SseDecode for zcash_voting::wire::DelegationSubmissionWire {
             gov_nullifiers: var_govNullifiers,
             proof: var_proof,
             vote_round_id: var_voteRoundId,
-        };
-    }
-}
-
-impl SseDecode for zcash_voting::wire::DraftVote {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_proposalId = <u32>::sse_decode(deserializer);
-        let mut var_choice = <u32>::sse_decode(deserializer);
-        let mut var_numOptions = <u32>::sse_decode(deserializer);
-        let mut var_vcTreePosition = <u64>::sse_decode(deserializer);
-        let mut var_singleShare = <bool>::sse_decode(deserializer);
-        return zcash_voting::wire::DraftVote {
-            proposal_id: var_proposalId,
-            choice: var_choice,
-            num_options: var_numOptions,
-            vc_tree_position: var_vcTreePosition,
-            single_share: var_singleShare,
         };
     }
 }
@@ -10864,20 +9157,6 @@ impl SseDecode for Vec<crate::api::voting::ApiResubmittedShare> {
     }
 }
 
-impl SseDecode for Vec<crate::api::voting::ApiShareDeliveryOutcome> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = vec![];
-        for idx_ in 0..len_ {
-            ans_.push(<crate::api::voting::ApiShareDeliveryOutcome>::sse_decode(
-                deserializer,
-            ));
-        }
-        return ans_;
-    }
-}
-
 impl SseDecode for Vec<crate::api::voting::ApiShareKey> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10897,32 +9176,6 @@ impl SseDecode for Vec<crate::api::voting::ApiSnapshotBundlePirResult> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<crate::api::voting::ApiSnapshotBundlePirResult>::sse_decode(deserializer));
-        }
-        return ans_;
-    }
-}
-
-impl SseDecode for Vec<crate::api::voting::ApiVoteRecoveryKey> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = vec![];
-        for idx_ in 0..len_ {
-            ans_.push(<crate::api::voting::ApiVoteRecoveryKey>::sse_decode(
-                deserializer,
-            ));
-        }
-        return ans_;
-    }
-}
-
-impl SseDecode for Vec<crate::api::voting::ApiVoteShareDeliveryReport> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = vec![];
-        for idx_ in 0..len_ {
-            ans_.push(<crate::api::voting::ApiVoteShareDeliveryReport>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -11017,18 +9270,6 @@ impl SseDecode for Vec<zcash_voting::wire::DelegationStatusView> {
             ans_.push(<zcash_voting::wire::DelegationStatusView>::sse_decode(
                 deserializer,
             ));
-        }
-        return ans_;
-    }
-}
-
-impl SseDecode for Vec<zcash_voting::wire::DraftVote> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = vec![];
-        for idx_ in 0..len_ {
-            ans_.push(<zcash_voting::wire::DraftVote>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -11395,20 +9636,6 @@ impl SseDecode for Vec<zcash_voting::wire::ShareWorkflowRecoveryView> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<zcash_voting::wire::ShareWorkflowRecoveryView>::sse_decode(
-                deserializer,
-            ));
-        }
-        return ans_;
-    }
-}
-
-impl SseDecode for Vec<zcash_voting::wire::SignedVoteCommitmentView> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = vec![];
-        for idx_ in 0..len_ {
-            ans_.push(<zcash_voting::wire::SignedVoteCommitmentView>::sse_decode(
                 deserializer,
             ));
         }
@@ -11956,142 +10183,12 @@ impl SseDecode for Option<String> {
     }
 }
 
-impl SseDecode for Option<crate::api::voting::ApiChainConfirmationSource> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(
-                <crate::api::voting::ApiChainConfirmationSource>::sse_decode(deserializer),
-            );
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::voting::ApiChainDiagnostic> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<crate::api::voting::ApiChainDiagnostic>::sse_decode(
-                deserializer,
-            ));
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::voting::ApiChainSubmissionFailure> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<crate::api::voting::ApiChainSubmissionFailure>::sse_decode(
-                deserializer,
-            ));
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::voting::ApiChainSubmissionFailureState> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(
-                <crate::api::voting::ApiChainSubmissionFailureState>::sse_decode(deserializer),
-            );
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::voting::ApiChainSubmissionOutcome> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<crate::api::voting::ApiChainSubmissionOutcome>::sse_decode(
-                deserializer,
-            ));
-        } else {
-            return None;
-        }
-    }
-}
-
 impl SseDecode for Option<crate::api::voting_session::ApiDelegationSignerInput> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(
                 <crate::api::voting_session::ApiDelegationSignerInput>::sse_decode(deserializer),
-            );
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::voting::ApiSignedVoteCommitments> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<crate::api::voting::ApiSignedVoteCommitments>::sse_decode(
-                deserializer,
-            ));
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::voting::ApiVoteRecoveryAdvance> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<crate::api::voting::ApiVoteRecoveryAdvance>::sse_decode(
-                deserializer,
-            ));
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::voting::ApiVoteRecoveryCallResult> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<crate::api::voting::ApiVoteRecoveryCallResult>::sse_decode(
-                deserializer,
-            ));
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::voting::ApiVoteRecoveryFailure> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<crate::api::voting::ApiVoteRecoveryFailure>::sse_decode(
-                deserializer,
-            ));
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::voting::ApiVoteShareDeliveryReport> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(
-                <crate::api::voting::ApiVoteShareDeliveryReport>::sse_decode(deserializer),
             );
         } else {
             return None;
@@ -12415,19 +10512,6 @@ impl SseDecode for Option<zcash_voting::wire::VoteCommitStageKind> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<zcash_voting::wire::VoteCommitStageKind>::sse_decode(
-                deserializer,
-            ));
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<zcash_voting::wire::VoteRecoveryWorkView> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<zcash_voting::wire::VoteRecoveryWorkView>::sse_decode(
                 deserializer,
             ));
         } else {
@@ -13075,18 +11159,6 @@ impl SseDecode for zcash_voting::wire::SignedDelegationPayloadView {
     }
 }
 
-impl SseDecode for zcash_voting::wire::SignedVoteCommitmentView {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_proposalId = <u32>::sse_decode(deserializer);
-        let mut var_wire = <zcash_voting::wire::VoteCommitmentWire>::sse_decode(deserializer);
-        return zcash_voting::wire::SignedVoteCommitmentView {
-            proposal_id: var_proposalId,
-            wire: var_wire,
-        };
-    }
-}
-
 impl SseDecode for crate::api::wallet::SoftwareWalletDiscoveredAccount {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -13372,20 +11444,6 @@ impl SseDecode for usize {
     }
 }
 
-impl SseDecode for zcash_voting::vote::VanWitness {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_authPath = <Vec<Vec<u8>>>::sse_decode(deserializer);
-        let mut var_position = <u32>::sse_decode(deserializer);
-        let mut var_anchorHeight = <u32>::sse_decode(deserializer);
-        return zcash_voting::vote::VanWitness {
-            auth_path: var_authPath,
-            position: var_position,
-            anchor_height: var_anchorHeight,
-        };
-    }
-}
-
 impl SseDecode for zcash_voting::wire::VoteCommitStageKind {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -13396,32 +11454,6 @@ impl SseDecode for zcash_voting::wire::VoteCommitStageKind {
             2 => zcash_voting::wire::VoteCommitStageKind::SharePayloadsBuilding,
             3 => zcash_voting::wire::VoteCommitStageKind::Signing,
             _ => unreachable!("Invalid variant for VoteCommitStageKind: {}", inner),
-        };
-    }
-}
-
-impl SseDecode for zcash_voting::wire::VoteCommitmentWire {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_vanNullifier = <String>::sse_decode(deserializer);
-        let mut var_voteAuthorityNoteNew = <String>::sse_decode(deserializer);
-        let mut var_voteCommitment = <String>::sse_decode(deserializer);
-        let mut var_proposalId = <u32>::sse_decode(deserializer);
-        let mut var_proof = <String>::sse_decode(deserializer);
-        let mut var_voteRoundId = <String>::sse_decode(deserializer);
-        let mut var_anchorHeight = <u32>::sse_decode(deserializer);
-        let mut var_rVpk = <String>::sse_decode(deserializer);
-        let mut var_voteAuthSig = <String>::sse_decode(deserializer);
-        return zcash_voting::wire::VoteCommitmentWire {
-            van_nullifier: var_vanNullifier,
-            vote_authority_note_new: var_voteAuthorityNoteNew,
-            vote_commitment: var_voteCommitment,
-            proposal_id: var_proposalId,
-            proof: var_proof,
-            vote_round_id: var_voteRoundId,
-            anchor_height: var_anchorHeight,
-            r_vpk: var_rVpk,
-            vote_auth_sig: var_voteAuthSig,
         };
     }
 }
@@ -13738,167 +11770,153 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-                        3 => wire__crate__api__voting_session__VotingRoundSession_advance_next_impl(port, ptr, rust_vec_len, data_len),
-4 => wire__crate__api__voting_session__VotingRoundSession_advance_step_impl(port, ptr, rust_vec_len, data_len),
-7 => wire__crate__api__voting_session__VotingRoundSession_keystone_signing_requests_impl(port, ptr, rust_vec_len, data_len),
-8 => wire__crate__api__voting_session__VotingRoundSession_plan_impl(port, ptr, rust_vec_len, data_len),
-9 => wire__crate__api__voting_session__VotingRoundSession_set_ballot_intents_impl(port, ptr, rust_vec_len, data_len),
-14 => wire__crate__api__sync__abandon_orchard_migration_impl(port, ptr, rust_vec_len, data_len),
-15 => wire__crate__api__wallet__add_account_impl(port, ptr, rust_vec_len, data_len),
-16 => wire__crate__api__sync__add_proofs_to_pczt_impl(port, ptr, rust_vec_len, data_len),
-17 => wire__crate__api__voting__advance_chain_delegation_impl(port, ptr, rust_vec_len, data_len),
-18 => wire__crate__api__voting__advance_chain_vote_impl(port, ptr, rust_vec_len, data_len),
-19 => wire__crate__api__voting__advance_chain_vote_batch_impl(port, ptr, rust_vec_len, data_len),
-20 => wire__crate__api__voting__advance_vote_recovery_work_impl(port, ptr, rust_vec_len, data_len),
-25 => wire__crate__api__sync__broadcast_due_orchard_migration_transactions_impl(port, ptr, rust_vec_len, data_len),
-26 => wire__crate__api__sync__broadcast_one_due_orchard_migration_transaction_impl(port, ptr, rust_vec_len, data_len),
-27 => wire__crate__api__voting__build_keystone_delegation_requests_impl(port, ptr, rust_vec_len, data_len),
-28 => wire__crate__api__voting__build_prove_and_sign_delegation_payload_with_progress_impl(port, ptr, rust_vec_len, data_len),
-29 => wire__crate__api__voting__build_prove_delegation_payload_with_keystone_signature_with_progress_impl(port, ptr, rust_vec_len, data_len),
-30 => wire__crate__api__voting__build_vote_commitments_with_progress_impl(port, ptr, rust_vec_len, data_len),
-32 => wire__crate__api__voting__check_voting_eligibility_impl(port, ptr, rust_vec_len, data_len),
-33 => wire__crate__api__sync__complete_orchard_migration_batch_pczt_impl(port, ptr, rust_vec_len, data_len),
-34 => wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(port, ptr, rust_vec_len, data_len),
-35 => wire__crate__api__sync__complete_orchard_migration_immediate_pczt_impl(port, ptr, rust_vec_len, data_len),
-36 => wire__crate__api__sync__complete_orchard_migration_single_qr_pczt_impl(port, ptr, rust_vec_len, data_len),
-37 => wire__crate__api__simple__configure_fast_testnet_migration_impl(port, ptr, rust_vec_len, data_len),
-38 => wire__crate__api__network_privacy__configure_network_privacy_impl(port, ptr, rust_vec_len, data_len),
-39 => wire__crate__api__simple__configure_regtest_ironwood_activation_height_impl(port, ptr, rust_vec_len, data_len),
-40 => wire__crate__api__voting__confirm_share_with_helpers_impl(port, ptr, rust_vec_len, data_len),
-41 => wire__crate__api__sync__create_or_resume_private_migration_draft_impl(port, ptr, rust_vec_len, data_len),
-42 => wire__crate__api__sync__create_pczt_from_proposal_impl(port, ptr, rust_vec_len, data_len),
-43 => wire__crate__api__sync__create_shield_transparent_pczt_impl(port, ptr, rust_vec_len, data_len),
-44 => wire__crate__api__sync__create_tex_pczts_from_proposal_impl(port, ptr, rust_vec_len, data_len),
-46 => wire__crate__api__wallet__create_wallet_impl(port, ptr, rust_vec_len, data_len),
-47 => wire__crate__api__keystone__decode_accounts_from_cbor_impl(port, ptr, rust_vec_len, data_len),
-48 => wire__crate__api__keystone__decode_accounts_ur_impl(port, ptr, rust_vec_len, data_len),
-49 => wire__crate__api__keystone__decode_pczt_from_cbor_impl(port, ptr, rust_vec_len, data_len),
-50 => wire__crate__api__keystone__decode_ur_part_impl(port, ptr, rust_vec_len, data_len),
-51 => wire__crate__api__keystone__decode_ur_to_pczt_impl(port, ptr, rust_vec_len, data_len),
-52 => wire__crate__api__keystone__decode_zcash_batch_sign_response_impl(port, ptr, rust_vec_len, data_len),
-53 => wire__crate__api__keystone__decode_zcash_sign_result_cbor_impl(port, ptr, rust_vec_len, data_len),
-54 => wire__crate__api__keystone__decode_zcash_sign_result_cbor_as_sig_result_impl(port, ptr, rust_vec_len, data_len),
-55 => wire__crate__api__sync__decrypt_and_store_transaction_impl(port, ptr, rust_vec_len, data_len),
-56 => wire__crate__api__secret__decrypt_secret_payload_impl(port, ptr, rust_vec_len, data_len),
-57 => wire__crate__api__wallet__delete_account_impl(port, ptr, rust_vec_len, data_len),
-58 => wire__crate__api__voting__delete_skipped_bundles_impl(port, ptr, rust_vec_len, data_len),
-59 => wire__crate__api__voting__delete_voting_account_state_impl(port, ptr, rust_vec_len, data_len),
-60 => wire__crate__api__secret__derive_secret_password_verifier_impl(port, ptr, rust_vec_len, data_len),
-61 => wire__crate__api__sync__discard_all_keystone_migration_requests_impl(port, ptr, rust_vec_len, data_len),
-62 => wire__crate__api__sync__discard_keystone_migration_request_impl(port, ptr, rust_vec_len, data_len),
-63 => wire__crate__api__sync__discard_proposal_impl(port, ptr, rust_vec_len, data_len),
-64 => wire__crate__api__wallet__discover_software_wallet_import_accounts_impl(port, ptr, rust_vec_len, data_len),
-65 => wire__crate__api__keystone__encode_keystone_action_sigs_impl(port, ptr, rust_vec_len, data_len),
-66 => wire__crate__api__keystone__encode_pczt_to_ur_impl(port, ptr, rust_vec_len, data_len),
-67 => wire__crate__api__keystone__encode_pczt_ur_parts_impl(port, ptr, rust_vec_len, data_len),
-68 => wire__crate__api__keystone__encode_zcash_sign_batch_ur_parts_impl(port, ptr, rust_vec_len, data_len),
-69 => wire__crate__api__secret__encrypt_secret_payload_impl(port, ptr, rust_vec_len, data_len),
-70 => wire__crate__api__wallet__ensure_wallet_db_migrated_impl(port, ptr, rust_vec_len, data_len),
-71 => wire__crate__api__sync__estimate_fee_impl(port, ptr, rust_vec_len, data_len),
-72 => wire__crate__api__network_privacy__estimate_import_birthday_height_impl(port, ptr, rust_vec_len, data_len),
-73 => wire__crate__api__sync__estimate_send_max_impl(port, ptr, rust_vec_len, data_len),
-74 => wire__crate__api__wallet__evict_wallet_summary_cache_impl(port, ptr, rust_vec_len, data_len),
-75 => wire__crate__api__sync__execute_proposal_impl(port, ptr, rust_vec_len, data_len),
-76 => wire__crate__api__sync__execute_proposal_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-77 => wire__crate__api__sync__export_orchard_migration_outbox_impl(port, ptr, rust_vec_len, data_len),
-78 => wire__crate__api__sync__extract_and_broadcast_pczt_impl(port, ptr, rust_vec_len, data_len),
-81 => wire__crate__api__voting__generate_van_witness_impl(port, ptr, rust_vec_len, data_len),
-82 => wire__crate__api__voting__generate_voting_hotkey_impl(port, ptr, rust_vec_len, data_len),
-83 => wire__crate__api__wallet__get_account_export_metadata_impl(port, ptr, rust_vec_len, data_len),
-84 => wire__crate__api__wallet__get_account_ufvk_impl(port, ptr, rust_vec_len, data_len),
-85 => wire__crate__api__sync__get_balance_impl(port, ptr, rust_vec_len, data_len),
-86 => wire__crate__api__sync__get_block_time_impl(port, ptr, rust_vec_len, data_len),
-88 => wire__crate__api__wallet__get_chain_upgrade_status_impl(port, ptr, rust_vec_len, data_len),
-89 => wire__crate__api__wallet__get_chain_upgrade_status_at_height_impl(port, ptr, rust_vec_len, data_len),
-90 => wire__crate__api__sync__get_export_birthday_height_impl(port, ptr, rust_vec_len, data_len),
-91 => wire__crate__api__network_privacy__get_import_birthday_metadata_impl(port, ptr, rust_vec_len, data_len),
-92 => wire__crate__api__voting__get_keystone_signatures_impl(port, ptr, rust_vec_len, data_len),
-93 => wire__crate__api__wallet__get_latest_block_height_impl(port, ptr, rust_vec_len, data_len),
-94 => wire__crate__api__wallet__get_lightwalletd_chain_name_impl(port, ptr, rust_vec_len, data_len),
-96 => wire__crate__api__sync__get_next_available_address_impl(port, ptr, rust_vec_len, data_len),
-97 => wire__crate__api__sync__get_next_subtree_indices_impl(port, ptr, rust_vec_len, data_len),
-98 => wire__crate__api__sync__get_orchard_migration_immediate_plan_impl(port, ptr, rust_vec_len, data_len),
-99 => wire__crate__api__sync__get_orchard_migration_private_plan_impl(port, ptr, rust_vec_len, data_len),
-100 => wire__crate__api__sync__get_orchard_migration_status_impl(port, ptr, rust_vec_len, data_len),
-101 => wire__crate__api__sync__get_orchard_migration_statuses_impl(port, ptr, rust_vec_len, data_len),
-102 => wire__crate__api__sync__get_previous_transaction_count_for_address_impl(port, ptr, rust_vec_len, data_len),
-103 => wire__crate__api__wallet__get_recent_transparent_receive_addresses_impl(port, ptr, rust_vec_len, data_len),
-104 => wire__crate__api__voting__get_round_plan_impl(port, ptr, rust_vec_len, data_len),
-105 => wire__crate__api__voting__get_round_recovery_state_impl(port, ptr, rust_vec_len, data_len),
-106 => wire__crate__api__sync__get_shield_transparent_status_impl(port, ptr, rust_vec_len, data_len),
-108 => wire__crate__api__sync__get_sync_status_impl(port, ptr, rust_vec_len, data_len),
-109 => wire__crate__api__sync__get_transaction_data_requests_impl(port, ptr, rust_vec_len, data_len),
-110 => wire__crate__api__sync__get_transaction_detail_impl(port, ptr, rust_vec_len, data_len),
-111 => wire__crate__api__sync__get_transaction_history_impl(port, ptr, rust_vec_len, data_len),
-112 => wire__crate__api__wallet__get_transparent_receive_address_impl(port, ptr, rust_vec_len, data_len),
-113 => wire__crate__api__wallet__get_unified_address_impl(port, ptr, rust_vec_len, data_len),
-115 => wire__crate__api__wallet__import_hardware_account_impl(port, ptr, rust_vec_len, data_len),
-116 => wire__crate__api__wallet__import_software_account_at_index_impl(port, ptr, rust_vec_len, data_len),
-117 => wire__crate__api__wallet__import_software_wallet_with_account_discovery_impl(port, ptr, rust_vec_len, data_len),
-118 => wire__crate__api__wallet__import_wallet_impl(port, ptr, rust_vec_len, data_len),
-119 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-122 => wire__crate__api__wallet__is_software_wallet_link_account_imported_impl(port, ptr, rust_vec_len, data_len),
-126 => wire__crate__api__sync__keystone_migration_proof_status_impl(port, ptr, rust_vec_len, data_len),
-128 => wire__crate__api__wallet__list_accounts_impl(port, ptr, rust_vec_len, data_len),
-129 => wire__crate__api__voting__list_pending_share_rounds_impl(port, ptr, rust_vec_len, data_len),
-130 => wire__crate__api__sync__migrate_orchard_to_ironwood_impl(port, ptr, rust_vec_len, data_len),
-131 => wire__crate__api__sync__migrate_orchard_to_ironwood_immediately_impl(port, ptr, rust_vec_len, data_len),
-132 => wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-134 => wire__crate__api__voting__next_share_tracking_delay_seconds_impl(port, ptr, rust_vec_len, data_len),
-136 => wire__crate__api__keystone__pczt_spend_nullifiers_impl(port, ptr, rust_vec_len, data_len),
-137 => wire__crate__api__voting__precompute_delegation_pir_impl(port, ptr, rust_vec_len, data_len),
-138 => wire__crate__api__voting__precompute_delegation_proof_impl(port, ptr, rust_vec_len, data_len),
-139 => wire__crate__api__voting__precompute_snapshot_bundles_impl(port, ptr, rust_vec_len, data_len),
-140 => wire__crate__api__voting__preflight_voting_helpers_impl(port, ptr, rust_vec_len, data_len),
-141 => wire__crate__api__voting__prepare_committed_share_delivery_impl(port, ptr, rust_vec_len, data_len),
-142 => wire__crate__api__sync__prepare_orchard_migration_batch_pczt_impl(port, ptr, rust_vec_len, data_len),
-143 => wire__crate__api__sync__prepare_orchard_migration_denominations_pczt_impl(port, ptr, rust_vec_len, data_len),
-144 => wire__crate__api__sync__prepare_orchard_migration_immediate_pczt_impl(port, ptr, rust_vec_len, data_len),
-145 => wire__crate__api__sync__prepare_orchard_migration_outbox_impl(port, ptr, rust_vec_len, data_len),
-146 => wire__crate__api__sync__prepare_orchard_migration_single_qr_pczt_impl(port, ptr, rust_vec_len, data_len),
-147 => wire__crate__api__sync__prepare_pczt_for_keystone_batch_impl(port, ptr, rust_vec_len, data_len),
-148 => wire__crate__api__wallet__preview_software_account_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
-149 => wire__crate__api__sync__propose_send_impl(port, ptr, rust_vec_len, data_len),
-150 => wire__crate__api__sync__put_subtree_roots_impl(port, ptr, rust_vec_len, data_len),
-151 => wire__crate__api__network_privacy__quiesce_network_privacy_direct_requests_impl(port, ptr, rust_vec_len, data_len),
-152 => wire__crate__api__sync__reconcile_orchard_migration_outbox_receipt_impl(port, ptr, rust_vec_len, data_len),
-153 => wire__crate__api__voting__recover_vote_commitment_impl(port, ptr, rust_vec_len, data_len),
-154 => wire__crate__api__sync__redact_pczt_for_signer_impl(port, ptr, rust_vec_len, data_len),
-156 => wire__crate__api__voting__reset_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-157 => wire__crate__api__voting__reset_voting_session_state_impl(port, ptr, rust_vec_len, data_len),
-158 => wire__crate__api__voting__resolve_static_voting_config_impl(port, ptr, rust_vec_len, data_len),
-159 => wire__crate__api__voting__resolve_voting_config_from_attempts_impl(port, ptr, rust_vec_len, data_len),
-160 => wire__crate__api__sync__retain_proposal_lock_until_expiry_impl(port, ptr, rust_vec_len, data_len),
-161 => wire__crate__api__sync__retire_unbroadcast_orchard_migration_impl(port, ptr, rust_vec_len, data_len),
-162 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
-163 => wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len),
-164 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
-167 => wire__crate__api__voting__set_ballot_intent_impl(port, ptr, rust_vec_len, data_len),
-170 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
-171 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
-172 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
-173 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-174 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
-175 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
-176 => wire__crate__api__network_privacy__start_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
-178 => wire__crate__api__network_privacy__stop_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
-179 => wire__crate__api__sync__store_and_broadcast_pczts_with_keystone_signatures_for_proposal_impl(port, ptr, rust_vec_len, data_len),
-180 => wire__crate__api__sync__store_and_broadcast_signed_pczts_for_proposal_impl(port, ptr, rust_vec_len, data_len),
-181 => wire__crate__api__voting__store_keystone_signature_impl(port, ptr, rust_vec_len, data_len),
-182 => wire__crate__api__voting__store_keystone_signatures_batch_impl(port, ptr, rust_vec_len, data_len),
-183 => wire__crate__api__voting__submit_prepared_shares_to_helpers_impl(port, ptr, rust_vec_len, data_len),
-184 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
-185 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-188 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
-189 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
-190 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
-191 => wire__crate__api__voting__track_pending_shares_impl(port, ptr, rust_vec_len, data_len),
-192 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
-193 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
-194 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-198 => wire__crate__api__voting__warm_pir_proof_cache_impl(port, ptr, rust_vec_len, data_len),
-200 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
-201 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
+                        1 => wire__crate__api__voting_session__VotingRoundSession_advance_next_impl(port, ptr, rust_vec_len, data_len),
+2 => wire__crate__api__voting_session__VotingRoundSession_advance_step_impl(port, ptr, rust_vec_len, data_len),
+5 => wire__crate__api__voting_session__VotingRoundSession_keystone_signing_requests_impl(port, ptr, rust_vec_len, data_len),
+6 => wire__crate__api__voting_session__VotingRoundSession_plan_impl(port, ptr, rust_vec_len, data_len),
+7 => wire__crate__api__voting_session__VotingRoundSession_set_ballot_intents_impl(port, ptr, rust_vec_len, data_len),
+10 => wire__crate__api__sync__abandon_orchard_migration_impl(port, ptr, rust_vec_len, data_len),
+11 => wire__crate__api__wallet__add_account_impl(port, ptr, rust_vec_len, data_len),
+12 => wire__crate__api__sync__add_proofs_to_pczt_impl(port, ptr, rust_vec_len, data_len),
+15 => wire__crate__api__sync__broadcast_due_orchard_migration_transactions_impl(port, ptr, rust_vec_len, data_len),
+16 => wire__crate__api__sync__broadcast_one_due_orchard_migration_transaction_impl(port, ptr, rust_vec_len, data_len),
+17 => wire__crate__api__voting__build_keystone_delegation_requests_impl(port, ptr, rust_vec_len, data_len),
+19 => wire__crate__api__voting__check_voting_eligibility_impl(port, ptr, rust_vec_len, data_len),
+20 => wire__crate__api__sync__complete_orchard_migration_batch_pczt_impl(port, ptr, rust_vec_len, data_len),
+21 => wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(port, ptr, rust_vec_len, data_len),
+22 => wire__crate__api__sync__complete_orchard_migration_immediate_pczt_impl(port, ptr, rust_vec_len, data_len),
+23 => wire__crate__api__sync__complete_orchard_migration_single_qr_pczt_impl(port, ptr, rust_vec_len, data_len),
+24 => wire__crate__api__simple__configure_fast_testnet_migration_impl(port, ptr, rust_vec_len, data_len),
+25 => wire__crate__api__network_privacy__configure_network_privacy_impl(port, ptr, rust_vec_len, data_len),
+26 => wire__crate__api__simple__configure_regtest_ironwood_activation_height_impl(port, ptr, rust_vec_len, data_len),
+27 => wire__crate__api__voting__confirm_share_with_helpers_impl(port, ptr, rust_vec_len, data_len),
+28 => wire__crate__api__sync__create_or_resume_private_migration_draft_impl(port, ptr, rust_vec_len, data_len),
+29 => wire__crate__api__sync__create_pczt_from_proposal_impl(port, ptr, rust_vec_len, data_len),
+30 => wire__crate__api__sync__create_shield_transparent_pczt_impl(port, ptr, rust_vec_len, data_len),
+31 => wire__crate__api__sync__create_tex_pczts_from_proposal_impl(port, ptr, rust_vec_len, data_len),
+33 => wire__crate__api__wallet__create_wallet_impl(port, ptr, rust_vec_len, data_len),
+34 => wire__crate__api__keystone__decode_accounts_from_cbor_impl(port, ptr, rust_vec_len, data_len),
+35 => wire__crate__api__keystone__decode_accounts_ur_impl(port, ptr, rust_vec_len, data_len),
+36 => wire__crate__api__keystone__decode_pczt_from_cbor_impl(port, ptr, rust_vec_len, data_len),
+37 => wire__crate__api__keystone__decode_ur_part_impl(port, ptr, rust_vec_len, data_len),
+38 => wire__crate__api__keystone__decode_ur_to_pczt_impl(port, ptr, rust_vec_len, data_len),
+39 => wire__crate__api__keystone__decode_zcash_batch_sign_response_impl(port, ptr, rust_vec_len, data_len),
+40 => wire__crate__api__keystone__decode_zcash_sign_result_cbor_impl(port, ptr, rust_vec_len, data_len),
+41 => wire__crate__api__keystone__decode_zcash_sign_result_cbor_as_sig_result_impl(port, ptr, rust_vec_len, data_len),
+42 => wire__crate__api__sync__decrypt_and_store_transaction_impl(port, ptr, rust_vec_len, data_len),
+43 => wire__crate__api__secret__decrypt_secret_payload_impl(port, ptr, rust_vec_len, data_len),
+44 => wire__crate__api__wallet__delete_account_impl(port, ptr, rust_vec_len, data_len),
+45 => wire__crate__api__voting__delete_skipped_bundles_impl(port, ptr, rust_vec_len, data_len),
+46 => wire__crate__api__voting__delete_voting_account_state_impl(port, ptr, rust_vec_len, data_len),
+47 => wire__crate__api__secret__derive_secret_password_verifier_impl(port, ptr, rust_vec_len, data_len),
+48 => wire__crate__api__sync__discard_all_keystone_migration_requests_impl(port, ptr, rust_vec_len, data_len),
+49 => wire__crate__api__sync__discard_keystone_migration_request_impl(port, ptr, rust_vec_len, data_len),
+50 => wire__crate__api__sync__discard_proposal_impl(port, ptr, rust_vec_len, data_len),
+51 => wire__crate__api__wallet__discover_software_wallet_import_accounts_impl(port, ptr, rust_vec_len, data_len),
+52 => wire__crate__api__keystone__encode_keystone_action_sigs_impl(port, ptr, rust_vec_len, data_len),
+53 => wire__crate__api__keystone__encode_pczt_to_ur_impl(port, ptr, rust_vec_len, data_len),
+54 => wire__crate__api__keystone__encode_pczt_ur_parts_impl(port, ptr, rust_vec_len, data_len),
+55 => wire__crate__api__keystone__encode_zcash_sign_batch_ur_parts_impl(port, ptr, rust_vec_len, data_len),
+56 => wire__crate__api__secret__encrypt_secret_payload_impl(port, ptr, rust_vec_len, data_len),
+57 => wire__crate__api__wallet__ensure_wallet_db_migrated_impl(port, ptr, rust_vec_len, data_len),
+58 => wire__crate__api__sync__estimate_fee_impl(port, ptr, rust_vec_len, data_len),
+59 => wire__crate__api__network_privacy__estimate_import_birthday_height_impl(port, ptr, rust_vec_len, data_len),
+60 => wire__crate__api__sync__estimate_send_max_impl(port, ptr, rust_vec_len, data_len),
+61 => wire__crate__api__wallet__evict_wallet_summary_cache_impl(port, ptr, rust_vec_len, data_len),
+62 => wire__crate__api__sync__execute_proposal_impl(port, ptr, rust_vec_len, data_len),
+63 => wire__crate__api__sync__execute_proposal_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+64 => wire__crate__api__sync__export_orchard_migration_outbox_impl(port, ptr, rust_vec_len, data_len),
+65 => wire__crate__api__sync__extract_and_broadcast_pczt_impl(port, ptr, rust_vec_len, data_len),
+68 => wire__crate__api__voting__generate_voting_hotkey_impl(port, ptr, rust_vec_len, data_len),
+69 => wire__crate__api__wallet__get_account_export_metadata_impl(port, ptr, rust_vec_len, data_len),
+70 => wire__crate__api__wallet__get_account_ufvk_impl(port, ptr, rust_vec_len, data_len),
+71 => wire__crate__api__sync__get_balance_impl(port, ptr, rust_vec_len, data_len),
+72 => wire__crate__api__sync__get_block_time_impl(port, ptr, rust_vec_len, data_len),
+74 => wire__crate__api__wallet__get_chain_upgrade_status_impl(port, ptr, rust_vec_len, data_len),
+75 => wire__crate__api__wallet__get_chain_upgrade_status_at_height_impl(port, ptr, rust_vec_len, data_len),
+76 => wire__crate__api__sync__get_export_birthday_height_impl(port, ptr, rust_vec_len, data_len),
+77 => wire__crate__api__network_privacy__get_import_birthday_metadata_impl(port, ptr, rust_vec_len, data_len),
+78 => wire__crate__api__voting__get_keystone_signatures_impl(port, ptr, rust_vec_len, data_len),
+79 => wire__crate__api__wallet__get_latest_block_height_impl(port, ptr, rust_vec_len, data_len),
+80 => wire__crate__api__wallet__get_lightwalletd_chain_name_impl(port, ptr, rust_vec_len, data_len),
+82 => wire__crate__api__sync__get_next_available_address_impl(port, ptr, rust_vec_len, data_len),
+83 => wire__crate__api__sync__get_next_subtree_indices_impl(port, ptr, rust_vec_len, data_len),
+84 => wire__crate__api__sync__get_orchard_migration_immediate_plan_impl(port, ptr, rust_vec_len, data_len),
+85 => wire__crate__api__sync__get_orchard_migration_private_plan_impl(port, ptr, rust_vec_len, data_len),
+86 => wire__crate__api__sync__get_orchard_migration_status_impl(port, ptr, rust_vec_len, data_len),
+87 => wire__crate__api__sync__get_orchard_migration_statuses_impl(port, ptr, rust_vec_len, data_len),
+88 => wire__crate__api__sync__get_previous_transaction_count_for_address_impl(port, ptr, rust_vec_len, data_len),
+89 => wire__crate__api__wallet__get_recent_transparent_receive_addresses_impl(port, ptr, rust_vec_len, data_len),
+90 => wire__crate__api__voting__get_round_plan_impl(port, ptr, rust_vec_len, data_len),
+91 => wire__crate__api__voting__get_round_recovery_state_impl(port, ptr, rust_vec_len, data_len),
+92 => wire__crate__api__sync__get_shield_transparent_status_impl(port, ptr, rust_vec_len, data_len),
+94 => wire__crate__api__sync__get_sync_status_impl(port, ptr, rust_vec_len, data_len),
+95 => wire__crate__api__sync__get_transaction_data_requests_impl(port, ptr, rust_vec_len, data_len),
+96 => wire__crate__api__sync__get_transaction_detail_impl(port, ptr, rust_vec_len, data_len),
+97 => wire__crate__api__sync__get_transaction_history_impl(port, ptr, rust_vec_len, data_len),
+98 => wire__crate__api__wallet__get_transparent_receive_address_impl(port, ptr, rust_vec_len, data_len),
+99 => wire__crate__api__wallet__get_unified_address_impl(port, ptr, rust_vec_len, data_len),
+101 => wire__crate__api__wallet__import_hardware_account_impl(port, ptr, rust_vec_len, data_len),
+102 => wire__crate__api__wallet__import_software_account_at_index_impl(port, ptr, rust_vec_len, data_len),
+103 => wire__crate__api__wallet__import_software_wallet_with_account_discovery_impl(port, ptr, rust_vec_len, data_len),
+104 => wire__crate__api__wallet__import_wallet_impl(port, ptr, rust_vec_len, data_len),
+105 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+108 => wire__crate__api__wallet__is_software_wallet_link_account_imported_impl(port, ptr, rust_vec_len, data_len),
+112 => wire__crate__api__sync__keystone_migration_proof_status_impl(port, ptr, rust_vec_len, data_len),
+114 => wire__crate__api__wallet__list_accounts_impl(port, ptr, rust_vec_len, data_len),
+115 => wire__crate__api__voting__list_pending_share_rounds_impl(port, ptr, rust_vec_len, data_len),
+116 => wire__crate__api__sync__migrate_orchard_to_ironwood_impl(port, ptr, rust_vec_len, data_len),
+117 => wire__crate__api__sync__migrate_orchard_to_ironwood_immediately_impl(port, ptr, rust_vec_len, data_len),
+118 => wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+120 => wire__crate__api__voting__next_share_tracking_delay_seconds_impl(port, ptr, rust_vec_len, data_len),
+122 => wire__crate__api__keystone__pczt_spend_nullifiers_impl(port, ptr, rust_vec_len, data_len),
+123 => wire__crate__api__voting__precompute_delegation_proof_impl(port, ptr, rust_vec_len, data_len),
+124 => wire__crate__api__voting__precompute_snapshot_bundles_impl(port, ptr, rust_vec_len, data_len),
+125 => wire__crate__api__sync__prepare_orchard_migration_batch_pczt_impl(port, ptr, rust_vec_len, data_len),
+126 => wire__crate__api__sync__prepare_orchard_migration_denominations_pczt_impl(port, ptr, rust_vec_len, data_len),
+127 => wire__crate__api__sync__prepare_orchard_migration_immediate_pczt_impl(port, ptr, rust_vec_len, data_len),
+128 => wire__crate__api__sync__prepare_orchard_migration_outbox_impl(port, ptr, rust_vec_len, data_len),
+129 => wire__crate__api__sync__prepare_orchard_migration_single_qr_pczt_impl(port, ptr, rust_vec_len, data_len),
+130 => wire__crate__api__sync__prepare_pczt_for_keystone_batch_impl(port, ptr, rust_vec_len, data_len),
+131 => wire__crate__api__wallet__preview_software_account_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
+132 => wire__crate__api__sync__propose_send_impl(port, ptr, rust_vec_len, data_len),
+133 => wire__crate__api__sync__put_subtree_roots_impl(port, ptr, rust_vec_len, data_len),
+134 => wire__crate__api__network_privacy__quiesce_network_privacy_direct_requests_impl(port, ptr, rust_vec_len, data_len),
+135 => wire__crate__api__sync__reconcile_orchard_migration_outbox_receipt_impl(port, ptr, rust_vec_len, data_len),
+136 => wire__crate__api__sync__redact_pczt_for_signer_impl(port, ptr, rust_vec_len, data_len),
+138 => wire__crate__api__voting__reset_vote_tree_impl(port, ptr, rust_vec_len, data_len),
+139 => wire__crate__api__voting__reset_voting_session_state_impl(port, ptr, rust_vec_len, data_len),
+140 => wire__crate__api__voting__resolve_static_voting_config_impl(port, ptr, rust_vec_len, data_len),
+141 => wire__crate__api__voting__resolve_voting_config_from_attempts_impl(port, ptr, rust_vec_len, data_len),
+142 => wire__crate__api__sync__retain_proposal_lock_until_expiry_impl(port, ptr, rust_vec_len, data_len),
+143 => wire__crate__api__sync__retire_unbroadcast_orchard_migration_impl(port, ptr, rust_vec_len, data_len),
+144 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
+145 => wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len),
+146 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
+149 => wire__crate__api__voting__set_ballot_intent_impl(port, ptr, rust_vec_len, data_len),
+152 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
+153 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
+154 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
+155 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+156 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
+157 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
+158 => wire__crate__api__network_privacy__start_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
+160 => wire__crate__api__network_privacy__stop_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
+161 => wire__crate__api__sync__store_and_broadcast_pczts_with_keystone_signatures_for_proposal_impl(port, ptr, rust_vec_len, data_len),
+162 => wire__crate__api__sync__store_and_broadcast_signed_pczts_for_proposal_impl(port, ptr, rust_vec_len, data_len),
+163 => wire__crate__api__voting__store_keystone_signatures_batch_impl(port, ptr, rust_vec_len, data_len),
+164 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
+165 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
+168 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
+169 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
+170 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
+171 => wire__crate__api__voting__track_pending_shares_impl(port, ptr, rust_vec_len, data_len),
+172 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
+173 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
+174 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
+178 => wire__crate__api__voting__warm_pir_proof_cache_impl(port, ptr, rust_vec_len, data_len),
+180 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+181 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
 }
@@ -13911,120 +11929,96 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__voting__VotingChainSubmissionPassHandle_cancel_impl(
+        3 => wire__crate__api__voting_session__VotingRoundSession_begin_share_tracking_pass_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        2 => wire__crate__api__voting__VotingChainSubmissionPassHandle_set_operation_epoch_impl(
+        4 => wire__crate__api__voting_session__VotingRoundSession_cancel_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        5 => wire__crate__api__voting_session__VotingRoundSession_begin_share_tracking_pass_impl(
+        8 => wire__crate__api__voting_session__VotingRoundSession_set_operation_epoch_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        6 => wire__crate__api__voting_session__VotingRoundSession_cancel_impl(
+        9 => wire__crate__api__voting__VotingShareTrackingPassHandle_cancel_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        10 => wire__crate__api__voting_session__VotingRoundSession_set_operation_epoch_impl(
+        13 => wire__crate__api__network_privacy__begin_network_privacy_enable_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        11 => wire__crate__api__voting__VotingShareTrackingPassHandle_cancel_impl(
+        14 => wire__crate__api__voting__begin_share_tracking_pass_impl(ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__sync__cancel_full_sync_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__voting__create_voting_helper_delivery_context_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        12 => wire__crate__api__voting__VotingVoteRecoveryPassHandle_cancel_impl(
+        66 => wire__crate__api__network_privacy__fail_network_privacy_enable_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        13 => wire__crate__api__voting__VotingVoteRecoveryPassHandle_set_operation_epoch_impl(
+        67 => wire__crate__api__wallet__generate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__sync__get_blocks_dir_impl(ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__network_privacy__get_network_privacy_status_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        21 => {
-            wire__crate__api__voting__begin_chain_submission_pass_impl(ptr, rust_vec_len, data_len)
-        }
-        22 => wire__crate__api__network_privacy__begin_network_privacy_enable_impl(
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        23 => wire__crate__api__voting__begin_share_tracking_pass_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__voting__begin_vote_recovery_pass_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__sync__cancel_full_sync_impl(ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__voting__create_voting_helper_delivery_context_impl(
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        79 => wire__crate__api__network_privacy__fail_network_privacy_enable_impl(
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        80 => wire__crate__api__wallet__generate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        87 => wire__crate__api__sync__get_blocks_dir_impl(ptr, rust_vec_len, data_len),
-        95 => wire__crate__api__network_privacy__get_network_privacy_status_impl(
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
-        107 => wire__crate__api__sync__get_sync_mode_impl(ptr, rust_vec_len, data_len),
-        114 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-        120 => wire__crate__api__voting__is_last_moment_impl(ptr, rust_vec_len, data_len),
-        121 => {
+        93 => wire__crate__api__sync__get_sync_mode_impl(ptr, rust_vec_len, data_len),
+        100 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+        106 => wire__crate__api__voting__is_last_moment_impl(ptr, rust_vec_len, data_len),
+        107 => {
             wire__crate__api__sync__is_mempool_observer_running_impl(ptr, rust_vec_len, data_len)
         }
-        123 => wire__crate__api__sync__is_sync_cancel_requested_impl(ptr, rust_vec_len, data_len),
-        124 => wire__crate__api__sync__is_sync_running_impl(ptr, rust_vec_len, data_len),
-        125 => wire__crate__api__network_privacy__is_tor_enabled_impl(ptr, rust_vec_len, data_len),
-        127 => {
+        109 => wire__crate__api__sync__is_sync_cancel_requested_impl(ptr, rust_vec_len, data_len),
+        110 => wire__crate__api__sync__is_sync_running_impl(ptr, rust_vec_len, data_len),
+        111 => wire__crate__api__network_privacy__is_tor_enabled_impl(ptr, rust_vec_len, data_len),
+        113 => {
             wire__crate__api__voting__last_moment_buffer_seconds_impl(ptr, rust_vec_len, data_len)
         }
-        133 => wire__crate__api__wallet__mnemonic_word_list_impl(ptr, rust_vec_len, data_len),
-        135 => wire__crate__api__voting_session__open_voting_round_session_impl(
+        119 => wire__crate__api__wallet__mnemonic_word_list_impl(ptr, rust_vec_len, data_len),
+        121 => wire__crate__api__voting_session__open_voting_round_session_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        155 => wire__crate__api__keystone__reset_ur_session_impl(ptr, rust_vec_len, data_len),
-        165 => {
+        137 => wire__crate__api__keystone__reset_ur_session_impl(ptr, rust_vec_len, data_len),
+        147 => {
             wire__crate__api__voting__select_pir_snapshot_endpoint_impl(ptr, rust_vec_len, data_len)
         }
-        166 => wire__crate__api__sync__set_active_sync_account_impl(ptr, rust_vec_len, data_len),
-        168 => wire__crate__api__network_privacy__set_network_privacy_dormant_impl(
+        148 => wire__crate__api__sync__set_active_sync_account_impl(ptr, rust_vec_len, data_len),
+        150 => wire__crate__api__network_privacy__set_network_privacy_dormant_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        169 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
-        177 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
-        186 => wire__crate__api__network_privacy__tor_http_begin_request_impl(
+        151 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
+        159 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
+        166 => wire__crate__api__network_privacy__tor_http_begin_request_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        187 => wire__crate__api__network_privacy__tor_http_cancel_request_impl(
+        167 => wire__crate__api__network_privacy__tor_http_cancel_request_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        195 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        196 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
-        197 => {
+        175 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        176 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
+        177 => {
             wire__crate__api__sync__warm_orchard_proving_key_cache_impl(ptr, rust_vec_len, data_len)
         }
-        199 => {
+        179 => {
             wire__crate__api__voting__warm_voting_proving_caches_impl(ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),
@@ -14032,26 +12026,6 @@ fn pde_ffi_dispatcher_sync_impl(
 }
 
 // Section: rust2dart
-
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<VotingChainSubmissionPassHandle> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
-            .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<VotingChainSubmissionPassHandle>
-{
-}
-
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<VotingChainSubmissionPassHandle>>
-    for VotingChainSubmissionPassHandle
-{
-    fn into_into_dart(self) -> FrbWrapper<VotingChainSubmissionPassHandle> {
-        self.into()
-    }
-}
 
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<VotingHelperDeliveryContext> {
@@ -14107,26 +12081,6 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<VotingShareTrackingPassHandle>
     for VotingShareTrackingPassHandle
 {
     fn into_into_dart(self) -> FrbWrapper<VotingShareTrackingPassHandle> {
-        self.into()
-    }
-}
-
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<VotingVoteRecoveryPassHandle> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
-            .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<VotingVoteRecoveryPassHandle>
-{
-}
-
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<VotingVoteRecoveryPassHandle>>
-    for VotingVoteRecoveryPassHandle
-{
-    fn into_into_dart(self) -> FrbWrapper<VotingVoteRecoveryPassHandle> {
         self.into()
     }
 }
@@ -14267,307 +12221,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiBundleLayout>
     for crate::api::voting::ApiBundleLayout
 {
     fn into_into_dart(self) -> crate::api::voting::ApiBundleLayout {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainConfirmationSource {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::Hash => 0.into_dart(),
-            Self::Tree => 1.into_dart(),
-            Self::LegacyImport => 2.into_dart(),
-            Self::LegacyProjection => 3.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainConfirmationSource
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainConfirmationSource>
-    for crate::api::voting::ApiChainConfirmationSource
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainConfirmationSource {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainDiagnostic {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.kind.into_into_dart().into_dart(),
-            self.message.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainDiagnostic
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainDiagnostic>
-    for crate::api::voting::ApiChainDiagnostic
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainDiagnostic {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainDiagnosticKind {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::AmbiguousDispatch => 0.into_dart(),
-            Self::AmbiguousAttemptsExhausted => 1.into_dart(),
-            Self::NullifierAlreadySpent => 2.into_dart(),
-            Self::TrackingWindowExpired => 3.into_dart(),
-            Self::ChainRejected => 4.into_dart(),
-            Self::ReconciliationPending => 5.into_dart(),
-            Self::InvalidProtocolResponse => 6.into_dart(),
-            Self::RecoveryUnavailable => 7.into_dart(),
-            Self::StorageFailure => 8.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainDiagnosticKind
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainDiagnosticKind>
-    for crate::api::voting::ApiChainDiagnosticKind
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainDiagnosticKind {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainRecoveryMode {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::StatusOnly => 0.into_dart(),
-            Self::ExactTree => 1.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainRecoveryMode
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainRecoveryMode>
-    for crate::api::voting::ApiChainRecoveryMode
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainRecoveryMode {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionCallResult {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.outcome.into_into_dart().into_dart(),
-            self.failure.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainSubmissionCallResult
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainSubmissionCallResult>
-    for crate::api::voting::ApiChainSubmissionCallResult
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainSubmissionCallResult {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionFailure {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.kind.into_into_dart().into_dart(),
-            self.strongest_state.into_into_dart().into_dart(),
-            self.message.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainSubmissionFailure
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainSubmissionFailure>
-    for crate::api::voting::ApiChainSubmissionFailure
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainSubmissionFailure {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionFailureKind {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::InvalidInput => 0.into_dart(),
-            Self::InvariantViolation => 1.into_dart(),
-            Self::Storage => 2.into_dart(),
-            Self::Transport => 3.into_dart(),
-            Self::Protocol => 4.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainSubmissionFailureKind
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainSubmissionFailureKind>
-    for crate::api::voting::ApiChainSubmissionFailureKind
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainSubmissionFailureKind {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionFailureState {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.state.into_into_dart().into_dart(),
-            self.evidence.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainSubmissionFailureState
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainSubmissionFailureState>
-    for crate::api::voting::ApiChainSubmissionFailureState
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainSubmissionFailureState {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionOutcome {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.kind.into_into_dart().into_dart(),
-            self.confirmation_source.into_into_dart().into_dart(),
-            self.transaction_hash.into_into_dart().into_dart(),
-            self.candidate_transaction_hash.into_into_dart().into_dart(),
-            self.final_van_position.into_into_dart().into_dart(),
-            self.vote_commitment_positions.into_into_dart().into_dart(),
-            self.diagnostic.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainSubmissionOutcome
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainSubmissionOutcome>
-    for crate::api::voting::ApiChainSubmissionOutcome
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainSubmissionOutcome {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionOutcomeKind {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::Confirmed => 0.into_dart(),
-            Self::Tracking => 1.into_dart(),
-            Self::Recovering => 2.into_dart(),
-            Self::SubmittedWithoutHash => 3.into_dart(),
-            Self::Rejected => 4.into_dart(),
-            Self::Cancelled => 5.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainSubmissionOutcomeKind
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainSubmissionOutcomeKind>
-    for crate::api::voting::ApiChainSubmissionOutcomeKind
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainSubmissionOutcomeKind {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionState {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::Submitting => 0.into_dart(),
-            Self::Tracking => 1.into_dart(),
-            Self::Recovering => 2.into_dart(),
-            Self::SubmittedWithoutHash => 3.into_dart(),
-            Self::Confirmed => 4.into_dart(),
-            Self::LegacyConfirmed => 5.into_dart(),
-            Self::Rejected => 6.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainSubmissionState
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainSubmissionState>
-    for crate::api::voting::ApiChainSubmissionState
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainSubmissionState {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiChainSubmissionStateEvidence {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::Durable => 0.into_dart(),
-            Self::KnownPossiblyDispatched => 1.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiChainSubmissionStateEvidence
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiChainSubmissionStateEvidence>
-    for crate::api::voting::ApiChainSubmissionStateEvidence
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiChainSubmissionStateEvidence {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiDelegationProofEvent {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.phase.into_into_dart().into_dart(),
-            self.proof_progress.into_into_dart().into_dart(),
-            self.signed_delegation_payload.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiDelegationProofEvent
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiDelegationProofEvent>
-    for crate::api::voting::ApiDelegationProofEvent
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiDelegationProofEvent {
         self
     }
 }
@@ -14934,50 +12587,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting_session::ApiRoundStepE
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiShareBatchDeliveryReport {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.deliveries.into_into_dart().into_dart(),
-            self.pending_share_indices.into_into_dart().into_dart(),
-            self.cancelled.into_into_dart().into_dart(),
-            self.legacy_best_effort.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiShareBatchDeliveryReport
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiShareBatchDeliveryReport>
-    for crate::api::voting::ApiShareBatchDeliveryReport
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiShareBatchDeliveryReport {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiShareDeliveryOutcome {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.share_index.into_into_dart().into_dart(),
-            self.submission.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiShareDeliveryOutcome
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiShareDeliveryOutcome>
-    for crate::api::voting::ApiShareDeliveryOutcome
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiShareDeliveryOutcome {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiShareKey {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -14996,28 +12605,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiShareKey>
     for crate::api::voting::ApiShareKey
 {
     fn into_into_dart(self) -> crate::api::voting::ApiShareKey {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiShareSubmissionReport {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.accepted_urls.into_into_dart().into_dart(),
-            self.ambiguous_urls.into_into_dart().into_dart(),
-            self.target_count.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiShareSubmissionReport
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiShareSubmissionReport>
-    for crate::api::voting::ApiShareSubmissionReport
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiShareSubmissionReport {
         self
     }
 }
@@ -15043,28 +12630,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiShareTrackingRepor
     for crate::api::voting::ApiShareTrackingReport
 {
     fn into_into_dart(self) -> crate::api::voting::ApiShareTrackingReport {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiSignedVoteCommitments {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.bundle_index.into_into_dart().into_dart(),
-            self.commitments.into_into_dart().into_dart(),
-            self.batch_digest.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiSignedVoteCommitments
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiSignedVoteCommitments>
-    for crate::api::voting::ApiSignedVoteCommitments
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiSignedVoteCommitments {
         self
     }
 }
@@ -15150,242 +12715,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiSyncProgressEvent>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteCommitEvent {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.phase.into_into_dart().into_dart(),
-            self.proposal_id.into_into_dart().into_dart(),
-            self.bundle_index.into_into_dart().into_dart(),
-            self.proof_progress.into_into_dart().into_dart(),
-            self.commitments.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteCommitEvent
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteCommitEvent>
-    for crate::api::voting::ApiVoteCommitEvent
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteCommitEvent {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteRecoveryAdvance {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.attempted_work.into_into_dart().into_dart(),
-            self.disposition.into_into_dart().into_dart(),
-            self.chain_outcome.into_into_dart().into_dart(),
-            self.share_deliveries.into_into_dart().into_dart(),
-            self.round_plan.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteRecoveryAdvance
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteRecoveryAdvance>
-    for crate::api::voting::ApiVoteRecoveryAdvance
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteRecoveryAdvance {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteRecoveryCallResult {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.advance.into_into_dart().into_dart(),
-            self.failure.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteRecoveryCallResult
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteRecoveryCallResult>
-    for crate::api::voting::ApiVoteRecoveryCallResult
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteRecoveryCallResult {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteRecoveryDisposition {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::NoWork => 0.into_dart(),
-            Self::Advanced => 1.into_dart(),
-            Self::Pending => 2.into_dart(),
-            Self::Cancelled => 3.into_dart(),
-            Self::Unsupported => 4.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteRecoveryDisposition
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteRecoveryDisposition>
-    for crate::api::voting::ApiVoteRecoveryDisposition
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteRecoveryDisposition {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteRecoveryEvent {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.kind.into_into_dart().into_dart(),
-            self.work.into_into_dart().into_dart(),
-            self.vote_keys.into_into_dart().into_dart(),
-            self.chain_outcome.into_into_dart().into_dart(),
-            self.share_delivery.into_into_dart().into_dart(),
-            self.result.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteRecoveryEvent
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteRecoveryEvent>
-    for crate::api::voting::ApiVoteRecoveryEvent
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteRecoveryEvent {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteRecoveryEventKind {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::Selected => 0.into_dart(),
-            Self::HelperPlansPrepared => 1.into_dart(),
-            Self::ChainOutcome => 2.into_dart(),
-            Self::ShareOutcome => 3.into_dart(),
-            Self::Result => 4.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteRecoveryEventKind
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteRecoveryEventKind>
-    for crate::api::voting::ApiVoteRecoveryEventKind
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteRecoveryEventKind {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteRecoveryFailure {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.kind.into_into_dart().into_dart(),
-            self.attempted_work.into_into_dart().into_dart(),
-            self.strongest_chain_state.into_into_dart().into_dart(),
-            self.chain_outcome.into_into_dart().into_dart(),
-            self.message.into_into_dart().into_dart(),
-            self.round_plan.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteRecoveryFailure
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteRecoveryFailure>
-    for crate::api::voting::ApiVoteRecoveryFailure
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteRecoveryFailure {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteRecoveryFailureKind {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::InvalidInput => 0.into_dart(),
-            Self::Busy => 1.into_dart(),
-            Self::Storage => 2.into_dart(),
-            Self::InvariantViolation => 3.into_dart(),
-            Self::Transport => 4.into_dart(),
-            Self::Protocol => 5.into_dart(),
-            Self::ChainTerminal => 6.into_dart(),
-            Self::HelperDeliveryIncomplete => 7.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteRecoveryFailureKind
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteRecoveryFailureKind>
-    for crate::api::voting::ApiVoteRecoveryFailureKind
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteRecoveryFailureKind {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteRecoveryKey {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.bundle_index.into_into_dart().into_dart(),
-            self.proposal_id.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteRecoveryKey
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteRecoveryKey>
-    for crate::api::voting::ApiVoteRecoveryKey
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteRecoveryKey {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteShareDeliveryReport {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.vote.into_into_dart().into_dart(),
-            self.delivery.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteShareDeliveryReport
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteShareDeliveryReport>
-    for crate::api::voting::ApiVoteShareDeliveryReport
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteShareDeliveryReport {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVotingEligibility {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -15407,27 +12736,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVotingEligibility>
     for crate::api::voting::ApiVotingEligibility
 {
     fn into_into_dart(self) -> crate::api::voting::ApiVotingEligibility {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVotingHelperPreflight {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.configured_helper_urls.into_into_dart().into_dart(),
-            self.ready_helper_urls.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVotingHelperPreflight
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVotingHelperPreflight>
-    for crate::api::voting::ApiVotingHelperPreflight
-{
-    fn into_into_dart(self) -> crate::api::voting::ApiVotingHelperPreflight {
         self
     }
 }
@@ -15884,33 +13192,6 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::config::ConfigSw
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart
-    for FrbWrapper<zcash_voting::wire::DelegationPirPrecomputeResultView>
-{
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.0.cached_count.into_into_dart().into_dart(),
-            self.0.fetched_count.into_into_dart().into_dart(),
-            self.0.bundle_count.into_into_dart().into_dart(),
-            self.0.bundle_index.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<zcash_voting::wire::DelegationPirPrecomputeResultView>
-{
-}
-impl
-    flutter_rust_bridge::IntoIntoDart<
-        FrbWrapper<zcash_voting::wire::DelegationPirPrecomputeResultView>,
-    > for zcash_voting::wire::DelegationPirPrecomputeResultView
-{
-    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::DelegationPirPrecomputeResultView> {
-        self.into()
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::DelegationProgressKind> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -16059,30 +13340,6 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::Delegation
     for zcash_voting::wire::DelegationSubmissionWire
 {
     fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::DelegationSubmissionWire> {
-        self.into()
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::DraftVote> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.0.proposal_id.into_into_dart().into_dart(),
-            self.0.choice.into_into_dart().into_dart(),
-            self.0.num_options.into_into_dart().into_dart(),
-            self.0.vc_tree_position.into_into_dart().into_dart(),
-            self.0.single_share.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<zcash_voting::wire::DraftVote>
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::DraftVote>>
-    for zcash_voting::wire::DraftVote
-{
-    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::DraftVote> {
         self.into()
     }
 }
@@ -17679,27 +14936,6 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::SignedDele
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::SignedVoteCommitmentView> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.0.proposal_id.into_into_dart().into_dart(),
-            self.0.wire.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<zcash_voting::wire::SignedVoteCommitmentView>
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::SignedVoteCommitmentView>>
-    for zcash_voting::wire::SignedVoteCommitmentView
-{
-    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::SignedVoteCommitmentView> {
-        self.into()
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::wallet::SoftwareWalletDiscoveredAccount {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -18045,28 +15281,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::wallet::keystone::UrDecodeResult>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::vote::VanWitness> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.0.auth_path.into_into_dart().into_dart(),
-            self.0.position.into_into_dart().into_dart(),
-            self.0.anchor_height.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<zcash_voting::vote::VanWitness>
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::vote::VanWitness>>
-    for zcash_voting::vote::VanWitness
-{
-    fn into_into_dart(self) -> FrbWrapper<zcash_voting::vote::VanWitness> {
-        self.into()
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VoteCommitStageKind> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -18086,34 +15300,6 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::VoteCommit
     for zcash_voting::wire::VoteCommitStageKind
 {
     fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::VoteCommitStageKind> {
-        self.into()
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VoteCommitmentWire> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.0.van_nullifier.into_into_dart().into_dart(),
-            self.0.vote_authority_note_new.into_into_dart().into_dart(),
-            self.0.vote_commitment.into_into_dart().into_dart(),
-            self.0.proposal_id.into_into_dart().into_dart(),
-            self.0.proof.into_into_dart().into_dart(),
-            self.0.vote_round_id.into_into_dart().into_dart(),
-            self.0.anchor_height.into_into_dart().into_dart(),
-            self.0.r_vpk.into_into_dart().into_dart(),
-            self.0.vote_auth_sig.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<zcash_voting::wire::VoteCommitmentWire>
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::VoteCommitmentWire>>
-    for zcash_voting::wire::VoteCommitmentWire
-{
-    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::VoteCommitmentWire> {
         self.into()
     }
 }
@@ -18526,20 +15712,6 @@ impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
     }
 }
 
-impl SseEncode for VotingChainSubmissionPassHandle {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <RustOpaqueMoi<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                VotingChainSubmissionPassHandle,
-            >,
-        >>::sse_encode(
-            flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self),
-            serializer,
-        );
-    }
-}
-
 impl SseEncode for VotingHelperDeliveryContext {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -18568,31 +15740,6 @@ impl SseEncode for VotingShareTrackingPassHandle {
             flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self),
             serializer,
         );
-    }
-}
-
-impl SseEncode for VotingVoteRecoveryPassHandle {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <RustOpaqueMoi<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>,
-        >>::sse_encode(
-            flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self),
-            serializer,
-        );
-    }
-}
-
-impl SseEncode
-    for RustOpaqueMoi<
-        flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingChainSubmissionPassHandle>,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        let (ptr, size) = self.sse_encode_raw();
-        <usize>::sse_encode(ptr, serializer);
-        <i32>::sse_encode(size, serializer);
     }
 }
 
@@ -18634,31 +15781,6 @@ impl SseEncode
 }
 
 impl SseEncode
-    for RustOpaqueMoi<
-        flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        let (ptr, size) = self.sse_encode_raw();
-        <usize>::sse_encode(ptr, serializer);
-        <i32>::sse_encode(size, serializer);
-    }
-}
-
-impl SseEncode
-    for StreamSink<
-        crate::api::voting::ApiDelegationProofEvent,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        unimplemented!("")
-    }
-}
-
-impl SseEncode
     for StreamSink<
         crate::api::sync::ApiMempoolTxEvent,
         flutter_rust_bridge::for_generated::SseCodec,
@@ -18685,30 +15807,6 @@ impl SseEncode
 impl SseEncode
     for StreamSink<
         crate::api::sync::ApiSyncProgressEvent,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        unimplemented!("")
-    }
-}
-
-impl SseEncode
-    for StreamSink<
-        crate::api::voting::ApiVoteCommitEvent,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        unimplemented!("")
-    }
-}
-
-impl SseEncode
-    for StreamSink<
-        crate::api::voting::ApiVoteRecoveryEvent,
         flutter_rust_bridge::for_generated::SseCodec,
     >
 {
@@ -18779,212 +15877,6 @@ impl SseEncode for crate::api::voting::ApiBundleLayout {
         <u32>::sse_encode(self.privacy_trim_dropped_bundles, serializer);
         <u32>::sse_encode(self.privacy_trim_dropped_notes, serializer);
         <u64>::sse_encode(self.privacy_trim_dropped_value_zatoshi, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainConfirmationSource {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiChainConfirmationSource::Hash => 0,
-                crate::api::voting::ApiChainConfirmationSource::Tree => 1,
-                crate::api::voting::ApiChainConfirmationSource::LegacyImport => 2,
-                crate::api::voting::ApiChainConfirmationSource::LegacyProjection => 3,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainDiagnostic {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <crate::api::voting::ApiChainDiagnosticKind>::sse_encode(self.kind, serializer);
-        <String>::sse_encode(self.message, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainDiagnosticKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiChainDiagnosticKind::AmbiguousDispatch => 0,
-                crate::api::voting::ApiChainDiagnosticKind::AmbiguousAttemptsExhausted => 1,
-                crate::api::voting::ApiChainDiagnosticKind::NullifierAlreadySpent => 2,
-                crate::api::voting::ApiChainDiagnosticKind::TrackingWindowExpired => 3,
-                crate::api::voting::ApiChainDiagnosticKind::ChainRejected => 4,
-                crate::api::voting::ApiChainDiagnosticKind::ReconciliationPending => 5,
-                crate::api::voting::ApiChainDiagnosticKind::InvalidProtocolResponse => 6,
-                crate::api::voting::ApiChainDiagnosticKind::RecoveryUnavailable => 7,
-                crate::api::voting::ApiChainDiagnosticKind::StorageFailure => 8,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainRecoveryMode {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiChainRecoveryMode::StatusOnly => 0,
-                crate::api::voting::ApiChainRecoveryMode::ExactTree => 1,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainSubmissionCallResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Option<crate::api::voting::ApiChainSubmissionOutcome>>::sse_encode(
-            self.outcome,
-            serializer,
-        );
-        <Option<crate::api::voting::ApiChainSubmissionFailure>>::sse_encode(
-            self.failure,
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainSubmissionFailure {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <crate::api::voting::ApiChainSubmissionFailureKind>::sse_encode(self.kind, serializer);
-        <Option<crate::api::voting::ApiChainSubmissionFailureState>>::sse_encode(
-            self.strongest_state,
-            serializer,
-        );
-        <String>::sse_encode(self.message, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainSubmissionFailureKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiChainSubmissionFailureKind::InvalidInput => 0,
-                crate::api::voting::ApiChainSubmissionFailureKind::InvariantViolation => 1,
-                crate::api::voting::ApiChainSubmissionFailureKind::Storage => 2,
-                crate::api::voting::ApiChainSubmissionFailureKind::Transport => 3,
-                crate::api::voting::ApiChainSubmissionFailureKind::Protocol => 4,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainSubmissionFailureState {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <crate::api::voting::ApiChainSubmissionState>::sse_encode(self.state, serializer);
-        <crate::api::voting::ApiChainSubmissionStateEvidence>::sse_encode(
-            self.evidence,
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainSubmissionOutcome {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <crate::api::voting::ApiChainSubmissionOutcomeKind>::sse_encode(self.kind, serializer);
-        <Option<crate::api::voting::ApiChainConfirmationSource>>::sse_encode(
-            self.confirmation_source,
-            serializer,
-        );
-        <Option<String>>::sse_encode(self.transaction_hash, serializer);
-        <Option<String>>::sse_encode(self.candidate_transaction_hash, serializer);
-        <Option<u64>>::sse_encode(self.final_van_position, serializer);
-        <Vec<u64>>::sse_encode(self.vote_commitment_positions, serializer);
-        <Option<crate::api::voting::ApiChainDiagnostic>>::sse_encode(self.diagnostic, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainSubmissionOutcomeKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiChainSubmissionOutcomeKind::Confirmed => 0,
-                crate::api::voting::ApiChainSubmissionOutcomeKind::Tracking => 1,
-                crate::api::voting::ApiChainSubmissionOutcomeKind::Recovering => 2,
-                crate::api::voting::ApiChainSubmissionOutcomeKind::SubmittedWithoutHash => 3,
-                crate::api::voting::ApiChainSubmissionOutcomeKind::Rejected => 4,
-                crate::api::voting::ApiChainSubmissionOutcomeKind::Cancelled => 5,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainSubmissionState {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiChainSubmissionState::Submitting => 0,
-                crate::api::voting::ApiChainSubmissionState::Tracking => 1,
-                crate::api::voting::ApiChainSubmissionState::Recovering => 2,
-                crate::api::voting::ApiChainSubmissionState::SubmittedWithoutHash => 3,
-                crate::api::voting::ApiChainSubmissionState::Confirmed => 4,
-                crate::api::voting::ApiChainSubmissionState::LegacyConfirmed => 5,
-                crate::api::voting::ApiChainSubmissionState::Rejected => 6,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiChainSubmissionStateEvidence {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiChainSubmissionStateEvidence::Durable => 0,
-                crate::api::voting::ApiChainSubmissionStateEvidence::KnownPossiblyDispatched => 1,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiDelegationProofEvent {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.phase, serializer);
-        <Option<f64>>::sse_encode(self.proof_progress, serializer);
-        <Option<zcash_voting::wire::SignedDelegationPayloadView>>::sse_encode(
-            self.signed_delegation_payload,
-            serializer,
-        );
     }
 }
 
@@ -19166,39 +16058,12 @@ impl SseEncode for crate::api::voting_session::ApiRoundStepEventKind {
     }
 }
 
-impl SseEncode for crate::api::voting::ApiShareBatchDeliveryReport {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Vec<crate::api::voting::ApiShareDeliveryOutcome>>::sse_encode(self.deliveries, serializer);
-        <Vec<u32>>::sse_encode(self.pending_share_indices, serializer);
-        <bool>::sse_encode(self.cancelled, serializer);
-        <bool>::sse_encode(self.legacy_best_effort, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiShareDeliveryOutcome {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u32>::sse_encode(self.share_index, serializer);
-        <crate::api::voting::ApiShareSubmissionReport>::sse_encode(self.submission, serializer);
-    }
-}
-
 impl SseEncode for crate::api::voting::ApiShareKey {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.bundle_index, serializer);
         <u32>::sse_encode(self.proposal_id, serializer);
         <u32>::sse_encode(self.share_index, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiShareSubmissionReport {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Vec<String>>::sse_encode(self.accepted_urls, serializer);
-        <Vec<String>>::sse_encode(self.ambiguous_urls, serializer);
-        <u32>::sse_encode(self.target_count, serializer);
     }
 }
 
@@ -19211,18 +16076,6 @@ impl SseEncode for crate::api::voting::ApiShareTrackingReport {
         <Vec<crate::api::voting::ApiShareKey>>::sse_encode(self.unrecoverable, serializer);
         <bool>::sse_encode(self.cancelled, serializer);
         <Option<u64>>::sse_encode(self.next_delay_seconds, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiSignedVoteCommitments {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u32>::sse_encode(self.bundle_index, serializer);
-        <Vec<zcash_voting::wire::SignedVoteCommitmentView>>::sse_encode(
-            self.commitments,
-            serializer,
-        );
-        <Option<Vec<u8>>>::sse_encode(self.batch_digest, serializer);
     }
 }
 
@@ -19264,166 +16117,6 @@ impl SseEncode for crate::api::sync::ApiSyncProgressEvent {
     }
 }
 
-impl SseEncode for crate::api::voting::ApiVoteCommitEvent {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.phase, serializer);
-        <Option<u32>>::sse_encode(self.proposal_id, serializer);
-        <Option<u32>>::sse_encode(self.bundle_index, serializer);
-        <Option<f64>>::sse_encode(self.proof_progress, serializer);
-        <Option<crate::api::voting::ApiSignedVoteCommitments>>::sse_encode(
-            self.commitments,
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVoteRecoveryAdvance {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Option<zcash_voting::wire::VoteRecoveryWorkView>>::sse_encode(
-            self.attempted_work,
-            serializer,
-        );
-        <crate::api::voting::ApiVoteRecoveryDisposition>::sse_encode(self.disposition, serializer);
-        <Option<crate::api::voting::ApiChainSubmissionOutcome>>::sse_encode(
-            self.chain_outcome,
-            serializer,
-        );
-        <Vec<crate::api::voting::ApiVoteShareDeliveryReport>>::sse_encode(
-            self.share_deliveries,
-            serializer,
-        );
-        <zcash_voting::wire::RoundPlanView>::sse_encode(self.round_plan, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVoteRecoveryCallResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Option<crate::api::voting::ApiVoteRecoveryAdvance>>::sse_encode(self.advance, serializer);
-        <Option<crate::api::voting::ApiVoteRecoveryFailure>>::sse_encode(self.failure, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVoteRecoveryDisposition {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiVoteRecoveryDisposition::NoWork => 0,
-                crate::api::voting::ApiVoteRecoveryDisposition::Advanced => 1,
-                crate::api::voting::ApiVoteRecoveryDisposition::Pending => 2,
-                crate::api::voting::ApiVoteRecoveryDisposition::Cancelled => 3,
-                crate::api::voting::ApiVoteRecoveryDisposition::Unsupported => 4,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVoteRecoveryEvent {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <crate::api::voting::ApiVoteRecoveryEventKind>::sse_encode(self.kind, serializer);
-        <Option<zcash_voting::wire::VoteRecoveryWorkView>>::sse_encode(self.work, serializer);
-        <Vec<crate::api::voting::ApiVoteRecoveryKey>>::sse_encode(self.vote_keys, serializer);
-        <Option<crate::api::voting::ApiChainSubmissionOutcome>>::sse_encode(
-            self.chain_outcome,
-            serializer,
-        );
-        <Option<crate::api::voting::ApiVoteShareDeliveryReport>>::sse_encode(
-            self.share_delivery,
-            serializer,
-        );
-        <Option<crate::api::voting::ApiVoteRecoveryCallResult>>::sse_encode(
-            self.result,
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVoteRecoveryEventKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiVoteRecoveryEventKind::Selected => 0,
-                crate::api::voting::ApiVoteRecoveryEventKind::HelperPlansPrepared => 1,
-                crate::api::voting::ApiVoteRecoveryEventKind::ChainOutcome => 2,
-                crate::api::voting::ApiVoteRecoveryEventKind::ShareOutcome => 3,
-                crate::api::voting::ApiVoteRecoveryEventKind::Result => 4,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVoteRecoveryFailure {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <crate::api::voting::ApiVoteRecoveryFailureKind>::sse_encode(self.kind, serializer);
-        <Option<zcash_voting::wire::VoteRecoveryWorkView>>::sse_encode(
-            self.attempted_work,
-            serializer,
-        );
-        <Option<crate::api::voting::ApiChainSubmissionFailureState>>::sse_encode(
-            self.strongest_chain_state,
-            serializer,
-        );
-        <Option<crate::api::voting::ApiChainSubmissionOutcome>>::sse_encode(
-            self.chain_outcome,
-            serializer,
-        );
-        <String>::sse_encode(self.message, serializer);
-        <Option<zcash_voting::wire::RoundPlanView>>::sse_encode(self.round_plan, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVoteRecoveryFailureKind {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::voting::ApiVoteRecoveryFailureKind::InvalidInput => 0,
-                crate::api::voting::ApiVoteRecoveryFailureKind::Busy => 1,
-                crate::api::voting::ApiVoteRecoveryFailureKind::Storage => 2,
-                crate::api::voting::ApiVoteRecoveryFailureKind::InvariantViolation => 3,
-                crate::api::voting::ApiVoteRecoveryFailureKind::Transport => 4,
-                crate::api::voting::ApiVoteRecoveryFailureKind::Protocol => 5,
-                crate::api::voting::ApiVoteRecoveryFailureKind::ChainTerminal => 6,
-                crate::api::voting::ApiVoteRecoveryFailureKind::HelperDeliveryIncomplete => 7,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVoteRecoveryKey {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u32>::sse_encode(self.bundle_index, serializer);
-        <u32>::sse_encode(self.proposal_id, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVoteShareDeliveryReport {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <crate::api::voting::ApiVoteRecoveryKey>::sse_encode(self.vote, serializer);
-        <crate::api::voting::ApiShareBatchDeliveryReport>::sse_encode(self.delivery, serializer);
-    }
-}
-
 impl SseEncode for crate::api::voting::ApiVotingEligibility {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -19431,14 +16124,6 @@ impl SseEncode for crate::api::voting::ApiVotingEligibility {
         <u32>::sse_encode(self.distinct_note_count, serializer);
         <u64>::sse_encode(self.eligible_weight_zatoshi, serializer);
         <u64>::sse_encode(self.privacy_trim_dropped_value_zatoshi, serializer);
-    }
-}
-
-impl SseEncode for crate::api::voting::ApiVotingHelperPreflight {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Vec<String>>::sse_encode(self.configured_helper_urls, serializer);
-        <Vec<String>>::sse_encode(self.ready_helper_urls, serializer);
     }
 }
 
@@ -19703,16 +16388,6 @@ impl SseEncode for zcash_voting::config::ConfigSwitchKind {
     }
 }
 
-impl SseEncode for zcash_voting::wire::DelegationPirPrecomputeResultView {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u32>::sse_encode(self.cached_count, serializer);
-        <u32>::sse_encode(self.fetched_count, serializer);
-        <u32>::sse_encode(self.bundle_count, serializer);
-        <u32>::sse_encode(self.bundle_index, serializer);
-    }
-}
-
 impl SseEncode for zcash_voting::wire::DelegationProgressKind {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -19794,17 +16469,6 @@ impl SseEncode for zcash_voting::wire::DelegationSubmissionWire {
         <Vec<String>>::sse_encode(self.gov_nullifiers, serializer);
         <String>::sse_encode(self.proof, serializer);
         <String>::sse_encode(self.vote_round_id, serializer);
-    }
-}
-
-impl SseEncode for zcash_voting::wire::DraftVote {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u32>::sse_encode(self.proposal_id, serializer);
-        <u32>::sse_encode(self.choice, serializer);
-        <u32>::sse_encode(self.num_options, serializer);
-        <u64>::sse_encode(self.vc_tree_position, serializer);
-        <bool>::sse_encode(self.single_share, serializer);
     }
 }
 
@@ -20088,16 +16752,6 @@ impl SseEncode for Vec<crate::api::voting::ApiResubmittedShare> {
     }
 }
 
-impl SseEncode for Vec<crate::api::voting::ApiShareDeliveryOutcome> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <crate::api::voting::ApiShareDeliveryOutcome>::sse_encode(item, serializer);
-        }
-    }
-}
-
 impl SseEncode for Vec<crate::api::voting::ApiShareKey> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -20114,26 +16768,6 @@ impl SseEncode for Vec<crate::api::voting::ApiSnapshotBundlePirResult> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::voting::ApiSnapshotBundlePirResult>::sse_encode(item, serializer);
-        }
-    }
-}
-
-impl SseEncode for Vec<crate::api::voting::ApiVoteRecoveryKey> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <crate::api::voting::ApiVoteRecoveryKey>::sse_encode(item, serializer);
-        }
-    }
-}
-
-impl SseEncode for Vec<crate::api::voting::ApiVoteShareDeliveryReport> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <crate::api::voting::ApiVoteShareDeliveryReport>::sse_encode(item, serializer);
         }
     }
 }
@@ -20204,16 +16838,6 @@ impl SseEncode for Vec<zcash_voting::wire::DelegationStatusView> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <zcash_voting::wire::DelegationStatusView>::sse_encode(item, serializer);
-        }
-    }
-}
-
-impl SseEncode for Vec<zcash_voting::wire::DraftVote> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <zcash_voting::wire::DraftVote>::sse_encode(item, serializer);
         }
     }
 }
@@ -20494,16 +17118,6 @@ impl SseEncode for Vec<zcash_voting::wire::ShareWorkflowRecoveryView> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <zcash_voting::wire::ShareWorkflowRecoveryView>::sse_encode(item, serializer);
-        }
-    }
-}
-
-impl SseEncode for Vec<zcash_voting::wire::SignedVoteCommitmentView> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <zcash_voting::wire::SignedVoteCommitmentView>::sse_encode(item, serializer);
         }
     }
 }
@@ -20910,112 +17524,12 @@ impl SseEncode for Option<String> {
     }
 }
 
-impl SseEncode for Option<crate::api::voting::ApiChainConfirmationSource> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiChainConfirmationSource>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::voting::ApiChainDiagnostic> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiChainDiagnostic>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::voting::ApiChainSubmissionFailure> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiChainSubmissionFailure>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::voting::ApiChainSubmissionFailureState> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiChainSubmissionFailureState>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::voting::ApiChainSubmissionOutcome> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiChainSubmissionOutcome>::sse_encode(value, serializer);
-        }
-    }
-}
-
 impl SseEncode for Option<crate::api::voting_session::ApiDelegationSignerInput> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::voting_session::ApiDelegationSignerInput>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::voting::ApiSignedVoteCommitments> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiSignedVoteCommitments>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::voting::ApiVoteRecoveryAdvance> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiVoteRecoveryAdvance>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::voting::ApiVoteRecoveryCallResult> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiVoteRecoveryCallResult>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::voting::ApiVoteRecoveryFailure> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiVoteRecoveryFailure>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::voting::ApiVoteShareDeliveryReport> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::voting::ApiVoteShareDeliveryReport>::sse_encode(value, serializer);
         }
     }
 }
@@ -21276,16 +17790,6 @@ impl SseEncode for Option<zcash_voting::wire::VoteCommitStageKind> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <zcash_voting::wire::VoteCommitStageKind>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<zcash_voting::wire::VoteRecoveryWorkView> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <zcash_voting::wire::VoteRecoveryWorkView>::sse_encode(value, serializer);
         }
     }
 }
@@ -21766,14 +18270,6 @@ impl SseEncode for zcash_voting::wire::SignedDelegationPayloadView {
     }
 }
 
-impl SseEncode for zcash_voting::wire::SignedVoteCommitmentView {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <u32>::sse_encode(self.proposal_id, serializer);
-        <zcash_voting::wire::VoteCommitmentWire>::sse_encode(self.wire, serializer);
-    }
-}
-
 impl SseEncode for crate::api::wallet::SoftwareWalletDiscoveredAccount {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -21974,15 +18470,6 @@ impl SseEncode for usize {
     }
 }
 
-impl SseEncode for zcash_voting::vote::VanWitness {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Vec<Vec<u8>>>::sse_encode(self.auth_path, serializer);
-        <u32>::sse_encode(self.position, serializer);
-        <u32>::sse_encode(self.anchor_height, serializer);
-    }
-}
-
 impl SseEncode for zcash_voting::wire::VoteCommitStageKind {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -21998,21 +18485,6 @@ impl SseEncode for zcash_voting::wire::VoteCommitStageKind {
             },
             serializer,
         );
-    }
-}
-
-impl SseEncode for zcash_voting::wire::VoteCommitmentWire {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.van_nullifier, serializer);
-        <String>::sse_encode(self.vote_authority_note_new, serializer);
-        <String>::sse_encode(self.vote_commitment, serializer);
-        <u32>::sse_encode(self.proposal_id, serializer);
-        <String>::sse_encode(self.proof, serializer);
-        <String>::sse_encode(self.vote_round_id, serializer);
-        <u32>::sse_encode(self.anchor_height, serializer);
-        <String>::sse_encode(self.r_vpk, serializer);
-        <String>::sse_encode(self.vote_auth_sig, serializer);
     }
 }
 
@@ -22266,28 +18738,6 @@ mod io {
     flutter_rust_bridge::frb_generated_boilerplate_io!();
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_zcash_wallet_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingChainSubmissionPassHandle(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                VotingChainSubmissionPassHandle,
-            >,
-        >::increment_strong_count(ptr as _);
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_zcash_wallet_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingChainSubmissionPassHandle(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                VotingChainSubmissionPassHandle,
-            >,
-        >::decrement_strong_count(ptr as _);
-    }
-
-    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_zcash_wallet_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
         ptr: *const std::ffi::c_void,
     ) {
@@ -22336,24 +18786,6 @@ mod io {
             flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingShareTrackingPassHandle>,
         >::decrement_strong_count(ptr as _);
     }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_zcash_wallet_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>,
-        >::increment_strong_count(ptr as _);
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_zcash_wallet_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>,
-        >::decrement_strong_count(ptr as _);
-    }
 }
 #[cfg(not(target_family = "wasm"))]
 pub use io::*;
@@ -22380,28 +18812,6 @@ mod web {
     // Section: boilerplate
 
     flutter_rust_bridge::frb_generated_boilerplate_web!();
-
-    #[wasm_bindgen]
-    pub fn rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingChainSubmissionPassHandle(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                VotingChainSubmissionPassHandle,
-            >,
-        >::increment_strong_count(ptr as _);
-    }
-
-    #[wasm_bindgen]
-    pub fn rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingChainSubmissionPassHandle(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<
-                VotingChainSubmissionPassHandle,
-            >,
-        >::decrement_strong_count(ptr as _);
-    }
 
     #[wasm_bindgen]
     pub fn rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingHelperDeliveryContext(
@@ -22450,24 +18860,6 @@ mod web {
     ) {
         MoiArc::<
             flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingShareTrackingPassHandle>,
-        >::decrement_strong_count(ptr as _);
-    }
-
-    #[wasm_bindgen]
-    pub fn rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>,
-        >::increment_strong_count(ptr as _);
-    }
-
-    #[wasm_bindgen]
-    pub fn rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerVotingVoteRecoveryPassHandle(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingVoteRecoveryPassHandle>,
         >::decrement_strong_count(ptr as _);
     }
 }

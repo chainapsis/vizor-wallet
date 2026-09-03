@@ -1030,7 +1030,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> castVotes({
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
     List<int>? allProposalIds,
     Map<int, int>? proposalOptionCounts,
   }) {
