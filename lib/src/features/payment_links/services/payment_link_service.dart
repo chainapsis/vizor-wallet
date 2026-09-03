@@ -23,6 +23,9 @@ import 'payment_link_recovery_reconciler.dart';
 import 'payment_link_recovery_store.dart';
 import 'payment_link_transaction_matching.dart';
 
+part 'payment_link_claim_math.dart';
+part 'payment_link_claim_wallet.dart';
+
 final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
   return PaymentLinkService(
     ref,
@@ -33,184 +36,7 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 });
 
 const kPaymentLinkShareConfirmationTarget = 1;
-const kPaymentLinkClaimConfirmationTarget = 6;
 const _paymentLinkClaimMetadataWriteAttempts = 2;
-
-/// The ZIP-317 fee for the payment link's expected one-input, one-output
-/// shielded claim transaction.
-const kPaymentLinkClaimFeeReserveZatoshi = 10000;
-
-@visibleForTesting
-Future<T> runPaymentLinkFundingSubmission<T>(
-  Future<T> Function(void Function() markSubmissionStarted) operation,
-) async {
-  var submissionStarted = false;
-  try {
-    return await operation(() => submissionStarted = true);
-  } catch (error, stackTrace) {
-    if (!submissionStarted) {
-      throw PaymentLinkFundingNotSubmittedException(error, stackTrace);
-    }
-    rethrow;
-  }
-}
-
-BigInt paymentLinkFundingAmountZatoshi(BigInt recipientAmountZatoshi) {
-  if (recipientAmountZatoshi <= BigInt.zero) {
-    throw ArgumentError.value(
-      recipientAmountZatoshi,
-      'recipientAmountZatoshi',
-      'Payment link amount must be positive.',
-    );
-  }
-  return recipientAmountZatoshi +
-      BigInt.from(kPaymentLinkClaimFeeReserveZatoshi);
-}
-
-@visibleForTesting
-int paymentLinkConfirmationCount({
-  required BigInt minedHeight,
-  required BigInt chainTipHeight,
-}) {
-  if (minedHeight <= BigInt.zero || chainTipHeight < minedHeight) return 0;
-  return (chainTipHeight - minedHeight + BigInt.one).toInt();
-}
-
-@visibleForTesting
-BigInt paymentLinkVerifiedChainHeight({
-  required int scannedHeight,
-  required int chainTipHeight,
-}) {
-  if (scannedHeight <= 0 || chainTipHeight <= 0) return BigInt.zero;
-  return BigInt.from(min(scannedHeight, chainTipHeight));
-}
-
-@visibleForTesting
-int paymentLinkFundingConfirmationCountForClaim({
-  required BigInt recipientAmountZatoshi,
-  required List<rust_sync.TransactionInfo> transactions,
-  required BigInt chainTipHeight,
-}) {
-  final expectedFunding = paymentLinkFundingAmountZatoshi(
-    recipientAmountZatoshi,
-  );
-  var confirmationCount = 0;
-  for (final transaction in transactions) {
-    if (transaction.expiredUnmined ||
-        transaction.txKind != 'received' ||
-        BigInt.from(transaction.accountBalanceDelta) != expectedFunding) {
-      continue;
-    }
-    confirmationCount = max(
-      confirmationCount,
-      paymentLinkConfirmationCount(
-        minedHeight: transaction.minedHeight,
-        chainTipHeight: chainTipHeight,
-      ),
-    );
-  }
-  return min(confirmationCount, kPaymentLinkClaimConfirmationTarget);
-}
-
-@visibleForTesting
-bool paymentLinkShouldWaitForFunding({
-  required BigInt recipientAmountZatoshi,
-  required BigInt totalZatoshi,
-  required int fundingConfirmationCount,
-  required int birthdayHeight,
-  required int currentTipHeight,
-}) {
-  if (fundingConfirmationCount >= kPaymentLinkClaimConfirmationTarget) {
-    return false;
-  }
-  final expectedFunding = paymentLinkFundingAmountZatoshi(
-    recipientAmountZatoshi,
-  );
-  if (totalZatoshi >= expectedFunding) return true;
-  return currentTipHeight - birthdayHeight <
-      kPaymentLinkClaimConfirmationTarget;
-}
-
-@visibleForTesting
-PaymentLinkReceivedStatus paymentLinkReceivedStatusForTransactions({
-  required String claimTxids,
-  required List<rust_sync.TransactionInfo> transactions,
-  required BigInt chainTipHeight,
-}) {
-  final expectedTxids = claimTxids
-      .split(',')
-      .map(normalizePaymentLinkTxid)
-      .where((txid) => txid.isNotEmpty)
-      .toSet();
-  if (expectedTxids.isEmpty) return PaymentLinkReceivedStatus.receiving;
-
-  bool everyTxidMatches(
-    bool Function(rust_sync.TransactionInfo transaction) predicate,
-  ) {
-    return expectedTxids.every(
-      (expectedTxid) => transactions.any(
-        (transaction) =>
-            paymentLinkTxidsMatch(expectedTxid, transaction.txidHex) &&
-            predicate(transaction),
-      ),
-    );
-  }
-
-  final allConfirmed = everyTxidMatches(
-    (transaction) =>
-        transaction.txKind == 'received' &&
-        paymentLinkConfirmationCount(
-              minedHeight: transaction.minedHeight,
-              chainTipHeight: chainTipHeight,
-            ) >=
-            kPaymentLinkClaimConfirmationTarget,
-  );
-  if (allConfirmed) return PaymentLinkReceivedStatus.received;
-
-  final allExpired = paymentLinkClaimTransactionsExpired(
-    claimTxids: claimTxids,
-    transactions: transactions,
-  );
-  return allExpired
-      ? PaymentLinkReceivedStatus.readyToClaim
-      : PaymentLinkReceivedStatus.receiving;
-}
-
-@visibleForTesting
-bool paymentLinkClaimTransactionsExpired({
-  required String claimTxids,
-  required List<rust_sync.TransactionInfo> transactions,
-}) {
-  final expectedTxids = claimTxids
-      .split(',')
-      .map(normalizePaymentLinkTxid)
-      .where((txid) => txid.isNotEmpty)
-      .toSet();
-  if (expectedTxids.isEmpty) return false;
-  return expectedTxids.every(
-    (expectedTxid) => transactions.any(
-      (transaction) =>
-          paymentLinkTxidsMatch(expectedTxid, transaction.txidHex) &&
-          transaction.expiredUnmined,
-    ),
-  );
-}
-
-@visibleForTesting
-List<String> paymentLinkActiveClaimTxids(
-  Iterable<rust_sync.TransactionInfo> transactions,
-) {
-  return transactions
-      .where(
-        (transaction) =>
-            transaction.txKind == 'sent' &&
-            !transaction.expiredUnmined &&
-            transaction.txidHex.trim().isNotEmpty,
-      )
-      .map((transaction) => transaction.txidHex.trim())
-      .toSet()
-      .toList();
-}
 
 class PaymentLinkFundingQuote {
   const PaymentLinkFundingQuote({
@@ -250,26 +76,6 @@ PaymentLinkFundingQuote paymentLinkMaxFundingQuote({
   );
 }
 
-const _submittedPaymentLinkFundingStatuses = {
-  'broadcasted',
-  'pending_broadcast',
-  'partial_broadcast',
-  'broadcast_unknown',
-  'broadcasted_storage_failed',
-};
-
-bool isPaymentLinkFundingSubmitted({
-  required String status,
-  required String txids,
-}) {
-  return txids.trim().isNotEmpty &&
-      _submittedPaymentLinkFundingStatuses.contains(status);
-}
-
-bool isPaymentLinkFundingBroadcastAccepted(String status) {
-  return status == 'broadcasted' || status == 'broadcasted_storage_failed';
-}
-
 class PaymentLinkFundingProgress {
   const PaymentLinkFundingProgress({
     required this.confirmationCount,
@@ -291,16 +97,6 @@ class PaymentLinkFundingProgress {
       broadcastAccepted: broadcastAccepted ?? this.broadcastAccepted,
     );
   }
-}
-
-@visibleForTesting
-BigInt paymentLinkClaimableAmountZatoshi({
-  required BigInt recipientAmountZatoshi,
-  required BigInt maxSpendableZatoshi,
-}) {
-  return maxSpendableZatoshi >= recipientAmountZatoshi
-      ? recipientAmountZatoshi
-      : BigInt.zero;
 }
 
 /// UI-facing boundary for the persisted Payment Link lifecycle.
@@ -409,67 +205,6 @@ PaymentLinkClaimBroadcastStatus paymentLinkClaimBroadcastStatusFromWire(
   };
 }
 
-@visibleForTesting
-Future<bool> finalizeConfirmedPaymentLinkClaim({
-  required PaymentLinkReceivedRecord record,
-  required Future<bool> Function(PaymentLinkReceivedRecord record)
-  deleteRetainedWallet,
-  required Future<void> Function(String address) markReceived,
-}) async {
-  if (!await deleteRetainedWallet(record)) return false;
-  await markReceived(record.address);
-  return true;
-}
-
-@visibleForTesting
-bool shouldRecreatePaymentLinkClaimWallet({
-  required List<String> accountAddresses,
-  required String expectedAddress,
-}) {
-  return accountAddresses.length != 1 ||
-      accountAddresses.single != expectedAddress;
-}
-
-@visibleForTesting
-void requireUnlockedPaymentLinkWallet({required bool requiresUnlock}) {
-  if (requiresUnlock) {
-    throw StateError('Wallet is locked.');
-  }
-}
-
-@visibleForTesting
-int validatePaymentLinkClaimBirthday({
-  required int advertisedBirthdayHeight,
-  required int currentTipHeight,
-}) {
-  if (currentTipHeight <= 0) {
-    throw StateError('Current chain tip is unavailable.');
-  }
-  if (advertisedBirthdayHeight <= 0) {
-    throw const FormatException('Payment link birthday must be positive.');
-  }
-  if (advertisedBirthdayHeight > currentTipHeight) {
-    throw const FormatException(
-      'Payment link birthday is ahead of the current chain tip.',
-    );
-  }
-  return advertisedBirthdayHeight;
-}
-
-const kPaymentLinkLongSyncLookbackBlocks = 100000;
-
-@visibleForTesting
-bool isLongPaymentLinkSync({
-  required int birthdayHeight,
-  required int currentTipHeight,
-}) {
-  validatePaymentLinkClaimBirthday(
-    advertisedBirthdayHeight: birthdayHeight,
-    currentTipHeight: currentTipHeight,
-  );
-  return currentTipHeight - birthdayHeight > kPaymentLinkLongSyncLookbackBlocks;
-}
-
 class PaymentLinkLongSyncConfirmationRequired implements Exception {
   const PaymentLinkLongSyncConfirmationRequired();
 }
@@ -516,22 +251,6 @@ void requireMatchingPaymentLinkClaimDestination({
   }
 }
 
-/// Claim databases are cached by the fields that determine the recovered
-/// account and its scan range. Share-payload fields such as amount, label,
-/// timestamp, and presentation deliberately do not participate, so a corrected
-/// payload can reuse already-scanned state.
-String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
-  final identity = sha256
-      .convert(
-        utf8.encode(
-          '${link.network}:${link.address}:${link.mnemonic}:'
-          '${link.birthdayHeight}',
-        ),
-      )
-      .toString();
-  return '$kPaymentLinkClaimWalletDirectoryPrefix$identity';
-}
-
 class PaymentLinkClaimResult {
   const PaymentLinkClaimResult({required this.txids, required this.status});
 
@@ -576,7 +295,7 @@ class PaymentLinkService implements PaymentLinkOperations {
   final PaymentLinkRecoveryStore _recoveryStore;
   final PaymentLinkReceivedStore _receivedStore;
   final PaymentLinkRecoveryReconciler _recoveryReconciler;
-  final Map<String, Future<void>> _claimSyncs = {};
+  late final PaymentLinkClaimWallet _claimWallet = PaymentLinkClaimWallet(_ref);
 
   @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
@@ -926,7 +645,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     await Future.wait(
       currentNetworkRecords.map((record) async {
         try {
-          if (await _syncRetainedClaimWallet(
+          if (await _claimWallet.syncRetained(
             record: record,
             network: endpoint.networkName,
           )) {
@@ -990,7 +709,7 @@ class PaymentLinkService implements PaymentLinkOperations {
         case PaymentLinkReceivedStatus.received:
           await finalizeConfirmedPaymentLinkClaim(
             record: record,
-            deleteRetainedWallet: _deleteRetainedClaimWallet,
+            deleteRetainedWallet: _claimWallet.deleteRetained,
             markReceived: (address) =>
                 _receivedStore.markReceived(address: address),
           );
@@ -1103,7 +822,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       throw const PaymentLinkLongSyncConfirmationRequired();
     }
 
-    final tempWallet = await _createOrOpenTemporaryWalletDb(link);
+    final tempWallet = await _claimWallet.createOrOpen(link);
     log('PaymentLinkClaim: temporary wallet opened');
     var deleteOnError = !tempWallet.existed;
     try {
@@ -1136,8 +855,8 @@ class PaymentLinkService implements PaymentLinkOperations {
             );
           }
           deleteOnError = true;
-          await _resetTemporaryWalletDb(tempWallet.directory);
-          final imported = await _importPaymentLinkClaimAccount(
+          await _claimWallet.resetDb(tempWallet.directory);
+          final imported = await _claimWallet.importClaimAccount(
             link: link,
             birthdayHeight: claimBirthdayHeight,
             dbPath: tempWallet.dbPath,
@@ -1150,7 +869,7 @@ class PaymentLinkService implements PaymentLinkOperations {
           importedAccountUuid = accounts.single.uuid;
         }
       } else {
-        final imported = await _importPaymentLinkClaimAccount(
+        final imported = await _claimWallet.importClaimAccount(
           link: link,
           birthdayHeight: claimBirthdayHeight,
           dbPath: tempWallet.dbPath,
@@ -1166,7 +885,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       }
       log('PaymentLinkClaim: recovery address validated');
 
-      await _runClaimSync(link: link, dbPath: tempWallet.dbPath);
+      await _claimWallet.runClaimSync(link: link, dbPath: tempWallet.dbPath);
       log('PaymentLinkClaim: temporary wallet sync completed');
       final balance = await rust_sync.getBalance(
         dbPath: tempWallet.dbPath,
@@ -1235,7 +954,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       );
     } catch (_) {
       if (deleteOnError) {
-        await _deleteTemporaryWalletDb(tempWallet.directory);
+        await _claimWallet.deleteDb(tempWallet.directory);
       }
       rethrow;
     }
@@ -1377,14 +1096,8 @@ class PaymentLinkService implements PaymentLinkOperations {
 
   @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
-    final claimId = paymentLinkClaimWalletDirectoryName(session.link);
-    rust_sync.cancelPaymentLinkClaimSync(claimId: claimId);
-    try {
-      await _claimSyncs[claimId];
-    } catch (_) {
-      // A failed scan does not prevent the user-requested preview cleanup.
-    }
-    await _deleteTemporaryWalletDb(session.directory);
+    await _claimWallet.cancelClaimSync(session.link);
+    await _claimWallet.deleteDb(session.directory);
   }
 
   Future<void> _refreshMainWalletAfterSend() async {
@@ -1531,52 +1244,6 @@ class PaymentLinkService implements PaymentLinkOperations {
     return result;
   }
 
-  Future<void> _runClaimSync({
-    required VizorPaymentLink link,
-    required String dbPath,
-  }) {
-    final claimId = paymentLinkClaimWalletDirectoryName(link);
-    final existing = _claimSyncs[claimId];
-    if (existing != null) return existing;
-    final future = _runClaimSyncOnce(
-      claimId: claimId,
-      dbPath: dbPath,
-      network: link.network,
-    );
-    _claimSyncs[claimId] = future;
-    return future.whenComplete(() {
-      if (identical(_claimSyncs[claimId], future)) {
-        _claimSyncs.remove(claimId);
-      }
-    });
-  }
-
-  Future<void> _runClaimSyncOnce({
-    required String claimId,
-    required String dbPath,
-    required String network,
-  }) {
-    return _ref
-        .read(rpcEndpointFailoverProvider.notifier)
-        .runWithEndpointFallback<void>(
-          operation: 'Gift Card claim sync',
-          action: (endpoint) {
-            if (endpoint.networkName != network) {
-              throw StateError(
-                'Payment link is for $network, but this wallet is using '
-                '${endpoint.networkName}.',
-              );
-            }
-            return rust_sync.runPaymentLinkClaimSync(
-              claimId: claimId,
-              dbPath: dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: network,
-            );
-          },
-        );
-  }
-
   Future<void> _recoverClaimMetadata({
     required PaymentLinkReceivedRecord record,
     required String network,
@@ -1585,10 +1252,10 @@ class PaymentLinkService implements PaymentLinkOperations {
     final destinationAccountUuid = record.destinationAccountUuid;
     if (link == null || destinationAccountUuid == null) return;
 
-    final tempWallet = await _temporaryWalletLocation(link);
+    final tempWallet = await _claimWallet.locate(link);
     if (!await File(tempWallet.dbPath).exists()) return;
 
-    await _runClaimSync(link: link, dbPath: tempWallet.dbPath);
+    await _claimWallet.runClaimSync(link: link, dbPath: tempWallet.dbPath);
     final accounts = await rust_wallet.listAccounts(
       dbPath: tempWallet.dbPath,
       network: network,
@@ -1619,135 +1286,6 @@ class PaymentLinkService implements PaymentLinkOperations {
     );
   }
 
-  Future<bool> _syncRetainedClaimWallet({
-    required PaymentLinkReceivedRecord record,
-    required String network,
-  }) async {
-    final link = record.claimLink;
-    final claimTxids = record.claimTxids;
-    if (link == null || claimTxids == null || claimTxids.trim().isEmpty) {
-      return false;
-    }
-
-    final tempWallet = await _temporaryWalletLocation(link);
-    if (!await File(tempWallet.dbPath).exists()) return false;
-
-    await _runClaimSync(link: link, dbPath: tempWallet.dbPath);
-    final accounts = await rust_wallet.listAccounts(
-      dbPath: tempWallet.dbPath,
-      network: network,
-    );
-    if (shouldRecreatePaymentLinkClaimWallet(
-      accountAddresses: [
-        for (final account in accounts) account.unifiedAddress,
-      ],
-      expectedAddress: link.address,
-    )) {
-      log(
-        'PaymentLinkService: retained claim wallet no longer matches its '
-        'Gift Card identity; leaving it recoverable from the stored link',
-      );
-      return false;
-    }
-    final transactions = await rust_sync.getTransactionHistory(
-      dbPath: tempWallet.dbPath,
-      network: network,
-      accountUuid: accounts.single.uuid,
-      limit: null,
-    );
-    return paymentLinkClaimTransactionsExpired(
-      claimTxids: claimTxids,
-      transactions: transactions,
-    );
-  }
-
-  Future<bool> _deleteRetainedClaimWallet(
-    PaymentLinkReceivedRecord record,
-  ) async {
-    final link = record.claimLink;
-    if (link == null) return true;
-
-    final tempWallet = await _temporaryWalletLocation(link);
-    if (!await tempWallet.directory.exists()) return true;
-    try {
-      await tempWallet.directory.delete(recursive: true);
-      return true;
-    } catch (error, stackTrace) {
-      log(
-        'PaymentLinkService: failed to delete confirmed claim wallet: '
-        '$error\n$stackTrace',
-      );
-      return false;
-    }
-  }
-
-  Future<({Directory directory, String dbPath})> _temporaryWalletLocation(
-    VizorPaymentLink link,
-  ) async {
-    final supportDir = await getWalletSupportDirectory();
-    final separator = Platform.pathSeparator;
-    final directory = Directory(
-      '${supportDir.path}$separator${paymentLinkClaimWalletDirectoryName(link)}',
-    );
-    return (
-      directory: directory,
-      dbPath: '${directory.path}${separator}zcash_wallet.db',
-    );
-  }
-
-  Future<({Directory directory, String dbPath, bool existed})>
-  _createOrOpenTemporaryWalletDb(VizorPaymentLink link) async {
-    final location = await _temporaryWalletLocation(link);
-    final existed = await File(location.dbPath).exists();
-    await location.directory.create(recursive: true);
-    return (
-      directory: location.directory,
-      dbPath: location.dbPath,
-      existed: existed,
-    );
-  }
-
-  Future<({String address, String accountUuid})>
-  _importPaymentLinkClaimAccount({
-    required VizorPaymentLink link,
-    required int birthdayHeight,
-    required String dbPath,
-    required String network,
-  }) async {
-    final imported = await rust_wallet.importWallet(
-      mnemonic: link.mnemonic,
-      bip39Passphrase: '',
-      birthdayHeight: BigInt.from(birthdayHeight),
-      network: network,
-      dbPath: dbPath,
-      accountName: 'Payment link claim',
-    );
-    return (
-      address: imported.unifiedAddress,
-      accountUuid: imported.accountUuid,
-    );
-  }
-
-  Future<void> _resetTemporaryWalletDb(Directory directory) async {
-    if (await directory.exists()) {
-      await directory.delete(recursive: true);
-    }
-    await directory.create(recursive: true);
-  }
-
-  Future<void> _deleteTemporaryWalletDb(Directory directory) async {
-    try {
-      if (await directory.exists()) {
-        await directory.delete(recursive: true);
-      }
-    } catch (e, st) {
-      log(
-        'PaymentLinkService: failed to delete temporary payment-link DB '
-        '${directory.path}: $e\n$st',
-      );
-    }
-  }
-
   Future<void> _requireShieldedAddress(String address) async {
     final validation = await rust_sync.validateAddress(
       address: address,
@@ -1772,9 +1310,5 @@ class PaymentLinkService implements PaymentLinkOperations {
       16,
       (_) => random.nextInt(256),
     ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-  }
-
-  void _zeroize(Uint8List bytes) {
-    bytes.fillRange(0, bytes.length, 0);
   }
 }
