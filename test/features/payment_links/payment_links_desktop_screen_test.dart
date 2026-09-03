@@ -1158,6 +1158,10 @@ void main() {
         find.byKey(const ValueKey('payment_links_mobile_screen')),
         findsOneWidget,
       );
+      await tester.tap(
+        find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Paste card link'));
       await tester.pumpAndSettle();
 
@@ -1902,9 +1906,6 @@ void main() {
   ) async {
     final operations = _FakePaymentLinkOperations(records: [_sharedRecovery]);
     await _pumpPaymentLinksScreen(tester, operations: operations);
-    // Mobile opens on Redeem; the Card list is the screen behind it.
-    await tester.tap(find.bySemanticsLabel('Back'));
-    await tester.pumpAndSettle();
 
     // Before this list existed the mobile home only offered Create/Redeem,
     // so a funded link was unreachable once the Ready page was left.
@@ -1943,8 +1944,6 @@ void main() {
       ],
     );
     await _pumpPaymentLinksScreen(tester, operations: operations);
-    await tester.tap(find.bySemanticsLabel('Back'));
-    await tester.pumpAndSettle();
 
     await tester.tap(
       find.byKey(const ValueKey('payment_links_mobile_received_tab')),
