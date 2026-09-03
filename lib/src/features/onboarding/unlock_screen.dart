@@ -4,13 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../main.dart' show log;
+import '../../core/navigation/payment_uri_unlock_claim.dart';
 import '../../core/security/password_policy.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/password_text_field.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
+import '../../providers/payment_request_flow_provider.dart';
 import '../../providers/router_refresh_provider.dart';
 import '../../providers/sync_provider.dart';
 import 'shared/onboarding_auth_shell.dart';
@@ -71,17 +75,39 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
-        // No payment-URI claim here yet. The surface that presents a claimed
-        // link — the payment request card and its host — arrives in the next
-        // PR of this stack, and claiming without one would clear the park to
-        // present nothing. The link stays parked instead: `/home` re-runs the
-        // app-level drain, which still says whatever the policy has to say
-        // about a link this wallet cannot open.
-        //
+        // Claim the payment-URI prefill (parked while locked) only now, after
+        // the post-unlock work has succeeded. Claiming earlier would drop the
+        // payment if any of the awaits above threw or this screen unmounted —
+        // the prefill would already be cleared with no way to recover it —
+        // and the drain policy inside the claim reads state those awaits
+        // settle.
+        final claimed = claimParkedPaymentUriAfterUnlock(ref);
         // Desktop has no Gift Card branch here: the desktop runners never
         // register the HTTPS deeplink, so `/payment-links` is only ever
         // reached from inside the app.
         context.go('/home');
+        final pendingPrefill = claimed.prefill;
+        final notice = claimed.notice;
+        if (pendingPrefill != null) {
+          // The link becomes a card over the wallet the user just unlocked,
+          // not a jump into the composer.
+          ref
+              .read(paymentRequestFlowProvider.notifier)
+              .present(pendingPrefill, source: PaymentRequestSource.link);
+        } else if (notice != null) {
+          // The link outlived its park window while the user was finding their
+          // password, or the wallet it landed on cannot open it. Landing on
+          // /home with no card and no word is the one silent loss of something
+          // the user deliberately asked for. The toast is asked for before this
+          // screen is torn down; `showAppToast` renders it on the app-level
+          // host, which outlives the navigation.
+          showAppToast(
+            context,
+            notice,
+            duration: const Duration(seconds: 4),
+            iconName: AppIcons.warning,
+          );
+        }
       });
     } catch (e, st) {
       log('UnlockScreen._submit: ERROR: $e\n$st');
