@@ -8,6 +8,8 @@ import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_back_link.dart';
 import '../src/features/donation/widgets/donation_views.dart';
+import '../src/features/send/widgets/send_review_layout.dart';
+import '../src/features/send/widgets/send_status_content_view.dart';
 
 Widget buildDonationZecEmptyUseCase(BuildContext context) =>
     const _DonationComposePreview(mode: DonationAmountMode.zec);
@@ -49,6 +51,29 @@ Widget buildDonationSuccessUseCase(BuildContext context) => _DonationFrame(
   background: const DonationSuccessBackground(),
   child: DonationSuccessView(onDone: () {}),
 );
+
+Widget buildDonationStatusInProgressUseCase(BuildContext context) =>
+    _DonationFrame(
+      child: AppPaneScrollScaffold(
+        toolbar: AppPaneToolbar(
+          leading: AppBackLink(label: 'Send', minWidth: 60, onTap: () {}),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        child: SendStatusContentView(
+          phase: SendStatusPhase.inProgress,
+          titleOverride: 'Donation in progress...',
+          amountText: '123.12 ZEC',
+          fiatText: r'$250.12',
+          recipient: const SendReviewAddressRecipient(
+            address: 'u1vizordonationaddress',
+          ),
+          recipientRow: const DonationRecipientInfoRow(),
+          timestampText: '25 May, 13:30',
+          txIdText: null,
+          feeText: '0.012 ZEC',
+        ),
+      ),
+    );
 
 class _DonationComposePreview extends StatefulWidget {
   const _DonationComposePreview({

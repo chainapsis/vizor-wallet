@@ -233,6 +233,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       _SendStatusPhase.succeeded => SendStatusPhase.completed,
       _SendStatusPhase.failed => SendStatusPhase.failed,
     };
+    final isDonation = widget.args.flowKind == SendFlowKind.donation;
     final isKeystoneSubmitting =
         widget.keystone != null && _phase == _SendStatusPhase.sending;
     final addressBookContacts =
@@ -292,6 +293,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                       child: SendStatusContentView(
                         key: ValueKey('send_status_${statusPhase.name}'),
                         phase: statusPhase,
+                        titleOverride: isDonation
+                            ? switch (_phase) {
+                                _SendStatusPhase.failed => 'Donation failed',
+                                _ => 'Donation in progress...',
+                              }
+                            : null,
                         amountText: _formatAmount(widget.args.amountZatoshi),
                         fiatText: fiatTextForZatoshi(
                           widget.args.amountZatoshi,
@@ -305,13 +312,20 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         feeText: _formatFee(widget.args.feeZatoshi),
                         isShieldedRecipient: widget.args.isShielded,
                         recipientAddressType: widget.args.addressType,
+                        recipientRow: isDonation
+                            ? DonationRecipientInfoRow(
+                                struckThrough:
+                                    _phase == _SendStatusPhase.failed,
+                              )
+                            : null,
                         memoText: hasMemo ? memo : null,
                         memoExpanded: _messageExpanded,
                         noticeText: _phase == _SendStatusPhase.failed
                             ? (_error ?? 'Send failed')
                             : _statusMessage,
-                        onShowFullAddress: () =>
-                            setState(() => _showVerifyAddress = true),
+                        onShowFullAddress: isDonation
+                            ? null
+                            : () => setState(() => _showVerifyAddress = true),
                         onExpandMemo: () => setState(
                           () => _messageExpanded = !_messageExpanded,
                         ),

@@ -54,6 +54,7 @@ class SendReviewInfoSection extends StatelessWidget {
     this.fiatText,
     this.connectorIconName = AppIcons.arrowDown,
     this.recipientStruckThrough = false,
+    this.recipientRow,
     this.onShowFullAddress,
     super.key,
   });
@@ -82,6 +83,10 @@ class SendReviewInfoSection extends StatelessWidget {
 
   /// Line-through on the recipient headline (failed send).
   final bool recipientStruckThrough;
+
+  /// Optional flow-specific recipient row. When omitted, the normal address
+  /// or contact recipient rendering is preserved.
+  final Widget? recipientRow;
 
   final VoidCallback? onShowFullAddress;
 
@@ -125,7 +130,7 @@ class SendReviewInfoSection extends StatelessWidget {
             bottomLeftText: fiatText,
           ),
           ReviewConnectorIcon(iconName: connectorIconName),
-          _recipientRow(context),
+          recipientRow ?? _recipientRow(context),
         ],
       ),
     );

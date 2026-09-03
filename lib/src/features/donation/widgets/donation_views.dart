@@ -532,6 +532,23 @@ class DonationVizorBadge extends StatelessWidget {
   }
 }
 
+class DonationRecipientInfoRow extends StatelessWidget {
+  const DonationRecipientInfoRow({this.struckThrough = false, super.key});
+
+  final bool struckThrough;
+
+  @override
+  Widget build(BuildContext context) {
+    return ReviewInfoRow(
+      label: 'Donating to',
+      value: 'Vizor Wallet',
+      leading: const DonationVizorBadge(),
+      struckThrough: struckThrough,
+      reserveBottomRow: false,
+    );
+  }
+}
+
 class DonationReviewContentView extends StatelessWidget {
   const DonationReviewContentView({
     required this.amountText,
@@ -572,12 +589,7 @@ class DonationReviewContentView extends StatelessWidget {
                       bottomLeftText: fiatText,
                     ),
                     const ReviewConnectorIcon(iconName: AppIcons.arrowDown),
-                    const ReviewInfoRow(
-                      label: 'Donating to',
-                      value: 'Vizor Wallet',
-                      leading: DonationVizorBadge(),
-                      reserveBottomRow: false,
-                    ),
+                    const DonationRecipientInfoRow(),
                   ],
                 ),
               ),

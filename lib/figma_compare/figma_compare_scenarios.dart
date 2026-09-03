@@ -64,6 +64,16 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSendReviewAddressUseCase,
   ),
   FigmaCompareScenario(
+    id: 'send-status-in-progress',
+    description: 'Desktop send status in progress',
+    builder: buildSendStatusInProgressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'donation-status-in-progress',
+    description: 'Desktop donation status in progress',
+    builder: buildDonationStatusInProgressUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'donation-success',
     description: 'Desktop donation thank-you screen',
     builder: buildDonationSuccessUseCase,
