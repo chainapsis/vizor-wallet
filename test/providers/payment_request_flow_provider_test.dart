@@ -32,6 +32,10 @@ class _FakeSendApi {
   bool addressWrongNetwork;
   Object? proposeThrows;
   Completer<void>? gate;
+
+  /// Holds every discard open until the test releases it, so "the inputs
+  /// are still locked" is an observable state rather than a race.
+  Completer<void>? discardGate;
   var nextProposalId = 1;
 
   /// Every entry into the propose path, including the ones that throw. What
@@ -40,6 +44,9 @@ class _FakeSendApi {
   var proposeAttempts = 0;
   final discarded = <BigInt>[];
   final proposed = <BigInt>[];
+
+  /// Proposals and discards in the order Rust would have seen them.
+  final events = <String>[];
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
     spendableIsAuthoritativeNow: () => true,
@@ -69,6 +76,7 @@ class _FakeSendApi {
           if (failure != null) throw failure;
           final id = BigInt.from(nextProposalId++);
           proposed.add(id);
+          events.add('propose $id');
           return SendReviewArgs(
             proposalId: id,
             sendFlowId: sendFlowId,
@@ -88,7 +96,12 @@ class _FakeSendApi {
           required BigInt proposalId,
           required String sendFlowId,
           required String logContext,
-        }) async => discarded.add(proposalId),
+        }) async {
+          final pending = discardGate;
+          if (pending != null) await pending.future;
+          discarded.add(proposalId);
+          events.add('discard $proposalId');
+        },
   );
 }
 
@@ -406,6 +419,127 @@ void main() {
     await pumpEventQueue();
 
     expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(api.discarded, [BigInt.one]);
+  });
+
+  test('a replacement waits for the displaced proposal to be handed back '
+      'before it asks', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1first'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(api.proposed, [BigInt.one]);
+
+    // The first card's inputs stay locked until Rust answers the discard.
+    api.discardGate = Completer<void>();
+    notifier.present(request('u1second'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    final waiting = container.read(paymentRequestFlowProvider)!;
+    expect(waiting.prefill.address, 'u1second');
+    expect(waiting.view.status, PaymentRequestStatus.checking);
+    expect(
+      api.proposeAttempts,
+      1,
+      reason:
+          'a check against still-locked inputs would read a shortfall '
+          'that is not there',
+    );
+
+    api.discardGate!.complete();
+    await pumpEventQueue();
+
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.view.status, PaymentRequestStatus.ready);
+    expect(state.reviewArgs!.proposalId, BigInt.two);
+    expect(api.events, ['propose 1', 'discard 1', 'propose 2']);
+  });
+
+  test('a replacement waits for a displaced check that is still running '
+      'to hand its proposal back', () async {
+    final api = _FakeSendApi()..gate = Completer<void>();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1first'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(api.proposeAttempts, 1);
+
+    notifier.present(request('u1second'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(
+      api.proposeAttempts,
+      1,
+      reason:
+          'the displaced check has not created, let alone released, '
+          'its proposal yet',
+    );
+
+    // Rust answers the first check: its proposal has no card, is handed
+    // back, and only then does the second check ask.
+    api.gate!.complete();
+    await pumpEventQueue();
+
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.prefill.address, 'u1second');
+    expect(state.reviewArgs!.proposalId, BigInt.two);
+    expect(api.events, ['propose 1', 'discard 1', 'propose 2']);
+  });
+
+  test('a link arriving right after a dismiss waits for that discard '
+      'too', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1first'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    notifier.dismiss();
+    notifier.present(request('u1second'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(api.proposeAttempts, 1);
+
+    api.discardGate!.complete();
+    await pumpEventQueue();
+
+    expect(
+      container.read(paymentRequestFlowProvider)!.view.status,
+      PaymentRequestStatus.ready,
+    );
+    expect(api.events, ['propose 1', 'discard 1', 'propose 2']);
+  });
+
+  test('handing the proposal back for mobile review completes only once '
+      'Rust has released it', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    var handedBack = false;
+    final pending = notifier.reviewHandingBack().then((args) {
+      handedBack = true;
+      return args;
+    });
+    await pumpEventQueue();
+
+    // The card is gone at once; the caller is still waiting on the release.
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(handedBack, isFalse);
+    expect(api.discarded, isEmpty);
+
+    api.discardGate!.complete();
+    final args = await pending;
+
+    expect(args!.proposalId, BigInt.one);
+    expect(args.isPaymentRequest, isTrue);
     expect(api.discarded, [BigInt.one]);
   });
 

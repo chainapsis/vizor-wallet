@@ -102,6 +102,21 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// How many immediate re-checks one card gets.
   static const _kImmediateRecheckBudget = 2;
 
+  /// The pre-check currently asking Rust, if any.
+  ///
+  /// A check displaced mid-flight still gets its proposal — Rust does not
+  /// know the card is gone — and hands it back only once its result arrives.
+  /// Until then the inputs that proposal selected are locked, so the
+  /// replacement's check has to wait for this future before it asks.
+  Future<void>? _inFlightPrecheck;
+
+  /// The most recent hand-back of a proposal (dismiss, edit, lock, a
+  /// replacement's displaced card), for the same reason as
+  /// [_inFlightPrecheck]: a check started before the locked inputs are
+  /// released can read a wallet whose funds are all "in use" and answer "not
+  /// enough" for a payment the wallet can afford.
+  Future<void>? _lastRelease;
+
   @override
   PaymentRequestFlowState? build() {
     // The card is consent given by one unlocked account, and it holds that
@@ -217,10 +232,15 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   }) {
     final replaced = state;
     if (replaced?.proposal != null) {
-      unawaited(
+      _track(
         replaced!.proposal!.discard(logContext: 'PaymentRequest(replaced)'),
       );
     }
+    // The replacement's check is serialized behind whatever is still
+    // releasing inputs: the displaced proposal's discard just started above,
+    // an earlier hand-back that has not finished, and a displaced check that
+    // is still running and will hand its own proposal back when it lands.
+    final after = <Future<void>>[?_lastRelease, ?_inFlightPrecheck];
 
     final generation = ++_generation;
     _immediateRecheckBudget = _kImmediateRecheckBudget;
@@ -235,7 +255,29 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
         ),
       ),
     );
-    unawaited(_runPrecheck(generation));
+    unawaited(_runPrecheck(generation, after: after));
+  }
+
+  /// Hands the proposal *back* rather than on, for the mobile review step,
+  /// which creates its own proposal on "Confirm & send".
+  ///
+  /// Clears the card at once but completes only when Rust has released the
+  /// proposal: the review step re-quotes the fee as it mounts, and a quote
+  /// asked while the card's proposal still holds its inputs can come back
+  /// short for the very payment the card just found affordable. Returns null
+  /// when there is nothing to review — see [review].
+  Future<SendReviewArgs?> reviewHandingBack() async {
+    final current = state;
+    if (current == null || !current.canReview) return null;
+    final proposal = current.proposal!;
+    _generation++;
+    _publish(null);
+    final release = proposal.discard(
+      logContext: 'PaymentRequest(mobile review handoff)',
+    );
+    _track(release);
+    await release;
+    return proposal.reviewArgs;
   }
 
   /// Hands the proposal to the review screen and clears the card.
@@ -273,13 +315,51 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     if (current == null) return;
     final proposal = current.proposal;
     if (proposal != null) {
-      unawaited(proposal.discard(logContext: logContext));
+      _track(proposal.discard(logContext: logContext));
     }
     _generation++;
     _publish(null);
   }
 
-  Future<void> _runPrecheck(int generation) async {
+  /// Remembers [release] as the hand-back a later check must wait for.
+  ///
+  /// A discard never throws — `discardSendProposal` swallows its own
+  /// failures — but the future is shielded anyway so a replacement can never
+  /// be wedged in `checking` by its predecessor.
+  void _track(Future<void> release) {
+    final shielded = release.then<void>((_) {}, onError: (Object _) {});
+    _lastRelease = shielded;
+    unawaited(
+      shielded.whenComplete(() {
+        if (identical(_lastRelease, shielded)) _lastRelease = null;
+      }),
+    );
+  }
+
+  /// Runs one pre-check and keeps it in [_inFlightPrecheck] while it runs, so
+  /// a replacement presented mid-check can wait for it.
+  Future<void> _runPrecheck(
+    int generation, {
+    List<Future<void>> after = const [],
+  }) async {
+    final run = _precheck(generation, after: after);
+    _inFlightPrecheck = run;
+    try {
+      await run;
+    } finally {
+      if (identical(_inFlightPrecheck, run)) _inFlightPrecheck = null;
+    }
+  }
+
+  Future<void> _precheck(
+    int generation, {
+    required List<Future<void>> after,
+  }) async {
+    if (after.isNotEmpty) {
+      // Every future here is shielded (`_track`) or is a `_precheck` of our
+      // own, which completes normally on every path.
+      await Future.wait<void>(after);
+    }
     final current = state;
     if (current == null || generation != _generation) return;
 
@@ -312,11 +392,15 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
 
     if (generation != _generation) {
       // The card this pre-check belonged to is gone. Anything it created has
-      // no owner, so hand it straight back.
+      // no owner, so hand it straight back — and only return once it is
+      // back, because a replacement's check is waiting on this future for
+      // exactly that release.
       if (result is PaymentRequestPrecheckReady && result.proposal != null) {
-        unawaited(
-          result.proposal!.discard(logContext: 'PaymentRequest(stale check)'),
+        final release = result.proposal!.discard(
+          logContext: 'PaymentRequest(stale check)',
         );
+        _track(release);
+        await release;
       }
       return;
     }
