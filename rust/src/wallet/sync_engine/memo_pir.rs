@@ -13,7 +13,9 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use zakura_pir_memo::{ClientError, MemoPirSession, MemoSnapshotMetadata, RECORDS_PER_ROW};
+use zakura_pir_memo::{
+    ClientError, GenerationManifest, PirSession, ACTION_EXPECTATION, RECORDS_PER_ROW,
+};
 use zcash_client_backend::data_api::memo_pir::{
     decrypt_and_store_ironwood_memo, IronwoodMemoRecord, MemoPirRead, MemoPirSnapshotAnchor,
     MemoPirSnapshotStatus, MemoPirStoreResult,
@@ -28,7 +30,7 @@ use super::{lwd::DirectRouteConnector, SyncError, WalletDatabase};
 const DEFAULT_MAINNET_ENDPOINT: &str = "https://memo-pir.167.99.42.60.sslip.io";
 const ENDPOINT_ENV: &str = "VIZOR_MEMO_PIR_URL";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-const MAX_METADATA_BYTES: usize = 1024 * 1024;
+const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 const MAX_PARAMS_BYTES: usize = 64 * 1024;
 const MAX_PIR_BODY_BYTES: usize = 16 * 1024 * 1024;
 
@@ -37,7 +39,7 @@ const MAX_PIR_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// every compact-block batch.
 pub(super) struct MemoPirSync {
     endpoint: Option<String>,
-    session: Option<MemoPirSession>,
+    session: Option<PirSession>,
 }
 
 impl MemoPirSync {
@@ -94,7 +96,7 @@ impl MemoPirSync {
         let mut rows = BTreeMap::<u64, Vec<_>>::new();
         for request in requests {
             let position = u64::from(request.position());
-            if position < session.metadata().ironwood_tree_size {
+            if position < session.table_manifest().positions {
                 rows.entry(position / RECORDS_PER_ROW as u64)
                     .or_default()
                     .push(request);
@@ -110,7 +112,7 @@ impl MemoPirSync {
                 .map_err(client_protocol_error)?;
             let response = routed_request(
                 Method::POST,
-                &endpoint_path(self.endpoint.as_deref().expect("configured"), "/memo/query")?,
+                &endpoint_path(self.endpoint.as_deref().expect("configured"), "/v1/action/query")?,
                 query.request_body().to_vec(),
                 MAX_PIR_BODY_BYTES,
             )
@@ -153,36 +155,43 @@ impl MemoPirSync {
     }
 }
 
-async fn connect(endpoint: &str) -> Result<MemoPirSession, SyncError> {
+async fn connect(endpoint: &str) -> Result<PirSession, SyncError> {
     if !endpoint.starts_with("https://") {
         return Err(SyncError::parse(
             "memo PIR endpoint must use an https:// URL",
         ));
     }
-    let metadata = routed_request(
+    let manifest = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/memo/metadata")?,
+        &endpoint_path(endpoint, "/v1/generation")?,
         Vec::new(),
-        MAX_METADATA_BYTES,
+        MAX_MANIFEST_BYTES,
     )
     .await?;
-    let metadata: MemoSnapshotMetadata = serde_json::from_slice(&metadata)
-        .map_err(|error| SyncError::parse(format!("memo PIR metadata JSON: {error}")))?;
+    let manifest: GenerationManifest = serde_json::from_slice(&manifest)
+        .map_err(|error| SyncError::parse(format!("memo PIR manifest JSON: {error}")))?;
     let params = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/memo/params")?,
+        &endpoint_path(endpoint, "/v1/action/params")?,
         Vec::new(),
         MAX_PARAMS_BYTES,
     )
     .await?;
     let public_params = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/memo/public-params")?,
+        &endpoint_path(endpoint, "/v1/action/public-params")?,
         Vec::new(),
         MAX_PIR_BODY_BYTES,
     )
     .await?;
-    MemoPirSession::new("main", metadata, &params, &public_params).map_err(client_protocol_error)
+    PirSession::new(
+        "main",
+        manifest,
+        ACTION_EXPECTATION,
+        &params,
+        &public_params,
+    )
+    .map_err(client_protocol_error)
 }
 
 fn endpoint_path(endpoint: &str, path: &str) -> Result<String, SyncError> {
@@ -340,10 +349,10 @@ mod tests {
 
     #[test]
     fn endpoint_requires_https() {
-        assert!(endpoint_path("http://example.test", "/memo/metadata").is_err());
+        assert!(endpoint_path("http://example.test", "/v1/generation").is_err());
         assert_eq!(
-            endpoint_path("https://example.test/", "/memo/metadata").unwrap(),
-            "https://example.test/memo/metadata"
+            endpoint_path("https://example.test/", "/v1/generation").unwrap(),
+            "https://example.test/v1/generation"
         );
     }
 
@@ -359,7 +368,7 @@ mod tests {
         let query = session.prepare_dummy().unwrap();
         let response = routed_request(
             Method::POST,
-            &endpoint_path(DEFAULT_MAINNET_ENDPOINT, "/memo/query").unwrap(),
+            &endpoint_path(DEFAULT_MAINNET_ENDPOINT, "/v1/action/query").unwrap(),
             query.request_body().to_vec(),
             MAX_PIR_BODY_BYTES,
         )
