@@ -174,8 +174,10 @@ impl DagSync {
                     self.checked.clear();
                 }
                 Err(error) => {
-                    log::warn!("sync: DAG pass unavailable for this sync: {error}");
-                    self.endpoint = None;
+                    // Deferred, not disabled: a redeploy or a publish race
+                    // clears within a batch or two, and the block-count gate
+                    // already spaces out reconnect attempts.
+                    log::warn!("sync: DAG pass deferred to a later pass: {error}");
                     return Ok(());
                 }
             }
