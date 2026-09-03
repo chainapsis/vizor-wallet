@@ -45,7 +45,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'donation-zec-selected',
-    description: 'Desktop donation composer with 0.05 ZEC selected',
+    description: 'Desktop donation composer with 0.02 ZEC selected',
     builder: buildDonationZecSelectedUseCase,
   ),
   FigmaCompareScenario(
