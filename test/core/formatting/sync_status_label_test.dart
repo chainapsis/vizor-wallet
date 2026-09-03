@@ -96,6 +96,20 @@ void main() {
     expect(status.label, 'Vizor is synced');
   });
 
+  test('an enable that never reached the runtime is not a Tor failure', () {
+    final status = SyncStatusLabel.from(
+      SyncState(isSyncing: true, percentage: 0.4, phase: 'scan'),
+      displayWholePercentage: 40,
+      networkPrivacy: const NetworkPrivacyState(
+        torEnabled: false,
+        status: NetworkPrivacyConnectionStatus.failed,
+        targetTorEnabled: true,
+      ),
+    );
+    expect(status.kind, SyncStatusKind.syncing);
+    expect(status.label, '40% Syncing...');
+  });
+
   test('turning Tor off does not read as connecting to it', () {
     final status = SyncStatusLabel.from(
       SyncState(percentage: 1.0, isSyncing: false),

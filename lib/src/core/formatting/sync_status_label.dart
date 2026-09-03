@@ -44,11 +44,14 @@ class SyncStatusLabel {
   }) {
     if (networkPrivacy != null) {
       // `failed` alone is not a failed Tor route. An enable that failed while
-      // saving the preference publishes `failed` with Tor still off, and a
-      // disable that could not quiesce publishes `failed` with a healthy Tor
-      // still running; in both the sync state is the truth. Only a failure
-      // on the way to Tor is a Tor connection failure.
-      if (torIsTargetRoute(networkPrivacy) &&
+      // saving the preference publishes `failed` with the runtime still
+      // direct (`torEnabled` false, target true), and a disable that could not
+      // quiesce publishes `failed` with a healthy Tor still running
+      // (`torEnabled` true, target false); in both the sync state is the
+      // truth. Only a runtime that is on Tor, and was not on its way off it,
+      // has a Tor connection failure to report.
+      if (networkPrivacy.torEnabled &&
+          (networkPrivacy.targetTorEnabled ?? true) &&
           networkPrivacy.status == NetworkPrivacyConnectionStatus.failed) {
         return const SyncStatusLabel(
           kind: SyncStatusKind.failed,
