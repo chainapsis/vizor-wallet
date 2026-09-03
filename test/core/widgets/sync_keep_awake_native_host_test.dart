@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -363,6 +365,40 @@ void main() {
     await tester.pump(const Duration(milliseconds: 20));
     await _drainNativeQueue(tester);
 
+    expect(_enabledArgs(calls), [true, false]);
+  });
+
+  testWidgets('handles an in-flight native failure after dispose', (
+    tester,
+  ) async {
+    final calls = <MethodCall>[];
+    final enableResult = Completer<void>();
+    const channel = MethodChannel(kNativeScreenAwakeChannelName);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          final enabled =
+              (call.arguments as Map<Object?, Object?>?)?['enabled'] as bool;
+          if (enabled) await enableResult.future;
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final syncNotifier = FakeSyncNotifier(
+      _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+    );
+
+    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+    await tester.pump();
+    expect(_enabledArgs(calls), [true]);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    enableResult.completeError(PlatformException(code: 'delayed_failure'));
+    await _drainNativeQueue(tester);
+
+    expect(tester.takeException(), isNull);
     expect(_enabledArgs(calls), [true, false]);
   });
 }

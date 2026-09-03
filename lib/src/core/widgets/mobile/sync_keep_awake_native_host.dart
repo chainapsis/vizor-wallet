@@ -118,6 +118,7 @@ class _SyncKeepAwakeNativeHostState
     bool force = false,
   }) {
     final bridge = widget.bridge;
+    final totalAttempts = widget.retryDelays.length + 1;
     _nativeQueue = _nativeQueue.then((_) async {
       if (!_isCurrentRequest(enabled, generation)) return;
       final applied = await _applyNativeState(
@@ -125,6 +126,7 @@ class _SyncKeepAwakeNativeHostState
         enabled,
         force: force,
         attempt: failedAttempts + 1,
+        totalAttempts: totalAttempts,
       );
       if (!applied) {
         _scheduleRetry(
@@ -145,6 +147,7 @@ class _SyncKeepAwakeNativeHostState
     bool enabled, {
     required bool force,
     required int attempt,
+    required int totalAttempts,
   }) async {
     if (!force && !_nativeStateUncertain && _lastAppliedEnabled == enabled) {
       return true;
@@ -158,7 +161,7 @@ class _SyncKeepAwakeNativeHostState
       _nativeStateUncertain = true;
       debugPrint(
         'SyncKeepAwakeNativeHost: setEnabled($enabled) failed '
-        '(attempt $attempt/${widget.retryDelays.length + 1}): $error',
+        '(attempt $attempt/$totalAttempts): $error',
       );
       return false;
     }
