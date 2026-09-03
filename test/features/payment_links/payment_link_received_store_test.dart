@@ -1,0 +1,346 @@
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_lifecycle_revision.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+
+void main() {
+  group('PaymentLinkReceivedStore', () {
+    test('notifies listeners after a lifecycle write', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      var revisions = 0;
+      final store = PaymentLinkReceivedStore(
+        storage,
+        onRecordsChanged: () => revisions += 1,
+      );
+
+      await store.saveReady(_link());
+
+      expect(revisions, 1);
+    });
+
+    test(
+      'restores a claim secret and in-flight transaction after restart',
+      () async {
+        final storage = _FakePaymentLinkReceivedStorage();
+        final link = _link();
+        final store = PaymentLinkReceivedStore(storage);
+
+        await store.saveReady(link);
+        await store.markReceiving(
+          address: link.address,
+          destinationAccountUuid: 'receiver-account',
+          claimTxids: 'claim-txid',
+        );
+
+        final restored = await PaymentLinkReceivedStore(storage).load();
+        expect(restored, hasLength(1));
+        expect(restored.single.status, PaymentLinkReceivedStatus.receiving);
+        expect(restored.single.destinationAccountUuid, 'receiver-account');
+        expect(restored.single.claimTxids, 'claim-txid');
+        expect(
+          restored.single.claimLink?.toUri().toString(),
+          link.toUri().toString(),
+        );
+      },
+    );
+
+    test('clears the bearer secret only after the claim is mined', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final link = _link();
+      final store = PaymentLinkReceivedStore(storage);
+
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      await store.markReceived(address: link.address);
+
+      final restored = await PaymentLinkReceivedStore(storage).load();
+      expect(restored.single.status, PaymentLinkReceivedStatus.received);
+      expect(restored.single.claimLink, isNull);
+      expect(restored.single.claimTxids, 'claim-txid');
+      expect(restored.single.artworkId, 'ruby');
+      expect(restored.single.message, 'Enjoy your gift!');
+      expect(restored.single.amountZatoshi, link.amountZatoshi);
+      expect(storage.value, isNot(contains(link.mnemonic)));
+    });
+
+    test('counts only in-flight claims for the destination account', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final link = _link();
+      final store = PaymentLinkReceivedStore(storage);
+
+      await store.saveReady(link);
+      expect(await store.countReceivingForAccount('receiver-account'), 0);
+
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+      );
+      expect(await store.countReceivingForAccount('receiver-account'), 1);
+
+      await store.markReadyToClaim(address: link.address);
+      expect(await store.countReceivingForAccount('receiver-account'), 0);
+
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      expect(await store.countReceivingForAccount('receiver-account'), 1);
+      expect(await store.countReceivingForAccount('other-account'), 0);
+
+      await store.markReceived(address: link.address);
+      expect(await store.countReceivingForAccount('receiver-account'), 0);
+    });
+
+    test(
+      'restores a submitting claim before its transaction id is saved',
+      () async {
+        final storage = _FakePaymentLinkReceivedStorage();
+        final link = _link();
+        final store = PaymentLinkReceivedStore(storage);
+
+        await store.saveReady(link);
+        await store.markClaimStarted(
+          address: link.address,
+          destinationAccountUuid: 'receiver-account',
+        );
+
+        final restored = await PaymentLinkReceivedStore(storage).load();
+        expect(restored.single.status, PaymentLinkReceivedStatus.submitting);
+        expect(restored.single.destinationAccountUuid, 'receiver-account');
+        expect(restored.single.claimTxids, isNull);
+        expect(restored.single.isClaimInFlight, isTrue);
+        expect(restored.single.needsClaimMetadataRecovery, isTrue);
+        expect((await store.find(link.address))?.isClaimInFlight, isTrue);
+        expect(await store.find('u1missinggiftcard'), isNull);
+      },
+    );
+
+    test('counts in-flight claims across every account', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final link = _link();
+      final store = PaymentLinkReceivedStore(storage);
+
+      await store.saveReady(link);
+      expect(await store.countClaimsInFlight(), 0);
+
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+      );
+      expect(await store.countClaimsInFlight(), 1);
+
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      expect(await store.countClaimsInFlight(), 1);
+
+      await store.markReceived(address: link.address);
+      expect(await store.countClaimsInFlight(), 0);
+    });
+
+    test(
+      'refreshes the in-flight claim count after lifecycle writes',
+      () async {
+        final store = _CountingReceivedStore();
+        final container = ProviderContainer(
+          overrides: [
+            paymentLinkReceivedStoreProvider.overrideWithValue(store),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        expect(
+          await container.read(paymentLinkClaimsInFlightProvider.future),
+          1,
+        );
+
+        store.inFlightCount = 0;
+        container.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+
+        expect(
+          await container.read(paymentLinkClaimsInFlightProvider.future),
+          0,
+        );
+      },
+    );
+
+    test(
+      'refreshes the cached receiving count after lifecycle writes',
+      () async {
+        final store = _CountingReceivedStore();
+        final container = ProviderContainer(
+          overrides: [
+            paymentLinkReceivedStoreProvider.overrideWithValue(store),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        expect(
+          await container.read(
+            paymentLinkReceivingCountProvider('receiver-account').future,
+          ),
+          1,
+        );
+
+        store.count = 0;
+        container.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+
+        expect(
+          await container.read(
+            paymentLinkReceivingCountProvider('receiver-account').future,
+          ),
+          0,
+        );
+      },
+    );
+
+    test('returns an expired claim to an actionable persisted state', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final link = _link();
+      final store = PaymentLinkReceivedStore(storage);
+
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      await store.markReadyToClaim(address: link.address);
+
+      final restored = await PaymentLinkReceivedStore(storage).load();
+      expect(restored.single.status, PaymentLinkReceivedStatus.readyToClaim);
+      expect(restored.single.destinationAccountUuid, isNull);
+      expect(restored.single.claimTxids, isNull);
+      expect(
+        restored.single.claimLink?.toUri().toString(),
+        link.toUri().toString(),
+      );
+    });
+
+    test('never persists Receiving without a claim transaction id', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final link = _link();
+      final store = PaymentLinkReceivedStore(storage);
+
+      await store.saveReady(link);
+
+      await expectLater(
+        store.markReceiving(
+          address: link.address,
+          destinationAccountUuid: 'receiver-account',
+          claimTxids: '   ',
+        ),
+        throwsArgumentError,
+      );
+      final restored = await PaymentLinkReceivedStore(storage).load();
+      expect(restored.single.status, PaymentLinkReceivedStatus.readyToClaim);
+    });
+
+    test(
+      'does not reintroduce a secret for an already received card',
+      () async {
+        final storage = _FakePaymentLinkReceivedStorage();
+        final link = _link();
+        final store = PaymentLinkReceivedStore(storage);
+
+        await store.saveReady(link);
+        await store.markReceiving(
+          address: link.address,
+          destinationAccountUuid: 'receiver-account',
+          claimTxids: 'claim-txid',
+        );
+        await store.markReceived(address: link.address);
+        await store.saveReady(link);
+
+        final restored = await PaymentLinkReceivedStore(storage).load();
+        expect(restored.single.status, PaymentLinkReceivedStatus.received);
+        expect(restored.single.claimLink, isNull);
+      },
+    );
+
+    test('fails loud instead of hiding corrupted received-card data', () async {
+      final storage = _FakePaymentLinkReceivedStorage()
+        ..value = jsonEncode({
+          'version': 1,
+          'records': [
+            {
+              'network': 'main',
+              'address': 'u1paymentlinkaddress',
+              'amountZatoshi': '100000',
+              'createdAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+              'artworkId': 'ruby',
+              'status': 'unknown',
+              'claimLink': _link().toUri().toString(),
+              'destinationAccountUuid': null,
+              'claimTxids': null,
+              'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+            },
+          ],
+        });
+
+      await expectLater(
+        PaymentLinkReceivedStore(storage).load(),
+        throwsA(isA<PaymentLinkReceivedStoreFormatException>()),
+      );
+    });
+  });
+}
+
+VizorPaymentLink _link() {
+  return VizorPaymentLink(
+    network: 'main',
+    address: 'u1paymentlinkaddress',
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 3_456_789,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 8, 5, 12),
+    presentation: const PaymentLinkPresentation(
+      artworkId: 'ruby',
+      message: 'Enjoy your gift!',
+    ),
+  );
+}
+
+class _FakePaymentLinkReceivedStorage implements PaymentLinkReceivedStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async {
+    value = null;
+  }
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String nextValue) async {
+    value = nextValue;
+  }
+}
+
+class _CountingReceivedStore extends PaymentLinkReceivedStore {
+  _CountingReceivedStore() : super(_FakePaymentLinkReceivedStorage());
+
+  int count = 1;
+  int inFlightCount = 1;
+
+  @override
+  Future<int> countReceivingForAccount(String destinationAccountUuid) async {
+    return count;
+  }
+
+  @override
+  Future<int> countClaimsInFlight() async => inFlightCount;
+}

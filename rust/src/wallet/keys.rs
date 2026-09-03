@@ -257,6 +257,20 @@ fn software_account_ufvk(
     )
 }
 
+/// Derive the default shielded Unified Address for a software account without
+/// importing it into the wallet database.
+pub fn derive_software_address(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<String, String> {
+    let ufvk = software_account_ufvk(network, seed, account_index)?;
+    let (ua, _di) = ufvk
+        .default_address(shielded_address_request())
+        .map_err(|e| format!("Failed to derive address: {e}"))?;
+    Ok(ua.encode(&network))
+}
+
 /// Return the transparent receiver at `m/44'/coin_type'/account'/0/0`.
 pub fn software_account_first_external_transparent_address(
     network: WalletNetwork,
@@ -1243,6 +1257,21 @@ mod tests {
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
         assert_eq!(seed.expose_secret().len(), 64);
+    }
+
+    #[test]
+    fn software_address_derivation_is_deterministic_and_network_scoped() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let seed = mnemonic_to_seed(phrase).unwrap();
+
+        let main = derive_software_address(WalletNetwork::Main, &seed, 0).unwrap();
+        let main_again = derive_software_address(WalletNetwork::Main, &seed, 0).unwrap();
+        let test = derive_software_address(WalletNetwork::Test, &seed, 0).unwrap();
+
+        assert_eq!(main, main_again);
+        assert!(main.starts_with("u1"));
+        assert!(test.starts_with("utest1"));
+        assert_ne!(main, test);
     }
 
     #[test]

@@ -320,6 +320,22 @@ pub(crate) fn txid_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<TxId, Str
     ))
 }
 
+/// Returns the expiry height committed to by an IO-finalized PCZT.
+pub(crate) fn expiry_height_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<u32, String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+    if pczt.global().inputs_modifiable()
+        || pczt.global().outputs_modifiable()
+        || pczt.global().shielded_modifiable()
+    {
+        return Err("PCZT IO is not finalized".to_string());
+    }
+
+    let effects = pczt
+        .into_effects()
+        .map_err(|e| format!("Extract PCZT effects: {e:?}"))?;
+    Ok(u32::from(effects.expiry_height()))
+}
+
 fn legacy_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
     cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
 }
@@ -2575,9 +2591,10 @@ mod tests {
         // levels up from this nested test module.
         use super::super::{
             apply_sigs_and_extract, ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
-            extract_compact_sigs_from_signed_pczt, extract_transaction_from_pczt,
-            ironwood_orchard_proving_key, preflight_orchard_spend_auth_signatures,
-            prepare_compact_signed_pczts, prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
+            expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_signed_pczt,
+            extract_transaction_from_pczt, ironwood_orchard_proving_key,
+            preflight_orchard_spend_auth_signatures, prepare_compact_signed_pczts,
+            prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
             set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
         };
         use orchard::tree::MerkleHashOrchard;
@@ -2866,6 +2883,8 @@ mod tests {
             let (base_bytes, orchard_ask, spend_index, _, _, _) = build_migration_base_pczt();
             let pre_signature_txid = txid_from_io_finalized_pczt(&base_bytes)
                 .expect("IO-finalized PCZT effects should have a stable txid");
+            let pre_signature_expiry = expiry_height_from_io_finalized_pczt(&base_bytes)
+                .expect("IO-finalized PCZT effects should have a stable expiry height");
 
             let pk = ironwood_orchard_proving_key();
             let proofs = Prover::new(pczt::Pczt::parse(&base_bytes).unwrap())
@@ -2882,6 +2901,10 @@ mod tests {
             let extracted = extract_transaction_from_pczt(&proofs, &signed, None, None).unwrap();
 
             assert_eq!(pre_signature_txid, extracted.txid);
+            assert_eq!(
+                pre_signature_expiry,
+                u32::from(extracted.tx.expiry_height())
+            );
         }
 
         #[test]

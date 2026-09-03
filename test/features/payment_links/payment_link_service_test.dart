@@ -1,0 +1,773 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
+void main() {
+  test('classifies failures before funding submission starts', () async {
+    final failure = StateError('insufficient balance');
+
+    await expectLater(
+      runPaymentLinkFundingSubmission<String>((_) => throw failure),
+      throwsA(
+        isA<PaymentLinkFundingNotSubmittedException>().having(
+          (error) => error.error,
+          'error',
+          same(failure),
+        ),
+      ),
+    );
+  });
+
+  test(
+    'preserves ambiguous failures after funding submission starts',
+    () async {
+      final failure = StateError('broadcast result unavailable');
+
+      await expectLater(
+        runPaymentLinkFundingSubmission<String>((markSubmissionStarted) {
+          markSubmissionStarted();
+          throw failure;
+        }),
+        throwsA(same(failure)),
+      );
+    },
+  );
+
+  test('funding covers the exact recipient amount and claim fee', () {
+    final recipientAmount = BigInt.from(100000000);
+
+    expect(
+      paymentLinkFundingAmountZatoshi(recipientAmount),
+      BigInt.from(100010000),
+    );
+    expect(
+      () => paymentLinkFundingAmountZatoshi(BigInt.zero),
+      throwsArgumentError,
+    );
+  });
+
+  test(
+    'funding quote includes deposit and redeem fees in the sender total',
+    () {
+      final quote = PaymentLinkFundingQuote(
+        sourceAccountUuid: 'account-1',
+        recipientAmountZatoshi: BigInt.from(100000000),
+        fundingFeeZatoshi: BigInt.from(15000),
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+
+      expect(quote.sourceAccountUuid, 'account-1');
+      expect(quote.cardFeeZatoshi, BigInt.from(25000));
+      expect(quote.totalDeductedZatoshi, BigInt.from(100025000));
+    },
+  );
+
+  test('max funding quote reserves deposit and redeem fees', () {
+    final quote = paymentLinkMaxFundingQuote(
+      sourceAccountUuid: 'account-1',
+      maxSpendAmountZatoshi: BigInt.from(100000000),
+      fundingFeeZatoshi: BigInt.from(15000),
+    );
+
+    expect(quote.recipientAmountZatoshi, BigInt.from(99990000));
+    expect(quote.fundingFeeZatoshi, BigInt.from(15000));
+    expect(quote.claimFeeReserveZatoshi, BigInt.from(10000));
+    expect(quote.totalDeductedZatoshi, BigInt.from(100015000));
+    expect(
+      quote.totalDeductedZatoshi,
+      BigInt.from(100000000) + quote.fundingFeeZatoshi,
+    );
+    expect(
+      () => paymentLinkMaxFundingQuote(
+        sourceAccountUuid: 'account-1',
+        maxSpendAmountZatoshi: BigInt.from(10000),
+        fundingFeeZatoshi: BigInt.from(15000),
+      ),
+      throwsStateError,
+    );
+  });
+
+  test('a funding result with a known status and txid is submitted', () {
+    for (final status in const [
+      'broadcasted',
+      'pending_broadcast',
+      'partial_broadcast',
+      'broadcast_unknown',
+      'broadcasted_storage_failed',
+    ]) {
+      expect(
+        isPaymentLinkFundingSubmitted(status: status, txids: 'funding-txid'),
+        isTrue,
+        reason: status,
+      );
+    }
+
+    expect(
+      isPaymentLinkFundingSubmitted(status: 'broadcasted', txids: '  '),
+      isFalse,
+    );
+    expect(
+      isPaymentLinkFundingSubmitted(
+        status: 'unexpected',
+        txids: 'funding-txid',
+      ),
+      isFalse,
+    );
+  });
+
+  test('share readiness accepts mempool broadcast or one confirmation', () {
+    expect(
+      paymentLinkConfirmationCount(
+        minedHeight: BigInt.from(100),
+        chainTipHeight: BigInt.from(104),
+      ),
+      5,
+    );
+    expect(
+      const PaymentLinkFundingProgress(confirmationCount: 0).isReady,
+      isFalse,
+    );
+    expect(
+      const PaymentLinkFundingProgress(
+        confirmationCount: 0,
+        broadcastAccepted: true,
+      ).isReady,
+      isTrue,
+    );
+    expect(
+      const PaymentLinkFundingProgress(confirmationCount: 1).isReady,
+      isTrue,
+    );
+    expect(
+      paymentLinkConfirmationCount(
+        minedHeight: BigInt.zero,
+        chainTipHeight: BigInt.from(104),
+      ),
+      0,
+    );
+  });
+
+  test('claim confirmation count follows the matching funding receive', () {
+    final expectedFunding = paymentLinkFundingAmountZatoshi(
+      BigInt.from(100000),
+    );
+    final transactions = [
+      _transaction(
+        txid: 'funding',
+        txKind: 'received',
+        minedHeight: 100,
+        accountBalanceDelta: expectedFunding.toInt(),
+      ),
+      _transaction(
+        txid: 'dust',
+        txKind: 'received',
+        minedHeight: 90,
+        accountBalanceDelta: 1,
+      ),
+    ];
+
+    expect(
+      paymentLinkFundingConfirmationCountForClaim(
+        recipientAmountZatoshi: BigInt.from(100000),
+        transactions: transactions,
+        chainTipHeight: BigInt.from(103),
+      ),
+      4,
+    );
+  });
+
+  test(
+    'claim waits while funding is pending or still in its initial window',
+    () {
+      expect(
+        paymentLinkShouldWaitForFunding(
+          recipientAmountZatoshi: BigInt.from(100000),
+          totalZatoshi: paymentLinkFundingAmountZatoshi(BigInt.from(100000)),
+          fundingConfirmationCount: 4,
+          birthdayHeight: 100,
+          currentTipHeight: 104,
+        ),
+        isTrue,
+      );
+      expect(
+        paymentLinkShouldWaitForFunding(
+          recipientAmountZatoshi: BigInt.from(100000),
+          totalZatoshi: BigInt.zero,
+          fundingConfirmationCount: 0,
+          birthdayHeight: 100,
+          currentTipHeight: 106,
+        ),
+        isFalse,
+      );
+      expect(
+        paymentLinkShouldWaitForFunding(
+          recipientAmountZatoshi: BigInt.from(100000),
+          totalZatoshi: paymentLinkFundingAmountZatoshi(BigInt.from(100000)),
+          fundingConfirmationCount: 6,
+          birthdayHeight: 100,
+          currentTipHeight: 105,
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test('matches broadcast and history txids across byte order', () {
+    const broadcastTxid =
+        '9909fe99c789029bf118c88bd9ee33ed35965fd0f3154dd1a8ec6daa4974c7e3';
+    const historyTxid =
+        'e3c77449aa6deca8d14d15f3d05f9635ed33eed98bc818f19b0289c799fe0999';
+
+    expect(paymentLinkTxidsMatch(broadcastTxid, historyTxid), isTrue);
+    expect(paymentLinkTxidsMatch('0x$broadcastTxid', broadcastTxid), isTrue);
+    expect(paymentLinkTxidsMatch(broadcastTxid, 'not-a-txid'), isFalse);
+  });
+
+  test('prepared funding recovery requires a non-expired history txid', () {
+    const preparedTxid =
+        '9909fe99c789029bf118c88bd9ee33ed35965fd0f3154dd1a8ec6daa4974c7e3';
+    const historyTxid =
+        'e3c77449aa6deca8d14d15f3d05f9635ed33eed98bc818f19b0289c799fe0999';
+
+    expect(
+      paymentLinkFundingTransactionExists(
+        fundingTxid: preparedTxid,
+        transactions: [_transaction(txid: historyTxid, txKind: 'sent')],
+      ),
+      isTrue,
+    );
+    expect(
+      paymentLinkFundingTransactionExists(
+        fundingTxid: preparedTxid,
+        transactions: [
+          _transaction(txid: historyTxid, txKind: 'sent', expiredUnmined: true),
+        ],
+      ),
+      isFalse,
+    );
+    expect(
+      paymentLinkFundingTransactionExists(
+        fundingTxid: preparedTxid,
+        transactions: [_transaction(txid: 'different', txKind: 'sent')],
+      ),
+      isFalse,
+    );
+  });
+
+  test('funding expires only after every transaction expires unmined', () {
+    final expired = _transaction(
+      txid: 'expired',
+      txKind: 'sent',
+      expiredUnmined: true,
+    );
+
+    expect(
+      paymentLinkFundingExpired(
+        fundingTxids: 'expired',
+        transactions: [expired],
+      ),
+      isTrue,
+    );
+    expect(
+      paymentLinkFundingExpired(
+        fundingTxids: 'expired,active',
+        transactions: [
+          expired,
+          _transaction(txid: 'active', txKind: 'sent'),
+        ],
+      ),
+      isFalse,
+    );
+    expect(
+      paymentLinkFundingExpired(
+        fundingTxids: 'expired,missing',
+        transactions: [expired],
+      ),
+      isFalse,
+    );
+  });
+
+  test(
+    'claim remains Receiving until every transaction has six confirmations',
+    () {
+      expect(
+        paymentLinkReceivedStatusForTransactions(
+          claimTxids: 'claim-a,claim-b',
+          transactions: [
+            _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
+            _transaction(txid: 'claim-b', txKind: 'receiving'),
+          ],
+          chainTipHeight: BigInt.from(18),
+        ),
+        PaymentLinkReceivedStatus.receiving,
+      );
+      expect(
+        paymentLinkReceivedStatusForTransactions(
+          claimTxids: 'claim-a,claim-b',
+          transactions: [
+            _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
+            _transaction(txid: 'claim-b', txKind: 'received', minedHeight: 14),
+          ],
+          chainTipHeight: BigInt.from(18),
+        ),
+        PaymentLinkReceivedStatus.receiving,
+      );
+      expect(
+        paymentLinkReceivedStatusForTransactions(
+          claimTxids: 'claim-a,claim-b',
+          transactions: [
+            _transaction(txid: 'claim-a', txKind: 'received', minedHeight: 12),
+            _transaction(txid: 'claim-b', txKind: 'received', minedHeight: 13),
+          ],
+          chainTipHeight: BigInt.from(18),
+        ),
+        PaymentLinkReceivedStatus.received,
+      );
+    },
+  );
+
+  test('claim confirmations never outrun the scanned wallet height', () {
+    expect(
+      paymentLinkVerifiedChainHeight(scannedHeight: 105, chainTipHeight: 106),
+      BigInt.from(105),
+    );
+    expect(
+      paymentLinkVerifiedChainHeight(scannedHeight: 106, chainTipHeight: 105),
+      BigInt.from(105),
+    );
+    expect(
+      paymentLinkVerifiedChainHeight(scannedHeight: 0, chainTipHeight: 106),
+      BigInt.zero,
+    );
+  });
+
+  test('expired unmined claim becomes actionable again', () {
+    expect(
+      paymentLinkReceivedStatusForTransactions(
+        claimTxids: 'claim-txid',
+        transactions: [
+          _transaction(
+            txid: 'claim-txid',
+            txKind: 'receiving',
+            expiredUnmined: true,
+          ),
+        ],
+        chainTipHeight: BigInt.from(18),
+      ),
+      PaymentLinkReceivedStatus.readyToClaim,
+    );
+  });
+
+  test('retained claim retries only after every transaction expires', () {
+    final transactions = [
+      _transaction(txid: 'claim-a', txKind: 'sent', expiredUnmined: true),
+      _transaction(txid: 'claim-b', txKind: 'sent'),
+    ];
+
+    expect(
+      paymentLinkClaimTransactionsExpired(
+        claimTxids: 'claim-a,claim-b',
+        transactions: transactions,
+      ),
+      isFalse,
+    );
+    expect(
+      paymentLinkClaimTransactionsExpired(
+        claimTxids: 'claim-a,missing',
+        transactions: transactions,
+      ),
+      isFalse,
+    );
+    expect(
+      paymentLinkClaimTransactionsExpired(
+        claimTxids: 'claim-a',
+        transactions: transactions,
+      ),
+      isTrue,
+    );
+  });
+
+  test('recovers only active sent claim transaction ids', () {
+    expect(
+      paymentLinkActiveClaimTxids([
+        _transaction(txid: 'active', txKind: 'sent'),
+        _transaction(txid: 'expired', txKind: 'sent', expiredUnmined: true),
+        _transaction(txid: 'funding', txKind: 'received'),
+      ]),
+      ['active'],
+    );
+  });
+
+  test('claim exposes only the amount promised by the link', () {
+    final recipientAmount = BigInt.from(100000000);
+
+    expect(
+      paymentLinkClaimableAmountZatoshi(
+        recipientAmountZatoshi: recipientAmount,
+        maxSpendableZatoshi: BigInt.from(100000000),
+      ),
+      recipientAmount,
+    );
+    expect(
+      paymentLinkClaimableAmountZatoshi(
+        recipientAmountZatoshi: recipientAmount,
+        maxSpendableZatoshi: BigInt.from(120000000),
+      ),
+      recipientAmount,
+    );
+    expect(
+      paymentLinkClaimableAmountZatoshi(
+        recipientAmountZatoshi: recipientAmount,
+        maxSpendableZatoshi: BigInt.from(99999999),
+      ),
+      BigInt.zero,
+    );
+  });
+
+  test('recognizes every accepted claim broadcast status', () {
+    expect(
+      paymentLinkClaimBroadcastStatusFromWire('pending_broadcast'),
+      PaymentLinkClaimBroadcastStatus.pendingBroadcast,
+    );
+    expect(
+      paymentLinkClaimBroadcastStatusFromWire('partial_broadcast'),
+      PaymentLinkClaimBroadcastStatus.partialBroadcast,
+    );
+    expect(
+      paymentLinkClaimBroadcastStatusFromWire('broadcasted'),
+      PaymentLinkClaimBroadcastStatus.broadcasted,
+    );
+    expect(
+      () => paymentLinkClaimBroadcastStatusFromWire('unexpected'),
+      throwsStateError,
+    );
+  });
+
+  test(
+    'confirmed claims delete retained state before clearing the link',
+    () async {
+      final storage = _PaymentLinkServiceReceivedStorage();
+      final store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      final record = (await store.load()).single;
+      final events = <String>[];
+
+      final completed = await finalizeConfirmedPaymentLinkClaim(
+        record: record,
+        deleteRetainedWallet: (candidate) async {
+          expect(candidate.claimLink, isNotNull);
+          events.add('delete');
+          return true;
+        },
+        markReceived: (address) async {
+          events.add('mark');
+          await store.markReceived(address: address);
+        },
+      );
+
+      expect(completed, isTrue);
+      expect(events, ['delete', 'mark']);
+      expect((await store.load()).single.claimLink, isNull);
+    },
+  );
+
+  test(
+    'confirmed claims keep their link when retained cleanup fails',
+    () async {
+      final storage = _PaymentLinkServiceReceivedStorage();
+      final store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+        claimTxids: 'claim-txid',
+      );
+      final record = (await store.load()).single;
+
+      final completed = await finalizeConfirmedPaymentLinkClaim(
+        record: record,
+        deleteRetainedWallet: (_) async => false,
+        markReceived: (_) async => fail('must not clear the retained link'),
+      );
+
+      expect(completed, isFalse);
+      expect((await store.load()).single.claimLink, isNotNull);
+    },
+  );
+
+  test('only reuses a complete claim wallet for the expected address', () {
+    expect(
+      shouldRecreatePaymentLinkClaimWallet(
+        accountAddresses: const [],
+        expectedAddress: 'u1expected',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRecreatePaymentLinkClaimWallet(
+        accountAddresses: const ['u1expected', 'u1unexpected'],
+        expectedAddress: 'u1expected',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRecreatePaymentLinkClaimWallet(
+        accountAddresses: const ['u1unexpected'],
+        expectedAddress: 'u1expected',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRecreatePaymentLinkClaimWallet(
+        accountAddresses: const ['u1expected'],
+        expectedAddress: 'u1expected',
+      ),
+      isFalse,
+    );
+  });
+
+  test('claim broadcast stops when the wallet locks', () {
+    expect(
+      () => requireUnlockedPaymentLinkWallet(requiresUnlock: true),
+      throwsStateError,
+    );
+    expect(
+      () => requireUnlockedPaymentLinkWallet(requiresUnlock: false),
+      returnsNormally,
+    );
+  });
+
+  test('claim destination must still resolve to the prepared address', () {
+    expect(
+      () => requireMatchingPaymentLinkClaimDestination(
+        preparedAddress: 'u1prepared',
+        currentAddress: 'u1prepared',
+      ),
+      returnsNormally,
+    );
+    expect(
+      () => requireMatchingPaymentLinkClaimDestination(
+        preparedAddress: 'u1prepared',
+        currentAddress: 'u1changed',
+      ),
+      throwsA(isA<PaymentLinkClaimDestinationChangedException>()),
+    );
+  });
+
+  test('accepts any past claim birthday and rejects invalid heights', () {
+    const currentTip = 3500000;
+    expect(
+      validatePaymentLinkClaimBirthday(
+        advertisedBirthdayHeight: 1,
+        currentTipHeight: currentTip,
+      ),
+      1,
+    );
+    expect(
+      () => validatePaymentLinkClaimBirthday(
+        advertisedBirthdayHeight: 0,
+        currentTipHeight: currentTip,
+      ),
+      throwsFormatException,
+    );
+    expect(
+      () => validatePaymentLinkClaimBirthday(
+        advertisedBirthdayHeight: currentTip + 1,
+        currentTipHeight: currentTip,
+      ),
+      throwsFormatException,
+    );
+  });
+
+  test('flags claim scans beyond the normal lookback', () {
+    const currentTip = 3500000;
+    expect(
+      isLongPaymentLinkSync(
+        birthdayHeight: currentTip - kPaymentLinkLongSyncLookbackBlocks,
+        currentTipHeight: currentTip,
+      ),
+      isFalse,
+    );
+    expect(
+      isLongPaymentLinkSync(
+        birthdayHeight: currentTip - kPaymentLinkLongSyncLookbackBlocks - 1,
+        currentTipHeight: currentTip,
+      ),
+      isTrue,
+    );
+  });
+
+  test('claim wallet cache identity uses the account and birthday only', () {
+    final link = _link();
+    final sameLinkName = paymentLinkClaimWalletDirectoryName(link);
+    final differentSecretName = paymentLinkClaimWalletDirectoryName(
+      VizorPaymentLink(
+        network: link.network,
+        address: link.address,
+        amountZatoshi: link.amountZatoshi,
+        mnemonic:
+            'legal winner thank year wave sausage worth useful legal winner thank yellow',
+        birthdayHeight: link.birthdayHeight,
+        label: link.label,
+        createdAt: link.createdAt,
+      ),
+    );
+    final differentBirthdayName = paymentLinkClaimWalletDirectoryName(
+      VizorPaymentLink(
+        network: link.network,
+        address: link.address,
+        amountZatoshi: link.amountZatoshi,
+        mnemonic: link.mnemonic,
+        birthdayHeight: link.birthdayHeight - 1,
+        label: link.label,
+        createdAt: link.createdAt,
+      ),
+    );
+    final differentSharePayloadName = paymentLinkClaimWalletDirectoryName(
+      VizorPaymentLink(
+        network: link.network,
+        address: link.address,
+        amountZatoshi: link.amountZatoshi + BigInt.one,
+        mnemonic: link.mnemonic,
+        birthdayHeight: link.birthdayHeight,
+        label: '${link.label} updated',
+        createdAt: link.createdAt.add(const Duration(seconds: 1)),
+        presentation: const PaymentLinkPresentation(message: 'Updated'),
+      ),
+    );
+
+    expect(paymentLinkClaimWalletDirectoryName(link), sameLinkName);
+    expect(differentSecretName, isNot(sameLinkName));
+    expect(differentBirthdayName, isNot(sameLinkName));
+    expect(differentSharePayloadName, sameLinkName);
+    expect(sameLinkName, isNot(contains(link.address)));
+    expect(sameLinkName, isNot(contains('abandon')));
+  });
+
+  test(
+    'hardware funding is rejected before creating a recovery draft',
+    () async {
+      final storage = _RecordingPaymentLinkRecoveryStorage();
+      final container = ProviderContainer(
+        overrides: [
+          accountProvider.overrideWith(_HardwareAccountNotifier.new),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(
+            PaymentLinkRecoveryStore(storage),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container
+            .read(paymentLinkServiceProvider)
+            .createFundedLink(
+              amountZatoshi: BigInt.from(100000),
+              sourceAccountUuid: 'hardware-account',
+            ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'Keystone payment links require the hardware signing flow.',
+          ),
+        ),
+      );
+      expect(storage.writeCount, 0);
+    },
+  );
+}
+
+class _PaymentLinkServiceReceivedStorage implements PaymentLinkReceivedStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async => value = null;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String nextValue) async => value = nextValue;
+}
+
+class _HardwareAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'hardware-account',
+        name: 'Keystone',
+        order: 0,
+        isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'hardware-account',
+    activeAddress: 'u1hardwareaddress',
+  );
+}
+
+class _RecordingPaymentLinkRecoveryStorage
+    implements PaymentLinkRecoveryStorage {
+  int writeCount = 0;
+
+  @override
+  Future<void> delete() async {}
+
+  @override
+  Future<String?> read() async => null;
+
+  @override
+  Future<void> write(String value) async {
+    writeCount += 1;
+  }
+}
+
+VizorPaymentLink _link() {
+  return VizorPaymentLink(
+    network: 'main',
+    address: 'u1paymentlinkaddress',
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 3_456_789,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 8, 5, 12),
+  );
+}
+
+rust_sync.TransactionInfo _transaction({
+  required String txid,
+  required String txKind,
+  int minedHeight = 0,
+  bool expiredUnmined = false,
+  int accountBalanceDelta = 1,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txid,
+    minedHeight: BigInt.from(minedHeight),
+    expiredUnmined: expiredUnmined,
+    accountBalanceDelta: accountBalanceDelta,
+    fee: BigInt.zero,
+    blockTime: BigInt.zero,
+    isTransparent: false,
+    txKind: txKind,
+    displayAmount: BigInt.one,
+    displayPool: 'shielded',
+    createdTime: BigInt.zero,
+  );
+}

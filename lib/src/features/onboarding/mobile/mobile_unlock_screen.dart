@@ -13,6 +13,7 @@ import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
+import '../../payment_links/providers/payment_link_intake_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
@@ -222,8 +223,14 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         // the prefill would already be cleared with no way to recover it —
         // and the drain policy inside the claim reads state those awaits
         // settle.
+        // Claim first, then pick the destination, then present. Both link
+        // kinds can be waiting at once, and they do not compete: the Gift Card
+        // owns the route, the ZIP-321 card is a route-agnostic overlay that
+        // lands on top of whichever destination that picks.
         final claimed = claimParkedPaymentUriAfterUnlock(ref);
-        context.go('/home');
+        final hasPendingPaymentLink =
+            ref.read(paymentLinkIntakeProvider).pendingLink != null;
+        context.go(hasPendingPaymentLink ? '/payment-links' : '/home');
         final pendingPrefill = claimed.prefill;
         final notice = claimed.notice;
         if (pendingPrefill != null) {
@@ -309,6 +316,15 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
             ? kWalletResetDeviceAuthRequiredMessage
             : kWalletResetDeviceAuthFailedMessage;
+      });
+      return;
+    } on WalletResetInFlightGiftCardClaimsException catch (e, st) {
+      // Not a failed wipe: nothing was deleted, and the user only has to wait.
+      log('MobileUnlockScreen._resetWallet held for claim: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = kWalletResetInFlightGiftCardClaimsMessage;
       });
       return;
     } catch (e, st) {
