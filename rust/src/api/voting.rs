@@ -855,6 +855,12 @@ pub async fn submit_prepared_shares_to_helpers(
 }
 
 /// Return the next share-tracking delay in seconds using crate policy.
+///
+/// Vizor wakes the tracker when the next share reaches its status-check grace
+/// boundary. The SDK's default policy caps future waits for wallets that also
+/// use the tracking pass as a general heartbeat; Vizor refreshes round state
+/// separately with a lightweight heartbeat and whenever the voting UI becomes
+/// visible, so that cap would only cause redundant SQLite and helper passes.
 pub fn next_share_tracking_delay_seconds(
     shares: Vec<zcash_voting::wire::ShareDelegationRecordView>,
     now_seconds: u64,
@@ -862,11 +868,29 @@ pub fn next_share_tracking_delay_seconds(
     catch(|| {
         // Convert wire views into core records consumed by share policy.
         let shares = shares.into_iter().map(share_record).collect::<Vec<_>>();
-        Ok(zcash_voting::share::policy::next_tracking_delay_seconds(
-            &shares,
-            now_seconds,
-            zcash_voting::share::ShareTimingPolicy::default(),
-        ))
+        let mut policy = zcash_voting::share::ShareTimingPolicy::default();
+        let ready_delay = shares
+            .iter()
+            .any(|share| {
+                zcash_voting::share::policy::is_share_ready_for_status_check(
+                    share,
+                    now_seconds,
+                    policy,
+                )
+            })
+            .then_some(
+                policy
+                    .ready_poll_interval_seconds
+                    .max(policy.min_tracking_delay_seconds),
+            );
+        policy.future_check_max_delay_seconds = u64::MAX;
+        let next_delay =
+            zcash_voting::share::policy::next_tracking_delay_seconds(&shares, now_seconds, policy);
+        Ok(match (ready_delay, next_delay) {
+            (Some(ready), Some(next)) => Some(ready.min(next)),
+            (Some(ready), None) => Some(ready),
+            (None, next) => next,
+        })
     })
 }
 
@@ -2950,7 +2974,7 @@ mod tests {
     }
 
     #[test]
-    fn next_share_tracking_delay_uses_crate_ready_interval() {
+    fn next_share_tracking_delay_uses_earliest_ready_or_future_wakeup() {
         let ready = zcash_voting::wire::ShareDelegationRecordView {
             round_id: ROUND_ID.to_string(),
             bundle_index: 0,
@@ -2966,17 +2990,29 @@ mod tests {
             created_at: 50,
         };
         let future = zcash_voting::wire::ShareDelegationRecordView {
-            submit_at: 140,
+            submit_at: 1_000,
+            ..ready.clone()
+        };
+        let near_future = zcash_voting::wire::ShareDelegationRecordView {
+            submit_at: 115,
             ..ready.clone()
         };
 
         assert_eq!(
-            next_share_tracking_delay_seconds(vec![ready], 130).unwrap(),
+            next_share_tracking_delay_seconds(vec![ready.clone()], 130).unwrap(),
             Some(15)
         );
         assert_eq!(
-            next_share_tracking_delay_seconds(vec![future], 120).unwrap(),
-            Some(30)
+            next_share_tracking_delay_seconds(vec![future.clone()], 120).unwrap(),
+            Some(890)
+        );
+        assert_eq!(
+            next_share_tracking_delay_seconds(vec![ready.clone(), future], 120).unwrap(),
+            Some(15)
+        );
+        assert_eq!(
+            next_share_tracking_delay_seconds(vec![ready.clone(), near_future], 120).unwrap(),
+            Some(5)
         );
     }
 
