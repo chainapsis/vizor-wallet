@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
+import '../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/screens/keystone_send_scan_screen.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
@@ -57,6 +60,9 @@ class _PaymentLinkKeystoneSigningOverlayState
   @override
   void initState() {
     super.initState();
+    // The mobile surface is driven by MobileKeystonePcztSigningFlow, which
+    // calls its own `preparePczt` once it is mounted.
+    if (kAppFormFactor == AppFormFactor.mobile) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_preparePczt());
     });
@@ -191,25 +197,40 @@ class _PaymentLinkKeystoneSigningOverlayState
   }
 
   Future<void> _broadcast(List<int> signatures) async {
-    final draft = _draft;
-    final pcztWithProofs = _pcztWithProofs;
-    final saplingParams = _saplingParams;
-    if (draft == null ||
-        pcztWithProofs == null ||
-        (draft.needsSaplingParams && saplingParams == null)) {
-      return;
-    }
-
     setState(() {
       _phase = _PaymentLinkKeystonePhase.broadcasting;
       _error = null;
     });
     try {
-      final service = _signingService;
-      if (service == null) {
-        throw StateError('Keystone signing service is unavailable.');
-      }
-      _draft = null;
+      await _completeFunding(signatures);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _phase = _PaymentLinkKeystonePhase.failed;
+        _error = _friendlyError(error);
+      });
+    }
+  }
+
+  /// Applies the Keystone signatures and broadcasts the funding transaction.
+  ///
+  /// Shared by both form factors: the desktop overlay converts a throw into
+  /// its own failed phase, while the mobile signing flow renders the throw on
+  /// its failure page.
+  Future<void> _completeFunding(List<int> signatures) async {
+    final draft = _draft;
+    final pcztWithProofs = _pcztWithProofs;
+    final saplingParams = _saplingParams;
+    final service = _signingService;
+    if (draft == null ||
+        pcztWithProofs == null ||
+        service == null ||
+        (draft.needsSaplingParams && saplingParams == null)) {
+      throw StateError('Keystone signing service is unavailable.');
+    }
+
+    _draft = null;
+    try {
       final result = await service.broadcastSignedPczt(
         draft: draft,
         pcztWithProofsBytes: pcztWithProofs,
@@ -226,32 +247,103 @@ class _PaymentLinkKeystoneSigningOverlayState
         txids: result.txids,
       );
       if (!fundingAccepted) {
-        if (!mounted) return;
-        setState(() {
-          _phase = _PaymentLinkKeystonePhase.failed;
-          _error =
-              result.message ??
-              'The funding status is uncertain. Check activity before trying again.';
-        });
-        return;
+        // The network may already hold this transaction, so the draft stays.
+        throw _PaymentLinkFundingUncertainException(
+          result.message ??
+              'The funding status is uncertain. Check activity before trying again.',
+        );
       }
       await widget.onFundingBroadcast(draft.link, result);
+    } on _PaymentLinkFundingUncertainException {
+      rethrow;
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._broadcast: $error\n$stackTrace');
       try {
-        await _signingService?.discardPcztDraft(draft: draft);
+        await service.discardPcztDraft(draft: draft);
       } catch (cleanupError, cleanupStackTrace) {
         log(
           'PaymentLinkKeystoneSigning._broadcast cleanup failed: '
           '$cleanupError\n$cleanupStackTrace',
         );
       }
-      if (!mounted) return;
-      setState(() {
-        _phase = _PaymentLinkKeystonePhase.failed;
-        _error = _friendlyError(error);
-      });
+      rethrow;
     }
+  }
+
+  /// Mobile step 1: create the funding PCZT, encode the Keystone request, and
+  /// hand the proving work back so it runs while the device is scanned.
+  Future<MobileKeystonePcztSigningPayload> _prepareMobilePczt(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final service = ref.read(paymentLinkHardwareSigningServiceProvider);
+    _signingService = service;
+    final draft = await service.createFundingPczt(
+      amountZatoshi: widget.amountZatoshi,
+      sourceAccountUuid: widget.sourceAccountUuid,
+      presentation: widget.presentation,
+    );
+    if (!mounted) {
+      await service.discardPcztDraft(draft: draft);
+      throw const MobileKeystonePcztSigningAborted();
+    }
+    _draft = draft;
+
+    SaplingParamsStatus? saplingParams;
+    if (draft.needsSaplingParams) {
+      saplingParams = await loadSaplingParamsStatus();
+      if (!saplingParams.complete) {
+        final confirmed = await _showDownloadPrompt();
+        if (!confirmed) {
+          await _discardDraft();
+          throw const MobileKeystonePcztSigningAborted();
+        }
+        await downloadMissingSaplingParams(
+          saplingParams,
+          log: (message) => log('PaymentLinkKeystoneSigning: $message'),
+        );
+        saplingParams = await loadSaplingParamsStatus();
+      }
+    }
+    _saplingParams = saplingParams;
+
+    final urParts = await service.encodeSigningUrParts(draft: draft);
+    return MobileKeystonePcztSigningPayload(
+      urParts: urParts,
+      pcztWithProofs: service.addProofsForSigning(
+        draft: draft,
+        spendParamsPath: draft.needsSaplingParams
+            ? saplingParams!.spendPath
+            : null,
+        outputParamsPath: draft.needsSaplingParams
+            ? saplingParams!.outputPath
+            : null,
+      ),
+    );
+  }
+
+  Future<Uint8List> _decodeMobileSigningResponse(List<int> responseCbor) async {
+    final draft = _draft;
+    final service = _signingService;
+    if (draft == null || service == null) {
+      throw StateError('Keystone signing service is unavailable.');
+    }
+    return Uint8List.fromList(
+      await service.decodeSigningResponse(
+        draft: draft,
+        responseCbor: responseCbor,
+      ),
+    );
+  }
+
+  Future<void> _handleMobileSigned(
+    BuildContext context,
+    WidgetRef ref,
+    List<int> pcztWithProofs,
+    Uint8List signatures,
+  ) async {
+    _pcztWithProofs = pcztWithProofs;
+    await _completeFunding(signatures);
   }
 
   void _cancel() {
@@ -269,6 +361,8 @@ class _PaymentLinkKeystoneSigningOverlayState
 
   @override
   Widget build(BuildContext context) {
+    if (kAppFormFactor == AppFormFactor.mobile) return _buildMobile();
+
     final modalPhase = switch (_phase) {
       _PaymentLinkKeystonePhase.ready => KeystoneSigningModalPhase.ready,
       _PaymentLinkKeystonePhase.failed => KeystoneSigningModalPhase.failed,
@@ -334,7 +428,46 @@ class _PaymentLinkKeystoneSigningOverlayState
     );
   }
 
+  Widget _buildMobile() {
+    return Stack(
+      key: const ValueKey('payment_link_keystone_signing_overlay_surface'),
+      fit: StackFit.expand,
+      children: [
+        // Same contract as the desktop overlay: the camera is reading the
+        // animated PCZT QR while `/payment-links` stays put behind it, so an
+        // arriving `zcash:` link must stay parked until the round ends.
+        PaymentUriBusySurfaceHold(
+          child: MobileKeystonePcztSigningFlow(
+            title: 'Confirm Gift Card',
+            description:
+                'Use your Keystone wallet to scan this transaction QR code. '
+                'Follow the steps on your device.',
+            scanCaption: 'Scan the QR code on your Keystone to finish creating',
+            readingSignatureLabel: 'Reading signature...',
+            finalizingSignatureLabel: 'Creating your Gift Card...',
+            keyPrefix: 'payment_link_keystone_sign',
+            logTag: 'PaymentLinkKeystoneSigning',
+            expectedSignedUrType: 'zcash-batch-sig-result',
+            preparePczt: _prepareMobilePczt,
+            signedPcztDecoder: _decodeMobileSigningResponse,
+            onSigned: _handleMobileSigned,
+            friendlyError: _friendlyError,
+            onCancel: _cancel,
+          ),
+        ),
+        if (_showSaplingParamsPrompt)
+          Positioned.fill(
+            child: SaplingParamsPrompt(
+              onDownload: () => _resolveSaplingParamsDialog(true),
+              onCancel: () => _resolveSaplingParamsDialog(false),
+            ),
+          ),
+      ],
+    );
+  }
+
   String _friendlyError(Object error) {
+    if (error is _PaymentLinkFundingUncertainException) return error.message;
     final lower = error.toString().toLowerCase();
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';
@@ -350,4 +483,15 @@ class _PaymentLinkKeystoneSigningOverlayState
     }
     return 'Gift Card signing could not be completed.';
   }
+}
+
+/// A funding broadcast whose acceptance could not be confirmed. The draft is
+/// deliberately retained so recovery can reconcile it against the chain.
+class _PaymentLinkFundingUncertainException implements Exception {
+  const _PaymentLinkFundingUncertainException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

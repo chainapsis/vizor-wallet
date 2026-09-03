@@ -1491,10 +1491,32 @@ class _PaymentLinksDesktopScreenState
       _PaymentLinksLocalPage.received => _buildMobileReceived(),
     };
 
+    // A hardware account funds its Card through the same Keystone round trip
+    // the desktop pane runs; without this stack the mobile review CTA would
+    // sit on "Creating..." forever.
+    final keystoneRequest = _keystoneFundingRequest;
+    final body = keystoneRequest == null
+        ? page
+        : Stack(
+            fit: StackFit.expand,
+            children: [
+              page,
+              Positioned.fill(
+                child: PaymentLinkKeystoneSigningOverlay(
+                  amountZatoshi: keystoneRequest.amountZatoshi,
+                  sourceAccountUuid: keystoneRequest.sourceAccountUuid,
+                  presentation: keystoneRequest.presentation,
+                  onCancel: _cancelKeystoneFunding,
+                  onFundingBroadcast: _completeKeystoneFunding,
+                ),
+              ),
+            ],
+          );
+
     return Scaffold(
       key: const ValueKey('payment_links_mobile_screen'),
       backgroundColor: context.colors.background.window,
-      body: AppToastHost(child: SafeArea(child: page)),
+      body: AppToastHost(child: SafeArea(child: body)),
     );
   }
 
