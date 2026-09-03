@@ -57,6 +57,8 @@ abstract final class AppIcons {
   static const faceId = 'face_id';
   static const filter = 'filter';
   static const github = 'github';
+  static const giftCard = 'gift_card';
+  static const giftCardOutline = 'gift_card_outline';
   static const globe = 'globe';
   static const help = 'help';
   static const history = 'history';

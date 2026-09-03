@@ -3,10 +3,13 @@
 
 import 'package:flutter/widgets.dart';
 
+import '../widgetbook/activity_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
+import '../widgetbook/payment_link_mobile_use_cases.dart';
+import '../widgetbook/payment_link_use_cases.dart';
 import '../widgetbook/payment_request_use_cases.dart';
 import '../widgetbook/receive_use_cases.dart';
 import '../widgetbook/request_amount_use_cases.dart';
@@ -182,6 +185,285 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPayCompletedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'activity-gift-cards',
+    description: 'Desktop Activity with Gift Card creation and redemption',
+    builder: buildActivityPageUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-gift-card-created-detail',
+    description: 'Desktop created Gift Card activity detail',
+    builder: buildCreatedGiftCardActivityDetailUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-gift-card-redeemed-detail',
+    description: 'Desktop redeemed Gift Card activity detail',
+    builder: buildRedeemedGiftCardActivityDetailUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-empty',
+    description: 'Desktop Gift Cards empty state',
+    builder: buildPaymentLinkEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-help',
+    description: 'Desktop Gift Cards help modal',
+    builder: buildPaymentLinkHelpUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-empty',
+    description: 'Desktop Gift Card amount step without an amount',
+    builder: buildPaymentLinkCreateEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-focused',
+    description: 'Desktop Gift Card amount step with focused input',
+    builder: buildPaymentLinkCreateFocusedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-amount',
+    description: 'Desktop Gift Card amount step with ZEC value',
+    builder: buildPaymentLinkCreateAmountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-amount-editor',
+    description: 'Desktop Gift Card focused amount editor with ZEC value',
+    builder: buildPaymentLinkInteractiveFocusedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-insufficient',
+    description: 'Desktop Gift Card amount step with insufficient balance',
+    builder: buildPaymentLinkCreateInsufficientUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-syncing',
+    description: 'Desktop Gift Card amount step waiting for wallet sync',
+    builder: buildPaymentLinkCreateSyncingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-fiat-loading',
+    description: 'Desktop Gift Card amount step while fiat price loads',
+    builder: buildPaymentLinkCreateFiatLoadingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-fiat',
+    description: 'Desktop Gift Card amount step with fiat value',
+    builder: buildPaymentLinkCreateFiatUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-message-empty',
+    description: 'Desktop Gift Card empty optional-message step',
+    builder: buildPaymentLinkMessageEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-message-filled',
+    description: 'Desktop Gift Card filled optional-message step',
+    builder: buildPaymentLinkMessageFilledUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-message-editing',
+    description: 'Desktop Gift Card focused empty message editor',
+    builder: buildPaymentLinkMessageEditingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-message-too-large',
+    description: 'Desktop Gift Card message exceeding its UTF-8 byte limit',
+    builder: buildPaymentLinkMessageTooLargeUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-review',
+    description: 'Desktop Gift Card review fixture',
+    builder: buildPaymentLinkReviewUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-review-message',
+    description: 'Desktop Gift Card review with its message revealed',
+    builder: buildPaymentLinkReviewMessageUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ready-waiting',
+    description: 'Desktop Gift Card waiting for confirmations',
+    builder: buildPaymentLinkReadyWaitingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ready',
+    description: 'Desktop Gift Card ready state',
+    builder: buildPaymentLinkReadyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-motion-handoff',
+    description: 'Desktop Gift Card motion handoff playground',
+    builder: buildPaymentLinkMotionHandoffUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-cards-list',
+    description: 'Desktop created Gift Cards list fixture',
+    builder: buildPaymentLinkCardsListUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-share-qr',
+    description: 'Desktop selected-artwork Gift Card QR export',
+    builder: buildPaymentLinkShareQrUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-redeem-paste',
+    description: 'Desktop Gift Card redeem paste state',
+    builder: buildPaymentLinkRedeemPasteUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-redeem-long-sync-warning',
+    description: 'Desktop Gift Card long-sync warning',
+    builder: buildPaymentLinkRedeemLongSyncWarningUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-redeem-loading',
+    description: 'Desktop Gift Card redeem loading state',
+    builder: buildPaymentLinkRedeemLoadingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-redeem-invalid',
+    description: 'Desktop Gift Card redeem invalid-link state',
+    builder: buildPaymentLinkRedeemInvalidUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-redeem-unavailable',
+    description: 'Desktop Gift Card redeem no-balance state',
+    builder: buildPaymentLinkRedeemUnavailableUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-received-waiting',
+    description: 'Desktop received Gift Card waiting for confirmations',
+    builder: buildPaymentLinkReceivedWaitingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-received',
+    description: 'Desktop received Gift Card preview',
+    builder: buildPaymentLinkReceivedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-received-message',
+    description: 'Desktop received Gift Card message preview',
+    builder: buildPaymentLinkReceivedMessageUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-home-empty',
+    description: 'Mobile Gift Cards empty state',
+    builder: buildMobilePaymentLinkHomeEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-links-home-cards',
+    description: 'Mobile Gift Card list with created and received cards',
+    builder: buildMobilePaymentLinkHomeCardsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-amount-empty',
+    description: 'Mobile Gift Card amount step without an amount',
+    builder: buildMobilePaymentLinkAmountEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-amount-filled',
+    description: 'Mobile Gift Card amount step with a ZEC value',
+    builder: buildMobilePaymentLinkAmountFilledUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-amount-focused',
+    description: 'Mobile Gift Card focused amount editor without OS keyboard',
+    builder: buildMobilePaymentLinkAmountFocusedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-message-empty',
+    description: 'Mobile Gift Card optional-message step without a message',
+    builder: buildMobilePaymentLinkMessageEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-message-filled',
+    description: 'Mobile Gift Card optional-message step with a message',
+    builder: buildMobilePaymentLinkMessageFilledUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-message-focused',
+    description: 'Mobile Gift Card focused empty message editor',
+    builder: buildMobilePaymentLinkMessageFocusedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-review',
+    description: 'Mobile Gift Card fee review fixture',
+    builder: buildMobilePaymentLinkReviewUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-ready-celebrating',
+    description: 'Mobile Gift Card deposited celebration state',
+    builder: buildMobilePaymentLinkReadyCelebratingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-ready-shareable',
+    description: 'Mobile Gift Card shareable state',
+    builder: buildMobilePaymentLinkReadyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-redeem-paste',
+    description: 'Mobile Gift Card redeem paste state',
+    builder: buildMobilePaymentLinkRedeemPasteUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-redeem-long-sync-warning',
+    description: 'Mobile Gift Card long-sync warning',
+    builder: buildMobilePaymentLinkRedeemLongSyncWarningUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-redeem-loading',
+    description: 'Mobile Gift Card redeem checking state',
+    builder: buildMobilePaymentLinkRedeemLoadingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-redeem-invalid',
+    description: 'Mobile Gift Card invalid-link state',
+    builder: buildMobilePaymentLinkRedeemInvalidUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-received-waiting',
+    description: 'Mobile received Gift Card waiting for confirmations',
+    builder: buildMobilePaymentLinkReceivedWaitingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-received',
+    description: 'Mobile received Gift Card claim state',
+    builder: buildMobilePaymentLinkReceivedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'customise-account',
     description: 'Desktop account personalisation onboarding screen',
     builder: buildCustomiseAccountUseCase,
@@ -195,6 +477,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'settings-main',
     description: 'Desktop settings with Tor privacy control',
     builder: buildSettingsMainUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-main',
+    description: 'Mobile settings at the Account group',
+    builder: buildMobileSettingsMainUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'settings-support-vizor',

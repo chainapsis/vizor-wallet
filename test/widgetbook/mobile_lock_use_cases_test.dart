@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart' show Icons, MaterialApp;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -16,6 +17,8 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/forgot_passcode_shee
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_auth_shell.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
@@ -253,6 +256,28 @@ void main() {
     );
   });
 
+  testWidgets('forgot-passcode sheet warns about an in-flight Gift Card', (
+    tester,
+  ) async {
+    await _pumpMobileLockUseCase(
+      tester,
+      buildMobileForgotPasscodeSheetUseCase,
+      claimsInFlight: 1,
+    );
+
+    // Warned, never blocked: this is the only way back into a wallet whose
+    // passcode is lost, and the claim cannot finish while it stays locked.
+    expect(
+      find.text(kWalletResetInFlightGiftCardWarningMessage),
+      findsOneWidget,
+    );
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_forgot_passcode_reset')),
+    );
+    expect(continueButton.onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mobile lock modal use cases render forgot-passcode states', (
     tester,
   ) async {
@@ -265,6 +290,14 @@ void main() {
       find.textContaining("If you can't remember your passcode"),
     );
     expect(forgotBody.style?.color, AppThemeData.light.colors.text.accent);
+    // The one mobile reset path, so it carries the same Gift Card warning the
+    // desktop lost-password and uninstall screens do.
+    expect(
+      forgotBody.data,
+      contains('Unshared Gift Card links will be permanently lost.'),
+    );
+    // Nothing is arriving in this use case, so no claim warning.
+    expect(find.text(kWalletResetInFlightGiftCardWarningMessage), findsNothing);
     final continueButton = tester.widget<AppButton>(
       find.byKey(const ValueKey('mobile_forgot_passcode_reset')),
     );
@@ -405,6 +438,7 @@ Future<void> _pumpMobileLockUseCase(
   WidgetTester tester,
   WidgetBuilder builder, {
   AppThemeData theme = AppThemeData.light,
+  int claimsInFlight = 0,
 }) async {
   tester.view.physicalSize = const Size(430, 900);
   tester.view.devicePixelRatio = 1.0;
@@ -412,11 +446,20 @@ Future<void> _pumpMobileLockUseCase(
   addTearDown(tester.view.resetDevicePixelRatio);
 
   await tester.pumpWidget(
-    MaterialApp(
-      key: UniqueKey(),
-      home: AppTheme(
-        data: theme,
-        child: Builder(builder: builder),
+    // The forgot-passcode sheet reads the in-flight claim count, and the real
+    // store would go to secure storage.
+    ProviderScope(
+      overrides: [
+        paymentLinkClaimsInFlightProvider.overrideWith(
+          (ref) async => claimsInFlight,
+        ),
+      ],
+      child: MaterialApp(
+        key: UniqueKey(),
+        home: AppTheme(
+          data: theme,
+          child: Builder(builder: builder),
+        ),
       ),
     ),
   );

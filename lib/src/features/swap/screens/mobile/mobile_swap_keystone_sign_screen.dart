@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -73,6 +74,8 @@ class MobileSwapKeystoneSignScreen extends ConsumerStatefulWidget {
       _MobileSwapKeystoneSignScreenState();
 }
 
+// The whole screen is one signing session: a deposit PCZT QR the Keystone
+// camera reads, then the signed result scanned back. The hold covers both.
 class _MobileSwapKeystoneSignScreenState
     extends ConsumerState<MobileSwapKeystoneSignScreen>
     with PaymentUriBusySurfaceHoldMixin {

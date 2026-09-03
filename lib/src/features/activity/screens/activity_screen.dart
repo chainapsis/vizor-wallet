@@ -21,6 +21,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
 import '../activity_row_mapper.dart';
+import '../gift_card_activity_index.dart';
 import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
@@ -178,8 +179,11 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     unawaited(_loadTransactions(showLoading: true, clearExisting: true));
   }
 
-  void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
-    unawaited(_pushTransactionStatus(transaction));
+  void _openTransactionStatus(
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) {
+    unawaited(_pushTransactionStatus(transaction, giftCard: giftCard));
   }
 
   String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
@@ -230,8 +234,9 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   }
 
   Future<void> _pushTransactionStatus(
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) async {
     final detail = await _loadTransactionDetail(transaction);
     if (!mounted) return;
     context.push(
@@ -244,6 +249,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
+        giftCard: giftCard,
       ),
     );
   }
@@ -302,6 +308,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     });
 
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final giftCardActivityIndex = accountUuid == null
+        ? GiftCardActivityIndex.empty
+        : ref.watch(giftCardActivityIndexProvider(accountUuid)).value ??
+              GiftCardActivityIndex.empty;
     final loadedTransactions = _transactionsAccountUuid == accountUuid
         ? _transactions
         : null;
@@ -331,6 +341,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     if (canRenderTransactions) {
       for (final tx in transactions) {
         if (absorption.absorbs(tx)) continue;
+        final giftCard = giftCardActivityIndex.metadataFor(tx);
         entries.add(
           _ActivityEntry(
             sortKey: activitySortKeyForTransaction(
@@ -340,8 +351,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             row: buildTransactionActivityRow(
               context: context,
               transaction: tx,
+              giftCardKind: giftCard?.kind,
+              giftCardAmountZatoshi: giftCard?.amountZatoshi,
               privacyModeEnabled: privacyModeEnabled,
-              onTap: () => _openTransactionStatus(tx),
+              onTap: () => _openTransactionStatus(tx, giftCard: giftCard),
             ),
           ),
         );

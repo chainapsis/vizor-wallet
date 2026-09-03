@@ -37,6 +37,9 @@ class SwapKeystoneSigningOverlay extends ConsumerStatefulWidget {
 
 enum _SwapKeystonePhase { preparing, ready, broadcasting, failed }
 
+// The overlay drives a device approval over an animated PCZT QR while
+// `matchedLocation` stays on the swap pane, so only a busy-surface hold can
+// tell the payment-URI drain that this surface is mid-session.
 class _SwapKeystoneSigningOverlayState
     extends ConsumerState<SwapKeystoneSigningOverlay>
     with PaymentUriBusySurfaceHoldMixin {

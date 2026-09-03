@@ -9,6 +9,8 @@ import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
+import 'package:zcash_wallet/src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -36,6 +38,56 @@ const _transparentSenderAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 final _blockTime = BigInt.from(1764150000);
 
 void main() {
+  testWidgets('renders created Gift Card activity metadata', (tester) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+        ),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'ruby',
+          message: 'Happy birthday!',
+        ),
+      ),
+    );
+
+    expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
+    expect(find.text('Created Gift Card'), findsOneWidget);
+    expect(find.text('Happy birthday!'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('0.001'), findsOneWidget);
+    expect(find.text('120'), findsNothing);
+    expect(find.text('Tx fee'), findsOneWidget);
+    expect(find.text('0.0001 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('renders redeemed Gift Card activity metadata', (tester) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'received',
+        initialTransaction: _transaction(txKind: 'received'),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.redeemed,
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'crystal',
+          message: null,
+        ),
+      ),
+    );
+
+    expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
+    expect(find.text('Redeemed Gift Card'), findsOneWidget);
+    expect(find.text('Message'), findsNothing);
+  });
+
   testWidgets('renders the redesigned receipt for a confirmed receive', (
     tester,
   ) async {
