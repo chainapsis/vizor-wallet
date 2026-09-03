@@ -69,6 +69,11 @@ void main() {
       );
       await enterPasscode(tester, mobileE2ePasscode);
       await enterPasscode(tester, mobileE2ePasscode);
+      await tapAppButton(
+        tester,
+        const ValueKey('mobile_customise_account_continue'),
+        timeout: const Duration(minutes: 2),
+      );
       await tapWidget(
         tester,
         const ValueKey('mobile_biometrics_not_now'),
