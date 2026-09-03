@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -524,28 +523,10 @@ class DonationVizorBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox.square(
       dimension: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SvgPicture.asset(
-            'assets/illustrations/donation_vizor_badge_bg.svg',
-            width: size * .9375,
-            height: size * .9375,
-          ),
-          Positioned(
-            left: size * .125,
-            top: size * .0625,
-            child: ClipOval(
-              child: Image.asset(
-                'assets/illustrations/donation_vizor_knight.png',
-                width: size * .71875,
-                height: size * .78125,
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-              ),
-            ),
-          ),
-        ],
+      child: Image.asset(
+        'assets/illustrations/donation_vizor_badge.png',
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
       ),
     );
   }
