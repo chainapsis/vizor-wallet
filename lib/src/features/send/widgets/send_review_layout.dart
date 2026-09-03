@@ -52,6 +52,8 @@ class SendReviewInfoSection extends StatelessWidget {
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
+    this.isPaymentRequest = false,
+    this.requestedAmountText,
     this.connectorIconName = AppIcons.arrowDown,
     this.recipientStruckThrough = false,
     this.onShowFullAddress,
@@ -75,6 +77,19 @@ class SendReviewInfoSection extends StatelessWidget {
 
   /// Optional fiat sub-label under the amount; hidden when null.
   final String? fiatText;
+
+  /// This send answers a ZIP-321 payment request.
+  ///
+  /// It only retitles the recipient row to "Requested by". The value stays
+  /// the verified recipient the ordinary "To" row shows (contact name, own
+  /// account, or truncated address). The link's own `label=` is unverified
+  /// text and is never rendered on the review — the payment request card is
+  /// the one surface that shows it.
+  final bool isPaymentRequest;
+
+  /// Preformatted amount the request asked for ("0.5 ZEC"), shown as a muted
+  /// line under the amount when the user changed it before reviewing.
+  final String? requestedAmountText;
 
   /// Connector between the Amount and To rows — arrow-down on review /
   /// in-progress / completed, uturn-up on failed.
@@ -124,6 +139,17 @@ class SendReviewInfoSection extends StatelessWidget {
             leading: const _ZecCoinImage(),
             bottomLeftText: fiatText,
           ),
+          if (requestedAmountText != null)
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.xl),
+              child: Text(
+                'Requested $requestedAmountText',
+                key: const ValueKey('send_review_requested_amount'),
+                style: AppTypography.bodySmall.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+            ),
           _ReviewConnectorIcon(iconName: connectorIconName),
           _recipientRow(context),
         ],
@@ -132,9 +158,17 @@ class SendReviewInfoSection extends StatelessWidget {
   }
 
   Widget _recipientRow(BuildContext context) {
+    // A request only changes what the row is called. The value stays the
+    // recipient the wallet resolved, so an unverified link label can never
+    // stand in for the identity the user is consenting to pay.
+    final rowLabel = isPaymentRequest ? 'Requested by' : 'To';
+    final rowKey = isPaymentRequest
+        ? const ValueKey('send_review_requested_by')
+        : null;
     return switch (recipient) {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
-        label: 'To',
+        key: rowKey,
+        label: rowLabel,
         value: truncatedAddress(address),
         leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
         struckThrough: recipientStruckThrough,
@@ -154,7 +188,8 @@ class SendReviewInfoSection extends StatelessWidget {
         :final address,
       ) =>
         ReviewInfoRow(
-          label: 'To',
+          key: rowKey,
+          label: rowLabel,
           value: name,
           leading: AppProfilePicture(
             profilePictureId: profilePictureId,

@@ -15,6 +15,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -54,9 +55,12 @@ class SendScreen extends ConsumerStatefulWidget {
 }
 
 class _SendScreenState extends ConsumerState<SendScreen> {
+  SendPrefillArgs? _retainedPrefill;
+
   @override
   void initState() {
     super.initState();
+    _retainedPrefill = widget.prefill;
     try {
       ref.read(sendProvingKeyWarmupProvider).call();
     } catch (error) {
@@ -65,7 +69,17 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant SendScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final prefill = widget.prefill;
+    if (prefill != null) {
+      _retainedPrefill = prefill;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final prefill = widget.prefill ?? _retainedPrefill;
     final walletAsync = ref.watch(walletProvider);
     final accountState = ref.watch(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
@@ -90,14 +104,14 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         sync.isUsingCompletedSpendableSnapshot;
 
     return _SendComposeBody(
-      key: ValueKey('$activeAccountUuid:${widget.prefill?.fingerprint ?? ''}'),
+      key: ValueKey('$activeAccountUuid:${prefill?.fingerprint ?? ''}'),
       walletAsync: walletAsync,
       activeAccountUuid: activeAccountUuid,
       activeAccountIsHardware: activeAccountIsHardware,
       spendableBalance: spendableBalance,
       displaySpendableBalance: displaySpendableBalance,
       isUsingCompletedSpendableSnapshot: isUsingCompletedSpendableSnapshot,
-      prefill: widget.prefill,
+      prefill: prefill,
     );
   }
 }
@@ -206,6 +220,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _contactPickerOpen = false;
   String? _error;
   String _addressType = '';
+
+  /// True when the last validation refused the address only because it belongs
+  /// to another Zcash network. `_addressType` stays `'invalid'` in that case so
+  /// every gate that already refuses bad addresses keeps refusing this one;
+  /// this flag changes nothing but the sentence under the field.
+  bool _addressWrongNetwork = false;
   String?
   _amountError; // null = no error, empty string = silent invalid (empty/dot)
   // Canonical wallet amount used for validation and Rust calls. The controller
@@ -217,16 +237,25 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
   bool _programmaticAmountEdit = false;
+  bool _programmaticMemoEdit = false;
+  bool _preserveMemoWhitespace = false;
+  // Last memo text this widget observed. TextEditingController notifies on
+  // selection-only changes too (focusing the field, moving the caret), which
+  // must not count as the user editing the memo.
+  String _lastMemoText = '';
   _MaxQuote? _maxQuote;
   Timer? _maxDebounceTimer;
   int _addressSeq = 0;
   int _maxSeq = 0;
   int _validateSeq = 0;
+  String? _appliedPrefillFingerprint;
 
   @override
   void initState() {
     super.initState();
     _applyPrefill(widget.prefill);
+    // _applyPrefill may have seeded the memo before the listener existed.
+    _lastMemoText = _memoController.text;
     _memoController.addListener(_handleMemoChanged);
     _addressFocusNode.addListener(_handleFieldVisualStateChanged);
     _amountFocusNode.addListener(_handleFieldVisualStateChanged);
@@ -234,24 +263,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
-    });
-  }
-
-  void _applyPrefill(SendPrefillArgs? prefill) {
-    if (prefill == null) return;
-    _addressController.text = prefill.address;
-    if (prefill.amountText != null) {
-      _amountText = prefill.amountText!.trim();
-      _amountController.text = _amountText;
-      _amountError = null;
-    }
-    if (prefill.memoText != null && prefill.memoText!.isNotEmpty) {
-      _memoController.text = prefill.memoText!;
-      _messageExpanded = true;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(_validateAddress());
     });
   }
 
@@ -273,7 +284,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   void _handleMemoChanged() {
-    if (_memoController.text.isNotEmpty && !_messageExpanded) {
+    final text = _memoController.text;
+    // Selection-only notification: tapping into the memo field must not drop
+    // the ZIP-321 whitespace the link asked us to preserve.
+    if (text == _lastMemoText) return;
+    _lastMemoText = text;
+    if (!_programmaticMemoEdit) {
+      _preserveMemoWhitespace = false;
+    }
+    if (text.isNotEmpty && !_messageExpanded) {
       _messageExpanded = true;
     }
     if (_isMaxMode) {
@@ -322,9 +341,42 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     _handleAddressChanged();
   }
 
+  void _applyPrefill(SendPrefillArgs? prefill) {
+    if (prefill == null || _appliedPrefillFingerprint == prefill.fingerprint) {
+      return;
+    }
+    _appliedPrefillFingerprint = prefill.fingerprint;
+    _maxDebounceTimer?.cancel();
+    _addressController.text = prefill.address;
+    if (prefill.amountText != null) {
+      _amountText = prefill.amountText!.trim();
+      _amountController.text = _amountText;
+      _amountError = null;
+    }
+    final memoText = prefill.memoText;
+    if (memoText != null && memoText.isNotEmpty) {
+      _preserveMemoWhitespace = prefill.preserveMemoText;
+      _programmaticMemoEdit = true;
+      _memoController.text = memoText;
+      _programmaticMemoEdit = false;
+      _messageExpanded = true;
+    } else {
+      _preserveMemoWhitespace = false;
+    }
+    _isMaxMode = false;
+    _isResolvingMax = false;
+    _maxQuote = null;
+    _error = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_validateAddress());
+    });
+  }
+
   @override
   void didUpdateWidget(covariant _SendComposeBody oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _applyPrefill(widget.prefill);
     if (oldWidget.spendableBalance != widget.spendableBalance ||
         oldWidget.displaySpendableBalance != widget.displaySpendableBalance ||
         oldWidget.isUsingCompletedSpendableSnapshot !=
@@ -345,18 +397,26 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final addr = _addressController.text.trim();
     if (addr.isEmpty) {
       if (!mounted || seq != _addressSeq) return;
-      setState(() => _addressType = '');
+      setState(() {
+        _addressType = '';
+        _addressWrongNetwork = false;
+      });
       _handleAddressValidationSettled();
       return;
     }
     try {
-      final result = await rust_sync.validateAddress(address: addr);
+      final result = await rust_sync.validateAddress(
+        address: addr,
+        network: kZcashDefaultNetworkName,
+      );
       if (!mounted || seq != _addressSeq) return;
       final nextAddressType = result.isValid ? result.addressType : 'invalid';
       setState(() {
         _addressType = nextAddressType;
+        _addressWrongNetwork = result.wrongNetwork;
         if (_isTransparentLikeType(nextAddressType)) {
           _messageExpanded = false;
+          _preserveMemoWhitespace = false;
         }
       });
       if (_isTransparentLikeType(nextAddressType) &&
@@ -367,7 +427,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     } catch (e) {
       log('Send: address validation error: $e');
       if (!mounted || seq != _addressSeq) return;
-      setState(() => _addressType = 'error');
+      setState(() {
+        _addressType = 'error';
+        _addressWrongNetwork = false;
+      });
       _handleAddressValidationSettled();
     }
   }
@@ -385,6 +448,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     _maxDebounceTimer?.cancel();
     setState(() {
       _addressType = '';
+      _addressWrongNetwork = false;
       _error = null;
       if (_isMaxMode) {
         _validateSeq++;
@@ -553,8 +617,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _isTransparentLikeType(String addressType) =>
       addressType == 'transparent' || addressType == 'tex';
 
-  String get _effectiveMemo =>
-      _isTransparentLikeAddress ? '' : _memoController.text.trim();
+  String get _effectiveMemo {
+    if (_isTransparentLikeAddress) return '';
+    final memo = _memoController.text;
+    return _preserveMemoWhitespace ? memo : memo.trim();
+  }
 
   BigInt get _availableBalanceForCurrentAddress =>
       widget.displaySpendableBalance;
@@ -838,8 +905,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
     } catch (e) {
       if (!mounted || seq != _validateSeq) return;
-      final msg = e.toString();
-      if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
+      // Lowercase first, like the max estimate above: what Rust actually
+      // sends up is "Propose failed: Insufficient balance (have …, need …
+      // including fee)", so a case-sensitive match on either literal never
+      // fired and this warning could not reach the composer at all.
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('insufficientfunds') || msg.contains('insufficient')) {
         setState(() => _amountError = _insufficientBalanceIncludingFeeText);
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
@@ -849,6 +920,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   bool get _isAmountValid => _amountError == null;
+
+  /// The prefill this compose form was opened from, when it came from a
+  /// payment request and still points at the same recipient.
+  SendPrefillArgs? _activePaymentRequest(String address) {
+    final prefill = widget.prefill;
+    if (prefill == null) return null;
+    if (prefill.source != kPaymentUriPrefillSource) return null;
+    if (prefill.address.trim() != address) return null;
+    return prefill;
+  }
 
   Future<void> _openReview() async {
     setState(() {
@@ -917,6 +998,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         });
         return;
       }
+      // A payment request that was edited rather than accepted as-is keeps
+      // its framing — but only while the recipient is still the one the
+      // request named. Retype the address and this is an ordinary send again.
+      final request = _activePaymentRequest(address);
       final reviewArgs = await proposeSendTransfer(
         ref: ref,
         loadDbPath: ref.read(sendWalletDbPathProvider),
@@ -926,6 +1011,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         addressType: _addressType,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        isPaymentRequest: request != null,
+        requestedBy: request?.label,
+        requestedAmountZatoshi: parseZecAmount(request?.amountText ?? ''),
       );
       activeProposalId = reviewArgs.proposalId;
 
@@ -1040,7 +1128,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
     }
     final addressMessage = switch (_addressType) {
-      'invalid' => 'Invalid address',
+      // A wrong-network address is well-formed, so "Invalid address" would
+      // send the user hunting for a typo that is not there.
+      'invalid' =>
+        _addressWrongNetwork ? kWrongNetworkAddressMessage : 'Invalid address',
       'error' => 'Address validation failed',
       _ => matchedRecipientName,
     };
@@ -1219,6 +1310,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                       _maxDebounceTimer?.cancel();
                                       setState(() {
                                         _addressType = '';
+                                        _addressWrongNetwork = false;
                                         _error = null;
                                         if (_isMaxMode) {
                                           _validateSeq++;
@@ -2045,7 +2137,9 @@ class _SendAmountConversionRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xxs),
-            const _SendAmountPriceLoadingBar(),
+            const AmountPriceLoadingBar(
+              key: ValueKey('send_amount_price_loading'),
+            ),
           ] else
             Text(
               text ?? r'$ 0',
@@ -2076,24 +2170,6 @@ class _SendAmountConversionRow extends StatelessWidget {
             child: content,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SendAmountPriceLoadingBar extends StatelessWidget {
-  const _SendAmountPriceLoadingBar();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      key: const ValueKey('send_amount_price_loading'),
-      width: 48,
-      height: 12,
-      decoration: BoxDecoration(
-        color: colors.background.overlay.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(AppRadii.full),
       ),
     );
   }

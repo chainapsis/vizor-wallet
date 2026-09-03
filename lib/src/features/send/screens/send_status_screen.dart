@@ -54,9 +54,14 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   bool _showVerifyAddress = false;
   Completer<bool>? _saplingParamsPromptCompleter;
 
+  /// Captured in [initState] so [dispose] can release the flag without reading
+  /// from `ref` after the element is gone.
+  late final SendStatusTerminalNotifier _sendStatusTerminal;
+
   @override
   void initState() {
     super.initState();
+    _sendStatusTerminal = ref.read(sendStatusTerminalProvider.notifier);
     _proposalConsumed = widget.keystone != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -75,6 +80,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (_phase != _SendStatusPhase.sending) {
       _scheduleDiscardIfNeeded();
     }
+    _sendStatusTerminal.resetAfterNavigation();
     super.dispose();
   }
 
@@ -156,6 +162,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   }
 
   Future<void> _startBroadcast() async {
+    // A broadcast is starting: nothing is safe to leave yet.
+    _sendStatusTerminal.reset();
     final outcome = await runSendBroadcast(
       ref: ref,
       args: widget.args,
@@ -180,6 +188,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         _completedAt = DateTime.now();
       }
     });
+    if (_phase == _SendStatusPhase.succeeded ||
+        _phase == _SendStatusPhase.failed) {
+      _sendStatusTerminal.markTerminal();
+    }
   }
 
   Widget _buildKeystoneSubmittingScreen(BuildContext context) {

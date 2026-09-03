@@ -495,9 +495,17 @@ pub struct BlockMetaInfo {
     pub orchard_actions_count: u32,
 }
 
+/// Flat address-validation result for the Dart side.
+///
+/// `wrong_network` marks the one case where `is_valid` is false but the input
+/// is still a real Zcash address: it decoded fine, and `address_type` carries
+/// the kind it decoded to, but its encoding belongs to a network other than
+/// the one this build talks to. For input that is not an address we can send
+/// to at all, `address_type` is `"invalid"` and `wrong_network` is false.
 pub struct AddressValidationResult {
     pub is_valid: bool,
     pub address_type: String,
+    pub wrong_network: bool,
 }
 
 // ======================== Panic Guard ========================
@@ -733,16 +741,38 @@ pub fn rewind_to_height(db_path: String, network: String, height: u64) -> Result
 
 // ======================== Address Validation ========================
 
-pub fn validate_address(address: String) -> Result<AddressValidationResult, String> {
-    catch(|| match wallet_sync::validate_address(&address) {
-        Ok(addr_type) => Ok(AddressValidationResult {
-            is_valid: true,
-            address_type: addr_type,
-        }),
-        Err(_) => Ok(AddressValidationResult {
-            is_valid: false,
-            address_type: "invalid".into(),
-        }),
+/// Validate a recipient address against the network this build talks to.
+///
+/// `network` is the usual `"main"` / `"test"` / `"regtest"` name; an unknown
+/// name is a programming error and comes back as an `Err`, not as an invalid
+/// address.
+pub fn validate_address(
+    address: String,
+    network: String,
+) -> Result<AddressValidationResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        match wallet_sync::validate_address(&address, network) {
+            Ok(wallet_sync::AddressValidation::Valid { address_type }) => {
+                Ok(AddressValidationResult {
+                    is_valid: true,
+                    address_type,
+                    wrong_network: false,
+                })
+            }
+            Ok(wallet_sync::AddressValidation::WrongNetwork { address_type }) => {
+                Ok(AddressValidationResult {
+                    is_valid: false,
+                    address_type,
+                    wrong_network: true,
+                })
+            }
+            Err(_) => Ok(AddressValidationResult {
+                is_valid: false,
+                address_type: "invalid".into(),
+                wrong_network: false,
+            }),
+        }
     })
 }
 
@@ -2832,4 +2862,44 @@ pub async fn extract_and_broadcast_pczt(
         status: result.status,
         message: result.message,
     })
+}
+
+#[cfg(test)]
+mod validate_address_tests {
+    //! The FRB boundary contract every Dart consumer of `wrongNetwork` relies
+    //! on. Needs no DB or network.
+    use super::validate_address;
+
+    const MAINNET_UA: &str = "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfg\
+                              ram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3ne\
+                              m8wwyen732wemtxcg6lxr4n2agm437m2";
+
+    #[test]
+    fn valid_on_its_own_network() {
+        let result = validate_address(MAINNET_UA.into(), "main".into()).unwrap();
+        assert!(result.is_valid);
+        assert!(!result.wrong_network);
+        assert_eq!(result.address_type, "unified");
+    }
+
+    #[test]
+    fn well_formed_but_for_another_network_is_wrong_network_with_its_type() {
+        let result = validate_address(MAINNET_UA.into(), "test".into()).unwrap();
+        assert!(!result.is_valid);
+        assert!(result.wrong_network);
+        assert_eq!(result.address_type, "unified");
+    }
+
+    #[test]
+    fn garbage_is_invalid_not_wrong_network() {
+        let result = validate_address("not-an-address".into(), "main".into()).unwrap();
+        assert!(!result.is_valid);
+        assert!(!result.wrong_network);
+        assert_eq!(result.address_type, "invalid");
+    }
+
+    #[test]
+    fn unknown_network_name_is_a_programming_error() {
+        assert!(validate_address(MAINNET_UA.into(), "moonnet".into()).is_err());
+    }
 }

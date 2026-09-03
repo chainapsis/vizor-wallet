@@ -7,6 +7,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_book_label_lookup.dart';
+import 'payment_request_card.dart';
 import 'send_review_layout.dart';
 
 const _selfSendTransparentLookbackLimit = 20;
@@ -144,4 +145,40 @@ SendReviewRecipient sendReviewRecipientFor({
     );
   }
   return SendReviewAddressRecipient(address: address);
+}
+
+/// Maps a payment-request recipient [address] to the name the card should
+/// show above it, or null when the wallet cannot name the address at all.
+///
+/// Same precedence as [sendReviewRecipientFor]: a saved contact wins over an
+/// own-account match. The card hands off to the review screen for the same
+/// address, and the two must not name it differently. An own account that is
+/// not also a saved contact renders under its account name with the
+/// `Your account` sub-label.
+///
+/// An identity with a blank name is not one: the caller falls back to the
+/// next match, and then to the plain address.
+PaymentRequestRecipientIdentity? paymentRequestRecipientIdentityFor({
+  required Iterable<AddressBookContact> contacts,
+  required String address,
+  Map<String, AccountInfo> ownAccounts = const {},
+}) {
+  final contact = sendRecipientContactFor(contacts: contacts, address: address);
+  final contactName = contact?.label.trim() ?? '';
+  if (contact != null && contactName.isNotEmpty) {
+    return PaymentRequestRecipientIdentity.contact(
+      name: contactName,
+      profilePictureId: contact.profilePictureId,
+    );
+  }
+
+  final ownAccount = ownAccounts[address.trim()];
+  final ownAccountName = ownAccount?.name.trim() ?? '';
+  if (ownAccount != null && ownAccountName.isNotEmpty) {
+    return PaymentRequestRecipientIdentity.ownAccount(
+      name: ownAccountName,
+      profilePictureId: ownAccount.profilePictureId,
+    );
+  }
+  return null;
 }

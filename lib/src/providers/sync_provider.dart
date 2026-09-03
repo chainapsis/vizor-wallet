@@ -180,6 +180,18 @@ class SyncState {
   bool get isUsingCompletedSpendableSnapshot =>
       displaySpendableFreshness == SpendableBalanceFreshness.lastCompletedSync;
 
+  /// Whether this state's spendable balance may end a check as "not enough".
+  ///
+  /// Read on an *account-scoped* state ([scopedToAccount]): the wallet-wide
+  /// sync fields survive [withoutAccountScopedData], so a state carrying no
+  /// balance for the account still reports `isSyncedToTip` with a zero
+  /// spendable. [hasBalanceData] is what separates "scanned to the tip and
+  /// this is the balance" from "scanned to the tip and this account's balance
+  /// was never fetched" — without it the predicate fails open on a zero, which
+  /// is the VZR-42 shape (a shortfall announced against a balance nobody read).
+  bool get hasSettledSpendableBalance =>
+      hasBalanceData && isSyncedToTip && !isUsingCompletedSpendableSnapshot;
+
   static bool shouldPreserveCompletedSpendable(SyncState? previous) {
     if (previous?.isUsingCompletedSpendableSnapshot ?? false) return true;
     return (previous?.hasBalanceData ?? false) &&
@@ -2958,4 +2970,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
 final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(
   () => SyncNotifier(),
+);
+
+/// [SyncState.hasSettledSpendableBalance] for [accountUuid], from an unscoped
+/// state.
+///
+/// The single spelling of "this balance is an answer" for everything that has
+/// to decide whether a shortfall is real. Scoping first is not optional: an
+/// unscoped read answers with another account's balance, or with the
+/// wallet-wide sync fields of a state that has no balance at all.
+bool spendableIsSettledForAccount(SyncState? sync, String? accountUuid) =>
+    sync != null &&
+    sync.scopedToAccount(accountUuid).hasSettledSpendableBalance;
+
+/// [spendableIsSettledForAccount] for the active account, read live.
+bool activeAccountSpendableIsSettled(Ref ref) => spendableIsSettledForAccount(
+  ref.read(syncProvider).value,
+  ref.read(accountProvider).value?.activeAccountUuid,
 );

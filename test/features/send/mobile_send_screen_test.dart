@@ -13,13 +13,19 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
+import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
+import 'package:zcash_wallet/src/features/send/widgets/payment_request_host.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -35,12 +41,22 @@ const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
 
+/// A real address that this build cannot pay because it belongs to another
+/// Zcash network — Rust reports it as not-valid plus `wrongNetwork`.
+const _otherNetworkAddress =
+    'utest1testnetshieldedaddress00000000000000000000000000000000000000';
+const _otherShieldedAddress =
+    'u1othershieldedaddress0000000000000000000000000000000000000000000000';
+
+String? _lastValidateNetwork;
 var _proposeSendSucceeds = false;
 Completer<ProposalResult>? _proposeSendCompleter;
 BigInt _proposalFeeZatoshi = BigInt.from(10000);
 int _estimateSendMaxCalls = 0;
 String? _lastEstimateSendMaxToAddress;
 String? _lastEstimateSendMaxMemo;
+String? _lastProposeToAddress;
+String? _lastProposeMemo;
 _SendMaxEstimateBuilder? _sendMaxEstimateBuilder;
 
 typedef _SendMaxEstimateBuilder =
@@ -56,20 +72,42 @@ class _RustApiFake implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) async {
+    _lastValidateNetwork = network;
     if (address == _invalidAddress) {
-      return const AddressValidationResult(isValid: false, addressType: '');
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: '',
+        wrongNetwork: false,
+      );
+    }
+    if (address == _otherNetworkAddress) {
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: 'unified',
+        wrongNetwork: true,
+      );
     }
     if (address.startsWith('tex')) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex');
+      return const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      );
     }
     if (address.startsWith('t1')) {
       return const AddressValidationResult(
         isValid: true,
         addressType: 'transparent',
+        wrongNetwork: false,
       );
     }
-    return const AddressValidationResult(isValid: true, addressType: 'unified');
+    return const AddressValidationResult(
+      isValid: true,
+      addressType: 'unified',
+      wrongNetwork: false,
+    );
   }
 
   @override
@@ -120,6 +158,8 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    _lastProposeToAddress = toAddress;
+    _lastProposeMemo = memo;
     final completer = _proposeSendCompleter;
     if (completer != null) return completer.future;
     if (!_proposeSendSucceeds) {
@@ -181,6 +221,30 @@ class _FakeSyncNotifier extends SyncNotifier {
     spendableBalance: BigInt.from(500000000), // 5 ZEC
     totalBalance: BigInt.from(500000000),
   );
+}
+
+/// A sync notifier whose state can be pushed mid-test, so a test can force the
+/// send screen to rebuild at a chosen moment — the everyday case in the real
+/// app, where sync progress lands every scanned batch.
+class _RebuildableSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState(
+    accountUuid: 'account-1',
+    hasAccountScopedData: true,
+    spendableBalance: BigInt.from(500000000),
+    totalBalance: BigInt.from(500000000),
+  );
+
+  void publishNewBalance() {
+    state = AsyncData(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        spendableBalance: BigInt.from(400000000),
+        totalBalance: BigInt.from(400000000),
+      ),
+    );
+  }
 }
 
 class _MigrationSyncNotifier extends SyncNotifier {
@@ -278,12 +342,21 @@ Widget _app({
   EdgeInsets viewPadding = EdgeInsets.zero,
   MobileSendScanner? openScanner,
   String? initialRecipient,
+  String? initialAmount,
+  bool initialAmountReady = false,
+  BigInt? initialFeeZatoshi,
+  String? initialMemo,
   MobileSendAddressValidator? validateAddress,
+  MobileSendFeeEstimator? estimateFee,
   SyncNotifier Function()? syncNotifier,
   NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
   void Function()? warmProvingKey,
+  bool isPaymentRequest = false,
+  String? paymentRequestLabel,
+  BigInt? requestedAmountZatoshi,
+  PaymentRequestPrecheck? precheck,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -294,7 +367,15 @@ Widget _app({
           loadWalletDbPath: () async => '/tmp/zcash-test',
           openScanner: openScanner ?? (_) async => null,
           initialRecipient: initialRecipient,
+          initialAmount: initialAmount,
+          initialAmountReady: initialAmountReady,
+          initialFeeZatoshi: initialFeeZatoshi,
+          initialMemo: initialMemo,
           validateAddress: validateAddress,
+          estimateFee: estimateFee,
+          isPaymentRequest: isPaymentRequest,
+          paymentRequestLabel: paymentRequestLabel,
+          requestedAmountZatoshi: requestedAmountZatoshi,
         ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
@@ -320,6 +401,8 @@ Widget _app({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      if (precheck != null)
+        paymentRequestPrecheckProvider.overrideWithValue(precheck),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -329,7 +412,12 @@ Widget _app({
         ).copyWith(padding: viewPadding, viewPadding: viewPadding);
         return AppTheme(
           data: AppThemeData.light,
-          child: MediaQuery(data: mediaQuery, child: c!),
+          child: MediaQuery(
+            data: mediaQuery,
+            // The scanner can hand back a payment request, which is answered
+            // on the app-level card rather than in the composer.
+            child: PaymentRequestHost(router: router, child: c!),
+          ),
         );
       },
     ),
@@ -369,6 +457,10 @@ Widget _reviewApp({
   bool refreshReviewFeeOnInit = true,
   String initialAmount = '1.5',
   BigInt? initialFeeZatoshi,
+  bool isPaymentRequest = false,
+  String? paymentRequestLabel,
+  BigInt? requestedAmountZatoshi,
+  List<AddressBookContact> contacts = const [],
 }) {
   return ProviderScope(
     overrides: [
@@ -380,7 +472,7 @@ Widget _reviewApp({
       ),
       zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
-        _FakeAddressBookRepository(const []),
+        _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => const {}),
     ],
@@ -398,15 +490,36 @@ Widget _reviewApp({
           initialMaxMode: initialMaxMode,
           refreshReviewFeeOnInit: refreshReviewFeeOnInit,
           estimateFee: estimateFee,
+          isPaymentRequest: isPaymentRequest,
+          paymentRequestLabel: paymentRequestLabel,
+          requestedAmountZatoshi: requestedAmountZatoshi,
         ),
       ),
     ),
   );
 }
 
-Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
+/// The real mobile send flow: `/send` pushed from home, with `/send/amount`
+/// and `/send/review` as pushed pages.
+///
+/// Pass `initialLocation: '/send'` plus a prefill to model a `zcash:` payment
+/// URI instead: `lib/app.dart` hands those to `router.go('/send', extra:
+/// SendPrefillArgs)`, so `/send` becomes the entire stack and there is nothing
+/// under it to pop.
+Widget _sendFlowRouterApp({
+  MobileSendFeeEstimator? estimateFee,
+  String? initialMemo,
+  bool preserveInitialMemoWhitespace = false,
+  String initialLocation = '/home',
+  String? initialRecipient,
+  String? initialAmount,
+  MobileSendAddressValidator? validateAddress,
+  bool isPaymentRequest = false,
+  String? paymentRequestLabel,
+  BigInt? requestedAmountZatoshi,
+}) {
   final router = GoRouter(
-    initialLocation: '/home',
+    initialLocation: initialLocation,
     routes: [
       GoRoute(
         path: '/home',
@@ -422,9 +535,19 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
           useRouteSteps: true,
           loadWalletDbPath: () async => '/tmp/zcash-test',
           openScanner: (_) async => null,
+          initialRecipient: initialRecipient,
+          initialAmount: initialAmount,
+          initialMemo: initialMemo,
+          preserveInitialMemoWhitespace: preserveInitialMemoWhitespace,
+          validateAddress: validateAddress,
           estimateFee: estimateFee,
+          isPaymentRequest: isPaymentRequest,
+          paymentRequestLabel: paymentRequestLabel,
+          requestedAmountZatoshi: requestedAmountZatoshi,
         ),
       ),
+      // Mirrors MobileSendAmountScreen in mobile_routes.dart, plus the test
+      // seams that screen does not expose.
       GoRoute(
         path: '/send/amount',
         builder: (_, state) {
@@ -435,10 +558,19 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
             initialSendFlowId: args.sendFlowId,
             initialRecipient: args.recipient,
             initialAddressType: args.addressType,
+            initialAmount: args.amountText,
+            initialFiatAmount: args.fiatAmountText,
+            initialAmountInputMode: args.amountInputMode,
+            initialMemo: args.memo,
+            preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
+            isPaymentRequest: args.isPaymentRequest,
+            paymentRequestLabel: args.requestedBy,
+            requestedAmountZatoshi: args.requestedAmountZatoshi,
             loadWalletDbPath: () async => '/tmp/zcash-test',
             openScanner: (_) async => null,
+            validateAddress: validateAddress,
             estimateFee: estimateFee,
           );
         },
@@ -459,8 +591,12 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
             refreshReviewFeeOnInit: true,
             initialMaxMode: args.isMaxMode,
             initialMemo: args.memo,
+            preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
+            isPaymentRequest: args.isPaymentRequest,
+            paymentRequestLabel: args.requestedBy,
+            requestedAmountZatoshi: args.requestedAmountZatoshi,
             loadWalletDbPath: () async => '/tmp/zcash-test',
             openScanner: (_) async => null,
             estimateFee: estimateFee,
@@ -588,6 +724,8 @@ void main() {
     _estimateSendMaxCalls = 0;
     _lastEstimateSendMaxToAddress = null;
     _lastEstimateSendMaxMemo = null;
+    _lastProposeToAddress = null;
+    _lastProposeMemo = null;
     _sendMaxEstimateBuilder = null;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
@@ -646,7 +784,8 @@ void main() {
     await tester.pumpWidget(
       _app(
         initialRecipient: _texAddress,
-        validateAddress: ({required address}) => validation.future,
+        validateAddress: ({required address, required network}) =>
+            validation.future,
         accountState: const AccountState(
           accounts: [
             AccountInfo(
@@ -673,7 +812,11 @@ void main() {
     expect(find.text('Enter Amount'), findsNothing);
 
     validation.complete(
-      const AddressValidationResult(isValid: true, addressType: 'tex'),
+      const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -701,14 +844,18 @@ void main() {
     expect(continueButton.onPressed, isNotNull);
   });
 
-  testWidgets('route pop is allowed only on the first recipient step', (
+  testWidgets('a send route with nothing under it never lets the pop through', (
     tester,
   ) async {
+    // `_app` starts at `/send`, the stack a `zcash:` payment URI produces —
+    // it arrives through `go`, so there is no page underneath. Letting the
+    // framework pop that away backgrounds the app, while the toolbar arrow
+    // runs `_handleBack` and lands on /home; the two must not diverge.
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
     expect(find.text('Select Recipient'), findsOneWidget);
-    expect(_sendRouteCanPop(tester), isTrue);
+    expect(_sendRouteCanPop(tester), isFalse);
 
     await _toAmountStep(tester, _shieldedAddress);
     expect(find.text('Enter Amount'), findsOneWidget);
@@ -720,6 +867,208 @@ void main() {
 
     expect(find.text('Review Send'), findsOneWidget);
     expect(_sendRouteCanPop(tester), isFalse);
+  });
+
+  testWidgets('system back on a rootless send recipient step goes to home', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('home'), findsOneWidget);
+    expect(find.text('Select Recipient'), findsNothing);
+  });
+
+  testWidgets(
+    'a closed sheet on a rootless send still lands system back on home',
+    (tester) async {
+      // The scanner / memo / fee / full-address sheets push a modal route above
+      // /send, which makes the navigator's canPop() true while they are open.
+      // Any rebuild during that window — sync progress landing, for one — used
+      // to record that true in PopScope.canPop and keep it after the sheet
+      // closed, so the next system back popped /send away and backgrounded the
+      // app instead of routing home.
+      await tester.pumpWidget(
+        _app(
+          syncNotifier: _RebuildableSyncNotifier.new,
+          openScanner: (context) => showModalBottomSheet<SendScanResult>(
+            context: context,
+            builder: (sheetContext) => TextButton(
+              key: const ValueKey('test_close_scan_sheet'),
+              onPressed: () => Navigator.of(sheetContext).pop(),
+              child: const Text('close sheet'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Select Recipient'), findsOneWidget);
+      expect(_sendRouteCanPop(tester), isFalse);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_scan_row')));
+      await tester.pumpAndSettle();
+      expect(find.text('close sheet'), findsOneWidget);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileSendScreen)),
+      );
+      (container.read(syncProvider.notifier) as _RebuildableSyncNotifier)
+          .publishNewBalance();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('test_close_scan_sheet')));
+      await tester.pumpAndSettle();
+      expect(find.text('close sheet'), findsNothing);
+
+      // The sheet came and went; this route's position never changed.
+      expect(_sendRouteCanPop(tester), isFalse);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(find.text('home'), findsOneWidget);
+      expect(find.text('Select Recipient'), findsNothing);
+    },
+  );
+
+  testWidgets('system back on a deep-linked amount step steps back in place', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter Amount'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isFalse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    // The amount step of a deep-linked /send is the same page, so there is
+    // nothing to pop: it steps back to the recipient in place and stays on
+    // /send instead of exiting the app.
+    expect(find.text('Select Recipient'), findsOneWidget);
+    expect(find.text('home'), findsNothing);
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(continueButton.onPressed, isNotNull);
+  });
+
+  testWidgets('the payment URI amount survives the in-place step back', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Enter Amount'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+
+    // Continue pushes the real /send/amount page: the payee-requested amount
+    // has to travel in the args, or it is stranded in the hidden root state.
+    expect(find.text('Enter Amount'), findsOneWidget);
+    final amountInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_send_amount_input')),
+    );
+    expect(amountInput.controller?.text, '1.5');
+    expect(find.text('Finish & review'), findsOneWidget);
+  });
+
+  testWidgets('the pushed amount page hands its edit back to the recipient', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Enter Amount'), findsOneWidget);
+
+    // Step back in place, then push the real amount page with the carried 1.5.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('mobile_send_amount_input')),
+          )
+          .controller
+          ?.text,
+      '1.5',
+    );
+
+    // Edit on the pushed page and go back: the recipient page below still
+    // holds 1.5 and would re-push that stale value on the next Continue.
+    await _enterAmount(tester, '2.0');
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter Amount'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('mobile_send_amount_input')),
+          )
+          .controller
+          ?.text,
+      '2.0',
+    );
+  });
+
+  testWidgets('a transient address error bounces a deep link to the recipient', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+        validateAddress: ({required address, required network}) =>
+            Future<AddressValidationResult>.error(
+              StateError('validation unavailable'),
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 'error' (validation itself failed) disables the amount CTA exactly like
+    // 'invalid' does, so leaving the user on the amount step strands them
+    // behind a dead button. Bounce to the recipient step, where the failure is
+    // visible and editing the address re-runs validation.
+    expect(find.text('Select Recipient'), findsOneWidget);
+    expect(find.text('Address validation failed'), findsOneWidget);
+    expect(find.text('Enter Amount'), findsNothing);
   });
 
   testWidgets('route-step mode lets amount and review pop as pages', (
@@ -749,6 +1098,97 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
     expect(find.text('Select Recipient'), findsOneWidget);
+  });
+
+  testWidgets('a send route pushed from home still pops on system back', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Recipient'), findsOneWidget);
+    // Home is still underneath, so the normal flow keeps the plain pop.
+    expect(_sendRouteCanPop(tester), isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('home'), findsOneWidget);
+    expect(find.text('Select Recipient'), findsNothing);
+  });
+
+  testWidgets('route-step mode preserves ZIP-321 memo whitespace on propose', (
+    tester,
+  ) async {
+    const rawMemo = '  shielded memo  ';
+
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialMemo: rawMemo,
+        preserveInitialMemoWhitespace: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+
+    await _toReviewStep(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(_lastProposeToAddress, _shieldedAddress);
+    expect(_lastProposeMemo, rawMemo);
+  });
+
+  testWidgets('route-step review keeps the payment request framing', (
+    tester,
+  ) async {
+    // A ZIP-321 request lands on /send with the amount step in place; the
+    // review it pushes must still read as answering that request.
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+        isPaymentRequest: true,
+        paymentRequestLabel: 'Blue Door Coffee',
+        requestedAmountZatoshi: BigInt.from(150000000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review payment request'), findsOneWidget);
+    expect(find.text('Requested by'), findsOneWidget);
+    expect(
+      find.text('Blue Door Coffee'),
+      findsNothing,
+      reason: "the link's own label is card-only, never on the review",
+    );
+
+    // Editing the amount on the way keeps the framing and surfaces what was
+    // asked for; the pushed amount page carries the request forward too.
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    await _enterAmount(tester, '2');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review payment request'), findsOneWidget);
+    expect(find.text('Requested by'), findsOneWidget);
+    expect(find.textContaining('1.5'), findsWidgets);
   });
 
   testWidgets('route-step review refreshes the fee on entry', (tester) async {
@@ -1038,6 +1478,80 @@ void main() {
     expect(find.text('Review Send'), findsNothing);
   });
 
+  testWidgets(
+    'confirming holds the payment-link busy surface until the status route '
+    'is up',
+    (tester) async {
+      final proposalCompleter = Completer<ProposalResult>();
+      _proposeSendCompleter = proposalCompleter;
+      addTearDown(() {
+        if (!proposalCompleter.isCompleted) {
+          proposalCompleter.completeError(StateError('test ended'));
+        }
+        _proposeSendCompleter = null;
+      });
+
+      await tester.pumpWidget(_sendFlowRouterApp());
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_send_open_from_home')),
+      );
+      await tester.pumpAndSettle();
+      await _toReviewStep(tester);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileSendScreen)),
+      );
+      expect(container.read(paymentUriBusySurfaceProvider), 0);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pump();
+
+      // A `zcash:` link arriving now must park rather than land as a card
+      // that would outlive the coming route change.
+      expect(find.text('Preparing...'), findsOneWidget);
+      expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+      proposalCompleter.complete(
+        ProposalResult(
+          proposalId: BigInt.from(1),
+          needsSaplingParams: false,
+          feeZatoshi: _proposalFeeZatoshi,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('status can pop'), findsOneWidget);
+      expect(
+        container.read(paymentUriBusySurfaceProvider),
+        0,
+        reason:
+            'the status route is on screen, so the drain policy can '
+            'now see the broadcast and hold the link itself',
+      );
+    },
+  );
+
+  testWidgets('a failed proposal gives the busy-surface hold back', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = false;
+
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('status can pop'), findsNothing);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+  });
+
   testWidgets('route-step review ignores back while preparing send', (
     tester,
   ) async {
@@ -1117,6 +1631,40 @@ void main() {
     expect(find.text('Enter Amount'), findsOneWidget);
   });
 
+  testWidgets('an address for another network says so and gates continue', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _otherNetworkAddress);
+
+    expect(
+      _lastValidateNetwork,
+      kZcashDefaultNetworkName,
+      reason: 'validation has to be asked about the network we actually pay on',
+    );
+    expect(find.text(kWrongNetworkAddressMessage), findsOneWidget);
+    expect(
+      find.text('Invalid address'),
+      findsNothing,
+      reason: 'the address is well-formed, so "invalid" would misdirect',
+    );
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_send_continue')))
+          .onPressed,
+      isNull,
+      reason: 'continue stays gated exactly as for any unusable address',
+    );
+
+    await _enterAddress(tester, _shieldedAddress);
+    expect(find.text(kWrongNetworkAddressMessage), findsNothing);
+  });
+
   testWidgets('recipient step names a matched saved contact', (tester) async {
     await tester.pumpWidget(
       _app(
@@ -1165,7 +1713,7 @@ void main() {
       _app(
         openScanner: (_) async {
           scannerOpenCount++;
-          return _shieldedAddress;
+          return const SendScanAddress(_shieldedAddress);
         },
       ),
     );
@@ -1186,6 +1734,106 @@ void main() {
     expect(editable.controller.text, _shieldedAddress);
     expect(find.text('Continue'), findsOneWidget);
   });
+
+  // A QR the parser refuses still surrenders its address, and the composer
+  // takes it. The payer scanned a request whose terms are now gone, so the
+  // scan says what was left behind instead of pretending it was a plain
+  // address QR all along.
+  testWidgets('a downgraded scan fills the recipient and says what was lost', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        openScanner: (_) async => const SendScanAddress(
+          _shieldedAddress,
+          downgrade: SendScanDowngrade.multipleRecipients,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Scan a QR Code'));
+    await tester.pumpAndSettle();
+
+    final editable = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_address_field')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(editable.controller.text, _shieldedAddress);
+    expect(
+      find.text(
+        sendScanDowngradeMessage(SendScanDowngrade.multipleRecipients)!,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a plain address scan says nothing', (tester) async {
+    await tester.pumpWidget(
+      _app(openScanner: (_) async => const SendScanAddress(_shieldedAddress)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Scan a QR Code'));
+    await tester.pumpAndSettle();
+
+    for (final downgrade in SendScanDowngrade.values) {
+      expect(
+        find.text(sendScanDowngradeMessage(downgrade)!),
+        findsNothing,
+        reason: '$downgrade',
+      );
+    }
+  });
+
+  testWidgets(
+    'scanning a payment request opens the card instead of the composer',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          precheck: _readyPaymentRequestPrecheck(),
+          openScanner: (_) async => SendScanPaymentRequest(
+            const SendPrefillArgs(
+              id: 'payment-qr-1',
+              source: kPaymentUriPrefillSource,
+              address: _shieldedAddress,
+              amountText: '0.25',
+              label: 'Coffee shop',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Scan a QR Code'));
+      await tester.pumpAndSettle();
+
+      // The request is answered on the card, over the send screen.
+      expect(
+        find.byKey(const ValueKey('payment_request_continue')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('payment_request_requester')),
+            )
+            .data,
+        contains('Coffee shop'),
+      );
+
+      // Nothing leaked into the composer behind it.
+      final editable = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_send_address_field')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(editable.controller.text, isEmpty);
+    },
+  );
 
   testWidgets(
     'recipient focus keeps the address field mounted and stationary',
@@ -1639,6 +2287,48 @@ void main() {
     expect(find.text('Finish & review'), findsOneWidget);
   });
 
+  // Rust reports this as "Propose failed: Insufficient balance (have …, need …
+  // including fee)" — capital I, and no `InsufficientFunds` token anywhere.
+  // Dart's contains() is case-sensitive, so a match on the raw string sent the
+  // amount that fits but cannot cover its fee straight through to Review.
+  testWidgets('an amount that cannot cover its fee is caught in the composer', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async => throw StateError(
+              'Propose failed: Insufficient balance '
+              '(have 5.0 ZEC, need 5.0001 ZEC including fee)',
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    // 4.9 ZEC is inside the 5 ZEC spendable fixture, so only the fee estimate
+    // can catch it.
+    await _enterAmount(tester, '4.9');
+
+    expect(find.text('Not enough ZEC'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_send_review_button')),
+          )
+          .onPressed,
+      isNull,
+      reason: 'Review must stay closed on an amount that cannot be sent',
+    );
+  });
+
   testWidgets('active migration limits Send to the Ironwood balance', (
     tester,
   ) async {
@@ -2077,6 +2767,61 @@ void main() {
     expect(find.text('Finish & review'), findsOneWidget);
   });
 
+  testWidgets('prefilled amount waits for recipient validation before review', (
+    tester,
+  ) async {
+    final validation = Completer<AddressValidationResult>();
+
+    await tester.pumpWidget(
+      _app(
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+        initialAmountReady: true,
+        initialFeeZatoshi: BigInt.from(10000),
+        initialMemo: 'shielded memo',
+        validateAddress: ({required address, required network}) =>
+            validation.future,
+        // The amount step's price placeholder shimmers forever while the live
+        // ZEC/USD price is null, which would hang pumpAndSettle.
+        zecUsdPriceProvider:
+            NotifierProvider<_TestZecUsdPriceNotifier, double?>(
+              _TestZecUsdPriceNotifier.new,
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter Amount'), findsOneWidget);
+    final pendingReview = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_review_button')),
+    );
+    expect(pendingReview.onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pump();
+    expect(find.text('Review Send'), findsNothing);
+
+    validation.complete(
+      const AddressValidationResult(
+        isValid: true,
+        addressType: 'unified',
+        wrongNetwork: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final readyReview = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_review_button')),
+    );
+    expect(readyReview.onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(find.text('shielded memo'), findsOneWidget);
+  });
+
   testWidgets('review shows the receipt and the shielded memo entry', (
     tester,
   ) async {
@@ -2350,4 +3095,228 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review Send'), findsOneWidget);
   });
+
+  group('payment request framing', () {
+    testWidgets('retitles the review step and names who asked', (tester) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.5',
+          initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coffee shop',
+          estimateFee: _fixedFeeEstimator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review payment request'), findsOneWidget);
+      expect(find.text('Review Send'), findsNothing);
+      expect(find.text('Requested by'), findsOneWidget);
+      expect(find.text('To'), findsNothing);
+      expect(
+        find.text('Shielded address'),
+        findsOneWidget,
+        reason: 'the recipient heads the row, not the link label',
+      );
+      expect(
+        find.text('Coffee shop'),
+        findsNothing,
+        reason: "the link's own label never reaches the review",
+      );
+      expect(find.text('Label from link'), findsNothing);
+    });
+
+    testWidgets('a saved contact heads the request row', (tester) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.5',
+          initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coinbase Support',
+          estimateFee: _fixedFeeEstimator,
+          contacts: [
+            AddressBookContact(
+              id: 'coffee',
+              label: 'Blue Door Coffee',
+              network: AddressBookNetwork.zcash,
+              address: _shieldedAddress,
+              profilePictureId: 'pfp-02',
+              createdAtMs: 0,
+              updatedAtMs: 0,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Requested by'), findsOneWidget);
+      expect(find.text('Blue Door Coffee'), findsOneWidget);
+      expect(find.text('Coinbase Support'), findsNothing);
+      expect(find.text('Label from link'), findsNothing);
+    });
+
+    testWidgets('states the requested amount only when it was edited', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.75',
+          initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          requestedAmountZatoshi: BigInt.from(50000000),
+          estimateFee: _fixedFeeEstimator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Requested 0.50 ZEC'), findsOneWidget);
+    });
+
+    testWidgets('says nothing when the amount still matches the request', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.5',
+          initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          requestedAmountZatoshi: BigInt.from(50000000),
+          estimateFee: _fixedFeeEstimator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('mobile_send_review_requested')),
+        findsNothing,
+      );
+      expect(find.textContaining('Requested 0.50'), findsNothing);
+    });
+
+    testWidgets('survives editing the amount but not the recipient', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          initialRecipient: _shieldedAddress,
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coffee shop',
+          requestedAmountZatoshi: BigInt.from(50000000),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _toReviewStep(tester, address: _shieldedAddress, amount: '0.75');
+
+      expect(find.text('Review payment request'), findsOneWidget);
+      expect(find.text('Requested by'), findsOneWidget);
+      expect(find.text('Requested 0.50 ZEC'), findsOneWidget);
+    });
+
+    testWidgets('drops the framing once the recipient is retyped', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          initialRecipient: _shieldedAddress,
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coffee shop',
+          requestedAmountZatoshi: BigInt.from(50000000),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _toReviewStep(
+        tester,
+        address: _otherShieldedAddress,
+        amount: '0.75',
+      );
+
+      expect(
+        find.text('Requested by'),
+        findsNothing,
+        reason:
+            'an untrusted label must never head an address the request '
+            'did not name',
+      );
+      expect(find.text('Coffee shop'), findsNothing);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.text('Review Send'), findsOneWidget);
+      expect(find.textContaining('Requested'), findsNothing);
+    });
+
+    testWidgets('an ordinary send keeps the plain review step', (tester) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          refreshReviewFeeOnInit: false,
+          initialAmount: '0.5',
+          initialFeeZatoshi: BigInt.from(10000),
+          estimateFee: _fixedFeeEstimator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review Send'), findsOneWidget);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.textContaining('Requested'), findsNothing);
+    });
+  });
 }
+
+Future<BigInt> _fixedFeeEstimator({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String toAddress,
+  required BigInt amountZatoshi,
+  String? memo,
+}) async => BigInt.from(10000);
+
+/// A pre-check that always reaches "ready" with a proposal, so a scanned
+/// payment request lands on the card's normal state without touching Rust.
+PaymentRequestPrecheck _readyPaymentRequestPrecheck() => PaymentRequestPrecheck(
+  spendableIsAuthoritativeNow: () => true,
+  validateAddress: ({required String address, required String network}) async =>
+      const AddressValidationResult(
+        isValid: true,
+        addressType: 'unified',
+        wrongNetwork: false,
+      ),
+  proposeTransfer:
+      ({
+        required String accountUuid,
+        required String sendFlowId,
+        required String address,
+        required String addressType,
+        required BigInt amountZatoshi,
+        String? memo,
+        bool isPaymentRequest = false,
+        String? requestedBy,
+        BigInt? requestedAmountZatoshi,
+      }) async => SendReviewArgs(
+        proposalId: BigInt.from(77),
+        sendFlowId: sendFlowId,
+        proposalAccountUuid: accountUuid,
+        address: address,
+        addressType: addressType,
+        amountZatoshi: amountZatoshi,
+        feeZatoshi: BigInt.from(10000),
+        needsSaplingParams: false,
+        isPaymentRequest: isPaymentRequest,
+        requestedBy: requestedBy,
+        requestedAmountZatoshi: requestedAmountZatoshi,
+      ),
+  discardProposal:
+      ({
+        required BigInt proposalId,
+        required String sendFlowId,
+        required String logContext,
+      }) async {},
+);

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -283,7 +284,12 @@ String _swapKeystoneRequestId(SwapHardwarePcztDraft draft) =>
     'vizor-${draft.sendFlowId}';
 
 Future<void> _rejectTexDepositForKeystone(String address) async {
-  final validation = await rust_sync.validateAddress(address: address);
+  final validation = await rust_sync.validateAddress(
+    address: address,
+    network: kZcashDefaultNetworkName,
+  );
+  // `isValid` already excludes a wrong-network address, which the deposit
+  // proposal refuses on its own; only a payable TEX recipient is blocked here.
   if (validation.isValid && validation.addressType == 'tex') {
     throw UnsupportedError('Keystone does not support TEX sends yet.');
   }

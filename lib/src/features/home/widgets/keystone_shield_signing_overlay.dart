@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_layout.dart';
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -41,8 +42,14 @@ class KeystoneShieldSigningOverlay extends ConsumerStatefulWidget {
       _KeystoneShieldSigningOverlayState();
 }
 
+// An inbound `zcash:` link must not scrim a prepared PCZT and a device
+// approval the user already gave. This overlay lives on `/home`, so the
+// location-based rules in `payment_uri_drain_policy.dart` cannot see it; the
+// hold is what makes the drain treat it as busy, for every phase until
+// dispose.
 class _KeystoneShieldSigningOverlayState
-    extends ConsumerState<KeystoneShieldSigningOverlay> {
+    extends ConsumerState<KeystoneShieldSigningOverlay>
+    with PaymentUriBusySurfaceHoldMixin {
   _KeystoneShieldPhase _phase = _KeystoneShieldPhase.preparing;
   bool _showSaplingParamsPrompt = false;
   Completer<bool>? _saplingParamsPromptCompleter;

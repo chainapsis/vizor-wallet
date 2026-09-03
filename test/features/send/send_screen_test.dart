@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -113,6 +114,78 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('send_review_button')), findsOneWidget);
+  });
+
+  testWidgets('preserves ZIP-321 memo whitespace when proposing send', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const rawMemo = '  Donation note  ';
+    await tester.pumpWidget(
+      _sendHarness(
+        prefill: const SendPrefillArgs(
+          id: 'zip321-whitespace',
+          source: 'zcash-uri',
+          address: _shieldedAddress,
+          amountText: '1.25',
+          memoText: rawMemo,
+          preserveMemoText: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeMemo, rawMemo);
+  });
+
+  testWidgets('keeps ZIP-321 memo whitespace when the memo field is focused', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const rawMemo = '  Donation note  ';
+    await tester.pumpWidget(
+      _sendHarness(
+        prefill: const SendPrefillArgs(
+          id: 'zip321-whitespace-focus',
+          source: 'zcash-uri',
+          address: _shieldedAddress,
+          amountText: '1.25',
+          memoText: rawMemo,
+          preserveMemoText: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    // Clicking into the memo field moves the caret, which notifies the
+    // controller without changing a single character. That must not count as
+    // the user editing the memo away from the link's exact text.
+    await tester.tap(find.byKey(const ValueKey('send_memo_field')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(rawMemo), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeMemo, rawMemo);
   });
 
   testWidgets('contacts label fills the send address from zcash contacts', (
@@ -903,6 +976,62 @@ void main() {
     expect(rustApi.proposeSendCalls, 0);
   });
 
+  testWidgets('an address for another network says so, and blocks review', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      _editableIn('send_address_field'),
+      _otherNetworkAddress,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      rustApi.lastValidateNetwork,
+      kZcashDefaultNetworkName,
+      reason: 'validation has to be asked about the network we actually pay on',
+    );
+    expect(find.text(kWrongNetworkAddressMessage), findsOneWidget);
+    expect(
+      find.text('Invalid address'),
+      findsNothing,
+      reason: 'the address is well-formed, so "invalid" would misdirect',
+    );
+
+    await tester.enterText(_editableIn('send_amount_field'), '0.5');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      rustApi.proposeSendCalls,
+      0,
+      reason: 'review stays gated exactly as for any unusable address',
+    );
+  });
+
+  testWidgets('a malformed address keeps the plain invalid copy', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      _editableIn('send_address_field'),
+      _malformedAddress,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid address'), findsOneWidget);
+    expect(find.text(kWrongNetworkAddressMessage), findsNothing);
+  });
+
   testWidgets('fee-specific balance error copy is preserved', (tester) async {
     await _setDesktopViewport(tester);
 
@@ -1159,6 +1288,106 @@ void main() {
       contains('6 for funds received from others'),
     );
   });
+
+  // The desktop mirror of mobile_send_screen_test's request-framing group.
+  // `_activePaymentRequest` decides whether the review screen says "Requested
+  // by <label>", and the label is attacker-controlled: it must not survive
+  // being pointed at a recipient the request never named.
+  group('payment-request framing on the desktop composer', () {
+    Future<SendReviewArgs?> pumpAndReview(
+      WidgetTester tester, {
+      required SendPrefillArgs prefill,
+      Future<void> Function(WidgetTester tester)? edit,
+    }) async {
+      await _setDesktopViewport(tester);
+      SendReviewArgs? captured;
+
+      await tester.pumpWidget(
+        _sendHarness(prefill: prefill, onReviewArgs: (args) => captured = args),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+
+      if (edit != null) {
+        await edit(tester);
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+
+      return captured;
+    }
+
+    const request = SendPrefillArgs(
+      id: 'payment-uri-framing',
+      source: kPaymentUriPrefillSource,
+      address: _shieldedAddress,
+      amountText: '1.25',
+      label: 'Acme coffee',
+    );
+
+    testWidgets('an accepted request reaches review as a request', (
+      tester,
+    ) async {
+      final args = await pumpAndReview(tester, prefill: request);
+
+      expect(args, isNotNull);
+      expect(args!.isPaymentRequest, isTrue);
+      expect(args.requestedBy, 'Acme coffee');
+      expect(args.requestedAmountZatoshi, BigInt.from(125000000));
+      expect(args.amountZatoshi, BigInt.from(125000000));
+    });
+
+    testWidgets('the framing survives editing the amount', (tester) async {
+      final args = await pumpAndReview(
+        tester,
+        prefill: request,
+        edit: (tester) async {
+          await tester.enterText(_editableIn('send_amount_field'), '0.5');
+        },
+      );
+
+      expect(args, isNotNull);
+      expect(args!.isPaymentRequest, isTrue);
+      expect(args.requestedBy, 'Acme coffee');
+      expect(
+        args.requestedAmountZatoshi,
+        BigInt.from(125000000),
+        reason: 'the review states what was asked for beside what is sent',
+      );
+      expect(args.amountZatoshi, BigInt.from(50000000));
+    });
+
+    testWidgets('retyping the recipient drops the framing', (tester) async {
+      // Otherwise the review says "Requested by Acme coffee" over an address
+      // that merchant never named — an attacker-controlled label attached to
+      // an unrelated recipient.
+      final args = await pumpAndReview(
+        tester,
+        prefill: request,
+        edit: (tester) async {
+          await tester.enterText(
+            _editableIn('send_address_field'),
+            _otherShieldedAddress,
+          );
+        },
+      );
+
+      expect(args, isNotNull);
+      expect(args!.address, _otherShieldedAddress);
+      expect(args.isPaymentRequest, isFalse);
+      expect(args.requestedBy, isNull);
+      expect(args.requestedAmountZatoshi, isNull);
+    });
+  });
 }
 
 const _figmaModalSurfaceShadows = [
@@ -1209,6 +1438,7 @@ Widget _sendHarness({
       const IronwoodHomeMigrationCtaState.hidden(),
   _FakeSyncNotifier? syncNotifier,
   void Function()? warmProvingKey,
+  void Function(SendReviewArgs?)? onReviewArgs,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1217,7 +1447,13 @@ Widget _sendHarness({
         path: '/send',
         builder: (_, _) => SendScreen(prefill: prefill),
       ),
-      GoRoute(path: '/send/review', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(
+        path: '/send/review',
+        builder: (_, state) {
+          onReviewArgs?.call(state.extra as SendReviewArgs?);
+          return const SizedBox.shrink();
+        },
+      ),
     ],
   );
 
@@ -1439,6 +1675,7 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
 
 class _RustApiFake implements RustLibApi {
   int proposeSendCalls = 0;
+  String? lastValidateNetwork;
   int estimateSendMaxCalls = 0;
   String? lastProposeToAddress;
   String? lastProposeMemo;
@@ -1447,6 +1684,7 @@ class _RustApiFake implements RustLibApi {
   String? lastEstimateSendMaxMemo;
 
   void reset() {
+    lastValidateNetwork = null;
     proposeSendCalls = 0;
     estimateSendMaxCalls = 0;
     lastProposeToAddress = null;
@@ -1459,17 +1697,42 @@ class _RustApiFake implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) async {
+    lastValidateNetwork = network;
+    if (address == _otherNetworkAddress) {
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: 'unified',
+        wrongNetwork: true,
+      );
+    }
+    if (address == _malformedAddress) {
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: 'invalid',
+        wrongNetwork: false,
+      );
+    }
     if (address == _texAddress) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex');
+      return const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      );
     }
     if (address == _transparentAddress) {
       return const AddressValidationResult(
         isValid: true,
         addressType: 'transparent',
+        wrongNetwork: false,
       );
     }
-    return const AddressValidationResult(isValid: true, addressType: 'unified');
+    return const AddressValidationResult(
+      isValid: true,
+      addressType: 'unified',
+      wrongNetwork: false,
+    );
   }
 
   @override
@@ -1529,5 +1792,16 @@ class _RustApiFake implements RustLibApi {
 
 const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
+
+/// A second address the fake validates as an ordinary unified recipient, so a
+/// test can retype the recipient away from the one a request named.
+const _otherShieldedAddress =
+    'u1othershieldedaddress00000000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+
+/// A real address that this build cannot pay because it belongs to another
+/// Zcash network — Rust reports it as not-valid plus `wrongNetwork`.
+const _otherNetworkAddress =
+    'utest1testnetshieldedaddress0000000000000000000000000000000000000000000';
+const _malformedAddress = 'not-an-address';

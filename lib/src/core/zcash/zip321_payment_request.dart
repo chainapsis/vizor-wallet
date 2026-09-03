@@ -1,5 +1,18 @@
 import 'dart:convert';
 
+/// Upper bound on a `zcash:` payment URI we are willing to parse, in UTF-8
+/// bytes. Matches `kMaxZcashUriBytes` in `windows/runner/utils.h`, which
+/// measures the bytes it receives, so the native handoff and the Dart parser
+/// refuse the same inputs — measuring UTF-16 code units here would let a URI
+/// the native side rejects through, since one CJK character is one code unit
+/// but three bytes.
+const kMaxPaymentUriLength = 16384;
+
+/// Longest attacker-controlled fragment we echo back into a user-facing parse
+/// error. Anything longer is truncated so a hostile link cannot fill a
+/// SnackBar with its own text.
+const _maxEchoedNameLength = 32;
+
 class Zip321PaymentRequest {
   const Zip321PaymentRequest({required this.payments, this.unsupportedReason});
 
@@ -11,6 +24,12 @@ class Zip321PaymentRequest {
   Zip321Payment get primaryPayment => payments.first;
 
   static Zip321PaymentRequest parse(String input) {
+    // Code units are never more than bytes, so the cheap check settles the
+    // common case before the string is encoded.
+    if (input.length > kMaxPaymentUriLength ||
+        utf8.encode(input).length > kMaxPaymentUriLength) {
+      throw const Zip321ParseException('Payment link is too long.');
+    }
     final trimmed = input.trim();
     if (trimmed.isEmpty) {
       throw const Zip321ParseException('Paste a zcash: payment URI.');
@@ -61,13 +80,13 @@ class Zip321PaymentRequest {
         if (!_recognizedParamNames.contains(name)) {
           if (name.startsWith('req-')) {
             throw Zip321ParseException(
-              'Required ZIP-321 parameter $name is not supported.',
+              'Required ZIP-321 parameter ${_echoSafe(name)} is not supported.',
             );
           }
           continue;
         }
         if (!seenKeys.add(seenKey)) {
-          throw Zip321ParseException('Duplicate $name parameter.');
+          throw Zip321ParseException('Duplicate ${_echoSafe(name)} parameter.');
         }
 
         final builder = builders.putIfAbsent(
@@ -165,6 +184,7 @@ const _recognizedParamNames = {
   'memo',
   'req-asset',
 };
+const _maxMemoBase64UrlLength = 684; // ceil(512 / 3) * 4
 
 class Zip321Payment {
   const Zip321Payment({
@@ -195,6 +215,23 @@ class Zip321ParseException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// A `zcash:` link that parsed cleanly but asks for something Vizor does not
+/// implement yet — see [Zip321PaymentRequest.unsupportedReason].
+///
+/// Separate from [Zip321ParseException] so a surface can tell "we cannot do
+/// this yet" apart from "this link is broken" without matching on the spec
+/// wording of a parse message. Both reasons are for the log; the user-facing
+/// sentence comes from `paymentUriRejectionMessage`.
+class Zip321UnsupportedRequestException implements Exception {
+  const Zip321UnsupportedRequestException(this.reason);
+
+  /// The parser's own wording, for the log. Never shown to the user.
+  final String reason;
+
+  @override
+  String toString() => reason;
 }
 
 class _Zip321PaymentBuilder {
@@ -262,16 +299,82 @@ void _validateBase64Url(String value, String label) {
 
 ({String? text, bool isBinary}) _parseMemo(String value) {
   _validateBase64Url(value, 'memo');
+  if (value.length > _maxMemoBase64UrlLength) {
+    throw const Zip321ParseException('ZIP-321 memo exceeds 512 bytes.');
+  }
   final bytes = _decodeBase64UrlBytes(value, 'memo');
   if (bytes.length > 512) {
     throw const Zip321ParseException('ZIP-321 memo exceeds 512 bytes.');
   }
+  // ZIP-302 memos are a fixed 512-byte field that producers zero-pad on the
+  // right, so a full-width encoding of "Invoice 42" arrives as the text plus
+  // 502 trailing NULs. Drop that padding before decoding; interior NULs stay
+  // in place and are still rejected as unsupported control characters.
+  final unpadded = _stripTrailingMemoPadding(bytes);
   try {
-    return (text: utf8.decode(bytes, allowMalformed: false), isBinary: false);
+    final text = utf8.decode(unpadded, allowMalformed: false);
+    if (_containsUnsupportedMemoText(text)) {
+      throw const Zip321ParseException(
+        'ZIP-321 memo contains unsupported control characters.',
+      );
+    }
+    return (text: text, isBinary: false);
   } on FormatException {
     return (text: null, isBinary: true);
   }
 }
+
+List<int> _stripTrailingMemoPadding(List<int> bytes) {
+  var end = bytes.length;
+  while (end > 0 && bytes[end - 1] == 0x00) {
+    end--;
+  }
+  return end == bytes.length ? bytes : bytes.sublist(0, end);
+}
+
+bool _containsUnsupportedMemoText(String value) =>
+    value.runes.any(_isUnsupportedMemoCodePoint);
+
+/// Whether [text] can travel as a ZIP-321 memo this parser will accept:
+/// no bidi controls, no C0/C1 control characters other than tab, LF and CR.
+///
+/// Producers (the request composer) call this so every artefact the wallet
+/// hands out round-trips through its own parser.
+bool zip321MemoTextIsSupported(String text) =>
+    !_containsUnsupportedMemoText(text);
+
+/// [text] with every code point the parser refuses removed. The characters
+/// dropped are invisible (bidi overrides, control characters), so the visible
+/// message is unchanged.
+String stripUnsupportedZip321MemoText(String text) {
+  if (!_containsUnsupportedMemoText(text)) return text;
+  return String.fromCharCodes(
+    text.runes.where((codePoint) => !_isUnsupportedMemoCodePoint(codePoint)),
+  );
+}
+
+bool _isUnsupportedMemoCodePoint(int codePoint) {
+  if (_bidiControlCodePoints.contains(codePoint)) return true;
+  if (codePoint < 0x20) {
+    return codePoint != 0x09 && codePoint != 0x0A && codePoint != 0x0D;
+  }
+  return codePoint >= 0x7F && codePoint <= 0x9F;
+}
+
+const _bidiControlCodePoints = <int>{
+  0x061C,
+  0x200E,
+  0x200F,
+  0x202A,
+  0x202B,
+  0x202C,
+  0x202D,
+  0x202E,
+  0x2066,
+  0x2067,
+  0x2068,
+  0x2069,
+};
 
 List<int> _decodeBase64UrlBytes(String value, String label) {
   final normalized = value.padRight(
@@ -285,11 +388,17 @@ List<int> _decodeBase64UrlBytes(String value, String label) {
   }
 }
 
+String _echoSafe(String value) => value.length <= _maxEchoedNameLength
+    ? value
+    : '${value.substring(0, _maxEchoedNameLength)}\u2026';
+
 String _decodeQChar(String value, String label) {
   try {
     return Uri.decodeComponent(value);
   } catch (_) {
-    throw Zip321ParseException('Invalid percent encoding in $label.');
+    throw Zip321ParseException(
+      'Invalid percent encoding in ${_echoSafe(label)}.',
+    );
   }
 }
 

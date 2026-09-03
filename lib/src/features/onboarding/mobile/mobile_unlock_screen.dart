@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
+import 'package:flutter/material.dart'
+    show Icon, Icons, Scaffold, ScaffoldMessenger;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/navigation/payment_uri_unlock_claim.dart';
+import '../../../core/navigation/payment_uri_notice.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -16,6 +19,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/device_owner_auth_provider.dart';
+import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
@@ -214,9 +218,36 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
+        // Claim the payment-URI prefill (parked while locked) only now, after
+        // the post-unlock work has succeeded. Claiming earlier would drop the
+        // payment if any of the awaits above threw or this screen unmounted —
+        // the prefill would already be cleared with no way to recover it —
+        // and the drain policy inside the claim reads state those awaits
+        // settle.
+        final claimed = claimParkedPaymentUriAfterUnlock(ref);
+        // Captured before the go(): this screen is gone by the time a notice's
+        // post-frame callback runs, the app-level messenger is not.
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        // A gift card link parked while locked opens its own screen; a ZIP-321
+        // request becomes a card over whichever destination that picks.
         final hasPendingPaymentLink =
             ref.read(paymentLinkIntakeProvider).pendingLink != null;
         context.go(hasPendingPaymentLink ? '/payment-links' : '/home');
+        final pendingPrefill = claimed.prefill;
+        final notice = claimed.notice;
+        if (pendingPrefill != null) {
+          // The link becomes a card over the wallet the user just unlocked,
+          // not a jump into the composer.
+          ref
+              .read(paymentRequestFlowProvider.notifier)
+              .present(pendingPrefill, source: PaymentRequestSource.link);
+        } else if (notice != null && messenger != null) {
+          // The link outlived its park window while the user was finding their
+          // passcode, or the wallet it landed on cannot open it. Landing on
+          // /home with no card and no word is the one silent loss of something
+          // the user deliberately asked for.
+          showPaymentUriNotice(messenger, notice);
+        }
       });
     } catch (e, st) {
       log('MobileUnlockScreen._submit: ERROR: $e\n$st');

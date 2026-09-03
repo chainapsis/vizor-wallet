@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/voting/voting_submission_job_provider.dart';
@@ -39,46 +40,51 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
       '${presentation.urParts.first.hashCode}',
     );
 
-    return MobileKeystonePcztSigningFlow(
-      key: flowKey,
-      title: 'Sign vote with Keystone',
-      failedTitle: 'Voting signature failed',
-      description:
-          'Scan the voting request with Keystone, approve it, then scan the signed result with this device.',
-      keyPrefix: 'mobile_voting_keystone',
-      logTag: 'MobileKeystoneVoting',
-      readingSignatureLabel: 'Reading voting signature...',
-      finalizingSignatureLabel: 'Checking voting signature...',
-      scanCaption: 'Scan the signed voting QR shown on Keystone',
-      expectedSignedUrType: 'zcash-batch-sig-result',
-      unexpectedUrMessage:
-          'Open the signed voting QR on Keystone, then scan again.',
-      recoverSignedCallbackErrorInScanner: true,
-      signingContextLabel: contextLabel,
-      requestDetails: presentation.batchMemos.isEmpty
-          ? null
-          : _MobileVotingMemoPager(memos: presentation.batchMemos),
-      requestAuxiliaryActionLabel: presentation.canSkipRemainingBundles
-          ? 'Skip unsigned bundles'
-          : null,
-      onRequestAuxiliaryAction: presentation.canSkipRemainingBundles
-          ? presentation.onSkipRemainingBundles
-          : null,
-      showCancelAction: false,
-      allowQrContentScrolling: true,
-      preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
-        urParts: presentation.urParts,
-        pcztWithProofs: Future<List<int>>.value(const []),
+    // Above the keyed flow on purpose: the key changes per bundle, so a hold
+    // taken inside the flow would fall back to zero between bundles.
+    return PaymentUriBusySurfaceHold(
+      child: MobileKeystonePcztSigningFlow(
+        key: flowKey,
+        title: 'Sign vote with Keystone',
+        failedTitle: 'Voting signature failed',
+        description:
+            'Scan the voting request with Keystone, approve it, then scan the signed result with this device.',
+        keyPrefix: 'mobile_voting_keystone',
+        logTag: 'MobileKeystoneVoting',
+        readingSignatureLabel: 'Reading voting signature...',
+        finalizingSignatureLabel: 'Checking voting signature...',
+        scanCaption: 'Scan the signed voting QR shown on Keystone',
+        expectedSignedUrType: 'zcash-batch-sig-result',
+        unexpectedUrMessage:
+            'Open the signed voting QR on Keystone, then scan again.',
+        recoverSignedCallbackErrorInScanner: true,
+        signingContextLabel: contextLabel,
+        requestDetails: presentation.batchMemos.isEmpty
+            ? null
+            : _MobileVotingMemoPager(memos: presentation.batchMemos),
+        requestAuxiliaryActionLabel: presentation.canSkipRemainingBundles
+            ? 'Skip unsigned bundles'
+            : null,
+        onRequestAuxiliaryAction: presentation.canSkipRemainingBundles
+            ? presentation.onSkipRemainingBundles
+            : null,
+        showCancelAction: false,
+        allowQrContentScrolling: true,
+        preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
+          urParts: presentation.urParts,
+          pcztWithProofs: Future<List<int>>.value(const []),
+        ),
+        signedPcztDecoder: (responseCbor) async =>
+            Uint8List.fromList(responseCbor),
+        onSigned: (_, _, _, responseCbor) =>
+            presentation.onSigned(responseCbor),
+        friendlyError: (error) =>
+            presentation.scanError ?? _friendlyVotingScanError(error),
+        scannerBuilder: scannerBuilder,
+        forceScannerActiveForTesting: forceScannerActiveForTesting,
+        startInScannerForTesting: startInScannerForTesting,
+        onCancel: () => context.go('/voting'),
       ),
-      signedPcztDecoder: (responseCbor) async =>
-          Uint8List.fromList(responseCbor),
-      onSigned: (_, _, _, responseCbor) => presentation.onSigned(responseCbor),
-      friendlyError: (error) =>
-          presentation.scanError ?? _friendlyVotingScanError(error),
-      scannerBuilder: scannerBuilder,
-      forceScannerActiveForTesting: forceScannerActiveForTesting,
-      startInScannerForTesting: startInScannerForTesting,
-      onCancel: () => context.go('/voting'),
     );
   }
 }

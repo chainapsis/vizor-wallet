@@ -164,7 +164,7 @@ DESKTOP_FILE="$APPDIR/$APP_ID.desktop"
 cp "$BUNDLE_DIR/data/applications/$APP_ID.desktop" "$DESKTOP_FILE"
 sed -i \
   -e "s/^Name=.*/Name=$APP_NAME/" \
-  -e "s/^Exec=.*/Exec=$BINARY_NAME/" \
+  -e "s/^Exec=.*/Exec=$BINARY_NAME %u/" \
   -e "s/^Icon=.*/Icon=$APP_ID/" \
   -e "s/^Categories=.*/Categories=Office;Finance;/" \
   -e "s/^StartupWMClass=.*/StartupWMClass=$APP_ID/" \
@@ -385,7 +385,7 @@ log_step "Running linuxdeploy"
 
 log_step "Writing custom AppRun"
 write_app_run
-set_desktop_exec "AppRun"
+set_desktop_exec "AppRun %u"
 install_appimage_root_icon
 
 log_step "Copying GStreamer runtime"

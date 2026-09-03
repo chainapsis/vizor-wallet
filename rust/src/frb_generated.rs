@@ -7499,10 +7499,11 @@ fn wire__crate__api__sync__validate_address_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_address = <String>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::sync::validate_address(api_address)?;
+                    let output_ok = crate::api::sync::validate_address(api_address, api_network)?;
                     Ok(output_ok)
                 })())
             }
@@ -8267,9 +8268,11 @@ impl SseDecode for crate::api::sync::AddressValidationResult {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_isValid = <bool>::sse_decode(deserializer);
         let mut var_addressType = <String>::sse_decode(deserializer);
+        let mut var_wrongNetwork = <bool>::sse_decode(deserializer);
         return crate::api::sync::AddressValidationResult {
             is_valid: var_isValid,
             address_type: var_addressType,
+            wrong_network: var_wrongNetwork,
         };
     }
 }
@@ -11907,6 +11910,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::AddressValidationResult
         [
             self.is_valid.into_into_dart().into_dart(),
             self.address_type.into_into_dart().into_dart(),
+            self.wrong_network.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -15073,6 +15077,7 @@ impl SseEncode for crate::api::sync::AddressValidationResult {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <bool>::sse_encode(self.is_valid, serializer);
         <String>::sse_encode(self.address_type, serializer);
+        <bool>::sse_encode(self.wrong_network, serializer);
     }
 }
 

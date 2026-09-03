@@ -829,6 +829,12 @@ final class IncomingUriChannelBridge {
   }
 
   func handles(_ url: URL) -> Bool {
+    // A ZIP-321 payment link is an opaque `zcash:` URL: no host to check, and
+    // the Dart side owns its parsing. Everything else must be one of the
+    // verified HTTPS routes on the deeplink host.
+    if url.scheme?.lowercased() == "zcash" {
+      return true
+    }
     guard
       url.scheme?.lowercased() == "https",
       url.host?.lowercased() == Self.deeplinkHost,

@@ -22,6 +22,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/migration_send_gate_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
@@ -995,8 +996,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
-    final sendDisabled =
-        migrationInProgress && sync.ironwoodBalance <= BigInt.zero;
+    // Same predicate as before, now owned by `migrationSendGateProvider` so
+    // the payment-URI drain in `app.dart` cannot drift away from what this
+    // button does.
+    final sendDisabled = ref.watch(migrationSendGateProvider);
     final shieldedBalance = migrationRequired
         ? sync.orchardBalance + sync.orchardPendingBalance
         : sync.saplingBalance +
