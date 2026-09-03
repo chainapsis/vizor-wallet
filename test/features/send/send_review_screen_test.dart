@@ -99,7 +99,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Review Donation'), findsOneWidget);
+    expect(find.text('Review Amount'), findsOneWidget);
     expect(find.text('Send'), findsOneWidget);
     expect(find.text('Donation'), findsNothing);
   });

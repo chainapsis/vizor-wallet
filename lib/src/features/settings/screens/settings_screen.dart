@@ -36,7 +36,9 @@ const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
 };
 
 class SettingsScreen extends ConsumerStatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({this.scrollController, super.key});
+
+  final ScrollController? scrollController;
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -164,6 +166,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: Stack(
           children: [
             AppPaneScrollScaffold(
+              controller: widget.scrollController,
               toolbar: const AppPaneToolbar(
                 // Design: back chevron sits 16px into the pane on every
                 // settings/utility screen. The 16px inset is the
@@ -552,7 +555,7 @@ class _SettingsList extends StatelessWidget {
               _SettingsRow(
                 iconName: AppIcons.donation,
                 iconGlyphSize: 16.5,
-                label: 'Donation',
+                label: 'Support Vizor',
                 onTap: onDonation!,
               ),
           ],

@@ -34,7 +34,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Donate to Vizor'), findsOneWidget);
+    expect(find.text('Support Vizor'), findsOneWidget);
     expect(find.text('0.05 ZEC'), findsOneWidget);
     expect(find.text('0.25 ZEC'), findsOneWidget);
     expect(find.text('Shielded balance'), findsOneWidget);
@@ -69,7 +69,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Review Donation'), findsOneWidget);
+    expect(find.text('Review Amount'), findsOneWidget);
     expect(find.text('Vizor Wallet'), findsOneWidget);
     expect(find.text('Confirm donation'), findsOneWidget);
     expect(find.text('Cancel'), findsNothing);
@@ -80,7 +80,7 @@ void main() {
       _host(SizedBox.expand(child: DonationSuccessView(onDone: () {}))),
     );
     expect(find.text('Thank you for supporting Vizor'), findsOneWidget);
-    expect(find.text('This means a lot to us!'), findsOneWidget);
+    expect(find.text('Your support keeps Vizor going.'), findsOneWidget);
     expect(find.text('Done'), findsOneWidget);
   });
 }

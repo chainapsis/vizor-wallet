@@ -261,6 +261,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           : widget.args.flowKind == SendFlowKind.donation &&
                 _phase == _SendStatusPhase.succeeded
           ? AppDesktopShell(
+              background: const DonationSuccessBackground(),
               sidebar: const AppMainSidebar(),
               pane: AppDesktopPane(
                 padding: EdgeInsets.zero,

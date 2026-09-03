@@ -45,8 +45,10 @@ Widget buildDonationReviewUseCase(BuildContext context) => _DonationFrame(
   ),
 );
 
-Widget buildDonationSuccessUseCase(BuildContext context) =>
-    _DonationFrame(child: DonationSuccessView(onDone: () {}));
+Widget buildDonationSuccessUseCase(BuildContext context) => _DonationFrame(
+  background: const DonationSuccessBackground(),
+  child: DonationSuccessView(onDone: () {}),
+);
 
 class _DonationComposePreview extends StatefulWidget {
   const _DonationComposePreview({
@@ -103,12 +105,14 @@ class _DonationComposePreviewState extends State<_DonationComposePreview> {
 }
 
 class _DonationFrame extends StatelessWidget {
-  const _DonationFrame({required this.child});
+  const _DonationFrame({required this.child, this.background});
 
   final Widget child;
+  final Widget? background;
 
   @override
   Widget build(BuildContext context) => AppDesktopShell(
+    background: background,
     sidebar: const _DonationPreviewSidebar(),
     pane: AppDesktopPane(padding: EdgeInsets.zero, child: child),
   );
@@ -121,7 +125,6 @@ class _DonationPreviewSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppDesktopSidebarSurface(
       glass: true,
-      clipBehavior: Clip.none,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.sm),
         child: Column(

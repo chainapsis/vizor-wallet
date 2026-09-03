@@ -183,6 +183,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsMainUseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-support-vizor',
+    description: 'Desktop settings scrolled to Support Vizor',
+    builder: buildSettingsSupportVizorUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'settings-explorer',
     description: 'Desktop explorer settings with CipherScan selected',
     builder: buildSettingsExplorerUseCase,

@@ -62,13 +62,13 @@ class DonationComposeView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Donate to Vizor',
+                    'Support Vizor',
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.accent,
                     ),
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 56),
                   _DonationAmountCard(
                     controller: controller,
                     isUsd: isUsd,
@@ -97,7 +97,7 @@ class DonationComposeView extends StatelessWidget {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          'Donating from your',
+                          'Sending from your',
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.primary,
                           ),
@@ -168,7 +168,7 @@ class _DonationAmountCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      height: 288,
+      height: 248,
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(32),
@@ -203,7 +203,7 @@ class _DonationAmountCard extends StatelessWidget {
                       const SizedBox(width: AppSpacing.xxs),
                       Expanded(
                         child: Text(
-                          'Enter your donation',
+                          'Enter your amount',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
@@ -322,23 +322,6 @@ class _DonationAmountCard extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Appreciate your support ',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.primary,
-                ),
-              ),
-              SvgPicture.asset(
-                'assets/illustrations/donation_success_heart.svg',
-                width: 14,
-                height: 13,
-              ),
-            ],
           ),
         ],
       ),
@@ -595,7 +578,7 @@ class DonationReviewContentView extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           SendReviewContentColumn(
-            title: 'Review Donation',
+            title: 'Review Amount',
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
@@ -649,6 +632,34 @@ class DonationReviewContentView extends StatelessWidget {
   }
 }
 
+class DonationSuccessBackground extends StatelessWidget {
+  const DonationSuccessBackground({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        width: double.infinity,
+        height: 520,
+        child: ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x26000000), Color(0x00000000)],
+            stops: [.27, 1],
+          ).createShader(bounds),
+          blendMode: BlendMode.dstIn,
+          child: Image.asset(
+            'assets/illustrations/donation_success_background.png',
+            fit: BoxFit.cover,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class DonationSuccessView extends StatelessWidget {
   const DonationSuccessView({required this.onDone, super.key});
   final VoidCallback onDone;
@@ -656,65 +667,46 @@ class DonationSuccessView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          height: 520,
-          child: ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0x26000000), Color(0x00000000)],
-              stops: [.27, 1],
-            ).createShader(bounds),
-            blendMode: BlendMode.dstIn,
-            child: Image.asset(
-              'assets/illustrations/donation_success_background.png',
-              fit: BoxFit.cover,
+    return Padding(
+      padding: const EdgeInsets.only(top: 48),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _DonationHeartBadge(),
+            const SizedBox(height: AppSpacing.s),
+            SizedBox(
+              width: 302,
+              child: Text(
+                'Thank you for supporting Vizor',
+                textAlign: TextAlign.center,
+                style: AppTypography.displayLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
             ),
-          ),
-        ),
-        Center(
-          child: Transform.translate(
-            offset: const Offset(0, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const _DonationHeartBadge(),
-                const SizedBox(height: AppSpacing.md),
-                SizedBox(
-                  width: 330,
-                  child: Text(
-                    'Thank you for supporting Vizor',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.displayLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
+            const SizedBox(height: AppSpacing.s),
+            SizedBox(
+              width: 216,
+              child: Text(
+                'Your support keeps Vizor going.',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.secondary,
                 ),
-                const SizedBox(height: AppSpacing.s),
-                Text(
-                  'This means a lot to us!',
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                AppButton(
-                  key: const ValueKey('donation_done_button'),
-                  onPressed: onDone,
-                  minWidth: 96,
-                  child: const Text('Done'),
-                ),
-              ],
+              ),
             ),
-          ),
+            const SizedBox(height: AppSpacing.md),
+            AppButton(
+              key: const ValueKey('donation_done_button'),
+              onPressed: onDone,
+              minWidth: 96,
+              size: AppButtonSize.mediumLarge,
+              child: const Text('Done'),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
