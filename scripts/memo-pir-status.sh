@@ -37,15 +37,13 @@ cp "$db" "$work/wallet.db"
 q() { sqlite3 -batch "$work/wallet.db" "$1"; }
 
 echo "== Server: $server"
-if health="$(curl -fsS --max-time 20 "$server/memo/health")" \
-  && meta="$(curl -fsS --max-time 20 "$server/memo/metadata")"; then
+if health="$(curl -fsS --max-time 20 "$server/v1/health")" \
+  && meta="$(curl -fsS --max-time 20 "$server/v1/generation")"; then
   jq -r --argjson h "$health" '
-    "phase                 \($h.phase.phase)",
-    "schema / record bytes \(.schema_version) / \(.record_bytes)   (2 / 792 = action record)",
-    "anchor height         \(.anchor_height)   tree size \(.ironwood_tree_size)",
-    "coverage              \(.coverage.kind) from position \(.coverage.covered_position_start)",
-    "shards                \(.shards | length) total, \([.shards[] | select(.sealed)] | length) sealed, workers \($h.workers)",
-    "parameters            \(.parameter_id)"' <<<"$meta"
+    "phase                 \($h.phase.phase // $h.phase)   generation \(.generation)   retained \($h.retained_generations)",
+    "schema                \(.schema_version)   envelope v\(.envelope.protocol_version): \(.envelope.k_nf) nf pairs, \(.envelope.k_act) action rows, \(.envelope.k_wit) witness pairs per pass",
+    "anchor height         \(.anchor_height)   tree size \(.ironwood_tree_size)   cold checkpoint \(.cold_checkpoint_height)",
+    (.tables | to_entries[] | "table " + (.key | . + "               " | .[0:14]) + " record \(.value.record_bytes) B, \(.value.positions) positions, \(.value.shards | length) shards (\([.value.shards[] | select(.sealed)] | length) sealed), workers \($h.tables[.key].workers)")' <<<"$meta"
   anchor_height="$(jq -r .anchor_height <<<"$meta")"
 else
   echo "unreachable"
@@ -77,6 +75,13 @@ q "select
   from ironwood_received_notes r join transactions t on t.id_tx = r.transaction_id;"
 echo "  queue (positions waiting for a PIR row): $(q 'select count(*) from ironwood_memo_retrieval_queue;')"
 echo "  \"completed privately\" = memo stored while the wallet never fetched the transaction: only the PIR client writes that."
+
+echo
+echo "== DAG-sync (Ironwood notes, keyed by tree position)"
+echo "  witnessed privately     $(q 'select count(*) from ironwood_pir_witnesses;')   (notes spendable from a PIR Merkle path; anchors: $(q 'select coalesce(group_concat(distinct anchor_height), "-") from ironwood_pir_witnesses;'))"
+echo "  spends found privately  $(q 'select count(*) from ironwood_received_note_spends s join transactions t on t.id_tx = s.transaction_id where t.block is null and t.mined_height is not null;')   (spent notes whose spending transaction the wallet never scanned)"
+echo "  change discovered       $(q 'select count(*) from ironwood_received_notes r join transactions t on t.id_tx = r.transaction_id where t.block is null and t.mined_height is not null;')   (notes learned from PIR action rows, memo included)"
+echo "  Every pass issues the fixed server envelope; these counts never change the request pattern."
 
 echo
 echo "== Legacy txid enhancement (inert on mainnet)"

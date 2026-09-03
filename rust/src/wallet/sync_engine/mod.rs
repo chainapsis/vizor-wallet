@@ -45,12 +45,14 @@ use {
 };
 
 mod block_source;
+mod dag_sync;
 mod enhance;
 mod error;
 mod lwd;
 mod memo_pir;
 pub(crate) mod mempool;
 
+use dag_sync::DagSync;
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
@@ -2309,6 +2311,7 @@ async fn run_sync_impl(
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
     let mut memo_pir = MemoPirSync::new(network);
+    let mut dag_sync = DagSync::new(network);
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -2649,7 +2652,11 @@ async fn run_sync_impl(
     let mut prefetch: Option<Prefetch<ScanBatch>> = None;
 
     // Retry memo work left by an interrupted/older sync even when the wallet
-    // is already at the chain tip and no compact-block batch will run.
+    // is already at the chain tip and no compact-block batch will run. The
+    // DAG pass runs first: spends it finds and change it discovers never
+    // need memo completion, and witnesses it stores make notes spendable
+    // before the local shard tree completes.
+    Box::pin(dag_sync.run(&mut db)).await?;
     Box::pin(memo_pir.run(&mut db)).await?;
 
     // 5. Sync loop
@@ -3388,6 +3395,7 @@ async fn run_sync_impl(
         // independent position queue is populated atomically by compact scan.
         // Box this transport-heavy future so its Hyper/Tor connector state does
         // not inflate the already-large sync future exported through FRB.
+        Box::pin(dag_sync.run(&mut db)).await?;
         Box::pin(memo_pir.run(&mut db)).await?;
 
         // Legacy enhancement remains available for status and transparent

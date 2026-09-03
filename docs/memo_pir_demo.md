@@ -4,12 +4,12 @@ Vizor now completes Ironwood memos from compact-sync results through iPIR+SP. It
 
 ## Build inputs
 
-This demo depends on the wallet-library implementation reviewed in
-[`zakura-core/wallet-libraries#13`](https://github.com/zakura-core/wallet-libraries/pull/13).
-The Cargo manifest pins that PR's revision until the new APIs have a published release:
+This demo depends on the wallet-library `feature/pir` branch
+([`zakura-core/wallet-libraries#14`](https://github.com/zakura-core/wallet-libraries/pull/14)).
+The Cargo manifest pins a revision of it until the new APIs have a published release:
 
 ```text
-f7fffa871549b7b593022600be77bd35957af07c
+49f1f136622af8f3d522a744a00a8eb5d53198e8
 ```
 
 The Cargo manifest enables the `zakura-pir-memo` backend and SQLite features and consumes the transport-neutral `zakura-pir-memo` client from that revision.

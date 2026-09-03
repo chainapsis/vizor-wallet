@@ -1,6 +1,6 @@
 # PIR and DAG-sync: Vizor plan
 
-Status: 2026-09-02. Phase 1 complete; Phase 2 not started.
+Status: 2026-09-03. Phases 1 and 2 deployed; Phases 3 and 4 built end to end, awaiting the server deploy and the wallet-library merge.
 
 The design and the full phased plan live in the server repository:
 
@@ -27,12 +27,12 @@ Vizor pins `wallet-libraries` by commit in `rust/Cargo.toml` (both the direct de
 
 | Phase | Server | wallet-libraries | Vizor | Status |
 | --- | --- | --- | --- | --- |
-| 1. Widen the ACTION record to 792 bytes | merged (#31, #32), POC redeployed | `feature/pir` | pinned, rebuilt, verified live | done |
-| 2. Parameterize the coordinator by table | — | — | — | next |
-| 3. WITNESS as a sharded table | — | — | — | after 2 |
-| 4. NULLIFIER cold/warm | — | — | — | after 2 |
+| 1. Widen the ACTION record | merged, deployed | `feature/pir` | pinned, verified live | done |
+| 2. Parameterize the coordinator by table | merged, deployed (`/v1/*`, two generations) | `feature/pir` | `/v1` client, verified live | done |
+| 3. WITNESS as a sharded table | PR #39 (`feat/pir-witness`), CI green | PR #16 (`feat/pir-dag-sync`) | `dag_sync.rs`, pin `49f1f136` | built; merge and deploy pending |
+| 4. NULLIFIER cold/warm | same PR #39 | same PR #16 | same | built; merge and deploy pending |
 | 5. Production deployment shape | — | n/a | n/a | after 3 and 4 |
-| 6. Query envelope and protocol version | — | — | — | after 3 and 4 |
+| 6. Query envelope and protocol version | folded into #39 (`envelope` in the manifest, v1: 8 / 4 / 4) | `DagSyncPlanner` issues it | `dag_sync.rs` | built with 3 and 4; packing-key batch spike deferred |
 
 ## What each phase changes in Vizor
 
@@ -46,20 +46,29 @@ and `/v1/action/*`, and reads the generation manifest for the anchor check. No b
 Two-generation retention on the server removes the one-off failure when a query straddles a
 publish, which today surfaces as a hard sync error.
 
-**Phase 3.** New `sync_engine/pir_witness.rs` mirroring `memo_pir.rs` (same anchor gate, same
-routed transport). `send.rs::orchard_witnesses` falls back to an externally supplied witness for
-Ironwood inputs, and the balance summary treats externally witnessed notes as spendable. Gate: a
-note received into a sealed shard becomes spendable before the local shard completes.
+**Phases 3 and 4, built together.** `rust/src/wallet/sync_engine/dag_sync.rs` runs before memo
+completion at the pre-loop slot and after every compact batch. It builds five table sessions
+from one generation manifest (transport shared with `memo_pir.rs`), applies the same anchor
+gate, checks the witness cap's tree root against the local Ironwood tree when that checkpoint is
+retained, then drains passes of exactly the manifest's envelope: nullifier pairs (cold and warm),
+action rows, witness pairs. A spend found in one pass is attributed to its transaction in the next
+(the action row at the spending transaction's first output carries the txid), change is
+trial-decrypted from action rows and stored with its memo, and reconstructed Merkle paths are
+stored in `ironwood_pir_witnesses`. Spend checks run only while a scan range below the anchor is
+still pending, so a synced wallet sends nothing. If the service does not serve all five tables
+the pass logs and stands down for that sync; compact scanning is unaffected.
 
-**Phase 4.** New `sync_engine/dag_sync.rs` runs at sync start: spend check for every known note,
-change discovery from ACTION rows, witness fetch, all against one pinned generation. The existing
-compact scan loop covers the tail from the anchor to the tip. Gate: a wallet restored at the
-Ironwood activation birthday shows correct spendable balance and change chain before compact
-scanning reaches the tip.
+Send path: the wallet library's transaction builder prefers stored PIR witnesses when every
+Ironwood input has one at the same anchor (`WalletCommitmentTrees::external_ironwood_witness`),
+so no PCZT post-processing is needed in Vizor. Spendability treats a stored witness as
+`witness_stabilized`.
 
-**Phase 6.** `dag_sync.rs` and `memo_pir.rs` issue exactly the fixed per-pass query envelope; the
-per-row scheduling in `memo_pir.rs` moves into the library's `DagSyncSession`. Gate: transcript
-tests showing that zero, one, and many pending notes produce identical request sequences.
+Gate (still to run once the server deploys): a wallet restored at the Ironwood activation
+birthday shows correct spendable balance and its change chain, and can send, before compact
+scanning reaches the tip; `scripts/memo-pir-status.sh` shows the new counters.
+
+**Phase 6.** The envelope is fixed now (folded into 3 and 4). What remains is the `ipir-sp`
+packing-key batch API spike, which changes bytes on the wire but not the request schedule.
 
 ## Constraints that shape the Vizor side
 
@@ -84,9 +93,14 @@ Demo procedure for memo retrieval is in `docs/memo_pir_demo.md`.
 
 ## Known follow-ups
 
-- `tx_retrieval_queue` in the wallet library keeps stale rows after an account is deleted.
-  Harmless under the gate; fix in queue reconciliation.
-- A query that straddles a generation publish fails once until Phase 2 lands.
-- No in-app observability yet. A developer "privacy" panel (endpoint, route, accepted
-  generation, pending and completed memo counts, suppressed enhancement count) is planned as part
-  of the Phase 2 Vizor work.
+- Merge order for the current stage: wallet-libraries #16 into `feature/pir`, then
+  spendability-pir #39 (its deploy re-ingests the journal, about 9 minutes, and serves manifest
+  schema 4 with five tables). Vizor is already pinned to the #16 head and degrades gracefully
+  until the server serves five tables; memo completion, which is stricter, fails closed on the
+  schema bump until the app is rebuilt, which it already is.
+- Frontier updates (`/v1/witness/frontier`) are served and the client can apply them, but Vizor
+  does not yet refresh held witnesses; a stored witness stays bound to the anchor it was fetched
+  at, which consensus accepts for Ironwood spends.
+- The witness cap's tree root is verified against the local tree only when the anchor's
+  checkpoint is retained; otherwise the manifest's block-hash and tree-size gate is the check.
+- No in-app observability yet; the status script is the demo surface.

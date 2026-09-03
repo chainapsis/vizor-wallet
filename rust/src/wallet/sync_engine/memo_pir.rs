@@ -14,7 +14,7 @@ use hyper::body::Incoming;
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use zakura_pir_memo::{
-    ClientError, GenerationManifest, PirSession, ACTION_EXPECTATION, RECORDS_PER_ROW,
+    ClientError, DatabaseId, GenerationManifest, PirSession, TableExpectation, RECORDS_PER_ROW,
 };
 use zcash_client_backend::data_api::memo_pir::{
     decrypt_and_store_ironwood_memo, IronwoodMemoRecord, MemoPirRead, MemoPirSnapshotAnchor,
@@ -30,9 +30,17 @@ use super::{lwd::DirectRouteConnector, SyncError, WalletDatabase};
 const DEFAULT_MAINNET_ENDPOINT: &str = "https://memo-pir.167.99.42.60.sslip.io";
 const ENDPOINT_ENV: &str = "VIZOR_MEMO_PIR_URL";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 const MAX_PARAMS_BYTES: usize = 64 * 1024;
-const MAX_PIR_BODY_BYTES: usize = 16 * 1024 * 1024;
+pub(super) const MAX_PIR_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+/// The PIR service for `network`, if the product serves one: mainnet only,
+/// overridable through `VIZOR_MEMO_PIR_URL`.
+pub(super) fn endpoint_for(network: WalletNetwork) -> Option<String> {
+    (network == WalletNetwork::Main).then(|| {
+        std::env::var(ENDPOINT_ENV).unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.to_owned())
+    })
+}
 
 /// Per-sync cached PIR state. A validated immutable generation is reused while
 /// the wallet scans toward its anchor instead of redownloading parameters for
@@ -44,11 +52,8 @@ pub(super) struct MemoPirSync {
 
 impl MemoPirSync {
     pub(super) fn new(network: WalletNetwork) -> Self {
-        let endpoint = (network == WalletNetwork::Main).then(|| {
-            std::env::var(ENDPOINT_ENV).unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.to_owned())
-        });
         Self {
-            endpoint,
+            endpoint: endpoint_for(network),
             session: None,
         }
     }
@@ -112,7 +117,10 @@ impl MemoPirSync {
                 .map_err(client_protocol_error)?;
             let response = routed_request(
                 Method::POST,
-                &endpoint_path(self.endpoint.as_deref().expect("configured"), "/v1/action/query")?,
+                &endpoint_path(
+                    self.endpoint.as_deref().expect("configured"),
+                    "/v1/action/query",
+                )?,
                 query.request_body().to_vec(),
                 MAX_PIR_BODY_BYTES,
             )
@@ -156,6 +164,12 @@ impl MemoPirSync {
 }
 
 async fn connect(endpoint: &str) -> Result<PirSession, SyncError> {
+    let manifest = fetch_manifest(endpoint).await?;
+    connect_table(endpoint, &manifest, DatabaseId::Action).await
+}
+
+/// Downloads and parses the current generation manifest.
+pub(super) async fn fetch_manifest(endpoint: &str) -> Result<GenerationManifest, SyncError> {
     if !endpoint.starts_with("https://") {
         return Err(SyncError::parse(
             "memo PIR endpoint must use an https:// URL",
@@ -168,33 +182,43 @@ async fn connect(endpoint: &str) -> Result<PirSession, SyncError> {
         MAX_MANIFEST_BYTES,
     )
     .await?;
-    let manifest: GenerationManifest = serde_json::from_slice(&manifest)
-        .map_err(|error| SyncError::parse(format!("memo PIR manifest JSON: {error}")))?;
+    serde_json::from_slice(&manifest)
+        .map_err(|error| SyncError::parse(format!("memo PIR manifest JSON: {error}")))
+}
+
+/// Validates one table of `manifest` and downloads its parameters, so every
+/// session built from one manifest is pinned to the same generation.
+pub(super) async fn connect_table(
+    endpoint: &str,
+    manifest: &GenerationManifest,
+    table: DatabaseId,
+) -> Result<PirSession, SyncError> {
+    let name = table.as_str();
     let params = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/v1/action/params")?,
+        &endpoint_path(endpoint, &format!("/v1/{name}/params"))?,
         Vec::new(),
         MAX_PARAMS_BYTES,
     )
     .await?;
     let public_params = routed_request(
         Method::GET,
-        &endpoint_path(endpoint, "/v1/action/public-params")?,
+        &endpoint_path(endpoint, &format!("/v1/{name}/public-params"))?,
         Vec::new(),
         MAX_PIR_BODY_BYTES,
     )
     .await?;
     PirSession::new(
         "main",
-        manifest,
-        ACTION_EXPECTATION,
+        manifest.clone(),
+        TableExpectation::for_table(table),
         &params,
         &public_params,
     )
     .map_err(client_protocol_error)
 }
 
-fn endpoint_path(endpoint: &str, path: &str) -> Result<String, SyncError> {
+pub(super) fn endpoint_path(endpoint: &str, path: &str) -> Result<String, SyncError> {
     let endpoint = endpoint.trim_end_matches('/');
     if !endpoint.starts_with("https://") {
         return Err(SyncError::parse(
@@ -204,11 +228,11 @@ fn endpoint_path(endpoint: &str, path: &str) -> Result<String, SyncError> {
     Ok(format!("{endpoint}{path}"))
 }
 
-fn client_protocol_error(error: ClientError) -> SyncError {
+pub(super) fn client_protocol_error(error: ClientError) -> SyncError {
     SyncError::parse(format!("memo PIR protocol validation failed: {error}"))
 }
 
-async fn routed_request(
+pub(super) async fn routed_request(
     method: Method,
     url: &str,
     body: Vec<u8>,
