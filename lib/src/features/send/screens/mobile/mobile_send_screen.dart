@@ -14,6 +14,7 @@ import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/navigation/payment_uri_busy_surface_provider.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -465,6 +466,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   var _phase = _SendPhase.compose;
   var _isConfirmingSend = false;
 
+  /// Captured in [initState] so the hold can be given back from [dispose]
+  /// and from an async continuation that outlives the element.
+  late final PaymentUriBusySurfaceNotifier _paymentUriBusySurface;
+
+  /// Whether this screen holds the `paymentUriBusySurfaceProvider` hold it
+  /// takes for the confirmation window — see [_confirmAndSend].
+  var _holdsConfirmBusySurface = false;
+
   // Recipient state.
   String _addressType = '';
 
@@ -504,6 +513,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   @override
   void initState() {
     super.initState();
+    _paymentUriBusySurface = ref.read(paymentUriBusySurfaceProvider.notifier);
     try {
       ref.read(sendProvingKeyWarmupProvider).call();
     } catch (error) {
@@ -584,6 +594,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   void dispose() {
+    if (_holdsConfirmBusySurface) {
+      _holdsConfirmBusySurface = false;
+      _paymentUriBusySurface.releaseAfterNavigation();
+    }
     _addressFocus.removeListener(_handleAddressFocusChanged);
     _amountFocus.removeListener(_handleAmountFocusChanged);
     _addressController.dispose();
@@ -1609,8 +1623,44 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     context.pushReplacement('/send/status', extra: extra);
   }
 
+  /// Confirm & send, under a `paymentUriBusySurfaceProvider` hold.
+  ///
+  /// Between the tap on Confirm and the status route being on screen, a
+  /// `zcash:` link would otherwise be delivered as a card over the review —
+  /// the drain policy's "a broadcast is running on `/send/status`" row
+  /// cannot see a send that has not reached that route yet. The card then
+  /// outlives the route change (it is hosted above the router), and its
+  /// Review or Edit would dispose the status screen mid-broadcast: the
+  /// transaction is on the network with no receipt, or the proposal leaks
+  /// if the broadcast had not started. The hold parks the link for the
+  /// window; when it lifts, the app re-runs the drain against `/send/status`,
+  /// which waits for the receipt.
   Future<void> _confirmAndSend() async {
     if (_phase != _SendPhase.compose || _isConfirmingSend) return;
+    _acquireConfirmBusySurface();
+    try {
+      await _confirmAndSendHeld();
+    } finally {
+      _releaseConfirmBusySurface();
+    }
+  }
+
+  void _acquireConfirmBusySurface() {
+    if (_holdsConfirmBusySurface) return;
+    _holdsConfirmBusySurface = true;
+    _paymentUriBusySurface.acquire();
+  }
+
+  /// Safe after the element is gone: the notifier is app-scoped, and this
+  /// runs from an async continuation, never from `dispose` (which has its
+  /// own release).
+  void _releaseConfirmBusySurface() {
+    if (!_holdsConfirmBusySurface) return;
+    _holdsConfirmBusySurface = false;
+    _paymentUriBusySurface.release();
+  }
+
+  Future<void> _confirmAndSendHeld() async {
     if (_isResolvingMax || (_isMaxMode && !_hasCurrentMaxQuote)) return;
     if (!_hasCurrentReviewFeeQuote) {
       unawaited(_refreshReviewQuote());

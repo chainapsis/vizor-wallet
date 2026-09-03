@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -1470,6 +1471,80 @@ void main() {
 
     expect(find.text('home'), findsOneWidget);
     expect(find.text('Review Send'), findsNothing);
+  });
+
+  testWidgets(
+    'confirming holds the payment-link busy surface until the status route '
+    'is up',
+    (tester) async {
+      final proposalCompleter = Completer<ProposalResult>();
+      _proposeSendCompleter = proposalCompleter;
+      addTearDown(() {
+        if (!proposalCompleter.isCompleted) {
+          proposalCompleter.completeError(StateError('test ended'));
+        }
+        _proposeSendCompleter = null;
+      });
+
+      await tester.pumpWidget(_sendFlowRouterApp());
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_send_open_from_home')),
+      );
+      await tester.pumpAndSettle();
+      await _toReviewStep(tester);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileSendScreen)),
+      );
+      expect(container.read(paymentUriBusySurfaceProvider), 0);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pump();
+
+      // A `zcash:` link arriving now must park rather than land as a card
+      // that would outlive the coming route change.
+      expect(find.text('Preparing...'), findsOneWidget);
+      expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+      proposalCompleter.complete(
+        ProposalResult(
+          proposalId: BigInt.from(1),
+          needsSaplingParams: false,
+          feeZatoshi: _proposalFeeZatoshi,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('status can pop'), findsOneWidget);
+      expect(
+        container.read(paymentUriBusySurfaceProvider),
+        0,
+        reason:
+            'the status route is on screen, so the drain policy can '
+            'now see the broadcast and hold the link itself',
+      );
+    },
+  );
+
+  testWidgets('a failed proposal gives the busy-surface hold back', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = false;
+
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('status can pop'), findsNothing);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
   });
 
   testWidgets('route-step review ignores back while preparing send', (
