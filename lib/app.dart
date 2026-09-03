@@ -15,12 +15,15 @@ import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
+import 'src/core/navigation/incoming_link_dispatch.dart';
+import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/core/widgets/app_button.dart';
 import 'src/core/widgets/app_icon.dart';
+import 'src/core/widgets/app_toast.dart';
 import 'src/core/widgets/mobile/sync_keep_awake_interaction_listener.dart';
 import 'src/core/widgets/mobile/sync_keep_awake_native_host.dart';
 import 'src/core/widgets/mobile/sync_keep_awake_privacy_lock_host.dart';
@@ -61,8 +64,8 @@ import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/pay/screens/pay_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
-import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
+import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
@@ -105,6 +108,7 @@ import 'src/providers/windows_update_provider.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
+import 'src/services/incoming_uri_service.dart';
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -773,6 +777,27 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
   ),
 ];
 
+// ignore: unused_element
+MaterialPage<void> _payloadKeyedDesktopPage(
+  GoRouterState state, {
+  required String? payloadId,
+  required Widget child,
+}) {
+  final key = payloadScopedPageKey(state, payloadId);
+  return MaterialPage<void>(
+    key: key,
+    name: state.name ?? state.path,
+    arguments: <String, String>{
+      ...state.pathParameters,
+      ...state.uri.queryParameters,
+    },
+    restorationId: key.value,
+    child: child,
+  );
+}
+
+
+
 /// Main application routes for the desktop (large-form-factor) tree.
 List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
@@ -1143,29 +1168,32 @@ class ZcashWalletApp extends ConsumerWidget {
             child: _WindowsUpdateStartupCheck(
               child: _WindowsUpdatePromptHost(
                 router: router,
-                child: _RpcEndpointFailoverToastListener(
-                  child: _DesktopOpaqueWindowBackground(
-                    child: IronwoodMigrationCoordinatorHost(
-                      child: IronwoodMigrationPrivacyLockHost(
-                        child: SyncKeepAwakeNativeHost(
-                          child: SyncKeepAwakePrivacyLockHost(
-                            child: SyncKeepAwakeInteractionListener(
-                              child: GestureDetector(
-                                onTap: () {
-                                  // Leaf-only: skip when the primary focus is a
-                                  // `FocusScopeNode` rather than a concrete `FocusNode`.
-                                  // Unfocusing the scope itself strips the scope's
-                                  // "most-recently-focused child" memory, which leaves the
-                                  // next Tab with no deterministic starting point.
-                                  final primary =
-                                      FocusManager.instance.primaryFocus;
-                                  if (primary != null &&
-                                      primary is! FocusScopeNode) {
-                                    primary.unfocus();
-                                  }
-                                },
-                                behavior: HitTestBehavior.translucent,
-                                child: child!,
+                child: _IncomingLinkHost(
+                  router: router,
+                  child: _RpcEndpointFailoverToastListener(
+                    child: _DesktopOpaqueWindowBackground(
+                      child: IronwoodMigrationCoordinatorHost(
+                        child: IronwoodMigrationPrivacyLockHost(
+                          child: SyncKeepAwakeNativeHost(
+                            child: SyncKeepAwakePrivacyLockHost(
+                              child: SyncKeepAwakeInteractionListener(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    // Leaf-only: skip when the primary focus is a
+                                    // `FocusScopeNode` rather than a concrete `FocusNode`.
+                                    // Unfocusing the scope itself strips the scope's
+                                    // "most-recently-focused child" memory, which leaves the
+                                    // next Tab with no deterministic starting point.
+                                    final primary =
+                                        FocusManager.instance.primaryFocus;
+                                    if (primary != null &&
+                                        primary is! FocusScopeNode) {
+                                      primary.unfocus();
+                                    }
+                                  },
+                                  behavior: HitTestBehavior.translucent,
+                                  child: child!,
+                                ),
                               ),
                             ),
                           ),
@@ -1222,6 +1250,91 @@ class _MacOSUpdatePrivacyChoiceHostState
   Widget build(BuildContext context) => widget.child;
 }
 
+/// Builds the app-level incoming-link host in isolation.
+///
+/// The host is private because nothing outside [ZcashWalletApp] builds one;
+/// tests need it without the whole app tree so the wallet-reset transition and
+/// the native pushes can be driven directly from provider overrides.
+@visibleForTesting
+Widget buildIncomingLinkHostForTest({
+  required GoRouter router,
+  required Widget child,
+}) => _IncomingLinkHost(router: router, child: child);
+
+/// The single subscriber to the native incoming-link stream.
+///
+/// Both products that arrive on `com.zcash.wallet/payment_uri` are dispatched
+/// from here, because there is only one method-call handler to go around and
+/// because two independent listeners would each hand every link to their own
+/// parser — which is how a Gift Card link's mnemonic-bearing fragment ends up
+/// in the ZIP-321 rejection snackbar. `classifyIncomingLink` picks the lane;
+/// everything below is per-lane and unchanged from the two hosts this replaced:
+///
+/// * **payment request** (`zcash:`) — parks in `paymentUriPrefillProvider` and
+///   drains through `decidePaymentUriDrain` into a card over the current
+///   screen. Route-agnostic: it never navigates on delivery.
+/// * **gift card** (`https://` on the Vizor origin) — queues in
+///   `paymentLinkIntakeProvider` and navigates to `/payment-links`.
+/// * **vizor home** — brings an unlocked wallet to `/home`.
+///
+/// The two intakes defer to each other: a Gift Card waits while a request card
+/// is up (`paymentLinkEntryDeferredMessageAtLocation`), and a request waits
+/// while a Gift Card signing round holds the busy-surface latch.
+class _IncomingLinkHost extends ConsumerStatefulWidget {
+  const _IncomingLinkHost({required this.router, required this.child});
+
+  final GoRouter router;
+  final Widget child;
+
+  @override
+  ConsumerState<_IncomingLinkHost> createState() => _IncomingLinkHostState();
+}
+
+class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
+  StreamSubscription<String>? _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    final service = ref.read(incomingUriServiceProvider);
+    _subscription = service.uriStream.listen(_handleIncomingUri);
+    unawaited(service.initialize());
+  }
+
+  @override
+  void didUpdateWidget(covariant _IncomingLinkHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_subscription?.cancel());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppToastHost(child: widget.child);
+  }
+
+  void _handleIncomingUri(String rawUri) {
+    switch (classifyIncomingLink(rawUri)) {
+      case IncomingPaymentRequestLink():
+        // ZIP-321 park/drain wired in PR 2 (zip321-02-core).
+        return;
+      case IncomingGiftCardLink():
+        // Gift Card intake wired in PR 5 (giftcard-05-core).
+        return;
+      case IncomingVizorHomeLink():
+        if (!ref.read(appSecurityProvider).requiresUnlock) {
+          widget.router.go('/home');
+        }
+      case IncomingLinkUnknown():
+        // Silent by contract — see classifyIncomingLink.
+        return;
+    }
+  }
+}
 class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {
   const _WindowsUpdateStartupCheck({required this.child});
 
