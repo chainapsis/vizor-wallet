@@ -117,6 +117,14 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
             ? kWalletResetDeviceAuthRequiredMessage
             : kWalletResetDeviceAuthFailedMessage;
       });
+    } on WalletResetInFlightGiftCardClaimsException catch (e, st) {
+      // Not a failed wipe: nothing was deleted, and the user only has to wait.
+      log('LostPasswordScreen._handleReset held for claim: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _isResetting = false;
+        _error = kWalletResetInFlightGiftCardClaimsMessage;
+      });
     } catch (e, st) {
       log('LostPasswordScreen._handleReset: ERROR: $e\n$st');
       if (!mounted) return;

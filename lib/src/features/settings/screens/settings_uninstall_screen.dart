@@ -236,6 +236,16 @@ class _SettingsUninstallScreenState
       setState(() {
         _stage = SettingsUninstallStage.done;
       });
+    } on WalletResetInFlightGiftCardClaimsException catch (e, st) {
+      // Not a failed wipe: nothing was deleted, and the user only has to wait.
+      // Same shape as the active-swap refusal in [_openGate].
+      log('SettingsUninstallScreen._runUninstall held for claim: $e\n$st');
+      if (!mounted) return;
+      _progressController.stop();
+      setState(() {
+        _stage = SettingsUninstallStage.confirm;
+        _confirmError = kWalletResetInFlightGiftCardClaimsMessage;
+      });
     } catch (e, st) {
       log('SettingsUninstallScreen._runUninstall: ERROR: $e\n$st');
       if (!mounted) return;

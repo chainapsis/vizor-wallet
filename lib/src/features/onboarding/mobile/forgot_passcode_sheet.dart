@@ -41,7 +41,8 @@ class ForgotPasscodeSheet extends StatelessWidget {
             "If you can't remember your passcode, the only way to "
             'recover your account is to completely reset the Vizor app, '
             'which means deleting all accounts and requiring you to '
-            'import accounts again.',
+            'import accounts again. Unshared Gift Card links will be '
+            'permanently lost.',
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.md),

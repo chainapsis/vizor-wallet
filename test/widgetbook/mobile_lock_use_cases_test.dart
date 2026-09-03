@@ -265,6 +265,12 @@ void main() {
       find.textContaining("If you can't remember your passcode"),
     );
     expect(forgotBody.style?.color, AppThemeData.light.colors.text.accent);
+    // The one mobile reset path, so it carries the same Gift Card warning the
+    // desktop lost-password and uninstall screens do.
+    expect(
+      forgotBody.data,
+      contains('Unshared Gift Card links will be permanently lost.'),
+    );
     final continueButton = tester.widget<AppButton>(
       find.byKey(const ValueKey('mobile_forgot_passcode_reset')),
     );

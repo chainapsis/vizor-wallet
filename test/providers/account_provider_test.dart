@@ -725,6 +725,65 @@ void main() {
   });
 
   test(
+    'wallet reset is rejected while a Gift Card is being received',
+    () async {
+      final receivedStorage = _AccountTestPaymentLinkReceivedStorage();
+      final receivedStore = PaymentLinkReceivedStore(receivedStorage);
+      final link = VizorPaymentLink(
+        network: 'main',
+        address: 'u1walletresetreceivedpaymentlink',
+        amountZatoshi: BigInt.from(100000),
+        mnemonic: List.filled(24, 'abandon').join(' '),
+        birthdayHeight: 3_456_789,
+        label: 'Payment link',
+        createdAt: DateTime.utc(2026, 9, 3),
+      );
+      await receivedStore.saveReady(link);
+      await receivedStore.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'account-2',
+        claimTxids: 'claim-txid',
+      );
+
+      final lifecycle = PaymentLinkClaimLifecycleRegistry();
+      var resumeCalls = 0;
+      lifecycle.register(
+        owner: Object(),
+        quiesceAndDrain: () async {},
+        resume: () => resumeCalls++,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
+          paymentLinkClaimLifecycleRegistryProvider.overrideWithValue(
+            lifecycle,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container.read(accountProvider.notifier).resetWallet(),
+        throwsA(
+          isA<WalletResetInFlightGiftCardClaimsException>().having(
+            (error) => error.count,
+            'count',
+            1,
+          ),
+        ),
+      );
+      // The refusal lands before anything is resolved or deleted, and the claim
+      // lifecycle is handed back so the claim can finish.
+      expect(container.read(accountProvider).value!.accounts, hasLength(2));
+      expect(_rustApi.deletedAccountUuids, isEmpty);
+      expect(resumeCalls, 1);
+    },
+  );
+
+  test(
     'account switching is allowed while voting submission is guarded',
     () async {
       FlutterSecureStorage.setMockInitialValues({});

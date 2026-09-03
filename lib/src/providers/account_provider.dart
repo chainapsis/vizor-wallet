@@ -63,6 +63,27 @@ class WalletCreationCurrentBlockHeightException implements Exception {
   String toString() => kWalletCreationCurrentBlockHeightErrorMessage;
 }
 
+/// Kept to one rendered line: the desktop lost-password card is a fixed 520px
+/// box whose status line is 348px wide and single-line, and a second line
+/// overflows the card by 20px. `Wait for it to finish.` carries the remedy
+/// without naming the reset, which every surface that shows this already does.
+const kWalletResetInFlightGiftCardClaimsMessage =
+    'A Gift Card is still being received. Wait for it to finish.';
+
+/// A full wallet reset was refused because a Gift Card claim is still in
+/// flight.
+///
+/// The per-account refusal is [PaymentLinkInFlightClaimsException]; a reset
+/// destroys every account, so this one names no destination.
+class WalletResetInFlightGiftCardClaimsException implements Exception {
+  const WalletResetInFlightGiftCardClaimsException({required this.count});
+
+  final int count;
+
+  @override
+  String toString() => kWalletResetInFlightGiftCardClaimsMessage;
+}
+
 class WalletResetException implements Exception {
   const WalletResetException({required this.cause, required this.dbDeleted});
 
@@ -720,7 +741,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// drained first so they cannot keep reading or writing wallet records or
   /// secure storage during the wipe. This also clears voting state held in
   /// this process for every account before the wallet DB and voting sidecar DB
-  /// are deleted.
+  /// are deleted. A claim still in flight after that drain refuses the reset
+  /// outright with [WalletResetInFlightGiftCardClaimsException], the way
+  /// [removeAccount] refuses a deletion, rather than wiping the wallet the
+  /// claim just paid into.
   ///
   /// Migration work must first stop without deleting its credential. After
   /// that fail-closed preflight, the wipe is best-effort: deletion steps remain
@@ -752,6 +776,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<void> _resetWalletWithShareTrackingStopped() async {
+    // Read after the drain, not before, for the reason spelled out in
+    // [removeAccount]: a one-shot count taken first can read zero and then be
+    // overtaken by a claim entering `submitting`. Draining first settles the
+    // running submissions, and a settled claim sits in `receiving` until it
+    // confirms -- which `isClaimInFlight` still counts -- so the refusal below
+    // sees it. Every account is about to go, so any in-flight claim counts,
+    // including one whose destination account is no longer listed.
+    final inFlightClaimCount = await ref
+        .read(paymentLinkReceivedStoreProvider)
+        .countClaimsInFlight();
+    if (inFlightClaimCount > 0) {
+      throw WalletResetInFlightGiftCardClaimsException(
+        count: inFlightClaimCount,
+      );
+    }
+
     Object? firstError;
     StackTrace? firstStackTrace;
     void recordError(String step, Object e, StackTrace st) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
@@ -251,6 +252,49 @@ void main() {
     expect(auth.calls, 1);
     expect(resetCalls, 1);
     expect(find.text(kWalletResetDeviceAuthRequiredMessage), findsNothing);
+  });
+
+  testWidgets('lost-password shows the in-flight Gift Card refusal in full', (
+    tester,
+  ) async {
+    final auth = _FakeDeviceOwnerAuth(result: true);
+
+    tester.view.physicalSize = const Size(1080, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [deviceOwnerAuthProvider.overrideWithValue(auth)],
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: LostPasswordScreen(
+              initialCountdownSeconds: 0,
+              countdownEnabled: false,
+              onReset: () async =>
+                  throw const WalletResetInFlightGiftCardClaimsException(
+                    count: 1,
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Reset Vizor'));
+    await tester.pumpAndSettle();
+
+    // Whole sentence, no ellipsis: this is the longest status the screen
+    // shows, and the half that would be cut is the one telling the user what
+    // to do. The card is a fixed 520px box, so a second line overflows it --
+    // the copy has to fit the 348px status line instead.
+    final status = tester.renderObject<RenderParagraph>(
+      find.text(kWalletResetInFlightGiftCardClaimsMessage),
+    );
+    expect(status.didExceedMaxLines, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('forgot-passcode helper does not wipe when auth is cancelled', (
