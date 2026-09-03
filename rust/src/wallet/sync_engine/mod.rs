@@ -2658,6 +2658,10 @@ async fn run_sync_impl(
     // before the local shard tree completes.
     Box::pin(dag_sync.run(&mut db)).await?;
     Box::pin(memo_pir.run(&mut db)).await?;
+    // While history is pending, scan the block holding the PIR generation's
+    // anchor before it, so the DAG pass can authenticate the generation and
+    // cover the history privately while the compact scan catches up.
+    let mut anchor_first = Box::pin(dag_sync.anchor_first_height(&db)).await?;
 
     // 5. Sync loop
     loop {
@@ -2963,8 +2967,24 @@ async fn run_sync_impl(
             main_phase_announced = true;
         }
 
-        let start = range.block_range().start;
         let range_end = range.block_range().end;
+        let start = match anchor_first.take() {
+            Some(anchor)
+                if !is_verify_phase && range.block_range().start < anchor && anchor < range_end =>
+            {
+                log::info!(
+                    "[{}] sync: scanning from the PIR anchor block {} ahead of the pending history",
+                    elapsed(),
+                    u32::from(anchor)
+                );
+                anchor
+            }
+            Some(anchor) => {
+                anchor_first = Some(anchor);
+                range.block_range().start
+            }
+            None => range.block_range().start,
+        };
         let frontier_height = u32::from(start)
             .checked_sub(1)
             .ok_or_else(|| SyncError::other("scan range starts before a usable frontier"))?;

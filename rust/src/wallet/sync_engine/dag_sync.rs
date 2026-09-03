@@ -60,6 +60,8 @@ struct PassStats {
 /// public witness cap, and the spends awaiting attribution to a transaction.
 pub(super) struct DagSync {
     endpoint: Option<String>,
+    /// The generation anchor advertised at sync start, fetched once.
+    anchor_hint: Option<BlockHeight>,
     sessions: Option<(TableSessions, WitnessCap)>,
     root_verified: bool,
     /// Nullifiers already checked against the connected generation.
@@ -72,11 +74,44 @@ impl DagSync {
     pub(super) fn new(network: WalletNetwork) -> Self {
         Self {
             endpoint: endpoint_for(network),
+            anchor_hint: None,
             sessions: None,
             root_verified: false,
             checked: HashSet::new(),
             pending_spends: Vec::new(),
         }
+    }
+
+    /// The height compact scanning should visit before the pending history,
+    /// if the pass can be of use: the generation's anchor block, while it is
+    /// not yet scanned. Authenticating the generation needs that block; in
+    /// ascending order it would be scanned last, after every block the pass
+    /// could have covered privately. Reads only public manifest data and the
+    /// wallet's own scan state; a fetch failure just keeps the normal order.
+    pub(super) async fn anchor_first_height(
+        &mut self,
+        db: &WalletDatabase,
+    ) -> Result<Option<BlockHeight>, SyncError> {
+        let Some(endpoint) = self.endpoint.as_deref() else {
+            return Ok(None);
+        };
+        if self.anchor_hint.is_none() {
+            match fetch_manifest(endpoint).await {
+                Ok(manifest) => {
+                    self.anchor_hint = Some(BlockHeight::from(manifest.anchor_height as u32));
+                }
+                Err(error) => {
+                    log::warn!("sync: DAG pass could not read the generation anchor: {error}");
+                    return Ok(None);
+                }
+            }
+        }
+        let anchor = self.anchor_hint.expect("set above");
+        let scanned = db
+            .block_metadata(anchor)
+            .map_err(|error| SyncError::db(format!("block_metadata: {error}")))?
+            .is_some();
+        Ok((!scanned).then_some(anchor))
     }
 
     pub(super) async fn run(&mut self, db: &mut WalletDatabase) -> Result<(), SyncError> {
@@ -168,6 +203,12 @@ impl DagSync {
             );
         }
 
+        if planner.pending() == (0, 0, 0) {
+            log::info!(
+                "sync: DAG pass idle: {} note(s) known, nothing to check, witness, or discover",
+                notes.len()
+            );
+        }
         let mut stats = PassStats::default();
         let result = self
             .drain(
