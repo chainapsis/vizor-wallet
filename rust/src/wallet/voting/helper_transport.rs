@@ -85,17 +85,20 @@ impl VotingHelperTransport {
         // Fails closed: a broken Tor route is an error, never a direct fallback.
         // A bootstrap in flight is waited out, but only inside this request's
         // own budget; nothing has been sent yet, so running out is a timeout.
+        // Nothing has been dispatched when the wait runs out, so for a POST
+        // this is a definite failure the SDK may retry, not an ambiguous one.
+        let is_post = method == Method::POST;
         let started = tokio::time::Instant::now();
         let route = tokio::time::timeout(
             timeout,
             network_privacy::tor_client_for_route(true, || false),
         )
         .await
-        .map_err(|_| HelperTransportError::Timeout)?
+        .map_err(|_| classify_tor_outer_timeout(is_post, false))?
         .map_err(HelperTransportError::Transport)?;
         let remaining = timeout.saturating_sub(started.elapsed());
         if remaining.is_zero() {
-            return Err(HelperTransportError::Timeout);
+            return Err(classify_tor_outer_timeout(is_post, false));
         }
         match route {
             Some(tor) => {
@@ -553,6 +556,29 @@ mod tests {
         assert!(
             waited < Duration::from_secs(1),
             "the route wait outlived the request timeout: {waited:?}"
+        );
+    }
+
+    /// A POST that never left the app is a definite pre-dispatch failure the
+    /// SDK may retry, not an ambiguous submission.
+    #[tokio::test]
+    async fn route_wait_expiry_before_a_post_is_safe_to_retry() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::begin_tor_enable();
+        let transport = VotingHelperTransport::new();
+
+        let result = transport
+            .request(
+                Method::POST,
+                "https://helper.invalid/shielded-vote/v1/shares",
+                br#"{"share_index":0}"#.to_vec(),
+                Duration::from_millis(200),
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(HelperTransportError::Transport(_))),
+            "{result:?}"
         );
     }
 }
