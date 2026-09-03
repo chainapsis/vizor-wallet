@@ -26,6 +26,7 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../core/config/network_config.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
@@ -104,7 +105,6 @@ class _ReviewRecipientPresentation {
 typedef MobileSendAddressValidator =
     Future<rust_sync.AddressValidationResult> Function({
       required String address,
-      required String network,
     });
 
 typedef MobileSendFeeEstimator =
@@ -532,9 +532,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     try {
       final result =
-          await (widget.validateAddress ?? rust_sync.validateAddress)(
+          await (widget.validateAddress ??
+              ({required String address}) => rust_sync.validateAddress(
+                address: address,
+                network: ref.read(rpcEndpointProvider).networkName,
+              ))(
             address: address,
-            network: ref.read(rpcEndpointProvider).networkName,
           );
       if (!mounted || seq != _addressSeq) return;
       setState(

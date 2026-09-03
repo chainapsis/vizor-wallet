@@ -7,11 +7,15 @@ import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
+import '../widgetbook/payment_request_use_cases.dart';
+import '../widgetbook/receive_use_cases.dart';
+import '../widgetbook/request_amount_use_cases.dart';
 import '../widgetbook/send_review_status_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
+import 'zip321_prefill_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -879,6 +883,322 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-ironwood-migration-keystone-scanner',
     description: 'Mobile Ironwood Keystone signature scanner screen',
     builder: buildMobileIronwoodMigrationKeystoneScannerUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zip321-desktop-send-prefill',
+    description: 'Desktop /send opened from a ZIP-321 payment link',
+    builder: buildZip321DesktopSendPrefillUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'zip321-desktop-send-prefill-no-memo',
+    description: 'Desktop /send from a ZIP-321 link without a memo',
+    builder: buildZip321DesktopSendPrefillNoMemoUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'zip321-mobile-send-amount-step',
+    description: 'Mobile /send jumped to the amount step from a payment link',
+    builder: buildZip321MobileSendAmountStepUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zip321-mobile-send-recipient-fallback',
+    description: 'Mobile /send bounced back to the recipient step',
+    builder: buildZip321MobileSendRecipientFallbackUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'send-review-payment-request-contact',
+    description:
+        'Desktop review of a payment request paying a saved contact, with '
+        'the link label on its own row',
+    builder: buildSendReviewPaymentRequestContactUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'send-review-payment-request-address',
+    description:
+        'Desktop review of a payment request paying a raw address, with the '
+        'link label on its own row',
+    builder: buildSendReviewPaymentRequestAddressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-review-payment-request',
+    description: 'Mobile review of a payment request with the link label row',
+    builder: buildZip321MobileSendReviewRequestUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-full',
+    description: 'Desktop payment request card with label, message and note',
+    builder: buildPaymentRequestFullUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-minimal',
+    description: 'Desktop payment request card with amount and address only',
+    builder: buildPaymentRequestMinimalUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-long-values',
+    description:
+        'Desktop payment request card with 80-char label and 512-byte message',
+    builder: buildPaymentRequestLongValuesUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-long-values-expanded',
+    description: 'Desktop payment request card with the long message expanded',
+    builder: buildPaymentRequestLongValuesExpandedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-address-expanded',
+    description: 'Desktop payment request card with the full address open',
+    builder: buildPaymentRequestAddressExpandedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-checking',
+    description: 'Desktop payment request card while checks are running',
+    builder: buildPaymentRequestCheckingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-error',
+    description: 'Desktop payment request card with an invalid address',
+    builder: buildPaymentRequestInvalidAddressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-insufficient',
+    description: 'Desktop payment request card with not enough ZEC',
+    builder: buildPaymentRequestInsufficientUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-syncing',
+    description: 'Desktop payment request card while the wallet is syncing',
+    builder: buildPaymentRequestSyncingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-sync-stalled',
+    description:
+        'Desktop payment request card once the sync re-check budget is spent',
+    builder: buildPaymentRequestSyncStalledUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-replaced',
+    description: 'Desktop payment request card with the replaced-link notice',
+    builder: buildPaymentRequestReplacedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-transparent',
+    description: 'Desktop payment request card paying a transparent address',
+    builder: buildPaymentRequestTransparentUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-contact',
+    description: 'Desktop payment request card paying a saved contact',
+    builder: buildPaymentRequestContactUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-own-account',
+    description: "Desktop payment request card paying the user's own account",
+    builder: buildPaymentRequestOwnAccountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-own-account-expanded',
+    description: 'Desktop payment request card, own account, address open',
+    builder: buildPaymentRequestOwnAccountExpandedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-note-only',
+    description: 'Desktop payment request card with a note and no message',
+    builder: buildPaymentRequestNoteOnlyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-no-amount',
+    description: 'Desktop payment request card for a link with no amount',
+    builder: buildPaymentRequestNoAmountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-full',
+    description: 'Mobile payment request sheet with label, message and note',
+    builder: buildMobilePaymentRequestFullUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-minimal',
+    description: 'Mobile payment request sheet with amount and address only',
+    builder: buildMobilePaymentRequestMinimalUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-long-values',
+    description:
+        'Mobile payment request sheet with 80-char label and 512-byte message',
+    builder: buildMobilePaymentRequestLongValuesUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-long-values-expanded',
+    description: 'Mobile payment request sheet with the long message expanded',
+    builder: buildMobilePaymentRequestLongValuesExpandedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-address-expanded',
+    description: 'Mobile payment request sheet with the full address open',
+    builder: buildMobilePaymentRequestAddressExpandedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-checking',
+    description: 'Mobile payment request sheet while checks are running',
+    builder: buildMobilePaymentRequestCheckingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-error',
+    description: 'Mobile payment request sheet with an invalid address',
+    builder: buildMobilePaymentRequestInvalidAddressUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-insufficient',
+    description: 'Mobile payment request sheet with not enough ZEC',
+    builder: buildMobilePaymentRequestInsufficientUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-syncing',
+    description: 'Mobile payment request sheet while the wallet is syncing',
+    builder: buildMobilePaymentRequestSyncingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-replaced',
+    description: 'Mobile payment request sheet with the replaced-link notice',
+    builder: buildMobilePaymentRequestReplacedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-transparent',
+    description: 'Mobile payment request sheet paying a transparent address',
+    builder: buildMobilePaymentRequestTransparentUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-contact',
+    description: 'Mobile payment request sheet paying a saved contact',
+    builder: buildMobilePaymentRequestContactUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-own-account',
+    description: "Mobile payment request sheet paying the user's own account",
+    builder: buildMobilePaymentRequestOwnAccountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-own-account-expanded',
+    description: 'Mobile payment request sheet, own account, address open',
+    builder: buildMobilePaymentRequestOwnAccountExpandedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-no-amount',
+    description: 'Mobile payment request sheet for a link with no amount',
+    builder: buildMobilePaymentRequestNoAmountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-note-only',
+    description: 'Mobile payment request sheet with a note and no message',
+    builder: buildMobilePaymentRequestNoteOnlyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-request-modal-step-1',
+    description: 'Desktop request modal step one with an open message',
+    builder: buildRequestModalStepOneMessageUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-request-modal-step-2',
+    description: 'Desktop request modal step two with the request QR',
+    builder: buildRequestModalStepTwoShieldedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-request-modal-step-2-dense',
+    description: 'Desktop request modal step two with a 512-byte message',
+    builder: buildRequestModalStepTwoDenseUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-shielded',
+    description: 'Mobile receive screen with the request entry beside share',
+    builder: buildReceiveMobileShieldedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-request-compose-no-price',
+    description: 'Desktop request modal step one with no live price',
+    builder: buildRequestModalStepOnePriceUnavailableUseCase,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-request-compose-no-price',
+    description: 'Mobile request sheet step one with no live price',
+    builder: buildRequestMobileComposePriceUnavailableUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-request-compose',
+    description: 'Mobile request sheet step one with an amount and a message',
+    builder: buildRequestMobileComposeMessageUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-request-compose-error',
+    description: 'Mobile request sheet step one with an invalid amount',
+    builder: buildRequestMobileComposeAmountErrorUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-desktop-shielded',
+    description: 'Desktop receive pane with the request entry beside copy',
+    builder: buildReceiveDesktopRequestEntryUseCase,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-request-result',
+    description: 'Desktop request modal step two with the shielded request QR',
+    builder: buildRequestModalStepTwoShieldedUseCase,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-request-result',
+    description: 'Mobile request sheet step two with the shielded request QR',
+    builder: buildRequestMobileResultShieldedUseCase,
     desktop: false,
     mobile: true,
   ),

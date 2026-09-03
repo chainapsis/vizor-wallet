@@ -70,7 +70,7 @@ class ImportOnboardingShell extends StatelessWidget {
     );
 
     return AppDesktopShell(
-      sidebarWidth: 256,
+      sidebarWidth: kAppDesktopSidebarWidth,
       background: _ImportOnboardingWindowBackground(activeStep: activeStep),
       sidebar: SlideTransition(
         position: Tween<Offset>(

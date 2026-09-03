@@ -18,6 +18,7 @@ import 'src/core/navigation/mobile_routes.dart';
 import 'src/core/navigation/incoming_link_dispatch.dart';
 import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
+import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
@@ -73,8 +74,8 @@ import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
 import 'src/features/send/services/send_flow.dart'
     show
-        resolveSendStatusRoutePayload,
         SendReviewArgs,
+        resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider,
         sendStatusTerminalProvider;
@@ -106,6 +107,8 @@ import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/rpc_endpoint_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
+import 'src/providers/migration_send_gate_provider.dart';
+import 'src/providers/payment_uri_prefill_provider.dart';
 import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
@@ -113,9 +116,7 @@ import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
 import 'src/services/incoming_uri_service.dart';
-import 'src/providers/migration_send_gate_provider.dart';
 import 'src/providers/payment_request_flow_provider.dart';
-import 'src/providers/payment_uri_prefill_provider.dart';
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -254,10 +255,9 @@ final _routerProvider = Provider<_AppRouter>((ref) {
     canPop: () => router.canPop(),
     currentLocation: () =>
         router.routerDelegate.currentConfiguration.uri.toString(),
-    // `PaymentRequestHost` is mounted above the `Router`, where a `PopScope`
-    // finds no `ModalRoute` to register with and is therefore inert. Back has
-    // to reach the card here or it would navigate — and on the second press
-    // exit the app — underneath a modal the user is still looking at.
+    // The payment request card is presented over the `Router`, where a
+    // `PopScope` finds no `ModalRoute` to register with. Back must reach the
+    // card first or it would navigate underneath a modal the user is looking at.
     handleBackAboveRouter: () {
       if (ref.read(paymentRequestFlowProvider) == null) return false;
       ref.read(paymentRequestFlowProvider.notifier).dismiss();
@@ -792,6 +792,68 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
   ),
 ];
 
+/// A desktop page whose identity carries its payload, not just its path.
+///
+/// Mirrors what go_router builds for a `builder:` route under a `MaterialApp`
+/// (`pageBuilderForMaterialApp`) in everything but the key — see
+/// [payloadScopedPageKey] for why the key has to widen.
+MaterialPage<void> _payloadKeyedDesktopPage(
+  GoRouterState state, {
+  required String? payloadId,
+  required Widget child,
+}) {
+  final key = payloadScopedPageKey(state, payloadId);
+  return MaterialPage<void>(
+    key: key,
+    name: state.name ?? state.path,
+    arguments: <String, String>{
+      ...state.pathParameters,
+      ...state.uri.queryParameters,
+    },
+    restorationId: key.value,
+    child: child,
+  );
+}
+
+/// The desktop `/send` page.
+///
+/// Exposed so a router test can drive the real page identity without
+/// rebuilding the whole desktop tree.
+@visibleForTesting
+Page<dynamic> buildDesktopSendPage(BuildContext context, GoRouterState state) {
+  final extra = state.extra;
+  final prefill = extra is SendPrefillArgs ? extra : null;
+  return _payloadKeyedDesktopPage(
+    state,
+    payloadId: prefill?.id,
+    child: SendScreen(prefill: prefill),
+  );
+}
+
+/// The desktop `/send/review` page.
+///
+/// Keyed by `sendFlowId` so answering a second payment request while a review
+/// is already on screen replaces the page: `_SendReviewScreenState.dispose` is
+/// the only thing that hands the outgoing proposal back.
+@visibleForTesting
+Page<dynamic> buildDesktopSendReviewPage(
+  BuildContext context,
+  GoRouterState state,
+) {
+  final args = state.extra;
+  if (args is! SendReviewArgs) {
+    return _payloadKeyedDesktopPage(
+      state,
+      payloadId: null,
+      child: const SendScreen(),
+    );
+  }
+  return _payloadKeyedDesktopPage(
+    state,
+    payloadId: args.sendFlowId,
+    child: SendReviewScreen(args: args),
+  );
+}
 
 /// Main application routes for the desktop (large-form-factor) tree.
 List<RouteBase> _desktopRoutes(Ref ref) => [
@@ -942,13 +1004,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
       );
     },
   ),
-  GoRoute(
-    path: '/send',
-    builder: (_, state) {
-      final extra = state.extra;
-      return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
-    },
-  ),
+  GoRoute(path: '/send', pageBuilder: buildDesktopSendPage),
   GoRoute(
     path: '/donation',
     redirect: (_, _) =>
@@ -976,14 +1032,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   ),
   GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
   GoRoute(path: '/swap/review', builder: (_, _) => const SwapReviewScreen()),
-  GoRoute(
-    path: '/send/review',
-    builder: (_, state) {
-      final args = state.extra;
-      if (args is! SendReviewArgs) return const SendScreen();
-      return SendReviewScreen(args: args);
-    },
-  ),
+  GoRoute(path: '/send/review', pageBuilder: buildDesktopSendReviewPage),
   GoRoute(
     path: '/send/keystone/scan',
     builder: (_, state) => KeystoneSendScanScreen(
@@ -1187,6 +1236,12 @@ class ZcashWalletApp extends ConsumerWidget {
                                     }
                                   },
                                   behavior: HitTestBehavior.translucent,
+                                  // Innermost app-level layer: the payment
+                                  // request card sits directly over the
+                                  // router's content, under the privacy lock
+                                  // and the keep-awake hosts above it. The
+                                  // link intake that feeds it lives further
+                                  // up, in `_IncomingLinkHost`.
                                   child: child!,
                                 ),
                               ),
@@ -1258,25 +1313,16 @@ Widget buildIncomingLinkHostForTest({
 
 /// The single subscriber to the native incoming-link stream.
 ///
-/// Both products that arrive on `com.zcash.wallet/payment_uri` are dispatched
-/// from here, because there is only one method-call handler to go around and
-/// because two independent listeners would each hand every link to their own
-/// parser — which is how a Gift Card link's mnemonic-bearing fragment ends up
-/// in the ZIP-321 rejection snackbar. `classifyIncomingLink` picks the lane;
-/// everything below is per-lane and unchanged from the two hosts this replaced:
+/// Incoming URIs are dispatched here. `classifyIncomingLink` picks the lane:
 ///
 /// * **payment request** (`zcash:`) — parks in `paymentUriPrefillProvider` and
 ///   drains through `decidePaymentUriDrain` into a card over the current
 ///   screen. Route-agnostic: it never navigates on delivery.
-/// * **gift card** (`https://` on the Vizor origin) — queues in
-///   `paymentLinkIntakeProvider` and navigates to `/payment-links`.
+/// * **gift card** (`https://` on the Vizor origin) — no-op in this prefix;
+///   the gift card lane is wired in a later PR.
 /// * **vizor home** — brings an unlocked wallet to `/home`, unless the user is
 ///   part-way through onboarding, import, or add-account, where the link is
 ///   dropped rather than allowed to discard widget-only state.
-///
-/// The two intakes defer to each other: a Gift Card waits while a request card
-/// is up (`paymentLinkEntryDeferredMessageAtLocation`), and a request waits
-/// while a Gift Card signing round holds the busy-surface latch.
 class _IncomingLinkHost extends ConsumerStatefulWidget {
   const _IncomingLinkHost({required this.router, required this.child});
 
@@ -1295,6 +1341,7 @@ const _kIncomingLinkNoticeDuration = Duration(seconds: 4);
 
 class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   StreamSubscription<String>? _subscription;
+
 
   // --- payment request lane ---
   var _paymentSequence = 0;
@@ -1318,7 +1365,6 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     _lastKnownHasWallet =
         ref.read(walletProvider).value?.hasWallet ??
         ref.read(appBootstrapProvider).hasWallet;
-    widget.router.routerDelegate.addListener(_handleRouteChanged);
     final service = ref.read(incomingUriServiceProvider);
     _subscription = service.uriStream.listen(_handleIncomingUri);
     unawaited(service.initialize());
@@ -1328,13 +1374,11 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   void didUpdateWidget(covariant _IncomingLinkHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.router == widget.router) return;
-    oldWidget.router.routerDelegate.removeListener(_handleRouteChanged);
-    widget.router.routerDelegate.addListener(_handleRouteChanged);
+
   }
 
   @override
   void dispose() {
-    widget.router.routerDelegate.removeListener(_handleRouteChanged);
     unawaited(_subscription?.cancel());
     super.dispose();
   }
@@ -1353,8 +1397,6 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
           // Wallet reset (uninstall, lost-password reset). Drop the parked
           // ZIP-321 link quietly: draining it here would follow the wipe with
           // a "Set up or import a wallet" notice and a jump to /welcome.
-          //
-          // Only the ZIP-321 park and its card.
           ref.read(paymentUriPrefillProvider.notifier).clear();
           ref.read(paymentRequestFlowProvider.notifier).clear();
           return;
@@ -1387,7 +1429,8 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       case IncomingPaymentRequestLink(:final raw):
         _handlePaymentRequestLink(raw);
       case IncomingGiftCardLink():
-        _handleGiftCardLink(rawUri);
+        // gift card lane not yet active in this prefix
+        return;
       case IncomingVizorHomeLink():
         if (ref.read(appSecurityProvider).requiresUnlock) return;
         // Onboarding, import, and add-account keep their state only in the
@@ -1404,11 +1447,6 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         return;
     }
   }
-
-  // Gift card lane placeholder (PR 5+).
-  void _handleGiftCardLink(String rawUri) {}
-
-  void _handleRouteChanged() {}
 
   // ---------------------------------------------------------------------
   // Payment request lane
@@ -1641,8 +1679,7 @@ class _WindowsUpdatePromptHostState
   void didUpdateWidget(covariant _WindowsUpdatePromptHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.router == widget.router) return;
-    oldWidget.router.routerDelegate.removeListener(_handleRouteChanged);
-    widget.router.routerDelegate.addListener(_handleRouteChanged);
+
   }
 
   @override

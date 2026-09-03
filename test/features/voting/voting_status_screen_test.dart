@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
@@ -3631,6 +3632,76 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  testWidgets('the desktop voting signing panel holds the payment-URI busy '
+      'latch', (tester) async {
+    // The bundle QR in the panel is the one a Keystone camera is reading. The
+    // status screen around it takes no hold, so a payment request still lands
+    // while the vote is merely submitting.
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        _proposalJson(1, 'First proposal', ['Yes', 'No']),
+      ];
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _HardwareAccountNotifier.new,
+      activeAccountUuid: () async => 'hardware-1',
+      accountIsHardware: true,
+      hardwareAccountUuids: const {'hardware-1'},
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+    container
+        .read(
+          votingDraftProvider(
+            const VotingSessionKey(
+              roundId: _roundId,
+              accountUuid: 'hardware-1',
+            ),
+          ).notifier,
+        )
+        .setChoice(1, 0);
+
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(keystoneScanResult: const [3]),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('Sign 1 voting bundle'));
+    await tester.pump();
+
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    // The scan screen is pushed over the status screen, so the panel is still
+    // mounted and the session is still live: the hold stays.
+    await tester.tap(find.text('Scan signature'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('keystone scan route'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    // Signing done: the panel goes away and the hold comes back with it.
+    await tester.tap(find.text('Return Signature'));
+    await _pumpUntilFound(tester, find.text('submission confirmed route'));
+    await tester.pump();
+
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
   });
 
   testWidgets('hardware status screen scans Keystone signature and submits', (

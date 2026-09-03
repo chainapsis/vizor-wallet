@@ -19,6 +19,8 @@ import 'icon_use_cases.dart';
 import 'keystone_use_cases.dart';
 import 'mobile_pay_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
+import 'payment_request_use_cases.dart';
+import 'request_amount_use_cases.dart';
 import 'pay_use_cases.dart';
 import 'receive_use_cases.dart';
 import 'received_receipt_use_cases.dart';
@@ -769,6 +771,46 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Transparent modal',
                       builder: buildReceiveDesktopTransparentModalUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Entry - Request ZEC button',
+                      builder: buildReceiveDesktopRequestEntryUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - empty',
+                      builder: buildRequestModalStepOneEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - amount',
+                      builder: buildRequestModalStepOneAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - price unavailable',
+                      builder: buildRequestModalStepOnePriceUnavailableUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - amount + message',
+                      builder: buildRequestModalStepOneMessageUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - transparent',
+                      builder: buildRequestModalStepOneTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - amount error',
+                      builder: buildRequestModalStepOneAmountErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 2 - shielded',
+                      builder: buildRequestModalStepTwoShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 2 - transparent',
+                      builder: buildRequestModalStepTwoTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 2 - 512-byte message',
+                      builder: buildRequestModalStepTwoDenseUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
@@ -789,6 +831,38 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Transparent sheet',
                       builder: buildReceiveMobileTransparentSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Entry - Request ZEC button',
+                      builder: buildRequestMobileEntryUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - empty',
+                      builder: buildRequestMobileComposeEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - amount (USD mode)',
+                      builder: buildRequestMobileComposeUsdUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - price unavailable',
+                      builder: buildRequestMobileComposePriceUnavailableUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - message added',
+                      builder: buildRequestMobileComposeMessageUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - amount error',
+                      builder: buildRequestMobileComposeAmountErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 2 - shielded QR',
+                      builder: buildRequestMobileResultShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 2 - transparent QR',
+                      builder: buildRequestMobileResultTransparentUseCase,
                     ),
                   ],
                 ),
@@ -1148,6 +1222,14 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Contact',
                       builder: buildSendReviewContactUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Payment request, contact',
+                      builder: buildSendReviewPaymentRequestContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Payment request, address',
+                      builder: buildSendReviewPaymentRequestAddressUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
@@ -1181,6 +1263,174 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Known contact',
                       builder: buildVerifyAddressKnownContactUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Payment request card',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Full',
+                      builder: buildPaymentRequestFullUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Minimal',
+                      builder: buildPaymentRequestMinimalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long values',
+                      builder: buildPaymentRequestLongValuesUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long values - message expanded',
+                      builder: buildPaymentRequestLongValuesExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Address expanded',
+                      builder: buildPaymentRequestAddressExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Checking',
+                      builder: buildPaymentRequestCheckingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - address',
+                      builder: buildPaymentRequestInvalidAddressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - not enough ZEC',
+                      builder: buildPaymentRequestInsufficientUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - syncing',
+                      builder: buildPaymentRequestSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - syncing stalled',
+                      builder: buildPaymentRequestSyncStalledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - check failed',
+                      builder: buildPaymentRequestFailedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Replaced notice',
+                      builder: buildPaymentRequestReplacedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent recipient',
+                      builder: buildPaymentRequestTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Saved contact recipient',
+                      builder: buildPaymentRequestContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account recipient',
+                      builder: buildPaymentRequestOwnAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account, address expanded',
+                      builder: buildPaymentRequestOwnAccountExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Note without message',
+                      builder: buildPaymentRequestNoteOnlyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No amount',
+                      builder: buildPaymentRequestNoAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Text scale 1.5x',
+                      builder: buildPaymentRequestLargeTextUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'RTL mirror',
+                      builder: buildPaymentRequestRtlUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile payment request card',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Full',
+                      builder: buildMobilePaymentRequestFullUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Minimal',
+                      builder: buildMobilePaymentRequestMinimalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long values',
+                      builder: buildMobilePaymentRequestLongValuesUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long values - message expanded',
+                      builder:
+                          buildMobilePaymentRequestLongValuesExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Address expanded',
+                      builder: buildMobilePaymentRequestAddressExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Checking',
+                      builder: buildMobilePaymentRequestCheckingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - address',
+                      builder: buildMobilePaymentRequestInvalidAddressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - not enough ZEC',
+                      builder: buildMobilePaymentRequestInsufficientUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - syncing',
+                      builder: buildMobilePaymentRequestSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - check failed',
+                      builder: buildMobilePaymentRequestFailedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Replaced notice',
+                      builder: buildMobilePaymentRequestReplacedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent recipient',
+                      builder: buildMobilePaymentRequestTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Saved contact recipient',
+                      builder: buildMobilePaymentRequestContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account recipient',
+                      builder: buildMobilePaymentRequestOwnAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account, address expanded',
+                      builder:
+                          buildMobilePaymentRequestOwnAccountExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Note without message',
+                      builder: buildMobilePaymentRequestNoteOnlyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No amount',
+                      builder: buildMobilePaymentRequestNoAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Text scale 1.5x',
+                      builder: buildMobilePaymentRequestLargeTextUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'RTL mirror',
+                      builder: buildMobilePaymentRequestRtlUseCase,
                     ),
                   ],
                 ),
