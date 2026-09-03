@@ -718,27 +718,10 @@ class _DonationHeartBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox.square(
       dimension: 60,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SvgPicture.asset(
-            'assets/illustrations/donation_success_heart.svg',
-            width: 50,
-            height: 46,
-          ),
-          Positioned(
-            top: 6,
-            child: ClipOval(
-              child: Image.asset(
-                'assets/illustrations/donation_vizor_knight.png',
-                width: 35,
-                height: 38,
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-              ),
-            ),
-          ),
-        ],
+      child: Image.asset(
+        'assets/illustrations/donation_vizor_heart.png',
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
       ),
     );
   }
