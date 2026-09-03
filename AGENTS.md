@@ -122,6 +122,31 @@ Untagged tests may run in either lane and must be lane-agnostic:
   `fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile`.
   Only `lib/main.dart` asserts the match.
 
+## Deep-link Host (VIZOR_DEEPLINK_BASE_URL)
+
+The HTTPS origin Vizor claims for incoming links has **one** knob on
+Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
+`https://link.vizor.cash`).
+
+- Dart is the source of truth: `VizorDeepLink` reads the define through
+  `String.fromEnvironment`.
+- Gradle derives its value from the same place. Flutter forwards every
+  dart-define as `-Pdart-defines=<base64("KEY=VALUE")>,...`, and
+  `android/app/build.gradle.kts` decodes that property to fill the
+  `vizorDeeplinkHost` manifest placeholder and `BuildConfig
+  .VIZOR_DEEPLINK_HOST`. There is deliberately no separate Gradle
+  property or environment variable — a second knob could disagree with
+  the compiled-in Dart origin and silently break verified app links.
+  Invoking Gradle directly (no dart-defines) falls back to the default.
+- iOS is the exception: it keeps `VIZOR_DEEPLINK_HOST` in the Flutter
+  xcconfigs (`ios/Flutter/{Debug,Profile,Release}.xcconfig`), which feed
+  `Info.plist` and `Runner.entitlements`. Change the host there too.
+- The Android intent-filter claims the host with no path constraint, so
+  the bare origin (empty path on Android), `/`, and
+  `/payment-links/open` all open the app. Path filtering belongs to
+  Dart's `classifyIncomingLink`, which drops unknown paths on the origin
+  silently.
+
 ## Editing Figma
 
 When the user explicitly asks you to modify a Figma file or design, read

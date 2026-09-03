@@ -1,4 +1,5 @@
 import java.net.URI
+import java.util.Base64
 
 plugins {
     id("com.android.application")
@@ -11,11 +12,36 @@ val androidKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
 val androidKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
 val androidKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
 val androidKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+// The deeplink origin has exactly one knob, and it is Dart's:
+// `--dart-define=VIZOR_DEEPLINK_BASE_URL`. Flutter forwards every dart-define
+// to Gradle as `-Pdart-defines=<base64("KEY=VALUE")>,...`, so decoding that
+// property here derives the manifest placeholder and BuildConfig host from the
+// same string `VizorDeepLink` compiles in. A second Gradle-only property or
+// env var would let the two drift, which is why there is no longer one.
+// (iOS keeps its own VIZOR_DEEPLINK_HOST in the Flutter xcconfigs.)
+val dartDefines: Map<String, String> = providers.gradleProperty("dart-defines")
+    .orNull
+    ?.split(",")
+    ?.mapNotNull { encoded ->
+        val entry = encoded.trim()
+        if (entry.isEmpty()) return@mapNotNull null
+        val decoded = runCatching {
+            String(Base64.getDecoder().decode(entry), Charsets.UTF_8)
+        }.getOrNull() ?: return@mapNotNull null
+        val separator = decoded.indexOf('=')
+        if (separator <= 0) {
+            null
+        } else {
+            decoded.substring(0, separator) to decoded.substring(separator + 1)
+        }
+    }
+    ?.toMap()
+    .orEmpty()
+
 val defaultVizorDeeplinkBaseUrl = "https://link.vizor.cash"
-val vizorDeeplinkBaseUrl = providers.gradleProperty("VIZOR_DEEPLINK_BASE_URL")
-    .orElse(providers.environmentVariable("VIZOR_DEEPLINK_BASE_URL"))
-    .getOrElse(defaultVizorDeeplinkBaseUrl)
-    .trim()
+val vizorDeeplinkBaseUrl = (
+    dartDefines["VIZOR_DEEPLINK_BASE_URL"] ?: defaultVizorDeeplinkBaseUrl
+    ).trim()
 val vizorDeeplinkUri = URI(vizorDeeplinkBaseUrl)
 require(
     vizorDeeplinkUri.scheme.equals("https", ignoreCase = true) &&
