@@ -7,7 +7,6 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
-import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../payment_link_action.dart';
 import '../payment_link_card_motion.dart';
 import '../payment_link_cards_layout.dart';
@@ -415,19 +414,9 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: AppSpacing.xxs),
-                            MobileSurfaceCard(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  for (final (rowIndex, card)
-                                      in section.cards.indexed) ...[
-                                    if (rowIndex > 0)
-                                      const SizedBox(height: AppSpacing.xxs),
-                                    card,
-                                  ],
-                                ],
-                              ),
-                            ),
+                            // Rows sit on the page like the desktop list —
+                            // no surface card around a section.
+                            ...section.cards,
                           ],
                       ],
                     )
