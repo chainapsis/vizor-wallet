@@ -255,6 +255,18 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Android 10+ only lets the focused app read the clipboard, and
+        // `onResume` runs before focus is granted. Without this hook the
+        // expiry retry would keep reading a clipboard the system refuses to
+        // show us, and an expired secret copied before Vizor went to the
+        // background would never be cleared.
+        if (hasFocus && ::sensitiveClipboardHandler.isInitialized) {
+            sensitiveClipboardHandler.retryExpiredClear()
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // singleTop launchMode: a link tapped while Vizor is already running is

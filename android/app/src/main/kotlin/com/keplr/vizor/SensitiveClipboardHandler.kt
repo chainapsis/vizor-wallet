@@ -1,5 +1,6 @@
 package com.keplr.vizor
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -11,7 +12,7 @@ import android.os.SystemClock
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-internal class SensitiveClipboardHandler(context: Context) {
+internal class SensitiveClipboardHandler(private val context: Context) {
     private val clipboardManager =
         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -66,10 +67,36 @@ internal class SensitiveClipboardHandler(context: Context) {
         result.success(null)
     }
 
+    /**
+     * Retires the pending expiry, but only on evidence that the secret is gone.
+     *
+     * A clipboard read cannot always be trusted. From Android 10 the system
+     * serves `getPrimaryClip()` only to the app that owns the focused window,
+     * and it refuses by returning **null rather than throwing**. A null read
+     * therefore cannot tell "the clipboard is empty" apart from "we are not
+     * allowed to look", and the second reading means the secret is still on the
+     * system clipboard where every installed app can read it.
+     *
+     * So the pending entry, and the plaintext it carries, is kept whenever the
+     * answer is unknown -- no window focus, `SecurityException`, null clip --
+     * and released only on proof that the secret is gone: a readable clip
+     * holding something else, or one this method has just cleared. Keeping a
+     * secret in this process a while longer is the cheap mistake; leaving it on
+     * the system clipboard with nothing scheduled to remove it is not
+     * recoverable.
+     *
+     * Every "keep" is a promise of a later retry, which is why MainActivity
+     * calls [retryExpiredClear] from `onWindowFocusChanged` as well as
+     * `onResume`: `onResume` runs before the window regains focus, so on its
+     * own it would never see a readable clipboard.
+     */
     private fun clearIfExpired(generation: Long) {
         val pending = pendingExpiration ?: return
         if (pending.copyGeneration != generation) return
         if (SystemClock.elapsedRealtime() < pending.expiresAtElapsedRealtime) return
+        // Nothing this read returned could be believed, so do not spend the
+        // pending entry on it.
+        if (!canReadClipboard()) return
 
         val currentText = try {
             clipboardManager.primaryClip
@@ -78,19 +105,13 @@ internal class SensitiveClipboardHandler(context: Context) {
                 ?.text
                 ?.toString()
         } catch (_: SecurityException) {
-            // Android can deny clipboard reads while Vizor is in the background.
-            // This is the one case where the secret may still be on the
-            // clipboard and unreachable, so keep the pending expiration and let
-            // onResume retry it.
             return
         }
+        // Focus can be lost between the check above and the read, and OEMs vary
+        // in what they return when they refuse, so a null here is still
+        // "unknown", not "empty".
+        if (currentText == null) return
 
-        // A null read is not a denial: the clip is gone, empty, or not text, so
-        // the secret is already off the clipboard and there is nothing left to
-        // clear. It still has to fall through to the release below -- returning
-        // early here pinned the plaintext in `pendingExpiration` for the rest of
-        // the activity's life, with the timer already fired and no one left to
-        // retire it.
         if (currentText == pending.text) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 clipboardManager.clearPrimaryClip()
@@ -98,9 +119,25 @@ internal class SensitiveClipboardHandler(context: Context) {
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("", ""))
             }
         }
+        // Either the secret was just cleared or the clipboard readably holds
+        // something else. Both mean it is off the clipboard, so the entry and
+        // its plaintext can go.
         if (pendingExpiration === pending) {
             pendingExpiration = null
         }
+    }
+
+    /**
+     * Whether a clipboard read can mean anything right now.
+     *
+     * Android 10+ hands the clipboard only to the app whose window has focus.
+     * Checking first keeps a background timer from consuming the pending entry
+     * on a read that would come back null whatever the clipboard holds.
+     */
+    private fun canReadClipboard(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
+        val activity = context as? Activity ?: return true
+        return activity.hasWindowFocus()
     }
 
     private data class PendingExpiration(
