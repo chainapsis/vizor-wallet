@@ -7,15 +7,23 @@ import '../../layout/app_form_factor.dart';
 import '../../../providers/sync_keep_awake_provider.dart';
 import '../../../services/native_screen_awake.dart';
 
+const kNativeScreenAwakeRetryDelays = <Duration>[
+  Duration(seconds: 1),
+  Duration(seconds: 4),
+  Duration(seconds: 16),
+];
+
 class SyncKeepAwakeNativeHost extends ConsumerStatefulWidget {
   const SyncKeepAwakeNativeHost({
     required this.child,
     this.bridge = const NativeScreenAwakeBridge(),
+    this.retryDelays = kNativeScreenAwakeRetryDelays,
     super.key,
   });
 
   final Widget child;
   final NativeScreenAwakeBridge bridge;
+  final List<Duration> retryDelays;
 
   @override
   ConsumerState<SyncKeepAwakeNativeHost> createState() =>
@@ -25,9 +33,13 @@ class SyncKeepAwakeNativeHost extends ConsumerStatefulWidget {
 class _SyncKeepAwakeNativeHostState
     extends ConsumerState<SyncKeepAwakeNativeHost> {
   AppLifecycleListener? _lifecycleListener;
+  Timer? _retryTimer;
   bool _isInForeground = true;
-  bool _lastRequestedEnabled = false;
+  bool _desiredEnabled = false;
   bool _lastAppliedEnabled = false;
+  bool _nativeStateUncertain = false;
+  bool _isDisposed = false;
+  int _requestGeneration = 0;
   Future<void> _nativeQueue = Future<void>.value();
 
   @override
@@ -59,8 +71,10 @@ class _SyncKeepAwakeNativeHostState
   @override
   void dispose() {
     _lifecycleListener?.dispose();
-    if (_lastRequestedEnabled || _lastAppliedEnabled) {
-      _requestNativeState(false, force: true);
+    _retryTimer?.cancel();
+    _isDisposed = true;
+    if (_desiredEnabled || _lastAppliedEnabled || _nativeStateUncertain) {
+      _requestNativeState(false, force: true, allowDisposed: true);
     }
     super.dispose();
   }
@@ -77,28 +91,99 @@ class _SyncKeepAwakeNativeHostState
     _requestNativeState(ref.read(syncKeepAwakeActiveProvider));
   }
 
-  void _requestNativeState(bool enabled, {bool force = false}) {
-    if (!force && _lastRequestedEnabled == enabled) return;
-    _lastRequestedEnabled = enabled;
-    final bridge = widget.bridge;
-    _nativeQueue = _nativeQueue.then(
-      (_) => _applyNativeState(bridge, enabled, force: force),
+  void _requestNativeState(
+    bool enabled, {
+    bool force = false,
+    bool allowDisposed = false,
+  }) {
+    if (_isDisposed && !allowDisposed) return;
+    if (!force && _desiredEnabled == enabled) return;
+
+    _desiredEnabled = enabled;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    final generation = ++_requestGeneration;
+    _enqueueNativeAttempt(
+      enabled,
+      generation: generation,
+      failedAttempts: 0,
+      force: force,
     );
   }
 
-  Future<void> _applyNativeState(
+  void _enqueueNativeAttempt(
+    bool enabled, {
+    required int generation,
+    required int failedAttempts,
+    bool force = false,
+  }) {
+    final bridge = widget.bridge;
+    _nativeQueue = _nativeQueue.then((_) async {
+      if (!_isCurrentRequest(enabled, generation)) return;
+      final applied = await _applyNativeState(
+        bridge,
+        enabled,
+        force: force,
+        attempt: failedAttempts + 1,
+      );
+      if (!applied) {
+        _scheduleRetry(
+          enabled,
+          generation: generation,
+          failedAttempts: failedAttempts + 1,
+        );
+      }
+    });
+  }
+
+  bool _isCurrentRequest(bool enabled, int generation) {
+    return generation == _requestGeneration && _desiredEnabled == enabled;
+  }
+
+  Future<bool> _applyNativeState(
     NativeScreenAwakeBridge bridge,
     bool enabled, {
     required bool force,
+    required int attempt,
   }) async {
-    if (!force && _lastAppliedEnabled == enabled) return;
+    if (!force && !_nativeStateUncertain && _lastAppliedEnabled == enabled) {
+      return true;
+    }
     try {
       await bridge.setEnabled(enabled);
       _lastAppliedEnabled = enabled;
+      _nativeStateUncertain = false;
+      return true;
     } catch (error) {
+      _nativeStateUncertain = true;
       debugPrint(
-        'SyncKeepAwakeNativeHost: setEnabled($enabled) failed: $error',
+        'SyncKeepAwakeNativeHost: setEnabled($enabled) failed '
+        '(attempt $attempt/${widget.retryDelays.length + 1}): $error',
       );
+      return false;
     }
+  }
+
+  void _scheduleRetry(
+    bool enabled, {
+    required int generation,
+    required int failedAttempts,
+  }) {
+    if (_isDisposed ||
+        !_isCurrentRequest(enabled, generation) ||
+        failedAttempts > widget.retryDelays.length) {
+      return;
+    }
+
+    _retryTimer?.cancel();
+    _retryTimer = Timer(widget.retryDelays[failedAttempts - 1], () {
+      _retryTimer = null;
+      if (_isDisposed || !_isCurrentRequest(enabled, generation)) return;
+      _enqueueNativeAttempt(
+        enabled,
+        generation: generation,
+        failedAttempts: failedAttempts,
+      );
+    });
   }
 }
