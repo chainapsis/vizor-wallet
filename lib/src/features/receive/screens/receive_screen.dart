@@ -482,6 +482,13 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     ref.listen(accountProvider, (previous, next) {
       final nextUuid = next.value?.activeAccountUuid;
       if (nextUuid != null && nextUuid != _activeAccountUuid) {
+        // The request modal covers only the trailing pane, so the sidebar's
+        // account selector stays reachable behind it. A draft snapshotted
+        // for the previous account would keep handing out that account's
+        // address — on the QR, the copied link, the saved image — under the
+        // new account's name. Close it rather than repoint it: the user
+        // opened it for the account they were looking at.
+        _closeRequest();
         unawaited(_loadAddresses());
       }
     });

@@ -564,6 +564,53 @@ void main() {
     expect(find.text('activity route'), findsOneWidget);
   });
 
+  testWidgets('switching accounts closes a request drafted for the previous '
+      'one', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final bootstrap = _twoAccountBootstrap;
+    await tester.pumpWidget(
+      _receiveHarness(
+        bootstrap: bootstrap,
+        extraOverrides: [
+          accountProvider.overrideWith(
+            () => _FakeAccountNotifier(bootstrap.initialAccountState, {
+              'account-1': _accountOneAddress,
+              'account-2': _accountTwoAddress,
+            }),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('receive_request_modal')), findsOneWidget);
+
+    // The modal covers only the trailing pane; the sidebar's account
+    // selector is still reachable behind it.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ReceiveScreen)),
+      listen: false,
+    );
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('receive_request_modal')),
+      findsNothing,
+      reason:
+          'a request drafted for account 1 must not be handed out under '
+          'account 2',
+    );
+  });
+
   testWidgets('ignores stale shielded load failure after account switch', (
     tester,
   ) async {
