@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../payment_links/providers/payment_link_cards_provider.dart';
 import '../../../../core/config/app_version_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
@@ -195,15 +196,9 @@ class MobileSettingsScreen extends ConsumerWidget {
                       showChevron: true,
                       onTap: () => context.push('/settings/address-book'),
                     ),
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_gift_cards_row'),
-                      leading: _RowIcon(AppIcons.giftCard),
-                      label: 'Gift Cards',
-                      minRowHeight: _settingsRowHeight,
+                    _GiftCardsRow(
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      onTap: () => context.push('/payment-links'),
                     ),
                   ],
                 ),
@@ -880,5 +875,56 @@ class _ThemeOptionCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// The Gift Cards entry. Like the desktop settings entry, it loads the
+/// created and received cards before pushing the screen, so the screen opens
+/// straight on the cards list (or the create/redeem landing) instead of
+/// flashing the landing while it loads. A load failure still opens the
+/// screen, which then loads its own cards.
+class _GiftCardsRow extends ConsumerStatefulWidget {
+  const _GiftCardsRow({required this.textStyle, required this.chevronColor});
+
+  final TextStyle textStyle;
+  final Color chevronColor;
+
+  @override
+  ConsumerState<_GiftCardsRow> createState() => _GiftCardsRowState();
+}
+
+class _GiftCardsRowState extends ConsumerState<_GiftCardsRow> {
+  bool _isOpening = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MobileListRow(
+      key: const ValueKey('mobile_settings_gift_cards_row'),
+      leading: _RowIcon(AppIcons.giftCard),
+      label: 'Gift Cards',
+      minRowHeight: _settingsRowHeight,
+      textStyle: widget.textStyle,
+      chevronColor: widget.chevronColor,
+      showChevron: true,
+      onTap: _isOpening ? null : () => unawaited(_open()),
+    );
+  }
+
+  Future<void> _open() async {
+    setState(() => _isOpening = true);
+    final router = GoRouter.of(context);
+    final entryPath = router.routerDelegate.currentConfiguration.uri.path;
+    PaymentLinkCardsSnapshot? cards;
+    try {
+      cards = await ref.read(paymentLinkCardsLoaderProvider)();
+    } catch (_) {
+      cards = null;
+    }
+    if (!mounted) return;
+    setState(() => _isOpening = false);
+    if (router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+      return;
+    }
+    unawaited(router.push('/payment-links', extra: cards));
   }
 }

@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_en
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
@@ -271,6 +272,71 @@ void main() {
       expect(find.byType(PaymentLinksDesktopScreen), findsOneWidget);
     },
     tags: ['mobile'],
+  );
+
+  testWidgets(
+    'mobile Gift Cards opens on the home landing when no link is waiting',
+    (tester) async {
+      await tester.pumpWidget(_mobileApp());
+      await _pumpUntilPresent(tester, find.byType(Scaffold));
+
+      final context = tester.element(find.byType(Scaffold).first);
+      unawaited(GoRouter.of(context).push('/payment-links'));
+      await _pumpUntilPresent(tester, find.byType(PaymentLinksDesktopScreen));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byType(PaymentLinksHomeMobileView), findsOneWidget);
+      expect(find.byType(PaymentLinkRedeemMobileView), findsNothing);
+    },
+    tags: ['mobile'],
+  );
+
+  testWidgets('mobile Gift Cards skips the landing when a link is waiting', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_mobileApp());
+    await _pumpUntilPresent(tester, find.byType(Scaffold));
+
+    final context = tester.element(find.byType(Scaffold).first);
+    // The bootstrap opens on the send screen, where a Gift Card is deferred;
+    // the entry decision under test is the one made from the home tab.
+    GoRouter.of(context).go('/home');
+    await tester.pump(const Duration(milliseconds: 100));
+    ProviderScope.containerOf(context)
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(_paymentLink.toUri().toString());
+    await _pumpUntilPresent(tester, find.byType(PaymentLinksDesktopScreen));
+
+    // The waiting link goes straight into the redeem pre-check — with this
+    // fake it resolves at once into the received page — and the landing is
+    // never shown on the way.
+    expect(find.byType(PaymentLinksHomeMobileView), findsNothing);
+    expect(find.byType(PaymentLinkReceivedMobileView), findsOneWidget);
+  }, tags: ['mobile']);
+}
+
+Widget _mobileApp() {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_readyBootstrap),
+      syncProvider.overrideWith(
+        () => FakeSyncNotifier(
+          SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            isSyncComplete: true,
+            percentage: 1,
+            displayTargetPercentage: 1,
+            spendableBalance: BigInt.from(1000000),
+            displaySpendableBalance: BigInt.from(1000000),
+          ),
+        ),
+      ),
+      paymentLinkOperationsProvider.overrideWithValue(
+        _PendingClaimPaymentLinkOperations(),
+      ),
+    ],
+    child: const ZcashWalletApp(),
   );
 }
 

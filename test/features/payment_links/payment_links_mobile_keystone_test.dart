@@ -89,12 +89,6 @@ void main() {
 }
 
 Future<void> _walkToApproveAndCreate(WidgetTester tester) async {
-  // Mobile opens on the redeem entry; step back to the Gift Card home first.
-  final semantics = tester.ensureSemantics();
-  await tester.tap(find.bySemanticsLabel('Back').first);
-  await tester.pumpAndSettle();
-  semantics.dispose();
-
   await tester.tap(
     find.byKey(const ValueKey('payment_links_mobile_create_button')),
   );

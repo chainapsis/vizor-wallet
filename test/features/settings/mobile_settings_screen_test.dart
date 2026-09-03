@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_welcome_art.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
@@ -195,7 +196,11 @@ Widget _routedApp() {
       ),
       GoRoute(
         path: '/payment-links',
-        builder: (_, _) => const Text('payment links route'),
+        builder: (_, state) => Text(
+          state.extra is PaymentLinkCardsSnapshot
+              ? 'payment links route with cards'
+              : 'payment links route',
+        ),
       ),
     ],
   );
@@ -205,6 +210,9 @@ Widget _routedApp() {
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
       syncKeepAwakeProvider.overrideWith(_FakeSyncKeepAwakeNotifier.new),
+      paymentLinkCardsLoaderProvider.overrideWithValue(
+        () async => const PaymentLinkCardsSnapshot(created: [], received: []),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -834,7 +842,7 @@ void main() {
     await tester.tap(row);
     await tester.pumpAndSettle();
 
-    expect(find.text('payment links route'), findsOneWidget);
+    expect(find.text('payment links route with cards'), findsOneWidget);
   });
 
   testWidgets('theme row opens the sheet and applies the selection', (

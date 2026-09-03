@@ -160,11 +160,14 @@ class _PaymentLinksDesktopScreenState
   void initState() {
     super.initState();
     _paymentLinkOperations = ref.read(paymentLinkOperationsProvider);
-    if (kAppFormFactor == AppFormFactor.mobile) {
+    // Both form factors open on the Gift Card home (the cards list once any
+    // exist, the create/redeem landing otherwise). Only a link that is
+    // already waiting jumps mobile straight to the redeem page, so the landing
+    // never flashes before the loading state it is about to show.
+    if (kAppFormFactor == AppFormFactor.mobile &&
+        ref.read(paymentLinkIntakeProvider).pendingLink != null) {
       _page = PaymentLinksLocalPage.redeem;
-      if (ref.read(paymentLinkIntakeProvider).pendingLink != null) {
-        _redeemState = PaymentLinkRedeemVisualState.loading;
-      }
+      _redeemState = PaymentLinkRedeemVisualState.loading;
     }
     final initialCards = widget.initialCards;
     if (initialCards != null) {
