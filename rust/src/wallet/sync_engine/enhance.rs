@@ -29,8 +29,8 @@ use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
     data_api::{
-        wallet::decrypt_and_store_transaction, TransactionDataRequest, TransactionStatus,
-        WalletRead, WalletWrite,
+        enhance_pir::EnhancePirRead, wallet::decrypt_and_store_transaction, TransactionDataRequest,
+        TransactionStatus, WalletRead, WalletWrite,
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
@@ -56,7 +56,7 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
-    suppress_tx_enhancement: bool,
+    enhance_pir_enabled: bool,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
 
@@ -69,16 +69,31 @@ pub(super) async fn run_enhancement(
         if requests.is_empty() {
             break;
         }
-        if suppress_tx_enhancement {
+        let mut protected_txids = HashSet::new();
+        if enhance_pir_enabled {
+            for request in &requests {
+                if let TransactionDataRequest::Enhancement(txid) = request {
+                    let protected =
+                        db.is_ironwood_enhancement_protected(*txid)
+                            .map_err(|error| {
+                                SyncError::db(format!("is_ironwood_enhancement_protected: {error}"))
+                            })?;
+                    if protected {
+                        protected_txids.insert(txid.to_string());
+                    }
+                }
+            }
+        }
+        if !protected_txids.is_empty() {
             let suppressed = requests
                 .iter()
-                .filter(|request| matches!(request, TransactionDataRequest::Enhancement(_)))
+                .filter(|request| request_is_suppressed(request, &protected_txids))
                 .count();
             if suppressed > 0 {
                 // Do not include the identifiers themselves in logs: the count
                 // is sufficient to demonstrate that the privacy gate fired.
                 log::info!(
-                    "sync: suppressed {suppressed} legacy transaction enhancement request(s); no transaction IDs were sent"
+                    "sync: suppressed {suppressed} legacy transaction enhancement request(s); those transaction IDs were not sent"
                 );
             }
         }
@@ -89,18 +104,20 @@ pub(super) async fn run_enhancement(
         // forever on the same inert queue.
         let actionable = requests
             .iter()
-            .any(|request| request_is_actionable(request, suppress_tx_enhancement));
+            .any(|request| request_is_actionable(request, &protected_txids));
         if !actionable {
             break;
         }
 
         for req in &requests {
             match req {
-                TransactionDataRequest::Enhancement(_) if suppress_tx_enhancement => {
+                TransactionDataRequest::Enhancement(txid)
+                    if protected_txids.contains(&txid.to_string()) =>
+                {
                     // Deliberately leave the legacy request queued. Removing it
                     // without a full transaction would lie about completion;
                     // servicing it would disclose the wallet's txid. Ironwood
-                    // memo completion is handled by the position-keyed PIR queue.
+                    // transaction completion is handled by the position-keyed PIR queue.
                     continue;
                 }
                 TransactionDataRequest::GetStatus(txid)
@@ -318,9 +335,19 @@ fn stored_transaction_ids_missing_fee(db_path: &str) -> Result<Vec<TxId>, SyncEr
 /// Whether servicing `request` can make progress under the active privacy
 /// policy. Status requests always can; enhancement is policy-gated, and
 /// address-scoped requests need a bounded block range.
-fn request_is_actionable(request: &TransactionDataRequest, suppress_tx_enhancement: bool) -> bool {
+fn request_is_suppressed(
+    request: &TransactionDataRequest,
+    protected_txids: &HashSet<String>,
+) -> bool {
+    matches!(request, TransactionDataRequest::Enhancement(txid) if protected_txids.contains(&txid.to_string()))
+}
+
+fn request_is_actionable(
+    request: &TransactionDataRequest,
+    protected_txids: &HashSet<String>,
+) -> bool {
     match request {
-        TransactionDataRequest::Enhancement(_) => !suppress_tx_enhancement,
+        TransactionDataRequest::Enhancement(_) => !request_is_suppressed(request, protected_txids),
         TransactionDataRequest::GetStatus(_) => true,
         TransactionDataRequest::TransactionsInvolvingAddress(req) => {
             req.block_range_end().is_some()
@@ -677,18 +704,20 @@ mod tests {
     #[test]
     fn privacy_gate_makes_enhancement_inert_but_keeps_status_actionable() {
         let txid = TxId::from_bytes([7; 32]);
+        let protected = HashSet::from([txid.to_string()]);
+        let unprotected = HashSet::new();
 
         assert!(!request_is_actionable(
             &TransactionDataRequest::Enhancement(txid),
-            true,
+            &protected,
         ));
         assert!(request_is_actionable(
             &TransactionDataRequest::GetStatus(txid),
-            true,
+            &protected,
         ));
         assert!(request_is_actionable(
             &TransactionDataRequest::Enhancement(txid),
-            false,
+            &unprotected,
         ));
     }
 
