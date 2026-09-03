@@ -1,59 +1,53 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
-import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+
+import 'fakes/fake_sync_notifier.dart';
 
 // A bare-origin Vizor link means no more than "open Vizor", and Vizor is
 // already open by the time the host sees one. It therefore loses to anything
 // the user is part-way through: onboarding, import, and add-account hold a
 // typed seed phrase or a freshly generated mnemonic in the widget tree alone,
 // and `go('/home')` would throw that away with no way back.
+//
+// The harness mirrors `app_incoming_link_host_test.dart`: a fake
+// `IncomingUriService` rather than the real platform channel, and the same
+// unlocked-wallet bootstrap. `_IncomingLinkHost` grows more provider reads as
+// the link stack lands on top of this PR, and every one of them resolves from
+// this bootstrap, so the file keeps passing as the host gains lanes.
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
-  const channel = MethodChannel(kIncomingUriChannelName);
   const homeLink = 'https://link.vizor.cash';
 
-  // No `debugDefaultTargetPlatformOverride` here: widget tests already report
-  // `TargetPlatform.android`, which is one of the five platforms
-  // `IncomingUriService` installs its channel handler on, and setting the
-  // override would have to be unwound before the test body ends.
-  setUp(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          return switch (call.method) {
-            'takePendingUris' => const <String>[],
-            'ready' => null,
-            _ => throw MissingPluginException(),
-          };
-        });
-  });
+  const account = AccountInfo(
+    uuid: 'account-1',
+    name: 'Account 1',
+    order: 0,
+    isSeedAnchor: true,
+  );
 
-  tearDown(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null);
-  });
+  const walletState = AccountState(
+    accounts: [account],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1active',
+  );
 
-  Future<void> pushLink(WidgetTester tester, String uri) async {
-    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .handlePlatformMessage(
-          kIncomingUriChannelName,
-          const StandardMethodCodec().encodeMethodCall(
-            MethodCall('onUris', <String>[uri]),
-          ),
-          (_) {},
-        );
-    await tester.pumpAndSettle();
-  }
-
-  Future<GoRouter> pumpHost(
+  Future<(GoRouter, _FakeIncomingUriService)> pumpHost(
     WidgetTester tester, {
     required String initialLocation,
   }) async {
+    final incomingUris = _FakeIncomingUriService();
+    addTearDown(incomingUris.dispose);
+
     final router = GoRouter(
       initialLocation: initialLocation,
       routes: [
@@ -68,7 +62,7 @@ void main() {
         ])
           GoRoute(
             path: path,
-            builder: (context, state) => Text(path, key: ValueKey(path)),
+            builder: (_, _) => Scaffold(body: Text('screen $path')),
           ),
       ],
     );
@@ -77,19 +71,26 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          appBootstrapProvider.overrideWithValue(
+            _unlockedBootstrapWithWallet(walletState),
+          ),
+          accountProvider.overrideWith(
+            () => _ControllableAccountNotifier(walletState),
+          ),
+          syncProvider.overrideWith(FakeSyncNotifier.new),
+          incomingUriServiceProvider.overrideWithValue(incomingUris),
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (context, child) => buildIncomingLinkHostForTest(
-            router: router,
-            child: child ?? const SizedBox.shrink(),
+          builder: (context, child) => AppTheme(
+            data: AppThemeData.dark,
+            child: buildIncomingLinkHostForTest(router: router, child: child!),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    return router;
+    return (router, incomingUris);
   }
 
   String locationOf(GoRouter router) =>
@@ -102,10 +103,14 @@ void main() {
     '/import/secret-passphrase',
   ]) {
     testWidgets('a home link on $origin does not navigate', (tester) async {
-      final router = await pumpHost(tester, initialLocation: origin);
+      final (router, incomingUris) = await pumpHost(
+        tester,
+        initialLocation: origin,
+      );
       expect(locationOf(router), origin);
 
-      await pushLink(tester, homeLink);
+      incomingUris.emit(homeLink);
+      await tester.pumpAndSettle();
 
       expect(
         locationOf(router),
@@ -117,10 +122,14 @@ void main() {
 
   for (final origin in const ['/activity', '/settings']) {
     testWidgets('a home link on $origin goes home', (tester) async {
-      final router = await pumpHost(tester, initialLocation: origin);
+      final (router, incomingUris) = await pumpHost(
+        tester,
+        initialLocation: origin,
+      );
       expect(locationOf(router), origin);
 
-      await pushLink(tester, homeLink);
+      incomingUris.emit(homeLink);
+      await tester.pumpAndSettle();
 
       expect(locationOf(router), '/home');
     });
@@ -131,24 +140,60 @@ void main() {
   ) async {
     // The gate is on where the user is now, not on where the app started: the
     // same link that was dropped during onboarding must work afterwards.
-    final router = await pumpHost(
+    final (router, incomingUris) = await pumpHost(
       tester,
       initialLocation: '/onboarding/secret-passphrase',
     );
 
-    await pushLink(tester, homeLink);
+    incomingUris.emit(homeLink);
+    await tester.pumpAndSettle();
     expect(locationOf(router), '/onboarding/secret-passphrase');
 
     router.go('/activity');
     await tester.pumpAndSettle();
 
-    await pushLink(tester, homeLink);
+    incomingUris.emit(homeLink);
+    await tester.pumpAndSettle();
     expect(locationOf(router), '/home');
   });
 }
 
-class _UnlockedSecurityNotifier extends AppSecurityNotifier {
+class _FakeIncomingUriService extends IncomingUriService {
+  final StreamController<String> _uris = StreamController<String>.broadcast();
+
   @override
-  AppSecurityState build() =>
-      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+  Stream<String> get uriStream => _uris.stream;
+
+  @override
+  Future<void> initialize() async {}
+
+  void emit(String uri) => _uris.add(uri);
+
+  @override
+  Future<void> dispose() async {
+    await _uris.close();
+  }
+}
+
+AppBootstrapState _unlockedBootstrapWithWallet(AccountState accountState) =>
+    AppBootstrapState(
+      initialLocation: '/home',
+      initialAccountState: accountState,
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.dark,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+    );
+
+class _ControllableAccountNotifier extends AccountNotifier {
+  _ControllableAccountNotifier(this._initial);
+
+  final AccountState _initial;
+
+  @override
+  FutureOr<AccountState> build() => _initial;
 }
