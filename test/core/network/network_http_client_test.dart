@@ -132,6 +132,42 @@ void main() {
     ]);
   });
 
+  test('a bootstrap wait is not charged to the redirect budget', () async {
+    // The Rust-side request timeout covers the HTTP exchange only: the first
+    // hop can sit inside Rust waiting for Tor to finish bootstrapping for
+    // longer than the caller's whole deadline. Billed to the redirect budget,
+    // that wait would time the redirect out before it was ever sent.
+    const timeout = Duration(milliseconds: 200);
+    final bridge = _HeldFirstResponseTorBridge([
+      NetworkHttpResponse(
+        statusCode: 302,
+        bodyBytes: Uint8List(0),
+        headers: const {
+          'location': ['/final'],
+        },
+      ),
+      NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
+    ]);
+    final client = NetworkHttpClient(torDesired: () => true, torBridge: bridge);
+    addTearDown(() => client.close());
+
+    final pending = client.request(
+      'GET',
+      Uri.parse('https://example.com/start'),
+      timeout: timeout,
+    );
+    await Future<void>.delayed(timeout * 2);
+    bridge.releaseFirstResponse();
+
+    final response = await pending;
+    expect(utf8.decode(response.bodyBytes), 'done');
+    expect(bridge.timeouts, hasLength(2));
+    expect(
+      bridge.timeouts[1]!.inMilliseconds,
+      inInclusiveRange(150, timeout.inMilliseconds),
+    );
+  });
+
   test('cross-origin redirects strip credentials', () async {
     final bridge = _RecordingTorBridge([
       NetworkHttpResponse(
@@ -462,6 +498,32 @@ class _RecordingTorBridge implements TorHttpBridge {
       ),
     );
     return responses[requests.length - 1];
+  }
+}
+
+/// Withholds the first response until the test releases it, standing in for a
+/// first hop that spends its time waiting for Tor to bootstrap inside Rust.
+class _HeldFirstResponseTorBridge extends _RecordingTorBridge {
+  _HeldFirstResponseTorBridge(super.responses);
+
+  final _firstResponse = Completer<void>();
+
+  void releaseFirstResponse() => _firstResponse.complete();
+
+  @override
+  Future<NetworkHttpResponse> get(
+    Uri uri, {
+    required Map<String, String> headers,
+    required Duration? timeout,
+    Future<void>? cancelSignal,
+  }) async {
+    if (requests.isEmpty) await _firstResponse.future;
+    return super.get(
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 }
 

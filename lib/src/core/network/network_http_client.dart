@@ -384,7 +384,12 @@ class NetworkHttpClient {
     var currentUri = initialUri;
     var currentHeaders = Map<String, String>.of(headers);
     var currentBody = bodyBytes;
-    final stopwatch = Stopwatch()..start();
+    // Only the hops themselves are charged to the redirect budget, so the
+    // clock starts when the first response arrives. The first hop can spend an
+    // unbounded stretch inside Rust waiting for Tor to bootstrap — a wait the
+    // per-request timeout does not cover either — and billing that here would
+    // leave a redirect with no budget at all.
+    final stopwatch = Stopwatch();
     for (var redirectCount = 0; redirectCount <= 5; redirectCount++) {
       final remainingTimeout = _remainingTimeout(timeout, stopwatch);
       final response = destinationPath != null
@@ -407,6 +412,7 @@ class NetworkHttpClient {
               timeout: remainingTimeout,
               cancelSignal: cancelSignal,
             );
+      if (!stopwatch.isRunning) stopwatch.start();
       final location = response.header(HttpHeaders.locationHeader);
       if (!_isRedirect(response.statusCode) || location == null) {
         return response;
