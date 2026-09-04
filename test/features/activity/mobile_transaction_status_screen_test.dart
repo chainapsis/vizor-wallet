@@ -119,6 +119,7 @@ Widget _app(
   rust_sync.TransactionDetail? detail,
   GiftCardActivityMetadata? giftCard,
   GiftCardActivityIndex giftCardIndex = GiftCardActivityIndex.empty,
+  AccountNotifier? accountNotifier,
   List<AddressBookContact> contacts = const [],
   Map<String, AccountInfo> ownAccounts = const {},
 }) {
@@ -138,6 +139,8 @@ Widget _app(
       giftCardActivityIndexProvider.overrideWith(
         (ref, _) async => giftCardIndex,
       ),
+      if (accountNotifier != null)
+        accountProvider.overrideWith(() => accountNotifier),
     ],
     child: MaterialApp(
       home: AppTheme(
@@ -219,6 +222,38 @@ void main() {
     await tester.pump();
     expect(find.text('Happy birthday!'), findsOneWidget);
   });
+
+  testWidgets(
+    'Gift Card receipt drops route metadata after an account switch',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final accountNotifier = _SwitchableAccountNotifier();
+      await tester.pumpWidget(
+        _app(
+          _tx(),
+          giftCard: _giftCard(message: 'Happy birthday!'),
+          accountNotifier: accountNotifier,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Created a Gift Card'), findsOneWidget);
+      expect(find.byType(PaymentLinkGiftCard), findsOneWidget);
+
+      // account-2's index knows nothing about this txid, so the receipt must
+      // fall back to the generic one instead of keeping account-1's card.
+      accountNotifier.setActiveAccount('account-2');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Created a Gift Card'), findsNothing);
+      expect(find.byType(PaymentLinkGiftCard), findsNothing);
+      expect(find.text('Message'), findsNothing);
+      expect(find.text('Sent successfully'), findsOneWidget);
+      expect(find.text('To'), findsOneWidget);
+    },
+  );
 
   testWidgets('Gift Card receipt resolves metadata the route did not carry', (
     tester,
@@ -586,6 +621,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('ZIP 317'), findsOneWidget);
   });
+}
+
+class _SwitchableAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Account1',
+        order: 0,
+        profilePictureId: kDefaultProfilePictureId,
+      ),
+      AccountInfo(
+        uuid: 'account-2',
+        name: 'Account2',
+        order: 1,
+        profilePictureId: kDefaultProfilePictureId,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+  );
+
+  void setActiveAccount(String uuid) {
+    state = AsyncData(
+      state.requireValue.copyWith(activeAccountUuid: uuid, activeAddress: null),
+    );
+  }
 }
 
 class _FakeAddressBookRepository implements AddressBookRepository {
