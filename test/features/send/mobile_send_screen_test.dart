@@ -62,12 +62,19 @@ _SendMaxEstimateBuilder? _sendMaxEstimateBuilder;
 typedef _SendMaxEstimateBuilder =
     SendMaxEstimateResult Function({required String toAddress, String? memo});
 
+/// Holds `discardProposal` open so a test can look at the busy-surface hold
+/// while a cancelled send's proposal is still being released.
+Completer<void>? _discardGate;
+
 class _RustApiFake implements RustLibApi {
   @override
   Future<void> crateApiSyncDiscardProposal({
     required BigInt proposalId,
     required String sendFlowId,
-  }) async {}
+  }) async {
+    final gate = _discardGate;
+    if (gate != null) await gate.future;
+  }
 
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
@@ -605,6 +612,7 @@ Widget _sendFlowRouterApp({
             isPaymentRequest: args.isPaymentRequest,
             paymentRequestLabel: args.requestedBy,
             requestedAmountZatoshi: args.requestedAmountZatoshi,
+            onMemoEdited: args.onMemoEdited,
             loadWalletDbPath: () async => '/tmp/zcash-test',
             openScanner: (_, {required String networkName}) async => null,
             estimateFee: estimateFee,
@@ -739,6 +747,7 @@ void main() {
   tearDownAll(RustLib.dispose);
 
   setUp(() {
+    _discardGate = null;
     _proposeSendSucceeds = false;
     _proposeSendCompleter = null;
     _proposalFeeZatoshi = BigInt.from(10000);
@@ -1155,6 +1164,38 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
     expect(find.text('Select Recipient'), findsOneWidget);
+  });
+
+  testWidgets('a memo edited on the pushed review page survives a second '
+      'review', (tester) async {
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+    expect(find.text('Review Send'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_row')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_memo_editable')),
+      'edited on review',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_save')));
+    await tester.pumpAndSettle();
+    expect(find.text('edited on review'), findsOneWidget);
+
+    // Back pops the review page; the amount page below was handed the memo
+    // as a copy before the edit and must not re-push that stale copy.
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter Amount'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(find.text('edited on review'), findsOneWidget);
   });
 
   testWidgets('a send route pushed from home still pops on system back', (
@@ -1641,11 +1682,23 @@ void main() {
     );
 
     // Cancelling on the device is one of the two ways out; both give the
-    // hold back rather than stranding the link until the park TTL.
+    // hold back rather than stranding the link until the park TTL — but only
+    // once Rust has released the cancelled proposal, or the link drained by
+    // the release would be pre-checked against inputs it still holds.
+    final discardGate = Completer<void>();
+    _discardGate = discardGate;
     await tester.tap(find.byKey(const ValueKey('mobile_send_keystone_cancel')));
     await tester.pumpAndSettle();
 
     expect(find.text('Review Send'), findsOneWidget);
+    expect(
+      container.read(paymentUriBusySurfaceProvider),
+      1,
+      reason: 'the proposal is still being released',
+    );
+
+    discardGate.complete();
+    await tester.pumpAndSettle();
     expect(container.read(paymentUriBusySurfaceProvider), 0);
   });
 

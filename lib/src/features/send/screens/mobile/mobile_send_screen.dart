@@ -235,6 +235,12 @@ class MobileSendAmountResult {
   final MobileSendAmountInputMode amountInputMode;
 }
 
+/// Reports a memo the pushed review page saved, so the page that pushed it
+/// keeps the same memo and a second review does not restore the copy it was
+/// handed before the edit.
+typedef MobileSendMemoEditedCallback =
+    void Function(String memo, bool preserveWhitespace);
+
 class MobileSendReviewDraftArgs {
   const MobileSendReviewDraftArgs({
     required this.sendFlowId,
@@ -250,7 +256,14 @@ class MobileSendReviewDraftArgs {
     this.isPaymentRequest = false,
     this.requestedBy,
     this.requestedAmountZatoshi,
+    this.onMemoEdited,
   });
+
+  /// Set by the amount step that pushes the review as a page: the memo it
+  /// hands over is a copy, and Back pops through the framework without a
+  /// result (system back, the iOS edge swipe), so edits travel back through
+  /// this callback instead. Null when the review is the whole stack.
+  final MobileSendMemoEditedCallback? onMemoEdited;
 
   /// Retitles the step "Review payment request".
   final bool isPaymentRequest;
@@ -326,6 +339,7 @@ class MobileSendReviewScreen extends StatelessWidget {
       isPaymentRequest: args.isPaymentRequest,
       paymentRequestLabel: args.requestedBy,
       requestedAmountZatoshi: args.requestedAmountZatoshi,
+      onMemoEdited: args.onMemoEdited,
     );
   }
 }
@@ -397,6 +411,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.isPaymentRequest = false,
     this.paymentRequestLabel,
     this.requestedAmountZatoshi,
+    this.onMemoEdited,
     super.key,
   });
 
@@ -451,6 +466,10 @@ class MobileSendScreen extends ConsumerStatefulWidget {
 
   /// Preview/test seam for the mobile scanner sheet.
   final MobileSendScanner openScanner;
+
+  /// Told about every memo this screen saves; see
+  /// [MobileSendReviewDraftArgs.onMemoEdited].
+  final MobileSendMemoEditedCallback? onMemoEdited;
 
   @override
   ConsumerState<MobileSendScreen> createState() => _MobileSendScreenState();
@@ -1414,6 +1433,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             requestedAmountZatoshi: _isAnsweringPaymentRequest
                 ? widget.requestedAmountZatoshi
                 : null,
+            // The memo above is a copy. Keep this page's in step with edits
+            // made on the review, or a second review after Back would send
+            // the memo from before the edit.
+            onMemoEdited: (memo, preserveWhitespace) {
+              if (!mounted) return;
+              setState(() {
+                _memo = memo;
+                _preserveMemoWhitespace = preserveWhitespace;
+              });
+            },
           ),
         ),
       );
@@ -1589,6 +1618,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _memo = next;
       _preserveMemoWhitespace = false;
     });
+    widget.onMemoEdited?.call(_memo, _preserveMemoWhitespace);
     unawaited(_refreshReviewQuote());
   }
 
@@ -1713,12 +1743,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       return;
     }
     if (!mounted) {
-      unawaited(
-        discardSendProposal(
-          proposalId: args.proposalId,
-          sendFlowId: _sendFlowId,
-          logContext: 'MobileSend(unmounted)',
-        ),
+      // Awaited: `_confirmAndSend`'s hold on the payment-URI latch lifts when
+      // this returns, and a link parked behind it would otherwise be
+      // pre-checked against inputs this proposal still holds.
+      await discardSendProposal(
+        proposalId: args.proposalId,
+        sendFlowId: _sendFlowId,
+        logContext: 'MobileSend(unmounted)',
       );
       return;
     }
@@ -1759,21 +1790,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         extra: args,
       );
       if (keystone == null) {
-        // Cancelled (or failed before signing). The signing screen may
-        // already have consumed the proposal — discard is idempotent.
-        unawaited(
-          discardSendProposal(
-            proposalId: args.proposalId,
-            sendFlowId: _sendFlowId,
-            logContext: 'MobileSend(keystone cancelled)',
-          ),
-        );
         if (mounted) {
           setState(() {
             _isConfirmingSend = false;
             _phase = _SendPhase.compose;
           });
         }
+        // Cancelled (or failed before signing). The signing screen may
+        // already have consumed the proposal — discard is idempotent. Awaited
+        // so the payment-URI hold `_confirmAndSend` took outlives the release:
+        // a link parked behind it would otherwise be pre-checked against
+        // inputs this proposal still holds.
+        await discardSendProposal(
+          proposalId: args.proposalId,
+          sendFlowId: _sendFlowId,
+          logContext: 'MobileSend(keystone cancelled)',
+        );
         return;
       }
       if (!mounted) return;
