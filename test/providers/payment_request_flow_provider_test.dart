@@ -429,6 +429,28 @@ void main() {
     expect(api.discarded, [BigInt.one]);
   });
 
+  test('a hand-back overtaken by an account switch opens nothing', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    final pendingReview = notifier.reviewHandingBack();
+    await pumpEventQueue();
+    expect(container.read(paymentRequestFlowProvider), isNull);
+
+    // The card is already down, so the account listener's clear finds no
+    // state — it still has to stop the hand-back, or the review would open
+    // on the newly active account.
+    notifier.clear(logContext: 'PaymentRequest(account switched)');
+    api.discardGate!.complete();
+
+    expect(await pendingReview, isA<PaymentRequestReviewOvertaken>());
+  });
+
   test('an edit hand-back overtaken by a newer link opens nothing', () async {
     final api = _FakeSendApi();
     final container = makeContainer(api);

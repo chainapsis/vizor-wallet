@@ -478,13 +478,18 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   }
 
   void _clear({required String logContext}) {
+    // Bumped even with no card on screen: a Review or Edit hand-back takes
+    // the card down first and navigates only once Rust has released the
+    // proposal, and a lock or an account switch landing in that window must
+    // stop it — otherwise the review of a request pre-checked for one account
+    // opens on, and proposes from, whichever account is active by then.
+    _generation++;
     final current = state;
     if (current == null) return;
     final proposal = current.proposal;
     if (proposal != null) {
       _track(proposal.discard(logContext: logContext));
     }
-    _generation++;
     _publish(null);
   }
 
