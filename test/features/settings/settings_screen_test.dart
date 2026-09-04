@@ -165,6 +165,39 @@ void main() {
     expect(find.textContaining('payment links route'), findsNothing);
   });
 
+  testWidgets('Gift Cards drops a slow open once a modal takes over', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final cards = Completer<PaymentLinkCardsSnapshot>();
+    await tester.pumpWidget(
+      _settingsHarness(
+        extraOverrides: [
+          paymentLinkCardsLoaderProvider.overrideWithValue(() => cards.future),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('settings_gift_cards_row')));
+    await tester.pump();
+
+    // The pane stays interactive while the cards load, so the user can open
+    // a modal the late navigation would replace.
+    await tester.tap(find.text('Theme'));
+    await tester.pumpAndSettle();
+    expect(find.text('System (Auto)'), findsOneWidget);
+
+    cards.complete(const PaymentLinkCardsSnapshot(created: [], received: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('System (Auto)'), findsOneWidget);
+    expect(find.textContaining('payment links route'), findsNothing);
+  });
+
   testWidgets('settings sections are grouped Personal to Danger zone', (
     tester,
   ) async {

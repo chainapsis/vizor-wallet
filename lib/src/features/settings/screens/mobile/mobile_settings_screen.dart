@@ -12,6 +12,7 @@ import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/navigation/mobile_tab_history.dart';
+import '../../../../core/navigation/route_stack.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -931,7 +932,10 @@ class _GiftCardsRowState extends ConsumerState<_GiftCardsRow> {
     }
     if (!mounted) return;
     setState(() => _isOpening = false);
-    if (router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+    // Drop the open once the user has moved on: the tab shell's sheets sit
+    // on the root navigator, so the path alone does not show them.
+    if (router.routerDelegate.currentConfiguration.uri.path != entryPath ||
+        !isRouteTopmost(context)) {
       return;
     }
     unawaited(router.push('/payment-links', extra: cards));

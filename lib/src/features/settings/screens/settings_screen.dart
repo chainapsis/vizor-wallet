@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/navigation/route_stack.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -59,8 +60,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _pfpPickerFromEdit = false;
   bool _isOpeningGiftCards = false;
 
+  // The pane modals are state, not routes, so a slow Gift Cards load has no
+  // route change to notice; every modal open bumps this instead.
+  int _modalGeneration = 0;
+
   void _showModal(_SettingsModalType modal) {
     setState(() {
+      _modalGeneration++;
       _activeModal = modal;
     });
   }
@@ -76,6 +82,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _openEditProfilePicturePicker() {
     setState(() {
+      _modalGeneration++;
       _pfpPickerFromEdit = true;
       _activeModal = _SettingsModalType.profilePicture;
     });
@@ -83,6 +90,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _returnToEditAccountModal({String? pickedProfilePictureId}) {
     setState(() {
+      _modalGeneration++;
       if (pickedProfilePictureId != null) {
         _editDraftProfilePictureId = pickedProfilePictureId;
       }
@@ -127,6 +135,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (_isOpeningGiftCards) return;
     final router = GoRouter.of(context);
     final entryPath = router.routerDelegate.currentConfiguration.uri.path;
+    final entryModalGeneration = _modalGeneration;
     setState(() => _isOpeningGiftCards = true);
     PaymentLinkCardsSnapshot? cards;
     try {
@@ -138,7 +147,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
     if (!mounted) return;
     setState(() => _isOpeningGiftCards = false);
-    if (router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+    // Drop the open once the user has moved on: another route, a dialog, or
+    // a pane modal would all be replaced by this late navigation.
+    if (router.routerDelegate.currentConfiguration.uri.path != entryPath ||
+        _modalGeneration != entryModalGeneration ||
+        !isRouteTopmost(context)) {
       return;
     }
     router.go('/payment-links', extra: cards);

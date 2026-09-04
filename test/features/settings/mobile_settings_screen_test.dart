@@ -189,14 +189,40 @@ Widget _app({
 }
 
 Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
+  // Mirrors the production mobile tree: /settings and /home are branches of
+  // an indexed-stack shell, and /payment-links is pushed over it. Sheets go
+  // to the root navigator, so a flat router would not reproduce them.
   final router = GoRouter(
     initialLocation: '/settings',
     routes: [
-      GoRoute(
-        path: '/settings',
-        builder: (_, _) => const MobileSettingsScreen(),
+      StatefulShellRoute.indexedStack(
+        pageBuilder: (_, state, navigationShell) =>
+            NoTransitionPage(key: state.pageKey, child: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/settings',
+                pageBuilder: (_, state) => NoTransitionPage(
+                  key: state.pageKey,
+                  child: const MobileSettingsScreen(),
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/home',
+                pageBuilder: (_, state) => NoTransitionPage(
+                  key: state.pageKey,
+                  child: const Text('home route'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
-      GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(
         path: '/payment-links',
         builder: (_, state) => Text(
@@ -907,6 +933,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('home route'), findsOneWidget);
+    expect(find.textContaining('payment links route'), findsNothing);
+  });
+
+  testWidgets('Gift Cards drops a slow open once a sheet takes over', (
+    tester,
+  ) async {
+    final cards = Completer<PaymentLinkCardsSnapshot>();
+    await tester.pumpWidget(_routedApp(cardsLoader: () => cards.future));
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_gift_cards_row'));
+    await tester.scrollUntilVisible(row, 200);
+    await tester.tap(row);
+    await tester.pump();
+
+    // The screen stays interactive while the cards load, and the sheet goes
+    // to the root navigator over the shell, not to this branch.
+    await tester.ensureVisible(find.text('Theme'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Theme'));
+    await tester.pumpAndSettle();
+    expect(find.text('System (Auto)'), findsOneWidget);
+
+    cards.complete(const PaymentLinkCardsSnapshot(created: [], received: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('System (Auto)'), findsOneWidget);
     expect(find.textContaining('payment links route'), findsNothing);
   });
 
