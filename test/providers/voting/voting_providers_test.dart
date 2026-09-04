@@ -49,6 +49,7 @@ import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_endpoint_mapper.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
+import 'package:zcash_wallet/src/services/voting/voting_retry.dart';
 
 import '../../features/voting/round_plan_test_utils.dart';
 import '../../features/voting/tx_event_json_test_utils.dart';
@@ -4053,6 +4054,59 @@ void main() {
     expect(rust.helperDeliveryContexts.single.isDisposed, isTrue);
   });
 
+  test(
+    'fresh external share tracking triggers reuse a successful pass',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 3)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+        extraOverrides: [
+          votingShareTrackingTriggerFreshnessProvider.overrideWithValue(
+            const Duration(hours: 1),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId);
+
+      await container.read(votingSubmissionSessionProvider(key).future);
+      final notifier = container.read(
+        votingSubmissionSessionProvider(key).notifier,
+      );
+
+      await notifier.runShareTrackingPassIfStale();
+      await notifier.runShareTrackingPassIfStale();
+
+      expect(rust.trackPendingSharesCalls, [kRoundId]);
+
+      // Protocol-owned timers and submission recovery use the forced entry
+      // point, so freshness never delays a scheduled boundary.
+      await notifier.runShareTrackingPass();
+      expect(rust.trackPendingSharesCalls, [kRoundId, kRoundId]);
+    },
+  );
+
   test('immediate share waits until two accepted helpers corroborate', () async {
     final fullTrackingGate = Completer<void>();
     addTearDown(() {
@@ -4605,6 +4659,959 @@ void main() {
       expect(rust.shareTrackingPassHandles.single.isDisposed, isTrue);
       expect(rust.helperDeliveryContexts, hasLength(1));
       expect(rust.helperDeliveryContexts.single.isDisposed, isTrue);
+    },
+  );
+
+  test(
+    'round-status heartbeat serializes before a requested full pass',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final activeRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: nowSeconds + 1000,
+      );
+      final roundRefreshResponse = Completer<VotingHttpResponse>();
+      final trackingGate = Completer<void>();
+      final rust = FakeVotingRustApi()..trackPendingSharesGate = trackingGate;
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+                roundStatus: activeRound,
+                dynamicConfig: dynamicConfigJson(
+                  voteServers: const [
+                    {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                  ],
+                ),
+              )
+              ..['/shielded-vote/v1/round/$kRoundId'] =
+                  SequentialVotingHttpResponses([
+                    {'round': activeRound},
+                    {'round': activeRound},
+                    roundRefreshResponse.future,
+                    {'round': activeRound},
+                  ]),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+        extraOverrides: [
+          votingShareTrackingRoundRefreshIntervalProvider.overrideWithValue(
+            const Duration(milliseconds: 10),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final roundProvider = votingSessionProvider(kRoundId);
+      final roundSubscription = container
+          .listen<AsyncValue<VotingSessionState>>(
+            roundProvider,
+            (_, _) {},
+            fireImmediately: true,
+          );
+      addTearDown(roundSubscription.close);
+      const trackingKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: kRoundId,
+      );
+
+      final initialRound = await container.read(roundProvider.future);
+      expect(initialRound.round?.status, 'active');
+      await container.read(votingSubmissionSessionProvider(trackingKey).future);
+      for (var i = 0; i < 100; i++) {
+        final roundReads = http.requests
+            .where(
+              (request) =>
+                  request.method == 'GET' &&
+                  request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+            )
+            .length;
+        if (roundReads >= 3) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      final trackingPass = container
+          .read(votingSubmissionSessionProvider(trackingKey).notifier)
+          .runShareTrackingPass();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(rust.trackPendingSharesCalls, isEmpty);
+
+      roundRefreshResponse.complete(jsonResponse({'round': activeRound}));
+      await rust.trackPendingSharesStarted.future;
+      if (!trackingGate.isCompleted) trackingGate.complete();
+      await trackingPass;
+      final refreshedRound = await container.read(roundProvider.future);
+
+      expect(refreshedRound.round?.status, 'active');
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        contains(trackingKey),
+      );
+      expect(rust.trackPendingSharesCalls, [kRoundId]);
+    },
+  );
+
+  test(
+    'background share tracking re-arms when the vote deadline extends',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final originalVoteEndSeconds = nowSeconds + 2;
+      final extendedVoteEndSeconds = nowSeconds + 1000;
+      final originalRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: originalVoteEndSeconds,
+      );
+      final extendedRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: extendedVoteEndSeconds,
+      );
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+                roundStatus: originalRound,
+                dynamicConfig: dynamicConfigJson(
+                  voteServers: const [
+                    {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                  ],
+                ),
+              )
+              ..['/shielded-vote/v1/round/$kRoundId'] =
+                  SequentialVotingHttpResponses([
+                    {'round': originalRound},
+                    {'round': originalRound},
+                    {'round': extendedRound},
+                  ]),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+        extraOverrides: [
+          votingShareTrackingRoundRefreshIntervalProvider.overrideWithValue(
+            const Duration(milliseconds: 50),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final roundProvider = votingSessionProvider(kRoundId);
+      final roundSubscription = container
+          .listen<AsyncValue<VotingSessionState>>(
+            roundProvider,
+            (_, _) {},
+            fireImmediately: true,
+          );
+      addTearDown(roundSubscription.close);
+      const trackingKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: kRoundId,
+      );
+      final trackingProvider = votingSubmissionSessionProvider(trackingKey);
+
+      await container.read(roundProvider.future);
+      await container.read(trackingProvider.future);
+      for (var i = 0; i < 100; i++) {
+        final voteEnd = container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch;
+        if (voteEnd == extendedVoteEndSeconds * 1000) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      final waitUntilOriginalExpiry = DateTime.fromMillisecondsSinceEpoch(
+        originalVoteEndSeconds * 1000,
+      ).difference(DateTime.now());
+      if (waitUntilOriginalExpiry > Duration.zero) {
+        await Future<void>.delayed(
+          waitUntilOriginalExpiry + const Duration(milliseconds: 100),
+        );
+      }
+
+      expect(
+        container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch,
+        extendedVoteEndSeconds * 1000,
+      );
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        contains(trackingKey),
+      );
+      expect(rust.trackPendingSharesCalls, isEmpty);
+    },
+  );
+
+  test('failed heartbeat preserves an earlier full-pass wake', () async {
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final activeRound = roundStatusJson(
+      roundId: kRoundId,
+      voteEnd: nowSeconds + 1000,
+    );
+    final pendingShare = rust_frb_types.ShareDelegationRecordView(
+      roundId: kRoundId,
+      bundleIndex: 0,
+      proposalId: 7,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper-a.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List.fromList(List.filled(32, 1)),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.from(nowSeconds + 100),
+      createdAt: BigInt.from(nowSeconds),
+    );
+    final rust = FakeVotingRustApi(nextShareTrackingDelayOverride: BigInt.one);
+    final http = FakeVotingHttpClient(
+      responses:
+          votingHttpResponses(
+              roundStatus: activeRound,
+              dynamicConfig: dynamicConfigJson(
+                voteServers: const [
+                  {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                ],
+              ),
+            )
+            ..['/shielded-vote/v1/round/$kRoundId'] =
+                SequentialVotingHttpResponses([
+                  {'round': activeRound},
+                  TimeoutException('round status unavailable'),
+                  {'round': activeRound},
+                ]),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: FakeVotingRecoveryApi(
+        state: recoveryState(
+          shareDelegations: [pendingShare],
+          unconfirmedShareDelegations: [pendingShare],
+        ),
+      ),
+      extraOverrides: [
+        votingApiReadRetryPolicyProvider.overrideWithValue(
+          VotingRetryPolicy.transientHttp(
+            name: 'test-voting-read',
+            delays: const [],
+          ),
+        ),
+        votingShareTrackingRoundRefreshIntervalProvider.overrideWithValue(
+          const Duration(milliseconds: 10),
+        ),
+        votingShareTrackingFailureRetryDelayProvider.overrideWithValue(
+          const Duration(seconds: 3),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    const trackingKey = VotingSessionKey(
+      accountUuid: 'account-1',
+      roundId: kRoundId,
+    );
+
+    await container.read(votingSubmissionSessionProvider(trackingKey).future);
+    for (var i = 0; i < 200 && rust.trackPendingSharesCalls.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(rust.trackPendingSharesCalls, [kRoundId]);
+  });
+
+  test(
+    'slow heartbeat runs an overdue full pass immediately after success',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final activeRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: nowSeconds + 1000,
+      );
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 2)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final delayedHeartbeat = Completer<VotingHttpResponse>();
+      addTearDown(() {
+        if (!delayedHeartbeat.isCompleted) {
+          delayedHeartbeat.complete(jsonResponse({'round': activeRound}));
+        }
+      });
+      final rust = FakeVotingRustApi(
+        nextShareTrackingDelayOverride: BigInt.one,
+      );
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+                roundStatus: activeRound,
+                dynamicConfig: dynamicConfigJson(
+                  voteServers: const [
+                    {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                  ],
+                ),
+              )
+              ..['/shielded-vote/v1/round/$kRoundId'] =
+                  SequentialVotingHttpResponses([
+                    {'round': activeRound},
+                    delayedHeartbeat.future,
+                    {'round': activeRound},
+                  ]),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+        extraOverrides: [
+          votingShareTrackingRoundRefreshIntervalProvider.overrideWithValue(
+            const Duration(milliseconds: 10),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      const trackingKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: kRoundId,
+      );
+
+      await container.read(votingSubmissionSessionProvider(trackingKey).future);
+      for (var i = 0; i < 100; i++) {
+        final roundReads = http.requests
+            .where(
+              (request) =>
+                  request.method == 'GET' &&
+                  request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+            )
+            .length;
+        if (roundReads >= 2) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+      delayedHeartbeat.complete(jsonResponse({'round': activeRound}));
+      for (var i = 0; i < 50 && rust.trackPendingSharesCalls.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(rust.trackPendingSharesCalls, [kRoundId]);
+    },
+  );
+
+  test(
+    'deadline refresh preserves shares created after context load',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final originalVoteEndSeconds = nowSeconds + 2;
+      final extendedVoteEndSeconds = nowSeconds + 1000;
+      final originalRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: originalVoteEndSeconds,
+      );
+      final extendedRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: extendedVoteEndSeconds,
+      );
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final emptyRecovery = recoveryState();
+      final pendingRecovery = recoveryState(
+        shareDelegations: [pendingShare],
+        unconfirmedShareDelegations: [pendingShare],
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: emptyRecovery,
+        stateSequence: [emptyRecovery, emptyRecovery, pendingRecovery],
+      );
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+                roundStatus: originalRound,
+                dynamicConfig: dynamicConfigJson(
+                  voteServers: const [
+                    {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                  ],
+                ),
+              )
+              ..['/shielded-vote/v1/round/$kRoundId'] =
+                  SequentialVotingHttpResponses([
+                    {'round': originalRound},
+                    {'round': originalRound},
+                    {'round': extendedRound},
+                  ]),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+        extraOverrides: [
+          votingShareTrackingRoundRefreshIntervalProvider.overrideWithValue(
+            const Duration(milliseconds: 50),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      const trackingKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: kRoundId,
+      );
+      final trackingProvider = votingSubmissionSessionProvider(trackingKey);
+
+      final initial = await container.read(trackingProvider.future);
+      expect(initial.resumePlan?.unconfirmedShareDelegations, isEmpty);
+
+      await container
+          .read(trackingProvider.notifier)
+          .castVotes(draftVotes: const []);
+      expect(
+        container
+            .read(trackingProvider)
+            .value
+            ?.resumePlan
+            ?.unconfirmedShareDelegations,
+        [pendingShare],
+      );
+
+      for (var i = 0; i < 100; i++) {
+        final voteEnd = container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch;
+        if (voteEnd == extendedVoteEndSeconds * 1000) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(
+        container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch,
+        extendedVoteEndSeconds * 1000,
+      );
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        contains(trackingKey),
+      );
+      expect(rust.trackPendingSharesCalls, isEmpty);
+    },
+  );
+
+  test(
+    'share tracking refreshes an extension at the cached deadline',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final originalVoteEndSeconds = nowSeconds + 2;
+      final extendedVoteEndSeconds = nowSeconds + 1000;
+      final originalRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: originalVoteEndSeconds,
+      );
+      final extendedRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: extendedVoteEndSeconds,
+      );
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+                roundStatus: originalRound,
+                dynamicConfig: dynamicConfigJson(
+                  voteServers: const [
+                    {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                  ],
+                ),
+              )
+              ..['/shielded-vote/v1/round/$kRoundId'] =
+                  SequentialVotingHttpResponses([
+                    {'round': originalRound},
+                    {'round': extendedRound},
+                  ]),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+      );
+      addTearDown(container.dispose);
+      const trackingKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: kRoundId,
+      );
+      final trackingProvider = votingSubmissionSessionProvider(trackingKey);
+
+      final initial = await container.read(trackingProvider.future);
+      expect(
+        initial.round?.voteEndTime?.millisecondsSinceEpoch,
+        originalVoteEndSeconds * 1000,
+      );
+      for (var i = 0; i < 300; i++) {
+        final voteEnd = container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch;
+        if (voteEnd == extendedVoteEndSeconds * 1000) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(
+        container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch,
+        extendedVoteEndSeconds * 1000,
+      );
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        contains(trackingKey),
+      );
+      expect(rust.trackPendingSharesCalls, isEmpty);
+      expect(
+        http.requests
+            .where(
+              (request) =>
+                  request.method == 'GET' &&
+                  request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+            )
+            .length,
+        2,
+      );
+    },
+  );
+
+  test(
+    'failed cached-deadline refresh retries without releasing tracking',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final originalVoteEndSeconds = nowSeconds + 1;
+      final extendedVoteEndSeconds = nowSeconds + 1000;
+      final originalRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: originalVoteEndSeconds,
+      );
+      final extendedRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: extendedVoteEndSeconds,
+      );
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+                roundStatus: originalRound,
+                dynamicConfig: dynamicConfigJson(
+                  voteServers: const [
+                    {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                  ],
+                ),
+              )
+              ..['/shielded-vote/v1/round/$kRoundId'] =
+                  SequentialVotingHttpResponses([
+                    {'round': originalRound},
+                    TimeoutException('round status unavailable'),
+                    TimeoutException('round status unavailable'),
+                    TimeoutException('round status unavailable'),
+                    {'round': extendedRound},
+                  ]),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+        extraOverrides: [
+          votingApiReadRetryPolicyProvider.overrideWithValue(
+            VotingRetryPolicy.transientHttp(
+              name: 'test-voting-read',
+              delays: const [Duration.zero, Duration.zero],
+            ),
+          ),
+          votingShareTrackingFailureRetryDelayProvider.overrideWithValue(
+            const Duration(milliseconds: 10),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      const trackingKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: kRoundId,
+      );
+      final trackingProvider = votingSubmissionSessionProvider(trackingKey);
+
+      await container.read(trackingProvider.future);
+      for (var i = 0; i < 300; i++) {
+        final voteEnd = container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch;
+        if (voteEnd == extendedVoteEndSeconds * 1000) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(
+        container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch,
+        extendedVoteEndSeconds * 1000,
+      );
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        contains(trackingKey),
+      );
+      expect(rust.trackPendingSharesCalls, isEmpty);
+      expect(
+        http.requests
+            .where(
+              (request) =>
+                  request.method == 'GET' &&
+                  request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+            )
+            .length,
+        5,
+      );
+    },
+  );
+
+  test(
+    'single heartbeat applies a deadline extension before the next wake',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final originalVoteEndSeconds = nowSeconds + 1;
+      final extendedVoteEndSeconds = nowSeconds + 1000;
+      final originalRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: originalVoteEndSeconds,
+      );
+      final extendedRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: extendedVoteEndSeconds,
+      );
+      final staleHeartbeat = Completer<VotingHttpResponse>();
+      addTearDown(() {
+        if (!staleHeartbeat.isCompleted) {
+          staleHeartbeat.complete(jsonResponse({'round': originalRound}));
+        }
+      });
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+                roundStatus: originalRound,
+                dynamicConfig: dynamicConfigJson(
+                  voteServers: const [
+                    {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                  ],
+                ),
+              )
+              ..['/shielded-vote/v1/round/$kRoundId'] =
+                  SequentialVotingHttpResponses([
+                    {'round': originalRound},
+                    staleHeartbeat.future,
+                    {'round': extendedRound},
+                  ]),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+        extraOverrides: [
+          votingShareTrackingRoundRefreshIntervalProvider.overrideWithValue(
+            const Duration(milliseconds: 10),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      const trackingKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: kRoundId,
+      );
+      final trackingProvider = votingSubmissionSessionProvider(trackingKey);
+
+      await container.read(trackingProvider.future);
+      staleHeartbeat.complete(jsonResponse({'round': extendedRound}));
+      for (var i = 0; i < 300; i++) {
+        final voteEnd = container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch;
+        if (voteEnd == extendedVoteEndSeconds * 1000) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch,
+        extendedVoteEndSeconds * 1000,
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        container
+            .read(trackingProvider)
+            .value
+            ?.round
+            ?.voteEndTime
+            ?.millisecondsSinceEpoch,
+        extendedVoteEndSeconds * 1000,
+      );
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        contains(trackingKey),
+      );
+      expect(rust.trackPendingSharesCalls, isEmpty);
+    },
+  );
+
+  test(
+    'full pass starts after a serialized heartbeat applies an extension',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final originalVoteEndSeconds = nowSeconds + 1000;
+      final extendedVoteEndSeconds = nowSeconds + 2000;
+      final originalRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: originalVoteEndSeconds,
+      );
+      final extendedRound = roundStatusJson(
+        roundId: kRoundId,
+        voteEnd: extendedVoteEndSeconds,
+      );
+      final staleHeartbeat = Completer<VotingHttpResponse>();
+      final trackingGate = Completer<void>();
+      addTearDown(() {
+        if (!staleHeartbeat.isCompleted) {
+          staleHeartbeat.complete(jsonResponse({'round': originalRound}));
+        }
+        if (!trackingGate.isCompleted) trackingGate.complete();
+      });
+      final pendingShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final rust = FakeVotingRustApi()..trackPendingSharesGate = trackingGate;
+      final http = FakeVotingHttpClient(
+        responses:
+            votingHttpResponses(
+                roundStatus: originalRound,
+                dynamicConfig: dynamicConfigJson(
+                  voteServers: const [
+                    {'url': 'https://helper-a.example', 'label': 'helper-a'},
+                  ],
+                ),
+              )
+              ..['/shielded-vote/v1/round/$kRoundId'] =
+                  SequentialVotingHttpResponses([
+                    {'round': originalRound},
+                    staleHeartbeat.future,
+                    {'round': extendedRound},
+                  ]),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+        extraOverrides: [
+          votingShareTrackingRoundRefreshIntervalProvider.overrideWithValue(
+            const Duration(milliseconds: 10),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      const trackingKey = VotingSessionKey(
+        accountUuid: 'account-1',
+        roundId: kRoundId,
+      );
+      final trackingProvider = votingSubmissionSessionProvider(trackingKey);
+
+      await container.read(trackingProvider.future);
+      for (var i = 0; i < 100; i++) {
+        final roundReads = http.requests
+            .where(
+              (request) =>
+                  request.method == 'GET' &&
+                  request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+            )
+            .length;
+        if (roundReads >= 2) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      staleHeartbeat.complete(jsonResponse({'round': extendedRound}));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final trackingPass = container
+          .read(trackingProvider.notifier)
+          .runShareTrackingPass();
+      await rust.trackPendingSharesStarted.future;
+
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        contains(trackingKey),
+      );
+
+      trackingGate.complete();
+      await trackingPass;
+
+      expect(
+        container.read(votingShareTrackingRegistryProvider).registeredKeys,
+        contains(trackingKey),
+      );
+      expect(rust.trackPendingSharesCalls, [kRoundId]);
     },
   );
 
@@ -8218,31 +9225,54 @@ void main() {
     },
   );
 
-  test(
-    'expired persisted shares stop before config or round requests',
-    () async {
-      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final http = FakeVotingHttpClient();
-      final container = _sessionContainer(
-        http: http,
-        pendingShareRoundLoader:
-            ({required dbPath, required accountUuids}) async {
-              return [
-                rust_api.ApiPendingShareRound(
-                  accountUuid: 'account-1',
-                  roundId: kRoundId,
-                  sessionJson: jsonEncode({'vote_end_time': nowSeconds - 1}),
-                ),
-              ];
-            },
-      );
-      addTearDown(container.dispose);
+  test('expired persisted shares verify live status before stopping', () async {
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses(
+        roundStatus: roundStatusJson(
+          roundId: kRoundId,
+          voteEnd: nowSeconds - 1,
+        ),
+      ),
+    );
+    final rust = FakeVotingRustApi();
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      pendingShareRoundLoader:
+          ({required dbPath, required accountUuids}) async {
+            return [
+              rust_api.ApiPendingShareRound(
+                accountUuid: 'account-1',
+                roundId: kRoundId,
+                sessionJson: jsonEncode({'vote_end_time': nowSeconds - 1}),
+              ),
+            ];
+          },
+    );
+    addTearDown(container.dispose);
 
-      await container.read(votingShareTrackingRestorerProvider).restore();
+    await container.read(votingShareTrackingRestorerProvider).restore();
 
-      expect(http.requests, isEmpty);
-    },
-  );
+    expect(
+      http.requests
+          .where(
+            (request) =>
+                request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+          )
+          .length,
+      1,
+    );
+    expect(rust.trackPendingSharesCalls, isEmpty);
+    expect(
+      http.requests.where(
+        (request) =>
+            request.uri.path.contains('share-status') ||
+            request.uri.path == '/shielded-vote/v1/shares',
+      ),
+      isEmpty,
+    );
+  });
 
   test('active rounds without an end time do not track shares', () {
     final round = VotingRoundDetails.fromStatus(
@@ -8658,7 +9688,7 @@ void main() {
     registry.resume();
   });
 
-  test('restores persisted shares across async session loading', () async {
+  test('restores cached-expired share when live round is open', () async {
     final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     const unknownRoundId =
         'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
@@ -8698,6 +9728,7 @@ void main() {
         unconfirmedShareDelegations: [pendingShare],
       ),
     );
+    final rust = FakeVotingRustApi();
     final shareId = _hexFromBytes(pendingShare.nullifier);
     final http = _YieldingFakeVotingHttpClient(
       responses:
@@ -8713,12 +9744,19 @@ void main() {
               ],
             ),
           )..addAll({
+            '/shielded-vote/v1/round/$kOtherRoundId': {
+              'round': roundStatusJson(
+                roundId: kOtherRoundId,
+                voteEnd: nowSeconds - 1,
+              ),
+            },
             'https://helper-a.example/shielded-vote/v1/share-status/$kRoundId/$shareId':
                 {'status': 'pending'},
           }),
     );
     final container = _sessionContainer(
       http: http,
+      rust: rust,
       recoveryApi: recoveryApi,
       pendingShareRoundLoader:
           ({required dbPath, required accountUuids}) async {
@@ -8726,7 +9764,9 @@ void main() {
               rust_api.ApiPendingShareRound(
                 accountUuid: 'account-1',
                 roundId: kRoundId,
-                sessionJson: jsonEncode({'vote_end_time': nowSeconds + 1000}),
+                // The sidecar retains the original deadline even though the
+                // authenticated live response above has extended the round.
+                sessionJson: jsonEncode({'vote_end_time': nowSeconds - 1}),
               ),
               rust_api.ApiPendingShareRound(
                 accountUuid: 'account-1',
@@ -8757,15 +9797,21 @@ void main() {
     final roundRequests = http.requests.where(
       (request) => request.uri.path.contains('/shielded-vote/v1/round/'),
     );
-    expect(roundRequests, isNotEmpty);
-    expect(
-      roundRequests.every((request) => request.uri.path.endsWith(kRoundId)),
-      isTrue,
-    );
+    expect(roundRequests.map((request) => request.uri.path).toSet(), {
+      '/shielded-vote/v1/round/$kRoundId',
+      '/shielded-vote/v1/round/$kOtherRoundId',
+    });
     final registry = container.read(votingShareTrackingRegistryProvider);
     expect(registry.registeredKeys, {
       const VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId),
     });
+    expect(rust.trackPendingSharesCalls, [kRoundId]);
+    expect(
+      roundRequests
+          .where((request) => request.uri.path.endsWith(kOtherRoundId))
+          .length,
+      1,
+    );
 
     await registry.quiesceAndDrain();
     expect(registry.registeredKeys, isEmpty);
@@ -8930,6 +9976,59 @@ void main() {
       expect(recoveryApi.addedSentServers, isEmpty);
     },
   );
+
+  test('unrecoverable shares switch to confirmation-only tracking', () async {
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final pendingShare = rust_frb_types.ShareDelegationRecordView(
+      roundId: kRoundId,
+      bundleIndex: 0,
+      proposalId: 7,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper-a.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List.fromList(List.filled(32, 4)),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.from(nowSeconds - 100),
+      createdAt: BigInt.from(nowSeconds - 100),
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        shareDelegations: [pendingShare],
+        unconfirmedShareDelegations: [pendingShare],
+      ),
+    );
+    final rust = FakeVotingRustApi();
+    rust.trackPendingSharesResult = () => rust_api.ApiShareTrackingReport(
+      confirmed: const [],
+      resubmitted: const [],
+      ambiguous: const [],
+      unrecoverable: const [
+        rust_api.ApiShareKey(bundleIndex: 0, proposalId: 7, shareIndex: 0),
+      ],
+      cancelled: false,
+      nextDelaySeconds: null,
+    );
+    final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+    addTearDown(container.dispose);
+    final provider = votingSessionProvider(kRoundId);
+
+    await container.read(provider.future);
+    final notifier = container.read(provider.notifier);
+    await notifier.runShareTrackingPass();
+
+    expect(rust.trackPendingSharesCalls, [kRoundId]);
+    // Initial load, one pre-pass context refresh, and one post-pass refresh.
+    // The pass does not reload either plan again before entering Rust.
+    expect(recoveryApi.walletIds, hasLength(3));
+    expect(recoveryApi.roundPlanProposalIds, hasLength(3));
+
+    await notifier.runShareTrackingPass();
+
+    expect(rust.trackPendingSharesCalls, [kRoundId]);
+    expect(rust.focusedShareConfirmationCalls, ['0:7:0']);
+  });
 
   test('pending share recovery resubmits helpers missed initially', () async {
     final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -9680,11 +10779,11 @@ void main() {
     final registry = container.read(votingShareTrackingRegistryProvider);
     addTearDown(() => registry.resume(accountUuid: 'account-1'));
     var drained = false;
-    final drain = registry
-        .quiesceAndDrain(accountUuid: 'account-1')
-        .then<void>((_) {
-          drained = true;
-        });
+    final drain = registry.quiesceAndDrain(accountUuid: 'account-1').then<void>(
+      (_) {
+        drained = true;
+      },
+    );
     await Future<void>.delayed(Duration.zero);
     expect(drained, isFalse);
 
@@ -11125,6 +12224,7 @@ VotingKeystoneBatchSignature _keystoneBatchSignature(int bundleIndex) {
 
 class FakeVotingRecoveryApi implements VotingRecoveryApi {
   rust_frb_types.RoundRecoveryStateView state;
+  final List<rust_frb_types.RoundRecoveryStateView>? stateSequence;
   rust_wire.RoundPlanView? roundPlan;
   final List<rust_wire.RoundPlanView>? roundPlanSequence;
   final walletIds = <String>[];
@@ -11132,10 +12232,12 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   final ballotIntents = <String>[];
   final roundPlanProposalIds = <List<int>>[];
   final Object? setBallotIntentError;
+  var _stateCallCount = 0;
   var _roundPlanCallCount = 0;
 
   FakeVotingRecoveryApi({
     required this.state,
+    this.stateSequence,
     this.roundPlan,
     this.roundPlanSequence,
     this.setBallotIntentError,
@@ -11162,6 +12264,13 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required String roundId,
   }) async {
     walletIds.add(accountUuid);
+    final sequence = stateSequence;
+    if (sequence != null && sequence.isNotEmpty) {
+      var index = _stateCallCount;
+      _stateCallCount++;
+      if (index >= sequence.length) index = sequence.length - 1;
+      state = sequence[index];
+    }
     return state;
   }
 
@@ -11971,6 +13080,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.keystoneSignatureBatchFailuresRemaining = 0,
     this.shareResubmissionError,
     this.nextShareTrackingDelayGate,
+    this.nextShareTrackingDelayOverride,
     this.trackingPassPolicyGate,
     this.helperPreflightGate,
     this.focusedShareConfirmationGate,
@@ -12019,6 +13129,7 @@ class FakeVotingRustApi implements VotingRustApi {
   int keystoneSignatureBatchFailuresRemaining;
   final Object? shareResubmissionError;
   final Completer<void>? nextShareTrackingDelayGate;
+  final BigInt? nextShareTrackingDelayOverride;
   final Completer<void>? trackingPassPolicyGate;
   final Completer<void>? helperPreflightGate;
   final Completer<void>? focusedShareConfirmationGate;
@@ -13514,9 +14625,12 @@ class FakeVotingRustApi implements VotingRustApi {
       nextShareTrackingDelayStarted.complete();
     }
     await nextShareTrackingDelayGate?.future;
+    final override = nextShareTrackingDelayOverride;
+    if (override != null) return override;
     final now = nowSeconds.toInt();
     int? nextSecond;
     var hasUnconfirmed = false;
+    var hasReady = false;
     for (final share in shares.where((share) => !share.confirmed)) {
       hasUnconfirmed = true;
       final base = share.submitAt > BigInt.zero
@@ -13525,12 +14639,12 @@ class FakeVotingRustApi implements VotingRustApi {
       final checkAt = base + 10;
       if (checkAt > now && (nextSecond == null || checkAt < nextSecond)) {
         nextSecond = checkAt;
+      } else if (checkAt <= now) {
+        hasReady = true;
       }
     }
     if (!hasUnconfirmed) return null;
-    final delay = nextSecond == null
-        ? 15
-        : (nextSecond - now).clamp(0, 30).toInt();
+    final delay = hasReady || nextSecond == null ? 15 : nextSecond - now;
     return BigInt.from(delay < 3 ? 3 : delay);
   }
 

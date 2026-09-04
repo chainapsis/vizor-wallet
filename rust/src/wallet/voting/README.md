@@ -210,8 +210,11 @@ ambiguous.
 
 On launch, unlock, and resume, Vizor asks
 `zcash_voting::share::pending_rounds` for durable
-unconfirmed rounds and rejects expired or unauthenticated entries before
-restoring a session. A restored session checks only helpers still present in
+unconfirmed rounds and rejects malformed or unauthenticated entries before
+restoring a session. The persisted session deadline is only a discovery hint:
+because a server may extend an existing round after that immutable metadata was
+stored, the restored session verifies live round status before deciding whether
+recovery remains open. A restored session checks only helpers still present in
 the current config and retains itself while work remains. Overdue shares use
 the crate's randomized, health-aware recovery order and continue until the
 complete definite-placement deficit is filled, candidates are exhausted, or

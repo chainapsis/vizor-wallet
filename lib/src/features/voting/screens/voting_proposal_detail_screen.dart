@@ -15,6 +15,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_pir_warmup_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
+import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
@@ -27,6 +28,7 @@ import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../widgets/voting_share_status_card.dart';
 
 class VotingProposalDetailScreen extends StatelessWidget {
   const VotingProposalDetailScreen({super.key, required this.roundId});
@@ -66,16 +68,26 @@ class VotingProposalDetailView extends ConsumerStatefulWidget {
 }
 
 class _VotingProposalDetailViewState
-    extends ConsumerState<VotingProposalDetailView> {
+    extends ConsumerState<VotingProposalDetailView>
+    with WidgetsBindingObserver {
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
   String? _snapshotBundlePrecomputeKey;
   String? _resultsRedirectRoundId;
+  Timer? _shareStatusDeadlineTimer;
+  DateTime? _shareStatusDeadline;
+  bool _shareStatusDeadlinePassed = false;
+  ProviderSubscription<AsyncValue<VotingSessionState>>?
+  _visibleRoundSubscription;
+  VotingSessionKey? _visibleShareRefreshKey;
+  ModalRoute<dynamic>? _modalRoute;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _listenForVisibleShareRefresh();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // Second entry point for the background nullifier-proof warm-up, for
@@ -94,14 +106,121 @@ class _VotingProposalDetailViewState
       _votingPowerPreparationKey = null;
       _snapshotBundlePrecomputeKey = null;
       _resultsRedirectRoundId = null;
+      _visibleShareRefreshKey = null;
+      _listenForVisibleShareRefresh();
+      _clearShareStatusDeadline();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _modalRoute = ModalRoute.of(context);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    _visibleShareRefreshKey = null;
+    final session = ref.read(votingSessionProvider(widget.roundId)).value;
+    if (session != null) _maybeRefreshVisibleShareStatus(session);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _visibleRoundSubscription?.close();
+    _shareStatusDeadlineTimer?.cancel();
+    super.dispose();
+  }
+
+  void _listenForVisibleShareRefresh() {
+    _visibleRoundSubscription?.close();
+    _visibleRoundSubscription = ref.listenManual(
+      votingSessionProvider(widget.roundId),
+      (_, next) => next.whenData(_maybeRefreshVisibleShareStatus),
+      fireImmediately: true,
+    );
+  }
+
+  void _maybeRefreshVisibleShareStatus(VotingSessionState session) {
+    final accountUuid = session.accountUuid;
+    final round = session.round;
+    final hasUnconfirmedShares =
+        session.resumePlan?.unconfirmedShareDelegations.isNotEmpty ?? false;
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    if (!mounted ||
+        (lifecycleState != null &&
+            lifecycleState != AppLifecycleState.resumed) ||
+        (_modalRoute != null && !_modalRoute!.isCurrent) ||
+        accountUuid == null ||
+        round == null ||
+        !hasUnconfirmedShares ||
+        !shouldTrackPendingVotingShares(round)) {
+      return;
+    }
+
+    final key = VotingSessionKey(
+      roundId: widget.roundId,
+      accountUuid: accountUuid,
+    );
+    if (_visibleShareRefreshKey == key) return;
+    _visibleShareRefreshKey = key;
+    unawaited(_refreshVisibleShareStatus(key));
+  }
+
+  Future<void> _refreshVisibleShareStatus(VotingSessionKey key) async {
+    try {
+      await ref.read(votingSubmissionSessionProvider(key).future);
+      if (!mounted || _visibleShareRefreshKey != key) return;
+      await ref
+          .read(votingSubmissionSessionProvider(key).notifier)
+          .runShareTrackingPassIfStale();
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[zcash] Voting: visible share status refresh failed '
+        'round=${key.roundId} account=${key.accountUuid} '
+        'error=$error\n$stackTrace',
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final roundId = widget.roundId;
-    final session = ref.watch(votingSessionProvider(roundId));
-    return session.when(
+    final roundSession = ref.watch(votingSessionProvider(roundId));
+    final roundState = roundSession.value;
+    final accountUuid = roundState?.accountUuid;
+    final round = roundState?.round;
+    final hasPersistedShares =
+        roundState?.resumePlan?.shareDelegations.isNotEmpty ?? false;
+    final hasUnconfirmedShares =
+        roundState?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ?? false;
+    final cachedRoundTrackingOpen =
+        round != null && shouldTrackPendingVotingShares(round);
+    final shouldWatchTrackedSession =
+        hasPersistedShares && (cachedRoundTrackingOpen || hasUnconfirmedShares);
+    final trackedSession = accountUuid == null || !shouldWatchTrackedSession
+        ? null
+        : ref.watch(
+            votingSubmissionJobSessionProvider(
+              VotingSessionKey(roundId: roundId, accountUuid: accountUuid),
+            ),
+          );
+    final trackedState = trackedSession?.value;
+    final trackedRound = trackedState?.round ?? round;
+    final shareTrackingOpen =
+        trackedRound != null && shouldTrackPendingVotingShares(trackedRound);
+    _syncShareStatusDeadline(
+      shareTrackingOpen && hasPersistedShares ? trackedRound.voteEndTime : null,
+    );
+    final hasShareStatus =
+        shareTrackingOpen && !_shareStatusDeadlinePassed && hasPersistedShares;
+    // The round session remains authoritative for the screen, while the
+    // submission session supplies live tracking metadata: share records plus
+    // the round status/deadline that controls their visibility.
+    final trackedShareDelegations = trackedState?.resumePlan?.shareDelegations;
+    return roundSession.when(
       skipLoadingOnRefresh: false,
       loading: () => _stateView(const VotingPaneLoading()),
       error: (error, _) => _stateView(
@@ -168,6 +287,11 @@ class _VotingProposalDetailViewState
             votedAt: completedVote.votedAt,
             proposals: proposals,
             choicesByProposalId: completedVote.choicesByProposalId,
+            shareDelegations: hasShareStatus
+                ? trackedShareDelegations ??
+                      state.resumePlan?.shareDelegations ??
+                      const []
+                : const [],
           );
         }
         if (pendingVote != null && hasConfirmedVotingEligibility) {
@@ -254,6 +378,39 @@ class _VotingProposalDetailViewState
         );
       },
     );
+  }
+
+  void _syncShareStatusDeadline(DateTime? deadline) {
+    if (deadline == null) {
+      _clearShareStatusDeadline();
+      return;
+    }
+    if (_shareStatusDeadline == deadline) return;
+
+    _shareStatusDeadlineTimer?.cancel();
+    _shareStatusDeadline = deadline;
+    final delay = deadline.difference(DateTime.now());
+    if (delay <= Duration.zero) {
+      _shareStatusDeadlineTimer = null;
+      _shareStatusDeadlinePassed = true;
+      return;
+    }
+
+    _shareStatusDeadlinePassed = false;
+    _shareStatusDeadlineTimer = Timer(delay, () {
+      if (!mounted || _shareStatusDeadline != deadline) return;
+      _shareStatusDeadlineTimer = null;
+      setState(() {
+        _shareStatusDeadlinePassed = true;
+      });
+    });
+  }
+
+  void _clearShareStatusDeadline() {
+    _shareStatusDeadlineTimer?.cancel();
+    _shareStatusDeadlineTimer = null;
+    _shareStatusDeadline = null;
+    _shareStatusDeadlinePassed = false;
   }
 
   Widget _stateView(Widget child) {
@@ -1336,6 +1493,8 @@ class VotingVotedPollContent extends StatelessWidget {
     required this.votedAt,
     required this.proposals,
     required this.choicesByProposalId,
+    this.shareDelegations = const [],
+    this.shareStatusNow,
   });
 
   final bool showDesktopToolbar;
@@ -1348,9 +1507,15 @@ class VotingVotedPollContent extends StatelessWidget {
   final DateTime? votedAt;
   final List<VotingProposalView> proposals;
   final Map<int, int?> choicesByProposalId;
+  final List<rust_wire.ShareDelegationRecordView> shareDelegations;
+
+  /// Fixed current time for deterministic vote-share previews.
+  final DateTime? shareStatusNow;
 
   @override
   Widget build(BuildContext context) {
+    final shareStatusOffset = shareDelegations.isEmpty ? 0 : 1;
+    final itemCount = proposals.length + shareStatusOffset;
     if (kAppFormFactor == AppFormFactor.desktop) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1379,7 +1544,7 @@ class VotingVotedPollContent extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Expanded(
-            child: proposals.isEmpty
+            child: itemCount == 0
                 ? const _Message(
                     title: 'No proposals',
                     message:
@@ -1393,10 +1558,16 @@ class VotingVotedPollContent extends StatelessWidget {
                       showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
                       AppSpacing.md,
                     ),
-                    itemCount: proposals.length,
+                    itemCount: itemCount,
                     separatorBuilder: (_, _) =>
                         const SizedBox(height: AppSpacing.s),
                     itemBuilder: (context, index) {
+                      if (index == proposals.length) {
+                        return VotingShareStatusCard(
+                          records: shareDelegations,
+                          now: shareStatusNow,
+                        );
+                      }
                       final proposal = proposals[index];
                       final choice = choicesByProposalId[proposal.id];
                       return VotingProposalCard(
@@ -1459,6 +1630,13 @@ class VotingVotedPollContent extends StatelessWidget {
                     if (index < proposals.length - 1)
                       const SizedBox(height: AppSpacing.md),
                   ],
+                if (shareDelegations.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  VotingShareStatusCard(
+                    records: shareDelegations,
+                    now: shareStatusNow,
+                  ),
+                ],
               ],
             ),
           ),

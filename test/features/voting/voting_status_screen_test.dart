@@ -56,6 +56,7 @@ import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
+import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
 import 'round_plan_test_utils.dart';
 import 'tx_event_json_test_utils.dart';
@@ -619,6 +620,81 @@ void main() {
     expect(find.text('Voting power'), findsOneWidget);
     expect(find.text('0.000001 ZEC'), findsOneWidget);
     expect(notifier.refreshCalls, 2);
+  });
+
+  testWidgets('submitted route leaves vote-share status in the poll menu', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final scheduled = DateTime.now().add(const Duration(hours: 3));
+    final share = rust_wire.ShareDelegationRecordView(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List(32),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.from(
+        scheduled.millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond,
+      ),
+      createdAt: BigInt.one,
+    );
+    final completedRoundPlan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      nextSteps: const [],
+      openProposals: Uint32List(0),
+      allDecided: true,
+      completedVoteArtifact: true,
+      completedForDisplay: true,
+    );
+    final resumePlan = const VotingRecoveryService().buildResumePlan(
+      _recoveryState(
+        shareDelegations: [share],
+        unconfirmedShareDelegations: [share],
+      ),
+    );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSessionProvider(_roundId).overrideWith(
+          () => _StaticVotingSessionNotifier(
+            VotingSessionState(
+              roundId: _roundId,
+              accountUuid: 'account-1',
+              round: VotingRoundDetails.fromStatus(
+                VotingRoundStatus.fromJson(_roundStatusJson()),
+              ),
+              phase: VotingSessionPhase.done,
+              resumePlan: resumePlan,
+              roundPlan: completedRoundPlan,
+              eligibleWeightZatoshi: BigInt.from(100),
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _submissionHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('Submission confirmed!'));
+
+    expect(
+      find.byKey(const ValueKey('voting_share_status_card')),
+      findsNothing,
+    );
   });
 
   testWidgets(
@@ -2121,6 +2197,327 @@ void main() {
     expect(find.text('Review answers'), findsNothing);
   });
 
+  testWidgets('proposal detail keeps live status despite a stale error', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final round = _roundStatusJson();
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final scheduled = DateTime.now().add(const Duration(hours: 4));
+    final share = rust_wire.ShareDelegationRecordView(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List(32),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.from(
+        scheduled.millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond,
+      ),
+      createdAt: BigInt.one,
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(
+        shareDelegations: [share],
+        unconfirmedShareDelegations: [share],
+      )
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [],
+        openProposals: Uint32List.fromList(const [1]),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
+          choices: const [
+            rust_wire.CompletedVoteChoiceView(proposalId: 1, choice: 0),
+          ],
+          votedAt: BigInt.from(1717260000),
+        ),
+      );
+    final confirmedShare = rust_wire.ShareDelegationRecordView(
+      roundId: share.roundId,
+      bundleIndex: share.bundleIndex,
+      proposalId: share.proposalId,
+      shareIndex: share.shareIndex,
+      sentToUrls: share.sentToUrls,
+      ambiguousUrls: share.ambiguousUrls,
+      targetCount: share.targetCount,
+      nullifier: share.nullifier,
+      phase: VotingWorkflowPhase.confirmed,
+      confirmed: true,
+      submitAt: share.submitAt,
+      createdAt: share.createdAt,
+    );
+    final trackedResumePlan = const VotingRecoveryService().buildResumePlan(
+      _recoveryState(shareDelegations: [confirmedShare]),
+    );
+    final rust = _VotingStatusRustApi(recoveryApi);
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: rust,
+      overrides: [
+        votingSubmissionJobSessionProvider(key).overrideWith((ref) {
+          return ref
+              .watch(votingSessionProvider(_roundId))
+              .whenData(
+                (state) => state.copyWith(
+                  phase: VotingSessionPhase.done,
+                  resumePlan: trackedResumePlan,
+                  error: const VotingSessionError(
+                    message: 'temporary eligibility refresh failed',
+                  ),
+                ),
+              );
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    // Exercise the cached-provider path where the manual listener fires from
+    // initState, before inherited route dependencies may be established.
+    await container.read(votingSessionProvider(_roundId).future);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilCondition(tester, () => rust.shareTrackingPassCalls == 1);
+
+    expect(find.textContaining('Voted'), findsOneWidget);
+    expect(find.text('Submission status'), findsOneWidget);
+    expect(find.text('1 of 1 share submitted'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('voting_share_status_complete_icon')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('voting_share_status_progress')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey('voting_share_status_card')))
+          .dy,
+      greaterThan(
+        tester.getBottomLeft(find.byType(VotingProposalCard).last).dy,
+      ),
+    );
+    expect(find.text('temporary eligibility refresh failed'), findsNothing);
+
+    // Rebuilds do not turn the user-initiated refresh into another poll loop.
+    await tester.pump();
+    expect(rust.shareTrackingPassCalls, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(rust.shareTrackingPassCalls, 1);
+  });
+
+  testWidgets('proposal detail removes share status when the deadline passes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final deadline = DateTime.now().add(const Duration(seconds: 10));
+    final deadlineSeconds =
+        deadline.millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond;
+    final round = _roundStatusJson()..['vote_end_time'] = deadlineSeconds;
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final share = rust_wire.ShareDelegationRecordView(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List(32),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.from(deadlineSeconds),
+      createdAt: BigInt.one,
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(
+        shareDelegations: [share],
+        unconfirmedShareDelegations: [share],
+      )
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [],
+        openProposals: Uint32List.fromList(const [1]),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
+          choices: const [
+            rust_wire.CompletedVoteChoiceView(proposalId: 1, choice: 0),
+          ],
+          votedAt: BigInt.from(1717260000),
+        ),
+      );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('voting_share_status_card')),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(seconds: 11));
+
+    expect(find.textContaining('Voted'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('voting_share_status_card')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('proposal detail uses the tracked share deadline', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final nowSeconds =
+        DateTime.now().millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond;
+    final cachedDeadlineSeconds = nowSeconds + 2;
+    final trackedDeadlineSeconds = nowSeconds + 10;
+    final cachedRound = _roundStatusJson()
+      ..['vote_end_time'] = cachedDeadlineSeconds;
+    final trackedRound = Map<String, dynamic>.of(cachedRound)
+      ..['vote_end_time'] = trackedDeadlineSeconds;
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': cachedRound},
+    );
+    final share = rust_wire.ShareDelegationRecordView(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List(32),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.from(trackedDeadlineSeconds),
+      createdAt: BigInt.one,
+    );
+    final recoveryState = _recoveryState(
+      shareDelegations: [share],
+      unconfirmedShareDelegations: [share],
+    );
+    final resumePlan = const VotingRecoveryService().buildResumePlan(
+      recoveryState,
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = recoveryState
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [],
+        openProposals: Uint32List.fromList(const [1]),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
+          choices: const [
+            rust_wire.CompletedVoteChoiceView(proposalId: 1, choice: 0),
+          ],
+          votedAt: BigInt.from(1717260000),
+        ),
+      );
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+      overrides: [
+        votingSubmissionJobSessionProvider(key).overrideWithValue(
+          AsyncData(
+            VotingSessionState(
+              roundId: _roundId,
+              accountUuid: key.accountUuid,
+              round: VotingRoundDetails.fromStatus(
+                VotingRoundStatus.fromJson(trackedRound),
+              ),
+              resumePlan: resumePlan,
+              phase: VotingSessionPhase.done,
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('voting_share_status_card')),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(seconds: 3));
+    expect(
+      find.byKey(const ValueKey('voting_share_status_card')),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(seconds: 8));
+    expect(
+      find.byKey(const ValueKey('voting_share_status_card')),
+      findsNothing,
+    );
+  });
+
   testWidgets('proposal detail shows long question descriptions in full', (
     tester,
   ) async {
@@ -2226,7 +2623,25 @@ void main() {
       responses: _votingHttpResponses()
         ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
     );
+    final share = rust_wire.ShareDelegationRecordView(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List(32),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.one,
+      createdAt: BigInt.one,
+    );
     final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(
+        shareDelegations: [share],
+        unconfirmedShareDelegations: [share],
+      )
       ..roundPlan = apiRoundPlan(
         roundId: _roundId,
         pendingRecovery: false,
@@ -2263,6 +2678,10 @@ void main() {
 
     expect(find.textContaining('Voted'), findsOneWidget);
     expect(find.text('results route'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('voting_share_status_card')),
+      findsNothing,
+    );
   });
 
   testWidgets('proposal detail shows recovery before non-active redirect', (
@@ -2768,6 +3187,34 @@ void main() {
           ],
         },
     );
+    final confirmedTallyShare = rust_frb_types.ShareDelegationRecordView(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List(32),
+      phase: VotingWorkflowPhase.confirmed,
+      confirmed: true,
+      submitAt: BigInt.one,
+      createdAt: BigInt.one,
+    );
+    final missingTallyShare = rust_frb_types.ShareDelegationRecordView(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 1,
+      sentToUrls: const ['https://helper.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List.fromList(List.filled(32, 1)),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.two,
+      createdAt: BigInt.two,
+    );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
         votes: const [
@@ -2779,6 +3226,8 @@ void main() {
             hasCommitmentBundle: false,
           ),
         ],
+        shareDelegations: [confirmedTallyShare, missingTallyShare],
+        unconfirmedShareDelegations: [missingTallyShare],
       );
     final container = _statusContainer(
       http: http,
@@ -2828,6 +3277,11 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('voting_share_status_card')),
+      findsNothing,
+    );
+    expect(find.text('Vote shares'), findsNothing);
   });
 
   testWidgets('results screen keeps empty tallies visible as zero rows', (
@@ -5279,6 +5733,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   int _persistedBundleCount;
   int setupDelegationBundleCalls = 0;
   int eligibilityCheckCalls = 0;
+  int shareTrackingPassCalls = 0;
 
   /// Raw note value the privacy trim withholds. Zero for every fixture that
   /// does not exercise the trim notice.
@@ -5758,6 +6213,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
   }) async {
+    shareTrackingPassCalls++;
     final accountUuid = passHandle.accountUuid;
     final confirmed = <rust_api.ApiShareKey>[];
     final pending = List.of(recoveryApi.state.unconfirmedShareDelegations);
