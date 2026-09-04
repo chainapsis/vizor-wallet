@@ -72,6 +72,10 @@ class _PaymentLinkCardSelectorRailState
   late final ScrollController _controller;
   late int _baseIndex;
 
+  /// First index of the repeated block the viewport is on: only that block is
+  /// announced, so the reader finds designs wherever the rail has scrolled.
+  late int _announcedBlockStart;
+
   double get _itemStride =>
       widget.itemWidth + PaymentLinkCardSelectorRail.itemGap;
 
@@ -81,10 +85,28 @@ class _PaymentLinkCardSelectorRailState
   void initState() {
     super.initState();
     _baseIndex = widget.artworks.length * (_cycleCopies ~/ 2);
+    _announcedBlockStart = _baseIndex;
     _controller = ScrollController(
       initialScrollOffset: _scrollOffsetFor(widget.selected),
-    );
+    )..addListener(_handleScroll);
   }
+
+  void _handleScroll() {
+    // Only a block boundary rebuilds; the offset itself changes every pixel.
+    final blockStart = _viewportBlockStart;
+    if (blockStart == _announcedBlockStart) return;
+    setState(() => _announcedBlockStart = blockStart);
+  }
+
+  int get _viewportBlockStart {
+    if (!_controller.hasClients) return _baseIndex;
+    return (_centerIndex ~/ widget.artworks.length) * widget.artworks.length;
+  }
+
+  int get _centerIndex =>
+      ((_controller.offset + (widget.width / 2) - (_itemStride / 2)) /
+              _itemStride)
+          .round();
 
   @override
   void didUpdateWidget(covariant PaymentLinkCardSelectorRail oldWidget) {
@@ -95,6 +117,7 @@ class _PaymentLinkCardSelectorRailState
     }
     if (artworksChanged) {
       _baseIndex = widget.artworks.length * (_cycleCopies ~/ 2);
+      _announcedBlockStart = _baseIndex;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (artworksChanged) {
@@ -131,10 +154,7 @@ class _PaymentLinkCardSelectorRailState
     if (logicalIndex < 0 || !_controller.hasClients) {
       return logicalIndex < 0 ? _baseIndex : _baseIndex + logicalIndex;
     }
-    final centerIndex =
-        ((_controller.offset + (widget.width / 2) - (_itemStride / 2)) /
-                _itemStride)
-            .round();
+    final centerIndex = _centerIndex;
     final cycleStart =
         (centerIndex ~/ widget.artworks.length) * widget.artworks.length;
     final candidates = [
@@ -175,7 +195,9 @@ class _PaymentLinkCardSelectorRailState
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller
+      ..removeListener(_handleScroll)
+      ..dispose();
     super.dispose();
   }
 
@@ -237,9 +259,9 @@ class _PaymentLinkCardSelectorRailState
               addSemanticIndexes: false,
               itemBuilder: (context, index) {
                 final artwork = widget.artworks[index % widget.artworks.length];
-                // The rail repeats the artworks to feel endless; only the block it
-                // starts on is announced, so a reader hears the designs, not the copies.
-                final semanticIndex = index - _baseIndex;
+                // The rail repeats the artworks to feel endless; only the block
+                // under the viewport is announced, so a reader finds the designs.
+                final semanticIndex = index - _announcedBlockStart;
                 final announced =
                     semanticIndex >= 0 &&
                     semanticIndex < widget.artworks.length;

@@ -183,12 +183,39 @@ class PaymentLinksMobileBody extends StatelessWidget {
             ],
           );
 
-    return Scaffold(
-      key: const ValueKey('payment_links_mobile_screen'),
-      backgroundColor: context.colors.background.window,
-      body: AppToastHost(child: SafeArea(child: body)),
+    // System Back does what the step's own back control does, so the draft
+    // survives; while the Keystone overlay is up, Back waits for it.
+    final stepBack = overlay == null ? _stepBack() : null;
+    return PopScope(
+      canPop: overlay == null && stepBack == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) stepBack?.call();
+      },
+      child: Scaffold(
+        key: const ValueKey('payment_links_mobile_screen'),
+        backgroundColor: context.colors.background.window,
+        body: AppToastHost(child: SafeArea(child: body)),
+      ),
     );
   }
+
+  /// The pages whose visible back control steps within the screen. The rest
+  /// leave the route, so their Back keeps popping it.
+  VoidCallback? _stepBack() => switch (page) {
+    PaymentLinksLocalPage.amount => () => onShowPage(
+      PaymentLinksLocalPage.home,
+    ),
+    PaymentLinksLocalPage.message => () => onShowPage(
+      PaymentLinksLocalPage.amount,
+    ),
+    PaymentLinksLocalPage.review => () => onShowPage(
+      PaymentLinksLocalPage.message,
+    ),
+    PaymentLinksLocalPage.redeem => () => onShowPage(
+      PaymentLinksLocalPage.home,
+    ),
+    _ => null,
+  };
 
   void _leavePaymentLinks(BuildContext context) {
     if (context.canPop()) {

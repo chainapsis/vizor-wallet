@@ -771,15 +771,22 @@ void main() {
       everyElement(lessThan(PaymentLinkCardArtwork.values.length)),
     );
 
-    // The loop repeats the designs; every copy outside the announced block is
-    // excluded, so a reader never counts past the design list.
+    // A full cycle further along the loop still announces designs: the block
+    // follows the viewport, so a reader never runs out of card buttons.
     await tester.drag(
       find.byKey(const ValueKey('payment_link_card_selector_scroll')),
       Offset(-72.0 * PaymentLinkCardArtwork.values.length, 0),
     );
     await tester.pumpAndSettle();
 
-    expect(announcedIndexes(), isEmpty);
+    final afterDrag = announcedIndexes();
+    expect(afterDrag, isNotEmpty);
+    expect(afterDrag.toSet().length, afterDrag.length);
+    expect(
+      afterDrag,
+      everyElement(lessThan(PaymentLinkCardArtwork.values.length)),
+    );
+    expect(afterDrag, everyElement(greaterThanOrEqualTo(0)));
     semantics.dispose();
   });
 
