@@ -45,8 +45,9 @@ void main() {
   );
 
   Future<(ProviderContainer, GoRouter, _FakeIncomingUriService)> pumpHost(
-    WidgetTester tester,
-  ) async {
+    WidgetTester tester, {
+    bool registerPaymentLinks = true,
+  }) async {
     final incomingUris = _FakeIncomingUriService();
     addTearDown(incomingUris.dispose);
 
@@ -58,7 +59,7 @@ void main() {
           '/send',
           '/welcome',
           '/unlock',
-          '/payment-links',
+          if (registerPaymentLinks) '/payment-links',
         ])
           GoRoute(
             path: path,
@@ -178,6 +179,22 @@ void main() {
       router.routerDelegate.currentConfiguration.uri.path,
       '/payment-links',
     );
+  });
+
+  testWidgets('a Gift Card stays pending while its surface is not registered', (
+    tester,
+  ) async {
+    final (container, router, incomingUris) = await pumpHost(
+      tester,
+      registerPaymentLinks: false,
+    );
+
+    incomingUris.emit(_paymentLink.toUri().toString());
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+    expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
   });
 
   testWidgets('an unknown link on the Vizor host is dropped without a word', (

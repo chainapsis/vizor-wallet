@@ -1546,6 +1546,10 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       return;
     }
     _lastDeferredLink = null;
+    // The `/payment-links` surface is registered by the next PR in this
+    // stack; until then a valid link stays pending rather than opening the
+    // router's error page.
+    if (!_paymentLinksSurfaceRegistered) return;
     _navigationScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _navigationScheduled = false;
@@ -1571,6 +1575,10 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
 
   bool get _paymentRequestCardPresented =>
       ref.read(paymentRequestFlowProvider) != null;
+
+  bool get _paymentLinksSurfaceRegistered => widget.router.configuration.routes
+      .whereType<GoRoute>()
+      .any((route) => route.path == '/payment-links');
 
   void _showDeferredPaymentLinkMessage(VizorPaymentLink link, String message) {
     if (identical(_lastDeferredLink, link)) return;
