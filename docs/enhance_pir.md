@@ -1,6 +1,6 @@
 # Private Ironwood transaction enhancement
 
-Vizor can privately complete incoming and outgoing Ironwood transaction details discovered by compact sync. The feature is off by default and is available under **Settings → Advanced → Private Ironwood recovery**.
+Vizor can privately complete incoming and outgoing Ironwood transaction details discovered by compact sync. The feature is off by default and is available on mainnet under **Settings → Privacy → Private Ironwood recovery**. Testnet and regtest do not expose the setting because they do not have a matching enhancement service.
 
 When enabled, Vizor queries by Ironwood commitment-tree position through iPIR+SP. It suppresses lightwalletd `GetTransaction(txid)` enhancement only for transactions protected by the independent position queue. Non-Ironwood transactions and ordinary status/address-history requests keep their existing behavior.
 
@@ -9,7 +9,7 @@ When enabled, Vizor queries by Ironwood commitment-tree position through iPIR+SP
 The Cargo manifest pins [`zakura-core/wallet-libraries#18`](https://github.com/zakura-core/wallet-libraries/pull/18) at:
 
 ```text
-ec25ebdf5161491495be086f5c0364b90e4cbcbf
+fb17c6a3489d6b53a63fc3e35c960a528d52bb10
 ```
 
 The wallet dependency exposes the `zakura-pir-enhance` client, incoming memo authentication, outgoing OVK recovery, durable recovery queues, and selective transaction-protection markers.
@@ -25,7 +25,9 @@ Set `VIZOR_ENHANCE_PIR_URL` to use another HTTPS deployment. `VIZOR_MEMO_PIR_URL
 ## Behavior
 
 1. Vizor loads and validates one atomic `/v1/enhance/init` response containing the
-   immutable generation, scheme parameters, and published setup material.
+   immutable generation, scheme parameters, and published setup material. A
+   recovering wallet caches that response while scanning toward its anchor
+   instead of downloading it after every compact-block batch.
 2. The generation remains pinned in every query and response, and Vizor rejects
    initialization above its local 65,536-row setup budget.
 3. No PIR setup is allocated and no private query is sent until the advertised
@@ -33,6 +35,14 @@ Set `VIZOR_ENHANCE_PIR_URL` to use another HTTPS deployment. `VIZOR_MEMO_PIR_URL
 4. Requests sharing a packed row are coalesced locally.
 5. Returned records are authenticated against compact-scanned state. Incoming details use the incoming viewing key; outgoing details use candidate funding accounts' external outgoing viewing keys.
 6. Successful work is logged only as aggregate counts.
+
+PIR transport and service failures do not fail compact synchronization. Vizor
+keeps the durable enhancement queue private, defers further service attempts
+for the current sync, and retries on a later sync. It does not fall back to a
+transaction-ID request for protected Ironwood transactions. Locking or resetting
+the wallet, changing sync mode, and restarting sync for a privacy-setting change
+cancel route acquisition and in-flight PIR HTTP work along with the rest of the
+sync session.
 
 Enabling the setting does not rescan or reprocess past history. It protects future compact scanning and future seed-recovery work. Details previously fetched by transaction ID remain stored, and that earlier disclosure cannot be undone.
 

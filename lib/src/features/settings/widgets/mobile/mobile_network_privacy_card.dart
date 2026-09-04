@@ -32,6 +32,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
     final colors = context.colors;
     final state = ref.watch(networkPrivacyProvider);
     final enhancePirEnabled = ref.watch(enhancePirProvider);
+    final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
     final notifier = ref.read(networkPrivacyProvider.notifier);
     final presentation = _presentationFor(
       state,
@@ -167,84 +168,86 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 ),
               ),
             ),
-          const SizedBox(height: AppSpacing.md),
-          Semantics(
-            button: true,
-            toggled: enhancePirEnabled,
-            label: 'Private Ironwood recovery',
-            onTap: () =>
-                unawaited(ref.read(enhancePirProvider.notifier).toggle()),
-            excludeSemantics: true,
-            child: GestureDetector(
-              key: const ValueKey('mobile_settings_enhance_pir_row'),
-              behavior: HitTestBehavior.opaque,
+          if (enhancePirAvailable) const SizedBox(height: AppSpacing.md),
+          if (enhancePirAvailable)
+            Semantics(
+              button: true,
+              toggled: enhancePirEnabled,
+              label: 'Private Ironwood recovery',
               onTap: () =>
                   unawaited(ref.read(enhancePirProvider.notifier).toggle()),
-              child: SizedBox(
-                height: _rowHeight,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xxs,
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox.square(
-                        dimension: 32,
-                        child: Center(
-                          child: AppIcon(
-                            AppIcons.eye,
-                            size: 20,
-                            color: enhancePirEnabled
-                                ? colors.icon.brandCrimson
-                                : colors.icon.muted,
+              excludeSemantics: true,
+              child: GestureDetector(
+                key: const ValueKey('mobile_settings_enhance_pir_row'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () =>
+                    unawaited(ref.read(enhancePirProvider.notifier).toggle()),
+                child: SizedBox(
+                  height: _rowHeight,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xxs,
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox.square(
+                          dimension: 32,
+                          child: Center(
+                            child: AppIcon(
+                              AppIcons.eye,
+                              size: 20,
+                              color: enhancePirEnabled
+                                  ? colors.icon.brandCrimson
+                                  : colors.icon.muted,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: AppSpacing.s),
-                      Expanded(
-                        child: Text(
-                          'Private Ironwood recovery',
-                          overflow: TextOverflow.ellipsis,
+                        const SizedBox(width: AppSpacing.s),
+                        Expanded(
+                          child: Text(
+                            'Private Ironwood recovery',
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          enhancePirEnabled ? 'On' : 'Off',
+                          key: const ValueKey(
+                            'mobile_settings_enhance_pir_status',
+                          ),
                           style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
+                            color: enhancePirEnabled
+                                ? colors.text.brandCrimson
+                                : colors.text.secondary,
                           ),
                         ),
-                      ),
-                      Text(
-                        enhancePirEnabled ? 'On' : 'Off',
-                        key: const ValueKey(
-                          'mobile_settings_enhance_pir_status',
+                        const SizedBox(width: AppSpacing.s),
+                        MobilePrivacyToggle(
+                          key: const ValueKey(
+                            'mobile_settings_enhance_pir_toggle',
+                          ),
+                          enabled: enhancePirEnabled,
+                          interactive: true,
+                          thumbKey: const ValueKey(
+                            'mobile_settings_enhance_pir_toggle_thumb',
+                          ),
                         ),
-                        style: AppTypography.labelLarge.copyWith(
-                          color: enhancePirEnabled
-                              ? colors.text.brandCrimson
-                              : colors.text.secondary,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.s),
-                      MobilePrivacyToggle(
-                        key: const ValueKey(
-                          'mobile_settings_enhance_pir_toggle',
-                        ),
-                        enabled: enhancePirEnabled,
-                        interactive: true,
-                        thumbKey: const ValueKey(
-                          'mobile_settings_enhance_pir_toggle_thumb',
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'Privately completes future Ironwood incoming and outgoing details during recovery. It does not reprocess past history, and timing and query counts remain visible to the service.',
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
+          if (enhancePirAvailable) const SizedBox(height: AppSpacing.sm),
+          if (enhancePirAvailable)
+            Text(
+              'Privately completes future Ironwood incoming and outgoing details during recovery. It does not reprocess past history, and timing and query counts remain visible to the service.',
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
             ),
-          ),
         ],
       ),
     );

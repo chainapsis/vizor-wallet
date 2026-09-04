@@ -498,6 +498,7 @@ class _SettingsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enhancePirEnabled = ref.watch(enhancePirProvider);
+    final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -599,12 +600,14 @@ class _SettingsList extends ConsumerWidget {
               key: ValueKey('settings_tor_control'),
               showSurface: false,
             ),
-            const SizedBox(height: AppSpacing.sm),
-            _EnhancePirPrivacyControl(
-              enabled: enhancePirEnabled,
-              onToggle: () =>
-                  unawaited(ref.read(enhancePirProvider.notifier).toggle()),
-            ),
+            if (enhancePirAvailable) ...[
+              const SizedBox(height: AppSpacing.sm),
+              _EnhancePirPrivacyControl(
+                enabled: enhancePirEnabled,
+                onToggle: () =>
+                    unawaited(ref.read(enhancePirProvider.notifier).toggle()),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: AppSpacing.md),

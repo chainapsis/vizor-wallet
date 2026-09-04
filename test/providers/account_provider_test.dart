@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
@@ -463,6 +464,37 @@ void main() {
     );
   });
 
+  test('wallet reset hook clears private recovery runtime state', () async {
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrapWithAccounts(enhancePirEnabled: true),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(enhancePirProvider), isTrue);
+    container.read(enhancePirProvider.notifier).clearAfterWalletReset();
+
+    expect(container.read(enhancePirProvider), isFalse);
+    expect(_rustApi.enhancePirEnabledValues, [false]);
+  });
+
+  test('private recovery ignores stale enabled state off mainnet', () {
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrapWithAccounts(network: 'test', enhancePirEnabled: true),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(enhancePirAvailableProvider), isFalse);
+    expect(container.read(enhancePirProvider), isFalse);
+  });
+
   test(
     'wallet link import rejects cross-network links before fresh wallet import',
     () async {
@@ -601,7 +633,9 @@ void main() {
       shareTracking.addRestoreRequestListener(() => restoreRequests++);
       final container = ProviderContainer(
         overrides: [
-          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          appBootstrapProvider.overrideWithValue(
+            _bootstrapWithAccounts(enhancePirEnabled: true),
+          ),
           votingShareTrackingRegistryProvider.overrideWithValue(shareTracking),
         ],
       );
@@ -621,6 +655,8 @@ void main() {
       );
       expect(shareTracking.isQuiesced('account-1'), isFalse);
       expect(restoreRequests, 2);
+      expect(container.read(enhancePirProvider), isTrue);
+      expect(_rustApi.enhancePirEnabledValues, isEmpty);
     },
   );
 
@@ -1223,12 +1259,14 @@ class _SwitchTestSecurityNotifier extends AppSecurityNotifier {
 class _AccountMutationRustApiFake implements RustLibApi {
   final deletedAccountUuids = <String>[];
   final requestedAccounts = <String>[];
+  final enhancePirEnabledValues = <bool>[];
   var lookupStarted = Completer<void>();
   Completer<String>? lookupGate;
 
   void reset() {
     deletedAccountUuids.clear();
     requestedAccounts.clear();
+    enhancePirEnabledValues.clear();
     lookupStarted = Completer<void>();
     lookupGate = null;
   }
@@ -1242,6 +1280,11 @@ class _AccountMutationRustApiFake implements RustLibApi {
     requestedAccounts.add(accountUuid!);
     if (!lookupStarted.isCompleted) lookupStarted.complete();
     return lookupGate?.future ?? Future.value('u1$accountUuid-address');
+  }
+
+  @override
+  void crateApiSyncSetEnhancePirEnabled({required bool enabled}) {
+    enhancePirEnabledValues.add(enabled);
   }
 
   @override
@@ -1391,7 +1434,12 @@ class _AccountTestPaymentLinkReceivedStorage
   Future<void> write(String nextValue) async => value = nextValue;
 }
 
-AppBootstrapState _bootstrapWithAccounts({bool isUnlocked = true}) {
+AppBootstrapState _bootstrapWithAccounts({
+  String? network,
+  bool isUnlocked = true,
+  bool enhancePirEnabled = false,
+}) {
+  final effectiveNetwork = network ?? kZcashDefaultNetworkName;
   const accountState = AccountState(
     accounts: [
       AccountInfo(uuid: 'account-1', name: 'Primary', order: 0),
@@ -1403,13 +1451,14 @@ AppBootstrapState _bootstrapWithAccounts({bool isUnlocked = true}) {
     initialLocation: '/home',
     initialAccountState: accountState,
     initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('account-1'),
-    network: kZcashDefaultNetworkName,
-    rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+    network: effectiveNetwork,
+    rpcEndpointConfig: defaultRpcEndpointConfig(effectiveNetwork),
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,
     isUnlocked: isUnlocked,
     passwordRotationRecoveryFailed: false,
+    enhancePirEnabled: enhancePirEnabled,
   );
 }
 

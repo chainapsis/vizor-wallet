@@ -32,6 +32,7 @@ import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
+import 'enhance_pir_provider.dart';
 import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
@@ -1058,6 +1059,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       } catch (e, st) {
         recordError('secure storage wipe', e, st);
       }
+      ref.read(enhancePirProvider.notifier).clearAfterWalletReset();
       final privacyRuntime = ref.read(networkPrivacyRuntimeProvider);
       final directRequests = ref.read(networkPrivacyDirectRequestGateProvider);
       await clearTorPrivacyStateForReset(
