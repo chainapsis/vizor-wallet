@@ -33,6 +33,14 @@ class _FakeSendApi {
   Object? proposeThrows;
   Completer<void>? gate;
 
+  /// The VZR-42 gate as the pre-check re-reads it. Settable so a test can
+  /// start a scan under a check that is already in flight.
+  var spendableIsAuthoritative = true;
+
+  /// Runs inside the awaited address validation, i.e. after the check has
+  /// read the balance and before it decides anything.
+  void Function()? whileValidating;
+
   /// Holds every discard open until the test releases it, so "the inputs
   /// are still locked" is an observable state rather than a race.
   Completer<void>? discardGate;
@@ -49,14 +57,16 @@ class _FakeSendApi {
   final events = <String>[];
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
-    spendableIsAuthoritativeNow: () => true,
+    spendableIsAuthoritativeNow: () => spendableIsAuthoritative,
     validateAddress:
-        ({required String address, required String network}) async =>
-            rust_sync.AddressValidationResult(
-              isValid: addressIsValid && !addressWrongNetwork,
-              addressType: addressType,
-              wrongNetwork: addressWrongNetwork,
-            ),
+        ({required String address, required String network}) async {
+          whileValidating?.call();
+          return rust_sync.AddressValidationResult(
+            isValid: addressIsValid && !addressWrongNetwork,
+            addressType: addressType,
+            wrongNetwork: addressWrongNetwork,
+          );
+        },
     proposeTransfer:
         ({
           required String accountUuid,
@@ -722,6 +732,45 @@ void main() {
 
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(api.discarded, [BigInt.one]);
+  });
+
+  test('a shortfall found after the wallet started scanning waits for the '
+      'sync instead of blocking the card', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(21000000)),
+    );
+    // 0.5 is more than the 0.21 the check reads, but the wallet starts
+    // scanning while the address is being validated, so that 0.21 is stale
+    // by the time the shortfall would be published.
+    api.whileValidating = () {
+      api.spendableIsAuthoritative = false;
+      syncNotifier(container).emit(scanningState());
+    };
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    expect(
+      flowState(container)!.view.status,
+      PaymentRequestStatus.syncing,
+      reason: 'a final insufficient would strand the card on a stale figure',
+    );
+    expect(api.proposeAttempts, 0);
+
+    // And it really is waiting on the sync: the completion re-checks it.
+    api.whileValidating = null;
+    api.spendableIsAuthoritative = true;
+    syncNotifier(
+      container,
+    ).emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    expect(flowState(container)!.view.status, PaymentRequestStatus.ready);
+    expect(api.proposeAttempts, 1);
   });
 
   test('a syncing card re-checks itself once the wallet finishes '

@@ -28,9 +28,14 @@ class FakeSendApi {
   Object? proposeThrows;
   BigInt? feeZatoshi;
 
-  /// What the wallet's spendable balance looks like *after* the proposal has
-  /// run — the VZR-42 gate the card re-reads before quoting a shortfall.
+  /// What the wallet's spendable balance looks like *now* — the VZR-42 gate
+  /// the card re-reads before quoting a shortfall, on either side of the
+  /// proposal.
   bool spendableIsAuthoritativeNow;
+
+  /// Runs inside the awaited address validation, so a test can move the
+  /// wallet under a check that is already in flight.
+  void Function()? whileValidating;
 
   var validateCalls = 0;
   var proposeCalls = 0;
@@ -45,6 +50,7 @@ class FakeSendApi {
   }) async {
     validateCalls++;
     lastValidatedNetwork = network;
+    whileValidating?.call();
     final failure = validateThrows;
     if (failure != null) throw failure;
     return rust_sync.AddressValidationResult(
@@ -214,6 +220,25 @@ void main() {
     expect(
       (result as PaymentRequestPrecheckInsufficientFunds).spendableText,
       '0.21 ZEC',
+    );
+    expect(api.proposeCalls, 0);
+  });
+
+  test('a shortfall whose balance stopped being settled mid-check waits for '
+      'the sync', () async {
+    final api = FakeSendApi();
+    // The wallet starts scanning while the check is awaiting the address
+    // validation, so the settled 0.21 it read is already history.
+    api.whileValidating = () => api.spendableIsAuthoritativeNow = false;
+
+    final result = await run(api, spendable: BigInt.from(21000000));
+
+    expect(
+      result,
+      isA<PaymentRequestPrecheckSyncing>(),
+      reason:
+          'VZR-42: a shortfall against a balance the scan has moved under is '
+          'not a final answer, and only syncing re-checks itself',
     );
     expect(api.proposeCalls, 0);
   });

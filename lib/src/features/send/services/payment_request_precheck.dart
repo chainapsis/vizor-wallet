@@ -49,9 +49,11 @@ typedef PaymentRequestProposeTransfer =
 
 /// Whether the wallet's spendable balance is settled *right now*.
 ///
-/// Read after the proposal comes back, not before it goes out: the propose
-/// path waits for an authoritative spendable of its own, so the only way to
-/// tell a real shortfall from a mid-scan one is to ask again afterwards.
+/// Every answer this service gives about affordability is separated from the
+/// balance it was handed by at least one await, so "settled" as of the start
+/// of the check is a claim about the past. This re-reads the same predicate
+/// at the moment a shortfall would be published — before the proposal goes
+/// out and after it comes back.
 typedef PaymentRequestSpendableIsAuthoritativeNow = bool Function();
 
 /// Releases a proposal. Matches [discardSendProposal].
@@ -172,9 +174,9 @@ class PaymentRequestPrecheck {
   final PaymentRequestProposeTransfer proposeTransfer;
   final PaymentRequestDiscardProposal discardProposal;
 
-  /// Live re-read of the VZR-42 condition, for the answers that only come
-  /// back after the proposal has run. Like [run]'s `spendableIsAuthoritative`
-  /// it has no default: getting it wrong is the bug this guards.
+  /// Live re-read of the VZR-42 condition, for every answer that lands after
+  /// the balance was read. Like [run]'s `spendableIsAuthoritative` it has no
+  /// default: getting it wrong is the bug this guards.
   final PaymentRequestSpendableIsAuthoritativeNow spendableIsAuthoritativeNow;
 
   /// [spendableIsAuthoritative] says whether [spendableBalance] is a settled
@@ -265,6 +267,15 @@ class PaymentRequestPrecheck {
     // the proposal decides, and it waits for the authoritative spendable
     // before Rust reports back through `_mapProposalError`.
     if (spendableIsAuthoritative && amountZatoshi > spendableBalance) {
+      // Both values were read before the address validation above was
+      // awaited, so they say the balance was settled, not that it still is.
+      // A scan that started in between is already moving it, and the two
+      // answers are not equally recoverable: `insufficient` is final and
+      // leaves the card blocked on a figure the scan has outgrown, while
+      // `syncing` re-checks itself the moment the wallet catches up.
+      if (!spendableIsAuthoritativeNow()) {
+        return const PaymentRequestPrecheckSyncing();
+      }
       return PaymentRequestPrecheckInsufficientFunds(
         spendableText: _formatZec(spendableBalance),
       );
