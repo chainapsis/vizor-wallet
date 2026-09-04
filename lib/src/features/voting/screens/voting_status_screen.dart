@@ -602,7 +602,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
 
   List<int> _delegationProgressBundleIndexes(VotingSessionState state) {
     final indexes = <int>{
-      ...?state.resumePlan?.pendingDelegationBundleIndexes,
+      ...delegationBundleIndexesNeedingSigning(state.roundPlan),
       ...state.delegationProgress.keys,
       ?state.currentBundleIndex,
     }.toList()..sort();

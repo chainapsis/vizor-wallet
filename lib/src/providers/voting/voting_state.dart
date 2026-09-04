@@ -218,7 +218,6 @@ class VotingSessionState {
   final VotingSessionPhase phase;
   final rust_config.ResolvedVotingConfig? config;
   final VotingRoundDetails? round;
-  final VotingResumePlan? resumePlan;
 
   /// Crate planner's derived resume plan for this round.
   ///
@@ -260,7 +259,6 @@ class VotingSessionState {
     this.phase = VotingSessionPhase.idle,
     this.config,
     this.round,
-    this.resumePlan,
     this.roundPlan,
     this.pirEndpoint,
     this.eligibleWeightZatoshi,
@@ -308,7 +306,7 @@ class VotingSessionState {
 
   int get keystoneResolvedBundlePrefixCount =>
       resolvedKeystoneBundlePrefixCount(
-        plan: resumePlan,
+        roundPlan: roundPlan,
         signatures: keystoneSignatures,
       );
 
@@ -332,7 +330,6 @@ class VotingSessionState {
     VotingSessionPhase? phase,
     rust_config.ResolvedVotingConfig? config,
     VotingRoundDetails? round,
-    VotingResumePlan? resumePlan,
     rust_wire.RoundPlanView? roundPlan,
     bool clearRoundPlan = false,
     Uri? pirEndpoint,
@@ -368,7 +365,6 @@ class VotingSessionState {
       phase: phase ?? this.phase,
       config: config ?? this.config,
       round: round ?? this.round,
-      resumePlan: resumePlan ?? this.resumePlan,
       roundPlan: clearRoundPlan ? null : roundPlan ?? this.roundPlan,
       pirEndpoint: pirEndpoint ?? this.pirEndpoint,
       eligibleWeightZatoshi:
@@ -416,10 +412,10 @@ class VotingSessionState {
 }
 
 int resolvedKeystoneBundlePrefixCount({
-  required VotingResumePlan? plan,
+  required rust_wire.RoundPlanView? roundPlan,
   required Map<int, rust_wire.KeystoneSignatureRecord> signatures,
 }) {
-  final bundleCount = plan?.bundleCount ?? 0;
+  final bundleCount = roundPlanBundleCount(roundPlan);
   if (bundleCount <= 0) return 0;
 
   final resolved = <int>{};
@@ -428,14 +424,13 @@ int resolvedKeystoneBundlePrefixCount({
       resolved.add(bundleIndex);
     }
   }
-  final phases =
-      plan?.delegationPhasesByIndex ??
-      const <int, rust_wire.WorkflowPhaseView>{};
-  for (final entry in phases.entries) {
-    if (entry.key >= 0 &&
-        entry.key < bundleCount &&
-        _isResolvedKeystoneDelegationPhase(entry.value)) {
-      resolved.add(entry.key);
+  for (final status
+      in roundPlan?.delegationStatuses ??
+          const <rust_wire.DelegationStatusView>[]) {
+    if (status.bundleIndex >= 0 &&
+        status.bundleIndex < bundleCount &&
+        _isResolvedKeystoneDelegationPhase(status.phase)) {
+      resolved.add(status.bundleIndex);
     }
   }
 
@@ -447,8 +442,8 @@ int resolvedKeystoneBundlePrefixCount({
 }
 
 bool _isResolvedKeystoneDelegationPhase(rust_wire.WorkflowPhaseView phase) {
-  return phase == VotingWorkflowPhase.submittedDelegation ||
-      phase == VotingWorkflowPhase.confirmed;
+  return phase == rust_wire.WorkflowPhaseView.submittedDelegation ||
+      phase == rust_wire.WorkflowPhaseView.confirmed;
 }
 
 String _stringFromJson(Map<String, dynamic> json, List<String> keys) {

@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 import 'package:zcash_wallet/src/services/voting/voting_rust_exception.dart';
+import 'fake_round_recovery_state.dart';
 
 /// Mirrors the SDK's `summarize_plan_work` so fixtures stay faithful to the
 /// derived predicates the app now reads instead of matching step kinds.
@@ -77,7 +78,8 @@ rust_wire.RoundPlanView apiRoundPlan({
   rust_wire.CompletedVoteDisplayView? completedVoteDisplay,
   bool? needsDraftSetup,
   rust_wire.RoundPlanActionKind? primaryAction,
-  List<rust_wire.DelegationStatusView> delegationStatuses = const [],
+  List<rust_wire.DelegationStatusView>? delegationStatuses,
+  int? bundleCount,
   List<rust_wire.DelegationRecoveryWorkView>? recoveredDelegationWork,
   List<rust_wire.VoteRecoveryWorkView>? recoveredVoteWork,
   rust_share_policy.ImmediateShareKey? immediateShareKey,
@@ -137,7 +139,8 @@ rust_wire.RoundPlanView apiRoundPlan({
           completedForDisplay: resolvedCompletedForDisplay,
         ),
     nextSteps: nextSteps,
-    delegationStatuses: delegationStatuses,
+    delegationStatuses:
+        delegationStatuses ?? _delegationStatuses(bundleCount, nextSteps),
     recoveredDelegationWork: resolvedDelegationWork,
     recoveredVoteWork: resolvedVoteWork,
     openProposals: openProposals,
@@ -148,7 +151,7 @@ rust_wire.RoundPlanView apiRoundPlan({
 }
 
 rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
-  required rust_wire.RoundRecoveryStateView state,
+  required FakeRoundRecoveryState state,
   required String roundId,
   required List<int> proposalIds,
 }) {
@@ -160,10 +163,11 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
       state.commitmentBundles.isNotEmpty ||
       state.shareDelegations.isNotEmpty;
 
+  final delegationByBundle = {
+    for (final record in state.delegation) record.bundleIndex: record,
+  };
+
   if (!completedVoteArtifact) {
-    final delegationByBundle = {
-      for (final record in state.delegation) record.bundleIndex: record,
-    };
     for (var bundleIndex = 0; bundleIndex < state.bundleCount; bundleIndex++) {
       final delegation = delegationByBundle[bundleIndex];
       if (delegation != null &&
@@ -296,6 +300,16 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     pendingRecovery: nextSteps.isNotEmpty,
     blockingRecovery: blockingRecovery,
     blockingShareWork: blockingShareWork,
+    // One status per persisted bundle, phase from the durable delegation row.
+    delegationStatuses: [
+      for (var bundleIndex = 0; bundleIndex < state.bundleCount; bundleIndex++)
+        rust_wire.DelegationStatusView(
+          bundleIndex: bundleIndex,
+          phase:
+              delegationByBundle[bundleIndex]?.phase ??
+              rust_wire.WorkflowPhaseView.prepared,
+        ),
+    ],
     hasUnconfirmedShares: state.unconfirmedShareDelegations.any(
       (share) => !share.confirmed,
     ),
@@ -326,10 +340,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
   );
 }
 
-int? _choiceForProposal(
-  rust_wire.RoundRecoveryStateView state,
-  int proposalId,
-) {
+int? _choiceForProposal(FakeRoundRecoveryState state, int proposalId) {
   final choices = state.votes
       .where((vote) => vote.proposalId == proposalId)
       .map((vote) => vote.choice)
@@ -337,7 +348,7 @@ int? _choiceForProposal(
   return choices.length == 1 ? choices.single : null;
 }
 
-BigInt? _latestShareCreatedAt(rust_wire.RoundRecoveryStateView state) {
+BigInt? _latestShareCreatedAt(FakeRoundRecoveryState state) {
   final timestamps = state.shareDelegations
       .map((share) => share.createdAt)
       .where((createdAt) => createdAt > BigInt.zero)
@@ -484,5 +495,96 @@ VotingRustException votingRustError(
       requiredNotes: requiredNotes,
       selectedNotes: selectedNotes,
     ),
+  );
+}
+
+/// One delegation status per persisted bundle, as the SDK reports.
+///
+/// A plan fixture that names no statuses still describes a round whose bundles
+/// exist; their phase comes from the delegation work the steps imply.
+List<rust_wire.DelegationStatusView> _delegationStatuses(
+  int? bundleCount,
+  List<rust_wire.NextStepView> nextSteps,
+) {
+  final phases = <int, rust_wire.WorkflowPhaseView>{};
+  for (final step in nextSteps) {
+    switch (step.kind) {
+      case rust_wire.NextStepKind.delegate:
+        phases[step.bundleIndex] = rust_wire.WorkflowPhaseView.prepared;
+      case rust_wire.NextStepKind.advanceDelegation:
+      case rust_wire.NextStepKind.advanceImportedDelegation:
+        phases[step.bundleIndex] =
+            rust_wire.WorkflowPhaseView.submittedDelegation;
+      default:
+        break;
+    }
+  }
+  final count =
+      bundleCount ??
+      (phases.isEmpty ? 0 : phases.keys.reduce((a, b) => a > b ? a : b) + 1);
+  return [
+    for (var bundleIndex = 0; bundleIndex < count; bundleIndex++)
+      rust_wire.DelegationStatusView(
+        bundleIndex: bundleIndex,
+        phase: phases[bundleIndex] ?? rust_wire.WorkflowPhaseView.confirmed,
+      ),
+  ];
+}
+
+/// Fills a scripted plan's durable-row facts from the state behind it.
+///
+/// The SDK derives delegation statuses and outstanding share work from the
+/// rows themselves, independent of which steps the plan lists, so a fixture
+/// that scripts steps alone would otherwise describe a round with no bundles
+/// and no shares to track.
+rust_wire.RoundPlanView withDelegationStatusesFrom(
+  rust_wire.RoundPlanView plan,
+  FakeRoundRecoveryState state,
+) {
+  final phases = {
+    for (final record in state.delegation) record.bundleIndex: record.phase,
+  };
+  return apiRoundPlan(
+    roundId: plan.roundId,
+    pendingRecovery: plan.pendingRecovery,
+    blockingRecovery: plan.blockingRecovery,
+    // Durable rows decide outstanding share work: a share no helper accepted
+    // is blocking, and a confirmed one is finished no matter which steps the
+    // fixture scripted.
+    blockingShareWork: state.shareDelegations.isEmpty
+        ? plan.blockingShareWork
+        : state.unconfirmedShareDelegations.any(
+            (share) => !share.confirmed && share.sentToUrls.isEmpty,
+          ),
+    hasUnconfirmedShares: state.shareDelegations.isEmpty
+        ? plan.hasUnconfirmedShares
+        : state.unconfirmedShareDelegations.any((share) => !share.confirmed),
+    hotkeyBound: plan.hotkeyBound,
+    completedVoteArtifact: plan.completedVoteArtifact,
+    completedForDisplay: plan.completedForDisplay,
+    completedVoteDisplay: plan.completedVoteDisplay,
+    needsDraftSetup: plan.needsDraftSetup,
+    primaryAction: plan.primaryAction,
+    nextSteps: plan.nextSteps,
+    delegationStatuses: plan.delegationStatuses.isNotEmpty
+        ? plan.delegationStatuses
+        : [
+            for (
+              var bundleIndex = 0;
+              bundleIndex < state.bundleCount;
+              bundleIndex++
+            )
+              rust_wire.DelegationStatusView(
+                bundleIndex: bundleIndex,
+                phase:
+                    phases[bundleIndex] ?? rust_wire.WorkflowPhaseView.prepared,
+              ),
+          ],
+    recoveredDelegationWork: plan.recoveredDelegationWork,
+    recoveredVoteWork: plan.recoveredVoteWork,
+    openProposals: plan.openProposals,
+    immediateShareKey: plan.immediateShareKey,
+    immediateShareConfirmed: plan.immediateShareConfirmed,
+    allDecided: plan.allDecided,
   );
 }

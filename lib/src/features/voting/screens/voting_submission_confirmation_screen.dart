@@ -168,7 +168,7 @@ class _VotingSubmissionConfirmationViewState
         : 'Token holder voting';
     final hasCompletedSubmission =
         hasCompletedVoteForDisplay(state.roundPlan) &&
-        hasConfirmedImmediateShare(state.roundPlan, state.resumePlan);
+        hasConfirmedImmediateShare(state.roundPlan);
     if (hasCompletedSubmission) {
       _lastSubmissionState = state;
     }

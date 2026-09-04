@@ -136,12 +136,19 @@ Preparation and recovery reads stay stage-level:
 | Background software delegation proof | `precompute_delegation_proof` | `DelegationPipeline::ensure_proof` — persists ZKP1 after snapshot PIR warm-up without receiving the mnemonic or signing |
 | Keystone signatures | `build_keystone_delegation_requests`, `store_keystone_signatures_batch`, `get_keystone_signatures`, `delete_skipped_bundles` | `DelegationPipeline::keystone_request`, `VotingDb` Keystone signature rows (`SetupAlreadyPersisted` on conflicting re-signs) |
 | Share tracking | `begin_share_tracking_pass`, `track_pending_shares`, `confirm_share_with_helpers`, `list_pending_share_rounds` | `share_tracking::{track_pending_shares, confirm_pending_share}`, `share::pending_rounds_for_accounts` |
-| Ballot intent / restart | `set_ballot_intent`, `get_round_plan`, `get_round_recovery_state` | `VotingDb::set_ballot_intent`, `session::resume_plan`, `recovery::round_snapshot` |
+| Ballot intent / restart | `set_ballot_intent`, `get_round_plan` | `VotingDb::set_ballot_intent`, `session::resume_plan` |
 
 Restart recovery is driven by `session::resume_plan`, which returns the ordered
 remaining `NextStep`s and the proposals still open. Dart consumes the crate's
 typed plan enums (`NextStepKind`, `RoundPlanActionKind`, `WorkflowPhaseView`);
 it does not derive its own phases.
+
+The round plan is the wallet's whole view of durable round state. Dart keeps no
+indexed mirror of delegation, vote, or share rows: bundle counts and delegation
+work come from `delegation_statuses`, outstanding share work from
+`has_unconfirmed_shares` and `blocking_share_work`, and the next tracking delay
+from `share::next_tracking_delay_for_round`. Durable share records never cross
+the bridge.
 
 ```mermaid
 stateDiagram-v2

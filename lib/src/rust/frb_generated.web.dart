@@ -407,9 +407,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DelegationProgressKind dco_decode_delegation_progress_kind(dynamic raw);
 
   @protected
-  DelegationRecoveryView dco_decode_delegation_recovery_view(dynamic raw);
-
-  @protected
   DelegationRecoveryWorkKindView dco_decode_delegation_recovery_work_kind_view(
     dynamic raw,
   );
@@ -552,11 +549,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ConfigCondition> dco_decode_list_config_condition(dynamic raw);
 
   @protected
-  List<DelegationRecoveryView> dco_decode_list_delegation_recovery_view(
-    dynamic raw,
-  );
-
-  @protected
   List<DelegationRecoveryWorkView>
   dco_decode_list_delegation_recovery_work_view(dynamic raw);
 
@@ -650,10 +642,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
-  List<RecoverableCommitmentBundle>
-  dco_decode_list_recoverable_commitment_bundle(dynamic raw);
-
-  @protected
   List<ScanRangeInfo> dco_decode_list_scan_range_info(dynamic raw);
 
   @protected
@@ -664,17 +652,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_list_share_batch_delivery_report_view(dynamic raw);
 
   @protected
-  List<ShareDelegationRecordView> dco_decode_list_share_delegation_record_view(
-    dynamic raw,
-  );
-
-  @protected
   List<ShareDeliveryOutcomeView> dco_decode_list_share_delivery_outcome_view(
-    dynamic raw,
-  );
-
-  @protected
-  List<ShareWorkflowRecoveryView> dco_decode_list_share_workflow_recovery_view(
     dynamic raw,
   );
 
@@ -702,9 +680,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<VoteKeyView> dco_decode_list_vote_key_view(dynamic raw);
-
-  @protected
-  List<VoteRecoveryView> dco_decode_list_vote_recovery_view(dynamic raw);
 
   @protected
   List<VoteRecoveryWorkView> dco_decode_list_vote_recovery_work_view(
@@ -928,11 +903,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ProposalResult dco_decode_proposal_result(dynamic raw);
 
   @protected
-  RecoverableCommitmentBundle dco_decode_recoverable_commitment_bundle(
-    dynamic raw,
-  );
-
-  @protected
   ResolvedVotingConfig dco_decode_resolved_voting_config(dynamic raw);
 
   @protected
@@ -940,9 +910,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RoundPlanView dco_decode_round_plan_view(dynamic raw);
-
-  @protected
-  RoundRecoveryStateView dco_decode_round_recovery_state_view(dynamic raw);
 
   @protected
   RoundStepDispositionView dco_decode_round_step_disposition_view(dynamic raw);
@@ -980,20 +947,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ShareDelegationRecordView dco_decode_share_delegation_record_view(
-    dynamic raw,
-  );
-
-  @protected
   ShareDeliveryOutcomeView dco_decode_share_delivery_outcome_view(dynamic raw);
 
   @protected
   ShareKeyView dco_decode_share_key_view(dynamic raw);
-
-  @protected
-  ShareWorkflowRecoveryView dco_decode_share_workflow_recovery_view(
-    dynamic raw,
-  );
 
   @protected
   ShieldTransparentPcztResult dco_decode_shield_transparent_pczt_result(
@@ -1090,9 +1047,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VoteKeyView dco_decode_vote_key_view(dynamic raw);
-
-  @protected
-  VoteRecoveryView dco_decode_vote_recovery_view(dynamic raw);
 
   @protected
   VoteRecoveryWorkKindView dco_decode_vote_recovery_work_kind_view(dynamic raw);
@@ -1582,11 +1536,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  DelegationRecoveryView sse_decode_delegation_recovery_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   DelegationRecoveryWorkKindView sse_decode_delegation_recovery_work_kind_view(
     SseDeserializer deserializer,
   );
@@ -1769,11 +1718,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<DelegationRecoveryView> sse_decode_list_delegation_recovery_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   List<DelegationRecoveryWorkView>
   sse_decode_list_delegation_recovery_work_view(SseDeserializer deserializer);
 
@@ -1891,10 +1835,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
-  List<RecoverableCommitmentBundle>
-  sse_decode_list_recoverable_commitment_bundle(SseDeserializer deserializer);
-
-  @protected
   List<ScanRangeInfo> sse_decode_list_scan_range_info(
     SseDeserializer deserializer,
   );
@@ -1911,17 +1851,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<ShareDelegationRecordView> sse_decode_list_share_delegation_record_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   List<ShareDeliveryOutcomeView> sse_decode_list_share_delivery_outcome_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<ShareWorkflowRecoveryView> sse_decode_list_share_workflow_recovery_view(
     SseDeserializer deserializer,
   );
 
@@ -1955,11 +1885,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<VoteKeyView> sse_decode_list_vote_key_view(SseDeserializer deserializer);
-
-  @protected
-  List<VoteRecoveryView> sse_decode_list_vote_recovery_view(
-    SseDeserializer deserializer,
-  );
 
   @protected
   List<VoteRecoveryWorkView> sse_decode_list_vote_recovery_work_view(
@@ -2235,11 +2160,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
 
   @protected
-  RecoverableCommitmentBundle sse_decode_recoverable_commitment_bundle(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   ResolvedVotingConfig sse_decode_resolved_voting_config(
     SseDeserializer deserializer,
   );
@@ -2251,11 +2171,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RoundPlanView sse_decode_round_plan_view(SseDeserializer deserializer);
-
-  @protected
-  RoundRecoveryStateView sse_decode_round_recovery_state_view(
-    SseDeserializer deserializer,
-  );
 
   @protected
   RoundStepDispositionView sse_decode_round_step_disposition_view(
@@ -2307,22 +2222,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ShareDelegationRecordView sse_decode_share_delegation_record_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   ShareDeliveryOutcomeView sse_decode_share_delivery_outcome_view(
     SseDeserializer deserializer,
   );
 
   @protected
   ShareKeyView sse_decode_share_key_view(SseDeserializer deserializer);
-
-  @protected
-  ShareWorkflowRecoveryView sse_decode_share_workflow_recovery_view(
-    SseDeserializer deserializer,
-  );
 
   @protected
   ShieldTransparentPcztResult sse_decode_shield_transparent_pczt_result(
@@ -2435,9 +2340,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VoteKeyView sse_decode_vote_key_view(SseDeserializer deserializer);
-
-  @protected
-  VoteRecoveryView sse_decode_vote_recovery_view(SseDeserializer deserializer);
 
   @protected
   VoteRecoveryWorkKindView sse_decode_vote_recovery_work_kind_view(
@@ -3043,12 +2945,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_delegation_recovery_view(
-    DelegationRecoveryView self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_delegation_recovery_work_kind_view(
     DelegationRecoveryWorkKindView self,
     SseSerializer serializer,
@@ -3271,12 +3167,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_delegation_recovery_view(
-    List<DelegationRecoveryView> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_delegation_recovery_work_view(
     List<DelegationRecoveryWorkView> self,
     SseSerializer serializer,
@@ -3424,12 +3314,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_recoverable_commitment_bundle(
-    List<RecoverableCommitmentBundle> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_scan_range_info(
     List<ScanRangeInfo> self,
     SseSerializer serializer,
@@ -3448,20 +3332,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_share_delegation_record_view(
-    List<ShareDelegationRecordView> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_share_delivery_outcome_view(
     List<ShareDeliveryOutcomeView> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_share_workflow_recovery_view(
-    List<ShareWorkflowRecoveryView> self,
     SseSerializer serializer,
   );
 
@@ -3504,12 +3376,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_vote_key_view(
     List<VoteKeyView> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_vote_recovery_view(
-    List<VoteRecoveryView> self,
     SseSerializer serializer,
   );
 
@@ -3829,12 +3695,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_recoverable_commitment_bundle(
-    RecoverableCommitmentBundle self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_resolved_voting_config(
     ResolvedVotingConfig self,
     SseSerializer serializer,
@@ -3848,12 +3708,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_round_plan_view(RoundPlanView self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_round_recovery_state_view(
-    RoundRecoveryStateView self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_round_step_disposition_view(
@@ -3916,12 +3770,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_share_delegation_record_view(
-    ShareDelegationRecordView self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_share_delivery_outcome_view(
     ShareDeliveryOutcomeView self,
     SseSerializer serializer,
@@ -3929,12 +3777,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_share_key_view(ShareKeyView self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_share_workflow_recovery_view(
-    ShareWorkflowRecoveryView self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_shield_transparent_pczt_result(
@@ -4073,12 +3915,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_vote_key_view(VoteKeyView self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_vote_recovery_view(
-    VoteRecoveryView self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_vote_recovery_work_kind_view(

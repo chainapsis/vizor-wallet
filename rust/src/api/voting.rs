@@ -1144,22 +1144,6 @@ pub fn list_pending_share_rounds(
     })
 }
 
-/// Load the full recovery/share-tracking summary for one voting round.
-///
-/// The round plan is the decision surface; this is the raw snapshot behind it,
-/// used for restart indexing and diagnostics.
-pub fn get_round_recovery_state(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-) -> Result<zcash_voting::wire::RoundRecoveryStateView, VotingErrorView> {
-    catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::recovery::round_snapshot(&db, &round_id)
-            .map(zcash_voting::wire::RoundRecoveryStateView::from)
-    })
-}
-
 /// Compute the resumable voting-session plan for a round. The plan reports the
 /// ordered remaining work (`next_steps`) and which proposals are still open.
 pub fn get_round_plan(
@@ -2154,12 +2138,13 @@ mod tests {
         )
         .unwrap();
 
-        let state = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
+        let state = zcash_voting::wire::RoundRecoveryStateView::from(
+            zcash_voting::recovery::round_snapshot(
+                &db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap(),
+                ROUND_ID,
+            )
+            .unwrap(),
+        );
 
         assert_eq!(state.bundle_count, 2);
         assert_eq!(
@@ -2194,12 +2179,13 @@ mod tests {
                 },
             )
             .unwrap();
-        let confirmed_state = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
+        let confirmed_state = zcash_voting::wire::RoundRecoveryStateView::from(
+            zcash_voting::recovery::round_snapshot(
+                &db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap(),
+                ROUND_ID,
+            )
+            .unwrap(),
+        );
         assert!(confirmed_state.unconfirmed_share_delegations.is_empty());
     }
 
@@ -2587,12 +2573,13 @@ mod tests {
 
         fixture_delegation_tx_hash(&db, 0, "delegation-submitted-tx");
 
-        let snapshot = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
+        let snapshot = zcash_voting::wire::RoundRecoveryStateView::from(
+            zcash_voting::recovery::round_snapshot(
+                &db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap(),
+                ROUND_ID,
+            )
+            .unwrap(),
+        );
         assert_eq!(snapshot.delegation.len(), 1);
         assert_eq!(
             snapshot.delegation[0].tx_hash.as_deref(),

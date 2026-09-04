@@ -432,20 +432,6 @@ Future<List<ApiPendingShareRound>> listPendingShareRounds({
   accountUuids: accountUuids,
 );
 
-/// Load the full recovery/share-tracking summary for one voting round.
-///
-/// The round plan is the decision surface; this is the raw snapshot behind it,
-/// used for restart indexing and diagnostics.
-Future<RoundRecoveryStateView> getRoundRecoveryState({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-}) => RustLib.instance.api.crateApiVotingGetRoundRecoveryState(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-);
-
 /// Compute the resumable voting-session plan for a round. The plan reports the
 /// ordered remaining work (`next_steps`) and which proposals are still open.
 Future<RoundPlanView> getRoundPlan({

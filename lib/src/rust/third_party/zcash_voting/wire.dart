@@ -7,7 +7,7 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegationPirPrecomputeResultView`, `DraftVote`, `PendingShareRoundView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
 
 /// How a confirmation was established.
@@ -178,43 +178,6 @@ enum DelegationProgressKind {
   proofComplete,
   signingPayload,
   payloadReady,
-}
-
-class DelegationRecoveryView {
-  final int bundleIndex;
-  final WorkflowPhaseView phase;
-  final String? txHash;
-
-  /// Confirmed VAN leaf position, if delegation has been projected.
-  final BigInt? vanLeafPosition;
-  final SubmissionDiagnosticView? submissionDiagnostic;
-
-  const DelegationRecoveryView({
-    required this.bundleIndex,
-    required this.phase,
-    this.txHash,
-    this.vanLeafPosition,
-    this.submissionDiagnostic,
-  });
-
-  @override
-  int get hashCode =>
-      bundleIndex.hashCode ^
-      phase.hashCode ^
-      txHash.hashCode ^
-      vanLeafPosition.hashCode ^
-      submissionDiagnostic.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is DelegationRecoveryView &&
-          runtimeType == other.runtimeType &&
-          bundleIndex == other.bundleIndex &&
-          phase == other.phase &&
-          txHash == other.txHash &&
-          vanLeafPosition == other.vanLeafPosition &&
-          submissionDiagnostic == other.submissionDiagnostic;
 }
 
 /// Kind of grouped delegation recovery work.
@@ -411,37 +374,6 @@ class NextStepView {
           shareIndex == other.shareIndex;
 }
 
-class RecoverableCommitmentBundle {
-  final int bundleIndex;
-  final int proposalId;
-  final String commitmentBundleJson;
-  final BigInt vcTreePosition;
-
-  const RecoverableCommitmentBundle({
-    required this.bundleIndex,
-    required this.proposalId,
-    required this.commitmentBundleJson,
-    required this.vcTreePosition,
-  });
-
-  @override
-  int get hashCode =>
-      bundleIndex.hashCode ^
-      proposalId.hashCode ^
-      commitmentBundleJson.hashCode ^
-      vcTreePosition.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is RecoverableCommitmentBundle &&
-          runtimeType == other.runtimeType &&
-          bundleIndex == other.bundleIndex &&
-          proposalId == other.proposalId &&
-          commitmentBundleJson == other.commitmentBundleJson &&
-          vcTreePosition == other.vcTreePosition;
-}
-
 /// High-level work area a wallet should show or resume for a round.
 enum RoundPlanActionKind { idle, delegate, vote, submitShares, done }
 
@@ -577,53 +509,6 @@ class RoundPlanView {
           immediateShareKey == other.immediateShareKey &&
           immediateShareConfirmed == other.immediateShareConfirmed &&
           allDecided == other.allDecided;
-}
-
-class RoundRecoveryStateView {
-  final String roundId;
-  final int bundleCount;
-  final List<DelegationRecoveryView> delegation;
-  final List<VoteRecoveryView> votes;
-  final List<RecoverableCommitmentBundle> commitmentBundles;
-  final List<ShareWorkflowRecoveryView> shares;
-  final List<ShareDelegationRecordView> shareDelegations;
-  final List<ShareDelegationRecordView> unconfirmedShareDelegations;
-
-  const RoundRecoveryStateView({
-    required this.roundId,
-    required this.bundleCount,
-    required this.delegation,
-    required this.votes,
-    required this.commitmentBundles,
-    required this.shares,
-    required this.shareDelegations,
-    required this.unconfirmedShareDelegations,
-  });
-
-  @override
-  int get hashCode =>
-      roundId.hashCode ^
-      bundleCount.hashCode ^
-      delegation.hashCode ^
-      votes.hashCode ^
-      commitmentBundles.hashCode ^
-      shares.hashCode ^
-      shareDelegations.hashCode ^
-      unconfirmedShareDelegations.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is RoundRecoveryStateView &&
-          runtimeType == other.runtimeType &&
-          roundId == other.roundId &&
-          bundleCount == other.bundleCount &&
-          delegation == other.delegation &&
-          votes == other.votes &&
-          commitmentBundles == other.commitmentBundles &&
-          shares == other.shares &&
-          shareDelegations == other.shareDelegations &&
-          unconfirmedShareDelegations == other.unconfirmedShareDelegations;
 }
 
 /// What one round step call accomplished.
@@ -854,69 +739,6 @@ class ShareBatchDeliveryReportView {
           legacyBestEffort == other.legacyBestEffort;
 }
 
-class ShareDelegationRecordView {
-  final String roundId;
-  final int bundleIndex;
-  final int proposalId;
-  final int shareIndex;
-  final List<String> sentToUrls;
-  final List<String> ambiguousUrls;
-  final int targetCount;
-  final Uint8List nullifier;
-  final WorkflowPhaseView phase;
-  final bool confirmed;
-  final BigInt submitAt;
-  final BigInt createdAt;
-
-  const ShareDelegationRecordView({
-    required this.roundId,
-    required this.bundleIndex,
-    required this.proposalId,
-    required this.shareIndex,
-    required this.sentToUrls,
-    required this.ambiguousUrls,
-    required this.targetCount,
-    required this.nullifier,
-    required this.phase,
-    required this.confirmed,
-    required this.submitAt,
-    required this.createdAt,
-  });
-
-  @override
-  int get hashCode =>
-      roundId.hashCode ^
-      bundleIndex.hashCode ^
-      proposalId.hashCode ^
-      shareIndex.hashCode ^
-      sentToUrls.hashCode ^
-      ambiguousUrls.hashCode ^
-      targetCount.hashCode ^
-      nullifier.hashCode ^
-      phase.hashCode ^
-      confirmed.hashCode ^
-      submitAt.hashCode ^
-      createdAt.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ShareDelegationRecordView &&
-          runtimeType == other.runtimeType &&
-          roundId == other.roundId &&
-          bundleIndex == other.bundleIndex &&
-          proposalId == other.proposalId &&
-          shareIndex == other.shareIndex &&
-          sentToUrls == other.sentToUrls &&
-          ambiguousUrls == other.ambiguousUrls &&
-          targetCount == other.targetCount &&
-          nullifier == other.nullifier &&
-          phase == other.phase &&
-          confirmed == other.confirmed &&
-          submitAt == other.submitAt &&
-          createdAt == other.createdAt;
-}
-
 /// Delivery result for one share of a batch.
 class ShareDeliveryOutcomeView {
   final int shareIndex;
@@ -973,37 +795,6 @@ class ShareKeyView {
           bundleIndex == other.bundleIndex &&
           proposalId == other.proposalId &&
           shareIndex == other.shareIndex;
-}
-
-class ShareWorkflowRecoveryView {
-  final int bundleIndex;
-  final int proposalId;
-  final int shareIndex;
-  final WorkflowPhaseView phase;
-
-  const ShareWorkflowRecoveryView({
-    required this.bundleIndex,
-    required this.proposalId,
-    required this.shareIndex,
-    required this.phase,
-  });
-
-  @override
-  int get hashCode =>
-      bundleIndex.hashCode ^
-      proposalId.hashCode ^
-      shareIndex.hashCode ^
-      phase.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ShareWorkflowRecoveryView &&
-          runtimeType == other.runtimeType &&
-          bundleIndex == other.bundleIndex &&
-          proposalId == other.proposalId &&
-          shareIndex == other.shareIndex &&
-          phase == other.phase;
 }
 
 class SignedDelegationPayloadView {
@@ -1103,53 +894,6 @@ class VoteKeyView {
           runtimeType == other.runtimeType &&
           bundleIndex == other.bundleIndex &&
           proposalId == other.proposalId;
-}
-
-class VoteRecoveryView {
-  final int bundleIndex;
-  final int proposalId;
-  final int choice;
-  final WorkflowPhaseView phase;
-  final String? txHash;
-  final BigInt? vcTreePosition;
-  final bool hasCommitmentBundle;
-  final SubmissionDiagnosticView? submissionDiagnostic;
-
-  const VoteRecoveryView({
-    required this.bundleIndex,
-    required this.proposalId,
-    required this.choice,
-    required this.phase,
-    this.txHash,
-    this.vcTreePosition,
-    required this.hasCommitmentBundle,
-    this.submissionDiagnostic,
-  });
-
-  @override
-  int get hashCode =>
-      bundleIndex.hashCode ^
-      proposalId.hashCode ^
-      choice.hashCode ^
-      phase.hashCode ^
-      txHash.hashCode ^
-      vcTreePosition.hashCode ^
-      hasCommitmentBundle.hashCode ^
-      submissionDiagnostic.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is VoteRecoveryView &&
-          runtimeType == other.runtimeType &&
-          bundleIndex == other.bundleIndex &&
-          proposalId == other.proposalId &&
-          choice == other.choice &&
-          phase == other.phase &&
-          txHash == other.txHash &&
-          vcTreePosition == other.vcTreePosition &&
-          hasCommitmentBundle == other.hasCommitmentBundle &&
-          submissionDiagnostic == other.submissionDiagnostic;
 }
 
 /// Kind of grouped vote recovery work.
