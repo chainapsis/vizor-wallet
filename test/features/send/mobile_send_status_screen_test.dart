@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
@@ -66,8 +67,41 @@ bool _statusRouteCanPop(WidgetTester tester) {
   return popScope.canPop;
 }
 
+/// Rust stand-in for the one call the receipt makes on its own: releasing a
+/// proposal the broadcast did not consume.
+class _RustApiFake implements RustLibApi {
+  final discardCalls = <(BigInt, String)>[];
+
+  /// Holds `discardProposal` open so a test can read the terminal flag while
+  /// the release is still in flight.
+  Completer<void>? discardGate;
+
+  @override
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {
+    discardCalls.add((proposalId, sendFlowId));
+    final gate = discardGate;
+    if (gate != null) await gate.future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  late _RustApiFake rustApi;
+
+  setUpAll(() {
+    rustApi = _RustApiFake();
+    RustLib.initMock(api: rustApi);
+  });
+  tearDownAll(RustLib.dispose);
+
   setUp(() {
+    rustApi.discardCalls.clear();
+    rustApi.discardGate = null;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
@@ -302,6 +336,49 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'failed outcome releases an unconsumed proposal before going terminal',
+    (tester) async {
+      // The software send's missing-mnemonic branch: the broadcast fails and
+      // Rust still owns the proposal. It is `!Platform.isMacOS`-only in
+      // `runSendBroadcast`, so the outcome is injected rather than provoked.
+      final discardGate = Completer<void>();
+      rustApi.discardGate = discardGate;
+
+      final broadcast = Completer<SendBroadcastOutcome>();
+      await tester.pumpWidget(_app(broadcastRunner: _runner(broadcast.future)));
+      await tester.pump();
+
+      broadcast.complete(
+        const SendBroadcastOutcome(
+          phase: SendBroadcastPhase.failed,
+          proposalConsumed: false,
+          error: 'Mnemonic not found for the proposal account.',
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // The receipt already reads as failed, but the proposal — and with it
+      // the input lock a parked `zcash:` request would propose against — is
+      // still held, so the drain must not be told the send is safe to leave.
+      expect(find.text('Send failed'), findsOneWidget);
+      expect(rustApi.discardCalls, [(BigInt.one, 'flow-1')]);
+      expect(_sendStatusTerminal(tester), isFalse);
+
+      discardGate.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(_sendStatusTerminal(tester), isTrue);
+
+      // Leaving the receipt must not release the proposal a second time.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(rustApi.discardCalls, hasLength(1));
+    },
+  );
 
   testWidgets('send success falls back to Flutter haptics on Android', (
     tester,

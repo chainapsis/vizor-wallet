@@ -519,6 +519,11 @@ Widget _sendFlowRouterApp({
   String? paymentRequestLabel,
   BigInt? requestedAmountZatoshi,
   AccountState? accountState,
+
+  /// Stands in for the `extra` a `go('/send/review', ...)` carries when the
+  /// router starts on `/send/review` — the payment-request card's Review, which
+  /// makes the review the whole stack.
+  MobileSendReviewDraftArgs? initialReviewDraft,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -580,7 +585,8 @@ Widget _sendFlowRouterApp({
       GoRoute(
         path: '/send/review',
         builder: (_, state) {
-          final args = state.extra! as MobileSendReviewDraftArgs;
+          final args =
+              (state.extra ?? initialReviewDraft)! as MobileSendReviewDraftArgs;
           return MobileSendScreen(
             useRouteSteps: true,
             initialReview: true,
@@ -980,6 +986,41 @@ void main() {
       find.byKey(const ValueKey('mobile_send_continue')),
     );
     expect(continueButton.onPressed, isNotNull);
+  });
+
+  testWidgets('back on a card-opened root review steps back in place', (
+    tester,
+  ) async {
+    // The payment-request card's Review is a `go('/send/review')`: the review
+    // is the first and only page, so its back has nothing to pop.
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send/review',
+        initialReviewDraft: const MobileSendReviewDraftArgs(
+          sendFlowId: 'card-review-flow',
+          recipient: _shieldedAddress,
+          addressType: 'unified',
+          amountText: '1.5',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(_sendRouteCanPop(tester), isFalse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    // Same page, earlier step — not an exception and not an exit.
+    expect(tester.takeException(), isNull);
+    expect(find.text('Enter Amount'), findsOneWidget);
+    expect(find.text('home'), findsNothing);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Recipient'), findsOneWidget);
   });
 
   testWidgets('the payment URI amount survives the in-place step back', (

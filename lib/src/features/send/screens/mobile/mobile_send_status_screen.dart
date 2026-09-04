@@ -66,21 +66,25 @@ class _MobileSendStatusScreenState
   @override
   void dispose() {
     if (_phase != _MobileSendStatusPhase.sending) {
-      _scheduleDiscardIfNeeded();
+      unawaited(_discardProposalIfNeeded('MobileSendStatus(dispose)'));
     }
     _sendStatusTerminal.resetAfterNavigation();
     super.dispose();
   }
 
-  void _scheduleDiscardIfNeeded() {
+  /// Releases the proposal unless the broadcast already consumed it.
+  ///
+  /// Idempotent by claim rather than by retry: the first caller — the failed
+  /// outcome below or [dispose] — takes the discard and every later call is a
+  /// no-op, so a failure that releases the proposal on screen does not get a
+  /// second release when the receipt is finally left.
+  Future<void> _discardProposalIfNeeded(String logContext) async {
     if (_proposalConsumed || _discardScheduled) return;
     _discardScheduled = true;
-    unawaited(
-      discardSendProposal(
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
-        logContext: 'MobileSendStatus(dispose)',
-      ),
+    await discardSendProposal(
+      proposalId: widget.args.proposalId,
+      sendFlowId: widget.args.sendFlowId,
+      logContext: logContext,
     );
   }
 
@@ -118,10 +122,6 @@ class _MobileSendStatusScreenState
       };
       _statusMessage = outcome.statusMessage;
     });
-    if (_phase == _MobileSendStatusPhase.succeeded ||
-        _phase == _MobileSendStatusPhase.failed) {
-      _sendStatusTerminal.markTerminal();
-    }
     // Success and failure use custom native haptic patterns without system
     // notification sounds.
     switch (_phase) {
@@ -132,6 +132,24 @@ class _MobileSendStatusScreenState
       case _MobileSendStatusPhase.sending:
       case _MobileSendStatusPhase.pendingBroadcast:
         break;
+    }
+    if (_phase == _MobileSendStatusPhase.succeeded ||
+        _phase == _MobileSendStatusPhase.failed) {
+      if (_phase == _MobileSendStatusPhase.failed) {
+        // A failed outcome does not always hand the proposal back: the
+        // software send's missing-mnemonic branch returns
+        // `proposalConsumed: false` without touching Rust's PROPOSAL_STORE,
+        // and until now the release waited for `dispose`. Marking the send
+        // terminal first lets `_IncomingLinkHost` drain a parked `zcash:`
+        // request against inputs this dead send still locks, which the
+        // request pre-check reads as insufficient funds. So: release, then
+        // publish "safe to leave".
+        await _discardProposalIfNeeded('MobileSendStatus(failed)');
+        // Leaving during the release means `dispose` already reset the flag;
+        // re-raising it here would strand it for the next screen.
+        if (!mounted) return;
+      }
+      _sendStatusTerminal.markTerminal();
     }
   }
 

@@ -1832,10 +1832,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         }
         setState(() => _step = _SendStep.recipient);
       case _SendStep.review:
-        if (widget.useRouteSteps) {
+        if (widget.useRouteSteps && _canPopRoute) {
           context.pop();
           return;
         }
+        // A review opened from the payment-request card enters through `go`,
+        // which makes /send/review the whole stack: there is no page under it
+        // to pop to. Step back in place instead, the way the deep-linked
+        // amount step does; from there the recipient step's own fallback
+        // still leads home.
         setState(() => _step = _SendStep.amount);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _amountFocus.requestFocus();
