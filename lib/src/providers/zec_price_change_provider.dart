@@ -255,6 +255,7 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
   Timer? _refreshTimer;
   Timer? _expiryTimer;
   int _epoch = 0;
+  int? _fetchInFlightEpoch;
   int _consecutiveFailures = 0;
   AppLifecycleListener? _lifecycle;
   bool _isInForeground = true;
@@ -319,39 +320,50 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
     }
 
     Future<void> tick() async {
+      if (_fetchInFlightEpoch == epoch) return;
       if (!_mayRunNow) {
         _refreshDeferredToForeground = true;
         return;
       }
-      if (state.displayData != null && !state.isFreshAt(now())) {
-        clearMarketData();
-      }
-      final data = await source.fetchMarketData();
-      if (epoch != _epoch) return;
-      if (data != null) {
-        _consecutiveFailures = 0;
-        final fetchedAt = now().toUtc();
-        state = ZecHomeMarketDataState(
-          displayData: data,
-          liveData: data,
-          fetchedAt: fetchedAt,
-        );
-        scheduleExpiry(fetchedAt);
-        unawaited(
-          persist(CachedZecMarketData(data: data, fetchedAt: fetchedAt)),
-        );
-      } else if (state.displayData != null && !state.isFreshAt(now())) {
-        clearMarketData();
-      }
-      final nextDelay = data != null
-          ? refreshInterval
-          : _consecutiveFailures < retryDelays.length
-          ? retryDelays[_consecutiveFailures++]
-          : refreshInterval;
-      if (_mayRunNow) {
-        _refreshTimer = Timer(nextDelay, () => unawaited(tick()));
-      } else {
-        _refreshDeferredToForeground = true;
+      _fetchInFlightEpoch = epoch;
+      try {
+        if (state.displayData != null && !state.isFreshAt(now())) {
+          clearMarketData();
+        }
+        final data = await source.fetchMarketData();
+        if (epoch != _epoch) return;
+        if (data != null) {
+          _consecutiveFailures = 0;
+          final fetchedAt = now().toUtc();
+          state = ZecHomeMarketDataState(
+            displayData: data,
+            liveData: data,
+            fetchedAt: fetchedAt,
+          );
+          scheduleExpiry(fetchedAt);
+          unawaited(
+            persist(CachedZecMarketData(data: data, fetchedAt: fetchedAt)),
+          );
+        } else if (state.displayData != null && !state.isFreshAt(now())) {
+          clearMarketData();
+        }
+        final nextDelay = data != null
+            ? refreshInterval
+            : _consecutiveFailures < retryDelays.length
+            ? retryDelays[_consecutiveFailures++]
+            : refreshInterval;
+        if (_mayRunNow) {
+          _refreshTimer = Timer(nextDelay, () {
+            _refreshTimer = null;
+            unawaited(tick());
+          });
+        } else {
+          _refreshDeferredToForeground = true;
+        }
+      } finally {
+        if (_fetchInFlightEpoch == epoch) {
+          _fetchInFlightEpoch = null;
+        }
       }
     }
 

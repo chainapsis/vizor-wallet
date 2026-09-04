@@ -44,6 +44,18 @@ class _SequenceSource implements ZecMarketDataSource {
   }
 }
 
+class _PendingRetrySource implements ZecMarketDataSource {
+  final retryCompleter = Completer<ZecMarketData?>();
+  int fetchCount = 0;
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() {
+    fetchCount += 1;
+    if (fetchCount == 1) return Future.value(null);
+    return retryCompleter.future;
+  }
+}
+
 class _FakeCache implements ZecMarketDataCache {
   _FakeCache({this.value, this.readError, this.writeError});
 
@@ -554,6 +566,46 @@ void main() {
         TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
           AppLifecycleState.resumed,
         );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(source.fetchCount, 2);
+        expect(sub.read(), 33.45);
+      },
+    );
+
+    test(
+      'does not overlap an in-flight retry across hide and resume',
+      () async {
+        final source = _PendingRetrySource();
+        final container = makeContainer(
+          swapEnabled: true,
+          source: source,
+          refreshInterval: const Duration(hours: 1),
+          retryDelays: const [Duration(milliseconds: 5)],
+          processWorkPolicy: ({required isInForeground}) => isInForeground,
+        );
+        final sub = container.listen(zecLiveUsdUnitPriceProvider, (_, _) {});
+
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(source.fetchCount, 2);
+
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.hidden,
+        );
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(source.fetchCount, 2);
+
+        source.retryCompleter.complete(const ZecMarketData(usdPrice: 33.45));
         await Future<void>.delayed(Duration.zero);
 
         expect(source.fetchCount, 2);
