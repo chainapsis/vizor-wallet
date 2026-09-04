@@ -9,9 +9,25 @@ fn sidecar_write_locks() -> &'static Mutex<HashMap<PathBuf, Arc<Mutex<()>>>> {
     LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn sidecar_open_locks() -> &'static Mutex<HashMap<PathBuf, Arc<Mutex<()>>>> {
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
+    LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn sidecar_write_lock(db_path: &str) -> Arc<Mutex<()>> {
     let sidecar_path = zcash_voting::storage::VotingDb::wallet_sidecar_path(Path::new(db_path));
     let mut locks = sidecar_write_locks()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    locks
+        .entry(sidecar_path)
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
+
+fn sidecar_open_lock(db_path: &str) -> Arc<Mutex<()>> {
+    let sidecar_path = zcash_voting::storage::VotingDb::wallet_sidecar_path(Path::new(db_path));
+    let mut locks = sidecar_open_locks()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     locks
@@ -118,6 +134,22 @@ pub fn open_voting_db(
     db_path: &str,
     account_uuid: &str,
 ) -> Result<zcash_voting::storage::VotingDb, String> {
+    // Every upstream open may run a schema migration. Keep that short phase
+    // separate from the longer-lived writer coordinator so callers that
+    // already hold the write lock can safely open the database. No code may
+    // acquire the write lock while holding this open lock; it is released
+    // before the database handle is returned.
+    let lock = sidecar_open_lock(db_path);
+    let _guard = lock
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    open_voting_db_unlocked(db_path, account_uuid)
+}
+
+fn open_voting_db_unlocked(
+    db_path: &str,
+    account_uuid: &str,
+) -> Result<zcash_voting::storage::VotingDb, String> {
     const MAX_LOCK_RETRIES: u32 = 5;
     let wallet_path = std::path::Path::new(db_path);
     for attempt in 0..=MAX_LOCK_RETRIES {
@@ -188,6 +220,55 @@ mod tests {
 
         release.join().unwrap();
         assert!(db.list_rounds().unwrap().is_empty());
+    }
+
+    #[test]
+    fn open_voting_db_serializes_concurrent_v15_migration() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("zcash_wallet.db");
+        let sidecar_path = zcash_voting::storage::VotingDb::wallet_sidecar_path(&db_path);
+
+        // Create the current schema through the public API, then faithfully
+        // remove the v16 and v17 additions to model a released v15 sidecar.
+        drop(open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap());
+        let conn = rusqlite::Connection::open(&sidecar_path).unwrap();
+        conn.execute_batch(
+            "DROP TRIGGER clear_helper_share_plan_on_vote_generation_change;
+             DROP TABLE helper_share_plans;
+             ALTER TABLE share_delegations DROP COLUMN target_count;
+             ALTER TABLE share_delegations DROP COLUMN attempting_urls;
+             ALTER TABLE share_delegations DROP COLUMN ambiguous_urls;
+             PRAGMA user_version = 15;",
+        )
+        .unwrap();
+        drop(conn);
+
+        let db_path = Arc::new(db_path.to_string_lossy().into_owned());
+        let start = Arc::new(Barrier::new(16));
+        let openers = (0..16)
+            .map(|_| {
+                let db_path = Arc::clone(&db_path);
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    open_voting_db(&db_path, "wallet-1").map(|_| ())
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for opener in openers {
+            opener.join().unwrap().unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&sidecar_path).unwrap();
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        let integrity: String = conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 17);
+        assert_eq!(integrity, "ok");
     }
 
     #[test]
