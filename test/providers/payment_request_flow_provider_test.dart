@@ -479,6 +479,39 @@ void main() {
     expect(api.discarded, [BigInt.one, BigInt.one]);
   });
 
+  test('a replacement pre-check waits for the retry of an unconfirmed '
+      'release', () async {
+    debugUnconfirmedReleaseGrace = const Duration(milliseconds: 50);
+    addTearDown(
+      () => debugUnconfirmedReleaseGrace = const Duration(seconds: 3),
+    );
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1first'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardFailuresRemaining = 1;
+    final pending = notifier.reviewHandingBack();
+    await pumpEventQueue();
+    // The first release failed; the retry is waiting out its grace.
+    expect(api.events, ['propose 1', 'discard 1']);
+
+    notifier.present(request('u1second'), source: PaymentRequestSource.link);
+    expect(await pending, isA<PaymentRequestReviewOvertaken>());
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await pumpEventQueue();
+
+    expect(
+      api.events,
+      ['propose 1', 'discard 1', 'discard 1', 'propose 2'],
+      reason:
+          'the newer request must not be checked against inputs the '
+          'first proposal still held',
+    );
+  });
+
   test('a lock during a hand-back re-parks the request instead of dropping '
       'it', () async {
     final api = _FakeSendApi();

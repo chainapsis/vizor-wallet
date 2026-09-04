@@ -393,7 +393,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
       logContext: 'PaymentRequest(mobile review handoff)',
     );
     _track(release);
-    await _awaitRelease(release, proposal, generation);
+    await _awaitRelease(release, proposal);
     if (identical(_handoffPrefill, current.prefill)) _handoffPrefill = null;
     if (generation != _generation) {
       // The tap is being dropped, so it is accounted for on the card that
@@ -449,7 +449,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
       _handoffPrefill = current.prefill;
       final release = proposal.discard(logContext: 'PaymentRequest(edit)');
       _track(release);
-      await _awaitRelease(release, proposal, generation);
+      await _awaitRelease(release, proposal);
       if (identical(_handoffPrefill, current.prefill)) _handoffPrefill = null;
       if (generation != _generation) {
         _noteReplacedRequest();
@@ -465,13 +465,15 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   Future<void> _awaitRelease(
     Future<bool> release,
     PaymentRequestProposalHandle proposal,
-    int generation,
   ) async {
     if (await release) return;
-    await Future<void>.delayed(debugUnconfirmedReleaseGrace);
-    if (generation != _generation) return;
-    _track(proposal.discard(logContext: 'PaymentRequest(release retry)'));
-    await _lastRelease;
+    // Tracked as one operation, grace included, so a replacement's pre-check
+    // stays serialized behind the retry even if this hand-off is overtaken.
+    final retry = Future<void>.delayed(debugUnconfirmedReleaseGrace).then(
+      (_) => proposal.discard(logContext: 'PaymentRequest(release retry)'),
+    );
+    _track(retry);
+    await retry;
   }
 
   /// Cancel, the ⨯, the scrim, and the Android back gesture.
