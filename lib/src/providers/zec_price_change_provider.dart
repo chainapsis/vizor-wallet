@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show log;
 import '../core/config/swap_feature_config.dart';
 import '../core/formatting/zec_amount.dart';
+import '../core/layout/app_process_work_policy.dart';
 import '../core/network/network_http_client.dart';
 import '../features/swap/models/swap_fiat_value_formatting.dart';
 
@@ -17,7 +19,13 @@ const kVizorCoinGeckoPriceBaseUrl = String.fromEnvironment(
   kVizorCoinGeckoPriceBaseUrlEnvKey,
   defaultValue: kVizorCoinGeckoDefaultPriceBaseUrl,
 );
+const zecMarketDataRequestTimeout = Duration(seconds: 60);
 const zecMarketDataRefreshInterval = Duration(minutes: 3);
+const zecMarketDataRetryDelays = <Duration>[
+  Duration(seconds: 5),
+  Duration(seconds: 15),
+  Duration(seconds: 30),
+];
 const zecMarketDataCacheTtl = Duration(hours: 1);
 const zecMarketDataCacheStorageKey = 'vizor_zec_market_data_v1';
 
@@ -115,7 +123,7 @@ class CoinGeckoZecMarketDataSource implements ZecMarketDataSource {
     HttpClient? client,
     NetworkHttpClient? networkClient,
     Uri? baseUri,
-    this.timeout = const Duration(seconds: 12),
+    this.timeout = zecMarketDataRequestTimeout,
   }) : _client = networkClient ?? NetworkHttpClient(directClient: client),
        _baseUri = baseUri ?? Uri.parse(kVizorCoinGeckoPriceBaseUrl);
 
@@ -205,6 +213,15 @@ final zecMarketDataRefreshIntervalProvider = Provider<Duration>((ref) {
   return zecMarketDataRefreshInterval;
 });
 
+final zecMarketDataRetryDelaysProvider = Provider<List<Duration>>((ref) {
+  return zecMarketDataRetryDelays;
+});
+
+final zecMarketDataProcessWorkPolicyProvider =
+    Provider<bool Function({required bool isInForeground})>(
+      (_) => canRunAppProcessWork,
+    );
+
 class ZecHomeMarketDataState {
   const ZecHomeMarketDataState({
     this.displayData,
@@ -238,6 +255,14 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
   Timer? _refreshTimer;
   Timer? _expiryTimer;
   int _epoch = 0;
+  int _consecutiveFailures = 0;
+  AppLifecycleListener? _lifecycle;
+  bool _isInForeground = true;
+  bool _refreshDeferredToForeground = false;
+
+  bool get _mayRunNow => ref.read(zecMarketDataProcessWorkPolicyProvider)(
+    isInForeground: _isInForeground,
+  );
 
   @override
   ZecHomeMarketDataState build() {
@@ -251,11 +276,15 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
     final cache = ref.watch(zecMarketDataCacheProvider);
     final now = ref.watch(zecMarketDataNowProvider);
     final refreshInterval = ref.watch(zecMarketDataRefreshIntervalProvider);
+    final retryDelays = ref.watch(zecMarketDataRetryDelaysProvider);
+    _consecutiveFailures = 0;
 
     ref.onDispose(() {
       _epoch++;
       _refreshTimer?.cancel();
       _expiryTimer?.cancel();
+      _lifecycle?.dispose();
+      _lifecycle = null;
     });
 
     void clearMarketData() {
@@ -290,12 +319,17 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
     }
 
     Future<void> tick() async {
+      if (!_mayRunNow) {
+        _refreshDeferredToForeground = true;
+        return;
+      }
       if (state.displayData != null && !state.isFreshAt(now())) {
         clearMarketData();
       }
       final data = await source.fetchMarketData();
       if (epoch != _epoch) return;
       if (data != null) {
+        _consecutiveFailures = 0;
         final fetchedAt = now().toUtc();
         state = ZecHomeMarketDataState(
           displayData: data,
@@ -309,7 +343,16 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
       } else if (state.displayData != null && !state.isFreshAt(now())) {
         clearMarketData();
       }
-      _refreshTimer = Timer(refreshInterval, () => unawaited(tick()));
+      final nextDelay = data != null
+          ? refreshInterval
+          : _consecutiveFailures < retryDelays.length
+          ? retryDelays[_consecutiveFailures++]
+          : refreshInterval;
+      if (_mayRunNow) {
+        _refreshTimer = Timer(nextDelay, () => unawaited(tick()));
+      } else {
+        _refreshDeferredToForeground = true;
+      }
     }
 
     Future<void> initialize() async {
@@ -328,6 +371,23 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
       }
       if (epoch == _epoch) await tick();
     }
+
+    _lifecycle?.dispose();
+    _lifecycle = AppLifecycleListener(
+      onHide: () {
+        _isInForeground = false;
+        if (_mayRunNow || _refreshTimer == null) return;
+        _refreshTimer?.cancel();
+        _refreshTimer = null;
+        _refreshDeferredToForeground = true;
+      },
+      onResume: () {
+        _isInForeground = true;
+        if (!_refreshDeferredToForeground || epoch != _epoch) return;
+        _refreshDeferredToForeground = false;
+        unawaited(tick());
+      },
+    );
 
     scheduleMicrotask(() {
       if (epoch == _epoch) unawaited(initialize());
