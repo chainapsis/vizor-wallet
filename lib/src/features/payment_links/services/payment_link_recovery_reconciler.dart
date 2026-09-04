@@ -120,14 +120,18 @@ PaymentLinkPreparedFundingDisposition _paymentLinkPreparedFundingDisposition({
 /// funding still in the mempool has to count too — treating it as unseen
 /// would discard a Card that does hold funds.
 List<String> _paymentLinkOwnFundingTxids(
-  Iterable<rust_sync.TransactionInfo> transactions,
-) {
+  Iterable<rust_sync.TransactionInfo> transactions, {
+  required BigInt expectedZatoshi,
+}) {
   return transactions
       .where(
         (transaction) =>
             (transaction.txKind == 'received' ||
                 transaction.txKind == 'receiving') &&
             !transaction.expiredUnmined &&
+            // Only the promised funding counts; unrelated dust must not
+            // promote the draft.
+            BigInt.from(transaction.accountBalanceDelta) >= expectedZatoshi &&
             transaction.txidHex.trim().isNotEmpty,
       )
       .map((transaction) => transaction.txidHex.trim())
@@ -292,6 +296,9 @@ class PaymentLinkRecoveryReconciler {
         try {
           final fundingTxids = _paymentLinkOwnFundingTxids(
             await _loadLinkFundingHistory(record.link),
+            expectedZatoshi: paymentLinkFundingAmountZatoshi(
+              record.link.amountZatoshi,
+            ),
           );
           if (fundingTxids.isNotEmpty) {
             final txids = fundingTxids.join(',');

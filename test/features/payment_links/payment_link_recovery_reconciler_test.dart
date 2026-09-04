@@ -284,7 +284,12 @@ void main() {
       loadScannedHeight: () async => BigInt.from(200),
       loadTransactionsByAccount: (_) async => const {'source-account': []},
       loadLinkFundingHistory: (_) async => [
-        _transaction(txid: _preparedTxid, txKind: 'received'),
+        // The promised funding: amount plus the claim fee reserve.
+        _transaction(
+          txid: _preparedTxid,
+          txKind: 'received',
+          accountBalanceDelta: 110000,
+        ),
       ],
     );
 
@@ -293,6 +298,28 @@ void main() {
     expect(record.state, PaymentLinkRecoveryState.funded);
     expect(record.fundingTxids, _preparedTxid);
     expect(await reconciler.countUnsharedFundedForAccount('source-account'), 1);
+  });
+
+  test('an unrelated receive does not fund an ambiguous submission', () async {
+    final fixture = await _ambiguousFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(120),
+      loadScannedHeight: () async => BigInt.from(120),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => [
+        _transaction(
+          txid: _secondTxid,
+          txKind: 'received',
+          accountBalanceDelta: 5000,
+        ),
+      ],
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.draft);
+    expect(record.fundingTxids, isNull);
   });
 
   test(
@@ -512,12 +539,13 @@ rust_sync.TransactionInfo _transaction({
   required String txid,
   bool expiredUnmined = false,
   String txKind = 'sent',
+  int accountBalanceDelta = -110000,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
     minedHeight: expiredUnmined ? BigInt.zero : BigInt.from(119),
     expiredUnmined: expiredUnmined,
-    accountBalanceDelta: -110000,
+    accountBalanceDelta: accountBalanceDelta,
     fee: BigInt.from(10000),
     blockTime: BigInt.zero,
     isTransparent: false,
