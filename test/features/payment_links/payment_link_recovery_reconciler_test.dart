@@ -70,6 +70,32 @@ void main() {
     },
   );
 
+  test('promotes a multi-transaction software draft only once every id is '
+      'mined', () async {
+    final fixture = await _submittedFixture(
+      fundingTxids: '$_preparedTxid,$_secondTxid',
+    );
+    PaymentLinkRecoveryReconciler reconciler(List<String> mined) =>
+        PaymentLinkRecoveryReconciler(
+          fixture.store,
+          loadCurrentHeight: () async => BigInt.from(200),
+          loadScannedHeight: () async => BigInt.from(200),
+          loadTransactionsByAccount: (_) async => {
+            'source-account': [
+              for (final txid in mined) _transaction(txid: txid),
+            ],
+          },
+          loadLinkFundingHistory: (_) async => const [],
+        );
+
+    var record = (await reconciler([_preparedTxid]).load()).single;
+    expect(record.state, PaymentLinkRecoveryState.draft);
+
+    record = (await reconciler([_preparedTxid, _secondTxid]).load()).single;
+    expect(record.state, PaymentLinkRecoveryState.funded);
+    expect(record.fundingTxids, '$_preparedTxid,$_secondTxid');
+  });
+
   test(
     'retains a software draft with no expiry height while its tx is unseen',
     () async {
@@ -371,7 +397,7 @@ _preparedFixture() async {
 /// A software funding whose broadcast landed but whose `markFunded` promotion
 /// never did: the draft carries its transaction id and no expiry height.
 Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
-_submittedFixture() async {
+_submittedFixture({String fundingTxids = _preparedTxid}) async {
   final storage = _MemoryStorage();
   final store = PaymentLinkRecoveryStore(storage);
   final link = VizorPaymentLink(
@@ -385,7 +411,7 @@ _submittedFixture() async {
     createdAt: DateTime.utc(2026, 9, 1),
   );
   await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
-  await store.markSubmitted(address: link.address, fundingTxids: _preparedTxid);
+  await store.markSubmitted(address: link.address, fundingTxids: fundingTxids);
   return (store: store, storage: storage);
 }
 

@@ -25,6 +25,26 @@ bool paymentLinkFundingTransactionExists({
   );
 }
 
+/// True when every transaction in a comma-separated funding proposal is in
+/// [transactions] and not expired.
+bool paymentLinkFundingTransactionsExist({
+  required String fundingTxids,
+  required List<rust_sync.TransactionInfo> transactions,
+}) {
+  final expectedTxids = fundingTxids
+      .split(',')
+      .map(normalizePaymentLinkTxid)
+      .where((txid) => txid.isNotEmpty)
+      .toList();
+  if (expectedTxids.isEmpty) return false;
+  return expectedTxids.every(
+    (txid) => paymentLinkFundingTransactionExists(
+      fundingTxid: txid,
+      transactions: transactions,
+    ),
+  );
+}
+
 /// Returns true only when every transaction in a funding proposal is known to
 /// have expired without being mined.
 bool paymentLinkFundingExpired({

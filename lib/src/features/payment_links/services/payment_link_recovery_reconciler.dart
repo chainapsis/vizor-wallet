@@ -82,8 +82,9 @@ PaymentLinkPreparedFundingDisposition _paymentLinkPreparedFundingDisposition({
   required BigInt scannedHeight,
   required List<rust_sync.TransactionInfo> transactions,
 }) {
-  if (paymentLinkFundingTransactionExists(
-    fundingTxid: fundingTxid,
+  // A software proposal can carry several ids; every one has to be mined.
+  if (paymentLinkFundingTransactionsExist(
+    fundingTxids: fundingTxid,
     transactions: transactions,
   )) {
     return PaymentLinkPreparedFundingDisposition.funded;

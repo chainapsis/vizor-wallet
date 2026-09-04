@@ -132,35 +132,46 @@ class PaymentLinkClaimWallet {
     VizorPaymentLink link,
   ) async {
     final tempWallet = await createOrOpen(link);
-    if (!tempWallet.existed) {
-      await importClaimAccount(
+    String? accountUuid;
+    if (tempWallet.existed) {
+      List<rust_wallet.AccountInfo>? accounts;
+      try {
+        accounts = await rust_wallet.listAccounts(
+          dbPath: tempWallet.dbPath,
+          network: link.network,
+        );
+      } catch (e) {
+        log('PaymentLinkClaimWallet: reopening the claim wallet failed: $e');
+      }
+      if (accounts != null &&
+          !shouldRecreatePaymentLinkClaimWallet(
+            accountAddresses: [
+              for (final account in accounts) account.unifiedAddress,
+            ],
+            expectedAddress: link.address,
+          )) {
+        accountUuid = accounts.single.uuid;
+      } else {
+        // An import that died between creating the file and the account, or a
+        // wallet for another identity: recreate, as the claim path does.
+        await resetDb(tempWallet.directory);
+        await tempWallet.directory.create(recursive: true);
+      }
+    }
+    if (accountUuid == null) {
+      final imported = await importClaimAccount(
         link: link,
         birthdayHeight: link.birthdayHeight,
         dbPath: tempWallet.dbPath,
         network: link.network,
       );
+      accountUuid = imported.accountUuid;
     }
     await runClaimSync(link: link, dbPath: tempWallet.dbPath);
-    final accounts = await rust_wallet.listAccounts(
-      dbPath: tempWallet.dbPath,
-      network: link.network,
-    );
-    if (shouldRecreatePaymentLinkClaimWallet(
-      accountAddresses: [
-        for (final account in accounts) account.unifiedAddress,
-      ],
-      expectedAddress: link.address,
-    )) {
-      log(
-        'PaymentLinkClaimWallet: funding history skipped because the claim '
-        'wallet no longer matches its Gift Card identity',
-      );
-      return const [];
-    }
     return rust_sync.getTransactionHistory(
       dbPath: tempWallet.dbPath,
       network: link.network,
-      accountUuid: accounts.single.uuid,
+      accountUuid: accountUuid,
       limit: null,
     );
   }
