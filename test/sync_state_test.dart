@@ -575,6 +575,92 @@ void main() {
     expect(completed.totalBalance, BigInt.from(123));
     expect(completed.recentTransactions, hasLength(1));
   });
+
+  // The single spelling of the VZR-42 rule: "this balance may end a check as
+  // not enough". Each clause is pinned on its own, because dropping any one of
+  // them leaves both Dart lanes green while a shortfall gets announced against
+  // a balance nobody read or a stale snapshot.
+  group('hasSettledSpendableBalance', () {
+    SyncState settled() => SyncState(
+      accountUuid: 'account-a',
+      hasAccountScopedData: true,
+      hasBalanceData: true,
+      isSyncComplete: true,
+      percentage: 1.0,
+      scannedHeight: 100,
+      chainTipHeight: 100,
+      spendableBalance: BigInt.from(50),
+    );
+
+    test('settled, at the tip, with a balance read', () {
+      expect(settled().hasSettledSpendableBalance, isTrue);
+    });
+
+    test('a balance that was never fetched is not an answer', () {
+      // The wallet-wide sync fields survive `withoutAccountScopedData`, so
+      // without this clause a state carrying no balance for the account still
+      // reports `isSyncedToTip` with a zero spendable — the VZR-42 shape.
+      expect(
+        settled().copyWith(hasBalanceData: false).hasSettledSpendableBalance,
+        isFalse,
+      );
+    });
+
+    test('a last-completed-sync snapshot is not an answer either', () {
+      expect(
+        settled()
+            .copyWith(
+              displaySpendableFreshness:
+                  SpendableBalanceFreshness.lastCompletedSync,
+            )
+            .hasSettledSpendableBalance,
+        isFalse,
+      );
+    });
+
+    test('mid-scan is not settled', () {
+      expect(
+        settled().copyWith(scannedHeight: 99).hasSettledSpendableBalance,
+        isFalse,
+      );
+      expect(
+        settled().copyWith(isSyncing: true).hasSettledSpendableBalance,
+        isFalse,
+      );
+      expect(
+        settled().copyWith(isSyncComplete: false).hasSettledSpendableBalance,
+        isFalse,
+      );
+    });
+  });
+
+  group('spendableIsSettledForAccount', () {
+    SyncState settledForA() => SyncState(
+      accountUuid: 'account-a',
+      hasAccountScopedData: true,
+      hasBalanceData: true,
+      isSyncComplete: true,
+      percentage: 1.0,
+      scannedHeight: 100,
+      chainTipHeight: 100,
+      spendableBalance: BigInt.from(50),
+    );
+
+    test('answers for the account that owns the balance', () {
+      expect(spendableIsSettledForAccount(settledForA(), 'account-a'), isTrue);
+    });
+
+    test('scopes first, so it never answers with another balance', () {
+      // Without the `scopedToAccount` step the wallet-wide sync fields would
+      // read as settled while the balance on the state belongs to account A.
+      expect(spendableIsSettledForAccount(settledForA(), 'account-b'), isFalse);
+    });
+
+    test('no state and no account are both unsettled', () {
+      expect(spendableIsSettledForAccount(null, 'account-a'), isFalse);
+      expect(spendableIsSettledForAccount(settledForA(), null), isFalse);
+    });
+  });
 }
 
 rust_sync.WalletBalance _balance({

@@ -180,9 +180,15 @@ class SyncState {
   bool get isUsingCompletedSpendableSnapshot =>
       displaySpendableFreshness == SpendableBalanceFreshness.lastCompletedSync;
 
-  /// True when the spendable balance is authoritative (scanned to tip, has
-  /// balance data, not using a completed-sync snapshot). The single predicate
-  /// for "is a shortfall real?".
+  /// Whether this state's spendable balance may end a check as "not enough".
+  ///
+  /// Read on an *account-scoped* state ([scopedToAccount]): the wallet-wide
+  /// sync fields survive [withoutAccountScopedData], so a state carrying no
+  /// balance for the account still reports `isSyncedToTip` with a zero
+  /// spendable. [hasBalanceData] is what separates "scanned to the tip and
+  /// this is the balance" from "scanned to the tip and this account's balance
+  /// was never fetched" — without it the predicate fails open on a zero, which
+  /// is the VZR-42 shape (a shortfall announced against a balance nobody read).
   bool get hasSettledSpendableBalance =>
       hasBalanceData && isSyncedToTip && !isUsingCompletedSpendableSnapshot;
 
@@ -1647,8 +1653,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
     if (_requiresUnlock) return;
 
-    if (pause.hadActiveSync) {
-      log('SyncNotifier: resuming sync after wallet DB mutation');
+    if (pause.hadActiveSync || pause.hadMempoolObserver) {
+      log('SyncNotifier: resuming sync and mempool observation after pause');
       startSync();
     }
     if (pause.hadPolling || pause.hadActiveSync) {
@@ -2962,8 +2968,12 @@ final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(
 );
 
 /// [SyncState.hasSettledSpendableBalance] for [accountUuid], from an unscoped
-/// state. Scoping first is mandatory: an unscoped read answers with another
-/// account's balance, or with wallet-wide fields of a state with no balance.
+/// state.
+///
+/// The single spelling of "this balance is an answer" for everything that has
+/// to decide whether a shortfall is real. Scoping first is not optional: an
+/// unscoped read answers with another account's balance, or with the
+/// wallet-wide sync fields of a state that has no balance at all.
 bool spendableIsSettledForAccount(SyncState? sync, String? accountUuid) =>
     sync != null &&
     sync.scopedToAccount(accountUuid).hasSettledSpendableBalance;

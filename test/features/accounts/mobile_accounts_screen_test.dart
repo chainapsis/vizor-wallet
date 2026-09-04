@@ -22,6 +22,8 @@ import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -143,9 +145,10 @@ rust_sync.MigrationStatus _activeMigrationStatus() => rust_sync.MigrationStatus(
 );
 
 class _FakeAccountNotifier extends AccountNotifier {
-  _FakeAccountNotifier(this.initialState);
+  _FakeAccountNotifier(this.initialState, {this.removeError});
 
   final AccountState initialState;
+  final Object? removeError;
   var resetCount = 0;
   String? removedUuid;
 
@@ -154,6 +157,7 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   @override
   Future<void> removeAccount(String uuid) async {
+    if (removeError case final error?) throw error;
     removedUuid = uuid;
     final previous = state.value ?? initialState;
     final remaining = [
@@ -558,6 +562,62 @@ void main() {
     expect(syncNotifier.accountSwitchRefreshes, 1);
     expect(syncNotifier.balanceRefreshes, 1);
   });
+
+  for (final testCase in [
+    (
+      name: 'unshared Gift Cards',
+      error: const PaymentLinkUnsharedGiftCardsException(
+        sourceAccountUuid: 'a',
+        count: 1,
+      ),
+      message:
+          'Copy your unshared Gift Card links before deleting this account.',
+    ),
+    (
+      name: 'incoming Gift Cards',
+      error: const PaymentLinkInFlightClaimsException(
+        destinationAccountUuid: 'a',
+        count: 1,
+      ),
+      message:
+          'Wait for incoming Gift Cards to finish before deleting this account.',
+    ),
+  ]) {
+    testWidgets('removal explains ${testCase.name} blockers', (tester) async {
+      final accountState = AccountState(
+        accounts: [_account('a', 'Active'), _account('b', 'Replacement')],
+        activeAccountUuid: 'a',
+      );
+      final accountNotifier = _FakeAccountNotifier(
+        accountState,
+        removeError: testCase.error,
+      );
+      final syncNotifier = _FakeWalletMutationSyncNotifier();
+
+      await tester.pumpWidget(
+        _app(
+          accountState,
+          accountNotifier: () => accountNotifier,
+          syncNotifier: () => syncNotifier,
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_menu_remove')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(testCase.message), findsOneWidget);
+      expect(find.text("Couldn't remove the account"), findsNothing);
+    });
+  }
 
   testWidgets('row menu stays above the floating tab bar clearance', (
     tester,

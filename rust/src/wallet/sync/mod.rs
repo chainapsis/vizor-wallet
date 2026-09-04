@@ -55,7 +55,10 @@ pub use pczt::{
     store_and_broadcast_signed_pczts_for_proposal, ExtractAndBroadcastPcztResult,
     KeystoneBatchPczt, StoreAndBroadcastPcztsResult, TexPcztPair,
 };
-pub(crate) use pczt::extract_compact_sigs_from_pczt;
+pub(crate) use pczt::{
+    expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_pczt,
+    txid_from_io_finalized_pczt,
+};
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::propose_send;

@@ -30,6 +30,12 @@ pub struct AccountCreationResult {
     pub unified_address: String,
 }
 
+/// A generated software account that has not been imported into the wallet DB.
+pub struct GeneratedSoftwareAccount {
+    pub mnemonic: String,
+    pub unified_address: String,
+}
+
 /// Result of software mnemonic import with ZIP32 account discovery.
 pub struct SoftwareWalletImportWithDiscoveryResult {
     pub accounts: Vec<SoftwareWalletImportAccount>,
@@ -313,6 +319,23 @@ pub fn add_account(
 
         Ok(AccountCreationResult {
             account_uuid,
+            unified_address,
+        })
+    })
+}
+
+/// Generate a software account mnemonic and shielded address without touching
+/// the wallet DB. Used for an external one-time recipient controlled by a
+/// fresh seed, such as payment-link funding.
+pub fn generate_software_account(network: String) -> Result<GeneratedSoftwareAccount, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let unified_address = keys::derive_software_address(network, &seed, 0)?;
+
+        Ok(GeneratedSoftwareAccount {
+            mnemonic,
             unified_address,
         })
     })
@@ -1095,6 +1118,15 @@ mod tests {
     const BIP39_VECTOR_MAINNET_UA: &str =
         "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfgram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3nem8wwyen732wemtxcg6lxr4n2agm437m2";
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
+
+    #[test]
+    fn generates_valid_software_account_without_creating_a_database() {
+        let account = generate_software_account("main".to_string()).unwrap();
+
+        assert_eq!(account.mnemonic.split_whitespace().count(), 24);
+        assert!(validate_mnemonic(account.mnemonic.clone()));
+        assert!(account.unified_address.starts_with("u1"));
+    }
 
     #[test]
     fn bip39_passphrase_import_matches_independent_mainnet_address_vectors() {

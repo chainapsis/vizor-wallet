@@ -18,6 +18,10 @@ import '../core/storage/wallet_paths.dart';
 import '../features/swap/providers/swap_activity_store.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
+import '../features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
+import '../features/payment_links/services/payment_link_received_store.dart';
+import '../features/payment_links/services/payment_link_recovery_reconciler.dart';
+import '../features/payment_links/services/payment_link_recovery_store.dart';
 import '../features/voting/voting_flow_models.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/voting.dart' as rust_voting;
@@ -57,6 +61,34 @@ class WalletCreationCurrentBlockHeightException implements Exception {
 
   @override
   String toString() => kWalletCreationCurrentBlockHeightErrorMessage;
+}
+
+/// Kept to one rendered line: the desktop lost-password card is a fixed 520px
+/// box whose status line is 348px wide and single-line, and a second line
+/// overflows the card by 20px. `Wait for it to finish.` carries the remedy
+/// without naming the reset, which every surface that shows this already does.
+const kWalletResetInFlightGiftCardClaimsMessage =
+    'A Gift Card is still being received. Wait for it to finish.';
+
+/// Shown where the reset is not refused — the locked recovery surfaces,
+/// whose CTA stays enabled because reset is the user's only way back in.
+/// It states the cost instead of asking the user to wait, because waiting is
+/// exactly what cannot help there. Fits the same 348px line.
+const kWalletResetInFlightGiftCardWarningMessage =
+    'A Gift Card is still being received. Resetting loses it.';
+
+/// A full wallet reset was refused because a Gift Card claim is still in
+/// flight.
+///
+/// The per-account refusal is [PaymentLinkInFlightClaimsException]; a reset
+/// destroys every account, so this one names no destination.
+class WalletResetInFlightGiftCardClaimsException implements Exception {
+  const WalletResetInFlightGiftCardClaimsException({required this.count});
+
+  final int count;
+
+  @override
+  String toString() => kWalletResetInFlightGiftCardClaimsMessage;
 }
 
 class WalletResetException implements Exception {
@@ -545,11 +577,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
+    final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     try {
+      // Gift Card claims first, and before the in-flight count below: that
+      // count is a one-shot read, and a claim that enters `submitting` right
+      // after it returned zero would revalidate its destination against an
+      // account this method is still several awaits away from deleting — and
+      // then broadcast to an address the wallet can no longer recover. Pausing
+      // new claims and draining the running ones here means a claim already
+      // under way finishes first, and the count then sees it and refuses the
+      // deletion. The pause holds until the wallet rows are gone.
+      await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain(accountUuid: uuid);
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
+      claimLifecycle.resume();
       shareTracking.resume(accountUuid: uuid);
       shareTracking.requestRestore();
     }
@@ -563,6 +606,24 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     final target = prev.accounts[targetIndex];
+    final receivingGiftCardCount = await ref
+        .read(paymentLinkReceivedStoreProvider)
+        .countReceivingForAccount(uuid);
+    if (receivingGiftCardCount > 0) {
+      throw PaymentLinkInFlightClaimsException(
+        destinationAccountUuid: uuid,
+        count: receivingGiftCardCount,
+      );
+    }
+    final unsharedGiftCardCount = await ref
+        .read(paymentLinkRecoveryReconcilerProvider)
+        .countUnsharedFundedForAccount(uuid);
+    if (unsharedGiftCardCount > 0) {
+      throw PaymentLinkUnsharedGiftCardsException(
+        sourceAccountUuid: uuid,
+        count: unsharedGiftCardCount,
+      );
+    }
     final remaining = [
       for (final account in prev.accounts)
         if (account.uuid != uuid) account,
@@ -683,10 +744,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.
   ///
-  /// In-flight voting background work is quiesced and drained first so it
-  /// cannot keep reading or writing voting records or secure storage during
-  /// the wipe. This also clears voting state held in this process for every
-  /// account before the wallet DB and voting sidecar DB are deleted.
+  /// In-flight Gift Card claims and voting background work are quiesced and
+  /// drained first so they cannot keep reading or writing wallet records or
+  /// secure storage during the wipe. This also clears voting state held in
+  /// this process for every account before the wallet DB and voting sidecar DB
+  /// are deleted. While the wallet is unlocked, a claim still in flight after
+  /// that drain refuses the reset outright with
+  /// [WalletResetInFlightGiftCardClaimsException], the way [removeAccount]
+  /// refuses a deletion, rather than wiping the wallet the claim just paid
+  /// into. A locked wallet does not refuse — see the comment on that check.
   ///
   /// Migration work must first stop without deleting its credential. After
   /// that fail-closed preflight, the wipe is best-effort: deletion steps remain
@@ -697,21 +763,53 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
+    final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     var restoreAfterFailure = false;
+    var resumeClaimLifecycle = false;
     try {
+      await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
       await _resetWalletWithShareTrackingStopped();
+      resumeClaimLifecycle = true;
     } catch (error) {
       restoreAfterFailure = error is! WalletResetException || !error.dbDeleted;
+      resumeClaimLifecycle = restoreAfterFailure;
       rethrow;
     } finally {
+      if (resumeClaimLifecycle) claimLifecycle.resume();
       shareTracking.resume();
       if (restoreAfterFailure) shareTracking.requestRestore();
     }
   }
 
   Future<void> _resetWalletWithShareTrackingStopped() async {
+    // Only an unlocked wallet refuses. A claim advances only while unlocked --
+    // PaymentLinkClaimCoordinator pauses on `requiresUnlock` -- so on the
+    // locked recovery path (`/lost-password`, the forgot-passcode sheet) a
+    // record frozen in `receiving` would never clear and the refusal would
+    // never lift, trapping a user whose only remaining way into the wallet is
+    // this reset. Those surfaces show
+    // [kWalletResetInFlightGiftCardWarningMessage] and let the reset through:
+    // one in-flight claim is worth less than the whole wallet.
+    if (!ref.read(appSecurityProvider).requiresUnlock) {
+      // Read after the drain, not before, for the reason spelled out in
+      // [removeAccount]: a one-shot count taken first can read zero and then
+      // be overtaken by a claim entering `submitting`. Draining first settles
+      // the running submissions, and a settled claim sits in `receiving` until
+      // it confirms -- which `isClaimInFlight` still counts -- so the refusal
+      // sees it. Every account is about to go, so any in-flight claim counts,
+      // including one whose destination account is not yet written.
+      final inFlightClaimCount = await ref
+          .read(paymentLinkReceivedStoreProvider)
+          .countClaimsInFlight();
+      if (inFlightClaimCount > 0) {
+        throw WalletResetInFlightGiftCardClaimsException(
+          count: inFlightClaimCount,
+        );
+      }
+    }
+
     Object? firstError;
     StackTrace? firstStackTrace;
     void recordError(String step, Object e, StackTrace st) {
@@ -815,6 +913,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         // The durable reset already succeeded. Cache cleanup is best-effort
         // and must not prevent the secure-storage wipe from completing.
         log('resetWallet: failed to evict wallet summary cache: $e\n$st');
+      }
+      try {
+        await clearPaymentLinkClaimWalletsForReset();
+      } catch (e, st) {
+        // Finish the remaining safe cleanup, but do not report a complete
+        // reset while a privacy-sensitive claim database remains.
+        recordError('payment-link claim db cleanup', e, st);
       }
       try {
         await _storage.deleteAll();
@@ -1405,6 +1510,14 @@ String _normalizedExceptionMessage(Object error) {
 final accountProvider = AsyncNotifierProvider<AccountNotifier, AccountState>(
   AccountNotifier.new,
 );
+
+/// Removes every isolated payment-link claim database or reports the failure
+/// to the reset coordinator.
+@visibleForTesting
+Future<void> clearPaymentLinkClaimWalletsForReset({
+  Future<void> Function() deleteDirectories =
+      deletePaymentLinkClaimWalletDirectories,
+}) => deleteDirectories();
 
 @visibleForTesting
 String? resolveNextActiveAccountUuidAfterRemoval({

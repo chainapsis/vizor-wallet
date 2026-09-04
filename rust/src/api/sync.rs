@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::panic;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use flutter_rust_bridge::frb;
 use zeroize::Zeroizing;
@@ -13,6 +14,9 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
+static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
 #[frb(sync)]
@@ -186,6 +190,65 @@ pub fn is_sync_cancel_requested() -> bool {
 #[frb(sync)]
 pub fn is_sync_running() -> bool {
     SYNC_RUNNING.load(Ordering::SeqCst)
+}
+
+/// Runs an isolated scan for one short-lived payment-link claim database.
+///
+/// Claim syncs do not use the main wallet's process-global running guard or
+/// desired mode. Different claim IDs can therefore scan independent databases
+/// concurrently with each other and with the main wallet.
+pub fn run_payment_link_claim_sync(
+    claim_id: String,
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+) -> Result<(), String> {
+    if claim_id.trim().is_empty() {
+        return Err("Payment-link claim ID must not be empty".into());
+    }
+
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut active = PAYMENT_LINK_CLAIM_SYNCS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if active.contains_key(&claim_id) {
+            return Err(format!(
+                "Payment-link claim sync already running: {claim_id}"
+            ));
+        }
+        active.insert(claim_id.clone(), cancel.clone());
+    }
+
+    let result = catch(panic::AssertUnwindSafe(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let runtime = tokio::runtime::Runtime::new().map_err(|error| format!("tokio: {error}"))?;
+        runtime.block_on(sync_engine::run_payment_link_claim_sync(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            cancel,
+        ))
+    }));
+
+    PAYMENT_LINK_CLAIM_SYNCS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&claim_id);
+
+    result
+}
+
+/// Cancels only the isolated scan associated with `claim_id`.
+#[frb(sync)]
+pub fn cancel_payment_link_claim_sync(claim_id: String) {
+    if let Some(cancel) = PAYMENT_LINK_CLAIM_SYNCS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&claim_id)
+    {
+        cancel.store(true, Ordering::Relaxed);
+    }
 }
 
 pub(crate) static SYNC_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =
@@ -2748,6 +2811,19 @@ pub async fn store_and_broadcast_pczts_with_keystone_signatures_for_proposal(
         total_count: result.total_count,
         message: result.message,
     })
+}
+
+/// Computes the stable transaction ID before a finalized PCZT crosses the
+/// irreversible broadcast boundary.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_pczt_txid(pczt_bytes: Vec<u8>) -> Result<String, String> {
+    catch(|| wallet_sync::txid_from_io_finalized_pczt(&pczt_bytes).map(|txid| txid.to_string()))
+}
+
+/// Returns the expiry height committed to by an IO-finalized PCZT.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_pczt_expiry_height(pczt_bytes: Vec<u8>) -> Result<u32, String> {
+    catch(|| wallet_sync::expiry_height_from_io_finalized_pczt(&pczt_bytes))
 }
 
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
