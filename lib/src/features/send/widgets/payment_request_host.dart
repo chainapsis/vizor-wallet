@@ -27,6 +27,9 @@ import '../services/send_flow.dart';
 import 'payment_request_surface.dart';
 import 'send_recipient_resolver.dart';
 
+String _location(GoRouter router) =>
+    router.routerDelegate.currentConfiguration.uri.path;
+
 class PaymentRequestHost extends ConsumerWidget {
   const PaymentRequestHost({
     required this.router,
@@ -101,9 +104,13 @@ class PaymentRequestHost extends ConsumerWidget {
       // it mounts, and Rust cannot select inputs a proposal still holds, so a
       // wallet whose funds sit in those inputs would answer that quote with
       // "not enough ZEC" for the very payment the card just found affordable.
+      // A slow release leaves the app usable underneath; a navigation made
+      // meanwhile wins over the hand-back.
+      final origin = _location(router);
       unawaited(() async {
         switch (await notifier.editHandingBack()) {
           case PaymentRequestEditReady(:final prefill):
+            if (_location(router) != origin) return;
             _releaseRetainedSendStatus(ref);
             // Both `/send` pages are keyed on the prefill's id, so this
             // remounts the composer and discards anything already typed
@@ -137,9 +144,11 @@ class PaymentRequestHost extends ConsumerWidget {
         // cannot select inputs a proposal still holds, so a wallet whose
         // funds sit in those inputs would answer that quote with "not enough
         // ZEC" for the very payment the card just found affordable.
+        final origin = _location(router);
         unawaited(() async {
           switch (await notifier.reviewHandingBack()) {
             case PaymentRequestReviewReady(:final args):
+              if (_location(router) != origin) return;
               _releaseRetainedSendStatus(ref);
               router.go('/send/review', extra: _mobileDraftFor(args));
             case PaymentRequestReviewOvertaken():
