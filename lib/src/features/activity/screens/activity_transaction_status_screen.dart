@@ -636,6 +636,20 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
+  /// A row tapped before the Gift Card index finished loading arrives with no
+  /// metadata, so the receipt resolves it here instead of staying generic.
+  GiftCardActivityMetadata? _resolvedGiftCard(rust_sync.TransactionInfo? tx) {
+    if (tx == null) return null;
+    final accountUuid =
+        _activeAccountUuid ??
+        ref.watch(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return null;
+    return ref
+        .watch(giftCardActivityIndexProvider(accountUuid))
+        .value
+        ?.metadataFor(tx);
+  }
+
   Widget _redesignedPane(Widget content) {
     return Positioned.fill(
       child: AppPaneScrollScaffold(
@@ -667,7 +681,7 @@ class _ActivityTransactionStatusScreenState
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ?? const [];
     final privacyModeEnabled = ref.watch(privacyModeProvider);
-    final giftCard = widget.args.giftCard;
+    final giftCard = widget.args.giftCard ?? _resolvedGiftCard(tx);
 
     final sentRecipientAddress = detail?.primaryAddress?.trim();
     Widget? redesignedContent;

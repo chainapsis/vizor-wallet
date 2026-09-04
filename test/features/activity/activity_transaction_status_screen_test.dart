@@ -88,6 +88,38 @@ void main() {
     expect(find.text('Message'), findsNothing);
   });
 
+  testWidgets('resolves Gift Card metadata the tapped row could not carry', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+        ),
+      ),
+      giftCardActivityIndex: GiftCardActivityIndex(
+        createdTxids: {_txidHex},
+        createdMetadataByTxid: {
+          _txidHex: GiftCardActivityMetadata(
+            kind: GiftCardActivityKind.created,
+            amountZatoshi: BigInt.from(100000),
+            artworkId: 'ruby',
+            message: 'Happy birthday!',
+          ),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
+    expect(find.text('Created Gift Card'), findsOneWidget);
+    expect(find.text('Happy birthday!'), findsOneWidget);
+  });
+
   testWidgets('renders the redesigned receipt for a confirmed receive', (
     tester,
   ) async {
@@ -747,6 +779,7 @@ Future<void> _pumpScreen(
   required ActivityTransactionStatusArgs args,
   List<AddressBookContact> contacts = const [],
   Map<String, AccountInfo> ownAccounts = const {},
+  GiftCardActivityIndex? giftCardActivityIndex,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1512, 982));
   addTearDown(() async {
@@ -784,6 +817,10 @@ Future<void> _pumpScreen(
           _FakeAddressBookRepository(contacts),
         ),
         ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+        if (giftCardActivityIndex != null)
+          giftCardActivityIndexProvider.overrideWith(
+            (ref, accountUuid) async => giftCardActivityIndex,
+          ),
       ],
       child: MaterialApp.router(
         routerConfig: router,

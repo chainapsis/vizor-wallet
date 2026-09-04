@@ -194,7 +194,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     _fundingProgressTimer?.cancel();
     final claimSession = _receivedClaimSession;
     if (claimSession != null) {
-      unawaited(_paymentLinkOperations.discardClaimSession(claimSession));
+      // A waiting claim has nothing persisted yet, so leaving the route keeps
+      // the Card (as _leavePendingClaim does); a preview's claim wallet can go.
+      unawaited(
+        claimSession.waitingForFundingConfirmations
+            ? _paymentLinkOperations.retainPendingClaim(claimSession)
+            : _paymentLinkOperations.discardClaimSession(claimSession),
+      );
     }
     _amountFocusNode
       ..removeListener(_handleAmountFocus)
@@ -791,6 +797,18 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     ];
   }
 
+  /// Created Cards show under the account that funded them, like their funding
+  /// transaction; a record of unknown origin stays visible so its recovery is.
+  List<PaymentLinkRecoveryRecord> get _visibleRecoveries {
+    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    return [
+      for (final record in _recoveries)
+        if (record.sourceAccountUuid.isEmpty ||
+            record.sourceAccountUuid == accountUuid)
+          record,
+    ];
+  }
+
   String? get _maxAmountText {
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final quote = _maxFundingQuote;
@@ -1162,6 +1180,19 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         await ref
             .read(paymentLinkOperationsProvider)
             .discardClaimSession(session);
+        return;
+      }
+      // Preparation can outlast an account switch; a session bound to the
+      // previous account is released instead of installed.
+      final activeAccountUuid = ref
+          .read(accountProvider)
+          .value
+          ?.activeAccountUuid;
+      if (activeAccountUuid != null &&
+          activeAccountUuid != session.destinationAccountUuid &&
+          (session.waitingForFundingConfirmations || session.canClaim)) {
+        _receivedClaimSession = session;
+        _handleClaimDestinationAccountChanged(activeAccountUuid);
         return;
       }
       if (session.waitingForFundingConfirmations) {
@@ -1537,7 +1568,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
                 onCancel: _cancelKeystoneFunding,
                 onFundingBroadcast: _completeKeystoneFunding,
               ),
-        hasCards: _recoveries.isNotEmpty || _visibleReceivedCards.isNotEmpty,
+        hasCards:
+            _visibleRecoveries.isNotEmpty || _visibleReceivedCards.isNotEmpty,
         cardsSections: () => _cardsSections(
           recoveryRow: _buildMobileRecoveryRow,
           receivedRow: _buildMobileReceivedRow,
@@ -1658,7 +1690,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   }
 
   Widget _buildHome() {
-    if (_recoveries.isNotEmpty || _visibleReceivedCards.isNotEmpty) {
+    if (_visibleRecoveries.isNotEmpty || _visibleReceivedCards.isNotEmpty) {
       return _buildCardsList();
     }
     return PaymentLinksHomeDesktopView(
@@ -1716,7 +1748,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     if (_activeCardsTab == PaymentLinkCardsTab.created) {
       final creatingCards = <Widget>[];
       final pendingCards = <Widget>[];
-      for (final record in _recoveries) {
+      for (final record in _visibleRecoveries) {
         final fundingReady =
             _fundingProgressByAddress[record.link.address]?.isReady ?? false;
         (fundingReady ? pendingCards : creatingCards).add(recoveryRow(record));

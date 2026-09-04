@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -1097,6 +1098,156 @@ void main() {
     expect(find.text('Paste card link'), findsOneWidget);
     expect(operations.discardedClaimAddresses, [_incomingLink.address]);
     expect(find.textContaining('Active account changed.'), findsOneWidget);
+  });
+
+  testWidgets(
+    'account switch during claim preparation releases the prepared session',
+    (tester) async {
+      final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+      final prepareClaimGate = Completer<void>();
+      final operations = _FakePaymentLinkOperations(
+        prepareClaimGate: prepareClaimGate,
+      );
+      final clipboard = _FakePaymentLinkClipboard(
+        text: _incomingLink.toUri().toString(),
+      );
+      await _pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: clipboard,
+        accountNotifier: accountNotifier,
+        bootstrap: _twoAccountBootstrap,
+      );
+
+      await tester.tap(find.text('Redeem a card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pump();
+
+      accountNotifier.setActiveAccount('account-2');
+      await tester.pump();
+
+      prepareClaimGate.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('You\u2019ve received\na gift card!'), findsNothing);
+      expect(find.text('Paste card link'), findsOneWidget);
+      expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+      expect(find.textContaining('Active account changed.'), findsOneWidget);
+    },
+  );
+
+  testWidgets('route dispose keeps a Card that is waiting to be claimable', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(
+      waitingForFundingConfirmations: true,
+      fundingConfirmationCount: 0,
+    );
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    GoRouter.of(
+      tester.element(
+        find.byKey(const ValueKey('payment_links_desktop_screen')),
+      ),
+    ).go('/home');
+    await tester.pumpAndSettle();
+
+    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.discardedClaimAddresses, isEmpty);
+  });
+
+  testWidgets('route dispose releases a claimable preview', (tester) async {
+    final operations = _FakePaymentLinkOperations();
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    GoRouter.of(
+      tester.element(
+        find.byKey(const ValueKey('payment_links_desktop_screen')),
+      ),
+    ).go('/home');
+    await tester.pumpAndSettle();
+
+    expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+    expect(operations.retainedClaimAddresses, isEmpty);
+  });
+
+  testWidgets('created Cards list only the accounts that funded them', (
+    tester,
+  ) async {
+    final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+    final operations = _FakePaymentLinkOperations(
+      records: [_fundedRecovery, _otherAccountRecovery, _unknownOriginRecovery],
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      accountNotifier: accountNotifier,
+      bootstrap: _twoAccountBootstrap,
+    );
+
+    expect(
+      find.byKey(ValueKey('payment_link_recovery_${_incomingLink.address}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey('payment_link_recovery_${_otherAccountLink.address}'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        ValueKey('payment_link_recovery_${_unknownOriginLink.address}'),
+      ),
+      findsOneWidget,
+    );
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(
+      find.byKey(ValueKey('payment_link_recovery_${_incomingLink.address}')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        ValueKey('payment_link_recovery_${_otherAccountLink.address}'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey('payment_link_recovery_${_unknownOriginLink.address}'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('enables manual redeem intake', (tester) async {
@@ -2373,6 +2524,42 @@ final _fundedRecovery = PaymentLinkRecoveryRecord(
   fundingTxids: 'funding-txid',
 );
 
+final _otherAccountLink = VizorPaymentLink(
+  network: 'main',
+  address: 'u1otheraccountpaymentlinkaddress',
+  amountZatoshi: BigInt.from(100000000),
+  mnemonic: List.filled(24, 'abandon').join(' '),
+  birthdayHeight: 3000000,
+  label: 'Payment link',
+  createdAt: DateTime.utc(2026, 8, 5),
+);
+
+final _otherAccountRecovery = PaymentLinkRecoveryRecord(
+  link: _otherAccountLink,
+  sourceAccountUuid: 'account-2',
+  state: PaymentLinkRecoveryState.funded,
+  updatedAt: DateTime.utc(2026, 8, 5),
+  fundingTxids: 'funding-txid-2',
+);
+
+final _unknownOriginRecovery = PaymentLinkRecoveryRecord(
+  link: _unknownOriginLink,
+  sourceAccountUuid: '',
+  state: PaymentLinkRecoveryState.funded,
+  updatedAt: DateTime.utc(2026, 8, 4),
+  fundingTxids: 'funding-txid-3',
+);
+
+final _unknownOriginLink = VizorPaymentLink(
+  network: 'main',
+  address: 'u1unknownoriginpaymentlinkaddress',
+  amountZatoshi: BigInt.from(200000000),
+  mnemonic: List.filled(24, 'abandon').join(' '),
+  birthdayHeight: 3000000,
+  label: 'Payment link',
+  createdAt: DateTime.utc(2026, 8, 4),
+);
+
 final _draftRecovery = PaymentLinkRecoveryRecord(
   link: _incomingLink,
   sourceAccountUuid: 'account-1',
@@ -2388,6 +2575,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     this.claimCompleters = const {},
     this.createdLoadGate,
     this.receivedLoadGate,
+    this.prepareClaimGate,
     this.receivedLoadFailures = 0,
     this.prepareClaimFailures = 0,
     this.prepareClaimError,
@@ -2404,6 +2592,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final Map<String, Completer<PaymentLinkClaimResult>> claimCompleters;
   final Completer<void>? createdLoadGate;
   final Completer<void>? receivedLoadGate;
+  final Completer<void>? prepareClaimGate;
   int receivedLoadFailures;
   int prepareClaimFailures;
   final Object? prepareClaimError;
@@ -2610,6 +2799,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   }) async {
     preparedLinks.add(link);
     allowLongSyncCalls.add(allowLongSync);
+    await prepareClaimGate?.future;
     final configuredError = prepareClaimError;
     if (configuredError != null) throw configuredError;
     if (prepareClaimFailures > 0) {
