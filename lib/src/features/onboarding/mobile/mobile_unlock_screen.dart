@@ -23,7 +23,6 @@ import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
 import '../../../services/device_owner_auth.dart';
-import '../../payment_links/services/payment_link_surface.dart';
 import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
@@ -230,8 +229,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         // lands on top of whichever destination that picks.
         final claimed = claimParkedPaymentUriAfterUnlock(ref);
         final hasPendingPaymentLink =
-            ref.read(paymentLinkIntakeProvider).pendingLink != null &&
-            paymentLinkSurfaceRegistered(GoRouter.of(context));
+            ref.read(paymentLinkIntakeProvider).pendingLink != null;
         context.go(hasPendingPaymentLink ? '/payment-links' : '/home');
         final pendingPrefill = claimed.prefill;
         final notice = claimed.notice;

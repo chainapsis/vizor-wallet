@@ -28,6 +28,7 @@ import '../src/features/about/screens/about_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
+import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
@@ -662,10 +663,50 @@ Widget buildSettingsMainUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(const NetworkPrivacyState.off());
 }
 
+/// Real mobile settings pinned to the top of the Account group.
+Widget buildMobileSettingsMainUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+      ),
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      constrainToDesignSize: false,
+      child: IgnorePointer(child: _MobileSettingsMainPreview()),
+    ),
+  );
+}
+
+class _MobileSettingsMainPreview extends StatelessWidget {
+  const _MobileSettingsMainPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppMobileShell(
+      body: const MobileSettingsScreen(),
+      tabBar: AppMobileTabBar(
+        items: _mobileHomeTabItems,
+        currentIndex: 3,
+        onSelect: (_) {},
+      ),
+    );
+  }
+}
+
 Widget buildSettingsSupportVizorUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(
     const NetworkPrivacyState.off(),
-    initialScrollOffset: 560,
+    initialScrollOffset: 820,
   );
 }
 
@@ -1165,8 +1206,30 @@ Widget buildMobileHomeDefaultUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileHomeGiftCardsUseCase(BuildContext context) {
+  final transactions = _previewGiftCardActivityTransactions();
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14312000000),
+      recentTransactions: transactions,
+    ),
+    giftCardActivityIndex: _previewGiftCardActivityIndex(),
+  );
+}
+
 Widget buildMobileActivityDefaultUseCase(BuildContext context) {
   final accountUuid = _accountsDesignState.activeAccountUuid;
+  final redeemedGiftCard = _giftCardActivityTx(
+    txidHex: 'preview-gift-card-redeemed',
+    kind: 'received',
+    seconds: 1800000011,
+  );
+  final createdGiftCard = _giftCardActivityTx(
+    txidHex: 'preview-gift-card-created',
+    kind: 'sent',
+    seconds: 1800000010,
+  );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -1180,20 +1243,65 @@ Widget buildMobileActivityDefaultUseCase(BuildContext context) {
           accountUuid,
           initialState: _homeSyncedState(
             orchardBalance: BigInt.from(14312000000),
-            recentTransactions: [_homeTx(1), _homeTx(2)],
+            recentTransactions: [redeemedGiftCard, createdGiftCard],
           ),
         ),
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => _previewGiftCardActivityIndex(),
+      ),
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
     ],
     child: _MobilePreviewFrame(
       child: MobileActivityScreen(
-        historyLoader: (_) async => [_homeTx(1), _homeTx(2), _homeTx(3)],
+        historyLoader: (_) async => [
+          redeemedGiftCard,
+          createdGiftCard,
+          _homeTx(3),
+        ],
       ),
     ),
+  );
+}
+
+List<rust_sync.TransactionInfo> _previewGiftCardActivityTransactions() {
+  return [
+    _giftCardActivityTx(
+      txidHex: 'preview-gift-card-redeemed',
+      kind: 'received',
+      seconds: 1800000011,
+    ),
+    _giftCardActivityTx(
+      txidHex: 'preview-gift-card-created',
+      kind: 'sent',
+      seconds: 1800000010,
+    ),
+  ];
+}
+
+GiftCardActivityIndex _previewGiftCardActivityIndex() {
+  return GiftCardActivityIndex(
+    createdTxids: const {'preview-gift-card-created'},
+    redeemedTxids: const {'preview-gift-card-redeemed'},
+    createdMetadataByTxid: {
+      'preview-gift-card-created': GiftCardActivityMetadata(
+        kind: GiftCardActivityKind.created,
+        amountZatoshi: BigInt.from(100000000),
+        artworkId: 'ruby',
+        message: 'Happy birthday!',
+      ),
+    },
+    redeemedMetadataByTxid: {
+      'preview-gift-card-redeemed': GiftCardActivityMetadata(
+        kind: GiftCardActivityKind.redeemed,
+        amountZatoshi: BigInt.from(100000000),
+        artworkId: 'crystal',
+        message: null,
+      ),
+    },
   );
 }
 
@@ -1321,6 +1429,18 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
       status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
     ),
     zecUsdPrice: 1200.12 / 143.23,
+  );
+}
+
+Widget buildDesktopHomeGiftCardsUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_323_000_000),
+      recentTransactions: _previewGiftCardActivityTransactions(),
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    giftCardActivityIndex: _previewGiftCardActivityIndex(),
   );
 }
 
@@ -2164,6 +2284,7 @@ Widget _buildMobileHomeUseCase({
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
   bool constrainToPreviewFrame = true,
+  GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
 }) {
   final harness = _MobileHomeHarness(
@@ -2197,6 +2318,9 @@ Widget _buildMobileHomeUseCase({
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => giftCardActivityIndex,
+      ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
@@ -2219,6 +2343,7 @@ Widget _buildDesktopHomeUseCase({
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
   double zecUsdPrice = 1.20012,
+  GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
 }) {
   return ProviderScope(
@@ -2247,6 +2372,9 @@ Widget _buildDesktopHomeUseCase({
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => giftCardActivityIndex,
+      ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
@@ -3911,6 +4039,27 @@ rust_sync.TransactionInfo _homeTx(int index) {
     displayAmount: BigInt.from(index) * BigInt.from(100000000),
     displayPool: 'shielded',
     createdTime: seconds,
+  );
+}
+
+rust_sync.TransactionInfo _giftCardActivityTx({
+  required String txidHex,
+  required String kind,
+  required int seconds,
+}) {
+  final timestamp = BigInt.from(seconds);
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000),
+    expiredUnmined: false,
+    accountBalanceDelta: 0,
+    fee: BigInt.zero,
+    blockTime: timestamp,
+    isTransparent: false,
+    txKind: kind,
+    displayAmount: BigInt.from(3_110_000_000),
+    displayPool: 'shielded',
+    createdTime: timestamp,
   );
 }
 

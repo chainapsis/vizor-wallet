@@ -42,6 +42,11 @@ class KeystoneShieldSigningOverlay extends ConsumerStatefulWidget {
       _KeystoneShieldSigningOverlayState();
 }
 
+// An inbound `zcash:` link must not scrim a prepared PCZT and a device
+// approval the user already gave. This overlay lives on `/home`, so the
+// location-based rules in `payment_uri_drain_policy.dart` cannot see it; the
+// hold is what makes the drain treat it as busy, for every phase until
+// dispose.
 class _KeystoneShieldSigningOverlayState
     extends ConsumerState<KeystoneShieldSigningOverlay>
     with PaymentUriBusySurfaceHoldMixin {

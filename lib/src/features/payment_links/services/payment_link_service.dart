@@ -17,6 +17,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../send/services/sapling_params.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/payment_link_claim_coordinator_provider.dart';
 import 'payment_link_received_store.dart';
 import 'payment_link_recovery_reconciler.dart';
 import 'payment_link_recovery_store.dart';
@@ -149,6 +150,19 @@ abstract interface class PaymentLinkOperations {
   );
 
   Future<void> discardClaimSession(PaymentLinkClaimSession session);
+
+  /// Keeps a checked Card the user left before claiming: it is persisted as
+  /// still-to-claim, and its scanned claim wallet is kept so the Received list
+  /// can reopen it without the bearer link.
+  Future<void> retainPendingClaim(PaymentLinkClaimSession session);
+
+  /// Keeps a Card the user checked but left before any claim session existed,
+  /// so a queued bearer link is not the only copy of it.
+  Future<void> keepReceivedLink(VizorPaymentLink link);
+
+  /// Drops a received Card that can never be claimed again, so neither the
+  /// list nor a relaunch keeps offering it.
+  Future<void> forgetReceivedLink(VizorPaymentLink link);
 }
 
 final paymentLinkOperationsProvider = Provider<PaymentLinkOperations>((ref) {
@@ -1110,6 +1124,35 @@ class PaymentLinkService implements PaymentLinkOperations {
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
     await _claimWallet.cancelClaimSync(session.link);
     await _claimWallet.deleteDb(session.directory);
+  }
+
+  @override
+  Future<void> keepReceivedLink(VizorPaymentLink link) {
+    // No claim wallet exists yet, so only the record is persisted; tracked so
+    // a wallet reset drains this write instead of racing it.
+    return _ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .trackRetention(() => _receivedStore.saveReady(link));
+  }
+
+  @override
+  Future<void> forgetReceivedLink(VizorPaymentLink link) {
+    // Tracked so a wallet reset drains this write instead of racing it.
+    return _ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .trackRetention(() => _receivedStore.remove(link.address));
+  }
+
+  @override
+  Future<void> retainPendingClaim(PaymentLinkClaimSession session) {
+    // Stop the scan but keep its database so the Card reopens already scanned;
+    // tracked so a wallet reset drains this write instead of racing it.
+    return _ref.read(paymentLinkClaimCoordinatorProvider).trackRetention(
+      () async {
+        await _claimWallet.cancelClaimSync(session.link);
+        await _receivedStore.saveReady(session.link);
+      },
+    );
   }
 
   Future<void> _refreshMainWalletAfterSend() async {

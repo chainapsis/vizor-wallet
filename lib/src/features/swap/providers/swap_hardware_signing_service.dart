@@ -294,6 +294,8 @@ Future<void> _rejectTexDepositForKeystone(
     address: address,
     network: networkName,
   );
+  // `isValid` already excludes a wrong-network address, which the deposit
+  // proposal refuses on its own; only a payable TEX recipient is blocked here.
   if (validation.isValid && validation.addressType == 'tex') {
     throw UnsupportedError('Keystone does not support TEX sends yet.');
   }

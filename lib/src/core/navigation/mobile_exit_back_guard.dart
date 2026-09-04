@@ -180,8 +180,13 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
   /// from home (so `_canPop()` already covers it), but a `zcash:` payment URI
   /// opens it with `go` as well, which makes `/send` the entire stack: the
   /// send screen's `PopScope` is then the only thing that can send the press
-  /// to its own step fallback instead of exiting the app.
-  static const _rootBackFlowPrefixes = ['/migration', '/send'];
+  /// to its own step fallback instead of exiting the app. `/payment-links`
+  /// is opened with `go` by an incoming Card link too, so it gets the same.
+  static const _rootBackFlowPrefixes = [
+    '/migration',
+    '/send',
+    '/payment-links',
+  ];
 
   static bool _routeLayerHandlesRootBack(String location) {
     final path = Uri.tryParse(location)?.path ?? location;

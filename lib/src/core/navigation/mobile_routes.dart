@@ -20,6 +20,8 @@ import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
 import '../../features/pay/screens/mobile/mobile_pay_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import '../../features/pay/models/pay_recent_recipients.dart';
+import '../../features/payment_links/providers/payment_link_cards_provider.dart';
+import '../../features/payment_links/screens/payment_links_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../../features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import '../../features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
@@ -184,6 +186,17 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
           ),
         );
       },
+    ),
+    GoRoute(
+      path: '/payment-links',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: PaymentLinksScreen(
+          initialCards: state.extra is PaymentLinkCardsSnapshot
+              ? state.extra! as PaymentLinkCardsSnapshot
+              : null,
+        ),
+      ),
     ),
     GoRoute(
       path: '/send/amount',

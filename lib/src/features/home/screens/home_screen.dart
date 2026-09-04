@@ -36,6 +36,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../activity/activity_feed_sections.dart';
+import '../../activity/gift_card_activity_index.dart';
 import '../../activity/activity_row_mapper.dart';
 import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
@@ -690,6 +691,10 @@ class _HomePaneState extends ConsumerState<_HomePane> {
 
   List<ActivityRowData> _activityRows(BuildContext context) {
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final giftCardActivityIndex = accountUuid == null
+        ? GiftCardActivityIndex.empty
+        : ref.watch(giftCardActivityIndexProvider(accountUuid)).value ??
+              GiftCardActivityIndex.empty;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final swapItems = accountUuid == null || !swapFeatureEnabled
         ? const <SwapActivityRowItem>[]
@@ -708,14 +713,10 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       if (widget.hasActivitySyncData)
         for (final tx in widget.sync.recentTransactions)
           if (!absorption.absorbs(tx))
-            _HomeActivityEntry(
-              timestamp: transactionActivityTimestamp(tx),
-              row: buildTransactionActivityRow(
-                context: context,
-                transaction: tx,
-                privacyModeEnabled: widget.privacyModeEnabled,
-                onTap: () => _openTransactionStatus(tx),
-              ),
+            _homeTransactionActivityEntry(
+              context,
+              tx,
+              giftCardActivityIndex.metadataFor(tx),
             ),
       for (final item in swapItems)
         _HomeActivityEntry(
@@ -734,8 +735,29 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         .toList(growable: false);
   }
 
-  void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
-    unawaited(_pushTransactionStatus(transaction));
+  _HomeActivityEntry _homeTransactionActivityEntry(
+    BuildContext context,
+    rust_sync.TransactionInfo transaction,
+    GiftCardActivityMetadata? giftCard,
+  ) {
+    return _HomeActivityEntry(
+      timestamp: transactionActivityTimestamp(transaction),
+      row: buildTransactionActivityRow(
+        context: context,
+        transaction: transaction,
+        giftCardKind: giftCard?.kind,
+        giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        privacyModeEnabled: widget.privacyModeEnabled,
+        onTap: () => _openTransactionStatus(transaction, giftCard: giftCard),
+      ),
+    );
+  }
+
+  void _openTransactionStatus(
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) {
+    unawaited(_pushTransactionStatus(transaction, giftCard: giftCard));
   }
 
   void _openSwapStatus(String intentId) {
@@ -748,10 +770,17 @@ class _HomePaneState extends ConsumerState<_HomePane> {
   }
 
   Future<void> _pushTransactionStatus(
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final detail = await _loadTransactionDetail(transaction);
     if (!mounted) return;
+    // The receipt takes this transaction and its Gift Card metadata as the
+    // active account's, so a switch during the load has to cancel the handoff.
+    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      return;
+    }
     context.push(
       Uri(
         path: '/activity/tx/${transaction.txidHex}',
@@ -762,6 +791,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
+        giftCard: giftCard,
       ),
     );
   }

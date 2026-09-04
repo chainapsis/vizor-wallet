@@ -73,6 +73,8 @@ class MobileSwapKeystoneSignScreen extends ConsumerStatefulWidget {
       _MobileSwapKeystoneSignScreenState();
 }
 
+// The whole screen is one signing session: a deposit PCZT QR the Keystone
+// camera reads, then the signed result scanned back. The hold covers both.
 class _MobileSwapKeystoneSignScreenState
     extends ConsumerState<MobileSwapKeystoneSignScreen>
     with PaymentUriBusySurfaceHoldMixin {

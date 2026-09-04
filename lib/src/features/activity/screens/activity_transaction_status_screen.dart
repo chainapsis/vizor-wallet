@@ -31,6 +31,9 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../send/widgets/send_recipient_resolver.dart';
 import '../../send/widgets/send_status_content_view.dart';
 import '../../send/widgets/send_verify_address_overlay.dart';
+import '../../payment_links/widgets/payment_link_gift_card.dart';
+import '../gift_card_activity_index.dart';
+import '../widgets/gift_card_activity_detail_view.dart';
 import '../widgets/received_receipt_view.dart';
 import '../widgets/shielded_receipt_view.dart';
 
@@ -40,12 +43,14 @@ class ActivityTransactionStatusArgs {
     this.txKind,
     this.initialTransaction,
     this.initialDetail,
+    this.giftCard,
   });
 
   final String txidHex;
   final String? txKind;
   final rust_sync.TransactionInfo? initialTransaction;
   final rust_sync.TransactionDetail? initialDetail;
+  final GiftCardActivityMetadata? giftCard;
 }
 
 class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
@@ -65,6 +70,7 @@ class _ActivityTransactionStatusScreenState
   bool _isLoading = false;
   String? _error;
   String? _activeAccountUuid;
+  String? _argsAccountUuid;
   bool _messageExpanded = false;
   String? _verifyAddress;
 
@@ -74,6 +80,7 @@ class _ActivityTransactionStatusScreenState
     _transaction = widget.args.initialTransaction;
     _detail = widget.args.initialDetail;
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    _argsAccountUuid = _activeAccountUuid;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -479,6 +486,40 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
+  Widget _giftCardContent(
+    rust_sync.TransactionInfo tx,
+    GiftCardActivityMetadata giftCard, {
+    required bool privacyModeEnabled,
+  }) {
+    final colors = context.colors;
+    final (statusText, statusIconName, statusColor) = tx.expiredUnmined
+        ? ('Failed', AppIcons.cancel, colors.text.destructive)
+        : tx.minedHeight == BigInt.zero
+        ? ('In progress', AppIcons.loader, colors.text.secondary)
+        : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
+    final amountText = hideAmountIfPrivacyMode(
+      formatZecAmount(giftCard.amountZatoshi),
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    return GiftCardActivityDetailView(
+      kind: giftCard.kind,
+      artwork: PaymentLinkCardArtwork.fromProtocolId(giftCard.artworkId),
+      amountText: amountText,
+      statusText: statusText,
+      statusIconName: statusIconName,
+      statusColor: statusColor,
+      message: giftCard.message,
+      messageExpanded: _messageExpanded,
+      onToggleMessage: giftCard.message?.trim().isNotEmpty == true
+          ? _toggleMessageExpanded
+          : null,
+      timestampText: _timestampText(tx),
+      txIdText: truncatedTxid(tx.txidHex),
+      feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
+      onTxIdPressed: () => unawaited(_openTransactionExplorer()),
+    );
+  }
+
   /// Fallback for the states without a dedicated redesigned receipt: a
   /// loading / not-found message when no transaction is available, and a
   /// minimal receipt (amount + status card, no counterparty) for an unknown
@@ -597,6 +638,19 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
+  /// A row tapped before the Gift Card index finished loading arrives with no
+  /// metadata, so the receipt resolves it here instead of staying generic.
+  GiftCardActivityMetadata? _resolvedGiftCard(
+    rust_sync.TransactionInfo? tx,
+    String? accountUuid,
+  ) {
+    if (tx == null || accountUuid == null) return null;
+    return ref
+        .watch(giftCardActivityIndexProvider(accountUuid))
+        .value
+        ?.metadataFor(tx);
+  }
+
   Widget _redesignedPane(Widget content) {
     return Positioned.fill(
       child: AppPaneScrollScaffold(
@@ -628,10 +682,28 @@ class _ActivityTransactionStatusScreenState
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ?? const [];
     final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final activeAccountUuid =
+        ref.watch(accountProvider).value?.activeAccountUuid ??
+        _activeAccountUuid;
+    // The args metadata was resolved for the account that was active when the
+    // row was tapped; under another account only that account's index counts.
+    final suppliedGiftCard =
+        _argsAccountUuid == null || _argsAccountUuid == activeAccountUuid
+        ? widget.args.giftCard
+        : null;
+    final giftCard =
+        suppliedGiftCard ?? _resolvedGiftCard(tx, activeAccountUuid);
 
     final sentRecipientAddress = detail?.primaryAddress?.trim();
     Widget? redesignedContent;
-    if (tx != null && (tx.txKind == 'received' || tx.txKind == 'receiving')) {
+    if (tx != null && giftCard != null) {
+      redesignedContent = _giftCardContent(
+        tx,
+        giftCard,
+        privacyModeEnabled: privacyModeEnabled,
+      );
+    } else if (tx != null &&
+        (tx.txKind == 'received' || tx.txKind == 'receiving')) {
       redesignedContent = _receivedContent(
         tx,
         detail,

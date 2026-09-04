@@ -4,12 +4,16 @@
 import 'package:flutter/widgets.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
+import '../src/core/layout/app_pane_scroll_scaffold.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/features/activity/models/activity_row_data.dart';
+import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/widgets/activity_feed.dart';
+import '../src/features/activity/widgets/gift_card_activity_detail_view.dart';
+import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 
 Widget buildActivityPageUseCase(BuildContext context) {
   return SizedBox(
@@ -78,6 +82,60 @@ Widget buildActivityPageUseCase(BuildContext context) {
   );
 }
 
+Widget buildCreatedGiftCardActivityDetailUseCase(BuildContext context) {
+  return _buildGiftCardActivityDetailUseCase(
+    context,
+    kind: GiftCardActivityKind.created,
+    artwork: PaymentLinkCardArtwork.ruby,
+  );
+}
+
+Widget buildRedeemedGiftCardActivityDetailUseCase(BuildContext context) {
+  return _buildGiftCardActivityDetailUseCase(
+    context,
+    kind: GiftCardActivityKind.redeemed,
+    artwork: PaymentLinkCardArtwork.crystal,
+  );
+}
+
+Widget _buildGiftCardActivityDetailUseCase(
+  BuildContext context, {
+  required GiftCardActivityKind kind,
+  required PaymentLinkCardArtwork artwork,
+}) {
+  return SizedBox(
+    width: 1080,
+    height: 720,
+    child: AppDesktopShell(
+      sidebar: const _ActivityUseCaseSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: AppPaneScrollScaffold(
+          toolbar: AppPaneToolbar(
+            leading: AppBackLink(label: 'Activity', minWidth: 60, onTap: _noop),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          child: GiftCardActivityDetailView(
+            kind: kind,
+            artwork: artwork,
+            amountText: '31.10',
+            supportingText: r'$142.23',
+            statusText: 'Completed',
+            statusIconName: AppIcons.checkCircle,
+            statusColor: context.colors.text.positiveStrong,
+            message: 'Hope this makes your day a little brighter!',
+            timestampText: '25 May, 13:30',
+            txIdText: 'f154...8143',
+            feeText: '0.0001 ZEC',
+            onTxIdPressed: _noop,
+            onToggleMessage: _noop,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 void _noop() {}
 
 List<ActivityFeedSectionData> _activitySections(BuildContext context) {
@@ -85,6 +143,25 @@ List<ActivityFeedSectionData> _activitySections(BuildContext context) {
     ActivityFeedSectionData(
       title: 'This week',
       rows: [
+        _activityRow(
+          context,
+          title: 'Redeemed a Gift Card',
+          iconName: AppIcons.giftCard,
+          subtitle: 'Shielded',
+          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          amountText: '+31.10 ZEC',
+          amountColor: context.colors.text.positiveStrong,
+          onTap: _noop,
+        ),
+        _activityRow(
+          context,
+          title: 'Created a Gift Card',
+          iconName: AppIcons.giftCard,
+          subtitle: 'Shielded',
+          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          amountText: '-31.10 ZEC',
+          onTap: _noop,
+        ),
         // Unconfirmed receive: loader glyph + progressive title, per the
         // Content Line pending variant.
         _activityRow(

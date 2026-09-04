@@ -67,10 +67,11 @@ import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/pay/screens/pay_screen.dart';
 import 'src/features/payment_links/models/vizor_payment_link.dart';
+import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
+import 'src/features/payment_links/screens/payment_links_screen.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
-import 'src/features/payment_links/services/payment_link_surface.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
@@ -866,6 +867,14 @@ Page<dynamic> buildDesktopSendReviewPage(
 List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
   GoRoute(
+    path: '/payment-links',
+    builder: (_, state) => PaymentLinksScreen(
+      initialCards: state.extra is PaymentLinkCardsSnapshot
+          ? state.extra! as PaymentLinkCardsSnapshot
+          : null,
+    ),
+  ),
+  GoRoute(
     path: '/migration',
     builder: (_, _) => const IronwoodMigrationEntryScreen(),
   ),
@@ -1002,6 +1011,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
                 txKind: txKind,
                 initialTransaction: extra.initialTransaction,
                 initialDetail: extra.initialDetail,
+                giftCard: extra.giftCard,
               )
             : extra;
         return ActivityTransactionStatusScreen(args: args);
@@ -1547,10 +1557,6 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       return;
     }
     _lastDeferredLink = null;
-    // The `/payment-links` surface is registered by the next PR in this
-    // stack; until then a valid link stays pending rather than opening the
-    // router's error page.
-    if (!_paymentLinksSurfaceRegistered) return;
     _navigationScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _navigationScheduled = false;
@@ -1576,9 +1582,6 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
 
   bool get _paymentRequestCardPresented =>
       ref.read(paymentRequestFlowProvider) != null;
-
-  bool get _paymentLinksSurfaceRegistered =>
-      paymentLinkSurfaceRegistered(widget.router);
 
   void _showDeferredPaymentLinkMessage(VizorPaymentLink link, String message) {
     if (identical(_lastDeferredLink, link)) return;

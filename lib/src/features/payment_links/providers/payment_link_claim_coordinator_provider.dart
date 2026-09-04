@@ -50,6 +50,7 @@ class PaymentLinkClaimCoordinator {
 
   final Ref _ref;
   final Map<String, Future<PaymentLinkClaimResult>> _submissions = {};
+  final Set<Future<void>> _retentions = {};
   Future<List<PaymentLinkReceivedRecord>>? _recoveryInFlight;
   Timer? _retryTimer;
   bool _enabled = false;
@@ -84,6 +85,25 @@ class PaymentLinkClaimCoordinator {
           if (_enabled && !_disposed) _refreshInBackground();
         });
     _submissions[claimId] = tracked;
+    return tracked;
+  }
+
+  /// A retention writes the received store, so a reset drains it; one started
+  /// after quiesce is skipped so it cannot resurrect a Card in the wiped wallet.
+  Future<void> trackRetention(Future<void> Function() run) {
+    if (_resetQuiesced) {
+      debugPrint(
+        '[zcash] PaymentLinkClaim: skipped retaining a claim during reset',
+      );
+      return Future<void>.value();
+    }
+    // Every retention is tracked on its own: retentions for one Card can
+    // overlap, and a reset has to outlast the slowest of them.
+    late final Future<void> tracked;
+    tracked = Future<void>.sync(
+      run,
+    ).whenComplete(() => _retentions.remove(tracked));
+    _retentions.add(tracked);
     return tracked;
   }
 
@@ -123,9 +143,12 @@ class PaymentLinkClaimCoordinator {
   Future<void> quiesceAndDrain() async {
     _resetQuiesced = true;
     pause();
-    while (_submissions.isNotEmpty || _recoveryInFlight != null) {
+    while (_submissions.isNotEmpty ||
+        _retentions.isNotEmpty ||
+        _recoveryInFlight != null) {
       final pending = <Future<Object?>>[
         ..._submissions.values,
+        ..._retentions,
         ?_recoveryInFlight,
       ];
       await Future.wait(pending.map(_ignoreOutcome));
