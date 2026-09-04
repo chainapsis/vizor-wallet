@@ -72,6 +72,7 @@ import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
+import 'src/features/send/widgets/payment_request_host.dart';
 import 'src/features/send/services/send_flow.dart'
     show
         SendReviewArgs,
@@ -1242,7 +1243,10 @@ class ZcashWalletApp extends ConsumerWidget {
                                   // and the keep-awake hosts above it. The
                                   // link intake that feeds it lives further
                                   // up, in `_IncomingLinkHost`.
-                                  child: child!,
+                                  child: PaymentRequestHost(
+                                    router: router,
+                                    child: child!,
+                                  ),
                                 ),
                               ),
                             ),
