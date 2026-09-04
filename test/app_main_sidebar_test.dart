@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -20,6 +21,7 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -52,6 +54,24 @@ void main() {
     expect(find.text('99% Syncing...'), findsOneWidget);
     expect(find.text('Synced'), findsNothing);
     expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
+  });
+
+  testWidgets('shows the Tor connecting label while the route bootstraps', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(percentage: 1.0, isSyncing: false),
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connecting,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(kSyncStatusConnectingToTorLabel), findsOneWidget);
+    expect(find.text('Vizor is synced'), findsNothing);
   });
 
   testWidgets('sidebar shows primary navigation', (tester) async {
@@ -1167,6 +1187,7 @@ Widget _sidebarHarness(
       const IronwoodPostMigrationState.unavailable(),
   IronwoodMigrationCoordinatorState migrationCoordinatorState =
       const IronwoodMigrationCoordinatorState(),
+  NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
 }) {
   final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
@@ -1260,6 +1281,9 @@ Widget _sidebarHarness(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(syncState)),
+      networkPrivacyProvider.overrideWith(
+        () => _FakeNetworkPrivacyNotifier(networkPrivacyState),
+      ),
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       paySelectedAssetStoreProvider.overrideWithValue(
         const _FakePaySelectedAssetStore(),
@@ -1559,4 +1583,13 @@ class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
 
   @override
   IronwoodMigrationCoordinatorState build() => initialState;
+}
+
+class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  _FakeNetworkPrivacyNotifier(this._state);
+
+  final NetworkPrivacyState _state;
+
+  @override
+  NetworkPrivacyState build() => _state;
 }

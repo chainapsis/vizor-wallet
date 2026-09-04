@@ -23,6 +23,7 @@ import '../../../core/widgets/review_wrap_card.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/zcash_explorer_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
@@ -233,6 +234,7 @@ class _ActivityTransactionStatusScreenState
       networkName: endpoint.networkName,
       txidHex: widget.args.txidHex,
       txidOrder: ZcashExplorerTxidOrder.protocol,
+      customTemplate: ref.read(zcashExplorerProvider),
     );
     if (launched || !mounted) return;
     copyTextWithToast(

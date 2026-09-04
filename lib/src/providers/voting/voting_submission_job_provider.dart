@@ -69,7 +69,7 @@ class VotingSubmissionJobState {
   final int keystoneBatchMessageCount;
   final int keystoneBatchTotalCount;
   final String? keystoneQrError;
-  final List<rust_wire.DraftVote>? pendingDraftVotes;
+  final List<VotingDraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
   final Map<int, int> pendingProposalOptionCounts;
   final bool pendingRecoveryWithoutDraft;
@@ -94,7 +94,7 @@ class VotingSubmissionJobState {
     int? keystoneBatchTotalCount,
     String? keystoneQrError,
     bool clearKeystoneQrError = false,
-    List<rust_wire.DraftVote>? pendingDraftVotes,
+    List<VotingDraftVote>? pendingDraftVotes,
     bool clearPendingDraftVotes = false,
     List<int>? pendingProposalIds,
     Map<int, int>? pendingProposalOptionCounts,
@@ -566,7 +566,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       final recoveredDraftVotes =
           userDraftVotes.isEmpty && _roundPlanHasNoOpenProposals(activeSession)
           ? _draftVotesFromRoundPlan(activeSession.roundPlan, proposals)
-          : const <rust_wire.DraftVote>[];
+          : const <VotingDraftVote>[];
       final draftVotes = userDraftVotes.isNotEmpty
           ? userDraftVotes
           : recoveredDraftVotes;
@@ -658,7 +658,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       String? softwareMnemonic;
-      if (!activeSession.isHardwareAccount && needsDelegationSigning) {
+      if (!activeSession.isHardwareAccount && needsDelegation) {
         final softwareSecret = await ref
             .read(accountProvider.notifier)
             .getSoftwareWalletSecretForAccount(key.accountUuid);
@@ -882,7 +882,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     VotingSessionNotifier sessionNotifier, {
     required VotingSessionKey key,
     required int generation,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
     required List<int> intentProposalIds,
     required Map<int, int> proposalOptionCounts,
     VotingSessionState? initialSession,
@@ -989,7 +989,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   void _storePendingKeystoneState({
     required VotingSessionKey key,
     required int generation,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
     required List<int> intentProposalIds,
     required Map<int, int> proposalOptionCounts,
     required bool pendingRecoveryWithoutDraft,
@@ -1129,10 +1129,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   void _pinLiveShareTracking(VotingSessionKey key) {
     final hasUnconfirmedShares =
-        _sessionForJob(
-          key,
-        )?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ??
-        false;
+        _sessionForJob(key)?.roundPlan?.hasUnconfirmedShares ?? false;
     if (!hasUnconfirmedShares) return;
     final sessionNotifier = ref.read(
       votingSubmissionSessionProvider(key).notifier,
@@ -1278,15 +1275,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (session == null) return false;
     return session.hasConfirmedVotingEligibility &&
         _hasCompletedSubmissionArtifacts(session) &&
-        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan);
+        hasConfirmedImmediateShare(session.roundPlan);
   }
 
   bool _hasExpiredUnconfirmedImmediateShare(
     VotingSessionState? session, {
     DateTime? now,
   }) {
-    if (session == null ||
-        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan)) {
+    if (session == null || hasConfirmedImmediateShare(session.roundPlan)) {
       return false;
     }
     final voteEnd = session.round?.voteEndTime;
@@ -1343,8 +1339,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     bool requireNoUnconfirmedShares = false,
   }) {
     if (requireNoUnconfirmedShares &&
-        (session?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ??
-            false)) {
+        (session?.roundPlan?.hasUnconfirmedShares ?? false)) {
       return false;
     }
     if (!_canCompleteSubmission(session)) return false;
@@ -1415,15 +1410,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _canRecoverWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      return _roundPlanHasNoOpenProposals(session) &&
-          roundPlan.nextSteps.any(_stepCanRecoverWithoutDraft);
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
-            resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
-            resumePlan.unconfirmedShareDelegations.isNotEmpty);
+    return roundPlan != null &&
+        _roundPlanHasNoOpenProposals(session) &&
+        roundPlan.hasRecoverableVoteOrShareWork;
   }
 
   bool _roundPlanHasNoOpenProposals(VotingSessionState session) {
@@ -1432,45 +1421,23 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   bool _hasRemainingVoteOrShareWork(VotingSessionState session) {
-    final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      for (final step in roundPlan.nextSteps) {
-        if (step.kind == 'confirm_share') {
-          if (roundPlan.blockingShareWork) return true;
-          continue;
-        }
-        if (_stepCanRecoverWithoutDraft(step)) return true;
-      }
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
-            resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
-            resumePlan.hasBlockingShareWork);
+    return session.roundPlan?.hasRemainingVoteOrShareWork ?? false;
   }
 
+  /// Whether delegation work can continue without ballot choices.
+  ///
+  /// A delegation already on the wire is driven to its chain outcome
+  /// regardless of the draft. A bundle that has not been sent yet is not: the
+  /// round's ballot comes first, so a round with any unsigned bundle left
+  /// still asks for a vote.
+  ///
+  /// The in-flight flag is read on its own rather than through
+  /// `needsDelegationSigning`, which the SDK also sets for an in-flight
+  /// delegation because advancing one re-signs it.
   bool _canPollDelegationWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      var hasSubmittedDelegation = false;
-      for (final step in roundPlan.nextSteps) {
-        if (step.kind == 'delegate') return false;
-        if (step.kind == 'poll_delegation') hasSubmittedDelegation = true;
-      }
-      if (hasSubmittedDelegation) return true;
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        resumePlan.submittedDelegationBundleIndexes.isNotEmpty &&
-        resumePlan.pendingDelegationBundleIndexes.isEmpty;
-  }
-
-  bool _stepCanRecoverWithoutDraft(rust_wire.NextStepView step) {
-    return step.kind == 'cast_vote' ||
-        step.kind == 'submit_vote' ||
-        step.kind == 'submit_shares' ||
-        step.kind == 'poll_vote' ||
-        step.kind == 'confirm_share';
+    return (roundPlan?.hasInFlightDelegation ?? false) &&
+        delegationBundleIndexesNeedingSigning(roundPlan).isEmpty;
   }
 
   bool _sessionNeedsDelegation(VotingSessionState? session) {
@@ -1478,11 +1445,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     final roundPlan = session.roundPlan;
     if (_planNeedsDelegation(roundPlan)) return true;
     if (roundPlan != null && roundPlanNeedsDraftSetup(roundPlan)) return true;
-    if (roundPlan != null) {
-      return _canPollDelegationWithoutDraft(session);
-    }
-    return session.resumePlan?.submittedDelegationBundleIndexes.isNotEmpty ??
-        false;
+    return roundPlan != null && _canPollDelegationWithoutDraft(session);
   }
 
   bool _sessionNeedsDelegationSubmission(VotingSessionState? session) {
@@ -1495,60 +1458,43 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _sessionNeedsDelegationSigning(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
-          roundPlanNeedsDraftSetup(roundPlan);
-    }
-    return session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
-        false;
+    return roundPlan != null &&
+        (roundPlan.needsDelegationSigning ||
+            roundPlanNeedsDraftSetup(roundPlan));
   }
 
   bool _sessionNeedsVotePolling(VotingSessionState? session) {
     if (session == null) return false;
-    if (_planNeedsVotePolling(session.roundPlan)) return true;
-    if (session.roundPlan != null) return false;
-    return session.resumePlan?.submittedVoteConfirmationKeys.isNotEmpty ??
-        false;
+    return _planNeedsVotePolling(session.roundPlan);
   }
 
   bool _planNeedsDelegation(rust_wire.RoundPlanView? roundPlan) {
-    return roundPlan?.nextSteps.any(
-          (step) => step.kind == 'delegate' || step.kind == 'poll_delegation',
-        ) ??
-        false;
+    if (roundPlan == null) return false;
+    return roundPlan.needsDelegationSigning || roundPlan.hasInFlightDelegation;
   }
 
   bool _planNeedsVotePolling(rust_wire.RoundPlanView? roundPlan) {
-    return roundPlan?.nextSteps.any(
-          (step) =>
-              step.kind == 'cast_vote' ||
-              step.kind == 'submit_vote' ||
-              step.kind == 'submit_shares' ||
-              step.kind == 'poll_vote',
-        ) ??
-        false;
+    return roundPlan?.needsVotePolling ?? false;
   }
 
-  List<rust_wire.DraftVote> _draftVotesFromRoundPlan(
+  List<VotingDraftVote> _draftVotesFromRoundPlan(
     rust_wire.RoundPlanView? roundPlan,
     List<VotingProposalView> proposals,
   ) {
     if (roundPlan == null) return const [];
     final choicesByProposal = <int, int>{};
     for (final step in roundPlan.nextSteps) {
-      if (step.kind != 'cast_vote') continue;
+      if (step.kind != rust_wire.NextStepKind.castVote) continue;
       choicesByProposal.putIfAbsent(step.proposalId, () => step.choice);
     }
     if (choicesByProposal.isEmpty) return const [];
     return [
       for (final proposal in proposals)
         if (choicesByProposal[proposal.id] != null)
-          rust_wire.DraftVote(
+          VotingDraftVote(
             proposalId: proposal.id,
             choice: choicesByProposal[proposal.id]!,
             numOptions: proposal.options.length,
-            vcTreePosition: BigInt.zero,
-            singleShare: false,
           ),
     ];
   }

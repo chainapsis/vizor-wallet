@@ -4,4 +4,4 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 compose down -v --remove-orphans || true
-rm -rf "$STATE_DIR"
+clear_regtest_state

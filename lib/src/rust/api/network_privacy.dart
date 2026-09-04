@@ -17,6 +17,14 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 void beginNetworkPrivacyEnable() =>
     RustLib.instance.api.crateApiNetworkPrivacyBeginNetworkPrivacyEnable();
 
+/// Publishes a failed enable when Dart gives up between
+/// [begin_network_privacy_enable] and [configure_network_privacy] (for example
+/// the direct drain did not finish). The route stays Tor-desired and
+/// fail-closed; this only turns "still connecting" into a definite failure so
+/// requests stop waiting for a bootstrap that is not running.
+void failNetworkPrivacyEnable() =>
+    RustLib.instance.api.crateApiNetworkPrivacyFailNetworkPrivacyEnable();
+
 /// Waits until direct tonic connections cancelled by
 /// [begin_network_privacy_enable] have released their sockets.
 Future<void> quiesceNetworkPrivacyDirectRequests() => RustLib.instance.api
@@ -61,6 +69,10 @@ Future<void> stopTorUpdateRelay() =>
 /// Makes a GET request on a fresh Tor circuit. Dart calls this only after its
 /// process-wide route check has selected Tor; direct requests stay in Dart so
 /// existing test injection and platform behaviour remain unchanged.
+///
+/// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
+/// Tor is still bootstrapping waits for the route first, under the bootstrap's
+/// own deadline, and the caller's cancellation covers that wait.
 Future<NetworkHttpResponse> torHttpGet({
   required String url,
   required List<NetworkHttpHeader> headers,
@@ -75,6 +87,10 @@ Future<NetworkHttpResponse> torHttpGet({
 
 /// Makes a POST request on a fresh Tor circuit. Every app-owned HTTP call is
 /// isolated from wallet gRPC and from other HTTP destinations.
+///
+/// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
+/// Tor is still bootstrapping waits for the route first, under the bootstrap's
+/// own deadline, and the caller's cancellation covers that wait.
 Future<NetworkHttpResponse> torHttpPost({
   required String url,
   required List<NetworkHttpHeader> headers,

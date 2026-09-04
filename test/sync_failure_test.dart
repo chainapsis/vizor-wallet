@@ -39,6 +39,37 @@ void main() {
     expect(failure.kind, SyncFailureKind.parseFatal);
   });
 
+  test('classifies a failed Tor route as a paused state with a Tor retry', () {
+    for (final raw in const [
+      'network: network privacy blocked lightwalletd: Tor connection failed',
+      'Tor could not connect. Check your internet connection and try again.',
+      'network: Tor is enabled but unavailable',
+    ]) {
+      final failure = classifySyncFailure(raw);
+
+      expect(failure.kind, SyncFailureKind.torUnavailable, reason: raw);
+      expect(failure.retriesTorRoute, isTrue, reason: raw);
+      expect(failure.showSettingsAction, isFalse, reason: raw);
+      expect(failure.actionLabel, 'Retry', reason: raw);
+      expect(
+        failure.userMessage,
+        "Tor couldn't connect. Retry, or turn Tor off in Settings.",
+      );
+    }
+  });
+
+  test('a Tor bootstrap the user abandoned stays a transient failure', () {
+    for (final raw in const [
+      'network: Tor gRPC connect failed: Tor was turned off while it was connecting',
+      'network: Tor wait cancelled',
+    ]) {
+      final failure = classifySyncFailure(raw);
+
+      expect(failure.kind, SyncFailureKind.network, reason: raw);
+      expect(failure.retriesTorRoute, isFalse, reason: raw);
+    }
+  });
+
   test('classifies chain recovery failures', () {
     final failure = classifySyncFailure(
       'chain continuity broken at height 123: PrevHashMismatch',

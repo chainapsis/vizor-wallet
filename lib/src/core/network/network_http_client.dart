@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../../rust/api/network_privacy.dart' as rust_network_privacy;
+import '../../rust/network_privacy.dart' as rust_types;
 
 class NetworkHttpResponse {
   const NetworkHttpResponse({
@@ -226,18 +227,25 @@ class NetworkHttpClient {
   NetworkHttpClient({
     HttpClient? directClient,
     bool Function()? torDesired,
+    bool Function()? torBootstrapping,
     TorHttpBridge? torBridge,
   }) : _directClient = directClient ?? HttpClient(),
        _torDesired = torDesired ?? rust_network_privacy.isTorEnabled,
+       _torBootstrapping = torBootstrapping ?? _rustTorBootstrapping,
        _torBridge = torBridge ?? const RustTorHttpBridge() {
     _instances.add(this);
   }
+
+  static bool _rustTorBootstrapping() =>
+      rust_network_privacy.getNetworkPrivacyStatus() ==
+      rust_types.NetworkPrivacyStatus.bootstrapping;
 
   static final Set<NetworkHttpClient> _instances = {};
   static bool _directRequestsBlocked = false;
 
   HttpClient _directClient;
   final bool Function() _torDesired;
+  final bool Function() _torBootstrapping;
   final TorHttpBridge _torBridge;
   var _activeDirectRequests = 0;
   var _directClientNeedsReset = false;
@@ -384,7 +392,13 @@ class NetworkHttpClient {
     var currentUri = initialUri;
     var currentHeaders = Map<String, String>.of(headers);
     var currentBody = bodyBytes;
-    final stopwatch = Stopwatch()..start();
+    // Every hop is charged to the redirect budget, except a first hop that
+    // is about to park inside Rust waiting for a Tor bootstrap: that wait is
+    // outside the per-request timeout too, and billing it would leave a
+    // redirect no budget. Dart cannot see when the wait ends, so the clock
+    // then starts at the first response.
+    final stopwatch = Stopwatch();
+    if (!_torBootstrapping()) stopwatch.start();
     for (var redirectCount = 0; redirectCount <= 5; redirectCount++) {
       final remainingTimeout = _remainingTimeout(timeout, stopwatch);
       final response = destinationPath != null
@@ -407,6 +421,7 @@ class NetworkHttpClient {
               timeout: remainingTimeout,
               cancelSignal: cancelSignal,
             );
+      if (!stopwatch.isRunning) stopwatch.start();
       final location = response.header(HttpHeaders.locationHeader);
       if (!_isRedirect(response.statusCode) || location == null) {
         return response;

@@ -54,6 +54,8 @@ static NEXT_DIRECT_IO_ID: AtomicU64 = AtomicU64::new(1);
 static ACTIVE_DIRECT_IO: AtomicUsize = AtomicUsize::new(0);
 static DIRECT_IO_WAKERS: OnceLock<Mutex<HashMap<u64, Waker>>> = OnceLock::new();
 static DIRECT_IO_DRAINED: OnceLock<tokio::sync::Notify> = OnceLock::new();
+/// Signalled after every published change to [`TOR_STATUS`] or the client slot.
+static TOR_STATUS_CHANGED: OnceLock<tokio::sync::Notify> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NetworkPrivacyStatus {
@@ -111,6 +113,7 @@ pub fn begin_tor_enable() {
     *client_slot()
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    notify_tor_status_changed();
     log::info!("network privacy: Tor requested; direct requests blocked");
 }
 
@@ -134,6 +137,16 @@ fn direct_io_wakers() -> &'static Mutex<HashMap<u64, Waker>> {
 
 fn direct_io_drained() -> &'static tokio::sync::Notify {
     DIRECT_IO_DRAINED.get_or_init(tokio::sync::Notify::new)
+}
+
+fn tor_status_changed() -> &'static tokio::sync::Notify {
+    TOR_STATUS_CHANGED.get_or_init(tokio::sync::Notify::new)
+}
+
+/// Called after the status is published and the client-slot lock is released,
+/// so a woken waiter reads the state that woke it.
+fn notify_tor_status_changed() {
+    tor_status_changed().notify_waiters();
 }
 
 pub(crate) async fn wait_for_direct_connections_to_close(timeout: Duration) -> Result<(), String> {
@@ -380,6 +393,7 @@ async fn bootstrap_tor(
         return Ok(NetworkPrivacyStatus::Ready);
     }
     TOR_STATUS.store(STATUS_BOOTSTRAPPING, Ordering::Release);
+    notify_tor_status_changed();
 
     if let Err(error) = tokio::fs::create_dir_all(tor_directory).await {
         set_tor_failed();
@@ -463,6 +477,7 @@ async fn install_bootstrapped_client<E: Display>(
         *slot = Some(client);
         TOR_STATUS.store(STATUS_READY, Ordering::Release);
     }
+    notify_tor_status_changed();
     log::info!("network privacy: Tor is ready");
     Ok(NetworkPrivacyStatus::Ready)
 }
@@ -524,18 +539,51 @@ pub fn disable_tor() {
     TOR_STATUS.store(STATUS_DIRECT, Ordering::Release);
     *slot = None;
     drop(slot);
+    notify_tor_status_changed();
     log::info!("network privacy: direct route enabled");
 }
 
+/// Publishes a failed enable when the caller abandons the switch between
+/// [`begin_tor_enable`] and the bootstrap (failed drain, refused transport
+/// restart). Otherwise the status stays `Bootstrapping` with nothing running
+/// and every waiter sits until the deadline.
+pub fn fail_tor_enable() {
+    set_tor_failed();
+    log::info!("network privacy: Tor enable abandoned before bootstrap; requests fail closed");
+}
+
 fn set_tor_failed() {
-    let mut slot = client_slot()
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    *slot = None;
-    // Same lock as the publish and the disable: a route that went direct while
-    // this bootstrap was failing keeps its own status.
-    if is_tor_desired() {
-        TOR_STATUS.store(STATUS_FAILED, Ordering::Release);
+    {
+        let mut slot = client_slot()
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *slot = None;
+        // Same lock as the publish and the disable: a route that went direct
+        // while this bootstrap was failing keeps its own status.
+        if is_tor_desired() {
+            TOR_STATUS.store(STATUS_FAILED, Ordering::Release);
+        }
+    }
+    notify_tor_status_changed();
+}
+
+/// Why the route policy is refusing a request. Only `Bootstrapping` can be
+/// waited out. Dart matches on the `Display` strings, so they must not drift.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RouteBlocked {
+    Bootstrapping,
+    Failed,
+    /// Tor is the route, but there is no client and no bootstrap behind it.
+    Unavailable,
+}
+
+impl Display for RouteBlocked {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Bootstrapping => "Tor is still connecting",
+            Self::Failed => "Tor connection failed",
+            Self::Unavailable => "Tor is enabled but unavailable",
+        })
     }
 }
 
@@ -544,15 +592,15 @@ fn route_decision(
     tor_status: NetworkPrivacyStatus,
     has_client: bool,
     isolated: bool,
-) -> Result<RouteDecision, &'static str> {
+) -> Result<RouteDecision, RouteBlocked> {
     if !tor_desired {
         return Ok(RouteDecision::Direct);
     }
     if tor_status != NetworkPrivacyStatus::Ready || !has_client {
         return Err(match tor_status {
-            NetworkPrivacyStatus::Bootstrapping => "Tor is still connecting",
-            NetworkPrivacyStatus::Failed => "Tor connection failed",
-            _ => "Tor is enabled but unavailable",
+            NetworkPrivacyStatus::Bootstrapping => RouteBlocked::Bootstrapping,
+            NetworkPrivacyStatus::Failed => RouteBlocked::Failed,
+            _ => RouteBlocked::Unavailable,
         });
     }
     Ok(if isolated {
@@ -562,16 +610,71 @@ fn route_decision(
     })
 }
 
-pub(crate) fn tor_client_for_route(isolated: bool) -> Result<Option<TorClient>, String> {
+/// The route as it stands right now, without waiting for a bootstrap in
+/// flight. Request paths should use [`tor_client_for_route`] instead.
+pub(crate) fn try_tor_client_for_route(isolated: bool) -> Result<Option<TorClient>, RouteBlocked> {
     let client = client_slot()
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
-    match route_decision(is_tor_desired(), status(), client.is_some(), isolated) {
-        Ok(RouteDecision::Direct) => Ok(None),
-        Ok(RouteDecision::TorShared) => Ok(client),
-        Ok(RouteDecision::TorIsolated) => Ok(client.map(|client| client.isolated_client())),
-        Err(error) => Err(error.to_string()),
+    match route_decision(is_tor_desired(), status(), client.is_some(), isolated)? {
+        RouteDecision::Direct => Ok(None),
+        RouteDecision::TorShared => Ok(client),
+        RouteDecision::TorIsolated => Ok(client.map(|client| client.isolated_client())),
+    }
+}
+
+/// Resolves the route for one request, waiting out a bootstrap in flight.
+///
+/// Requests made in the second or so after launch used to be refused outright
+/// (the swap flag fetch, the first lightwalletd channel), and their callers
+/// never asked again. `Bootstrapping` therefore waits, bounded by
+/// [`TOR_BOOTSTRAP_TIMEOUT`] and interruptible through `cancelled` (polled
+/// every tick; pass whatever flag the caller already stops on, or `|| false`).
+/// `Failed`, `Unavailable` and a switch to direct resolve immediately, and
+/// nothing ever falls back to clearnet. A caller that abandons an enable
+/// before the bootstrap must publish [`fail_tor_enable`] or waiters sit until
+/// the deadline.
+pub(crate) async fn tor_client_for_route(
+    isolated: bool,
+    cancelled: impl Fn() -> bool,
+) -> Result<Option<TorClient>, String> {
+    tor_client_for_route_with_deadline(isolated, TOR_BOOTSTRAP_TIMEOUT, cancelled).await
+}
+
+const ROUTE_WAIT_CANCELLED_MESSAGE: &str = "Route wait cancelled";
+
+async fn tor_client_for_route_with_deadline(
+    isolated: bool,
+    deadline: Duration,
+    cancelled: impl Fn() -> bool,
+) -> Result<Option<TorClient>, String> {
+    let expires_at = tokio::time::Instant::now() + deadline;
+    loop {
+        // Enabled before the probe so a status published in between is not a
+        // missed wakeup; the tick below bounds whatever window is left.
+        let status_changed = tor_status_changed().notified();
+        tokio::pin!(status_changed);
+        status_changed.as_mut().enable();
+
+        // Cancellation wins ties: a sync stopped as Tor came up must not open
+        // a connection its stopper is already waiting out.
+        if cancelled() {
+            return Err(ROUTE_WAIT_CANCELLED_MESSAGE.to_string());
+        }
+        match try_tor_client_for_route(isolated) {
+            Ok(client) => return Ok(client),
+            Err(RouteBlocked::Bootstrapping) => {}
+            Err(blocked) => return Err(blocked.to_string()),
+        }
+        if tokio::time::Instant::now() >= expires_at {
+            return Err(TOR_BOOTSTRAP_TIMEOUT_MESSAGE.to_string());
+        }
+        // The tick bounds cancellation and any missed wakeup.
+        tokio::select! {
+            _ = status_changed.as_mut() => {}
+            _ = tokio::time::sleep(BOOTSTRAP_ROUTE_POLL_INTERVAL) => {}
+        }
     }
 }
 
@@ -616,16 +719,18 @@ pub(crate) mod test_route_policy {
 #[cfg(test)]
 mod tests {
     use std::{
+        sync::atomic::{AtomicBool, Ordering},
         task::{Context, Poll, Waker},
         time::Duration,
     };
 
     use super::{
         await_tor_bootstrap, begin_tor_enable, bootstrap_tor, cancel_direct_connections,
-        client_slot, disable_tor, init_lock, install_bootstrapped_client, is_tor_desired,
-        pending_dormant_mode, route_decision, set_tor_dormant, set_tor_failed, status,
-        test_route_policy::lock_route_policy, tor_client_for_route, DirectRouteIo, DormantMode,
-        NetworkPrivacyStatus, RouteDecision, TorClient, BOOTSTRAP_ABANDONED_MESSAGE,
+        client_slot, disable_tor, fail_tor_enable, init_lock, install_bootstrapped_client,
+        is_tor_desired, pending_dormant_mode, route_decision, set_tor_dormant, set_tor_failed,
+        status, test_route_policy::lock_route_policy, tor_client_for_route,
+        tor_client_for_route_with_deadline, try_tor_client_for_route, DirectRouteIo, DormantMode,
+        NetworkPrivacyStatus, RouteBlocked, RouteDecision, TorClient, BOOTSTRAP_ABANDONED_MESSAGE,
         TOR_BOOTSTRAP_TIMEOUT_MESSAGE,
     };
 
@@ -660,11 +765,26 @@ mod tests {
     fn tor_bootstrap_and_failure_are_fail_closed() {
         assert_eq!(
             route_decision(true, NetworkPrivacyStatus::Bootstrapping, false, false),
-            Err("Tor is still connecting")
+            Err(RouteBlocked::Bootstrapping)
         );
         assert_eq!(
             route_decision(true, NetworkPrivacyStatus::Failed, false, false),
-            Err("Tor connection failed")
+            Err(RouteBlocked::Failed)
+        );
+    }
+
+    /// Dart tells "Tor is coming up" from "Tor is broken" by matching these
+    /// strings, so the enum may be reshaped but the wording may not drift.
+    #[test]
+    fn blocked_routes_keep_the_messages_the_app_matches_on() {
+        assert_eq!(
+            RouteBlocked::Bootstrapping.to_string(),
+            "Tor is still connecting"
+        );
+        assert_eq!(RouteBlocked::Failed.to_string(), "Tor connection failed");
+        assert_eq!(
+            RouteBlocked::Unavailable.to_string(),
+            "Tor is enabled but unavailable"
         );
     }
 
@@ -684,7 +804,7 @@ mod tests {
     fn ready_status_without_a_client_is_still_fail_closed() {
         assert_eq!(
             route_decision(true, NetworkPrivacyStatus::Ready, false, false),
-            Err("Tor is enabled but unavailable")
+            Err(RouteBlocked::Unavailable)
         );
     }
 
@@ -799,7 +919,7 @@ mod tests {
         assert_eq!(result.unwrap_err(), TOR_BOOTSTRAP_TIMEOUT_MESSAGE);
         assert!(is_tor_desired());
         assert_eq!(status(), NetworkPrivacyStatus::Failed);
-        assert!(tor_client_for_route(false).is_err());
+        assert!(try_tor_client_for_route(false).is_err());
     }
 
     #[tokio::test]
@@ -838,7 +958,148 @@ mod tests {
         // Running out of time is still not a reason to reach the network another
         // way: the route stays Tor and every policy-aware client keeps refusing.
         assert!(is_tor_desired());
-        assert!(tor_client_for_route(false).is_err());
+        assert!(try_tor_client_for_route(false).is_err());
+    }
+
+    /// A request that arrives during the seconds Tor takes to come up is the
+    /// case this whole wait exists for: the swap feature flag was fetched 0.12s
+    /// into launch and rejected at 0.13s, one second before Tor was ready.
+    #[tokio::test]
+    async fn a_request_made_mid_bootstrap_waits_for_the_route_to_resolve() {
+        let _policy = lock_route_policy();
+        begin_tor_enable();
+
+        let switching_to_direct = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            disable_tor();
+        });
+        let started = std::time::Instant::now();
+        let client = tor_client_for_route(false, || false)
+            .await
+            .expect("a resolved route");
+        let waited = started.elapsed();
+        switching_to_direct.await.expect("the disable task");
+
+        assert!(client.is_none(), "the direct route needs no Tor client");
+        assert!(
+            waited < Duration::from_secs(1),
+            "the wait outlived the route change it was waiting for: {waited:?}"
+        );
+    }
+
+    /// The abandon path exists precisely so waiters stop: without a published
+    /// failure they would sit here for the bootstrap's full deadline.
+    #[tokio::test]
+    async fn a_waiting_request_stops_when_the_enable_is_abandoned() {
+        let _policy = lock_route_policy();
+        begin_tor_enable();
+
+        let abandoning = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            fail_tor_enable();
+        });
+        let started = std::time::Instant::now();
+        let error = tor_client_for_route(false, || false)
+            .await
+            // `TorClient` is not `Debug`, so the success side is reduced to
+            // something the assertion can print.
+            .map(|client| client.is_some())
+            .expect_err("an abandoned enable must not resolve to a route");
+        let waited = started.elapsed();
+        abandoning.await.expect("the abandon task");
+
+        assert!(error.contains("Tor connection failed"), "{error}");
+        assert!(
+            waited < Duration::from_secs(1),
+            "a published failure did not wake the waiter: {waited:?}"
+        );
+    }
+
+    /// A sync the user stopped must leave the wait, not hold it for the
+    /// bootstrap's deadline.
+    #[tokio::test]
+    async fn a_cancelled_caller_stops_waiting_for_the_bootstrap() {
+        let _policy = lock_route_policy();
+        begin_tor_enable();
+
+        let cancelled = std::sync::Arc::new(AtomicBool::new(false));
+        let flipping = {
+            let cancelled = cancelled.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                cancelled.store(true, Ordering::Release);
+            })
+        };
+        let started = std::time::Instant::now();
+        let error = tor_client_for_route(false, || cancelled.load(Ordering::Acquire))
+            .await
+            .map(|client| client.is_some())
+            .expect_err("a cancelled caller must not be handed a route");
+        let waited = started.elapsed();
+        flipping.await.expect("the cancel task");
+
+        assert!(error.contains("cancelled"), "{error}");
+        assert!(
+            waited < Duration::from_secs(1),
+            "cancellation was not observed within a poll tick: {waited:?}"
+        );
+    }
+
+    /// A caller that is already cancelled gets no route even when one is
+    /// ready: otherwise a sync stopped in the same instant Tor came up would
+    /// open a connection its stopper is already waiting out.
+    #[tokio::test]
+    async fn a_cancelled_caller_is_refused_a_route_that_is_already_resolved() {
+        let _policy = lock_route_policy();
+        disable_tor();
+
+        let error = tor_client_for_route(false, || true)
+            .await
+            .map(|client| client.is_some())
+            .expect_err("a cancelled caller must not be handed a route");
+
+        assert!(error.contains("cancelled"), "{error}");
+    }
+
+    /// Running out of patience is not a reason to reach the network another
+    /// way: the wait ends in the bootstrap's own failure message.
+    #[tokio::test]
+    async fn a_bootstrap_that_never_resolves_ends_the_wait_at_the_deadline() {
+        let _policy = lock_route_policy();
+        begin_tor_enable();
+
+        let error = tor_client_for_route_with_deadline(false, Duration::from_millis(50), || false)
+            .await
+            .map(|client| client.is_some())
+            .expect_err("an unresolved bootstrap must not resolve to a route");
+
+        assert_eq!(error, TOR_BOOTSTRAP_TIMEOUT_MESSAGE);
+        assert!(is_tor_desired());
+    }
+
+    /// Only `Bootstrapping` is a state waiting can improve. A resolved failure
+    /// answers immediately, so a caller is never parked on a route that is not
+    /// coming back.
+    #[tokio::test]
+    async fn a_failed_route_answers_without_waiting() {
+        let _policy = lock_route_policy();
+        begin_tor_enable();
+        set_tor_failed();
+
+        let started = std::time::Instant::now();
+        let error = tor_client_for_route(false, || false)
+            .await
+            // `TorClient` is not `Debug`, so the success side is reduced to
+            // something the assertion can print.
+            .map(|client| client.is_some())
+            .expect_err("a failed route must not resolve to a route");
+        let waited = started.elapsed();
+
+        assert!(error.contains("Tor connection failed"), "{error}");
+        assert!(
+            waited < Duration::from_millis(100),
+            "a resolved failure waited anyway: {waited:?}"
+        );
     }
 
     #[tokio::test]

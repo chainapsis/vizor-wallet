@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// Voting PCZT request that should be signed by an external signer.
 class KeystoneSigningRequest {
-  /// Exact full PCZT persisted by the delegation setup lifecycle.
+  /// Full setup output persisted for later proof and submission assembly.
   final Uint8List pcztBytes;
 
   /// Redacted PCZT bytes safe to send to the signer role.

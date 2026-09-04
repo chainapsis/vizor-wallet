@@ -31,6 +31,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -1083,6 +1084,77 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
   });
 
+  testWidgets('home desktop retries the Tor route from a Tor failure notice', (
+    tester,
+  ) async {
+    final privacy = _FakeNetworkPrivacyNotifier();
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        networkPrivacy: privacy,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          failure: classifySyncFailure(
+            'network: network privacy blocked lightwalletd: '
+            'Tor connection failed',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text("Tor couldn't connect. Retry, or turn Tor off in Settings."),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+
+    expect(privacy.retryCalls, 1);
+  });
+
+  testWidgets('home desktop does not re-run a pending Tor disable from Retry', (
+    tester,
+  ) async {
+    // A disable that failed before the runtime switched leaves Tor running
+    // with a direct target pending; `retry()` would retry the disable, not
+    // the connection the notice is about, so Retry falls back to the sync.
+    final privacy = _FakeNetworkPrivacyNotifier(
+      initialState: const NetworkPrivacyState(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.failed,
+        targetTorEnabled: false,
+      ),
+    );
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        networkPrivacy: privacy,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          failure: classifySyncFailure(
+            'network: network privacy blocked lightwalletd: '
+            'Tor connection failed',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+
+    expect(privacy.retryCalls, 0);
+    final sync =
+        ProviderScope.containerOf(
+              tester.element(find.byType(HomeScreen)),
+            ).read(syncProvider.notifier)
+            as FakeSyncNotifier;
+    expect(sync.startSyncs, 1);
+  });
+
   testWidgets('home desktop scrolls notice and activity together', (
     tester,
   ) async {
@@ -1304,9 +1376,12 @@ Widget _appHarness(
   IronwoodMigrationFlowData? ironwoodMigrationFlowData,
   OrchardMigrationStatusGetter? migrationStatusGetter,
   bool failIfMigrationResolverLoads = false,
+  _FakeNetworkPrivacyNotifier? networkPrivacy,
 }) {
   return ProviderScope(
     overrides: [
+      if (networkPrivacy != null)
+        networkPrivacyProvider.overrideWith(() => networkPrivacy),
       zecMarketDataSourceProvider.overrideWithValue(
         _FakeMarketDataSource(priceChange24hPct),
       ),
@@ -1560,5 +1635,27 @@ class _FakeSwapProvider implements SwapProvider, SwapPricingProvider {
     String? nearSenderAccount,
   }) {
     throw UnimplementedError();
+  }
+}
+
+/// Stands in for the live route so the notice's Retry can be observed
+/// without a Tor bootstrap: the real `retry()` would call `setTorEnabled`.
+class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  _FakeNetworkPrivacyNotifier({
+    this.initialState = const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.failed,
+    ),
+  });
+
+  final NetworkPrivacyState initialState;
+  var retryCalls = 0;
+
+  @override
+  NetworkPrivacyState build() => initialState;
+
+  @override
+  Future<void> retry() async {
+    retryCalls++;
   }
 }

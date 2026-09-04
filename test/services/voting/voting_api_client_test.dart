@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/voting/voting_api_client.dart';
 import 'package:zcash_wallet/src/services/voting/voting_retry.dart';
@@ -29,11 +27,6 @@ void main() {
             {'vote_round_id': encodedRoundId},
           ],
         },
-        '/shielded-vote/v1/delegate-vote': {
-          'tx_hash': 'delegation-tx',
-          'code': 0,
-          'log': '',
-        },
       },
     );
     final client = VotingApiClient(
@@ -44,21 +37,15 @@ void main() {
     final rounds = await client.listRounds();
     final status = await client.getRoundStatus(encodedRoundId);
     final tally = await client.getRoundTally(encodedRoundId);
-    final delegation = await client.submitDelegation(
-      submission: {'vote_round_id': encodedRoundId, 'proof': 'AQ=='},
-    );
 
     expect(http.requests.map((request) => request.uri.path), [
       '/shielded-vote/v1/rounds',
       '/shielded-vote/v1/round/$hexRoundId',
       '/shielded-vote/v1/tally-results/$hexRoundId',
-      '/shielded-vote/v1/delegate-vote',
     ]);
     expect(rounds.single.roundId, hexRoundId);
     expect(status.roundId, hexRoundId);
     expect(tally.roundId, hexRoundId);
-    expect(delegation.txHash, 'delegation-tx');
-    expect(delegation.code, 0);
   });
 
   test(
@@ -412,171 +399,6 @@ void main() {
     );
   });
 
-  test('fetches transaction confirmation events', () async {
-    final http = FakeVotingHttpClient(
-      responses: {
-        '/shielded-vote/v1/tx/delegation-tx': {
-          'height': '12',
-          'code': 0,
-          'log': '',
-          'events': [
-            {
-              'type': 'delegate_vote',
-              'attributes': [
-                {'key': 'leaf_index', 'value': '3'},
-              ],
-            },
-          ],
-        },
-      },
-    );
-    final client = VotingApiClient(
-      baseUrl: Uri.parse('https://voting.valargroup.org'),
-      httpClient: http,
-    );
-
-    final confirmation = await client.getTxConfirmation('delegation-tx');
-
-    expect(confirmation?.height, 12);
-    expect(confirmation?.events.single['attributes'].single['value'], '3');
-  });
-
-  test(
-    'tries each tx confirmation server once before returning null',
-    () async {
-      final primary = Uri.parse('https://vote-primary.example');
-      final secondary = Uri.parse('https://vote-secondary.example');
-      final http = FakeVotingHttpClient(
-        responses: {
-          'https://vote-primary.example/shielded-vote/v1/tx/delegation-tx':
-              timeoutResponse(),
-          'https://vote-secondary.example/shielded-vote/v1/tx/delegation-tx': {
-            'height': '12',
-            'code': 0,
-            'log': '',
-            'events': const [],
-          },
-        },
-      );
-      final client = VotingApiClient(
-        baseUrl: primary,
-        fallbackBaseUrls: [secondary],
-        httpClient: http,
-        delay: (_) async {},
-      );
-
-      final confirmation = await client.getTxConfirmation('delegation-tx');
-
-      expect(confirmation?.height, 12);
-      expect(http.requests.map((request) => request.uri.host), [
-        'vote-primary.example',
-        'vote-secondary.example',
-      ]);
-
-      final missingHttp = FakeVotingHttpClient(
-        responses: {
-          'https://vote-primary.example/shielded-vote/v1/tx/missing-tx':
-              jsonResponse({'error': 'not found'}, statusCode: 404),
-          'https://vote-secondary.example/shielded-vote/v1/tx/missing-tx':
-              jsonResponse({'error': 'not found'}, statusCode: 404),
-        },
-      );
-      final missingClient = VotingApiClient(
-        baseUrl: primary,
-        fallbackBaseUrls: [secondary],
-        httpClient: missingHttp,
-        delay: (_) async {},
-      );
-
-      await expectLater(
-        missingClient.getTxConfirmation('missing-tx'),
-        completion(isNull),
-      );
-      expect(missingHttp.requests.map((request) => request.uri.host), [
-        'vote-primary.example',
-        'vote-secondary.example',
-      ]);
-
-      final flakyFallbackHttp = FakeVotingHttpClient(
-        responses: {
-          'https://vote-primary.example/shielded-vote/v1/tx/flaky-tx':
-              timeoutResponse(),
-          'https://vote-secondary.example/shielded-vote/v1/tx/flaky-tx':
-              jsonResponse({'error': 'unavailable'}, statusCode: 503),
-        },
-      );
-      final flakyFallbackClient = VotingApiClient(
-        baseUrl: primary,
-        fallbackBaseUrls: [secondary],
-        httpClient: flakyFallbackHttp,
-        delay: (_) async {},
-      );
-
-      await expectLater(
-        flakyFallbackClient.getTxConfirmation('flaky-tx'),
-        completion(isNull),
-      );
-      expect(flakyFallbackHttp.requests.map((request) => request.uri.host), [
-        'vote-primary.example',
-        'vote-secondary.example',
-      ]);
-    },
-  );
-
-  test('rejects malformed transaction confirmation bodies', () async {
-    final client = VotingApiClient(
-      baseUrl: Uri.parse('https://voting.valargroup.org'),
-      httpClient: FakeVotingHttpClient(
-        responses: {
-          '/shielded-vote/v1/tx/delegation-tx': {'events': const []},
-        },
-      ),
-    );
-
-    await expectLater(
-      client.getTxConfirmation('delegation-tx'),
-      throwsA(
-        isA<FormatException>().having(
-          (error) => error.message,
-          'message',
-          'Missing required int: height',
-        ),
-      ),
-    );
-  });
-
-  test('retries transient broadcast errors', () async {
-    final delays = <Duration>[];
-    final http = FakeVotingHttpClient(
-      responses: {
-        '/shielded-vote/v1/cast-vote': SequentialVotingHttpResponses([
-          jsonResponse({'error': 'gateway'}, statusCode: 503),
-          {'tx_hash': 'vote-tx', 'code': 0, 'log': ''},
-        ]),
-      },
-    );
-    final client = VotingApiClient(
-      baseUrl: Uri.parse('https://voting.valargroup.org'),
-      httpClient: http,
-      broadcastRetryPolicy: VotingRetryPolicy.transientHttp(
-        name: 'test-broadcast-retry',
-        delays: const [Duration(milliseconds: 1)],
-      ),
-      delay: (delay) async => delays.add(delay),
-    );
-
-    final result = await client.submitVoteCommitment(
-      commitment: {'vote_round_id': encodedRoundId},
-    );
-
-    expect(result.txHash, 'vote-tx');
-    expect(http.requests.map((request) => request.uri.path), [
-      '/shielded-vote/v1/cast-vote',
-      '/shielded-vote/v1/cast-vote',
-    ]);
-    expect(delays, const [Duration(milliseconds: 1)]);
-  });
-
   test('retries transient round reads for 500 responses', () async {
     final delays = <Duration>[];
     final http = FakeVotingHttpClient(
@@ -635,76 +457,4 @@ void main() {
       'vote-secondary.example',
     ]);
   });
-
-  test('rejects malformed successful broadcast responses', () async {
-    Future<Object> submit(Object response) {
-      final http = FakeVotingHttpClient(
-        responses: {'/shielded-vote/v1/cast-vote': response},
-      );
-      return VotingApiClient(
-        baseUrl: Uri.parse('https://voting.valargroup.org'),
-        httpClient: http,
-      ).submitVoteCommitment(commitment: {'vote_round_id': encodedRoundId});
-    }
-
-    await expectLater(
-      submit({'tx_hash': 'vote-tx', 'log': ''}),
-      throwsA(
-        isA<FormatException>().having(
-          (error) => error.message,
-          'message',
-          'Missing required int: code',
-        ),
-      ),
-    );
-    await expectLater(
-      submit({'tx_hash': '', 'code': 0, 'log': ''}),
-      throwsA(
-        isA<FormatException>().having(
-          (error) => error.message,
-          'message',
-          'Missing required string: tx_hash',
-        ),
-      ),
-    );
-  });
-
-  test(
-    'retries transient delegate timeout but not deterministic rejection',
-    () async {
-      final http = FakeVotingHttpClient(
-        responses: {
-          '/shielded-vote/v1/delegate-vote': SequentialVotingHttpResponses([
-            TimeoutException('timed out'),
-            {'tx_hash': 'delegation-tx', 'code': 0, 'log': ''},
-            jsonResponse({
-              'tx_hash': '',
-              'code': 7,
-              'log': 'rejected',
-            }, statusCode: 422),
-          ]),
-        },
-      );
-      final client = VotingApiClient(
-        baseUrl: Uri.parse('https://voting.valargroup.org'),
-        httpClient: http,
-        broadcastRetryPolicy: VotingRetryPolicy.transientHttp(
-          name: 'test-delegate-retry',
-          delays: const [Duration.zero],
-        ),
-        delay: (_) async {},
-      );
-
-      final retried = await client.submitDelegation(
-        submission: {'vote_round_id': encodedRoundId},
-      );
-      final rejected = await client.submitDelegation(
-        submission: {'vote_round_id': encodedRoundId},
-      );
-
-      expect(retried.txHash, 'delegation-tx');
-      expect(rejected.code, 7);
-      expect(http.requests.length, 3);
-    },
-  );
 }

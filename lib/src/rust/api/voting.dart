@@ -7,12 +7,11 @@ import '../frb_generated.dart';
 import '../third_party/zcash_voting/config.dart';
 import '../third_party/zcash_voting/delegate.dart';
 import '../third_party/zcash_voting/share_policy.dart';
-import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `log_sink_closed`, `parse_tx_events_json`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
+// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `internal`, `invalid_input`, `is_cancelled`, `round_inputs`, `routed_transport`, `share_tracking_pass_for`, `view`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
 ///
@@ -46,23 +45,6 @@ bool isLastMoment({
   nowSeconds: nowSeconds,
   ceremonyStartSeconds: ceremonyStartSeconds,
   voteEndTimeSeconds: voteEndTimeSeconds,
-);
-
-/// Returns the vote-chain delegation submission body as validated wire JSON.
-///
-/// Binary fields are base64-encoded here so Dart does not duplicate protocol
-/// field names or byte encoding rules.
-Future<String> delegationSubmissionWireJson({
-  required SignedDelegationPayloadView submission,
-}) => RustLib.instance.api.crateApiVotingDelegationSubmissionWireJson(
-  submission: submission,
-);
-
-/// Returns the vote-chain cast-vote submission body as validated wire JSON.
-Future<String> voteCommitmentWireJson({
-  required VoteCommitmentWire commitment,
-}) => RustLib.instance.api.crateApiVotingVoteCommitmentWireJson(
-  commitment: commitment,
 );
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
@@ -121,19 +103,6 @@ VotingShareTrackingPassHandle beginShareTrackingPass({
 }) =>
     RustLib.instance.api.crateApiVotingBeginShareTrackingPass(context: context);
 
-/// Canonicalizes and probes the complete configured helper fleet.
-///
-/// Validation happens before any request. The crate-owned helper client then
-/// enforces canonical identity, response bounds, JSON content type, and the
-/// progressive soft/hard readiness windows.
-Future<ApiVotingHelperPreflight> preflightVotingHelpers({
-  required VotingHelperDeliveryContext context,
-  required List<String> configuredHelperUrls,
-}) => RustLib.instance.api.crateApiVotingPreflightVotingHelpers(
-  context: context,
-  configuredHelperUrls: configuredHelperUrls,
-);
-
 /// Runs one confirm-or-retry pass over a round's unconfirmed helper shares.
 ///
 /// This is the whole helper-facing workflow: the crate polls helpers, requires
@@ -189,69 +158,20 @@ Future<bool> confirmShareWithHelpers({
   nowSeconds: nowSeconds,
 );
 
-/// Prepares and durably persists every helper-share placement for one vote.
+/// Seconds until this round's next helper-share tracking pass should run.
 ///
-/// Call this after the commitment has been persisted and before broadcasting
-/// it to the vote chain. Repeating the call after restart reuses the exact plan;
-/// it never starts helper network delivery.
-///
-/// # Errors
-///
-/// Returns an error without persisting a new plan if the helper fleet, proposal
-/// roster, ballot intent, or committed-vote generation is invalid, or if the
-/// database cannot be opened or updated.
-Future<void> prepareCommittedShareDelivery({
-  required VotingHelperDeliveryContext context,
-  required int bundleIndex,
-  required int proposalId,
-  required ApiVotingHelperPreflight preflight,
-  required BigInt nowSeconds,
-  required BigInt voteEndTimeSeconds,
-  BigInt? lastMomentBufferSeconds,
-  required List<int> proposalIds,
-}) => RustLib.instance.api.crateApiVotingPrepareCommittedShareDelivery(
-  context: context,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  preflight: preflight,
-  nowSeconds: nowSeconds,
-  voteEndTimeSeconds: voteEndTimeSeconds,
-  lastMomentBufferSeconds: lastMomentBufferSeconds,
-  proposalIds: proposalIds,
-);
-
-/// Submits every incomplete share from an existing durable delivery plan.
-///
-/// Call this only after chain confirmation has been persisted. The SDK rebuilds
-/// and validates every payload against the confirmed committed-vote generation
-/// before the first POST, enforces its process-wide concurrency ceiling, and
-/// journals each attempt before dispatch.
-///
-/// # Errors
-///
-/// Returns an error before network I/O if the plan is missing or incompatible,
-/// the confirmed committed-vote generation is invalid, or the configured fleet
-/// differs from the persisted plan. Helper refusals are scored and reported.
-Future<ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
-  required VotingHelperDeliveryContext context,
-  required int bundleIndex,
-  required int proposalId,
-  required List<String> configuredHelperUrls,
-  required BigInt nowSeconds,
-}) => RustLib.instance.api.crateApiVotingSubmitPreparedSharesToHelpers(
-  context: context,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  configuredHelperUrls: configuredHelperUrls,
-  nowSeconds: nowSeconds,
-);
-
-/// Return the next share-tracking delay in seconds using crate policy.
+/// `None` means the round has no unconfirmed shares left, which is also the
+/// signal to stop background tracking. The SDK reads the durable share rows
+/// itself, so they never cross this boundary.
 Future<BigInt?> nextShareTrackingDelaySeconds({
-  required List<ShareDelegationRecordView> shares,
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
   required BigInt nowSeconds,
 }) => RustLib.instance.api.crateApiVotingNextShareTrackingDelaySeconds(
-  shares: shares,
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
   nowSeconds: nowSeconds,
 );
 
@@ -265,13 +185,10 @@ Future<Uint8List> generateVotingHotkey({required String network}) =>
 
 /// Select notes and persist bundle rows for the delegation pipeline.
 ///
-/// Reuses existing bundle rows for the same round/wallet, so callers can safely
-/// retry setup before proving a specific bundle.
-///
 /// # Errors
 ///
-/// Returns an error if bundle policy parsing, opening the sidecar DB, round
-/// initialization, note selection, or bundle layout persistence fails.
+/// Returns an error if bundle policy parsing, opening the sidecar DB, note
+/// selection, or bundle setup fails.
 Future<ApiBundleLayout> setupDelegationBundles({
   required ApiVotingRoundContext ctx,
 }) => RustLib.instance.api.crateApiVotingSetupDelegationBundles(ctx: ctx);
@@ -304,34 +221,13 @@ Future<ApiSnapshotBundlePrecomputeResult> precomputeSnapshotBundles({
   pirServerUrl: pirServerUrl,
 );
 
-/// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
-///
-/// This is a background warm-up path. The normal proof path still fetches any
-/// missing PIR proofs if this was not run or did not complete in time.
-///
-/// # Errors
-///
-/// Returns an error if round input resolution, hotkey validation, bundle
-/// preparation, or PIR precompute fails.
-Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
-  required ApiVotingRoundContext ctx,
-  required String pirServerUrl,
-  required List<int> storedHotkeySecret,
-  required int bundleIndex,
-}) => RustLib.instance.api.crateApiVotingPrecomputeDelegationPir(
-  ctx: ctx,
-  pirServerUrl: pirServerUrl,
-  storedHotkeySecret: storedHotkeySecret,
-  bundleIndex: bundleIndex,
-);
-
-/// Generate and persist ZKP1 for one delegation bundle without signing.
+/// Generate and persist ZKP1 for one software delegation bundle without signing.
 ///
 /// This is the account-bound continuation of snapshot PIR precompute. It uses
-/// the stored app hotkey to prepare the bundle and persists the proof and exact
-/// SDK-owned PCZT, but it never receives the wallet mnemonic and cannot sign or
-/// submit a delegation. Repeated calls reuse an existing proved, submitted, or
-/// confirmed bundle and return `false`; a newly generated proof returns `true`.
+/// the stored app hotkey to prepare the bundle and persists the proof, but it
+/// never receives the wallet mnemonic and cannot sign or submit a delegation.
+/// Repeated calls reuse an existing proved, submitted, or confirmed bundle and
+/// return `false`; a newly generated proof returns `true`.
 ///
 /// # Errors
 ///
@@ -349,27 +245,6 @@ Future<bool> precomputeDelegationProof({
   bundleIndex: bundleIndex,
 );
 
-/// Return whether one delegation bundle already has a durable ZKP1.
-///
-/// This is a local sidecar query. Wallet orchestration can use it to skip PIR
-/// endpoint resolution when every pending bundle is already proved.
-///
-/// # Errors
-///
-/// Returns an error if the voting sidecar cannot be opened or the bundle state
-/// cannot be read.
-Future<bool> hasPersistedDelegationProof({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-}) => RustLib.instance.api.crateApiVotingHasPersistedDelegationProof(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-);
-
 /// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
 ///
 /// Safe to call repeatedly; only the first call starts work. Returns
@@ -377,24 +252,10 @@ Future<bool> hasPersistedDelegationProof({
 void warmVotingProvingCaches() =>
     RustLib.instance.api.crateApiVotingWarmVotingProvingCaches();
 
-/// Warm the bundle-independent PIR proof cache for one account.
+/// Warm the bundle-independent PIR proof cache for one account and snapshot.
 ///
-/// Fetches and caches IMT non-membership proofs for the account's eligible
-/// notes at `snapshot_height` against whatever snapshot the PIR endpoint
-/// currently serves. Notes are planned with the same whale-protected default
-/// bundle policy round setup uses. The library prunes cache rows older than
-/// four weeks; `keep_roots` is accepted for FRB compatibility.
-///
-/// This is a background warm-up path: it needs no hotkey, no round rows, and
-/// no bundles, so it can run as soon as the wallet is scanned to the snapshot
-/// height. The delegation prove path reads the same cache and still fetches
-/// anything missing, so skipping or failing this call only costs latency.
-///
-/// # Errors
-///
-/// Returns an error if the network string is invalid, the sidecar cannot be
-/// opened, the wallet is not scanned to the snapshot height, note selection
-/// fails, the PIR handshake fails, or a fetched proof does not verify.
+/// `keep_roots` is accepted for FRB compatibility; the SDK prunes cache rows
+/// by age and does not take a keep list.
 Future<ApiPirCacheWarmupResult> warmPirProofCache({
   required String dbPath,
   required String accountUuid,
@@ -415,34 +276,6 @@ Future<ApiPirCacheWarmupResult> warmPirProofCache({
   keepRoots: keepRoots,
 );
 
-/// Streaming variant of `build_prove_and_sign_delegation_payload`.
-///
-/// Emits local preparation phase events while work progresses, then emits a
-/// final `"result"` event containing `SignedDelegationPayloadView`. The function
-/// returns `Ok(())` after the terminal event is queued. `pir_server_urls` must
-/// contain at least one endpoint that serves the round's exact snapshot; later
-/// entries are used only after retryable PIR transport failures.
-///
-/// # Errors
-///
-/// Returns an error if round input resolution fails before the stream work
-/// starts. Runtime delegation/proving errors are forwarded into the sink as
-/// stream errors.
-Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
-  required ApiVotingRoundContext ctx,
-  required List<String> pirServerUrls,
-  required String mnemonic,
-  required List<int> storedHotkeySecret,
-  required int bundleIndex,
-}) => RustLib.instance.api
-    .crateApiVotingBuildProveAndSignDelegationPayloadWithProgress(
-      ctx: ctx,
-      pirServerUrls: pirServerUrls,
-      mnemonic: mnemonic,
-      storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
-    );
-
 /// Build and redact voting PCZTs that Keystone can sign in one or more batches.
 ///
 /// # Errors
@@ -460,39 +293,13 @@ Future<List<KeystoneSigningRequest>> buildKeystoneDelegationRequests({
   bundleIndices: bundleIndices,
 );
 
-/// Persist a Keystone signature for one delegation bundle.
-///
-/// # Errors
-///
-/// Returns an error if signature lengths are invalid, the supplied signing
-/// context does not match the persisted bundle setup, signature verification
-/// fails, opening the voting DB fails, or persisting the record fails.
-Future<void> storeKeystoneSignature({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required List<int> sig,
-  required List<int> sighash,
-  required List<int> rk,
-}) => RustLib.instance.api.crateApiVotingStoreKeystoneSignature(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  sig: sig,
-  sighash: sighash,
-  rk: rk,
-);
-
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
-/// Every tuple must match the bundle's persisted sighash and randomized key and
-/// pass SpendAuth verification. Existing valid tuples for the same context are
-/// accepted as idempotent retries, even when randomized signing produced
-/// different signature bytes. A tuple for a different signing context is a
-/// conflict, and any validation or database error rolls back the complete
-/// batch.
+/// Existing tuples for the same sighash and randomized key are accepted as
+/// idempotent retries, even when randomized signing produced different valid
+/// signature bytes. A tuple for a different signing context is a
+/// `KeystoneSignatureConflict` error, and any validation or database error
+/// rolls back the complete batch.
 Future<ApiKeystoneSignatureBatchResult> storeKeystoneSignaturesBatch({
   required String dbPath,
   required String accountUuid,
@@ -519,75 +326,6 @@ Future<List<KeystoneSignatureRecord>> getKeystoneSignatures({
   dbPath: dbPath,
   accountUuid: accountUuid,
   roundId: roundId,
-);
-
-/// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
-/// `pir_server_urls` follows the same exact-snapshot failover contract.
-///
-/// # Errors
-///
-/// Returns an error if round input resolution fails before stream work starts.
-/// Runtime proving/signature errors are emitted through the sink.
-Stream<ApiDelegationProofEvent>
-buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
-  required ApiVotingRoundContext ctx,
-  required List<String> pirServerUrls,
-  required List<int> storedHotkeySecret,
-  required int bundleIndex,
-  required List<int> keystoneSig,
-  required List<int> keystoneSighash,
-}) => RustLib.instance.api
-    .crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress(
-      ctx: ctx,
-      pirServerUrls: pirServerUrls,
-      storedHotkeySecret: storedHotkeySecret,
-      bundleIndex: bundleIndex,
-      keystoneSig: keystoneSig,
-      keystoneSighash: keystoneSighash,
-    );
-
-/// Record a submitted delegation transaction hash for one bundle.
-///
-/// Repeated calls are idempotent only for the same transaction hash.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the bundle key is missing,
-/// or the stored hash conflicts with `tx_hash`.
-Future<void> markDelegationSubmitted({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required String txHash,
-}) => RustLib.instance.api.crateApiVotingMarkDelegationSubmitted(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  txHash: txHash,
-);
-
-/// Parse tx events and record a confirmed delegation submission.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the event payload does not
-/// match the expected round/type shape, or confirmation state cannot be stored.
-Future<DelegationConfirmation> confirmDelegationSubmission({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required String txHash,
-  required String eventsJson,
-}) => RustLib.instance.api.crateApiVotingConfirmDelegationSubmission(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  txHash: txHash,
-  eventsJson: eventsJson,
 );
 
 /// Delete bundle rows at or above `keep_count` for partial-bundle recovery.
@@ -625,29 +363,6 @@ Future<int> syncVoteTree({
   accountUuid: accountUuid,
   roundId: roundId,
   nodeUrl: nodeUrl,
-);
-
-/// Generate a Vote Authority Note Merkle witness for a delegation bundle.
-///
-/// `anchor_height` is the vote-tree height where the witness should be anchored;
-/// callers must sync the same round before requesting the witness.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, `bundle_index` is out of
-/// range for the round, or witness generation fails.
-Future<VanWitness> generateVanWitness({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required int anchorHeight,
-}) => RustLib.instance.api.crateApiVotingGenerateVanWitness(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  anchorHeight: anchorHeight,
 );
 
 /// Clear process-local vote-tree sync state for a wallet or round.
@@ -705,119 +420,16 @@ Future<int> deleteVotingAccountState({
   accountUuid: accountUuid,
 );
 
-/// Lists account/round pairs with durable unconfirmed helper shares.
+/// List rounds with durable unconfirmed helper shares for the given accounts.
 ///
-/// The opaque session JSON is returned for caller-owned deadline checks. The
-/// sidecar is not created when the wallet has never persisted voting state.
+/// Accounts with no pending rounds contribute nothing. The result is sorted by
+/// account and round.
 Future<List<ApiPendingShareRound>> listPendingShareRounds({
   required String dbPath,
   required List<String> accountUuids,
 }) => RustLib.instance.api.crateApiVotingListPendingShareRounds(
   dbPath: dbPath,
   accountUuids: accountUuids,
-);
-
-/// Recover a committed but unsubmitted vote from persisted local recovery data.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, no matching commitment is
-/// recoverable, or wire conversion fails.
-Future<SignedVoteCommitmentsView> recoverVoteCommitment({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-}) => RustLib.instance.api.crateApiVotingRecoverVoteCommitment(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-);
-
-/// Streaming variant of `build_vote_commitments`.
-///
-/// Emits per-proposal progress events, then a terminal `"result"` event carrying
-/// `SignedVoteCommitmentsView`.
-Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
-  required String dbPath,
-  required String accountUuid,
-  required String network,
-  required String roundId,
-  required int bundleIndex,
-  required List<int> storedHotkeySecret,
-  required VanWitness vanWitness,
-  required List<DraftVote> draftVotes,
-}) => RustLib.instance.api.crateApiVotingBuildVoteCommitmentsWithProgress(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  network: network,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  storedHotkeySecret: storedHotkeySecret,
-  vanWitness: vanWitness,
-  draftVotes: draftVotes,
-);
-
-/// Load the full recovery/share-tracking summary for one voting round.
-Future<RoundRecoveryStateView> getRoundRecoveryState({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-}) => RustLib.instance.api.crateApiVotingGetRoundRecoveryState(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-);
-
-/// Record a submitted cast-vote transaction hash for one bundle/proposal key.
-///
-/// Repeated calls are idempotent only for the same transaction hash.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the vote key is missing, or
-/// the stored hash conflicts with `tx_hash`.
-Future<void> markVoteSubmitted({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required String txHash,
-}) => RustLib.instance.api.crateApiVotingMarkVoteSubmitted(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  txHash: txHash,
-);
-
-/// Parse tx events and record a confirmed vote submission.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the event payload does not
-/// match the expected round/type shape, or confirmation state cannot be stored.
-Future<VoteConfirmation> confirmVoteSubmission({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required String txHash,
-  required String eventsJson,
-}) => RustLib.instance.api.crateApiVotingConfirmVoteSubmission(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  txHash: txHash,
-  eventsJson: eventsJson,
 );
 
 /// Compute the resumable voting-session plan for a round. The plan reports the
@@ -955,37 +567,6 @@ class ApiBundleLayout {
               other.privacyTrimDroppedValueZatoshi;
 }
 
-/// Progress event emitted while building, proving, and signing a delegation payload.
-///
-/// A terminal `"result"` event carries `signed_delegation_payload`; earlier
-/// phase events only describe local preparation progress.
-class ApiDelegationProofEvent {
-  final String phase;
-  final double? proofProgress;
-  final SignedDelegationPayloadView? signedDelegationPayload;
-
-  const ApiDelegationProofEvent({
-    required this.phase,
-    this.proofProgress,
-    this.signedDelegationPayload,
-  });
-
-  @override
-  int get hashCode =>
-      phase.hashCode ^
-      proofProgress.hashCode ^
-      signedDelegationPayload.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiDelegationProofEvent &&
-          runtimeType == other.runtimeType &&
-          phase == other.phase &&
-          proofProgress == other.proofProgress &&
-          signedDelegationPayload == other.signedDelegationPayload;
-}
-
 /// One wallet-side fetch outcome for a single dynamic config mirror.
 ///
 /// Flat by necessity: the crate's [`DynamicConfigAttempt`] carries a
@@ -1036,22 +617,20 @@ class ApiDynamicConfigMirrorFailure {
 }
 
 /// Outcome of an idempotent Keystone signature batch write.
+///
+/// A tuple for a different signing context fails the whole batch with
+/// `VotingError::KeystoneSignatureConflict`, which names the bundle.
 class ApiKeystoneSignatureBatchResult {
   final int inserted;
   final int alreadyPresent;
-  final int? conflictingBundleIndex;
 
   const ApiKeystoneSignatureBatchResult({
     required this.inserted,
     required this.alreadyPresent,
-    this.conflictingBundleIndex,
   });
 
   @override
-  int get hashCode =>
-      inserted.hashCode ^
-      alreadyPresent.hashCode ^
-      conflictingBundleIndex.hashCode;
+  int get hashCode => inserted.hashCode ^ alreadyPresent.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1059,8 +638,7 @@ class ApiKeystoneSignatureBatchResult {
       other is ApiKeystoneSignatureBatchResult &&
           runtimeType == other.runtimeType &&
           inserted == other.inserted &&
-          alreadyPresent == other.alreadyPresent &&
-          conflictingBundleIndex == other.conflictingBundleIndex;
+          alreadyPresent == other.alreadyPresent;
 }
 
 /// One Keystone delegation signature tuple to persist atomically.
@@ -1230,60 +808,6 @@ class ApiResubmittedShare {
           serverUrl == other.serverUrl;
 }
 
-/// Commitment-wide helper delivery result.
-class ApiShareBatchDeliveryReport {
-  final List<ApiShareDeliveryOutcome> deliveries;
-  final Uint32List pendingShareIndices;
-  final bool cancelled;
-  final bool legacyBestEffort;
-
-  const ApiShareBatchDeliveryReport({
-    required this.deliveries,
-    required this.pendingShareIndices,
-    required this.cancelled,
-    required this.legacyBestEffort,
-  });
-
-  @override
-  int get hashCode =>
-      deliveries.hashCode ^
-      pendingShareIndices.hashCode ^
-      cancelled.hashCode ^
-      legacyBestEffort.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiShareBatchDeliveryReport &&
-          runtimeType == other.runtimeType &&
-          deliveries == other.deliveries &&
-          pendingShareIndices == other.pendingShareIndices &&
-          cancelled == other.cancelled &&
-          legacyBestEffort == other.legacyBestEffort;
-}
-
-/// One share processed by commitment-wide initial delivery.
-class ApiShareDeliveryOutcome {
-  final int shareIndex;
-  final ApiShareSubmissionReport submission;
-
-  const ApiShareDeliveryOutcome({
-    required this.shareIndex,
-    required this.submission,
-  });
-
-  @override
-  int get hashCode => shareIndex.hashCode ^ submission.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiShareDeliveryOutcome &&
-          runtimeType == other.runtimeType &&
-          shareIndex == other.shareIndex &&
-          submission == other.submission;
-}
-
 /// One helper share identified within its round.
 class ApiShareKey {
   final int bundleIndex;
@@ -1308,37 +832,6 @@ class ApiShareKey {
           bundleIndex == other.bundleIndex &&
           proposalId == other.proposalId &&
           shareIndex == other.shareIndex;
-}
-
-/// Definite and outcome-unknown results from one initial helper fan-out.
-class ApiShareSubmissionReport {
-  /// Helpers that definitively accepted the share.
-  final List<String> acceptedUrls;
-
-  /// Helpers that may have accepted the share before the response failed.
-  final List<String> ambiguousUrls;
-
-  /// Desired number of definite helper placements.
-  final int targetCount;
-
-  const ApiShareSubmissionReport({
-    required this.acceptedUrls,
-    required this.ambiguousUrls,
-    required this.targetCount,
-  });
-
-  @override
-  int get hashCode =>
-      acceptedUrls.hashCode ^ ambiguousUrls.hashCode ^ targetCount.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiShareSubmissionReport &&
-          runtimeType == other.runtimeType &&
-          acceptedUrls == other.acceptedUrls &&
-          ambiguousUrls == other.ambiguousUrls &&
-          targetCount == other.targetCount;
 }
 
 /// What one helper share-tracking pass did.
@@ -1459,45 +952,6 @@ class ApiSnapshotBundlePrecomputeResult {
           bundles == other.bundles;
 }
 
-/// Progress event emitted while building ZKP2 vote commitments.
-///
-/// A terminal `"result"` event carries the completed commitment set; earlier
-/// phase events include the active `(proposal_id, bundle_index)` pair.
-class ApiVoteCommitEvent {
-  final String phase;
-  final int? proposalId;
-  final int? bundleIndex;
-  final double? proofProgress;
-  final SignedVoteCommitmentsView? commitments;
-
-  const ApiVoteCommitEvent({
-    required this.phase,
-    this.proposalId,
-    this.bundleIndex,
-    this.proofProgress,
-    this.commitments,
-  });
-
-  @override
-  int get hashCode =>
-      phase.hashCode ^
-      proposalId.hashCode ^
-      bundleIndex.hashCode ^
-      proofProgress.hashCode ^
-      commitments.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiVoteCommitEvent &&
-          runtimeType == other.runtimeType &&
-          phase == other.phase &&
-          proposalId == other.proposalId &&
-          bundleIndex == other.bundleIndex &&
-          proofProgress == other.proofProgress &&
-          commitments == other.commitments;
-}
-
 /// Read-only minimum voting eligibility status for one round/account.
 class ApiVotingEligibility {
   final bool isEligible;
@@ -1532,31 +986,6 @@ class ApiVotingEligibility {
           eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
           privacyTrimDroppedValueZatoshi ==
               other.privacyTrimDroppedValueZatoshi;
-}
-
-/// Canonical helper fleet and readiness-ranked prefix for initial planning.
-class ApiVotingHelperPreflight {
-  /// Complete configured helper fleet in canonical caller order.
-  final List<String> configuredHelperUrls;
-
-  /// Ready helpers in the same relative order as the configured fleet.
-  final List<String> readyHelperUrls;
-
-  const ApiVotingHelperPreflight({
-    required this.configuredHelperUrls,
-    required this.readyHelperUrls,
-  });
-
-  @override
-  int get hashCode => configuredHelperUrls.hashCode ^ readyHelperUrls.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiVotingHelperPreflight &&
-          runtimeType == other.runtimeType &&
-          configuredHelperUrls == other.configuredHelperUrls &&
-          readyHelperUrls == other.readyHelperUrls;
 }
 
 /// Shared delegation/voting round context passed across the FRB boundary.

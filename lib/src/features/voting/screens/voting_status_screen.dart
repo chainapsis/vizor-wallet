@@ -40,10 +40,12 @@ class VotingSubmissionProgressPresentation {
   const VotingSubmissionProgressPresentation({
     required this.activeStep,
     this.activeStepProgress,
+    this.activeStepDetail,
   });
 
   final VotingSubmissionProgressStep activeStep;
   final double? activeStepProgress;
+  final String? activeStepDetail;
 }
 
 VotingSubmissionProgressStep votingSubmissionProgressStepFor({
@@ -395,6 +397,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         final voteStepComplete =
             completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
         final delegationProgress = _delegationProgress(state);
+        final delegationDetail = _delegationDetail(state);
         final progressBuilder = widget.submissionProgressBuilder;
         if (progressBuilder != null &&
             phase != VotingSessionPhase.error &&
@@ -417,6 +420,10 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
                   voteSubmissionProgress,
                 VotingSubmissionProgressStep.finalizing => null,
               },
+              activeStepDetail:
+                  activeStep == VotingSubmissionProgressStep.delegating
+                  ? delegationDetail
+                  : null,
             ),
           );
         }
@@ -426,6 +433,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           voteSubmissionDetail: _voteSubmissionDetail(state),
           voteSubmissionProgress: voteSubmissionProgress,
           delegationProgress: delegationProgress,
+          delegationDetail: delegationDetail,
           completedSubmission: completedSubmission,
           submissionJobComplete: submissionJobComplete,
           submissionJobInFlight: submissionJobInFlight,
@@ -524,10 +532,13 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       final message = state.voteProgress[key]?.message;
       if (message != null && message.isNotEmpty) return message;
     }
+    // The chain outcome carries the transaction hash to show while shares go
+    // out; earlier phases have nothing to say.
     final messages = state.voteProgress.values
         .where(
           (progress) =>
-              progress.phase == 'submitting_shares' &&
+              (progress.phase == VotingProgressPhase.submitted ||
+                  progress.phase == VotingProgressPhase.confirmed) &&
               progress.message != null &&
               progress.message!.isNotEmpty,
         )
@@ -574,9 +585,28 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     return (completedProgress / bundleIndexes.length).clamp(0.0, 1.0);
   }
 
+  String? _delegationDetail(VotingSessionState state) {
+    if (state.phase != VotingSessionPhase.delegating) return null;
+    final bundleIndexes = _delegationProgressBundleIndexes(state);
+    if (bundleIndexes.isEmpty) return null;
+    final completed = bundleIndexes
+        .where(
+          (bundleIndex) => _isDelegationBundleComplete(
+            state.delegationProgress[bundleIndex],
+          ),
+        )
+        .length;
+    final waiting = state.delegationProgress.values.any(
+      (progress) =>
+          progress.phase == VotingProgressPhase.waitingForExistingProof,
+    );
+    final count = '$completed of ${bundleIndexes.length} bundles complete';
+    return waiting ? 'Reusing an in-progress proof — $count' : count;
+  }
+
   List<int> _delegationProgressBundleIndexes(VotingSessionState state) {
     final indexes = <int>{
-      ...?state.resumePlan?.pendingDelegationBundleIndexes,
+      ...delegationBundleIndexesNeedingSigning(state.roundPlan),
       ...state.delegationProgress.keys,
       ?state.currentBundleIndex,
     }.toList()..sort();
@@ -584,7 +614,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   bool _isDelegationBundleComplete(VotingSessionProgress? progress) {
-    return progress?.phase == 'submitted' || progress?.phase == 'confirmed';
+    return progress?.phase == VotingProgressPhase.submitted ||
+        progress?.phase == VotingProgressPhase.confirmed;
   }
 
   void _retry() {
@@ -733,6 +764,7 @@ class _StatusContent extends StatelessWidget {
     this.voteSubmissionDetail,
     this.voteSubmissionProgress,
     this.delegationProgress,
+    this.delegationDetail,
     this.completedSubmission = false,
     this.submissionJobComplete = false,
     this.submissionJobInFlight = false,
@@ -761,6 +793,7 @@ class _StatusContent extends StatelessWidget {
   final String? voteSubmissionDetail;
   final double? voteSubmissionProgress;
   final double? delegationProgress;
+  final String? delegationDetail;
   final bool completedSubmission;
   final bool submissionJobComplete;
   final bool submissionJobInFlight;
@@ -865,6 +898,7 @@ class _StatusContent extends StatelessWidget {
                 label: 'Delegating voting authority',
                 active: phase == VotingSessionPhase.delegating,
                 complete: _after(VotingSessionPhase.delegating),
+                detail: delegationDetail,
                 progressValue: delegationProgress,
               ),
               _StepRow(

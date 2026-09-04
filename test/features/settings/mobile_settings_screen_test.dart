@@ -786,6 +786,8 @@ void main() {
       find.text(defaultRpcEndpointConfig('main').hostPort),
       findsOneWidget,
     );
+    expect(find.text('Explorer'), findsOneWidget);
+    expect(find.text('CipherScan'), findsOneWidget);
   });
 
   testWidgets('theme row opens the sheet and applies the selection', (

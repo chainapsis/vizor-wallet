@@ -114,6 +114,88 @@ void main() {
     );
   });
 
+  test('screen keep-awake covers progress discovery during sync startup', () {
+    final startedAt = DateTime(2026, 7, 9, 12);
+    const settings = SyncKeepAwakeSettings(enabled: true, promptSeen: true);
+
+    for (final phase in [
+      kSyncPhasePreflight,
+      kSyncPhaseSetup,
+      kSyncPhaseActiveUtxo,
+      kSyncPhaseChainPrepare,
+    ]) {
+      expect(
+        shouldKeepScreenAwakeForSync(
+          settings: settings,
+          sync: _sync(
+            percentage: 0,
+            displayTargetBlocks: 0,
+            scannedHeight: 0,
+            chainTipHeight: 0,
+            lastSyncStartedAt: startedAt,
+            phase: phase,
+          ),
+        ),
+        isTrue,
+        reason: 'foreground $phase should stay awake before progress arrives',
+      );
+    }
+
+    expect(
+      shouldKeepScreenAwakeForSync(
+        settings: settings,
+        sync: _sync(
+          isBackgroundMode: true,
+          percentage: 0,
+          lastSyncStartedAt: startedAt,
+          phase: kSyncPhasePreflight,
+        ),
+      ),
+      isFalse,
+    );
+  });
+
+  test('preparation phases preserve the known near-tip exclusion', () {
+    final startedAt = DateTime(2026, 7, 9, 12);
+    const settings = SyncKeepAwakeSettings(enabled: true, promptSeen: true);
+
+    for (final phase in [
+      kSyncPhasePreflight,
+      kSyncPhaseSetup,
+      kSyncPhaseActiveUtxo,
+      kSyncPhaseChainPrepare,
+    ]) {
+      expect(
+        shouldKeepScreenAwakeForSync(
+          settings: settings,
+          sync: _sync(
+            percentage: 0,
+            scannedHeight: 100,
+            chainTipHeight: 102,
+            lastSyncStartedAt: startedAt,
+            phase: phase,
+          ),
+        ),
+        isFalse,
+        reason: 'known near-tip $phase should not keep the screen awake',
+      );
+      expect(
+        shouldKeepScreenAwakeForSync(
+          settings: settings,
+          sync: _sync(
+            percentage: 0,
+            scannedHeight: 100,
+            chainTipHeight: 103,
+            lastSyncStartedAt: startedAt,
+            phase: phase,
+          ),
+        ),
+        isTrue,
+        reason: '$phase with more than two blocks should stay awake',
+      );
+    }
+  });
+
   test(
     'screen keep-awake active provider combines settings and sync state',
     () async {
@@ -535,6 +617,7 @@ SyncState _sync({
   int scannedHeight = 100,
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
+  String phase = '',
 }) {
   return SyncState(
     isSyncing: isSyncing,
@@ -545,5 +628,6 @@ SyncState _sync({
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
     lastSyncStartedAt: lastSyncStartedAt,
+    phase: phase,
   );
 }

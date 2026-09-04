@@ -36,6 +36,7 @@ import '../../rust/api/sync.dart' as rust_sync;
 import '../../features/about/screens/mobile/mobile_about_screens.dart';
 import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dart';
 import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
+import '../../features/settings/screens/mobile/mobile_explorer_screen.dart';
 import '../../features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../../features/settings/screens/mobile/mobile_viewing_key_screen.dart';
@@ -127,6 +128,13 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileEndpointScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/settings/explorer',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileExplorerScreen(),
       ),
     ),
     // The Set New Passcode frames also drop the tab bar — same

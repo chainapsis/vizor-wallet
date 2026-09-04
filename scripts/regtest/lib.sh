@@ -15,6 +15,110 @@ compose() {
   docker compose -f "$COMPOSE_FILE" "$@"
 }
 
+assert_safe_regtest_state_dir() {
+  if [[ -z "$STATE_DIR" || "$STATE_DIR" == "/" || "$STATE_DIR" == "$ROOT_DIR" ]]; then
+    echo "Refusing unsafe regtest state directory: $STATE_DIR" >&2
+    return 1
+  fi
+}
+
+ensure_regtest_mount_dirs() {
+  local mount_dir
+  assert_safe_regtest_state_dir
+  mkdir -p "$STATE_DIR"
+
+  for mount_dir in "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"; do
+    if [[ -L "$mount_dir" || ( -e "$mount_dir" && ! -d "$mount_dir" ) ]]; then
+      rm -rf -- "$mount_dir"
+    fi
+    mkdir -p "$mount_dir"
+    chmod 0777 "$mount_dir"
+  done
+}
+
+clear_regtest_state() {
+  local mount_dir
+  ensure_regtest_mount_dirs
+
+  # Docker Desktop tracks these host directories as bind-mount sources. Keep
+  # the directories themselves stable and remove only their contents so its
+  # Linux VM never observes a deleted source path between reset and startup.
+  for mount_dir in "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"; do
+    find "$mount_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+  done
+  find "$STATE_DIR" -mindepth 1 -maxdepth 1 \
+    ! -name zcashd \
+    ! -name lightwalletd \
+    -exec rm -rf -- {} +
+}
+
+regtest_state_has_payload() {
+  [[ -d "$STATE_DIR/zcashd" ]] && \
+    [[ -n "$(find "$STATE_DIR/zcashd" -mindepth 1 -print -quit 2>/dev/null)" ]] && \
+    return 0
+  [[ -d "$STATE_DIR/lightwalletd" ]] && \
+    [[ -n "$(find "$STATE_DIR/lightwalletd" -mindepth 1 -print -quit 2>/dev/null)" ]] && \
+    return 0
+  [[ -d "$STATE_DIR" ]] && \
+    [[ -n "$(find "$STATE_DIR" -mindepth 1 -maxdepth 1 \
+      ! -name zcashd ! -name lightwalletd -print -quit 2>/dev/null)" ]]
+}
+
+is_regtest_state_startup_error() {
+  local output="$1"
+  if [[ "$output" == *"error while creating mount source path"* ]] && \
+    [[ "$output" == *".regtest/zcashd"* || "$output" == *".regtest/lightwalletd"* ]]; then
+    return 0
+  fi
+  [[ "$output" == *"Cannot obtain a lock on data directory /var/lib/zcash/.zcash/regtest"* ]] && \
+    [[ "$output" == *"No such file or directory"* ]]
+}
+
+prepare_regtest_startup_retry() {
+  # A partial start can leave lightwalletd attached to a zcashd container that
+  # already exited. Tear down the whole stack so the retry recreates both
+  # services against the same, now-visible state.
+  compose down --remove-orphans >/dev/null 2>&1 || true
+  ensure_regtest_mount_dirs
+  sleep 1
+}
+
+start_regtest_services() {
+  local attempt output status zcashd_logs
+  local max_attempts=3
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if output="$(compose up -d zcashd lightwalletd 2>&1)"; then
+      printf '%s\n' "$output"
+    else
+      status="$?"
+      printf '%s\n' "$output" >&2
+
+      if ! is_regtest_state_startup_error "$output" || \
+        ((attempt == max_attempts)); then
+        return "$status"
+      fi
+
+      echo "Regtest bind mount was not ready; retrying service startup (${attempt}/${max_attempts})." >&2
+      prepare_regtest_startup_retry
+      continue
+    fi
+
+    if wait_for_zcashd; then
+      return 0
+    else
+      status="$?"
+    fi
+    zcashd_logs="$(compose logs --tail=40 zcashd 2>&1 || true)"
+    if ! is_regtest_state_startup_error "$zcashd_logs" || \
+      ((attempt == max_attempts)); then
+      return "$status"
+    fi
+
+    echo "Regtest state was not visible consistently; retrying service startup (${attempt}/${max_attempts})." >&2
+    prepare_regtest_startup_retry
+  done
+}
+
 zcash_cli() {
   compose exec -T zcashd zcash-cli -conf=/etc/zcash/zcash.conf "$@"
 }
@@ -50,10 +154,7 @@ regtest_runtime_fingerprint() {
 
 prepare_compatible_regtest_state() {
   local expected_fingerprint existing_fingerprint=""
-  if [[ -z "$STATE_DIR" || "$STATE_DIR" == "/" || "$STATE_DIR" == "$ROOT_DIR" ]]; then
-    echo "Refusing unsafe regtest state directory: $STATE_DIR" >&2
-    return 1
-  fi
+  assert_safe_regtest_state_dir
   expected_fingerprint="$(regtest_runtime_fingerprint)"
 
   if [[ -f "$RUNTIME_FINGERPRINT_FILE" ]]; then
@@ -61,7 +162,7 @@ prepare_compatible_regtest_state() {
   fi
 
   local has_state=0
-  if [[ -d "$STATE_DIR" ]] && [[ -n "$(find "$STATE_DIR" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
+  if regtest_state_has_payload; then
     has_state=1
   fi
 
@@ -74,16 +175,15 @@ prepare_compatible_regtest_state() {
 
     echo "Regtest runtime changed; resetting disposable state instead of reindexing."
     compose down -v --remove-orphans >/dev/null 2>&1 || true
-    rm -rf "$STATE_DIR"
+    clear_regtest_state
   fi
 
-  mkdir -p "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
-  chmod 0777 "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
+  ensure_regtest_mount_dirs
   printf '%s\n' "$expected_fingerprint" >"$RUNTIME_FINGERPRINT_FILE"
 }
 
 wait_for_zcashd() {
-  local deadline=$((SECONDS + REGTEST_STARTUP_TIMEOUT_SECONDS)) logs
+  local deadline=$((SECONDS + REGTEST_STARTUP_TIMEOUT_SECONDS)) container_id container_state logs
   while ((SECONDS < deadline)); do
     # zcashd begins accepting some RPCs before its wallet is loaded. Wait for
     # the explicit initialization-complete event instead of polling a wallet
@@ -92,6 +192,16 @@ wait_for_zcashd() {
     if zcash_cli getblockcount >/dev/null 2>&1 && \
       [[ "$logs" == *"init message: Done loading"* ]]; then
       return 0
+    fi
+
+    container_id="$(compose ps --all --quiet zcashd 2>/dev/null || true)"
+    if [[ -n "$container_id" ]]; then
+      container_state="$(docker inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || true)"
+      if [[ "$container_state" == "dead" || "$container_state" == "exited" ]]; then
+        echo "zcashd exited before initialization completed" >&2
+        compose logs --tail=40 zcashd >&2 || true
+        return 1
+      fi
     fi
     sleep 1
   done

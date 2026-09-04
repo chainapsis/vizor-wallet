@@ -1850,6 +1850,42 @@ pub(crate) struct ResubmittableTx {
     pub expiry_height: u32,
 }
 
+/// Returns whether the base transaction table contains anything the full
+/// account-aware resubmission query could accept.
+///
+/// This may return a false positive for an inbound transaction, because the
+/// outbound balance predicate exists only in `v_transactions`. It must not
+/// return a false negative. An empty result lets the normal sync case avoid
+/// materializing that comparatively expensive aggregate view.
+fn has_pending_raw_transaction(
+    conn: &rusqlite::Connection,
+    current_height: u32,
+) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS ( \
+             SELECT 1 FROM transactions \
+             WHERE mined_height IS NULL \
+               AND (expiry_height = 0 OR expiry_height > ?1) \
+               AND raw IS NOT NULL \
+         )",
+        [current_height],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Pending transaction preflight error: {e}"))
+}
+
+fn should_skip_resubmission_view(conn: &rusqlite::Connection, current_height: u32) -> bool {
+    match has_pending_raw_transaction(conn, current_height) {
+        Ok(has_candidate) => !has_candidate,
+        Err(error) => {
+            // This is an optimization only. Preserve resubmission liveness if
+            // an old or partially migrated database cannot run the preflight.
+            log::warn!("resubmit: {error}; falling back to v_transactions");
+            false
+        }
+    }
+}
+
 /// Return every wallet transaction that is eligible for automatic
 /// resubmit at `current_height`.
 ///
@@ -1882,6 +1918,9 @@ pub(crate) fn get_resubmittable_txs(
     current_height: u32,
 ) -> Result<Vec<ResubmittableTx>, String> {
     let conn = open_readonly_conn(db_path)?;
+    if should_skip_resubmission_view(&conn, current_height) {
+        return Ok(Vec::new());
+    }
 
     let mut stmt = conn
         .prepare(
@@ -1928,6 +1967,9 @@ pub(crate) fn get_resubmittable_txs_excluding(
     }
 
     let conn = open_readonly_conn(db_path)?;
+    if should_skip_resubmission_view(&conn, current_height) {
+        return Ok(Vec::new());
+    }
     let candidate_metadata = {
         let mut stmt = conn
             .prepare(
@@ -2026,7 +2068,9 @@ mod tests {
         conn.execute_batch(
             "CREATE TABLE transactions (
                  txid BLOB PRIMARY KEY,
-                 raw BLOB
+                 raw BLOB,
+                 mined_height INTEGER,
+                 expiry_height INTEGER
              );
              CREATE TABLE v_transactions (
                  txid BLOB NOT NULL,
@@ -2079,9 +2123,13 @@ mod tests {
     ) {
         let conn = rusqlite::Connection::open(db.path()).unwrap();
         conn.execute(
-            "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)
-             ON CONFLICT(txid) DO UPDATE SET raw = excluded.raw",
-            rusqlite::params![txid, raw],
+            "INSERT INTO transactions (txid, raw, mined_height, expiry_height)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(txid) DO UPDATE SET
+                 raw = excluded.raw,
+                 mined_height = excluded.mined_height,
+                 expiry_height = excluded.expiry_height",
+            rusqlite::params![txid, raw, mined_height, expiry_height],
         )
         .unwrap();
         conn.execute(
@@ -5552,6 +5600,17 @@ mod tests {
         assert_eq!(got[0].txid_bytes, txid.to_vec());
         assert_eq!(got[0].raw_tx, raw);
         assert_eq!(got[0].expiry_height, 1_000_100);
+    }
+
+    #[test]
+    fn resubmit_falls_back_when_preflight_schema_is_unavailable() {
+        let (db, txid) = (fresh_db(), fake_txid(0x08));
+        insert_row(&db, &txid, Some(&fake_raw()), None, Some(1_000_100), -5_000);
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute("ALTER TABLE transactions DROP COLUMN mined_height", [])
+            .unwrap();
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert_eq!(got[0].txid_bytes, txid);
     }
 
     #[test]

@@ -2,83 +2,6 @@ import 'dart:convert';
 
 import '../../core/formatting/hex_codec.dart';
 
-/// Result returned by chain-facing submit endpoints.
-///
-/// A 2xx or accepted deterministic rejection can both carry this shape. Callers
-/// must check [code] before treating [txHash] as a submitted transaction.
-class VotingTxResult {
-  final String txHash;
-  final int code;
-  final String log;
-
-  const VotingTxResult({
-    required this.txHash,
-    required this.code,
-    required this.log,
-  });
-
-  factory VotingTxResult.fromJson(Map<String, dynamic> json) {
-    final code = _intFromJson(json, const ['code']);
-    final txHash = _optionalStringFromJson(json, const ['tx_hash']) ?? '';
-    if (code == 0 && txHash.trim().isEmpty) {
-      throw const FormatException('Missing required string: tx_hash');
-    }
-    return VotingTxResult(
-      txHash: txHash,
-      code: code,
-      log: _optionalStringFromJson(json, const ['log']) ?? '',
-    );
-  }
-}
-
-/// Confirmation query result for a submitted voting transaction.
-class VotingTxConfirmation {
-  final int height;
-  final int code;
-  final String log;
-  final List<Map<String, dynamic>> events;
-
-  const VotingTxConfirmation({
-    required this.height,
-    required this.code,
-    required this.log,
-    required this.events,
-  });
-
-  factory VotingTxConfirmation.fromJson(Map<String, dynamic> json) {
-    return VotingTxConfirmation(
-      height: _intFromJson(json, const ['height']),
-      code: _intFromJson(json, const ['code']),
-      log: _optionalStringFromJson(json, const ['log']) ?? '',
-      events: _optionalListFromJson(json, const [
-        'events',
-      ]).map(_objectFromValue).map(_txEventJsonFromApi).toList(growable: false),
-    );
-  }
-
-  String get eventsJson => jsonEncode(events);
-}
-
-// Validate tx-event fields once and keep only the wire keys Rust consumes.
-Map<String, dynamic> _txEventJsonFromApi(Map<String, dynamic> event) {
-  return <String, dynamic>{
-    'type': _stringFromJson(event, const ['type']),
-    'attributes': _optionalListFromJson(event, const ['attributes'])
-        .map(_objectFromValue)
-        .map(_txEventAttributeJsonFromApi)
-        .toList(growable: false),
-  };
-}
-
-Map<String, dynamic> _txEventAttributeJsonFromApi(
-  Map<String, dynamic> attribute,
-) {
-  return <String, dynamic>{
-    'key': _stringFromJson(attribute, const ['key']),
-    'value': _stringFromJson(attribute, const ['value']),
-  };
-}
-
 /// Lightweight round summary returned by list endpoints.
 ///
 /// The raw object is kept so later provider/UI work can use newly added service
@@ -261,51 +184,6 @@ String _normalizeRoundId(String value) {
   throw const FormatException(
     'Invalid vote_round_id: expected 64 hex chars or 32-byte base64',
   );
-}
-
-int _intFromJson(Map<String, dynamic> json, List<String> keys) {
-  final value = _optionalIntFromJson(json, keys);
-  if (value == null) {
-    throw FormatException('Missing required int: ${keys.first}');
-  }
-  return value;
-}
-
-int? _optionalIntFromJson(Map<String, dynamic> json, List<String> keys) {
-  for (final key in keys) {
-    final value = json[key];
-    if (value == null) continue;
-    if (value is int) return value;
-    if (value is num) {
-      if (value.isFinite && value == value.truncateToDouble()) {
-        return value.toInt();
-      }
-      throw FormatException('$key must be an integer');
-    }
-    return int.parse(value.toString());
-  }
-  return null;
-}
-
-List<Object?> _optionalListFromJson(
-  Map<String, dynamic> json,
-  List<String> keys,
-) {
-  for (final key in keys) {
-    final value = json[key];
-    if (value == null) continue;
-    if (value is List) return value;
-    throw FormatException('Expected list: $key');
-  }
-  return const [];
-}
-
-Map<String, dynamic> _objectFromValue(Object? value) {
-  if (value is Map<String, dynamic>) return value;
-  if (value is Map) {
-    return value.map((key, value) => MapEntry(key.toString(), value));
-  }
-  throw const FormatException('Expected JSON object');
 }
 
 bool _isHexRoundId(String value) {
