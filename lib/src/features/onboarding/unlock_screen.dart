@@ -71,6 +71,16 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
+        // No payment-URI claim here yet. The surface that presents a claimed
+        // link — the payment request card and its host — arrives in the next
+        // PR of this stack, and claiming without one would clear the park to
+        // present nothing. The link stays parked instead: `/home` re-runs the
+        // app-level drain, which still says whatever the policy has to say
+        // about a link this wallet cannot open.
+        //
+        // Desktop has no Gift Card branch here: the desktop runners never
+        // register the HTTPS deeplink, so `/payment-links` is only ever
+        // reached from inside the app.
         context.go('/home');
       });
     } catch (e, st) {

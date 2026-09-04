@@ -26,6 +26,8 @@ const kSyncKeepAwakeEnabledKey = 'zcash_sync_keep_awake_enabled';
 const kSyncKeepAwakePromptSeenKey = 'zcash_sync_keep_awake_prompt_seen';
 const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
+const kPaymentLinkRecoveryStorageKey = 'zcash_gift_card_recovery_v1';
+const kPaymentLinkReceivedStorageKey = 'zcash_gift_card_received_v1';
 const kZcashExplorerUrlKey = 'zcash_explorer_url';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
@@ -378,7 +380,9 @@ class AppSecureStore {
       });
       return;
     }
-    if (key.startsWith(_votingHotkeyKeyPrefix)) {
+    if (key.startsWith(_votingHotkeyKeyPrefix) ||
+        key == kPaymentLinkRecoveryStorageKey ||
+        key == kPaymentLinkReceivedStorageKey) {
       await _secretMutationLock.run(() async {
         await _runStorageOperation(
           'delete "$key"',
@@ -471,8 +475,9 @@ class AppSecureStore {
 
   /// Rotates the wallet password and re-encrypts every app-managed secret.
   ///
-  /// Account mnemonics and voting hotkeys are both encrypted with the wallet
-  /// password, but they may live in different secure storage backends.
+  /// Account mnemonics, voting hotkeys, and payment-link recovery records are
+  /// encrypted with the wallet password, but they may live in different secure
+  /// storage backends.
   Future<bool> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -551,12 +556,12 @@ class AppSecureStore {
           ),
         );
       }
-      final votingHotkeyValues = await _runStorageOperation(
-        'read all voting hotkeys',
+      final appManagedSecretValues = await _runStorageOperation(
+        'read all app-managed secrets',
         _storage.readAll,
       );
-      for (final entry in votingHotkeyValues.entries) {
-        if (!entry.key.startsWith(_votingHotkeyKeyPrefix)) continue;
+      for (final entry in appManagedSecretValues.entries) {
+        if (!_isAppManagedGeneralSecretKey(entry.key)) continue;
 
         if (!_isEncryptedPayload(entry.value)) {
           throw StateError(
@@ -1034,6 +1039,12 @@ class AppSecureStore {
     return key.startsWith(_accountMnemonicKeyPrefix)
         ? _mnemonicStorage
         : _storage;
+  }
+
+  bool _isAppManagedGeneralSecretKey(String key) {
+    return key.startsWith(_votingHotkeyKeyPrefix) ||
+        key == kPaymentLinkRecoveryStorageKey ||
+        key == kPaymentLinkReceivedStorageKey;
   }
 
   Future<void> _deleteRotationRecordBestEffort() async {

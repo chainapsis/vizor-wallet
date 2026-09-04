@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../keystone/services/keystone_batch_signing.dart';
@@ -82,7 +83,10 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     if (depositAddress == null || depositAddress.isEmpty) {
       throw StateError('Swap deposit address is missing');
     }
-    await _rejectTexDepositForKeystone(depositAddress);
+    await _rejectTexDepositForKeystone(
+      depositAddress,
+      networkName: _ref.read(rpcEndpointProvider).networkName,
+    );
     final amountZatoshi = zecDepositAmountZatoshiForIntent(intent);
     final sendFlowId = _newSwapHardwareFlowId('deposit');
     return _ref
@@ -282,8 +286,14 @@ const _swapKeystoneMessageId = 'swap-deposit';
 String _swapKeystoneRequestId(SwapHardwarePcztDraft draft) =>
     'vizor-${draft.sendFlowId}';
 
-Future<void> _rejectTexDepositForKeystone(String address) async {
-  final validation = await rust_sync.validateAddress(address: address);
+Future<void> _rejectTexDepositForKeystone(
+  String address, {
+  required String networkName,
+}) async {
+  final validation = await rust_sync.validateAddress(
+    address: address,
+    network: networkName,
+  );
   if (validation.isValid && validation.addressType == 'tex') {
     throw UnsupportedError('Keystone does not support TEX sends yet.');
   }

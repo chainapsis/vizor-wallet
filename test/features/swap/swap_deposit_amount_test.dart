@@ -1,5 +1,9 @@
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_service.dart';
@@ -57,7 +61,11 @@ void main() {
   });
 
   test('hardware ZEC deposit rejects TEX before proposal', () async {
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      // The TEX check validates against the wallet's own network, which it
+      // reads off the persisted endpoint.
+      overrides: [appBootstrapProvider.overrideWithValue(_bootstrap)],
+    );
     addTearDown(container.dispose);
 
     final service = container.read(swapHardwareSigningServiceProvider);
@@ -80,8 +88,31 @@ void main() {
       ),
     );
     expect(rustApi.proposeSendCalls, 0);
+    expect(
+      rustApi.lastValidatedNetwork,
+      _bootstrap.rpcEndpointConfig.networkName,
+      reason:
+          'the deposit address is checked against the network the wallet '
+          'would broadcast on',
+    );
   });
 }
+
+final _bootstrap = AppBootstrapState(
+  initialLocation: '/home',
+  initialAccountState: const AccountState(
+    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    activeAccountUuid: 'account-1',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: kZcashDefaultNetworkName,
+  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
 
 SwapQuote _quote({
   String? sellAmountTextOverride,
@@ -132,20 +163,31 @@ SwapIntent _intent({
 class _RustApiFake implements RustLibApi {
   int proposeSendCalls = 0;
 
+  /// The network the last address validation was asked about.
+  String? lastValidatedNetwork;
+
   void reset() {
     proposeSendCalls = 0;
+    lastValidatedNetwork = null;
   }
 
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) async {
+    lastValidatedNetwork = network;
     if (address == _texAddress) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex');
+      return const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      );
     }
     return const AddressValidationResult(
       isValid: true,
       addressType: 'transparent',
+      wrongNetwork: false,
     );
   }
 

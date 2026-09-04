@@ -350,7 +350,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
     try {
-      final result = await rust_sync.validateAddress(address: addr);
+      final result = await rust_sync.validateAddress(
+        address: addr,
+        network: ref.read(rpcEndpointProvider).networkName,
+      );
       if (!mounted || seq != _addressSeq) return;
       final nextAddressType = result.isValid ? result.addressType : 'invalid';
       setState(() {

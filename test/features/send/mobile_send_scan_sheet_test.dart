@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart'
@@ -34,6 +35,7 @@ void main() {
                         unawaited(
                           showMobileSendScanSheet(
                             context,
+                            networkName: kZcashDefaultNetworkName,
                             controller: controller,
                             resolve: (raw) async =>
                                 MobileScanOutcome.accepted(raw),
