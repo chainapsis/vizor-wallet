@@ -105,7 +105,7 @@ class FdroidMetadataTest(unittest.TestCase):
         )
         self.assertEqual(
             rendered.count(
-                "apt-get install -y -t bookworm openjdk-17-jdk-headless"
+                "apt-get install -y -t bookworm build-essential openjdk-17-jdk-headless"
             ),
             3,
         )
