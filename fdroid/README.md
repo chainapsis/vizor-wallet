@@ -67,9 +67,11 @@ Both Direct Release and F-Droid call
 `scripts/build-android-reproducible.sh`. The shared entry point exports the
 source commit into `/tmp/vizor-android-reproducible/source`, uses fixed Pub,
 Cargo, and Gradle cache paths, pins the source timestamp, and remaps Rust source
-paths. Builds on one host are serialized because the canonical directory is
-shared. The directory is private to its owner and symlinks are rejected before
-it is cleaned or used.
+paths. Generated fdroiddata metadata installs OpenJDK 17, selects its `java`
+and `javac` alternatives, and exports `JAVA_HOME` because D8/R8 output is part
+of the reproducible APK payload. Builds on one host are serialized because the
+canonical directory is shared. The directory is private to its owner and
+symlinks are rejected before it is cleaned or used.
 
 The Direct Release workflow must use the same public endpoint values embedded
 by this script:

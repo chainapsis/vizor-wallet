@@ -98,6 +98,29 @@ class FdroidMetadataTest(unittest.TestCase):
         self.assertNotIn("flutter@stable", rendered)
         self.assertEqual(
             rendered.count(
+                'echo "deb https://deb.debian.org/debian bookworm main" > '
+                "/etc/apt/sources.list.d/bookworm.list"
+            ),
+            3,
+        )
+        self.assertEqual(
+            rendered.count(
+                "apt-get install -y -t bookworm openjdk-17-jdk-headless"
+            ),
+            3,
+        )
+        self.assertEqual(
+            rendered.count(
+                "update-java-alternatives -s java-1.17.0-openjdk-amd64"
+            ),
+            3,
+        )
+        self.assertEqual(
+            rendered.count("export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"),
+            6,
+        )
+        self.assertEqual(
+            rendered.count(
                 "export PUB_CACHE=/tmp/vizor-android-reproducible/pub-cache"
             ),
             6,
@@ -267,7 +290,6 @@ class AndroidReproducibleBuildScriptTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("FLUTTER_BIN must be an absolute path", result.stderr)
-
 
 class AndroidReproducibleRustWrapperTest(unittest.TestCase):
     def _run_with_fake_rustup(self, *, installed: bool) -> tuple[subprocess.CompletedProcess, pathlib.Path]:
