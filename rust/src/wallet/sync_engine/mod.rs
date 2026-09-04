@@ -52,7 +52,7 @@ mod lwd;
 pub(crate) mod mempool;
 
 use enhance::run_enhancement;
-use enhance_pir::EnhancePirSync;
+use enhance_pir::{EnhancePirRunError, EnhancePirSync};
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
@@ -1754,6 +1754,29 @@ async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
     }
 }
 
+/// Runs optional private enhancement without making compact synchronization
+/// depend on the separate service. An ordinary failure defers retries until a
+/// new full-sync session; cancellation and mode handoff still stop immediately.
+async fn run_optional_enhance_pir(
+    enhance_pir: &mut EnhancePirSync,
+    db: &mut WalletDatabase,
+    should_exit: &impl Fn() -> bool,
+) -> bool {
+    match Box::pin(enhance_pir.run(db, should_exit)).await {
+        Ok(()) => false,
+        Err(EnhancePirRunError::ExitRequested) => true,
+        Err(EnhancePirRunError::Failed(error)) => {
+            enhance_pir.defer();
+            log::warn!(
+                "[{}] sync: private Ironwood enhancement failed; queued work will retry on a later sync: {}",
+                elapsed(),
+                error,
+            );
+            false
+        }
+    }
+}
+
 /// Discard a completed tip RPC result when cancellation or a mode handoff won
 /// the race. Callers must apply this before interpreting the result or mutating
 /// the wallet DB.
@@ -2652,7 +2675,10 @@ async fn run_sync_impl(
 
     // Retry enhancement work left by an interrupted/older sync even when the wallet
     // is already at the chain tip and no compact-block batch will run.
-    Box::pin(enhance_pir.run(&mut db)).await?;
+    if run_optional_enhance_pir(&mut enhance_pir, &mut db, &should_exit).await {
+        log::info!("[{}] sync: exiting during private enhancement", elapsed());
+        return Ok(());
+    }
 
     // 5. Sync loop
     loop {
@@ -3390,7 +3416,10 @@ async fn run_sync_impl(
         // independent position queue is populated atomically by compact scan.
         // Box this transport-heavy future so its Hyper/Tor connector state does
         // not inflate the already-large sync future exported through FRB.
-        Box::pin(enhance_pir.run(&mut db)).await?;
+        if run_optional_enhance_pir(&mut enhance_pir, &mut db, &should_exit).await {
+            log::info!("[{}] sync: exiting during private enhancement", elapsed());
+            return Ok(());
+        }
 
         // Legacy enhancement remains available for status and transparent
         // history. When private recovery is enabled, protected Ironwood

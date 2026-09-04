@@ -5,6 +5,7 @@
 //! Ironwood tree size agree with the wallet's locally scanned chain state.
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -43,7 +44,21 @@ const MAX_LOGICAL_ROWS: u64 = 65_536;
 pub(super) struct EnhancePirSync {
     network: WalletNetwork,
     endpoint: Option<String>,
+    pending_session: Option<EnhanceSession>,
     session: Option<QuerySession>,
+    deferred: bool,
+}
+
+#[derive(Debug)]
+pub(super) enum EnhancePirRunError {
+    ExitRequested,
+    Failed(SyncError),
+}
+
+impl From<SyncError> for EnhancePirRunError {
+    fn from(error: SyncError) -> Self {
+        Self::Failed(error)
+    }
 }
 
 impl EnhancePirSync {
@@ -56,7 +71,9 @@ impl EnhancePirSync {
         Self {
             network,
             endpoint,
+            pending_session: None,
             session: None,
+            deferred: false,
         }
     }
 
@@ -64,31 +81,65 @@ impl EnhancePirSync {
         self.endpoint.is_some()
     }
 
-    pub(super) async fn run(&mut self, db: &mut WalletDatabase) -> Result<(), SyncError> {
+    /// Defers optional service work until a new full-sync session while
+    /// preserving private enhancement mode for the durable queue.
+    pub(super) fn defer(&mut self) {
+        self.deferred = true;
+    }
+
+    pub(super) async fn run(
+        &mut self,
+        db: &mut WalletDatabase,
+        should_exit: &impl Fn() -> bool,
+    ) -> Result<(), EnhancePirRunError> {
+        if should_exit() {
+            return Err(EnhancePirRunError::ExitRequested);
+        }
+        if self.endpoint.is_none() || self.deferred {
+            return Ok(());
+        }
         let requests = db
             .enhance_pir_requests()
             .map_err(|error| SyncError::db(format!("enhance_pir_requests: {error}")))?;
-        if requests.is_empty() || self.endpoint.is_none() {
+        if requests.is_empty() {
             return Ok(());
         }
 
         if self.session.is_none() {
-            let endpoint = self.endpoint.as_deref().expect("checked above");
-            let init = fetch_init(endpoint).await?;
-            match snapshot_status(db, &init.generation)? {
+            let endpoint = self.endpoint.as_deref().expect("checked above").to_owned();
+            let network = self.network;
+            initialize_once(&mut self.pending_session, async {
+                let init = fetch_init(&endpoint, should_exit).await?;
+                let acceptance = generation_acceptance(network, &init.generation)?;
+                acceptance
+                    .validate(&init.generation)
+                    .map_err(client_protocol_error)?;
+                Ok::<_, EnhancePirRunError>(init)
+            })
+            .await?;
+
+            let pending = self.pending_session.as_ref().expect("initialized above");
+            match snapshot_status(db, &pending.generation)? {
                 EnhancePirSnapshotStatus::NotYetScanned => return Ok(()),
-                EnhancePirSnapshotStatus::Mismatch => return Err(snapshot_mismatch()),
+                EnhancePirSnapshotStatus::Mismatch => return Err(snapshot_mismatch().into()),
                 EnhancePirSnapshotStatus::Accepted => {}
             }
+            if should_exit() {
+                return Err(EnhancePirRunError::ExitRequested);
+            }
+            let init = self.pending_session.take().expect("checked above");
             let acceptance = generation_acceptance(self.network, &init.generation)?;
             self.session =
                 Some(QuerySession::from_session(init, &acceptance).map_err(client_protocol_error)?);
+            if should_exit() {
+                return Err(EnhancePirRunError::ExitRequested);
+            }
         }
         let session = self.session.as_ref().expect("initialized above");
         let generation = session.generation();
         match snapshot_status(db, generation)? {
             EnhancePirSnapshotStatus::NotYetScanned => return Ok(()),
-            EnhancePirSnapshotStatus::Mismatch => return Err(snapshot_mismatch()),
+            EnhancePirSnapshotStatus::Mismatch => return Err(snapshot_mismatch().into()),
             EnhancePirSnapshotStatus::Accepted => {}
         }
 
@@ -108,6 +159,9 @@ impl EnhancePirSync {
         let mut non_recoverable = 0usize;
         let row_count = rows.len();
         for requests in rows.into_values() {
+            if should_exit() {
+                return Err(EnhancePirRunError::ExitRequested);
+            }
             let position = u64::from(requests[0].position());
             let (query, _) = session
                 .prepare_position(position)
@@ -120,13 +174,20 @@ impl EnhancePirSync {
                 )?,
                 query.body().to_vec(),
                 MAX_PIR_BODY_BYTES,
+                should_exit,
             )
             .await?;
+            if should_exit() {
+                return Err(EnhancePirRunError::ExitRequested);
+            }
             let row = session
                 .decode(query, &response)
                 .map_err(client_protocol_error)?;
 
             for request in requests {
+                if should_exit() {
+                    return Err(EnhancePirRunError::ExitRequested);
+                }
                 let position = u64::from(request.position());
                 let slot = position as usize % RECORDS_PER_ROW;
                 let wire_record = record_in_row(&row, slot).map_err(client_protocol_error)?;
@@ -150,7 +211,8 @@ impl EnhancePirSync {
                 {
                     return Err(SyncError::parse(
                         "Enhance PIR record failed wallet authentication",
-                    ));
+                    )
+                    .into());
                 }
             }
         }
@@ -165,17 +227,29 @@ impl EnhancePirSync {
     }
 }
 
-async fn fetch_init(endpoint: &str) -> Result<EnhanceSession, SyncError> {
+async fn initialize_once<T, E>(
+    cached: &mut Option<T>,
+    initialize: impl Future<Output = Result<T, E>>,
+) -> Result<(), E> {
+    if cached.is_none() {
+        *cached = Some(initialize.await?);
+    }
+    Ok(())
+}
+
+async fn fetch_init(
+    endpoint: &str,
+    should_exit: &impl Fn() -> bool,
+) -> Result<EnhanceSession, EnhancePirRunError> {
     if !endpoint.starts_with("https://") {
-        return Err(SyncError::parse(
-            "Enhance PIR endpoint must use an https:// URL",
-        ));
+        return Err(SyncError::parse("Enhance PIR endpoint must use an https:// URL").into());
     }
     let session = routed_request(
         Method::GET,
         &endpoint_path(endpoint, "/v1/enhance/init")?,
         Vec::new(),
         MAX_SESSION_BYTES,
+        should_exit,
     )
     .await?;
     let session: EnhanceSession = serde_json::from_slice(&session)
@@ -258,56 +332,72 @@ async fn routed_request(
     url: &str,
     body: Vec<u8>,
     body_limit: usize,
-) -> Result<Vec<u8>, SyncError> {
+    should_exit: &impl Fn() -> bool,
+) -> Result<Vec<u8>, EnhancePirRunError> {
+    if should_exit() {
+        return Err(EnhancePirRunError::ExitRequested);
+    }
     if crate::network_privacy::is_tor_desired() {
-        let client = crate::network_privacy::tor_client_for_route(true, || false)
+        let client = crate::network_privacy::tor_client_for_route(true, || should_exit())
             .await
             .map_err(|error| {
-                SyncError::net(format!("network privacy blocked Enhance PIR: {error}"))
+                if should_exit() {
+                    EnhancePirRunError::ExitRequested
+                } else {
+                    EnhancePirRunError::Failed(SyncError::net(format!(
+                        "network privacy blocked Enhance PIR: {error}"
+                    )))
+                }
             })?
-            .ok_or_else(|| SyncError::net("Tor route changed before Enhance PIR request"))?;
+            .ok_or_else(|| {
+                EnhancePirRunError::Failed(SyncError::net(
+                    "Tor route changed before Enhance PIR request",
+                ))
+            })?;
         let uri = url
             .parse()
             .map_err(|error| SyncError::parse(format!("invalid Enhance PIR URL: {error}")))?;
-        let response = match method {
-            Method::GET => {
-                tokio::time::timeout(
-                    HTTP_TIMEOUT,
-                    client.http_get(
-                        uri,
-                        |builder| builder,
-                        |incoming| tor_body_limited(incoming, body_limit),
-                        0,
-                        |_| None,
-                    ),
-                )
-                .await
+        let request = async {
+            match method {
+                Method::GET => {
+                    client
+                        .http_get(
+                            uri,
+                            |builder| builder,
+                            |incoming| tor_body_limited(incoming, body_limit),
+                            0,
+                            |_| None,
+                        )
+                        .await
+                }
+                Method::POST => {
+                    client
+                        .http_post(
+                            uri,
+                            |builder| {
+                                builder
+                                    .header(http::header::CONTENT_TYPE, "application/octet-stream")
+                            },
+                            Full::new(Bytes::from(body)),
+                            |incoming| tor_body_limited(incoming, body_limit),
+                            0,
+                            |_| None,
+                        )
+                        .await
+                }
+                _ => unreachable!("Enhance PIR uses GET and POST only"),
             }
-            Method::POST => {
-                tokio::time::timeout(
-                    HTTP_TIMEOUT,
-                    client.http_post(
-                        uri,
-                        |builder| {
-                            builder.header(http::header::CONTENT_TYPE, "application/octet-stream")
-                        },
-                        Full::new(Bytes::from(body)),
-                        |incoming| tor_body_limited(incoming, body_limit),
-                        0,
-                        |_| None,
-                    ),
-                )
-                .await
-            }
-            _ => unreachable!("Enhance PIR uses GET and POST only"),
-        }
-        .map_err(|_| SyncError::net("Enhance PIR Tor request timed out"))?
-        .map_err(|error| SyncError::net(format!("Enhance PIR Tor request failed: {error}")))?;
+            .map_err(|error| SyncError::net(format!("Enhance PIR Tor request failed: {error}")))
+        };
+        let response =
+            await_request_with_cancel(request, should_exit, "Enhance PIR Tor request timed out")
+                .await?;
         if !response.status().is_success() {
             return Err(SyncError::net(format!(
                 "Enhance PIR server returned HTTP {}",
                 response.status()
-            )));
+            ))
+            .into());
         }
         return Ok(response.into_body());
     }
@@ -316,7 +406,7 @@ async fn routed_request(
         .parse::<http::Uri>()
         .map_err(|error| SyncError::parse(format!("invalid Enhance PIR URL: {error}")))?;
     if uri.scheme_str() != Some("https") {
-        return Err(SyncError::parse("Enhance PIR transport requires HTTPS"));
+        return Err(SyncError::parse("Enhance PIR transport requires HTTPS").into());
     }
     let connector = HttpsConnectorBuilder::new()
         .with_webpki_roots()
@@ -330,17 +420,39 @@ async fn routed_request(
         .header(http::header::CONTENT_TYPE, "application/octet-stream")
         .body(Full::new(Bytes::from(body)))
         .map_err(|error| SyncError::parse(format!("build Enhance PIR request: {error}")))?;
-    let response = tokio::time::timeout(HTTP_TIMEOUT, client.request(request))
-        .await
-        .map_err(|_| SyncError::net("Enhance PIR HTTPS request timed out"))?
-        .map_err(|error| SyncError::net(format!("Enhance PIR HTTPS request failed: {error}")))?;
-    if !response.status().is_success() {
-        return Err(SyncError::net(format!(
-            "Enhance PIR server returned HTTP {}",
-            response.status()
-        )));
+    let request = async {
+        let response = client.request(request).await.map_err(|error| {
+            SyncError::net(format!("Enhance PIR HTTPS request failed: {error}"))
+        })?;
+        if !response.status().is_success() {
+            return Err(SyncError::net(format!(
+                "Enhance PIR server returned HTTP {}",
+                response.status()
+            )));
+        }
+        read_body_limited(response.status(), response.into_body(), body_limit).await
+    };
+    await_request_with_cancel(request, should_exit, "Enhance PIR HTTPS request timed out").await
+}
+
+async fn await_request_with_cancel<T>(
+    request: impl Future<Output = Result<T, SyncError>>,
+    should_exit: &impl Fn() -> bool,
+    timeout_message: &'static str,
+) -> Result<T, EnhancePirRunError> {
+    if should_exit() {
+        return Err(EnhancePirRunError::ExitRequested);
     }
-    read_body_limited(response.status(), response.into_body(), body_limit).await
+    tokio::pin!(request);
+    tokio::select! {
+        biased;
+        _ = super::watch_for_exit(should_exit) => Err(EnhancePirRunError::ExitRequested),
+        result = tokio::time::timeout(HTTP_TIMEOUT, &mut request) => {
+            result
+                .map_err(|_| EnhancePirRunError::Failed(SyncError::net(timeout_message)))?
+                .map_err(EnhancePirRunError::Failed)
+        }
+    }
 }
 
 async fn tor_body_limited(
@@ -386,7 +498,81 @@ async fn read_body_limited(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+
     use super::*;
+
+    #[tokio::test]
+    async fn initialization_is_reused_while_waiting_for_the_anchor() {
+        let calls = AtomicUsize::new(0);
+        let mut cached = None;
+
+        initialize_once(&mut cached, async {
+            calls.fetch_add(1, Ordering::Relaxed);
+            Ok::<_, ()>("first")
+        })
+        .await
+        .unwrap();
+        initialize_once(&mut cached, async {
+            calls.fetch_add(1, Ordering::Relaxed);
+            Ok::<_, ()>("replacement")
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(cached, Some("first"));
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn pending_request_stops_when_sync_exit_is_requested() {
+        let exit = Arc::new(AtomicBool::new(false));
+        let flip = exit.clone();
+        let flipping = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            flip.store(true, Ordering::Release);
+        });
+        let should_exit = || exit.load(Ordering::Acquire);
+        let started = tokio::time::Instant::now();
+
+        let result = await_request_with_cancel(
+            std::future::pending::<Result<(), SyncError>>(),
+            &should_exit,
+            "unused timeout",
+        )
+        .await;
+
+        assert!(matches!(result, Err(EnhancePirRunError::ExitRequested)));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        flipping.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn request_failures_remain_distinct_from_sync_exit() {
+        let result = await_request_with_cancel(
+            async { Err::<(), _>(SyncError::net("service unavailable")) },
+            &|| false,
+            "unused timeout",
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(EnhancePirRunError::Failed(error))
+                if error.to_string().contains("service unavailable")
+        ));
+    }
+
+    #[test]
+    fn deferring_service_work_preserves_private_mode() {
+        let mut enhance_pir = EnhancePirSync::new(WalletNetwork::Main, true);
+
+        enhance_pir.defer();
+
+        assert!(enhance_pir.enabled());
+        assert!(enhance_pir.deferred);
+    }
 
     #[test]
     fn only_enabled_mainnet_uses_enhance_pir() {
@@ -423,7 +609,9 @@ mod tests {
         // Production sync installs this while opening lightwalletd; this test
         // intentionally exercises the PIR transport in isolation.
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let init = fetch_init(DEFAULT_MAINNET_ENDPOINT).await.unwrap();
+        let init = fetch_init(DEFAULT_MAINNET_ENDPOINT, &|| false)
+            .await
+            .unwrap();
         let acceptance = generation_acceptance(WalletNetwork::Main, &init.generation).unwrap();
         let session = QuerySession::from_session(init, &acceptance).unwrap();
         let query = session.prepare_dummy().unwrap();
@@ -432,6 +620,7 @@ mod tests {
             &endpoint_path(DEFAULT_MAINNET_ENDPOINT, "/v1/enhance/query").unwrap(),
             query.body().to_vec(),
             MAX_PIR_BODY_BYTES,
+            &|| false,
         )
         .await
         .unwrap();

@@ -94,6 +94,7 @@ import 'src/features/voting/screens/voting_status_screen.dart';
 import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
+import 'src/providers/enhance_pir_provider.dart';
 import 'src/providers/linux_update_provider.dart';
 import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
@@ -144,7 +145,11 @@ Future<Widget> buildBootstrappedZcashWalletApp({
   List<Override> overrides = const [],
 }) async {
   final bootstrap = await loadAppBootstrap();
-  rust_sync.setEnhancePirEnabled(enabled: bootstrap.enhancePirEnabled);
+  rust_sync.setEnhancePirEnabled(
+    enabled:
+        bootstrap.enhancePirEnabled &&
+        isEnhancePirAvailableForNetwork(bootstrap.network),
+  );
   return BootstrappedZcashWalletApp(
     initialBootstrap: bootstrap,
     overrides: overrides,
@@ -187,7 +192,11 @@ class _BootstrappedZcashWalletAppState
 
   Future<void> _reloadBootstrap() async {
     final bootstrap = await loadAppBootstrap();
-    rust_sync.setEnhancePirEnabled(enabled: bootstrap.enhancePirEnabled);
+    rust_sync.setEnhancePirEnabled(
+      enabled:
+          bootstrap.enhancePirEnabled &&
+          isEnhancePirAvailableForNetwork(bootstrap.network),
+    );
     if (!mounted) return;
     setState(() {
       _bootstrap = bootstrap;

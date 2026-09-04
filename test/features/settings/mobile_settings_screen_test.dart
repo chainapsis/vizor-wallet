@@ -58,19 +58,23 @@ const _hardwareAccountState = AccountState(
   activeAddress: 'u1settingsaddress',
 );
 
-AppBootstrapState _bootstrap([AccountState accountState = _accountState]) =>
-    AppBootstrapState(
-      initialLocation: '/settings',
-      initialAccountState: accountState,
-      initialSyncSnapshot: AppSyncSnapshot.empty,
-      network: 'main',
-      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-      themeMode: ThemeMode.dark,
-      privacyModeEnabled: false,
-      isPasswordConfigured: true,
-      isUnlocked: true,
-      passwordRotationRecoveryFailed: false,
-    );
+AppBootstrapState _bootstrap(
+  AccountState accountState, {
+  String network = 'main',
+  bool enhancePirEnabled = false,
+}) => AppBootstrapState(
+  initialLocation: '/settings',
+  initialAccountState: accountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: network,
+  rpcEndpointConfig: defaultRpcEndpointConfig(network),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+  enhancePirEnabled: enhancePirEnabled,
+);
 
 /// Skips the secure-storage write so theme selection works without a
 /// platform channel in widget tests.
@@ -134,10 +138,18 @@ Widget _app({
   AppThemeData? themeData,
   bool withTabBar = false,
   double textScale = 1,
+  String network = 'main',
+  bool enhancePirEnabled = false,
 }) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(
+          accountState,
+          network: network,
+          enhancePirEnabled: enhancePirEnabled,
+        ),
+      ),
       if (networkPrivacyState != null)
         networkPrivacyProvider.overrideWith(
           () => _FakeNetworkPrivacyNotifier(
@@ -463,6 +475,19 @@ void main() {
     } finally {
       debugDefaultTargetPlatformOverride = previousPlatformOverride;
     }
+  });
+
+  testWidgets('private Ironwood recovery is hidden off mainnet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(network: 'regtest', enhancePirEnabled: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Private Ironwood recovery'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_settings_enhance_pir_toggle')),
+      findsNothing,
+    );
   });
 
   testWidgets('a connected Tor route omits the iOS exception on Android', (

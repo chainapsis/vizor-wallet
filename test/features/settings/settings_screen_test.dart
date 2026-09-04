@@ -421,6 +421,21 @@ void main() {
     }
   });
 
+  testWidgets('private Ironwood recovery is hidden off mainnet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(network: 'test', enhancePirEnabled: true),
+    );
+    await tester.pump();
+
+    expect(find.text('Private Ironwood recovery'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('settings_enhance_pir_toggle')),
+      findsNothing,
+    );
+  });
+
   testWidgets('Tor stays effective while switching to direct', (tester) async {
     await tester.pumpWidget(
       _settingsHarness(
@@ -536,6 +551,8 @@ Widget _settingsHarness({
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
   List<bool>? networkPrivacyCalls,
   List<Override> extraOverrides = const [],
+  String network = 'main',
+  bool enhancePirEnabled = false,
 }) {
   final router = GoRouter(
     initialLocation: '/settings',
@@ -553,7 +570,9 @@ Widget _settingsHarness({
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrapForNetwork(network, enhancePirEnabled: enhancePirEnabled),
+      ),
       syncProvider.overrideWith(FakeSyncNotifier.new),
       networkPrivacyProvider.overrideWith(
         () => _FakeNetworkPrivacyNotifier(
@@ -627,7 +646,10 @@ class _FailedWindowsUpdateNotifier extends WindowsUpdateNotifier {
   );
 }
 
-final _bootstrap = AppBootstrapState(
+AppBootstrapState _bootstrapForNetwork(
+  String network, {
+  bool enhancePirEnabled = false,
+}) => AppBootstrapState(
   initialLocation: '/settings',
   initialAccountState: const AccountState(
     accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
@@ -635,13 +657,14 @@ final _bootstrap = AppBootstrapState(
     activeAddress: 'u1settingsscreenaddress',
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  network: network,
+  rpcEndpointConfig: defaultRpcEndpointConfig(network),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
+  enhancePirEnabled: enhancePirEnabled,
 );
 
 double _toggleTrackOpacity(WidgetTester tester) {

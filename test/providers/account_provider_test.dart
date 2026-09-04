@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
@@ -158,6 +159,37 @@ void main() {
     );
   });
 
+  test('wallet reset hook clears private recovery runtime state', () async {
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrapWithAccounts(enhancePirEnabled: true),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(enhancePirProvider), isTrue);
+    container.read(enhancePirProvider.notifier).clearAfterWalletReset();
+
+    expect(container.read(enhancePirProvider), isFalse);
+    expect(_rustApi.enhancePirEnabledValues, [false]);
+  });
+
+  test('private recovery ignores stale enabled state off mainnet', () {
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrapWithAccounts(network: 'test', enhancePirEnabled: true),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(enhancePirAvailableProvider), isFalse);
+    expect(container.read(enhancePirProvider), isFalse);
+  });
+
   test(
     'wallet link import rejects cross-network links before fresh wallet import',
     () async {
@@ -296,7 +328,9 @@ void main() {
       shareTracking.addRestoreRequestListener(() => restoreRequests++);
       final container = ProviderContainer(
         overrides: [
-          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          appBootstrapProvider.overrideWithValue(
+            _bootstrapWithAccounts(enhancePirEnabled: true),
+          ),
           votingShareTrackingRegistryProvider.overrideWithValue(shareTracking),
         ],
       );
@@ -316,6 +350,8 @@ void main() {
       );
       expect(shareTracking.isQuiesced('account-1'), isFalse);
       expect(restoreRequests, 2);
+      expect(container.read(enhancePirProvider), isTrue);
+      expect(_rustApi.enhancePirEnabledValues, isEmpty);
     },
   );
 
@@ -524,8 +560,17 @@ class _FakeAnyhowException implements Exception {
 
 class _AccountMutationRustApiFake implements RustLibApi {
   final deletedAccountUuids = <String>[];
+  final enhancePirEnabledValues = <bool>[];
 
-  void reset() => deletedAccountUuids.clear();
+  void reset() {
+    deletedAccountUuids.clear();
+    enhancePirEnabledValues.clear();
+  }
+
+  @override
+  void crateApiSyncSetEnhancePirEnabled({required bool enabled}) {
+    enhancePirEnabledValues.add(enabled);
+  }
 
   @override
   Future<void> crateApiWalletDeleteAccount({
@@ -617,7 +662,11 @@ Future<void> _expectAccountDeletionDrainsLiveShareTracking() async {
   expect(shareTracking.isQuiesced('account-2'), isFalse);
 }
 
-AppBootstrapState _bootstrapWithAccounts() {
+AppBootstrapState _bootstrapWithAccounts({
+  String? network,
+  bool enhancePirEnabled = false,
+}) {
+  final effectiveNetwork = network ?? kZcashDefaultNetworkName;
   const accountState = AccountState(
     accounts: [
       AccountInfo(uuid: 'account-1', name: 'Primary', order: 0),
@@ -629,12 +678,13 @@ AppBootstrapState _bootstrapWithAccounts() {
     initialLocation: '/home',
     initialAccountState: accountState,
     initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('account-1'),
-    network: kZcashDefaultNetworkName,
-    rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+    network: effectiveNetwork,
+    rpcEndpointConfig: defaultRpcEndpointConfig(effectiveNetwork),
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,
     isUnlocked: true,
     passwordRotationRecoveryFailed: false,
+    enhancePirEnabled: enhancePirEnabled,
   );
 }
