@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,7 +60,7 @@ abstract interface class PaymentLinkHardwareSigningService {
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
     String? outputParamsPath,
-    void Function()? onSubmissionStarted,
+    FutureOr<void> Function()? onSubmissionStarted,
   });
 }
 
@@ -294,13 +295,13 @@ class RustPaymentLinkHardwareSigningService
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
     String? outputParamsPath,
-    void Function()? onSubmissionStarted,
+    FutureOr<void> Function()? onSubmissionStarted,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     // Rust broadcasts before it stores, so from here on a throw can no longer
     // prove the network did not accept the transaction.
-    onSubmissionStarted?.call();
+    await onSubmissionStarted?.call();
     final stored = await rust_sync
         .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
           dbPath: dbPath,

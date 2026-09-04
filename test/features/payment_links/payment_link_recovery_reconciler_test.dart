@@ -14,6 +14,7 @@ void main() {
       loadCurrentHeight: () async => BigInt.from(119),
       loadScannedHeight: () async => BigInt.from(119),
       loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => const [],
     );
 
     final record = (await reconciler.load()).single;
@@ -33,6 +34,7 @@ void main() {
         loadCurrentHeight: () async => BigInt.from(120),
         loadScannedHeight: () async => BigInt.from(120),
         loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
       );
 
       expect(await reconciler.load(), isEmpty);
@@ -54,6 +56,7 @@ void main() {
         loadTransactionsByAccount: (_) async => {
           'source-account': [_transaction(txid: _preparedTxid)],
         },
+        loadLinkFundingHistory: (_) async => const [],
       );
 
       final record = (await reconciler.load()).single;
@@ -76,6 +79,7 @@ void main() {
         loadCurrentHeight: () async => BigInt.from(100000),
         loadScannedHeight: () async => BigInt.from(100000),
         loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
       );
 
       final record = (await reconciler.load()).single;
@@ -100,6 +104,7 @@ void main() {
           _transaction(txid: _preparedTxid, expiredUnmined: true),
         ],
       },
+      loadLinkFundingHistory: (_) async => const [],
     );
 
     expect(await reconciler.load(), isEmpty);
@@ -115,6 +120,7 @@ void main() {
       loadTransactionsByAccount: (_) async => {
         'source-account': [_transaction(txid: _preparedTxid)],
       },
+      loadLinkFundingHistory: (_) async => const [],
     );
 
     final record = (await reconciler.load()).single;
@@ -131,6 +137,7 @@ void main() {
       loadCurrentHeight: () => throw StateError('offline'),
       loadScannedHeight: () async => BigInt.from(120),
       loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => const [],
     );
 
     final record = (await reconciler.load()).single;
@@ -149,6 +156,7 @@ void main() {
         loadCurrentHeight: () async => BigInt.from(125),
         loadScannedHeight: () async => BigInt.from(119),
         loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
       );
 
       final record = (await reconciler.load()).single;
@@ -169,6 +177,7 @@ void main() {
           _transaction(txid: _preparedTxid, expiredUnmined: true),
         ],
       },
+      loadLinkFundingHistory: (_) async => const [],
     );
 
     expect(await reconciler.load(), isEmpty);
@@ -191,6 +200,7 @@ void main() {
             _transaction(txid: _secondTxid),
           ],
         },
+        loadLinkFundingHistory: (_) async => const [],
       );
 
       expect(await reconciler.load(), hasLength(1));
@@ -213,11 +223,93 @@ void main() {
           _transaction(txid: _preparedTxid, expiredUnmined: true),
         ],
       },
+      loadLinkFundingHistory: (_) async => const [],
     );
 
     final record = (await reconciler.load()).single;
     expect(record.state, PaymentLinkRecoveryState.shared);
   });
+
+  test('funds an ambiguous submission its Gift Card wallet can see', () async {
+    final fixture = await _ambiguousFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(200),
+      loadScannedHeight: () async => BigInt.from(200),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => [
+        _transaction(txid: _preparedTxid, txKind: 'received'),
+      ],
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.funded);
+    expect(record.fundingTxids, _preparedTxid);
+    expect(await reconciler.countUnsharedFundedForAccount('source-account'), 1);
+  });
+
+  test(
+    'retains an ambiguous submission until it can no longer be mined',
+    () async {
+      final fixture = await _ambiguousFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(200),
+        loadScannedHeight: () async => BigInt.from(159),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.isAmbiguousSubmission, isTrue);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    },
+  );
+
+  test(
+    'removes an ambiguous submission that never reached the chain',
+    () async {
+      final fixture = await _ambiguousFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(200),
+        loadScannedHeight: () async => BigInt.from(160),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+      expect(await reconciler.load(), isEmpty);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        0,
+      );
+    },
+  );
+
+  test(
+    'keeps an ambiguous submission when its wallet cannot be read',
+    () async {
+      final fixture = await _ambiguousFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(200),
+        loadScannedHeight: () async => BigInt.from(200),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) => throw StateError('claim sync failed'),
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.isAmbiguousSubmission, isTrue);
+    },
+  );
 
   test('refreshes the cached unshared count after lifecycle writes', () async {
     final reconciler = _CountingRecoveryReconciler();
@@ -297,6 +389,27 @@ _submittedFixture() async {
   return (store: store, storage: storage);
 }
 
+/// A software funding whose broadcast started and whose result never came
+/// back: the draft carries a submission height and no transaction id.
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_ambiguousFixture() async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: _preparedAddress,
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+  await store.markSubmissionStarted(address: link.address, chainHeight: 100);
+  return (store: store, storage: storage);
+}
+
 Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
 _fundedFixture({String fundingTxids = _preparedTxid}) async {
   final storage = _MemoryStorage();
@@ -319,6 +432,7 @@ _fundedFixture({String fundingTxids = _preparedTxid}) async {
 rust_sync.TransactionInfo _transaction({
   required String txid,
   bool expiredUnmined = false,
+  String txKind = 'sent',
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
@@ -328,7 +442,7 @@ rust_sync.TransactionInfo _transaction({
     fee: BigInt.from(10000),
     blockTime: BigInt.zero,
     isTransparent: false,
-    txKind: 'sent',
+    txKind: txKind,
     displayAmount: BigInt.from(-110000),
     displayPool: 'shielded',
     createdTime: BigInt.zero,
@@ -355,6 +469,7 @@ class _CountingRecoveryReconciler extends PaymentLinkRecoveryReconciler {
         loadCurrentHeight: () async => BigInt.zero,
         loadScannedHeight: () async => BigInt.zero,
         loadTransactionsByAccount: (_) async => const {},
+        loadLinkFundingHistory: (_) async => const [],
       );
 
   int count = 1;

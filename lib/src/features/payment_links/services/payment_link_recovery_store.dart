@@ -47,6 +47,7 @@ class PaymentLinkRecoveryRecord {
     required this.updatedAt,
     this.fundingTxids,
     this.preparedExpiryHeight,
+    this.submittedAtHeight,
   });
 
   final VizorPaymentLink link;
@@ -56,11 +57,32 @@ class PaymentLinkRecoveryRecord {
   final String? fundingTxids;
   final int? preparedExpiryHeight;
 
+  /// The chain height the wallet knew when a software funding broadcast
+  /// started.
+  ///
+  /// It is written before the broadcast boundary is crossed, so a broadcast
+  /// whose result never came back — an FFI or channel failure after the
+  /// transaction reached the network — still leaves a durable trace to
+  /// reconcile. `0` means the height was unknown at submission time.
+  final int? submittedAtHeight;
+
+  /// True while the wallet knows a funding broadcast started but never learned
+  /// its transaction id.
+  ///
+  /// Such a draft may hold funds, so it is neither removable as inert nor
+  /// matchable by transaction id; the reconciler settles it by scanning the
+  /// link's own wallet.
+  bool get isAmbiguousSubmission =>
+      state == PaymentLinkRecoveryState.draft &&
+      (fundingTxids?.trim().isEmpty ?? true) &&
+      submittedAtHeight != null;
+
   PaymentLinkRecoveryRecord copyWith({
     required PaymentLinkRecoveryState state,
     required DateTime updatedAt,
     Object? fundingTxids = _fieldNotProvided,
     Object? preparedExpiryHeight = _fieldNotProvided,
+    Object? submittedAtHeight = _fieldNotProvided,
   }) {
     return PaymentLinkRecoveryRecord(
       link: link,
@@ -73,6 +95,9 @@ class PaymentLinkRecoveryRecord {
       preparedExpiryHeight: identical(preparedExpiryHeight, _fieldNotProvided)
           ? this.preparedExpiryHeight
           : preparedExpiryHeight as int?,
+      submittedAtHeight: identical(submittedAtHeight, _fieldNotProvided)
+          ? this.submittedAtHeight
+          : submittedAtHeight as int?,
     );
   }
 }
@@ -205,6 +230,46 @@ class PaymentLinkRecoveryStore {
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
         fundingTxids: submittedTxid,
         preparedExpiryHeight: null,
+      );
+      await _writeRecords(_replaceByAddress(records, updated));
+      return updated;
+    });
+  }
+
+  /// Records that a software funding broadcast is about to be handed to the
+  /// network, before its transaction id can be known.
+  ///
+  /// The software path only learns its transaction id from the broadcast
+  /// result, so a failure that loses that result would otherwise leave an inert
+  /// draft that recovery cannot tell apart from one that never funded. Writing
+  /// the submission height first turns that case into an ambiguous submission
+  /// the reconciler can settle against the link's own wallet.
+  ///
+  /// Idempotent: an already-recorded height is the earlier, safer one and is
+  /// kept. A draft that already carries a transaction id, or a record past
+  /// `draft`, needs no marker and is returned unchanged.
+  Future<PaymentLinkRecoveryRecord> markSubmissionStarted({
+    required String address,
+    required int chainHeight,
+    DateTime? updatedAt,
+  }) {
+    return _runExclusive(() async {
+      if (chainHeight < 0) {
+        throw ArgumentError.value(
+          chainHeight,
+          'chainHeight',
+          'A submitted payment link requires a non-negative chain height.',
+        );
+      }
+      final records = await _loadUnlocked();
+      final existing = _findRequired(records, address);
+      if (existing.state != PaymentLinkRecoveryState.draft) return existing;
+      if (existing.fundingTxids?.trim().isNotEmpty ?? false) return existing;
+      if (existing.submittedAtHeight != null) return existing;
+      final updated = existing.copyWith(
+        state: PaymentLinkRecoveryState.draft,
+        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        submittedAtHeight: chainHeight,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -344,7 +409,10 @@ class PaymentLinkRecoveryStore {
       if (existing == null) return;
       if (existing.state != PaymentLinkRecoveryState.draft ||
           (existing.fundingTxids?.trim().isNotEmpty ?? false) ||
-          existing.preparedExpiryHeight != null) {
+          existing.preparedExpiryHeight != null ||
+          // A broadcast started for this draft and its result was never seen,
+          // so it may hold funds even without a transaction id.
+          existing.submittedAtHeight != null) {
         throw StateError(
           'Only an unsubmitted payment link draft can be removed.',
         );
@@ -465,16 +533,41 @@ class PaymentLinkFundingRecovery {
 
   final PaymentLinkRecoveryStore _store;
 
+  /// Persists the bearer secret, then runs [createTransaction] to fund it.
+  ///
+  /// [createTransaction] receives a `markSubmissionStarted` callback it must
+  /// await immediately before the broadcast boundary. The ordering is what
+  /// makes recovery possible:
+  ///
+  /// 1. `saveDraft` — the bearer secret exists before anything can be spent to
+  ///    it.
+  /// 2. `markSubmissionStarted` — a durable trace of a broadcast that is about
+  ///    to happen, written while the transaction id is still unknown.
+  /// 3. the broadcast, then `complete` — the transaction id, then the
+  ///    promotion to funded.
+  ///
+  /// A failure before step 2 is definitive: nothing was sent, so the draft is
+  /// removed as inert. A failure after it — including one that loses the
+  /// broadcast result itself — still propagates to the caller, but leaves an
+  /// ambiguous submission the reconciler can settle against the link's own
+  /// wallet instead of an inert draft it would ignore.
   Future<PaymentLinkFundingRecoveryResult<T>> fund<T>({
     required VizorPaymentLink link,
     required String sourceAccountUuid,
-    required Future<T> Function() createTransaction,
+    required Future<T> Function(Future<void> Function() markSubmissionStarted)
+    createTransaction,
+    required Future<int> Function() currentChainHeight,
     required String Function(T result) fundingTxids,
   }) async {
     await _store.saveDraft(link: link, sourceAccountUuid: sourceAccountUuid);
     late final T result;
     try {
-      result = await createTransaction();
+      result = await createTransaction(() async {
+        await _store.markSubmissionStarted(
+          address: link.address,
+          chainHeight: await currentChainHeight(),
+        );
+      });
     } on PaymentLinkFundingNotSubmittedException catch (failure) {
       await _store.removeUnsubmittedDraft(address: link.address);
       Error.throwWithStackTrace(failure.error, failure.stackTrace);
@@ -574,6 +667,7 @@ Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
     'state': record.state.name,
     'fundingTxids': record.fundingTxids,
     'preparedExpiryHeight': record.preparedExpiryHeight,
+    'submittedAtHeight': record.submittedAtHeight,
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
   };
 }
@@ -589,6 +683,7 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   final stateRaw = value['state'];
   final fundingTxids = value['fundingTxids'];
   final preparedExpiryHeight = value['preparedExpiryHeight'];
+  final submittedAtHeight = value['submittedAtHeight'];
   final updatedAtRaw = value['updatedAt'];
   if (linkRaw is! String ||
       sourceAccountUuid is! String ||
@@ -597,6 +692,8 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
       (fundingTxids != null && fundingTxids is! String) ||
       (preparedExpiryHeight != null &&
           (preparedExpiryHeight is! int || preparedExpiryHeight <= 0)) ||
+      (submittedAtHeight != null &&
+          (submittedAtHeight is! int || submittedAtHeight < 0)) ||
       updatedAtRaw is! String) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Recovery record fields are invalid.',
@@ -637,6 +734,7 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     state: state,
     fundingTxids: fundingTxids,
     preparedExpiryHeight: preparedExpiryHeight as int?,
+    submittedAtHeight: submittedAtHeight as int?,
     updatedAt: updatedAt.toUtc(),
   );
 }
@@ -652,7 +750,11 @@ int countUnsharedFundedPaymentLinks(
             record.sourceAccountUuid == sourceAccountUuid &&
             (record.state == PaymentLinkRecoveryState.funded ||
                 (record.state == PaymentLinkRecoveryState.draft &&
-                    (record.fundingTxids?.trim().isNotEmpty ?? false))),
+                    (record.fundingTxids?.trim().isNotEmpty ?? false)) ||
+                // An ambiguous submission has no transaction id to check, and
+                // its broadcast may well have landed. Blocking the delete is
+                // the conservative answer.
+                record.isAmbiguousSubmission),
       )
       .length;
 }

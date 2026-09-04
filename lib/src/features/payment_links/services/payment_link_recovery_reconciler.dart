@@ -4,8 +4,10 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../models/vizor_payment_link.dart';
 import 'payment_link_lifecycle_revision.dart';
 import 'payment_link_recovery_store.dart';
+import 'payment_link_service.dart';
 import 'payment_link_transaction_matching.dart';
 
 typedef PaymentLinkFundingHistoryLoader =
@@ -13,8 +15,23 @@ typedef PaymentLinkFundingHistoryLoader =
       Set<String> accountUuids,
     );
 
+typedef PaymentLinkOwnFundingHistoryLoader =
+    Future<List<rust_sync.TransactionInfo>> Function(VizorPaymentLink link);
+
+/// How far past its submission height an ambiguous funding broadcast is
+/// treated as never having reached the chain.
+///
+/// A Zcash transaction expires 40 blocks after the height it was built at
+/// (ZIP-203), and the wallet's own scan trails the tip; 20 blocks of margin
+/// keeps a slow scan from discarding a Gift Card that really was funded.
+const kPaymentLinkAmbiguousFundingExpiryDelta = 60;
+
+/// How long an ambiguous funding is kept when no submission height was known.
+const kPaymentLinkAmbiguousFundingUndatedRetention = Duration(hours: 24);
+
 final paymentLinkRecoveryReconcilerProvider =
     Provider<PaymentLinkRecoveryReconciler>((ref) {
+      final claimWallet = PaymentLinkClaimWallet(ref);
       return PaymentLinkRecoveryReconciler(
         ref.watch(paymentLinkRecoveryStoreProvider),
         loadCurrentHeight: () => ref
@@ -44,6 +61,7 @@ final paymentLinkRecoveryReconcilerProvider =
           );
           return Map.fromEntries(entries);
         },
+        loadLinkFundingHistory: claimWallet.loadFundingHistory,
       );
     });
 
@@ -89,20 +107,60 @@ PaymentLinkPreparedFundingDisposition _paymentLinkPreparedFundingDisposition({
   return PaymentLinkPreparedFundingDisposition.pending;
 }
 
+/// The transaction ids by which a Gift Card's own wallet holds funds.
+///
+/// Only inbound transactions count: `sent` rows are the Card being claimed,
+/// and Rust labels an inbound transaction `receiving` until it is mined
+/// ([`receiving_tx_kind`] in `rust/src/wallet/sync/transactions.rs`), so a
+/// funding still in the mempool has to count too — treating it as unseen
+/// would discard a Card that does hold funds.
+List<String> _paymentLinkOwnFundingTxids(
+  Iterable<rust_sync.TransactionInfo> transactions,
+) {
+  return transactions
+      .where(
+        (transaction) =>
+            (transaction.txKind == 'received' ||
+                transaction.txKind == 'receiving') &&
+            !transaction.expiredUnmined &&
+            transaction.txidHex.trim().isNotEmpty,
+      )
+      .map((transaction) => transaction.txidHex.trim())
+      .toSet()
+      .toList();
+}
+
+bool _paymentLinkAmbiguousFundingExpired({
+  required PaymentLinkRecoveryRecord record,
+  required BigInt scannedHeight,
+}) {
+  final submittedAtHeight = record.submittedAtHeight ?? 0;
+  if (submittedAtHeight <= 0) {
+    // No height was known at submission, so age is the only measure left.
+    return DateTime.now().toUtc().difference(record.updatedAt) >
+        kPaymentLinkAmbiguousFundingUndatedRetention;
+  }
+  return scannedHeight >=
+      BigInt.from(submittedAtHeight + kPaymentLinkAmbiguousFundingExpiryDelta);
+}
+
 class PaymentLinkRecoveryReconciler {
   const PaymentLinkRecoveryReconciler(
     this._store, {
     required Future<BigInt> Function() loadCurrentHeight,
     required Future<BigInt> Function() loadScannedHeight,
     required PaymentLinkFundingHistoryLoader loadTransactionsByAccount,
+    required PaymentLinkOwnFundingHistoryLoader loadLinkFundingHistory,
   }) : _loadCurrentHeight = loadCurrentHeight,
        _loadScannedHeight = loadScannedHeight,
-       _loadTransactionsByAccount = loadTransactionsByAccount;
+       _loadTransactionsByAccount = loadTransactionsByAccount,
+       _loadLinkFundingHistory = loadLinkFundingHistory;
 
   final PaymentLinkRecoveryStore _store;
   final Future<BigInt> Function() _loadCurrentHeight;
   final Future<BigInt> Function() _loadScannedHeight;
   final PaymentLinkFundingHistoryLoader _loadTransactionsByAccount;
+  final PaymentLinkOwnFundingHistoryLoader _loadLinkFundingHistory;
 
   Future<int> countUnsharedFundedForAccount(String sourceAccountUuid) async {
     if (sourceAccountUuid.isEmpty) return 0;
@@ -121,6 +179,12 @@ class PaymentLinkRecoveryReconciler {
               (record.fundingTxids?.trim().isNotEmpty ?? false),
         )
         .toList();
+    // A broadcast the wallet started but never got a result for. It has no
+    // transaction id to match, so it is settled against the Gift Card's own
+    // wallet rather than the source account's history.
+    final ambiguousDrafts = records
+        .where((record) => record.isAmbiguousSubmission)
+        .toList();
     final unsharedFundings = records
         .where(
           (record) =>
@@ -128,7 +192,11 @@ class PaymentLinkRecoveryReconciler {
               (record.fundingTxids?.trim().isNotEmpty ?? false),
         )
         .toList();
-    if (preparedDrafts.isEmpty && unsharedFundings.isEmpty) return records;
+    if (preparedDrafts.isEmpty &&
+        ambiguousDrafts.isEmpty &&
+        unsharedFundings.isEmpty) {
+      return records;
+    }
 
     try {
       final accountUuids = {
@@ -139,7 +207,7 @@ class PaymentLinkRecoveryReconciler {
       late final BigInt scannedHeight;
       late final Map<String, List<rust_sync.TransactionInfo>>
       transactionsByAccount;
-      if (preparedDrafts.isEmpty) {
+      if (preparedDrafts.isEmpty && ambiguousDrafts.isEmpty) {
         transactionsByAccount = await _loadTransactionsByAccount(accountUuids);
       } else {
         final lookupResults = await Future.wait<Object>([
@@ -183,6 +251,44 @@ class PaymentLinkRecoveryReconciler {
         } catch (error) {
           log(
             'PaymentLinkRecoveryReconciler: prepared funding update failed '
+            'address=${record.link.address} error=$error',
+          );
+        }
+      }
+      for (final record in ambiguousDrafts) {
+        try {
+          final fundingTxids = _paymentLinkOwnFundingTxids(
+            await _loadLinkFundingHistory(record.link),
+          );
+          if (fundingTxids.isNotEmpty) {
+            final txids = fundingTxids.join(',');
+            // Record the recovered id before promoting, so a failure between
+            // the two still leaves a draft the prepared path can settle.
+            await _store.markSubmitted(
+              address: record.link.address,
+              fundingTxids: txids,
+            );
+            await _store.markFunded(
+              address: record.link.address,
+              fundingTxids: txids,
+            );
+            changed = true;
+            continue;
+          }
+          if (!_paymentLinkAmbiguousFundingExpired(
+            record: record,
+            scannedHeight: scannedHeight,
+          )) {
+            continue;
+          }
+          // The wallet scanned well past any height this broadcast could have
+          // been mined at and the Gift Card holds nothing: the transaction
+          // never reached the chain.
+          await _store.removeUnbroadcastDraft(address: record.link.address);
+          changed = true;
+        } catch (error) {
+          log(
+            'PaymentLinkRecoveryReconciler: ambiguous funding update failed '
             'address=${record.link.address} error=$error',
           );
         }

@@ -393,15 +393,28 @@ class PaymentLinkService implements PaymentLinkOperations {
         .fund<rust_sync.ExecuteProposalResult>(
           link: link,
           sourceAccountUuid: sourceAccountUuid,
-          createTransaction: () => runPaymentLinkFundingSubmission(
-            (markSubmissionStarted) => _sendShielded(
-              fromAccountUuid: sourceAccountUuid,
-              toAddress: link.address,
-              amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-              memo: null,
-              onSubmissionStarted: markSubmissionStarted,
-            ),
-          ),
+          createTransaction: (markSubmissionStarted) =>
+              runPaymentLinkFundingSubmission(
+                (markLocalSubmission) => _sendShielded(
+                  fromAccountUuid: sourceAccountUuid,
+                  toAddress: link.address,
+                  amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+                  memo: null,
+                  onSubmissionStarted: () async {
+                    // The durable trace has to land before the broadcast, and
+                    // the local marker only after it: a failed write leaves
+                    // the submission unmarked, which classifies the failure as
+                    // definitely-not-submitted and discards the inert draft.
+                    await markSubmissionStarted();
+                    markLocalSubmission();
+                  },
+                ),
+              ),
+          // The in-memory sync tip, not a network round trip: this runs on the
+          // broadcast path, and a height the wallet already knows is enough to
+          // date the submission.
+          currentChainHeight: () async =>
+              _ref.read(syncProvider).value?.chainTipHeight ?? 0,
           fundingTxids: (result) => result.txids,
         );
     final fundingResult = funding.transaction;
@@ -1001,7 +1014,7 @@ class PaymentLinkService implements PaymentLinkOperations {
 
   Future<PaymentLinkClaimResult> _broadcastPreparedSpend(
     PaymentLinkClaimSession session, {
-    void Function()? onSubmissionStarted,
+    FutureOr<void> Function()? onSubmissionStarted,
   }) async {
     if (!session.canClaim) {
       throw StateError('Payment link has no spendable shielded balance yet.');
@@ -1118,7 +1131,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     String? memo,
     String? mnemonic,
     Future<void> Function()? beforeExecute,
-    void Function()? onSubmissionStarted,
+    FutureOr<void> Function()? onSubmissionStarted,
   }) async {
     await _requireShieldedAddress(toAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
@@ -1187,7 +1200,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     required bool needsSaplingParams,
     String? mnemonic,
     Future<void> Function()? beforeExecute,
-    void Function()? onSubmissionStarted,
+    FutureOr<void> Function()? onSubmissionStarted,
   }) async {
     var saplingParams = await loadSaplingParamsStatus();
     if (needsSaplingParams && !saplingParams.complete) {
@@ -1205,7 +1218,9 @@ class PaymentLinkService implements PaymentLinkOperations {
       final password = _ref
           .read(appSecurityProvider.notifier)
           .requireSessionPasswordForNativeSecretUse();
-      onSubmissionStarted?.call();
+      // Awaited, not fired: the caller's durable write must be on disk
+      // before the transaction can reach the network.
+      await onSubmissionStarted?.call();
       return rust_sync.executeProposalWithMacosStoredMnemonic(
         dbPath: dbPath,
         lightwalletdUrl: lightwalletdUrl,
@@ -1227,7 +1242,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
     late final Future<rust_sync.ExecuteProposalResult> result;
     try {
-      onSubmissionStarted?.call();
+      await onSubmissionStarted?.call();
       result = rust_sync.executeProposal(
         dbPath: dbPath,
         lightwalletdUrl: lightwalletdUrl,

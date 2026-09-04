@@ -16,7 +16,8 @@ void main() {
         final funding = await PaymentLinkFundingRecovery(store).fund(
           link: link,
           sourceAccountUuid: 'source-account',
-          createTransaction: () async {
+          currentChainHeight: () async => _submissionHeight,
+          createTransaction: (_) async {
             final restartedRecords = await PaymentLinkRecoveryStore(
               storage,
             ).load();
@@ -51,7 +52,8 @@ void main() {
           ).fund<String>(
             link: link,
             sourceAccountUuid: 'source-account',
-            createTransaction: () => throw StateError('transaction failed'),
+            currentChainHeight: () async => _submissionHeight,
+            createTransaction: (_) => throw StateError('transaction failed'),
             fundingTxids: (txid) => txid,
           ),
           throwsStateError,
@@ -75,7 +77,8 @@ void main() {
         ).fund<String>(
           link: link,
           sourceAccountUuid: 'source-account',
-          createTransaction: () =>
+          currentChainHeight: () async => _submissionHeight,
+          createTransaction: (_) =>
               throw PaymentLinkFundingNotSubmittedException(
                 failure,
                 StackTrace.current,
@@ -111,7 +114,8 @@ void main() {
           ).fund(
             link: link,
             sourceAccountUuid: 'source-account',
-            createTransaction: () async => 'funding-txid',
+            currentChainHeight: () async => _submissionHeight,
+            createTransaction: (_) async => 'funding-txid',
             fundingTxids: (txid) => txid,
           );
 
@@ -140,7 +144,8 @@ void main() {
             ).fund(
               link: link,
               sourceAccountUuid: 'source-account',
-              createTransaction: () async {
+              currentChainHeight: () async => _submissionHeight,
+              createTransaction: (_) async {
                 transactionCount += 1;
                 return 'funding-txid';
               },
@@ -251,7 +256,8 @@ void main() {
       final funding = await PaymentLinkFundingRecovery(store).fund(
         link: link,
         sourceAccountUuid: 'source-account',
-        createTransaction: () async =>
+        currentChainHeight: () async => _submissionHeight,
+        createTransaction: (_) async =>
             (txids: 'pending-funding-txid', status: 'pending_broadcast'),
         fundingTxids: (result) => result.txids,
       );
@@ -454,7 +460,8 @@ void main() {
             ).fund(
               link: link,
               sourceAccountUuid: 'source-account',
-              createTransaction: () async => 'funding-txid',
+              currentChainHeight: () async => _submissionHeight,
+              createTransaction: (_) async => 'funding-txid',
               fundingTxids: (txid) => txid,
             );
 
@@ -500,6 +507,154 @@ void main() {
       );
     });
 
+    test('records the chain height a software broadcast started at', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+
+      await store.markSubmissionStarted(
+        address: link.address,
+        chainHeight: _submissionHeight,
+      );
+      // A retry must not move the marker forward: the earlier height is the
+      // one the transaction could have been mined at.
+      await store.markSubmissionStarted(
+        address: link.address,
+        chainHeight: _submissionHeight + 10,
+      );
+
+      final record = (await PaymentLinkRecoveryStore(storage).load()).single;
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.submittedAtHeight, _submissionHeight);
+      expect(record.fundingTxids, isNull);
+      expect(record.isAmbiguousSubmission, isTrue);
+    });
+
+    test(
+      'a draft that already knows its txid needs no submission marker',
+      () async {
+        final storage = _FakePaymentLinkRecoveryStorage();
+        final store = PaymentLinkRecoveryStore(storage);
+        final link = _link();
+        await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+        await store.markSubmitted(
+          address: link.address,
+          fundingTxids: 'funding-txid',
+        );
+
+        await store.markSubmissionStarted(
+          address: link.address,
+          chainHeight: _submissionHeight,
+        );
+
+        final record = (await PaymentLinkRecoveryStore(storage).load()).single;
+        expect(record.submittedAtHeight, isNull);
+        expect(record.fundingTxids, 'funding-txid');
+        expect(record.isAmbiguousSubmission, isFalse);
+      },
+    );
+
+    test('an ambiguous submission cannot be removed as inert', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
+      await store.markSubmissionStarted(
+        address: link.address,
+        chainHeight: _submissionHeight,
+      );
+
+      await expectLater(
+        store.removeUnsubmittedDraft(address: link.address),
+        throwsStateError,
+      );
+      // The account-deletion guard must see it too: it may hold funds.
+      expect(await store.countUnsharedFundedForAccount('source-account'), 1);
+    });
+
+    test('a lost broadcast result leaves an ambiguous submission', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      final failure = StateError('broadcast result unavailable');
+
+      await expectLater(
+        PaymentLinkFundingRecovery(store).fund<String>(
+          link: link,
+          sourceAccountUuid: 'source-account',
+          currentChainHeight: () async => _submissionHeight,
+          // What the send path does: mark the submission, cross the broadcast
+          // boundary, then lose the result.
+          createTransaction: (markSubmissionStarted) async {
+            await markSubmissionStarted();
+            throw failure;
+          },
+          fundingTxids: (txid) => txid,
+        ),
+        throwsA(same(failure)),
+      );
+
+      final record = (await PaymentLinkRecoveryStore(storage).load()).single;
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.fundingTxids, isNull);
+      expect(record.submittedAtHeight, _submissionHeight);
+      expect(record.isAmbiguousSubmission, isTrue);
+      expect(record.link.mnemonic, link.mnemonic);
+    });
+
+    test('reads a submission height back from stored records', () async {
+      final link = _link();
+      final storage = _FakePaymentLinkRecoveryStorage()
+        ..value = jsonEncode({
+          'version': 1,
+          'records': [
+            {
+              'link': link.toUri().toString(),
+              'sourceAccountUuid': 'source-account',
+              'state': 'draft',
+              'fundingTxids': null,
+              'preparedExpiryHeight': null,
+              'submittedAtHeight': _submissionHeight,
+              'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+            },
+          ],
+        });
+
+      final record = (await PaymentLinkRecoveryStore(storage).load()).single;
+
+      expect(record.submittedAtHeight, _submissionHeight);
+      expect(record.isAmbiguousSubmission, isTrue);
+      expect(
+        countUnsharedFundedPaymentLinks([
+          record,
+        ], sourceAccountUuid: 'source-account'),
+        1,
+      );
+    });
+
+    test('rejects a negative submission height', () async {
+      final link = _link();
+      final storage = _FakePaymentLinkRecoveryStorage()
+        ..value = jsonEncode({
+          'version': 1,
+          'records': [
+            {
+              'link': link.toUri().toString(),
+              'sourceAccountUuid': 'source-account',
+              'state': 'draft',
+              'submittedAtHeight': -1,
+              'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+            },
+          ],
+        });
+
+      await expectLater(
+        PaymentLinkRecoveryStore(storage).load(),
+        throwsA(isA<PaymentLinkRecoveryStoreFormatException>()),
+      );
+    });
+
     test('fails loud instead of hiding corrupted recovery data', () async {
       final storage = _FakePaymentLinkRecoveryStorage()..value = '{not-json';
 
@@ -510,6 +665,8 @@ void main() {
     });
   });
 }
+
+const _submissionHeight = 3_456_800;
 
 VizorPaymentLink _link() {
   return VizorPaymentLink(

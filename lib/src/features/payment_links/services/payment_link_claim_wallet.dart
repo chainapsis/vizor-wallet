@@ -120,6 +120,51 @@ class PaymentLinkClaimWallet {
     );
   }
 
+  /// Reads the link's own wallet history so a funding broadcast whose result
+  /// was lost can be matched against the chain.
+  ///
+  /// The funding transaction is invisible from the source account's history —
+  /// nothing there records which address it paid — but it is a plain receive
+  /// in the Gift Card's own wallet. That wallet normally exists only once
+  /// somebody claims the Card, so this creates and imports it if needed, and
+  /// leaves it in place for the claim that may still follow.
+  Future<List<rust_sync.TransactionInfo>> loadFundingHistory(
+    VizorPaymentLink link,
+  ) async {
+    final tempWallet = await createOrOpen(link);
+    if (!tempWallet.existed) {
+      await importClaimAccount(
+        link: link,
+        birthdayHeight: link.birthdayHeight,
+        dbPath: tempWallet.dbPath,
+        network: link.network,
+      );
+    }
+    await runClaimSync(link: link, dbPath: tempWallet.dbPath);
+    final accounts = await rust_wallet.listAccounts(
+      dbPath: tempWallet.dbPath,
+      network: link.network,
+    );
+    if (shouldRecreatePaymentLinkClaimWallet(
+      accountAddresses: [
+        for (final account in accounts) account.unifiedAddress,
+      ],
+      expectedAddress: link.address,
+    )) {
+      log(
+        'PaymentLinkClaimWallet: funding history skipped because the claim '
+        'wallet no longer matches its Gift Card identity',
+      );
+      return const [];
+    }
+    return rust_sync.getTransactionHistory(
+      dbPath: tempWallet.dbPath,
+      network: link.network,
+      accountUuid: accounts.single.uuid,
+      limit: null,
+    );
+  }
+
   Future<bool> deleteRetained(PaymentLinkReceivedRecord record) async {
     final link = record.claimLink;
     if (link == null) return true;

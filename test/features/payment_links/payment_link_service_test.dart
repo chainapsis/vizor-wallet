@@ -39,6 +39,61 @@ void main() {
     },
   );
 
+  test('a funding whose broadcast result is lost stays recoverable', () async {
+    final storage = _FakePaymentLinkRecoveryStorage();
+    final store = PaymentLinkRecoveryStore(storage);
+    final link = _link();
+    final failure = StateError('channel closed after broadcast');
+
+    // The composition `createFundedLink` uses: the recovery marker is awaited
+    // inside the submission classifier, immediately before the broadcast.
+    await expectLater(
+      PaymentLinkFundingRecovery(store).fund<String>(
+        link: link,
+        sourceAccountUuid: 'source-account',
+        currentChainHeight: () async => 3456800,
+        createTransaction: (markSubmissionStarted) =>
+            runPaymentLinkFundingSubmission((markLocalSubmission) async {
+              await markSubmissionStarted();
+              markLocalSubmission();
+              throw failure;
+            }),
+        fundingTxids: (txid) => txid,
+      ),
+      throwsA(same(failure)),
+    );
+
+    final record = (await PaymentLinkRecoveryStore(storage).load()).single;
+    expect(record.state, PaymentLinkRecoveryState.draft);
+    expect(record.fundingTxids, isNull);
+    expect(record.submittedAtHeight, 3456800);
+    expect(record.isAmbiguousSubmission, isTrue);
+    expect(record.link.mnemonic, link.mnemonic);
+  });
+
+  test(
+    'a funding that never reached the network leaves nothing behind',
+    () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final failure = StateError('proposal failed');
+
+      await expectLater(
+        PaymentLinkFundingRecovery(store).fund<String>(
+          link: _link(),
+          sourceAccountUuid: 'source-account',
+          currentChainHeight: () async => 3456800,
+          createTransaction: (markSubmissionStarted) =>
+              runPaymentLinkFundingSubmission((_) async => throw failure),
+          fundingTxids: (txid) => txid,
+        ),
+        throwsA(same(failure)),
+      );
+
+      expect(await PaymentLinkRecoveryStore(storage).load(), isEmpty);
+    },
+  );
+
   test('funding covers the exact recipient amount and claim fee', () {
     final recipientAmount = BigInt.from(100000000);
 
@@ -719,6 +774,19 @@ class _HardwareAccountNotifier extends AccountNotifier {
     activeAccountUuid: 'hardware-account',
     activeAddress: 'u1hardwareaddress',
   );
+}
+
+class _FakePaymentLinkRecoveryStorage implements PaymentLinkRecoveryStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async => value = null;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String nextValue) async => value = nextValue;
 }
 
 class _RecordingPaymentLinkRecoveryStorage
