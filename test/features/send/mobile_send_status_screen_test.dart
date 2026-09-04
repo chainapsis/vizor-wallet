@@ -485,6 +485,54 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('leaving mid-broadcast keeps terminal closed until the runner '
+      'finishes', (tester) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: MobileSendStatusScreen(
+              args: _args,
+              broadcastRunner: _runner(broadcast.future),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final published = <bool>[];
+    container.listen<bool>(
+      sendStatusTerminalProvider,
+      (_, next) => published.add(next),
+    );
+
+    // A sidebar or deep-link `go` can unmount the receipt while `sending`.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump();
+    expect(published, isEmpty);
+
+    // The runner aborts at its next checkpoint and releases the proposal.
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.aborted,
+        proposalConsumed: true,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(published, [true, false]);
+  });
+
   testWidgets('send success falls back to Flutter haptics on Android', (
     tester,
   ) async {

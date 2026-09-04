@@ -69,6 +69,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   /// way out so a departure mid-release does not publish "safe to leave"
   /// before the inputs are actually free.
   Future<bool>? _proposalRelease;
+
+  /// The running broadcast; a receipt left while still `sending` hands its
+  /// completion to the terminal flag instead of a release of its own.
+  Future<SendBroadcastOutcome>? _broadcast;
   String? _error;
   String? _statusMessage;
   String? _txid;
@@ -108,7 +112,11 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       unawaited(_discardProposalIfNeeded('SendStatus(dispose)'));
     }
     _sendStatusTerminal.resetAfterNavigation(
-      afterRelease: _proposalRelease,
+      // Left mid-broadcast: the runner's abort cleanup owns the proposal, so
+      // the edge waits for it.
+      afterRelease: _phase == _SendStatusPhase.sending
+          ? _broadcast?.then((outcome) => outcome.proposalConsumed)
+          : _proposalRelease,
       retryRelease: _proposalConsumed
           ? null
           : () => discardSendProposal(
@@ -204,13 +212,15 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     // A broadcast is starting: nothing is safe to leave yet.
     _sendStatusTerminal.reset();
     final runner = widget.broadcastRunner ?? runSendBroadcast;
-    final outcome = await runner(
+    final broadcast = runner(
       ref: ref,
       args: widget.args,
       keystone: widget.keystone,
       confirmSaplingParamsDownload: _showSaplingParamsDialog,
       shouldAbort: () async => !mounted,
     );
+    _broadcast = broadcast;
+    final outcome = await broadcast;
     _proposalConsumed = outcome.proposalConsumed;
     if (outcome.phase == SendBroadcastPhase.aborted || !mounted) return;
     setState(() {
