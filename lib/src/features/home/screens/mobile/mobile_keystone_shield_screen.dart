@@ -21,7 +21,6 @@ import '../../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../../services/camera_permission_settings.dart';
 import '../../../../services/qr_scanner.dart';
-import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanCameraErrorOverlay, MobileScanViewfinderCorners;
 import '../../../keystone/widgets/keystone_pczt_qr_stage.dart';

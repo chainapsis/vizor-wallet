@@ -222,6 +222,9 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<BigInt> createdAmounts = [];
 
   @override
+  Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {}
+
+  @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
     required String sourceAccountUuid,
   }) async {
