@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
@@ -72,6 +73,9 @@ class _FakeSendApi {
         gatedByMigration: read.read(migrationSendGateProvider),
       );
     },
+    // The production wiring reads this off `rpcEndpointProvider`; these
+    // cases never vary it, so the build default stands in.
+    readNetworkName: () => kZcashDefaultNetworkName,
     validateAddress:
         ({required String address, required String network}) async {
           whileValidating?.call();

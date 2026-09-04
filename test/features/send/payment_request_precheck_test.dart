@@ -16,7 +16,13 @@ class FakeSendApi {
     this.proposeThrows,
     this.feeZatoshi,
     this.spendableIsAuthoritativeNow = true,
-  });
+    String? networkName,
+  }) : networkName = networkName ?? kZcashDefaultNetworkName;
+
+  /// The network the wallet is on, as the pre-check reads it from the
+  /// persisted endpoint. Defaults to the build's, which is what a wallet that
+  /// never moved off it reports; a stored-endpoint wallet says otherwise.
+  String networkName;
 
   String addressType;
   bool addressIsValid;
@@ -110,6 +116,7 @@ class FakeSendApi {
     spendableIsAuthoritativeNow: () => spendableIsAuthoritativeNow,
     spendableBalanceNow: () => spendableBalanceNow ?? BigInt.zero,
     validateAddress: validateAddress,
+    readNetworkName: () => networkName,
     proposeTransfer: proposeTransfer,
     discardProposal: discardProposal,
   );
@@ -119,10 +126,11 @@ SendPrefillArgs prefill({
   String? amountText = '0.5',
   String? memoText,
   bool preserveMemoText = false,
+  String address = 'u1recipient',
 }) => SendPrefillArgs(
   id: 'payment-uri-1',
   source: kPaymentUriPrefillSource,
-  address: 'u1recipient',
+  address: address,
   amountText: amountText,
   memoText: memoText,
   preserveMemoText: preserveMemoText,
@@ -200,6 +208,23 @@ void main() {
     final api = FakeSendApi();
     await run(api);
     expect(api.lastValidatedNetwork, kZcashDefaultNetworkName);
+  });
+
+  test('validation follows the wallet off the build default network', () async {
+    // A wallet whose stored endpoint is testnet: bootstrap, sync and the
+    // proposal all run against `test`, so a testnet address in a link is
+    // payable and must not come back as wrongNetwork.
+    final api = FakeSendApi(networkName: ZcashNetwork.testnet.name);
+    final result = await run(api, request: prefill(address: 'utest1recipient'));
+
+    expect(
+      api.lastValidatedNetwork,
+      ZcashNetwork.testnet.name,
+      reason: 'the active network decides, not the compiled-in default',
+    );
+    expect(api.lastValidatedNetwork, isNot(kZcashDefaultNetworkName));
+    expect(result, isA<PaymentRequestPrecheckReady>());
+    expect((result as PaymentRequestPrecheckReady).reviewArgs, isNotNull);
   });
 
   test('an address for another network says so instead of "invalid"', () async {

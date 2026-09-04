@@ -17,7 +17,6 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/migration_send_gate_provider.dart'
@@ -34,6 +33,17 @@ typedef PaymentRequestValidateAddress =
       required String address,
       required String network,
     });
+
+/// The network name the wallet is actually talking to, read at the moment of
+/// the check.
+///
+/// Not the compiled-in default: the endpoint — and with it the network — is
+/// persisted, and bootstrap, sync and proposal creation all read the stored
+/// one. Validating against the build constant instead would tell a wallet
+/// running on another network that every perfectly good address in its own
+/// links belongs to the wrong one. Kept lazy for the same reason
+/// [proposeSendTransferWith]'s `readEndpoint` is: the card outlives the read.
+typedef PaymentRequestReadNetworkName = String Function();
 
 /// Creates the proposal. Matches the shape of [proposeSendTransferWith] minus
 /// the provider reader, which the service does not have.
@@ -177,6 +187,7 @@ final class PaymentRequestPrecheckFailed extends PaymentRequestPrecheckResult {
 class PaymentRequestPrecheck {
   const PaymentRequestPrecheck({
     required this.validateAddress,
+    required this.readNetworkName,
     required this.proposeTransfer,
     required this.discardProposal,
     required this.spendableIsAuthoritativeNow,
@@ -184,6 +195,12 @@ class PaymentRequestPrecheck {
   });
 
   final PaymentRequestValidateAddress validateAddress;
+
+  /// Which network [validateAddress] is asked about. Required, with no
+  /// default: the build constant is the wrong answer for any wallet whose
+  /// stored endpoint moved off it, and a silent default is how it got used.
+  final PaymentRequestReadNetworkName readNetworkName;
+
   final PaymentRequestProposeTransfer proposeTransfer;
   final PaymentRequestDiscardProposal discardProposal;
 
@@ -222,7 +239,7 @@ class PaymentRequestPrecheck {
     try {
       final validation = await validateAddress(
         address: address,
-        network: kZcashDefaultNetworkName,
+        network: readNetworkName(),
       );
       if (!validation.isValid) {
         // A well-formed address for another network is still unpayable, but
@@ -405,6 +422,9 @@ BigInt paymentRequestSpendableOf(
 final paymentRequestPrecheckProvider = Provider<PaymentRequestPrecheck>((ref) {
   return PaymentRequestPrecheck(
     validateAddress: rust_sync.validateAddress,
+    // The same endpoint the proposal below is made against, so a link can
+    // never be refused for a network the wallet is not on.
+    readNetworkName: () => ref.read(rpcEndpointProvider).networkName,
     discardProposal: discardSendProposal,
     // The same predicate the card's own read and its sync watch use, scoped
     // to the active account: an unscoped read answers with the wallet-wide

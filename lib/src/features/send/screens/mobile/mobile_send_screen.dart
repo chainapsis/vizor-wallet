@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -118,7 +117,13 @@ typedef MobileSendFeeEstimator =
       String? memo,
     });
 
-typedef MobileSendScanner = Future<String?> Function(BuildContext context);
+/// [networkName] is the network the wallet is actually on, not the build
+/// default: the scanner refuses an address that does not belong to it.
+typedef MobileSendScanner =
+    Future<String?> Function(
+      BuildContext context, {
+      required String networkName,
+    });
 
 class _MobileSendMaxQuote {
   const _MobileSendMaxQuote({
@@ -529,7 +534,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final result =
           await (widget.validateAddress ?? rust_sync.validateAddress)(
             address: address,
-            network: kZcashDefaultNetworkName,
+            network: ref.read(rpcEndpointProvider).networkName,
           );
       if (!mounted || seq != _addressSeq) return;
       setState(
@@ -571,7 +576,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _openScanner() async {
-    final scanned = await widget.openScanner(context);
+    final scanned = await widget.openScanner(
+      context,
+      networkName: ref.read(rpcEndpointProvider).networkName,
+    );
     if (scanned == null || scanned.trim().isEmpty || !mounted) return;
     _addressController.value = TextEditingValue(
       text: scanned.trim(),

@@ -59,10 +59,18 @@ class _RustApiFake implements RustLibApi {
     required String network,
   }) async {
     if (address == _invalidAddress) {
-      return const AddressValidationResult(isValid: false, addressType: '', wrongNetwork: false);
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: '',
+        wrongNetwork: false,
+      );
     }
     if (address.startsWith('tex')) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex', wrongNetwork: false);
+      return const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      );
     }
     if (address.startsWith('t1')) {
       return const AddressValidationResult(
@@ -71,7 +79,11 @@ class _RustApiFake implements RustLibApi {
         wrongNetwork: false,
       );
     }
-    return const AddressValidationResult(isValid: true, addressType: 'unified', wrongNetwork: false);
+    return const AddressValidationResult(
+      isValid: true,
+      addressType: 'unified',
+      wrongNetwork: false,
+    );
   }
 
   @override
@@ -294,7 +306,8 @@ Widget _app({
         path: '/send',
         builder: (_, _) => MobileSendScreen(
           loadWalletDbPath: () async => '/tmp/zcash-test',
-          openScanner: openScanner ?? (_) async => null,
+          openScanner:
+              openScanner ?? (_, {required String networkName}) async => null,
           initialRecipient: initialRecipient,
           validateAddress: validateAddress,
         ),
@@ -423,7 +436,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
         builder: (_, _) => MobileSendScreen(
           useRouteSteps: true,
           loadWalletDbPath: () async => '/tmp/zcash-test',
-          openScanner: (_) async => null,
+          openScanner: (_, {required String networkName}) async => null,
           estimateFee: estimateFee,
         ),
       ),
@@ -440,7 +453,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
             loadWalletDbPath: () async => '/tmp/zcash-test',
-            openScanner: (_) async => null,
+            openScanner: (_, {required String networkName}) async => null,
             estimateFee: estimateFee,
           );
         },
@@ -464,7 +477,7 @@ Widget _sendFlowRouterApp({MobileSendFeeEstimator? estimateFee}) {
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
             loadWalletDbPath: () async => '/tmp/zcash-test',
-            openScanner: (_) async => null,
+            openScanner: (_, {required String networkName}) async => null,
             estimateFee: estimateFee,
           );
         },
@@ -648,7 +661,8 @@ void main() {
     await tester.pumpWidget(
       _app(
         initialRecipient: _texAddress,
-        validateAddress: ({required address, required network}) => validation.future,
+        validateAddress: ({required address, required network}) =>
+            validation.future,
         accountState: const AccountState(
           accounts: [
             AccountInfo(
@@ -675,7 +689,11 @@ void main() {
     expect(find.text('Enter Amount'), findsNothing);
 
     validation.complete(
-      const AddressValidationResult(isValid: true, addressType: 'tex', wrongNetwork: false),
+      const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -1165,7 +1183,7 @@ void main() {
     var scannerOpenCount = 0;
     await tester.pumpWidget(
       _app(
-        openScanner: (_) async {
+        openScanner: (_, {required String networkName}) async {
           scannerOpenCount++;
           return _shieldedAddress;
         },
