@@ -1346,7 +1346,6 @@ const _kIncomingLinkNoticeDuration = Duration(seconds: 4);
 class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   StreamSubscription<String>? _subscription;
 
-
   // --- payment request lane ---
   var _paymentSequence = 0;
 
@@ -1378,7 +1377,6 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   void didUpdateWidget(covariant _IncomingLinkHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.router == widget.router) return;
-
   }
 
   @override
@@ -1576,6 +1574,22 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         widget.router.go('/welcome');
         _showPaymentUriMessage(decision.message!);
       case PaymentUriDrainAction.deliver:
+        if (kAppFormFactor == AppFormFactor.mobile) {
+          // Nothing on mobile can answer the card yet. The surface already
+          // draws a mobile sheet, so presenting here would look right — but
+          // the host still hands over the desktop route payloads, and the
+          // mobile routes reject both: `/send/review` takes only a
+          // `MobileSendReviewDraftArgs` and `/send` only a recipient string,
+          // so either answer opens an empty composer. Review does it after
+          // handing off the live proposal the pre-check just built, which
+          // that composer never consumes or discards — the wallet's inputs
+          // stay reserved behind a card that is gone.
+          //
+          // The mobile handoff lands in the next PR of this stack. Until then
+          // the link stays parked, exactly as it did before any host existed,
+          // and a parked link is drained again on the next pass.
+          return;
+        }
         prefillNotifier.clear();
         // The request is presented over the current screen, not navigated to.
         ref
@@ -1681,7 +1695,6 @@ class _WindowsUpdatePromptHostState
   void didUpdateWidget(covariant _WindowsUpdatePromptHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.router == widget.router) return;
-
   }
 
   @override
