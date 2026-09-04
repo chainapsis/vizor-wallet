@@ -22,7 +22,7 @@ use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirRead, EnhancePirSnapshotAnchor, EnhancePirSnapshotStatus, EnhancePirStoreResult,
 };
 use zcash_primitives::block::BlockHash;
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
@@ -41,6 +41,7 @@ const MAX_LOGICAL_ROWS: u64 = 65_536;
 /// the wallet scans toward its anchor instead of redownloading parameters for
 /// every compact-block batch.
 pub(super) struct EnhancePirSync {
+    network: WalletNetwork,
     endpoint: Option<String>,
     session: Option<QuerySession>,
 }
@@ -53,6 +54,7 @@ impl EnhancePirSync {
                 .unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.to_owned())
         });
         Self {
+            network,
             endpoint,
             session: None,
         }
@@ -78,7 +80,7 @@ impl EnhancePirSync {
                 EnhancePirSnapshotStatus::Mismatch => return Err(snapshot_mismatch()),
                 EnhancePirSnapshotStatus::Accepted => {}
             }
-            let acceptance = generation_acceptance(&init.generation)?;
+            let acceptance = generation_acceptance(self.network, &init.generation)?;
             self.session =
                 Some(QuerySession::from_session(init, &acceptance).map_err(client_protocol_error)?);
         }
@@ -103,6 +105,7 @@ impl EnhancePirSync {
         }
 
         let mut stored = 0usize;
+        let mut non_recoverable = 0usize;
         let row_count = rows.len();
         for requests in rows.into_values() {
             let position = u64::from(requests[0].position());
@@ -138,6 +141,10 @@ impl EnhancePirSync {
                     .into_iter()
                     .filter(|result| *result == EnhancePirStoreResult::Stored)
                     .count();
+                non_recoverable += [incoming, outgoing]
+                    .into_iter()
+                    .filter(|result| *result == EnhancePirStoreResult::NotRecoverable)
+                    .count();
                 if incoming == EnhancePirStoreResult::Rejected
                     || outgoing == EnhancePirStoreResult::Rejected
                 {
@@ -151,7 +158,7 @@ impl EnhancePirSync {
         if row_count > 0 {
             // Counts are useful demo evidence without recording txids or note positions.
             log::info!(
-                "sync: Enhance PIR privately completed {stored} Ironwood enhancement(s) in {row_count} row query/queries"
+                "sync: Enhance PIR privately stored {stored} Ironwood enhancement(s) and retired {non_recoverable} authenticated non-recoverable action(s) in {row_count} row query/queries"
             );
         }
         Ok(())
@@ -191,6 +198,7 @@ fn snapshot_status(
 }
 
 fn generation_acceptance(
+    network: WalletNetwork,
     generation: &EnhanceGeneration,
 ) -> Result<GenerationAcceptance, SyncError> {
     let block_hash: [u8; 32] = hex::decode(&generation.anchor_block_hash)
@@ -198,6 +206,16 @@ fn generation_acceptance(
         .try_into()
         .map_err(|_| SyncError::parse("invalid Enhance PIR anchor hash length"))?;
     Ok(GenerationAcceptance::new(
+        match network {
+            WalletNetwork::Main => "main",
+            WalletNetwork::Test => "test",
+            WalletNetwork::Regtest => "regtest",
+        },
+        u64::from(u32::from(
+            network
+                .activation_height(NetworkUpgrade::Nu6_3)
+                .ok_or_else(|| SyncError::parse("NU6.3 activation height is unavailable"))?,
+        )),
         AcceptedAnchor::new(
             generation.anchor_height,
             block_hash,
@@ -406,7 +424,7 @@ mod tests {
         // intentionally exercises the PIR transport in isolation.
         let _ = rustls::crypto::ring::default_provider().install_default();
         let init = fetch_init(DEFAULT_MAINNET_ENDPOINT).await.unwrap();
-        let acceptance = generation_acceptance(&init.generation).unwrap();
+        let acceptance = generation_acceptance(WalletNetwork::Main, &init.generation).unwrap();
         let session = QuerySession::from_session(init, &acceptance).unwrap();
         let query = session.prepare_dummy().unwrap();
         let response = routed_request(
