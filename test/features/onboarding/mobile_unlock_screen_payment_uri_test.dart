@@ -142,7 +142,6 @@ late GoRouter _router;
 Future<ProviderContainer> _pumpUnlock(
   WidgetTester tester, {
   bool migrationGate = false,
-  bool registerPaymentLinks = true,
 }) async {
   tester.view.physicalSize = const Size(520, 1100);
   tester.view.devicePixelRatio = 1.0;
@@ -165,11 +164,10 @@ Future<ProviderContainer> _pumpUnlock(
         path: '/home',
         builder: (_, _) => const Scaffold(body: Text('home-route')),
       ),
-      if (registerPaymentLinks)
-        GoRoute(
-          path: '/payment-links',
-          builder: (_, _) => const Scaffold(body: Text('payment-links-route')),
-        ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, _) => const Scaffold(body: Text('payment-links-route')),
+      ),
     ],
   );
   addTearDown(_router.dispose);
@@ -288,22 +286,6 @@ void main() {
       isNotNull,
       reason: 'the Payment Links screen claims the Gift Card, not the unlock',
     );
-  });
-
-  testWidgets('a Gift Card stays pending after unlock while its surface is '
-      'not registered', (tester) async {
-    final container = await _pumpUnlock(tester, registerPaymentLinks: false);
-    expect(
-      container
-          .read(paymentLinkIntakeProvider.notifier)
-          .receive(_pendingPaymentLink.toUri().toString()),
-      PaymentLinkIntakeResult.accepted,
-    );
-
-    await _enterPasscode(tester, _passcode);
-
-    expect(_location(), '/home');
-    expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
   });
 
   testWidgets('a Gift Card alone routes to the Payment Links screen', (
