@@ -583,6 +583,7 @@ Widget _sendFlowRouterApp({
             paymentRequestLabel: args.requestedBy,
             requestedAmountZatoshi: args.requestedAmountZatoshi,
             onAmountEdited: args.onAmountEdited,
+            onMemoEdited: args.onMemoEdited,
             loadWalletDbPath: () async => '/tmp/zcash-test',
             openScanner: (_, {required String networkName}) async => null,
             validateAddress: validateAddress,
@@ -1235,6 +1236,44 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review Send'), findsOneWidget);
     expect(find.text('edited on review'), findsOneWidget);
+  });
+
+  testWidgets('a memo edited on the review reaches the recipient page and '
+      'keeps Continue usable', (tester) async {
+    await tester.pumpWidget(_sendFlowRouterApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_row')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_memo_editable')),
+      'relayed memo',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_save')));
+    await tester.pumpAndSettle();
+
+    // Back to the amount page: its quote was for the old memo, so Continue
+    // must re-quote rather than dead-end.
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter Amount'), findsOneWidget);
+    expect(find.text('Finish & review'), findsOneWidget);
+
+    // Back again to the recipient page, then forward twice: the memo edited
+    // two pages up must still be the one reviewed.
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(find.text('relayed memo'), findsOneWidget);
   });
 
   testWidgets('a send route pushed from home still pops on system back', (

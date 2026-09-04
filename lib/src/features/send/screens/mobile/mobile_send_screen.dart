@@ -197,7 +197,12 @@ class MobileSendAmountArgs {
     this.requestedBy,
     this.requestedAmountZatoshi,
     this.onAmountEdited,
+    this.onMemoEdited,
   });
+
+  /// Memo edits made further up the wizard, relayed to the page that pushed
+  /// this one so nothing below re-pushes a stale memo.
+  final MobileSendMemoEditedCallback? onMemoEdited;
 
   /// Set by the recipient step that pushes the amount page: the amount it
   /// hands over is a copy, and the Android system back and the iOS edge swipe
@@ -324,6 +329,7 @@ class MobileSendAmountScreen extends StatelessWidget {
       paymentRequestLabel: args.requestedBy,
       requestedAmountZatoshi: args.requestedAmountZatoshi,
       onAmountEdited: args.onAmountEdited,
+      onMemoEdited: args.onMemoEdited,
     );
   }
 }
@@ -922,6 +928,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         onAmountEdited: (edited) {
           if (mounted) _adoptAmountStepResult(edited);
         },
+        onMemoEdited: (memo, preserveWhitespace) {
+          if (!mounted) return;
+          setState(() {
+            _memo = memo;
+            _preserveMemoWhitespace = preserveWhitespace;
+          });
+        },
       ),
     );
     if (!mounted) return;
@@ -1488,7 +1501,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               setState(() {
                 _memo = memo;
                 _preserveMemoWhitespace = preserveWhitespace;
+                // The memo changes the fee, so the quote this page holds is
+                // stale; re-quote instead of dead-ending Continue.
+                if (!_isMaxMode) _invalidateReviewFeeQuote();
               });
+              widget.onMemoEdited?.call(memo, preserveWhitespace);
+              if (_isMaxMode) {
+                unawaited(_resolveMaxEstimate());
+              } else {
+                unawaited(_validateAmount());
+              }
             },
           ),
         ),
@@ -1837,22 +1859,20 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         extra: args,
       );
       if (keystone == null) {
+        // Cancelled (or failed before signing); discard is idempotent. Released
+        // before the review is re-enabled so neither Back nor a second Confirm
+        // can run while the proposal still holds its inputs.
+        await discardSendProposal(
+          proposalId: args.proposalId,
+          sendFlowId: _sendFlowId,
+          logContext: 'MobileSend(keystone cancelled)',
+        );
         if (mounted) {
           setState(() {
             _isConfirmingSend = false;
             _phase = _SendPhase.compose;
           });
         }
-        // Cancelled (or failed before signing). The signing screen may
-        // already have consumed the proposal — discard is idempotent. Awaited
-        // so the payment-URI hold `_confirmAndSend` took outlives the release:
-        // a link parked behind it would otherwise be pre-checked against
-        // inputs this proposal still holds.
-        await discardSendProposal(
-          proposalId: args.proposalId,
-          sendFlowId: _sendFlowId,
-          logContext: 'MobileSend(keystone cancelled)',
-        );
         return;
       }
       if (!mounted) return;

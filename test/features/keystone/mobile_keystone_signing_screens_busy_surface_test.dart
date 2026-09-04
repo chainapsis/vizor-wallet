@@ -10,6 +10,8 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_keystone_shield_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_keystone_voting_signing_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -47,7 +49,34 @@ void main() {
       postUnmountSettle: const Duration(seconds: 2),
     );
   });
+
+  testWidgets('the mobile voting signing screen holds the payment-URI busy '
+      'latch', (tester) async {
+    final container = _container();
+    await expectPaymentUriBusySurfaceHeldWhileMounted(
+      tester,
+      container: container,
+      host: _host(container),
+      surface: MobileKeystoneVotingSigningScreen(
+        presentation: VotingKeystoneStatusPresentation(
+          bundleIndex: 0,
+          urParts: const [_previewVotingUr],
+          batchMemos: const [],
+          batchMessageCount: 0,
+          batchTotalCount: 1,
+          canSkipRemainingBundles: false,
+          onSigned: (_) async {},
+          onSkipRemainingBundles: () {},
+        ),
+      ),
+      drainExceptions: true,
+      postUnmountSettle: const Duration(seconds: 2),
+    );
+  });
 }
+
+const _previewVotingUr =
+    'ur:zcash-sign-batch/1-1/lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcx';
 
 ProviderContainer _container() {
   final container = ProviderContainer(
