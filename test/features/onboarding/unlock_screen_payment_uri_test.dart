@@ -81,6 +81,7 @@ class _FakeUnlockSyncNotifier extends FakeSyncNotifier {
 /// Ends the card's pre-check without touching Rust: the claim is what these
 /// tests are about, not the verdict the card lands on.
 PaymentRequestPrecheck _stubPrecheck() => PaymentRequestPrecheck(
+  readNetworkName: () => kZcashDefaultNetworkName,
   spendableIsAuthoritativeNow: () => true,
   validateAddress: ({required String address, required String network}) async =>
       rust_sync.AddressValidationResult(

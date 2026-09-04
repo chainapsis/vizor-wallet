@@ -225,6 +225,7 @@ final _paymentLink = VizorPaymentLink(
 );
 
 PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
+  readNetworkName: () => kZcashDefaultNetworkName,
   spendableIsAuthoritativeNow: () => true,
   validateAddress: ({required String address, required String network}) async =>
       rust_sync.AddressValidationResult(

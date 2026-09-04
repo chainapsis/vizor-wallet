@@ -8,7 +8,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/network_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -1289,7 +1288,9 @@ class PaymentLinkService implements PaymentLinkOperations {
   Future<void> _requireShieldedAddress(String address) async {
     final validation = await rust_sync.validateAddress(
       address: address,
-      network: kZcashDefaultNetworkName,
+      // The wallet's network, not the build default: a wallet moved off it
+      // would otherwise refuse every address it can actually pay.
+      network: _ref.read(rpcEndpointFailoverProvider).current.networkName,
     );
     if (!validation.isValid ||
         (validation.addressType != 'unified' &&
