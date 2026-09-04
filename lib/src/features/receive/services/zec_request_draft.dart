@@ -134,8 +134,20 @@ class ZecRequestDraft {
   /// Whether the unit switch can be taken. USD mode needs a live price; ZEC
   /// mode always works, so a price that disappears never traps the field in a
   /// unit it can no longer convert.
-  bool canToggleUnit(double? zecUsdUnitPrice) =>
-      inputIsUsd || zecRequestPriceIsUsable(zecUsdUnitPrice);
+  ///
+  /// A ZEC amount that rounds to \$0.00 at the live price has no dollar form
+  /// the field can show, and a switch would leave an empty-looking field over
+  /// a request that still encodes the amount — so such an amount stays in ZEC.
+  bool canToggleUnit(double? zecUsdUnitPrice) {
+    if (inputIsUsd) return true;
+    if (!zecRequestPriceIsUsable(zecUsdUnitPrice)) return false;
+    final zatoshi = parseZecAmount(input.trim());
+    if (zatoshi == null || zatoshi <= BigInt.zero) return true;
+    return sendSendableUsdInputTextForZatoshi(
+      zatoshi,
+      zecUsdUnitPrice!,
+    ).isNotEmpty;
+  }
 
   /// The same draft with the units swapped and [input] rewritten in the new
   /// unit, so the number on screen keeps meaning what it meant.

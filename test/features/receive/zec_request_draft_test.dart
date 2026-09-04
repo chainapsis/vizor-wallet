@@ -139,6 +139,26 @@ void main() {
       expect(typed.resolve(zecUsdUnitPrice: null).isReady, isFalse);
     });
 
+    test('a ZEC amount below a cent stays in ZEC', () {
+      // 0.00000001 ZEC at \$70 is \$0.0000007: the dollar field would round it
+      // to nothing while the request kept encoding the amount, so the switch
+      // is refused rather than taken.
+      const draft = ZecRequestDraft(address: _shielded, input: '0.00000001');
+
+      expect(draft.canToggleUnit(70), isFalse);
+      final same = draft.toggledUnit(zecUsdUnitPrice: 70);
+      expect(same.inputIsUsd, isFalse);
+      expect(same.input, '0.00000001');
+      expect(
+        same.resolve(zecUsdUnitPrice: 70).requestUri,
+        'zcash:$_shielded?amount=0.00000001',
+      );
+
+      // An amount that does have a cent form still switches.
+      const payable = ZecRequestDraft(address: _shielded, input: '0.5');
+      expect(payable.canToggleUnit(70), isTrue);
+    });
+
     test('switching an unfinished ZEC field to USD derives nothing', () {
       for (final input in ['', '0', '0.', 'abc']) {
         final usdDraft = ZecRequestDraft(
