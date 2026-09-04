@@ -906,6 +906,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
       progress: null,
       outcome: null,
       failure: rust_wire.RoundStepFailureView(
+        shareDeliveries: const [],
         kind: kind,
         step: step,
         strongestChainState: strongestChainState,

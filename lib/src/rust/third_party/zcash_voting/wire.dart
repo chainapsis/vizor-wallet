@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
 
 /// How a confirmation was established.
 enum ChainConfirmationSourceView { hash, tree }
@@ -215,14 +215,24 @@ class DelegationRecoveryWorkView {
           txHash == other.txHash;
 }
 
+/// Wire form of [`crate::types::DelegationSetupField`].
+enum DelegationSetupFieldView {
+  delegationPczt,
+  paddedNoteSecrets,
+  pcztSighash,
+  tx1Effects,
+}
+
 class DelegationStatusView {
   final int bundleIndex;
   final WorkflowPhaseView phase;
   final String? txHash;
   final SubmissionDiagnosticView? submissionDiagnostic;
 
-  /// True when this bundle's delegation has ended and no further delegation
-  /// step will be planned for it; `submission_diagnostic` says why.
+  /// True when this bundle's delegation ended without a confirmation and no
+  /// further delegation step will be planned for it; `submission_diagnostic`
+  /// says why. A confirmed bundle is not terminal in this sense: it
+  /// succeeded, and `phase` says so.
   ///
   /// Read this rather than inferring from `phase`: a dispatch that reached
   /// the chain without a usable transaction hash reports the same phase as a
@@ -431,6 +441,10 @@ class RoundPlanView {
   final List<VoteRecoveryWorkView> recoveredVoteWork;
   final Uint32List openProposals;
 
+  /// Durable intents for proposals outside the authenticated roster; casting
+  /// is withheld until the host clears them.
+  final Uint32List unrosteredIntents;
+
   /// The round's single immediate helper-share submission, if designated.
   final ImmediateShareKey? immediateShareKey;
   final bool immediateShareConfirmed;
@@ -458,6 +472,7 @@ class RoundPlanView {
     required this.recoveredDelegationWork,
     required this.recoveredVoteWork,
     required this.openProposals,
+    required this.unrosteredIntents,
     this.immediateShareKey,
     required this.immediateShareConfirmed,
     required this.allDecided,
@@ -486,6 +501,7 @@ class RoundPlanView {
       recoveredDelegationWork.hashCode ^
       recoveredVoteWork.hashCode ^
       openProposals.hashCode ^
+      unrosteredIntents.hashCode ^
       immediateShareKey.hashCode ^
       immediateShareConfirmed.hashCode ^
       allDecided.hashCode;
@@ -517,6 +533,7 @@ class RoundPlanView {
           recoveredDelegationWork == other.recoveredDelegationWork &&
           recoveredVoteWork == other.recoveredVoteWork &&
           openProposals == other.openProposals &&
+          unrosteredIntents == other.unrosteredIntents &&
           immediateShareKey == other.immediateShareKey &&
           immediateShareConfirmed == other.immediateShareConfirmed &&
           allDecided == other.allDecided;
@@ -534,6 +551,8 @@ enum RoundStepDispositionView {
 /// Stable category of a round step failure.
 enum RoundStepFailureKindView {
   invalidInput,
+  insufficientEligibility,
+  noSpendableNotes,
   busy,
   storage,
   invariantViolation,
@@ -542,6 +561,7 @@ enum RoundStepFailureKindView {
   proofFailed,
   signing,
   helperDeliveryIncomplete,
+  voteEnded,
 }
 
 /// Failure of one round step with the refreshed plan when it could be read.
@@ -553,6 +573,10 @@ class RoundStepFailureView {
   final String message;
   final RoundPlanView? plan;
 
+  /// Helper delivery reports accumulated before the failure; absent in
+  /// payloads from SDKs that predate the field.
+  final List<ShareBatchDeliveryReportView> shareDeliveries;
+
   const RoundStepFailureView({
     required this.kind,
     this.step,
@@ -560,6 +584,7 @@ class RoundStepFailureView {
     this.chainOutcome,
     required this.message,
     this.plan,
+    required this.shareDeliveries,
   });
 
   @override
@@ -569,7 +594,8 @@ class RoundStepFailureView {
       strongestChainState.hashCode ^
       chainOutcome.hashCode ^
       message.hashCode ^
-      plan.hashCode;
+      plan.hashCode ^
+      shareDeliveries.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -581,7 +607,8 @@ class RoundStepFailureView {
           strongestChainState == other.strongestChainState &&
           chainOutcome == other.chainOutcome &&
           message == other.message &&
-          plan == other.plan;
+          plan == other.plan &&
+          shareDeliveries == other.shareDeliveries;
 }
 
 /// Outcome of one round step.
@@ -963,8 +990,13 @@ enum VotingErrorKindView {
   insufficientEligibility,
   noSpendableNotes,
   setupAlreadyPersisted,
+  delegationReconciliationRequired,
   dbBusy,
   pirUnavailable,
+
+  /// Any category this host does not know. Serde deserializes unknown
+  /// category strings into it, so a newer crate can add kinds without
+  /// breaking an older host's view.
   other,
 }
 
@@ -973,18 +1005,28 @@ enum VotingErrorKindView {
 /// `kind`, `retryable`, and `message` are always populated. The remaining
 /// fields carry the structured payload of the kinds that have one:
 /// `bundle_index` for `KeystoneSignatureConflict` and `SetupAlreadyPersisted`;
-/// `snapshot_height`, the weight fields, and the note counts for
+/// `snapshot_height`, the weight fields, the selected note count, and the
+/// bundle slot capacity for
 /// `InsufficientEligibility` and `NoSpendableNotes`; `http_status` and
 /// `endpoint` for `PirUnavailable`.
+///
+/// Unknown fields are accepted on purpose: a newer crate may add a structured
+/// field for a category an older host reads as `Other`, and the whole payload
+/// must still parse for that fallback to mean anything.
 class VotingErrorView implements FrbException {
   final VotingErrorKindView kind;
   final bool retryable;
   final String message;
   final int? bundleIndex;
+
+  /// For `SetupAlreadyPersisted`, the setup column that already held a
+  /// value. Sighash and effects conflicts are reusable after validation;
+  /// a padded-note-secrets conflict is not.
+  final DelegationSetupFieldView? setupField;
   final BigInt? snapshotHeight;
   final BigInt? requiredWeightZatoshi;
   final BigInt? selectedWeightZatoshi;
-  final int? requiredNotes;
+  final int? bundleNoteSlots;
   final int? selectedNotes;
   final int? httpStatus;
   final String? endpoint;
@@ -994,10 +1036,11 @@ class VotingErrorView implements FrbException {
     required this.retryable,
     required this.message,
     this.bundleIndex,
+    this.setupField,
     this.snapshotHeight,
     this.requiredWeightZatoshi,
     this.selectedWeightZatoshi,
-    this.requiredNotes,
+    this.bundleNoteSlots,
     this.selectedNotes,
     this.httpStatus,
     this.endpoint,
@@ -1009,10 +1052,11 @@ class VotingErrorView implements FrbException {
       retryable.hashCode ^
       message.hashCode ^
       bundleIndex.hashCode ^
+      setupField.hashCode ^
       snapshotHeight.hashCode ^
       requiredWeightZatoshi.hashCode ^
       selectedWeightZatoshi.hashCode ^
-      requiredNotes.hashCode ^
+      bundleNoteSlots.hashCode ^
       selectedNotes.hashCode ^
       httpStatus.hashCode ^
       endpoint.hashCode;
@@ -1026,10 +1070,11 @@ class VotingErrorView implements FrbException {
           retryable == other.retryable &&
           message == other.message &&
           bundleIndex == other.bundleIndex &&
+          setupField == other.setupField &&
           snapshotHeight == other.snapshotHeight &&
           requiredWeightZatoshi == other.requiredWeightZatoshi &&
           selectedWeightZatoshi == other.selectedWeightZatoshi &&
-          requiredNotes == other.requiredNotes &&
+          bundleNoteSlots == other.bundleNoteSlots &&
           selectedNotes == other.selectedNotes &&
           httpStatus == other.httpStatus &&
           endpoint == other.endpoint;

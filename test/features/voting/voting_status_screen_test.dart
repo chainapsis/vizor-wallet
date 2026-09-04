@@ -4723,6 +4723,7 @@ class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
   rust_wire.RoundPlanView? roundPlan;
   final ballotIntents = <String>[];
 
+  @override
   Future<FakeRoundRecoveryState> getRoundRecoveryState({
     required String dbPath,
     required String accountUuid,

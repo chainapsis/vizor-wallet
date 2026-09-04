@@ -108,6 +108,7 @@ rust_wire.RoundPlanView apiRoundPlan({
   final work = _planWork(nextSteps, blockingShareWork);
 
   return rust_wire.RoundPlanView(
+    unrosteredIntents: Uint32List(0),
     roundId: roundId,
     pendingRecovery: pendingRecovery,
     blockingRecovery: resolvedBlockingRecovery,
@@ -496,7 +497,7 @@ VotingRustException votingRustError(
       snapshotHeight: snapshotHeight,
       requiredWeightZatoshi: requiredWeightZatoshi,
       selectedWeightZatoshi: selectedWeightZatoshi,
-      requiredNotes: requiredNotes,
+      bundleNoteSlots: requiredNotes,
       selectedNotes: selectedNotes,
     ),
   );

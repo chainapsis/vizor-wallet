@@ -7512,6 +7512,7 @@ const _: fn() = || {
             RoundPlanView.recovered_delegation_work;
         let _: Vec<zcash_voting::wire::VoteRecoveryWorkView> = RoundPlanView.recovered_vote_work;
         let _: Vec<u32> = RoundPlanView.open_proposals;
+        let _: Vec<u32> = RoundPlanView.unrostered_intents;
         let _: Option<zcash_voting::share_policy::ImmediateShareKey> =
             RoundPlanView.immediate_share_key;
         let _: bool = RoundPlanView.immediate_share_confirmed;
@@ -7527,6 +7528,8 @@ const _: fn() = || {
             RoundStepFailureView.chain_outcome;
         let _: String = RoundStepFailureView.message;
         let _: Option<zcash_voting::wire::RoundPlanView> = RoundStepFailureView.plan;
+        let _: Vec<zcash_voting::wire::ShareBatchDeliveryReportView> =
+            RoundStepFailureView.share_deliveries;
     }
     {
         let RoundStepOutcomeView = None::<zcash_voting::wire::RoundStepOutcomeView>.unwrap();
@@ -7635,10 +7638,11 @@ const _: fn() = || {
         let _: bool = VotingErrorView.retryable;
         let _: String = VotingErrorView.message;
         let _: Option<u32> = VotingErrorView.bundle_index;
+        let _: Option<zcash_voting::wire::DelegationSetupFieldView> = VotingErrorView.setup_field;
         let _: Option<u64> = VotingErrorView.snapshot_height;
         let _: Option<u64> = VotingErrorView.required_weight_zatoshi;
         let _: Option<u64> = VotingErrorView.selected_weight_zatoshi;
-        let _: Option<u32> = VotingErrorView.required_notes;
+        let _: Option<u32> = VotingErrorView.bundle_note_slots;
         let _: Option<u32> = VotingErrorView.selected_notes;
         let _: Option<u16> = VotingErrorView.http_status;
         let _: Option<String> = VotingErrorView.endpoint;
@@ -8594,6 +8598,20 @@ impl SseDecode for zcash_voting::wire::DelegationRecoveryWorkView {
             bundle_index: var_bundleIndex,
             phase: var_phase,
             tx_hash: var_txHash,
+        };
+    }
+}
+
+impl SseDecode for zcash_voting::wire::DelegationSetupFieldView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => zcash_voting::wire::DelegationSetupFieldView::DelegationPczt,
+            1 => zcash_voting::wire::DelegationSetupFieldView::PaddedNoteSecrets,
+            2 => zcash_voting::wire::DelegationSetupFieldView::PcztSighash,
+            3 => zcash_voting::wire::DelegationSetupFieldView::Tx1Effects,
+            _ => unreachable!("Invalid variant for DelegationSetupFieldView: {}", inner),
         };
     }
 }
@@ -10115,6 +10133,19 @@ impl SseDecode for Option<zcash_voting::wire::DelegationProgressKind> {
     }
 }
 
+impl SseDecode for Option<zcash_voting::wire::DelegationSetupFieldView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<zcash_voting::wire::DelegationSetupFieldView>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<f64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10564,6 +10595,7 @@ impl SseDecode for zcash_voting::wire::RoundPlanView {
         let mut var_recoveredVoteWork =
             <Vec<zcash_voting::wire::VoteRecoveryWorkView>>::sse_decode(deserializer);
         let mut var_openProposals = <Vec<u32>>::sse_decode(deserializer);
+        let mut var_unrosteredIntents = <Vec<u32>>::sse_decode(deserializer);
         let mut var_immediateShareKey =
             <Option<zcash_voting::share_policy::ImmediateShareKey>>::sse_decode(deserializer);
         let mut var_immediateShareConfirmed = <bool>::sse_decode(deserializer);
@@ -10590,6 +10622,7 @@ impl SseDecode for zcash_voting::wire::RoundPlanView {
             recovered_delegation_work: var_recoveredDelegationWork,
             recovered_vote_work: var_recoveredVoteWork,
             open_proposals: var_openProposals,
+            unrostered_intents: var_unrosteredIntents,
             immediate_share_key: var_immediateShareKey,
             immediate_share_confirmed: var_immediateShareConfirmed,
             all_decided: var_allDecided,
@@ -10618,14 +10651,17 @@ impl SseDecode for zcash_voting::wire::RoundStepFailureKindView {
         let mut inner = <i32>::sse_decode(deserializer);
         return match inner {
             0 => zcash_voting::wire::RoundStepFailureKindView::InvalidInput,
-            1 => zcash_voting::wire::RoundStepFailureKindView::Busy,
-            2 => zcash_voting::wire::RoundStepFailureKindView::Storage,
-            3 => zcash_voting::wire::RoundStepFailureKindView::InvariantViolation,
-            4 => zcash_voting::wire::RoundStepFailureKindView::Transport,
-            5 => zcash_voting::wire::RoundStepFailureKindView::Protocol,
-            6 => zcash_voting::wire::RoundStepFailureKindView::ProofFailed,
-            7 => zcash_voting::wire::RoundStepFailureKindView::Signing,
-            8 => zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete,
+            1 => zcash_voting::wire::RoundStepFailureKindView::InsufficientEligibility,
+            2 => zcash_voting::wire::RoundStepFailureKindView::NoSpendableNotes,
+            3 => zcash_voting::wire::RoundStepFailureKindView::Busy,
+            4 => zcash_voting::wire::RoundStepFailureKindView::Storage,
+            5 => zcash_voting::wire::RoundStepFailureKindView::InvariantViolation,
+            6 => zcash_voting::wire::RoundStepFailureKindView::Transport,
+            7 => zcash_voting::wire::RoundStepFailureKindView::Protocol,
+            8 => zcash_voting::wire::RoundStepFailureKindView::ProofFailed,
+            9 => zcash_voting::wire::RoundStepFailureKindView::Signing,
+            10 => zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete,
+            11 => zcash_voting::wire::RoundStepFailureKindView::VoteEnded,
             _ => unreachable!("Invalid variant for RoundStepFailureKindView: {}", inner),
         };
     }
@@ -10642,6 +10678,8 @@ impl SseDecode for zcash_voting::wire::RoundStepFailureView {
             <Option<zcash_voting::wire::ChainSubmissionOutcomeView>>::sse_decode(deserializer);
         let mut var_message = <String>::sse_decode(deserializer);
         let mut var_plan = <Option<zcash_voting::wire::RoundPlanView>>::sse_decode(deserializer);
+        let mut var_shareDeliveries =
+            <Vec<zcash_voting::wire::ShareBatchDeliveryReportView>>::sse_decode(deserializer);
         return zcash_voting::wire::RoundStepFailureView {
             kind: var_kind,
             step: var_step,
@@ -10649,6 +10687,7 @@ impl SseDecode for zcash_voting::wire::RoundStepFailureView {
             chain_outcome: var_chainOutcome,
             message: var_message,
             plan: var_plan,
+            share_deliveries: var_shareDeliveries,
         };
     }
 }
@@ -11296,9 +11335,10 @@ impl SseDecode for zcash_voting::wire::VotingErrorKindView {
             6 => zcash_voting::wire::VotingErrorKindView::InsufficientEligibility,
             7 => zcash_voting::wire::VotingErrorKindView::NoSpendableNotes,
             8 => zcash_voting::wire::VotingErrorKindView::SetupAlreadyPersisted,
-            9 => zcash_voting::wire::VotingErrorKindView::DbBusy,
-            10 => zcash_voting::wire::VotingErrorKindView::PirUnavailable,
-            11 => zcash_voting::wire::VotingErrorKindView::Other,
+            9 => zcash_voting::wire::VotingErrorKindView::DelegationReconciliationRequired,
+            10 => zcash_voting::wire::VotingErrorKindView::DbBusy,
+            11 => zcash_voting::wire::VotingErrorKindView::PirUnavailable,
+            12 => zcash_voting::wire::VotingErrorKindView::Other,
             _ => unreachable!("Invalid variant for VotingErrorKindView: {}", inner),
         };
     }
@@ -11311,10 +11351,12 @@ impl SseDecode for zcash_voting::wire::VotingErrorView {
         let mut var_retryable = <bool>::sse_decode(deserializer);
         let mut var_message = <String>::sse_decode(deserializer);
         let mut var_bundleIndex = <Option<u32>>::sse_decode(deserializer);
+        let mut var_setupField =
+            <Option<zcash_voting::wire::DelegationSetupFieldView>>::sse_decode(deserializer);
         let mut var_snapshotHeight = <Option<u64>>::sse_decode(deserializer);
         let mut var_requiredWeightZatoshi = <Option<u64>>::sse_decode(deserializer);
         let mut var_selectedWeightZatoshi = <Option<u64>>::sse_decode(deserializer);
-        let mut var_requiredNotes = <Option<u32>>::sse_decode(deserializer);
+        let mut var_bundleNoteSlots = <Option<u32>>::sse_decode(deserializer);
         let mut var_selectedNotes = <Option<u32>>::sse_decode(deserializer);
         let mut var_httpStatus = <Option<u16>>::sse_decode(deserializer);
         let mut var_endpoint = <Option<String>>::sse_decode(deserializer);
@@ -11323,10 +11365,11 @@ impl SseDecode for zcash_voting::wire::VotingErrorView {
             retryable: var_retryable,
             message: var_message,
             bundle_index: var_bundleIndex,
+            setup_field: var_setupField,
             snapshot_height: var_snapshotHeight,
             required_weight_zatoshi: var_requiredWeightZatoshi,
             selected_weight_zatoshi: var_selectedWeightZatoshi,
-            required_notes: var_requiredNotes,
+            bundle_note_slots: var_bundleNoteSlots,
             selected_notes: var_selectedNotes,
             http_status: var_httpStatus,
             endpoint: var_endpoint,
@@ -13011,6 +13054,29 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::Delegation
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::DelegationSetupFieldView> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            zcash_voting::wire::DelegationSetupFieldView::DelegationPczt => 0.into_dart(),
+            zcash_voting::wire::DelegationSetupFieldView::PaddedNoteSecrets => 1.into_dart(),
+            zcash_voting::wire::DelegationSetupFieldView::PcztSighash => 2.into_dart(),
+            zcash_voting::wire::DelegationSetupFieldView::Tx1Effects => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<zcash_voting::wire::DelegationSetupFieldView>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::DelegationSetupFieldView>>
+    for zcash_voting::wire::DelegationSetupFieldView
+{
+    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::DelegationSetupFieldView> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::DelegationStatusView> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -14117,6 +14183,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundPlanV
                 .into_dart(),
             self.0.recovered_vote_work.into_into_dart().into_dart(),
             self.0.open_proposals.into_into_dart().into_dart(),
+            self.0.unrostered_intents.into_into_dart().into_dart(),
             self.0.immediate_share_key.into_into_dart().into_dart(),
             self.0
                 .immediate_share_confirmed
@@ -14167,14 +14234,19 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundStepF
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
             zcash_voting::wire::RoundStepFailureKindView::InvalidInput => 0.into_dart(),
-            zcash_voting::wire::RoundStepFailureKindView::Busy => 1.into_dart(),
-            zcash_voting::wire::RoundStepFailureKindView::Storage => 2.into_dart(),
-            zcash_voting::wire::RoundStepFailureKindView::InvariantViolation => 3.into_dart(),
-            zcash_voting::wire::RoundStepFailureKindView::Transport => 4.into_dart(),
-            zcash_voting::wire::RoundStepFailureKindView::Protocol => 5.into_dart(),
-            zcash_voting::wire::RoundStepFailureKindView::ProofFailed => 6.into_dart(),
-            zcash_voting::wire::RoundStepFailureKindView::Signing => 7.into_dart(),
-            zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete => 8.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::InsufficientEligibility => 1.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::NoSpendableNotes => 2.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::Busy => 3.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::Storage => 4.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::InvariantViolation => 5.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::Transport => 6.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::Protocol => 7.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::ProofFailed => 8.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::Signing => 9.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete => {
+                10.into_dart()
+            }
+            zcash_voting::wire::RoundStepFailureKindView::VoteEnded => 11.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -14200,6 +14272,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundStepF
             self.0.chain_outcome.into_into_dart().into_dart(),
             self.0.message.into_into_dart().into_dart(),
             self.0.plan.into_into_dart().into_dart(),
+            self.0.share_deliveries.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -15040,9 +15113,12 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VotingErro
             zcash_voting::wire::VotingErrorKindView::InsufficientEligibility => 6.into_dart(),
             zcash_voting::wire::VotingErrorKindView::NoSpendableNotes => 7.into_dart(),
             zcash_voting::wire::VotingErrorKindView::SetupAlreadyPersisted => 8.into_dart(),
-            zcash_voting::wire::VotingErrorKindView::DbBusy => 9.into_dart(),
-            zcash_voting::wire::VotingErrorKindView::PirUnavailable => 10.into_dart(),
-            zcash_voting::wire::VotingErrorKindView::Other => 11.into_dart(),
+            zcash_voting::wire::VotingErrorKindView::DelegationReconciliationRequired => {
+                9.into_dart()
+            }
+            zcash_voting::wire::VotingErrorKindView::DbBusy => 10.into_dart(),
+            zcash_voting::wire::VotingErrorKindView::PirUnavailable => 11.into_dart(),
+            zcash_voting::wire::VotingErrorKindView::Other => 12.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -15066,10 +15142,11 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VotingErro
             self.0.retryable.into_into_dart().into_dart(),
             self.0.message.into_into_dart().into_dart(),
             self.0.bundle_index.into_into_dart().into_dart(),
+            self.0.setup_field.into_into_dart().into_dart(),
             self.0.snapshot_height.into_into_dart().into_dart(),
             self.0.required_weight_zatoshi.into_into_dart().into_dart(),
             self.0.selected_weight_zatoshi.into_into_dart().into_dart(),
-            self.0.required_notes.into_into_dart().into_dart(),
+            self.0.bundle_note_slots.into_into_dart().into_dart(),
             self.0.selected_notes.into_into_dart().into_dart(),
             self.0.http_status.into_into_dart().into_dart(),
             self.0.endpoint.into_into_dart().into_dart(),
@@ -16042,6 +16119,24 @@ impl SseEncode for zcash_voting::wire::DelegationRecoveryWorkView {
         <u32>::sse_encode(self.bundle_index, serializer);
         <zcash_voting::wire::WorkflowPhaseView>::sse_encode(self.phase, serializer);
         <Option<String>>::sse_encode(self.tx_hash, serializer);
+    }
+}
+
+impl SseEncode for zcash_voting::wire::DelegationSetupFieldView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                zcash_voting::wire::DelegationSetupFieldView::DelegationPczt => 0,
+                zcash_voting::wire::DelegationSetupFieldView::PaddedNoteSecrets => 1,
+                zcash_voting::wire::DelegationSetupFieldView::PcztSighash => 2,
+                zcash_voting::wire::DelegationSetupFieldView::Tx1Effects => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -17156,6 +17251,16 @@ impl SseEncode for Option<zcash_voting::wire::DelegationProgressKind> {
     }
 }
 
+impl SseEncode for Option<zcash_voting::wire::DelegationSetupFieldView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <zcash_voting::wire::DelegationSetupFieldView>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<f64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -17516,6 +17621,7 @@ impl SseEncode for zcash_voting::wire::RoundPlanView {
             serializer,
         );
         <Vec<u32>>::sse_encode(self.open_proposals, serializer);
+        <Vec<u32>>::sse_encode(self.unrostered_intents, serializer);
         <Option<zcash_voting::share_policy::ImmediateShareKey>>::sse_encode(
             self.immediate_share_key,
             serializer,
@@ -17550,14 +17656,17 @@ impl SseEncode for zcash_voting::wire::RoundStepFailureKindView {
         <i32>::sse_encode(
             match self {
                 zcash_voting::wire::RoundStepFailureKindView::InvalidInput => 0,
-                zcash_voting::wire::RoundStepFailureKindView::Busy => 1,
-                zcash_voting::wire::RoundStepFailureKindView::Storage => 2,
-                zcash_voting::wire::RoundStepFailureKindView::InvariantViolation => 3,
-                zcash_voting::wire::RoundStepFailureKindView::Transport => 4,
-                zcash_voting::wire::RoundStepFailureKindView::Protocol => 5,
-                zcash_voting::wire::RoundStepFailureKindView::ProofFailed => 6,
-                zcash_voting::wire::RoundStepFailureKindView::Signing => 7,
-                zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete => 8,
+                zcash_voting::wire::RoundStepFailureKindView::InsufficientEligibility => 1,
+                zcash_voting::wire::RoundStepFailureKindView::NoSpendableNotes => 2,
+                zcash_voting::wire::RoundStepFailureKindView::Busy => 3,
+                zcash_voting::wire::RoundStepFailureKindView::Storage => 4,
+                zcash_voting::wire::RoundStepFailureKindView::InvariantViolation => 5,
+                zcash_voting::wire::RoundStepFailureKindView::Transport => 6,
+                zcash_voting::wire::RoundStepFailureKindView::Protocol => 7,
+                zcash_voting::wire::RoundStepFailureKindView::ProofFailed => 8,
+                zcash_voting::wire::RoundStepFailureKindView::Signing => 9,
+                zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete => 10,
+                zcash_voting::wire::RoundStepFailureKindView::VoteEnded => 11,
                 _ => {
                     unimplemented!("");
                 }
@@ -17582,6 +17691,10 @@ impl SseEncode for zcash_voting::wire::RoundStepFailureView {
         );
         <String>::sse_encode(self.message, serializer);
         <Option<zcash_voting::wire::RoundPlanView>>::sse_encode(self.plan, serializer);
+        <Vec<zcash_voting::wire::ShareBatchDeliveryReportView>>::sse_encode(
+            self.share_deliveries,
+            serializer,
+        );
     }
 }
 
@@ -18061,9 +18174,10 @@ impl SseEncode for zcash_voting::wire::VotingErrorKindView {
                 zcash_voting::wire::VotingErrorKindView::InsufficientEligibility => 6,
                 zcash_voting::wire::VotingErrorKindView::NoSpendableNotes => 7,
                 zcash_voting::wire::VotingErrorKindView::SetupAlreadyPersisted => 8,
-                zcash_voting::wire::VotingErrorKindView::DbBusy => 9,
-                zcash_voting::wire::VotingErrorKindView::PirUnavailable => 10,
-                zcash_voting::wire::VotingErrorKindView::Other => 11,
+                zcash_voting::wire::VotingErrorKindView::DelegationReconciliationRequired => 9,
+                zcash_voting::wire::VotingErrorKindView::DbBusy => 10,
+                zcash_voting::wire::VotingErrorKindView::PirUnavailable => 11,
+                zcash_voting::wire::VotingErrorKindView::Other => 12,
                 _ => {
                     unimplemented!("");
                 }
@@ -18080,10 +18194,14 @@ impl SseEncode for zcash_voting::wire::VotingErrorView {
         <bool>::sse_encode(self.retryable, serializer);
         <String>::sse_encode(self.message, serializer);
         <Option<u32>>::sse_encode(self.bundle_index, serializer);
+        <Option<zcash_voting::wire::DelegationSetupFieldView>>::sse_encode(
+            self.setup_field,
+            serializer,
+        );
         <Option<u64>>::sse_encode(self.snapshot_height, serializer);
         <Option<u64>>::sse_encode(self.required_weight_zatoshi, serializer);
         <Option<u64>>::sse_encode(self.selected_weight_zatoshi, serializer);
-        <Option<u32>>::sse_encode(self.required_notes, serializer);
+        <Option<u32>>::sse_encode(self.bundle_note_slots, serializer);
         <Option<u32>>::sse_encode(self.selected_notes, serializer);
         <Option<u16>>::sse_encode(self.http_status, serializer);
         <Option<String>>::sse_encode(self.endpoint, serializer);

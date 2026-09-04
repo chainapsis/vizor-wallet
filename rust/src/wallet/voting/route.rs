@@ -104,6 +104,12 @@ impl VizorRoute {
 }
 
 impl RouteHttp for VizorRoute {
+    // The direct client marks dispatch before TCP/TLS setup. Preserve its
+    // classification of definite connect failures through this route wrapper.
+    fn hook_precedes_connection_setup(&self) -> bool {
+        self.direct.hook_precedes_connection_setup()
+    }
+
     fn execute<'a>(
         &'a self,
         request: RouteRequest<'a>,

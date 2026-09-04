@@ -194,7 +194,7 @@ pub async fn precompute_snapshot_bundles(
         let round_id = pipeline.round_id().to_string();
         fleet.with_failover(|session| {
             zcash_voting::precompute::precompute_snapshot_bundles(
-                pipeline.voting_db(),
+                &pipeline.voting_db(),
                 &round_id,
                 &notes,
                 bundle_policy,
@@ -206,7 +206,7 @@ pub async fn precompute_snapshot_bundles(
     .await
 }
 
-/// Prepare and persist ZKP1 for one software delegation bundle without signing.
+/// Prepare and persist ZKP1 for a software or Keystone bundle without signing.
 ///
 /// Returns `true` when this call generated the proof and `false` when a
 /// persisted proof was reused.

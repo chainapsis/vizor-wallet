@@ -9316,6 +9316,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DelegationSetupFieldView dco_decode_box_autoadd_delegation_setup_field_view(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_delegation_setup_field_view(raw);
+  }
+
+  @protected
   double dco_decode_box_autoadd_f_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
@@ -9653,6 +9661,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       phase: dco_decode_workflow_phase_view(arr[2]),
       txHash: dco_decode_opt_String(arr[3]),
     );
+  }
+
+  @protected
+  DelegationSetupFieldView dco_decode_delegation_setup_field_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return DelegationSetupFieldView.values[raw as int];
   }
 
   @protected
@@ -10726,6 +10740,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DelegationSetupFieldView?
+  dco_decode_opt_box_autoadd_delegation_setup_field_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_delegation_setup_field_view(raw);
+  }
+
+  @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_f_64(raw);
@@ -11008,8 +11031,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RoundPlanView dco_decode_round_plan_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 24)
-      throw Exception('unexpected arr length: expect 24 but see ${arr.length}');
+    if (arr.length != 25)
+      throw Exception('unexpected arr length: expect 25 but see ${arr.length}');
     return RoundPlanView(
       roundId: dco_decode_String(arr[0]),
       pendingRecovery: dco_decode_bool(arr[1]),
@@ -11035,11 +11058,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ),
       recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[19]),
       openProposals: dco_decode_list_prim_u_32_strict(arr[20]),
+      unrosteredIntents: dco_decode_list_prim_u_32_strict(arr[21]),
       immediateShareKey: dco_decode_opt_box_autoadd_immediate_share_key(
-        arr[21],
+        arr[22],
       ),
-      immediateShareConfirmed: dco_decode_bool(arr[22]),
-      allDecided: dco_decode_bool(arr[23]),
+      immediateShareConfirmed: dco_decode_bool(arr[23]),
+      allDecided: dco_decode_bool(arr[24]),
     );
   }
 
@@ -11061,8 +11085,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RoundStepFailureView dco_decode_round_step_failure_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return RoundStepFailureView(
       kind: dco_decode_round_step_failure_kind_view(arr[0]),
       step: dco_decode_opt_box_autoadd_next_step_view(arr[1]),
@@ -11075,6 +11099,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ),
       message: dco_decode_String(arr[4]),
       plan: dco_decode_opt_box_autoadd_round_plan_view(arr[5]),
+      shareDeliveries: dco_decode_list_share_batch_delivery_report_view(arr[6]),
     );
   }
 
@@ -11624,20 +11649,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   VotingErrorView dco_decode_voting_error_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return VotingErrorView(
       kind: dco_decode_voting_error_kind_view(arr[0]),
       retryable: dco_decode_bool(arr[1]),
       message: dco_decode_String(arr[2]),
       bundleIndex: dco_decode_opt_box_autoadd_u_32(arr[3]),
-      snapshotHeight: dco_decode_opt_box_autoadd_u_64(arr[4]),
-      requiredWeightZatoshi: dco_decode_opt_box_autoadd_u_64(arr[5]),
-      selectedWeightZatoshi: dco_decode_opt_box_autoadd_u_64(arr[6]),
-      requiredNotes: dco_decode_opt_box_autoadd_u_32(arr[7]),
-      selectedNotes: dco_decode_opt_box_autoadd_u_32(arr[8]),
-      httpStatus: dco_decode_opt_box_autoadd_u_16(arr[9]),
-      endpoint: dco_decode_opt_String(arr[10]),
+      setupField: dco_decode_opt_box_autoadd_delegation_setup_field_view(
+        arr[4],
+      ),
+      snapshotHeight: dco_decode_opt_box_autoadd_u_64(arr[5]),
+      requiredWeightZatoshi: dco_decode_opt_box_autoadd_u_64(arr[6]),
+      selectedWeightZatoshi: dco_decode_opt_box_autoadd_u_64(arr[7]),
+      bundleNoteSlots: dco_decode_opt_box_autoadd_u_32(arr[8]),
+      selectedNotes: dco_decode_opt_box_autoadd_u_32(arr[9]),
+      httpStatus: dco_decode_opt_box_autoadd_u_16(arr[10]),
+      endpoint: dco_decode_opt_String(arr[11]),
     );
   }
 
@@ -12501,6 +12529,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DelegationSetupFieldView sse_decode_box_autoadd_delegation_setup_field_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_delegation_setup_field_view(deserializer));
+  }
+
+  @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_f_64(deserializer));
@@ -12897,6 +12933,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       phase: var_phase,
       txHash: var_txHash,
     );
+  }
+
+  @protected
+  DelegationSetupFieldView sse_decode_delegation_setup_field_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return DelegationSetupFieldView.values[inner];
   }
 
   @protected
@@ -14459,6 +14504,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DelegationSetupFieldView?
+  sse_decode_opt_box_autoadd_delegation_setup_field_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_delegation_setup_field_view(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -14927,6 +14986,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       deserializer,
     );
     var var_openProposals = sse_decode_list_prim_u_32_strict(deserializer);
+    var var_unrosteredIntents = sse_decode_list_prim_u_32_strict(deserializer);
     var var_immediateShareKey = sse_decode_opt_box_autoadd_immediate_share_key(
       deserializer,
     );
@@ -14954,6 +15014,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       recoveredDelegationWork: var_recoveredDelegationWork,
       recoveredVoteWork: var_recoveredVoteWork,
       openProposals: var_openProposals,
+      unrosteredIntents: var_unrosteredIntents,
       immediateShareKey: var_immediateShareKey,
       immediateShareConfirmed: var_immediateShareConfirmed,
       allDecided: var_allDecided,
@@ -14993,6 +15054,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_decode_opt_box_autoadd_chain_submission_outcome_view(deserializer);
     var var_message = sse_decode_String(deserializer);
     var var_plan = sse_decode_opt_box_autoadd_round_plan_view(deserializer);
+    var var_shareDeliveries = sse_decode_list_share_batch_delivery_report_view(
+      deserializer,
+    );
     return RoundStepFailureView(
       kind: var_kind,
       step: var_step,
@@ -15000,6 +15064,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       chainOutcome: var_chainOutcome,
       message: var_message,
       plan: var_plan,
+      shareDeliveries: var_shareDeliveries,
     );
   }
 
@@ -15633,6 +15698,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_retryable = sse_decode_bool(deserializer);
     var var_message = sse_decode_String(deserializer);
     var var_bundleIndex = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_setupField = sse_decode_opt_box_autoadd_delegation_setup_field_view(
+      deserializer,
+    );
     var var_snapshotHeight = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_requiredWeightZatoshi = sse_decode_opt_box_autoadd_u_64(
       deserializer,
@@ -15640,7 +15708,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_selectedWeightZatoshi = sse_decode_opt_box_autoadd_u_64(
       deserializer,
     );
-    var var_requiredNotes = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_bundleNoteSlots = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_selectedNotes = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_httpStatus = sse_decode_opt_box_autoadd_u_16(deserializer);
     var var_endpoint = sse_decode_opt_String(deserializer);
@@ -15649,10 +15717,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       retryable: var_retryable,
       message: var_message,
       bundleIndex: var_bundleIndex,
+      setupField: var_setupField,
       snapshotHeight: var_snapshotHeight,
       requiredWeightZatoshi: var_requiredWeightZatoshi,
       selectedWeightZatoshi: var_selectedWeightZatoshi,
-      requiredNotes: var_requiredNotes,
+      bundleNoteSlots: var_bundleNoteSlots,
       selectedNotes: var_selectedNotes,
       httpStatus: var_httpStatus,
       endpoint: var_endpoint,
@@ -16476,6 +16545,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_delegation_setup_field_view(
+    DelegationSetupFieldView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_delegation_setup_field_view(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_f_64(self, serializer);
@@ -16846,6 +16924,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.bundleIndex, serializer);
     sse_encode_workflow_phase_view(self.phase, serializer);
     sse_encode_opt_String(self.txHash, serializer);
+  }
+
+  @protected
+  void sse_encode_delegation_setup_field_view(
+    DelegationSetupFieldView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -18114,6 +18201,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_delegation_setup_field_view(
+    DelegationSetupFieldView? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_delegation_setup_field_view(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -18522,6 +18622,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     );
     sse_encode_list_vote_recovery_work_view(self.recoveredVoteWork, serializer);
     sse_encode_list_prim_u_32_strict(self.openProposals, serializer);
+    sse_encode_list_prim_u_32_strict(self.unrosteredIntents, serializer);
     sse_encode_opt_box_autoadd_immediate_share_key(
       self.immediateShareKey,
       serializer,
@@ -18566,6 +18667,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     );
     sse_encode_String(self.message, serializer);
     sse_encode_opt_box_autoadd_round_plan_view(self.plan, serializer);
+    sse_encode_list_share_batch_delivery_report_view(
+      self.shareDeliveries,
+      serializer,
+    );
   }
 
   @protected
@@ -19054,10 +19159,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.retryable, serializer);
     sse_encode_String(self.message, serializer);
     sse_encode_opt_box_autoadd_u_32(self.bundleIndex, serializer);
+    sse_encode_opt_box_autoadd_delegation_setup_field_view(
+      self.setupField,
+      serializer,
+    );
     sse_encode_opt_box_autoadd_u_64(self.snapshotHeight, serializer);
     sse_encode_opt_box_autoadd_u_64(self.requiredWeightZatoshi, serializer);
     sse_encode_opt_box_autoadd_u_64(self.selectedWeightZatoshi, serializer);
-    sse_encode_opt_box_autoadd_u_32(self.requiredNotes, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.bundleNoteSlots, serializer);
     sse_encode_opt_box_autoadd_u_32(self.selectedNotes, serializer);
     sse_encode_opt_box_autoadd_u_16(self.httpStatus, serializer);
     sse_encode_opt_String(self.endpoint, serializer);

@@ -13,7 +13,6 @@ import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/api/voting_session.dart' as rust_session;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
-import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
@@ -503,7 +502,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         !_isCurrentPrecomputeContext(context, accountUuid)) {
       return;
     }
-    if (context.isHardwareAccount || bundleCount == 0) {
+    if (bundleCount == 0) {
       _completedSnapshotBundlePrecomputes.add(precomputeKey);
       return;
     }
@@ -666,7 +665,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> prepareKeystoneSigning() {
-    return _enqueue(_prepareKeystoneSigningUnlocked);
+    return _enqueue(
+      _prepareKeystoneSigningUnlocked,
+      cleanupProcessStateOnError: false,
+    );
   }
 
   Future<void> handleKeystoneBatchSignatures(
@@ -791,7 +793,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
       await _prepareKeystoneSigningUnlocked();
-    });
+    }, cleanupProcessStateOnError: false);
   }
 
   Future<void> reportKeystoneScanError(String message) {
@@ -2514,10 +2516,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Uri pirEndpoint,
     required int bundleCount,
   }) async {
-    // Keystone must retain the original PCZT bytes for its QR signing request.
-    // The software path can persist ZKP1 now and reconstruct its signed payload
-    // from the stored setup fields later without retaining those bytes in Dart.
-    if (context.isHardwareAccount || bundleCount == 0) return true;
+    // The SDK retains the exact PCZT for the later Keystone signing request.
+    if (bundleCount == 0) return true;
     if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
       return false;
     }
@@ -2525,7 +2525,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final rust = ref.read(votingRustApiProvider);
     late final List<int> storedHotkeySecret;
     try {
-      storedHotkeySecret = await _ensureHotkey(context);
+      final signatures = context.isHardwareAccount
+          ? await _loadKeystoneSignatures(context)
+          : const <int, rust_wire.KeystoneSignatureRecord>{};
+      storedHotkeySecret = await _ensureHotkey(
+        context,
+        alreadyBound: signatures.isNotEmpty,
+      );
     } catch (e) {
       debugPrint(
         '[zcash] Voting: background delegation proof skipped '
@@ -2774,8 +2780,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   static bool _needsFreshDelegationPreparation(
     rust_wire.RoundPlanView? roundPlan,
   ) {
-    if (delegationBundleIndexesNeedingSigning(roundPlan).isNotEmpty)
+    if (delegationBundleIndexesNeedingSigning(roundPlan).isNotEmpty) {
       return true;
+    }
     if (roundPlan == null) return false;
     return roundPlanNeedsDraftSetup(roundPlan) ||
         roundPlan.recoveredDelegationWork.any(
@@ -2848,73 +2855,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
 
     final rust = ref.read(votingRustApiProvider);
-    late final List<rust_delegate.KeystoneSigningRequest> requests;
-    try {
-      requests = await rust.buildKeystoneDelegationRequests(
-        ctx: _apiRoundContext(context),
-        storedHotkeySecret: storedHotkeySecret,
-        bundleIndices: unsignedBundleIndexes,
-      );
-    } catch (error) {
-      if (!_isKeystoneSetupOverwriteError(error)) rethrow;
-      debugPrint(
-        '[zcash] Voting: Keystone request detected stale bundle setup '
-        'round=${context.round.roundId} bundles=$unsignedBundleIndexes',
-      );
-      await _resetVotingSessionState(
-        rust: rust,
-        context: context,
-        reason: 'keystone-stale-setup',
-      );
-      await rust.setupDelegationBundles(ctx: _apiRoundContext(context));
-      roundPlan = await _loadRoundPlan(context);
-      signatures = await _loadKeystoneSignatures(context);
-      final maxBundleIndex = roundPlanBundleCount(roundPlan);
-      if (maxBundleIndex >= 0) {
-        signatures = {
-          for (final entry in signatures.entries)
-            if (entry.key >= 0 && entry.key < maxBundleIndex)
-              entry.key: entry.value,
-        };
-      }
-      unsignedBundleIndexes = delegationBundleIndexesNeedingSigning(
-        roundPlan,
-      ).where((bundleIndex) => !signatures.containsKey(bundleIndex)).toList();
-      if (unsignedBundleIndexes.isEmpty) {
-        _setStateForContext(
-          context,
-          (state.value ?? current).copyWith(
-            phase: VotingSessionPhase.readyToDelegate,
-            isHardwareAccount: true,
-            roundPlan: roundPlan,
-            keystoneSignatures: signatures,
-            clearKeystoneSigningRequest: true,
-            clearKeystoneScanError: true,
-            clearCurrentBundleIndex: true,
-            clearError: true,
-          ),
-        );
-        return;
-      }
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: VotingSessionPhase.keystoneSigning,
-          isHardwareAccount: true,
-          roundPlan: roundPlan,
-          keystoneSignatures: signatures,
-          currentBundleIndex: unsignedBundleIndexes.first,
-          clearKeystoneSigningRequest: true,
-          clearKeystoneScanError: true,
-          clearError: true,
-        ),
-      );
-      requests = await rust.buildKeystoneDelegationRequests(
-        ctx: _apiRoundContext(context),
-        storedHotkeySecret: storedHotkeySecret,
-        bundleIndices: unsignedBundleIndexes,
-      );
-    }
+    final requests = await rust.buildKeystoneDelegationRequests(
+      ctx: _apiRoundContext(context),
+      storedHotkeySecret: storedHotkeySecret,
+      bundleIndices: unsignedBundleIndexes,
+    );
 
     if (requests.length != unsignedBundleIndexes.length ||
         !List.generate(
@@ -3555,11 +3500,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   static int _unixSeconds(DateTime value) {
     return value.toUtc().millisecondsSinceEpoch ~/ 1000;
-  }
-
-  static bool _isKeystoneSetupOverwriteError(Object error) {
-    return error is VotingRustException &&
-        error.kind == rust_wire.VotingErrorKindView.setupAlreadyPersisted;
   }
 }
 

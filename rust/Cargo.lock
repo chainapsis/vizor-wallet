@@ -6812,7 +6812,7 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 [[package]]
 name = "vote-commitment-tree"
 version = "0.6.0"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=5dba6283598f017023ef2b5f598e99587d0f97a9#5dba6283598f017023ef2b5f598e99587d0f97a9"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=9e20768eaca95b4cff6644c32003cea03637532e#9e20768eaca95b4cff6644c32003cea03637532e"
 dependencies = [
  "anyhow",
  "imt-tree",
@@ -6826,7 +6826,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.8.0"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=5dba6283598f017023ef2b5f598e99587d0f97a9#5dba6283598f017023ef2b5f598e99587d0f97a9"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=9e20768eaca95b4cff6644c32003cea03637532e#9e20768eaca95b4cff6644c32003cea03637532e"
 dependencies = [
  "base64",
  "hex",
@@ -8027,7 +8027,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "4.0.0"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=5dba6283598f017023ef2b5f598e99587d0f97a9#5dba6283598f017023ef2b5f598e99587d0f97a9"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=9e20768eaca95b4cff6644c32003cea03637532e#9e20768eaca95b4cff6644c32003cea03637532e"
 dependencies = [
  "anyhow",
  "base64",
