@@ -7,11 +7,13 @@ Usage: scripts/build-android-reproducible.sh \
   --build-name X.Y.Z \
   --build-number CODE \
   --release-version VERSION \
-  --signing required|unsigned [--offline] [--dry-run]
+  --signing required|unsigned \
+  [--target-abi all|arm64-v8a|armeabi-v7a|x86_64] [--offline] [--dry-run]
 
-Builds all three Android APK ABIs from a clean copy of HEAD under Vizor's
-canonical Linux build path. Direct Release and F-Droid must both use this
-entry point so Flutter and Rust embed the same source/cache paths.
+Builds Android APKs from a clean copy of HEAD under Vizor's canonical Linux
+build path. The default target is all three ABIs. Direct Release and F-Droid
+must both use this entry point so Flutter and Rust embed the same source/cache
+paths.
 
 Set FLUTTER_BIN to an absolute Flutter executable in F-Droid. It defaults to
 the repository's required `fvm flutter` command for Direct/local builds.
@@ -22,6 +24,7 @@ build_name=""
 build_number=""
 release_version=""
 signing=""
+target_abi="all"
 offline="false"
 dry_run="false"
 
@@ -41,6 +44,10 @@ while (($# > 0)); do
       ;;
     --signing)
       signing="${2:-}"
+      shift 2
+      ;;
+    --target-abi)
+      target_abi="${2:-}"
       shift 2
       ;;
     --offline)
@@ -80,6 +87,29 @@ if [[ "${signing}" != "required" && "${signing}" != "unsigned" ]]; then
   exit 2
 fi
 
+case "${target_abi}" in
+  all)
+    target_platforms="android-arm64,android-arm,android-x64"
+    output_abis=(arm64-v8a armeabi-v7a x86_64)
+    ;;
+  arm64-v8a)
+    target_platforms="android-arm64"
+    output_abis=(arm64-v8a)
+    ;;
+  armeabi-v7a)
+    target_platforms="android-arm"
+    output_abis=(armeabi-v7a)
+    ;;
+  x86_64)
+    target_platforms="android-x64"
+    output_abis=(x86_64)
+    ;;
+  *)
+    echo "--target-abi must be all, arm64-v8a, armeabi-v7a, or x86_64: ${target_abi:-<missing>}" >&2
+    exit 2
+    ;;
+esac
+
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd -- "${script_dir}/.." && pwd)"
 canonical_root="/tmp/vizor-android-reproducible"
@@ -101,7 +131,7 @@ build_args=(
   build apk
   --release
   --split-per-abi
-  --target-platform android-arm64,android-arm,android-x64
+  --target-platform "${target_platforms}"
   --build-name "${build_name}"
   --build-number "${build_number}"
   --dart-define=VIZOR_FORM_FACTOR=mobile
@@ -110,8 +140,8 @@ build_args=(
   --dart-define=VIZOR_WALLET_LINK_BACKEND_URL=https://functions.vizor.cash
 )
 
-printf 'Reproducible Android build: name=%s number=%s release=%s signing=%s offline=%s\n' \
-  "${build_name}" "${build_number}" "${release_version}" "${signing}" "${offline}"
+printf 'Reproducible Android build: name=%s number=%s release=%s signing=%s targetAbi=%s offline=%s\n' \
+  "${build_name}" "${build_number}" "${release_version}" "${signing}" "${target_abi}" "${offline}"
 printf 'Canonical source: %s\n' "${canonical_source}"
 printf 'Command:'
 printf ' %q' "${flutter_command[@]}" "${build_args[@]}"
@@ -220,7 +250,7 @@ cargo "${cargo_fetch_args[@]}"
 
 output_dir="${repository_root}/build/app/outputs/flutter-apk"
 mkdir -p "${output_dir}"
-for abi in arm64-v8a armeabi-v7a x86_64; do
+for abi in "${output_abis[@]}"; do
   apk="app-${abi}-release.apk"
   source_apk="${canonical_source}/build/app/outputs/flutter-apk/${apk}"
   if [[ ! -s "${source_apk}" ]]; then

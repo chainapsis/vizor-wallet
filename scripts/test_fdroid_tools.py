@@ -198,7 +198,8 @@ class FdroidBuildScriptTest(unittest.TestCase):
         command_output = result.stdout.replace("\\", "")
         self.assertIn("baseVersionCode=350999", command_output)
         self.assertIn("rust=1.98.0", command_output)
-        self.assertIn("--target-platform android-arm64,android-arm,android-x64", command_output)
+        self.assertIn("--target-platform android-arm64", command_output)
+        self.assertNotIn("android-arm64,android-arm,android-x64", command_output)
         self.assertIn("--dart-define=VIZOR_FORM_FACTOR=mobile", command_output)
         self.assertIn(
             "--dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=https://functions.vizor.cash/api/v3",
@@ -214,6 +215,38 @@ class FdroidBuildScriptTest(unittest.TestCase):
         )
         self.assertIn("signing=unsigned", command_output)
         self.assertIn("offline=true", command_output)
+
+    def test_dry_run_builds_only_requested_abi(self) -> None:
+        cases = (
+            ("armeabi-v7a", "351999", "android-arm"),
+            ("arm64-v8a", "352999", "android-arm64"),
+            ("x86_64", "354999", "android-x64"),
+        )
+        for abi, version_code, target_platform in cases:
+            with self.subTest(abi=abi):
+                result = subprocess.run(
+                    [
+                        str(ROOT / "scripts" / "build-android-fdroid.sh"),
+                        "--version",
+                        "0.0.35",
+                        "--expected-abi",
+                        abi,
+                        "--expected-version-code",
+                        version_code,
+                        "--dry-run",
+                    ],
+                    check=True,
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+                command_output = result.stdout.replace("\\", "")
+                self.assertIn(
+                    f"--target-platform {target_platform}", command_output
+                )
+                self.assertNotIn(
+                    "android-arm64,android-arm,android-x64", command_output
+                )
 
     def test_dry_run_rejects_wrong_abi_version_code(self) -> None:
         result = subprocess.run(
@@ -258,7 +291,12 @@ class AndroidReproducibleBuildScriptTest(unittest.TestCase):
         )
         command_output = result.stdout.replace("\\", "")
         self.assertIn("signing=required", command_output)
+        self.assertIn("targetAbi=all", command_output)
         self.assertIn("offline=false", command_output)
+        self.assertIn(
+            "--target-platform android-arm64,android-arm,android-x64",
+            command_output,
+        )
         self.assertIn("--build-name 0.0.35", command_output)
         self.assertIn("--build-number 350999", command_output)
         self.assertIn(
