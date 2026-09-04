@@ -27,9 +27,40 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Vizor https links: the host is claimed whole, with no path
+                 constraint. A bare `https://<host>` carries an *empty* path on
+                 Android, which android:path="/" does not match, so a
+                 path-constrained filter left exactly the bare origin sitting in
+                 the browser. Claiming the host matches the empty path, "/", and
+                 "/payment-links/open" alike, and it is what iOS already does:
+                 its AASA claims every path on this host. Widening is safe
+                 because nothing downstream trusts the path: MainActivity's
+                 acceptsIncomingUri admits by host, and Dart's
+                 classifyIncomingLink drops an unrecognised path on this origin
+                 silently. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="https"
+                    android:host="${vizorDeeplinkHost}" />
+            </intent-filter>
+            <!-- ZIP-321 payment links: zcash:<address>?amount=... open Vizor.
+                 Handled in MainActivity (com.zcash.wallet/payment_uri channel),
+                 not Flutter's built-in deep linking. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="zcash"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

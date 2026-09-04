@@ -536,6 +536,23 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+
+    let incomingUriChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/payment_uri",
+      binaryMessenger: messenger
+    )
+    IncomingUriChannelBridge.shared.attach(channel: incomingUriChannel)
+    incomingUriChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "takePendingUris":
+        result(IncomingUriChannelBridge.shared.takePending())
+      case "ready":
+        IncomingUriChannelBridge.shared.markReady()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func completeOutboxArmWithBackgroundSchedule(
@@ -761,6 +778,113 @@ import UIKit
         return false
       }
     #endif
+  }
+}
+
+/// Buffers trusted Vizor HTTPS links until the Dart isolate has installed its
+/// handler. Never logs the URL because a route may contain bearer material.
+final class IncomingUriChannelBridge {
+  static let shared = IncomingUriChannelBridge()
+  static let deeplinkHost =
+    (Bundle.main.object(forInfoDictionaryKey: "VizorDeeplinkHost") as? String)?
+    .lowercased() ?? "link.vizor.cash"
+  private static let paymentLinkPath = "/payment-links/open"
+  /// Sanity ceiling, set far above every link this app actually accepts.
+  ///
+  /// Dart owns the real size limits -- `VizorPaymentLink.maxEncodedLength` and
+  /// `kMaxPaymentUriLength`, both 16 KB -- and rejects an oversize link with a
+  /// message the user can read. Capping here at those same 16 KB dropped
+  /// exactly the links Dart had copy for, in silence, so the rejection never
+  /// rendered. Forward anything up to this bound and let Dart explain; the
+  /// bound exists only so a pathological multi-megabyte URL still cannot sit
+  /// in the queue.
+  private static let maxIncomingUriBytes = 64 * 1024
+  private static let maxPendingUris = 16
+  private init() {}
+
+  private var channel: FlutterMethodChannel?
+  private var pendingUris: [String] = []
+  private var dartReady = false
+
+  func attach(channel: FlutterMethodChannel) {
+    self.channel = channel
+    dartReady = false
+  }
+
+  func markReady() {
+    dartReady = true
+    flush()
+  }
+
+  func takePending() -> [String] {
+    let uris = pendingUris
+    pendingUris.removeAll()
+    return uris
+  }
+
+  func handle(urlContexts: Set<UIOpenURLContext>) {
+    handle(urls: urlContexts.map(\.url))
+  }
+
+  @discardableResult
+  func handle(userActivity: NSUserActivity) -> Bool {
+    guard
+      userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+      let url = userActivity.webpageURL
+    else {
+      return false
+    }
+    return handle(urls: [url])
+  }
+
+  func handles(_ url: URL) -> Bool {
+    // A ZIP-321 payment link is an opaque `zcash:` URL: no host to check, and
+    // the Dart side owns its parsing. Everything else must be one of the
+    // verified HTTPS routes on the deeplink host.
+    if url.scheme?.lowercased() == "zcash" {
+      return true
+    }
+    guard
+      url.scheme?.lowercased() == "https",
+      url.host?.lowercased() == Self.deeplinkHost,
+      url.user == nil,
+      url.port == nil
+    else {
+      return false
+    }
+    let isHome = (url.path.isEmpty || url.path == "/")
+      && url.query == nil
+      && url.fragment == nil
+    return isHome || url.path == Self.paymentLinkPath
+  }
+
+  @discardableResult
+  private func handle(urls: [URL]) -> Bool {
+    var handledDeeplink = false
+    for url in urls {
+      guard handles(url) else { continue }
+      handledDeeplink = true
+      let uri = url.absoluteString
+      guard
+        uri.utf8.count <= Self.maxIncomingUriBytes,
+        pendingUris.count < Self.maxPendingUris,
+        !pendingUris.contains(uri)
+      else {
+        continue
+      }
+      pendingUris.append(uri)
+    }
+    if handledDeeplink {
+      flush()
+    }
+    return handledDeeplink
+  }
+
+  private func flush() {
+    guard dartReady, let channel, !pendingUris.isEmpty else { return }
+    let uris = pendingUris
+    pendingUris.removeAll()
+    channel.invokeMethod("onUris", arguments: uris)
   }
 }
 

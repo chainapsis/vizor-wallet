@@ -6,5 +6,9 @@
 	<array>
 		<string>group.com.keplr.vizor</string>
 	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:$(VIZOR_DEEPLINK_HOST)</string>
+	</array>
 </dict>
 </plist>

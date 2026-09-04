@@ -69,6 +69,10 @@ Future<void> stopTorUpdateRelay() =>
 /// Makes a GET request on a fresh Tor circuit. Dart calls this only after its
 /// process-wide route check has selected Tor; direct requests stay in Dart so
 /// existing test injection and platform behaviour remain unchanged.
+///
+/// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
+/// Tor is still bootstrapping waits for the route first, under the bootstrap's
+/// own deadline, and the caller's cancellation covers that wait.
 Future<NetworkHttpResponse> torHttpGet({
   required String url,
   required List<NetworkHttpHeader> headers,
@@ -83,6 +87,10 @@ Future<NetworkHttpResponse> torHttpGet({
 
 /// Makes a POST request on a fresh Tor circuit. Every app-owned HTTP call is
 /// isolated from wallet gRPC and from other HTTP destinations.
+///
+/// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
+/// Tor is still bootstrapping waits for the route first, under the bootstrap's
+/// own deadline, and the caller's cancellation covers that wait.
 Future<NetworkHttpResponse> torHttpPost({
   required String url,
   required List<NetworkHttpHeader> headers,
