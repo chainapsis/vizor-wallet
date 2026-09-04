@@ -17,7 +17,6 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passph
 import 'package:zcash_wallet/src/features/onboarding/mobile/seed_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
-import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 
 const _mnemonic =

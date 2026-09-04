@@ -465,6 +465,7 @@ void main() {
 /// A pre-check that always resolves "ready", so the delivery test can assert
 /// the card's arrival without a Rust bridge.
 PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
+  readNetworkName: () => kZcashDefaultNetworkName,
   spendableIsAuthoritativeNow: () => true,
   validateAddress: ({required String address, required String network}) async =>
       rust_sync.AddressValidationResult(

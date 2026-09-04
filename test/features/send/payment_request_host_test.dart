@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -81,6 +82,7 @@ class _FakeAccountNotifier extends AccountNotifier {
 final _discarded = <BigInt>[];
 
 PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
+  readNetworkName: () => kZcashDefaultNetworkName,
   spendableIsAuthoritativeNow: () => true,
   validateAddress: ({required String address, required String network}) async =>
       rust_sync.AddressValidationResult(
@@ -128,6 +130,7 @@ class _StallingSendApi {
   var proposeAttempts = 0;
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
+    readNetworkName: () => kZcashDefaultNetworkName,
     // Settled: a shortfall would be final, so the only way to `syncing` here
     // is the propose leg — and with the sync settled there is no completion
     // left for the card to wait for, which is what makes it stall.

@@ -152,6 +152,7 @@ class _EmptyAddressBookNotifier extends AddressBookNotifier {
 
 PaymentRequestPrecheck _readyPrecheck({required VoidCallback onPropose}) =>
     PaymentRequestPrecheck(
+      readNetworkName: () => kZcashDefaultNetworkName,
       spendableIsAuthoritativeNow: () => true,
       validateAddress:
           ({required String address, required String network}) async =>

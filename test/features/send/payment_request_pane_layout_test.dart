@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
@@ -171,6 +172,7 @@ class _FakeAccountNotifier extends AccountNotifier {
 }
 
 PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
+  readNetworkName: () => kZcashDefaultNetworkName,
   spendableIsAuthoritativeNow: () => true,
   validateAddress: ({required String address, required String network}) async =>
       rust_sync.AddressValidationResult(

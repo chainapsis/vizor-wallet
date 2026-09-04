@@ -26,7 +26,6 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/account_provider.dart';
-import '../../../../core/config/network_config.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
