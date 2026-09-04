@@ -463,6 +463,62 @@ void main() {
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
   });
 
+  testWidgets(
+    'android root back reaches a deep-linked Gift Card screen that cannot pop',
+    (tester) async {
+      final platformCalls = _capturePlatformCalls(tester);
+      var handledBacks = 0;
+      // An incoming Card link opens /payment-links with `go`, so the wizard's
+      // local steps sit on a stack that cannot pop.
+      final testRouter = _exitBackRouter(
+        initialLocation: '/payment-links',
+        routes: [
+          _placeholderRoute('/home', 'Home route'),
+          GoRoute(
+            path: '/payment-links',
+            builder: (_, _) => _RouteLevelBackHandler(
+              label: 'Gift Card route',
+              onBack: () => handledBacks++,
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(_app(testRouter));
+      await tester.pumpAndSettle();
+
+      expect(testRouter.router.canPop(), isFalse);
+      expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+      await tester.pump();
+
+      expect(handledBacks, 1);
+      expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+      expect(_systemNavigatorPopCallCount(platformCalls), 0);
+    },
+  );
+
+  testWidgets('a Gift Card page without a step back still exits', (
+    tester,
+  ) async {
+    final platformCalls = _capturePlatformCalls(tester);
+    final testRouter = _exitBackRouter(
+      initialLocation: '/payment-links',
+      routes: [
+        _placeholderRoute('/home', 'Home route'),
+        _placeholderRoute('/payment-links', 'Gift Card route'),
+      ],
+    );
+    await tester.pumpWidget(_app(testRouter));
+    await tester.pumpAndSettle();
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+    expect(_systemNavigatorPopCallCount(platformCalls), 1);
+  });
+
   testWidgets('a send route without a back handler still exits', (
     tester,
   ) async {

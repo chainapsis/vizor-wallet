@@ -95,6 +95,45 @@ void main() {
     },
   );
 
+  testWidgets('mobile system back steps the wizard instead of leaving it', (
+    tester,
+  ) async {
+    await pumpPaymentLinksScreen(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_links_mobile_create_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_mobile_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('payment_link_mobile_message_continue_button')),
+      findsOneWidget,
+    );
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('payment_links_mobile_screen')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('payment_link_mobile_amount_continue_button')),
+      findsOneWidget,
+    );
+    expect(find.text('0.1'), findsOneWidget);
+  });
+
   testWidgets('mobile home lists a funded card and copies its link', (
     tester,
   ) async {

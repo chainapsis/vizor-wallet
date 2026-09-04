@@ -111,6 +111,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _messageFocusNode = FocusNode();
   late final PaymentLinkOperations _paymentLinkOperations;
+  late final PaymentLinkIntakeNotifier _paymentLinkIntake;
   Timer? _fundingQuoteDebounce;
   Timer? _fundingProgressTimer;
 
@@ -158,6 +159,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   void initState() {
     super.initState();
     _paymentLinkOperations = ref.read(paymentLinkOperationsProvider);
+    _paymentLinkIntake = ref.read(paymentLinkIntakeProvider.notifier);
     // Both form factors open on the Gift Card home (the cards list once any
     // exist, the create/redeem landing otherwise). Only a link that is
     // already waiting jumps mobile straight to the redeem page, so the landing
@@ -464,6 +466,22 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       });
     }
     unawaited(_paymentLinkOperations.keepReceivedLink(link));
+  }
+
+  /// A Card that can never be claimed again stops being offered: the durable
+  /// record goes with the row, so a relaunch does not restore the Claim.
+  void _forgetUnavailableCard(VizorPaymentLink link) {
+    final listed = _receivedCards.any(
+      (record) =>
+          record.address == link.address &&
+          record.status == PaymentLinkReceivedStatus.readyToClaim,
+    );
+    if (!listed) return;
+    _receivedCards = [
+      for (final record in _receivedCards)
+        if (record.address != link.address) record,
+    ];
+    unawaited(_paymentLinkOperations.forgetReceivedLink(link));
   }
 
   void _rememberReceivedLink(VizorPaymentLink link) {
@@ -967,7 +985,20 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       final link = funding.link;
       if (!funding.fundingMetadataSaved) {
         if (!mounted) return;
-        setState(() => _pendingFundingMetadata = funding);
+        // An account switch mid-send resets the wizard, which would strand the
+        // retry: put Review back with the quote this funding actually used,
+        // and drop the requote the reset started so it cannot clear it again.
+        _fundingQuoteDebounce?.cancel();
+        _fundingQuoteGeneration += 1;
+        setState(() {
+          _pendingFundingMetadata = funding;
+          _fundingQuote = quote;
+          _fundingQuoteInProgress = false;
+          _amountSupportingText = null;
+          _amountSupportingTextIsError = false;
+          _reviewShowsBack = false;
+          _page = PaymentLinksLocalPage.review;
+        });
         _showError(
           'Funding was sent, but the Gift Card could not be saved. '
           'Try again before closing Vizor.',
@@ -1064,6 +1095,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             result.status,
           ),
         );
+        // Review is where the retry lives; it renders from the quote, so it is
+        // only safe to return to while one is still held.
+        if (_fundingQuote != null) {
+          _reviewShowsBack = false;
+          _page = PaymentLinksLocalPage.review;
+        }
       });
       _showError(
         'Funding was sent, but the Gift Card could not be saved. '
@@ -1202,9 +1239,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           .read(paymentLinkOperationsProvider)
           .prepareClaim(link, allowLongSync: allowLongSync);
       if (!mounted) {
-        await ref
-            .read(paymentLinkOperationsProvider)
-            .discardClaimSession(session);
+        // The element is defunct here, so its ref may already throw; the
+        // captured operations still delete the temporary claim wallet.
+        await _paymentLinkOperations.discardClaimSession(session);
         return;
       }
       // Preparation can outlast an account switch; a session bound to the
@@ -1241,6 +1278,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           _receivedClaimSession = null;
           _longSyncLink = null;
           _retryLink = null;
+          _forgetUnavailableCard(link);
           _redeemState = PaymentLinkRedeemVisualState.unavailable;
           _page = PaymentLinksLocalPage.redeem;
         });
@@ -1361,6 +1399,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         setState(() {
           _receivedClaimSession = null;
           _receivedLink = null;
+          _forgetUnavailableCard(link);
           _redeemState = PaymentLinkRedeemVisualState.unavailable;
           _page = PaymentLinksLocalPage.redeem;
         });
@@ -1472,11 +1511,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     await ref.read(paymentLinkClipboardProvider).clear();
     final claimSession = _receivedClaimSession;
     if (claimSession != null) {
-      await ref
-          .read(paymentLinkOperationsProvider)
-          .discardClaimSession(claimSession);
+      await _paymentLinkOperations.discardClaimSession(claimSession);
     }
-    ref.read(paymentLinkIntakeProvider.notifier).clearError();
+    _paymentLinkIntake.clearError();
     if (mounted) {
       setState(() {
         _receivedClaimSession = null;

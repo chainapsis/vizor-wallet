@@ -64,6 +64,9 @@ class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
   Future<void> keepReceivedLink(VizorPaymentLink link) async {}
 
   @override
+  Future<void> forgetReceivedLink(VizorPaymentLink link) async {}
+
+  @override
   Future<PaymentLinkFundingQuote> quoteFunding({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,

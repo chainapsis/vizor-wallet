@@ -348,6 +348,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     this.createdLoadGate,
     this.receivedLoadGate,
     this.prepareClaimGates = const {},
+    this.createFundedLinkGate,
     this.receivedLoadFailures = 0,
     this.prepareClaimFailures = 0,
     this.prepareClaimError,
@@ -367,6 +368,9 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
 
   /// Gates the Nth `prepareClaim` call (1-based) so a test can act mid-await.
   final Map<int, Completer<void>> prepareClaimGates;
+
+  /// Holds `createFundedLink` open so a test can act while funding is sent.
+  final Completer<void>? createFundedLinkGate;
   int receivedLoadFailures;
   int prepareClaimFailures;
   final Object? prepareClaimError;
@@ -391,6 +395,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<String> discardedClaimAddresses = [];
   final List<String> retainedClaimAddresses = [];
   final List<String> keptLinkAddresses = [];
+  final List<String> forgottenLinkAddresses = [];
   final List<bool> allowLongSyncCalls = [];
   final List<VizorPaymentLink> preparedLinks = [];
   int createdLoadCalls = 0;
@@ -434,6 +439,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     createdFromAccounts.add(sourceAccountUuid);
     createdArtworkIds.add(presentation?.artworkId);
     createdMessages.add(presentation?.message);
+    await createFundedLinkGate?.future;
     final link = VizorPaymentLink(
       network: 'main',
       address: 'u1createdpaymentlinkaddress',
@@ -643,6 +649,12 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
   @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
     discardedClaimAddresses.add(session.link.address);
+  }
+
+  @override
+  Future<void> forgetReceivedLink(VizorPaymentLink link) async {
+    forgottenLinkAddresses.add(link.address);
+    receivedRecords.removeWhere((record) => record.address == link.address);
   }
 
   @override

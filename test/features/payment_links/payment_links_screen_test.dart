@@ -1377,6 +1377,64 @@ void main() {
     );
   });
 
+  testWidgets('an account switch mid-send keeps the metadata retry on screen', (
+    tester,
+  ) async {
+    final accountNotifier = SwitchablePaymentLinkAccountNotifier();
+    final fundingGate = Completer<void>();
+    final operations = FakePaymentLinkOperations(
+      createFundedLinkGate: fundingGate,
+      fundingMetadataSavedOnCreate: false,
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      accountNotifier: accountNotifier,
+      bootstrap: twoAccountBootstrap,
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create card'));
+    await tester.pump();
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      findsOneWidget,
+    );
+
+    fundingGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Try saving again'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('Try saving again'));
+    await tester.pumpAndSettle();
+
+    expect(operations.fundingMetadataRetries, 1);
+    expect(operations.createdAmounts, [BigInt.from(10000000)]);
+  });
+
   testWidgets('an account switch leaves the metadata retry reachable', (
     tester,
   ) async {
@@ -2321,6 +2379,72 @@ void main() {
       find.byKey(const ValueKey('payment_link_received_u1landedelsewhere')),
       findsNothing,
     );
+  });
+
+  testWidgets('a claim prepared after the route is gone is still discarded', (
+    tester,
+  ) async {
+    final prepareClaimGate = Completer<void>();
+    final operations = FakePaymentLinkOperations(
+      prepareClaimGates: {1: prepareClaimGate},
+    );
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pump();
+
+    GoRouter.of(
+      tester.element(
+        find.byKey(const ValueKey('payment_links_desktop_screen')),
+      ),
+    ).go('/home');
+    await tester.pumpAndSettle();
+
+    prepareClaimGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a Card that can no longer be claimed leaves Received', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(
+          incomingLink,
+          updatedAt: DateTime.utc(2026, 8, 6),
+        ),
+      ],
+      claimable: false,
+    );
+    await pumpPaymentLinksScreen(tester, operations: operations);
+
+    await tester.tap(find.text('Received'));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(
+      ValueKey('payment_link_received_${incomingLink.address}'),
+    );
+    expect(row, findsOneWidget);
+
+    await tester.tap(find.text('Claim'));
+    await tester.pumpAndSettle();
+
+    expect(row, findsNothing);
+    expect(operations.forgottenLinkAddresses, [incomingLink.address]);
+    expect(operations.receivedRecords, isEmpty);
   });
 
   testWidgets('shows an interrupted funding draft without reclaim controls', (
