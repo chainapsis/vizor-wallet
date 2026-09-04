@@ -497,6 +497,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       if (mounted) {
         showAppToast(context, switch (e) {
           PaymentLinkInFlightClaimsException() => e.toString(),
+          WalletResetInFlightGiftCardClaimsException() => e.toString(),
           PaymentLinkUnsharedGiftCardsException() => e.toString(),
           _ when isLastAccount => "Couldn't reset Vizor",
           _ => "Couldn't remove the account",

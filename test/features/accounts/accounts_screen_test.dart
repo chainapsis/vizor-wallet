@@ -1039,6 +1039,51 @@ void main() {
     expect(accountNotifier.removedUuid, isNull);
   });
 
+  testWidgets('resetting via the last account is blocked while it receives a '
+      'Gift Card', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const singleAccountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Primary Vault',
+          order: 0,
+          isSeedAnchor: true,
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    final accountNotifier = _FakeAccountNotifier(singleAccountState);
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        receivingGiftCardCounts: const {'account-1': 1},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-1');
+
+    expect(
+      find.text(
+        'This account is receiving a Gift Card. Wait for it to finish before removing this account.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Reset Vizor'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.resetWalletCalled, isFalse);
+  });
+
   testWidgets('remove account requires the current password before deleting', (
     tester,
   ) async {
