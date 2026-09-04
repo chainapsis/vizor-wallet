@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
@@ -186,7 +188,7 @@ Widget _app({
   );
 }
 
-Widget _routedApp() {
+Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
   final router = GoRouter(
     initialLocation: '/settings',
     routes: [
@@ -194,6 +196,7 @@ Widget _routedApp() {
         path: '/settings',
         builder: (_, _) => const MobileSettingsScreen(),
       ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(
         path: '/payment-links',
         builder: (_, state) => Text(
@@ -211,7 +214,9 @@ Widget _routedApp() {
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
       syncKeepAwakeProvider.overrideWith(_FakeSyncKeepAwakeNotifier.new),
       paymentLinkCardsLoaderProvider.overrideWithValue(
-        () async => const PaymentLinkCardsSnapshot(created: [], received: []),
+        cardsLoader ??
+            () async =>
+                const PaymentLinkCardsSnapshot(created: [], received: []),
       ),
     ],
     child: MaterialApp.router(
@@ -861,10 +866,10 @@ void main() {
     expect(top('Endpoint'), lessThan(top('Privacy')));
 
     // Personal owns the gift cards and address book entries.
-    expect(find.text('Address Book'), findsOneWidget);
+    expect(find.text('Address book'), findsOneWidget);
     expect(find.text('Contacts'), findsNothing);
-    expect(top('My Gift Cards'), lessThan(top('Address Book')));
-    expect(top('Address Book'), lessThan(top('Account')));
+    expect(top('My Gift Cards'), lessThan(top('Address book')));
+    expect(top('Address book'), lessThan(top('Account')));
 
     // Mobile keeps its own pieces and never offers to link to itself.
     expect(find.text('Syncing'), findsOneWidget);
@@ -881,6 +886,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('payment links route with cards'), findsOneWidget);
+  });
+
+  testWidgets('Gift Cards does not navigate after leaving settings', (
+    tester,
+  ) async {
+    final cards = Completer<PaymentLinkCardsSnapshot>();
+    await tester.pumpWidget(_routedApp(cardsLoader: () => cards.future));
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_gift_cards_row'));
+    await tester.scrollUntilVisible(row, 200);
+    final router = GoRouter.of(tester.element(row));
+    await tester.tap(row);
+    await tester.pump();
+
+    router.go('/home');
+    await tester.pumpAndSettle();
+    cards.complete(const PaymentLinkCardsSnapshot(created: [], received: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+    expect(find.textContaining('payment links route'), findsNothing);
   });
 
   testWidgets('theme row opens the sheet and applies the selection', (
@@ -1028,7 +1055,7 @@ void main() {
     await tester.pump();
 
     for (final label in [
-      'Address Book',
+      'Address book',
       'Secret Passphrase',
       'Viewing Key',
       'Keep screen awake',

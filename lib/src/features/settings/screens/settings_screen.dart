@@ -16,7 +16,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../core/config/zcash_explorer.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -129,27 +128,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final router = GoRouter.of(context);
     final entryPath = router.routerDelegate.currentConfiguration.uri.path;
     setState(() => _isOpeningGiftCards = true);
+    PaymentLinkCardsSnapshot? cards;
     try {
-      final cards = await ref.read(paymentLinkCardsLoaderProvider)();
-      if (!mounted ||
-          router.routerDelegate.currentConfiguration.uri.path != entryPath) {
-        return;
-      }
-      router.go('/payment-links', extra: cards);
+      cards = await ref.read(paymentLinkCardsLoaderProvider)();
     } catch (_) {
-      if (!mounted ||
-          router.routerDelegate.currentConfiguration.uri.path != entryPath) {
-        return;
-      }
-      showAppToast(
-        context,
-        'Gift Cards could not be loaded.',
-        iconName: AppIcons.warning,
-        tone: AppToastTone.destructive,
-      );
-    } finally {
-      if (mounted) setState(() => _isOpeningGiftCards = false);
+      // Open anyway, like mobile: the screen loads and reports each store on
+      // its own, so one unreadable store must not lock Gift Cards away.
+      cards = null;
     }
+    if (!mounted) return;
+    setState(() => _isOpeningGiftCards = false);
+    if (router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+      return;
+    }
+    router.go('/payment-links', extra: cards);
   }
 
   @override

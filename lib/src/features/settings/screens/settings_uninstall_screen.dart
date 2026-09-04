@@ -553,9 +553,7 @@ class _UninstallConfirmView extends StatelessWidget {
                 size: 20,
                 animated: isCheckingSwaps,
               ),
-              child: Text(
-                isCheckingSwaps ? 'Checking swaps...' : 'Uninstall Vizor',
-              ),
+              child: Text(isCheckingSwaps ? 'Checking...' : 'Uninstall Vizor'),
             ),
             const SizedBox(height: AppSpacing.s),
             AppButton(

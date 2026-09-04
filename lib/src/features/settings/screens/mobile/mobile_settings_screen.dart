@@ -99,7 +99,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     MobileListRow(
                       key: const ValueKey('mobile_settings_address_book_row'),
                       leading: _RowIcon(AppIcons.users),
-                      label: 'Address Book',
+                      label: 'Address book',
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -919,6 +919,7 @@ class _GiftCardsRowState extends ConsumerState<_GiftCardsRow> {
   }
 
   Future<void> _open() async {
+    if (_isOpening) return;
     setState(() => _isOpening = true);
     final router = GoRouter.of(context);
     final entryPath = router.routerDelegate.currentConfiguration.uri.path;

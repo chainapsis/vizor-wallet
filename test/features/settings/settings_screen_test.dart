@@ -117,6 +117,54 @@ void main() {
     expect(find.text('payment links route with data'), findsOneWidget);
   });
 
+  testWidgets('Gift Cards opens without data when the load fails', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        extraOverrides: [
+          paymentLinkCardsLoaderProvider.overrideWithValue(
+            () => Future<PaymentLinkCardsSnapshot>.error(StateError('x')),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('settings_gift_cards_row')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('payment links route without data'), findsOneWidget);
+    expect(find.text('payment links route with data'), findsNothing);
+  });
+
+  testWidgets('Gift Cards does not navigate after leaving settings', (
+    tester,
+  ) async {
+    final cards = Completer<PaymentLinkCardsSnapshot>();
+    await tester.pumpWidget(
+      _settingsHarness(
+        extraOverrides: [
+          paymentLinkCardsLoaderProvider.overrideWithValue(() => cards.future),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('settings_gift_cards_row'));
+    final router = GoRouter.of(tester.element(row));
+    await tester.tap(row);
+    await tester.pump();
+
+    router.go('/home');
+    await tester.pumpAndSettle();
+    cards.complete(const PaymentLinkCardsSnapshot(created: [], received: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+    expect(find.textContaining('payment links route'), findsNothing);
+  });
+
   testWidgets('settings sections are grouped Personal to Danger zone', (
     tester,
   ) async {

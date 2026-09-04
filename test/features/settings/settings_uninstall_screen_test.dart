@@ -86,6 +86,57 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     }
   });
+
+  testWidgets('uninstall button shows a neutral checking label', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    final claims = Completer<int>();
+    try {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _bootstrap('/settings/uninstall'),
+            ),
+            accountProvider.overrideWith(_ResettingAccountNotifier.new),
+            appSecurityProvider.overrideWith(_TestAppSecurityNotifier.new),
+            syncProvider.overrideWith(_TestSyncNotifier.new),
+            votingShareTrackingRestorerProvider.overrideWith(
+              (ref) => VotingShareTrackingRestorer(ref),
+            ),
+            swapPendingIntentCountProvider.overrideWith(
+              (ref, accountUuid) async => 0,
+            ),
+            paymentLinkClaimsInFlightProvider.overrideWith(
+              (ref) => claims.future,
+            ),
+          ],
+          child: const ZcashWalletApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(AppButton, 'Uninstall Vizor'));
+      await tester.pump();
+
+      // The wait covers the Gift Card claim check too, so the label must not
+      // name swaps.
+      expect(find.text('Checking...'), findsOneWidget);
+      expect(find.textContaining('Checking swaps'), findsNothing);
+
+      claims.complete(0);
+      await tester.pumpAndSettle();
+    } finally {
+      if (!claims.isCompleted) claims.complete(0);
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 }
 
 Future<void> _runUninstallFlow(
