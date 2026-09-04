@@ -46,7 +46,12 @@ class _MobileSendStatusScreenState
     extends ConsumerState<MobileSendStatusScreen> {
   var _phase = _MobileSendStatusPhase.sending;
   var _proposalConsumed = false;
-  var _discardScheduled = false;
+
+  /// The one release of this receipt's proposal, once something has claimed
+  /// it — the failed outcome or `dispose`. Handed to the terminal flag on the
+  /// way out so a departure mid-release does not publish "safe to leave"
+  /// before the inputs are actually free.
+  Future<void>? _proposalRelease;
   String? _statusMessage;
 
   /// Captured in [initState] so [dispose] can release the flag without reading
@@ -68,7 +73,7 @@ class _MobileSendStatusScreenState
     if (_phase != _MobileSendStatusPhase.sending) {
       unawaited(_discardProposalIfNeeded('MobileSendStatus(dispose)'));
     }
-    _sendStatusTerminal.resetAfterNavigation();
+    _sendStatusTerminal.resetAfterNavigation(afterRelease: _proposalRelease);
     super.dispose();
   }
 
@@ -78,10 +83,9 @@ class _MobileSendStatusScreenState
   /// outcome below or [dispose] — takes the discard and every later call is a
   /// no-op, so a failure that releases the proposal on screen does not get a
   /// second release when the receipt is finally left.
-  Future<void> _discardProposalIfNeeded(String logContext) async {
-    if (_proposalConsumed || _discardScheduled) return;
-    _discardScheduled = true;
-    await discardSendProposal(
+  Future<void> _discardProposalIfNeeded(String logContext) {
+    if (_proposalConsumed) return Future<void>.value();
+    return _proposalRelease ??= discardSendProposal(
       proposalId: widget.args.proposalId,
       sendFlowId: widget.args.sendFlowId,
       logContext: logContext,

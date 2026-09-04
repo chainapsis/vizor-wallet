@@ -380,6 +380,74 @@ void main() {
     },
   );
 
+  testWidgets('leaving a failed receipt mid-release delays the drain until the '
+      'proposal is free', (tester) async {
+    final discardGate = Completer<void>();
+    rustApi.discardGate = discardGate;
+
+    // The test owns the container so the flag outlives the receipt; a
+    // `ProviderScope` widget would dispose it together with the screen.
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: MobileSendStatusScreen(
+              args: _args,
+              broadcastRunner: _runner(broadcast.future),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: false,
+        error: 'Mnemonic not found for the proposal account.',
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(container.read(sendStatusTerminalProvider), isFalse);
+
+    final published = <bool>[];
+    container.listen<bool>(
+      sendStatusTerminalProvider,
+      (_, next) => published.add(next),
+    );
+
+    // Back is allowed on a failed receipt; the user leaves while Rust is
+    // still releasing the proposal.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump();
+    expect(
+      published,
+      isEmpty,
+      reason:
+          'publishing terminal here would drain a parked request against '
+          'inputs the dead send still locks',
+    );
+
+    discardGate.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(published, [true, false]);
+    expect(rustApi.discardCalls, hasLength(1));
+  });
+
   testWidgets('send success falls back to Flutter haptics on Android', (
     tester,
   ) async {
