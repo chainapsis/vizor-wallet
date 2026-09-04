@@ -542,6 +542,32 @@ void main() {
     );
   });
 
+  test('a hand-back invalidated by an account switch is not re-parked on '
+      'lock', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    final pending = notifier.reviewHandingBack();
+    await pumpEventQueue();
+
+    notifier.clear(logContext: 'PaymentRequest(account switched)');
+    (container.read(appSecurityProvider.notifier) as _FakeSecurityNotifier)
+        .lockForTest();
+    api.discardGate!.complete();
+
+    expect(await pending, isA<PaymentRequestReviewOvertaken>());
+    expect(
+      container.read(paymentUriPrefillProvider),
+      isNull,
+      reason: 'the request belonged to the account that was switched away',
+    );
+  });
+
   test('an edit hand-back overtaken by a newer link opens nothing', () async {
     final api = _FakeSendApi();
     final container = makeContainer(api);

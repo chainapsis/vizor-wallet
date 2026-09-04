@@ -515,6 +515,8 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     // stop it — otherwise the review of a request pre-checked for one account
     // opens on, and proposes from, whichever account is active by then.
     _generation++;
+    // The hand-back this invalidates must not be re-parked by a later lock.
+    _handoffPrefill = null;
     final current = state;
     if (current == null) return;
     final proposal = current.proposal;
