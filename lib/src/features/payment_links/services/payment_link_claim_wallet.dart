@@ -13,6 +13,9 @@ part of 'payment_link_service.dart';
 /// account and its scan range. Share-payload fields such as amount, label,
 /// timestamp, and presentation deliberately do not participate, so a corrected
 /// payload can reuse already-scanned state.
+///
+/// The network is also kept outside the hash, as a readable name segment, so a
+/// cleanup sweep can scope itself to one network.
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
   final identity = sha256
       .convert(
@@ -22,7 +25,10 @@ String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
         ),
       )
       .toString();
-  return '$kPaymentLinkClaimWalletDirectoryPrefix$identity';
+  return paymentLinkClaimWalletDirectoryNameFor(
+    network: link.network.trim(),
+    identityHash: identity,
+  );
 }
 
 /// Owns every filesystem and scan operation on a claim's temporary wallet.

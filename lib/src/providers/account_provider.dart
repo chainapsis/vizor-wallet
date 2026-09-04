@@ -1512,12 +1512,16 @@ final accountProvider = AsyncNotifierProvider<AccountNotifier, AccountState>(
 );
 
 /// Removes every isolated payment-link claim database or reports the failure
-/// to the reset coordinator.
+/// to the reset coordinator. A wallet reset is network-wide, so no `network`
+/// filter is passed and every network's claim wallets go.
 @visibleForTesting
 Future<void> clearPaymentLinkClaimWalletsForReset({
   Future<void> Function() deleteDirectories =
-      deletePaymentLinkClaimWalletDirectories,
+      _deleteAllPaymentLinkClaimWalletDirectories,
 }) => deleteDirectories();
+
+Future<void> _deleteAllPaymentLinkClaimWalletDirectories() =>
+    deletePaymentLinkClaimWalletDirectories();
 
 @visibleForTesting
 String? resolveNextActiveAccountUuidAfterRemoval({
