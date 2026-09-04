@@ -183,6 +183,7 @@ Future<ProviderContainer> _pumpHost(
   Map<String, AccountInfo> ownAccounts = const {},
   bool addressBookPending = false,
   PaymentRequestPrecheck? precheck,
+  WidgetBuilder? homeScreen,
 }) async {
   tester.view.physicalSize = const Size(1280, 900);
   tester.view.devicePixelRatio = 1.0;
@@ -195,7 +196,9 @@ Future<ProviderContainer> _pumpHost(
       for (final path in ['/home', '/send', '/send/review'])
         GoRoute(
           path: path,
-          builder: (_, _) => Scaffold(body: Text('screen $path')),
+          builder: (context, _) => path == '/home' && homeScreen != null
+              ? homeScreen(context)
+              : Scaffold(body: Text('screen $path')),
         ),
     ],
   );
@@ -259,6 +262,57 @@ Future<ProviderContainer> _pumpHost(
 
 final _routers = <ProviderContainer, GoRouter>{};
 
+/// How many times [_StatefulScreenProbe] has been built from scratch.
+var _probeMounts = 0;
+
+/// How many times it has been unhooked from the element tree.
+///
+/// This is the assertion with teeth. `go_router` gives its `Navigator` a
+/// `GlobalKey`, so even a routed subtree that gets re-parented is *retaken*
+/// rather than rebuilt: screen state survives either way, and `find.text`
+/// alone would pass either way. What re-parenting still costs is a
+/// deactivate/activate cycle through every element under the router — plus a
+/// fresh `Router` state above them, which is not global-keyed — on every show
+/// and every dismiss, for a card that is only supposed to be sitting on top.
+/// Zero here is the whole point.
+var _probeDeactivations = 0;
+
+/// A screen that owns route-local state, standing in for a half-typed
+/// Send form.
+class _StatefulScreenProbe extends StatefulWidget {
+  const _StatefulScreenProbe();
+
+  @override
+  State<_StatefulScreenProbe> createState() => _StatefulScreenProbeState();
+}
+
+class _StatefulScreenProbeState extends State<_StatefulScreenProbe> {
+  final _controller = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _probeMounts++;
+  }
+
+  @override
+  void deactivate() {
+    _probeDeactivations++;
+    super.deactivate();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(child: TextField(controller: _controller)),
+  );
+}
+
 class _TestZecUsdPriceNotifier extends Notifier<double?> {
   @override
   double? build() => null;
@@ -275,7 +329,11 @@ String _location(ProviderContainer container) =>
     _routers[container]!.routerDelegate.currentConfiguration.uri.path;
 
 void main() {
-  setUp(_discarded.clear);
+  setUp(() {
+    _discarded.clear();
+    _probeMounts = 0;
+    _probeDeactivations = 0;
+  });
 
   testWidgets('the card renders over the current screen', (tester) async {
     final container = await _pumpHost(tester);
@@ -294,6 +352,66 @@ void main() {
       reason: 'the screen underneath stays mounted',
     );
     expect(_location(container), '/home');
+  });
+
+  testWidgets('the screen under the card stays put across show and dismiss', (
+    tester,
+  ) async {
+    final container = await _pumpHost(
+      tester,
+      homeScreen: (_) => const _StatefulScreenProbe(),
+    );
+    await tester.enterText(find.byType(TextField), 'half typed');
+    await tester.pumpAndSettle();
+    expect(_probeMounts, 1);
+    expect(_probeDeactivations, 0);
+    final screen = tester.state<_StatefulScreenProbeState>(
+      find.byType(_StatefulScreenProbe),
+    );
+    final router = tester.state(find.byType(Router<Object>));
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Payment request'), findsOneWidget);
+    expect(
+      _probeDeactivations,
+      0,
+      reason: 'showing the card must not move the routed subtree',
+    );
+    expect(
+      tester.state(find.byType(Router<Object>)),
+      same(router),
+      reason: 'the router above it is not global-keyed, so it would be rebuilt',
+    );
+    expect(_probeMounts, 1);
+    expect(screen.mounted, isTrue);
+    expect(find.text('half typed'), findsOneWidget);
+
+    container.read(paymentRequestFlowProvider.notifier).dismiss();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Payment request'), findsNothing);
+    expect(
+      _probeDeactivations,
+      0,
+      reason: 'dismissing it must not move the subtree back',
+    );
+    expect(tester.state(find.byType(Router<Object>)), same(router));
+    expect(_probeMounts, 1);
+    expect(
+      tester.state<_StatefulScreenProbeState>(
+        find.byType(_StatefulScreenProbe),
+      ),
+      same(screen),
+    );
+    expect(
+      find.text('half typed'),
+      findsOneWidget,
+      reason: 'a link arriving over the composer cannot empty it',
+    );
   });
 
   // Hosted above the router there is no `Navigator`, so the caveat tooltip

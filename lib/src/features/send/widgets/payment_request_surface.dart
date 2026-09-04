@@ -30,7 +30,28 @@ class PaymentRequestSurface extends StatelessWidget {
     this.cardKey,
     this.background,
     super.key,
-  });
+  }) : _paintsBackground = true;
+
+  /// Just the scrim and the card, over whatever is already on screen.
+  ///
+  /// The live host renders the app underneath itself and layers this on top,
+  /// so that the routed content keeps one position in the widget tree whether
+  /// or not a request is up. Handing that content in as [background] instead
+  /// would re-parent it every time a card appears or is dismissed, which
+  /// disposes and remounts the whole routed subtree.
+  const PaymentRequestSurface.overlay({
+    required this.request,
+    required this.onContinue,
+    required this.onEdit,
+    required this.onCancel,
+    this.onRecheck,
+    this.layout = PaymentRequestLayout.auto,
+    this.initialAddressExpanded = false,
+    this.initialMessageExpanded = false,
+    this.cardKey,
+    super.key,
+  }) : background = null,
+       _paintsBackground = false;
 
   final PaymentRequestView request;
   final VoidCallback onContinue;
@@ -53,8 +74,13 @@ class PaymentRequestSurface extends StatelessWidget {
   final Key? cardKey;
 
   /// What the modal sits on top of. Defaults to the flat window color so a
-  /// preview does not have to supply a whole screen.
+  /// preview does not have to supply a whole screen. Always null on
+  /// [PaymentRequestSurface.overlay], which paints no background at all.
   final Widget? background;
+
+  /// False on [PaymentRequestSurface.overlay]: the caller already owns what is
+  /// underneath, so painting the fallback window color would cover it.
+  final bool _paintsBackground;
 
   bool get _isMobile => switch (layout) {
     PaymentRequestLayout.auto => kAppFormFactor == AppFormFactor.mobile,
@@ -86,15 +112,18 @@ class PaymentRequestSurface extends StatelessWidget {
       ),
     );
 
+    final modal = _ModalOverlayScope(
+      child: _isMobile
+          ? _mobileModal(context, card)
+          : _desktopModal(context, card),
+    );
+    if (!_paintsBackground) return modal;
+
     return Stack(
       fit: StackFit.expand,
       children: [
         background ?? ColoredBox(color: colors.background.window),
-        _ModalOverlayScope(
-          child: _isMobile
-              ? _mobileModal(context, card)
-              : _desktopModal(context, card),
-        ),
+        modal,
       ],
     );
   }

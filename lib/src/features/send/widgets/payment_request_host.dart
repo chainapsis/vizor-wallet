@@ -38,7 +38,17 @@ class PaymentRequestHost extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final flow = ref.watch(paymentRequestFlowProvider);
-    if (flow == null) return child;
+    // [child] is the router's content, and it holds route-local state — a
+    // half-typed Send form, a scroll offset, an expanded row. So it keeps one
+    // position in the tree whether or not a card is up: always this `Stack`'s
+    // first layer, with the request laid over it as a second layer. Handing it
+    // to the surface as its background instead re-parented it on every show
+    // and every dismiss, and Flutter answers a subtree that moved by disposing
+    // and remounting it — which emptied the form the card was supposed to be
+    // sitting harmlessly on top of.
+    if (flow == null) {
+      return Stack(fit: StackFit.passthrough, children: [child]);
+    }
 
     final notifier = ref.read(paymentRequestFlowProvider.notifier);
 
@@ -109,15 +119,20 @@ class PaymentRequestHost extends ConsumerWidget {
     // Pointer-driven dismissal (the scrim, the ⨯, and — because the scrim is
     // an opaque hit-test target over the whole app — the iOS edge swipe) is
     // owned by `PaymentRequestSurface`.
-    return PaymentRequestSurface(
-      key: const ValueKey('payment_request_host_surface'),
-      cardKey: ValueKey(flow.prefill.id),
-      request: request,
-      onContinue: review,
-      onEdit: edit,
-      onCancel: notifier.dismiss,
-      onRecheck: notifier.recheck,
-      background: child,
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        child,
+        PaymentRequestSurface.overlay(
+          key: const ValueKey('payment_request_host_surface'),
+          cardKey: ValueKey(flow.prefill.id),
+          request: request,
+          onContinue: review,
+          onEdit: edit,
+          onCancel: notifier.dismiss,
+          onRecheck: notifier.recheck,
+        ),
+      ],
     );
   }
 
