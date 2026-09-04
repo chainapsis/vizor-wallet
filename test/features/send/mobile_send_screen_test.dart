@@ -582,6 +582,7 @@ Widget _sendFlowRouterApp({
             isPaymentRequest: args.isPaymentRequest,
             paymentRequestLabel: args.requestedBy,
             requestedAmountZatoshi: args.requestedAmountZatoshi,
+            onAmountEdited: args.onAmountEdited,
             loadWalletDbPath: () async => '/tmp/zcash-test',
             openScanner: (_, {required String networkName}) async => null,
             validateAddress: validateAddress,
@@ -1102,6 +1103,44 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
     await tester.pumpAndSettle();
     expect(find.text('Enter Amount'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('mobile_send_amount_input')),
+          )
+          .controller
+          ?.text,
+      '2.0',
+    );
+  });
+
+  testWidgets('system back on the pushed amount page keeps the edit', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1.5',
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    await _enterAmount(tester, '2.0');
+
+    // The framework pop carries no result, unlike the toolbar Back; the edit
+    // must survive it all the same.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Select Recipient'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
     expect(
       tester
           .widget<TextField>(

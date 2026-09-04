@@ -218,24 +218,30 @@ class SendStatusTerminalNotifier extends Notifier<bool> {
   /// until some unrelated wallet event happened to run the drain.
   ///
   /// [afterRelease] is the proposal hand-back the departing receipt still has
-  /// in flight, if any. Terminal is published only once it lands: the drain
-  /// that edge triggers pre-checks a parked request against the wallet's
-  /// inputs, and a dead send's proposal still locks its inputs until Rust has
-  /// released it — the very "not enough ZEC" this ordering exists to prevent.
-  void resetAfterNavigation({Future<void>? afterRelease}) {
+  /// in flight, if any — `discardSendProposal`'s result. Terminal is published
+  /// only once it lands *and* reports the release: the drain that edge
+  /// triggers pre-checks a parked request against the wallet's inputs, and a
+  /// dead send's proposal still locks its inputs until Rust has released it —
+  /// the very "not enough ZEC" this ordering exists to prevent. A release that
+  /// failed clears the flag without the edge; the request stays parked until
+  /// the park's own TTL, which is the honest answer while the inputs are held.
+  void resetAfterNavigation({Future<bool>? afterRelease}) {
     final retainedRevision = _revision;
-    void finish() {
+    void finish({required bool released}) {
       if (_disposed || _revision != retainedRevision) return;
-      if (!state) markTerminal();
+      if (released && !state) markTerminal();
       reset();
     }
 
     if (afterRelease == null) {
-      scheduleMicrotask(finish);
+      scheduleMicrotask(() => finish(released: true));
       return;
     }
     unawaited(
-      afterRelease.then<void>((_) => finish(), onError: (Object _) => finish()),
+      afterRelease.then<void>(
+        (released) => finish(released: released),
+        onError: (Object _) => finish(released: false),
+      ),
     );
   }
 }
@@ -392,7 +398,12 @@ Future<SendReviewArgs> proposeSendTransferWith({
 }
 
 /// Idempotent proposal release for every non-consuming exit path.
-Future<void> discardSendProposal({
+///
+/// Returns whether Rust confirmed the release. Never throws: a release that
+/// still fails after its retries is logged and left to height-based expiry,
+/// and the caller that needs to know (the terminal flag's departure edge) reads
+/// the result instead of catching.
+Future<bool> discardSendProposal({
   required BigInt proposalId,
   required String sendFlowId,
   required String logContext,
@@ -405,7 +416,7 @@ Future<void> discardSendProposal({
         sendFlowId: sendFlowId,
       );
       log('$logContext: released proposal $proposalId');
-      return;
+      return true;
     } catch (e) {
       lastError = e;
       log('$logContext: discardProposal cleanup attempt $attempt failed: $e');
@@ -417,6 +428,7 @@ Future<void> discardSendProposal({
   // Rust keeps the owner token when unlock fails, so another idempotent
   // cleanup call can retry while height-based expiry remains the fallback.
   log('$logContext: proposal cleanup remains pending: $lastError');
+  return false;
 }
 
 Future<void> retainSendProposalLockUntilExpiry({

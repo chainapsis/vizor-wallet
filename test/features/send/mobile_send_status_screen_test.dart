@@ -76,6 +76,9 @@ class _RustApiFake implements RustLibApi {
   /// the release is still in flight.
   Completer<void>? discardGate;
 
+  /// How many more `discardProposal` calls fail before one succeeds.
+  int discardFailuresRemaining = 0;
+
   @override
   Future<void> crateApiSyncDiscardProposal({
     required BigInt proposalId,
@@ -84,6 +87,10 @@ class _RustApiFake implements RustLibApi {
     discardCalls.add((proposalId, sendFlowId));
     final gate = discardGate;
     if (gate != null) await gate.future;
+    if (discardFailuresRemaining > 0) {
+      discardFailuresRemaining--;
+      throw Exception('transient wallet DB unlock failure');
+    }
   }
 
   @override
@@ -102,6 +109,7 @@ void main() {
   setUp(() {
     rustApi.discardCalls.clear();
     rustApi.discardGate = null;
+    rustApi.discardFailuresRemaining = 0;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
@@ -446,6 +454,30 @@ void main() {
 
     expect(published, [true, false]);
     expect(rustApi.discardCalls, hasLength(1));
+  });
+
+  testWidgets('a release Rust never confirms keeps the failed receipt '
+      'non-terminal', (tester) async {
+    rustApi.discardFailuresRemaining = 3;
+
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(_app(broadcastRunner: _runner(broadcast.future)));
+    await tester.pump();
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: false,
+        error: 'Mnemonic not found for the proposal account.',
+      ),
+    );
+    await tester.pump();
+    // The retries back off 100 ms, then 200 ms.
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(rustApi.discardCalls, hasLength(3));
+    expect(_sendStatusTerminal(tester), isFalse);
   });
 
   testWidgets('send success falls back to Flutter haptics on Android', (

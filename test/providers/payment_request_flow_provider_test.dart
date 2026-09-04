@@ -451,6 +451,36 @@ void main() {
     expect(await pendingReview, isA<PaymentRequestReviewOvertaken>());
   });
 
+  test('a lock during a hand-back re-parks the request instead of dropping '
+      'it', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    final pending = notifier.reviewHandingBack();
+    await pumpEventQueue();
+    // The card is down; only the hand-back still knows the request.
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+
+    (container.read(appSecurityProvider.notifier) as _FakeSecurityNotifier)
+        .lockForTest();
+    api.discardGate!.complete();
+
+    expect(await pending, isA<PaymentRequestReviewOvertaken>());
+    expect(
+      container.read(paymentUriPrefillProvider)?.address,
+      'u1a',
+      reason:
+          'the unlock flow re-presents the parked request; without the park '
+          'the answered request would be gone with nothing to say',
+    );
+  });
+
   test('an edit hand-back overtaken by a newer link opens nothing', () async {
     final api = _FakeSendApi();
     final container = makeContainer(api);

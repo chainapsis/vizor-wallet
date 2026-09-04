@@ -180,6 +180,13 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// enough" for a payment the wallet can afford.
   Future<void>? _lastRelease;
 
+  /// The request a Review or Edit hand-back is carrying while it waits for
+  /// Rust to release the card's proposal. The card is already down, so a lock
+  /// landing in that window finds no `state` to re-park — this is what it
+  /// re-parks instead, so the request survives the unlock rather than being
+  /// dropped with the cancelled navigation.
+  SendPrefillArgs? _handoffPrefill;
+
   @override
   PaymentRequestFlowState? build() {
     // The card is consent given by one unlocked account, and it holds that
@@ -381,11 +388,13 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     final proposal = current.proposal!;
     final generation = ++_generation;
     _publish(null);
+    _handoffPrefill = current.prefill;
     final release = proposal.discard(
       logContext: 'PaymentRequest(mobile review handoff)',
     );
     _track(release);
     await release;
+    if (identical(_handoffPrefill, current.prefill)) _handoffPrefill = null;
     if (generation != _generation) {
       // The tap is being dropped, so it is accounted for on the card that
       // took its place rather than vanishing with the request it belonged to.
@@ -437,9 +446,11 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     final generation = ++_generation;
     _publish(null);
     if (proposal != null) {
+      _handoffPrefill = current.prefill;
       final release = proposal.discard(logContext: 'PaymentRequest(edit)');
       _track(release);
       await release;
+      if (identical(_handoffPrefill, current.prefill)) _handoffPrefill = null;
       if (generation != _generation) {
         _noteReplacedRequest();
         return const PaymentRequestEditOvertaken();
@@ -468,13 +479,16 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// after a successful unlock, under the same park TTL as a link tapped
   /// while locked. The proposal is still discarded; only the request survives.
   void _reparkForUnlock() {
-    final current = state;
-    if (current == null) return;
+    // A card on screen, or the request a hand-back is still carrying while
+    // Rust releases the proposal: either way the user answered this request
+    // and has not yet reached where the answer leads.
+    final prefill = state?.prefill ?? _handoffPrefill;
+    if (prefill == null) return;
     // Latest link wins, the same answer the park itself gives: a link that
     // arrived while the card was up and is still parked (held behind a busy
     // surface, say) is the newer request, so it keeps the single slot.
     if (ref.read(paymentUriPrefillProvider) != null) return;
-    ref.read(paymentUriPrefillProvider.notifier).set(current.prefill);
+    ref.read(paymentUriPrefillProvider.notifier).set(prefill);
   }
 
   void _clear({required String logContext}) {

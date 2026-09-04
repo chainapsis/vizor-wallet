@@ -51,7 +51,7 @@ class _MobileSendStatusScreenState
   /// it — the failed outcome or `dispose`. Handed to the terminal flag on the
   /// way out so a departure mid-release does not publish "safe to leave"
   /// before the inputs are actually free.
-  Future<void>? _proposalRelease;
+  Future<bool>? _proposalRelease;
   String? _statusMessage;
 
   /// Captured in [initState] so [dispose] can release the flag without reading
@@ -83,8 +83,8 @@ class _MobileSendStatusScreenState
   /// outcome below or [dispose] — takes the discard and every later call is a
   /// no-op, so a failure that releases the proposal on screen does not get a
   /// second release when the receipt is finally left.
-  Future<void> _discardProposalIfNeeded(String logContext) {
-    if (_proposalConsumed) return Future<void>.value();
+  Future<bool> _discardProposalIfNeeded(String logContext) {
+    if (_proposalConsumed) return Future<bool>.value(true);
     return _proposalRelease ??= discardSendProposal(
       proposalId: widget.args.proposalId,
       sendFlowId: widget.args.sendFlowId,
@@ -148,10 +148,15 @@ class _MobileSendStatusScreenState
         // request against inputs this dead send still locks, which the
         // request pre-check reads as insufficient funds. So: release, then
         // publish "safe to leave".
-        await _discardProposalIfNeeded('MobileSendStatus(failed)');
+        final released = await _discardProposalIfNeeded(
+          'MobileSendStatus(failed)',
+        );
         // Leaving during the release means `dispose` already reset the flag;
         // re-raising it here would strand it for the next screen.
         if (!mounted) return;
+        // A release Rust never confirmed leaves the inputs held until expiry;
+        // the drain must keep waiting rather than pre-check against them.
+        if (!released) return;
       }
       _sendStatusTerminal.markTerminal();
     }

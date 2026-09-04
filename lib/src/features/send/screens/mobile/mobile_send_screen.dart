@@ -175,6 +175,12 @@ class _MobileSendFeeQuote {
   }
 }
 
+/// Reports the amount the pushed amount page currently holds, every time it
+/// changes, so the page that pushed it keeps the same amount whichever way the
+/// pushed page is left.
+typedef MobileSendAmountEditedCallback =
+    void Function(MobileSendAmountResult result);
+
 class MobileSendAmountArgs {
   const MobileSendAmountArgs({
     required this.sendFlowId,
@@ -190,7 +196,14 @@ class MobileSendAmountArgs {
     this.isPaymentRequest = false,
     this.requestedBy,
     this.requestedAmountZatoshi,
+    this.onAmountEdited,
   });
+
+  /// Set by the recipient step that pushes the amount page: the amount it
+  /// hands over is a copy, and the Android system back and the iOS edge swipe
+  /// pop through the framework without a result, so edits travel back through
+  /// this callback rather than only through the toolbar Back's pop value.
+  final MobileSendAmountEditedCallback? onAmountEdited;
 
   final String sendFlowId;
   final String recipient;
@@ -310,6 +323,7 @@ class MobileSendAmountScreen extends StatelessWidget {
       isPaymentRequest: args.isPaymentRequest,
       paymentRequestLabel: args.requestedBy,
       requestedAmountZatoshi: args.requestedAmountZatoshi,
+      onAmountEdited: args.onAmountEdited,
     );
   }
 }
@@ -412,6 +426,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.paymentRequestLabel,
     this.requestedAmountZatoshi,
     this.onMemoEdited,
+    this.onAmountEdited,
     super.key,
   });
 
@@ -471,6 +486,10 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   /// [MobileSendReviewDraftArgs.onMemoEdited].
   final MobileSendMemoEditedCallback? onMemoEdited;
 
+  /// Told about every amount this screen composes on its amount step; see
+  /// [MobileSendAmountArgs.onAmountEdited].
+  final MobileSendAmountEditedCallback? onAmountEdited;
+
   @override
   ConsumerState<MobileSendScreen> createState() => _MobileSendScreenState();
 }
@@ -483,6 +502,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   late final String _sendFlowId = widget.initialSendFlowId ?? newSendFlowId();
 
   var _step = _SendStep.recipient;
+
+  /// The last amount handed to [MobileSendScreen.onAmountEdited], so a rebuild
+  /// that changed nothing about the amount reports nothing.
+  MobileSendAmountResult? _lastReportedAmount;
   // True when a ZIP-321 prefill jumped straight to the amount step while the
   // address is still validating; lets us bounce back to the recipient step if
   // the prefilled address turns out invalid (see _maybeFallBackToRecipientStep).
@@ -893,6 +916,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         requestedAmountZatoshi: _isAnsweringPaymentRequest
             ? widget.requestedAmountZatoshi
             : null,
+        // The amount above is a copy. Keep this page's in step with the
+        // pushed page as it is edited, so a pop that carries no value
+        // (system back, edge swipe) still leaves the edit here.
+        onAmountEdited: (edited) {
+          if (mounted) _adoptAmountStepResult(edited);
+        },
       ),
     );
     if (!mounted) return;
@@ -906,17 +935,35 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     amountInputMode: _amountInputMode,
   );
 
+  /// Hands the current amount to the page that pushed this one, once per
+  /// change. Scheduled after the frame from `build`, because the receiver
+  /// answers with its own `setState`.
+  void _reportAmountEditedIfChanged() {
+    final onAmountEdited = widget.onAmountEdited;
+    if (onAmountEdited == null) return;
+    final current = _amountStepResult;
+    final last = _lastReportedAmount;
+    if (last != null &&
+        last.amountText == current.amountText &&
+        last.fiatAmountText == current.fiatAmountText &&
+        last.amountInputMode == current.amountInputMode) {
+      return;
+    }
+    _lastReportedAmount = current;
+    onAmountEdited(current);
+  }
+
   /// Takes over whatever the pushed amount page composed.
   ///
   /// A null result means the page popped without one — the Android system back
   /// and the iOS edge swipe pop through the framework and cannot carry a
-  /// value. Dropping the carried amount there is deliberate: re-seeding the
-  /// next push from this screen's copy would resurrect a number the user has
-  /// already edited past, which is the bug this hand-back exists to remove.
+  /// value. Nothing is lost there: the pushed page reported every edit through
+  /// `onAmountEdited` while it was up, so this page's copy is already current.
   void _adoptAmountStepResult(MobileSendAmountResult? result) {
-    final amountText = result?.amountText ?? '';
-    final fiatAmountText = result?.fiatAmountText ?? '';
-    final amountInputMode = result?.amountInputMode ?? _amountInputMode;
+    if (result == null) return;
+    final amountText = result.amountText;
+    final fiatAmountText = result.fiatAmountText;
+    final amountInputMode = result.amountInputMode;
     if (amountText == _amountText &&
         fiatAmountText == _fiatAmountText &&
         amountInputMode == _amountInputMode) {
@@ -1961,6 +2008,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.onAmountEdited != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reportAmountEditedIfChanged();
+      });
+    }
     ref.listen<double?>(zecLiveUsdUnitPriceProvider, (previous, next) {
       if (previous == next || !mounted) return;
       _handleZecUsdPriceChanged(next);

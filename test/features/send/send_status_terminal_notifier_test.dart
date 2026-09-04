@@ -59,7 +59,7 @@ void main() {
       'lands', () async {
     // A failed software send that never consumed its proposal: the receipt
     // is still releasing it when the user leaves.
-    final release = Completer<void>();
+    final release = Completer<bool>();
     notifier.reset();
     notifier.resetAfterNavigation(afterRelease: release.future);
     await flushMicrotasks();
@@ -72,11 +72,29 @@ void main() {
           'proposal still locks the inputs a parked request would check',
     );
 
-    release.complete();
+    release.complete(true);
     await flushMicrotasks();
 
     expect(published, [true, false]);
   });
+
+  test(
+    'a release Rust never confirmed clears the flag without the edge',
+    () async {
+      notifier.reset();
+      notifier.resetAfterNavigation(afterRelease: Future<bool>.value(false));
+      await flushMicrotasks();
+
+      expect(
+        published,
+        isEmpty,
+        reason:
+            'the inputs are still held until expiry; a drain now would read '
+            'the wallet as short for a payment it can afford',
+      );
+      expect(container.read(sendStatusTerminalProvider), isFalse);
+    },
+  );
 
   test('a departing receipt leaves a newer send\'s flag alone', () async {
     notifier.reset();
