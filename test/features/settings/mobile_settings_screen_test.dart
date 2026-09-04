@@ -345,7 +345,13 @@ void main() {
     );
     expect(find.text('Privacy'), findsOneWidget);
     expect(find.text('Use Tor'), findsOneWidget);
-    expect(find.text('Off'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_settings_tor_row')),
+        matching: find.text('Off'),
+      ),
+      findsOneWidget,
+    );
     expect(
       tester
           .widget<Text>(
@@ -408,6 +414,18 @@ void main() {
       tester.getCenter(torThumb).dx,
       greaterThan(tester.getCenter(torTrack).dx),
     );
+
+    final pirThumb = find.byKey(
+      const ValueKey('mobile_settings_enhance_pir_toggle_thumb'),
+    );
+    final pirTrack = find.byKey(
+      const ValueKey('mobile_settings_enhance_pir_toggle'),
+    );
+    await tester.scrollUntilVisible(pirThumb, 200);
+    expect(find.text('Advanced'), findsNothing);
+    expect(find.text('Private Ironwood recovery'), findsOneWidget);
+    expect(tester.getSize(pirThumb), tester.getSize(torThumb));
+    expect(tester.getSize(pirTrack), tester.getSize(torTrack));
   });
 
   testWidgets('a connected Tor route names the iOS migration exception', (

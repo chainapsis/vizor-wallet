@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/network_privacy_provider.dart';
 // The widget is deliberately not shared; the decision behind it is, because
 // both form factors drive one provider and the escape hatch has to exist on
@@ -30,6 +31,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final state = ref.watch(networkPrivacyProvider);
+    final enhancePirEnabled = ref.watch(enhancePirProvider);
     final notifier = ref.read(networkPrivacyProvider.notifier);
     final presentation = _presentationFor(
       state,
@@ -119,7 +121,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.s),
-                      _MobileTorToggle(
+                      MobilePrivacyToggle(
                         key: const ValueKey('mobile_settings_tor_toggle'),
                         enabled: state.torEnabled,
                         interactive: toggleAction.isInteractive,
@@ -165,6 +167,84 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 ),
               ),
             ),
+          const SizedBox(height: AppSpacing.md),
+          Semantics(
+            button: true,
+            toggled: enhancePirEnabled,
+            label: 'Private Ironwood recovery',
+            onTap: () =>
+                unawaited(ref.read(enhancePirProvider.notifier).toggle()),
+            excludeSemantics: true,
+            child: GestureDetector(
+              key: const ValueKey('mobile_settings_enhance_pir_row'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () =>
+                  unawaited(ref.read(enhancePirProvider.notifier).toggle()),
+              child: SizedBox(
+                height: _rowHeight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xxs,
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox.square(
+                        dimension: 32,
+                        child: Center(
+                          child: AppIcon(
+                            AppIcons.eye,
+                            size: 20,
+                            color: enhancePirEnabled
+                                ? colors.icon.brandCrimson
+                                : colors.icon.muted,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.s),
+                      Expanded(
+                        child: Text(
+                          'Private Ironwood recovery',
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        enhancePirEnabled ? 'On' : 'Off',
+                        key: const ValueKey(
+                          'mobile_settings_enhance_pir_status',
+                        ),
+                        style: AppTypography.labelLarge.copyWith(
+                          color: enhancePirEnabled
+                              ? colors.text.brandCrimson
+                              : colors.text.secondary,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.s),
+                      MobilePrivacyToggle(
+                        key: const ValueKey(
+                          'mobile_settings_enhance_pir_toggle',
+                        ),
+                        enabled: enhancePirEnabled,
+                        interactive: true,
+                        thumbKey: const ValueKey(
+                          'mobile_settings_enhance_pir_toggle_thumb',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Privately completes future Ironwood incoming and outgoing details during recovery. It does not reprocess past history, and timing and query counts remain visible to the service.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
         ],
       ),
     );
@@ -292,10 +372,11 @@ _MobileTorPresentation _presentationFor(
   };
 }
 
-class _MobileTorToggle extends StatelessWidget {
-  const _MobileTorToggle({
+class MobilePrivacyToggle extends StatelessWidget {
+  const MobilePrivacyToggle({
     required this.enabled,
     required this.interactive,
+    this.thumbKey = const ValueKey('mobile_settings_tor_toggle_thumb'),
     super.key,
   });
 
@@ -305,6 +386,7 @@ class _MobileTorToggle extends StatelessWidget {
   /// still leave is not dimmed: the control has to look like something they may
   /// act on, because acting on it is the way out of the wait.
   final bool interactive;
+  final Key thumbKey;
 
   @override
   Widget build(BuildContext context) {
@@ -333,7 +415,7 @@ class _MobileTorToggle extends StatelessWidget {
           curve: Curves.easeOutCubic,
           alignment: enabled ? Alignment.centerRight : Alignment.centerLeft,
           child: DecoratedBox(
-            key: const ValueKey('mobile_settings_tor_toggle_thumb'),
+            key: thumbKey,
             decoration: BoxDecoration(
               color: const Color(0xFFFFFFFF),
               borderRadius: BorderRadius.circular(AppRadii.full),

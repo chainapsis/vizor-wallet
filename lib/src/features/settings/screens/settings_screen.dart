@@ -504,33 +504,17 @@ class _SettingsList extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
-          title: 'Advanced',
-          rows: [
-            _SettingsRow(
-              iconName: AppIcons.eye,
-              label: 'Private Ironwood recovery',
-              value: enhancePirEnabled ? 'On' : 'Off',
-              onTap: () =>
-                  unawaited(ref.read(enhancePirProvider.notifier).toggle()),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-              child: Text(
-                'Privately completes future Ironwood incoming and outgoing details during recovery. It does not reprocess past history, and timing and query counts remain visible to the service.',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: context.colors.text.secondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _SettingsBlock(
           title: 'Privacy',
-          rows: const [
-            NetworkPrivacyControl(
+          rows: [
+            const NetworkPrivacyControl(
               key: ValueKey('settings_tor_control'),
               showSurface: false,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _EnhancePirPrivacyControl(
+              enabled: enhancePirEnabled,
+              onToggle: () =>
+                  unawaited(ref.read(enhancePirProvider.notifier).toggle()),
             ),
           ],
         ),
@@ -1014,6 +998,94 @@ class _ThemeOptionIndicator extends StatelessWidget {
               ),
             )
           : null,
+    );
+  }
+}
+
+class _EnhancePirPrivacyControl extends StatelessWidget {
+  const _EnhancePirPrivacyControl({
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 44,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: Row(
+              children: [
+                SizedBox.square(
+                  dimension: 20,
+                  child: Center(
+                    child: AppIcon(
+                      AppIcons.eye,
+                      size: 20,
+                      color: enabled
+                          ? colors.icon.brandCrimson
+                          : colors.icon.muted,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Private Ironwood recovery',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        enabled ? 'On' : 'Off',
+                        key: const ValueKey('settings_enhance_pir_status'),
+                        style: AppTypography.labelLarge.copyWith(
+                          color: enabled
+                              ? colors.text.brandCrimson
+                              : colors.text.secondary,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                PrivacyToggle(
+                  key: const ValueKey('settings_enhance_pir_toggle'),
+                  trackKey: const ValueKey('settings_enhance_pir_toggle_track'),
+                  enabled: enabled,
+                  semanticsLabel: 'Private Ironwood recovery',
+                  onToggle: onToggle,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+          child: Text(
+            'Privately completes future Ironwood incoming and outgoing details during recovery. It does not reprocess past history, and timing and query counts remain visible to the service.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -365,6 +365,16 @@ void main() {
       ),
       const Size(44, 20),
     );
+    expect(find.text('Advanced'), findsNothing);
+    expect(find.text('Private Ironwood recovery'), findsOneWidget);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('settings_enhance_pir_toggle_track')),
+      ),
+      tester.getSize(
+        find.byKey(const ValueKey('network_privacy_toggle_track')),
+      ),
+    );
 
     final status = tester.widget<Text>(
       find.byKey(const ValueKey('network_privacy_status_connected_true')),
