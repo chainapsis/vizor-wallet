@@ -41,6 +41,11 @@ const _selectorTop = _cardTop + _cardHeight + AppSpacing.md;
 const _selectorHeight = 80.0;
 const _bottomInset = 12.0;
 const _buttonHeight = 50.0;
+const _reviewSummaryTop = 456.625;
+const _reviewSummaryHeight = 193.0;
+const _readyStatusTop = 474.0;
+// Tallest measured status block: two lines of body text plus the wait pill.
+const _readyStatusAllowance = 160.0;
 // Two lines of supporting text plus its gap above the CTA.
 const _supportingTextAllowance = 44.0;
 
@@ -757,6 +762,14 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
     return _MobilePaymentLinkFrame(
       title: title,
       onBack: onBack,
+      // The summary hangs off a fixed offset while the CTA hangs off the
+      // bottom, so below this height the two overlap.
+      minStageHeight:
+          _reviewSummaryTop +
+          _reviewSummaryHeight +
+          AppSpacing.md +
+          _buttonHeight +
+          _bottomInset,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -782,13 +795,13 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
             child: _MobileCardSlot(card: card),
           ),
           Positioned(
-            top: 456.625,
+            top: _reviewSummaryTop,
             left: _sideInset,
             right: _sideInset,
             child: Container(
               key: const ValueKey('payment_link_mobile_review_summary'),
               width: double.infinity,
-              height: 193,
+              height: _reviewSummaryHeight,
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.sm,
                 vertical: AppSpacing.base,
@@ -904,88 +917,103 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
           )
         : motionCard;
 
-    return SizedBox.expand(
-      key: const ValueKey('payment_link_mobile_ready_view'),
-      child: Stack(
-        fit: StackFit.expand,
-        clipBehavior: Clip.none,
-        children: [
-          if (decoration != null) Positioned.fill(child: decoration!),
-          Positioned(
-            top: 12,
-            left: 40,
-            right: 40,
-            child: Text(
-              ready ? kPaymentLinkReadyHeading : waitingHeading,
-              textAlign: TextAlign.center,
-              style: AppTypography.displayLarge.copyWith(
-                color: context.colors.text.accent,
-              ),
-            ),
-          ),
-          Positioned(
-            top: cardTop,
-            left: _sideInset,
-            right: _sideInset,
-            child: _MobileCardSlot(card: cardContent),
-          ),
-          Positioned(
-            top: 474,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 328),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      ready
-                          ? 'Share this link with the intended recipient so '
-                                'they can claim the Card using their Vizor app.'
-                          : waitingDescription,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: context.colors.text.primary,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (ready)
-                      AppButton(
-                        key: const ValueKey('payment_link_mobile_copy_button'),
-                        onPressed: onCopy,
-                        size: AppButtonSize.mediumLarge,
-                        leading: const AppIcon(AppIcons.copy),
-                        child: Text(copyLabel),
-                      )
-                    else
-                      _MobileDashedStatusPill(
-                        label: waitingStatusLabel,
-                        icon:
-                            waitingIcon ??
-                            (state == PaymentLinkReadyMobileState.soon
-                                ? AppIcons.link
-                                : AppIcons.giftCard),
-                      ),
-                  ],
+    return LayoutBuilder(
+      builder: (context, constraints) => _MobileStageViewport(
+        available: constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : _referenceContentHeight,
+        // The status block hangs off a fixed offset while the CTA hangs off
+        // the bottom, so below this height the two overlap.
+        minStageHeight:
+            _readyStatusTop +
+            _readyStatusAllowance +
+            AppSpacing.md +
+            _buttonHeight +
+            _bottomInset,
+        stageKey: const ValueKey('payment_link_mobile_ready_view'),
+        child: Stack(
+          fit: StackFit.expand,
+          clipBehavior: Clip.none,
+          children: [
+            if (decoration != null) Positioned.fill(child: decoration!),
+            Positioned(
+              top: 12,
+              left: 40,
+              right: 40,
+              child: Text(
+                ready ? kPaymentLinkReadyHeading : waitingHeading,
+                textAlign: TextAlign.center,
+                style: AppTypography.displayLarge.copyWith(
+                  color: context.colors.text.accent,
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: _sideInset,
-            right: _sideInset,
-            bottom: _bottomInset,
-            child: AppButton(
-              key: const ValueKey('payment_link_mobile_ready_home_button'),
-              onPressed: onHome,
-              size: AppButtonSize.large,
-              height: _buttonHeight,
-              expand: true,
-              child: Text(homeLabel),
+            Positioned(
+              top: cardTop,
+              left: _sideInset,
+              right: _sideInset,
+              child: _MobileCardSlot(card: cardContent),
             ),
-          ),
-        ],
+            Positioned(
+              top: _readyStatusTop,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 328),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        ready
+                            ? 'Share this link with the intended recipient so '
+                                  'they can claim the Card using their Vizor app.'
+                            : waitingDescription,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: context.colors.text.primary,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      if (ready)
+                        AppButton(
+                          key: const ValueKey(
+                            'payment_link_mobile_copy_button',
+                          ),
+                          onPressed: onCopy,
+                          size: AppButtonSize.mediumLarge,
+                          leading: const AppIcon(AppIcons.copy),
+                          child: Text(copyLabel),
+                        )
+                      else
+                        _MobileDashedStatusPill(
+                          label: waitingStatusLabel,
+                          icon:
+                              waitingIcon ??
+                              (state == PaymentLinkReadyMobileState.soon
+                                  ? AppIcons.link
+                                  : AppIcons.giftCard),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: _sideInset,
+              right: _sideInset,
+              bottom: _bottomInset,
+              child: AppButton(
+                key: const ValueKey('payment_link_mobile_ready_home_button'),
+                onPressed: onHome,
+                size: AppButtonSize.large,
+                height: _buttonHeight,
+                expand: true,
+                child: Text(homeLabel),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1532,11 +1560,10 @@ class _MobilePaymentLinkFrame extends StatelessWidget {
         final available = constraints.hasBoundedHeight
             ? constraints.maxHeight
             : _referenceContentHeight;
-        final height = math.max(available, minStageHeight ?? 0.0);
-        final stage = SizedBox(
-          key: const ValueKey('payment_link_mobile_view'),
-          width: double.infinity,
-          height: height,
+        return _MobileStageViewport(
+          available: available,
+          minStageHeight: minStageHeight ?? 0.0,
+          stageKey: const ValueKey('payment_link_mobile_view'),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1555,9 +1582,41 @@ class _MobilePaymentLinkFrame extends StatelessWidget {
             ],
           ),
         );
-        if (height <= available) return stage;
-        return SingleChildScrollView(child: stage);
       },
+    );
+  }
+}
+
+/// Holds a fixed-offset stage at [minStageHeight] and scrolls it when the
+/// viewport is shorter. The scroll view is always in the tree: swapping it in
+/// and out when the keyboard opens re-inflates the stage and drops the focus
+/// that opened the keyboard in the first place.
+class _MobileStageViewport extends StatelessWidget {
+  const _MobileStageViewport({
+    required this.available,
+    required this.minStageHeight,
+    required this.stageKey,
+    required this.child,
+  });
+
+  final double available;
+  final double minStageHeight;
+  final Key stageKey;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final height = math.max(available, minStageHeight);
+    return SingleChildScrollView(
+      physics: height <= available
+          ? const NeverScrollableScrollPhysics()
+          : null,
+      child: SizedBox(
+        key: stageKey,
+        width: double.infinity,
+        height: height,
+        child: child,
+      ),
     );
   }
 }

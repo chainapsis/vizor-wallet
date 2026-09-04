@@ -194,10 +194,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     _fundingProgressTimer?.cancel();
     final claimSession = _receivedClaimSession;
     if (claimSession != null) {
-      // A waiting claim has nothing persisted yet, so leaving the route keeps
-      // the Card (as _leavePendingClaim does); a preview's claim wallet can go.
       unawaited(
-        claimSession.waitingForFundingConfirmations
+        _shouldKeepCard(claimSession)
             ? _paymentLinkOperations.retainPendingClaim(claimSession)
             : _paymentLinkOperations.discardClaimSession(claimSession),
       );
@@ -449,6 +447,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _receivedRefreshInProgress = false;
     }
   }
+
+  /// Releasing [session] keeps its claim wallet for a Card already listed in
+  /// Received, or one still waiting for confirmations (nothing persisted yet).
+  bool _shouldKeepCard(PaymentLinkClaimSession session) =>
+      session.waitingForFundingConfirmations ||
+      _receivedCards.any((record) => record.address == session.link.address);
 
   void _rememberReceivedLink(VizorPaymentLink link) {
     final existingIndex = _receivedCards.indexWhere(
@@ -709,6 +713,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   void _handleClaimDestinationAccountChanged(String current) {
     final session = _receivedClaimSession;
     if (session == null || session.destinationAccountUuid == current) return;
+    final link = _receivedLink;
+    final keepCard = _shouldKeepCard(session);
     setState(() {
       _receivedClaimSession = null;
       _receivedLink = null;
@@ -718,10 +724,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _showHelp = false;
       _redeemState = PaymentLinkRedeemVisualState.paste;
       _page = PaymentLinksLocalPage.redeem;
+      // The switch must not cost the Card: a kept one stays in Received so the
+      // recipient can reopen it under the account they moved to.
+      if (keepCard && link != null) {
+        _rememberReceivedLink(link);
+        _activeCardsTab = PaymentLinkCardsTab.received;
+      }
     });
-    unawaited(
-      ref.read(paymentLinkOperationsProvider).discardClaimSession(session),
-    );
+    _releaseClaimSession(session, keepCard: keepCard);
     showAppToast(
       context,
       'Active account changed. Redeem this Gift Card again to receive it in '
@@ -1192,6 +1202,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           activeAccountUuid != session.destinationAccountUuid &&
           (session.waitingForFundingConfirmations || session.canClaim)) {
         _receivedClaimSession = session;
+        _receivedLink = link;
         _handleClaimDestinationAccountChanged(activeAccountUuid);
         return;
       }
@@ -1312,9 +1323,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           .read(paymentLinkOperationsProvider)
           .prepareClaim(link, allowLongSync: true);
       if (!mounted) {
-        await ref
-            .read(paymentLinkOperationsProvider)
-            .discardClaimSession(refreshed);
+        await _discardRefreshedClaim(refreshed);
         return;
       }
       final stillWaitingForThisLink =
@@ -1322,9 +1331,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           _receivedLink?.address == link.address &&
           identical(_receivedClaimSession, currentSession);
       if (!stillWaitingForThisLink) {
-        await ref
-            .read(paymentLinkOperationsProvider)
-            .discardClaimSession(refreshed);
+        await _discardRefreshedClaim(refreshed);
         return;
       }
       if (!refreshed.canClaim && !refreshed.waitingForFundingConfirmations) {
@@ -1348,6 +1355,21 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     } finally {
       _claimConfirmationRefreshInProgress = false;
     }
+  }
+
+  /// A refresh opens a second session over the same claim wallet; delete it
+  /// only when neither the live session nor a listed Card still owns it.
+  Future<void> _discardRefreshedClaim(PaymentLinkClaimSession refreshed) async {
+    final directory = paymentLinkClaimWalletDirectoryName(refreshed.link);
+    final live = _receivedClaimSession;
+    final stillOwned =
+        (live != null &&
+            paymentLinkClaimWalletDirectoryName(live.link) == directory) ||
+        _receivedCards.any(
+          (record) => record.address == refreshed.link.address,
+        );
+    if (stillOwned) return;
+    await _paymentLinkOperations.discardClaimSession(refreshed);
   }
 
   /// Leaving the confirmation wait keeps the Card. Nothing has been persisted
@@ -1386,12 +1408,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _receivedShowsBack = false;
     });
     if (session != null) {
-      _releaseClaimSession(
-        session,
-        keepCard: _receivedCards.any(
-          (record) => record.address == session.link.address,
-        ),
-      );
+      _releaseClaimSession(session, keepCard: _shouldKeepCard(session));
     }
     _showPage(PaymentLinksLocalPage.home);
   }

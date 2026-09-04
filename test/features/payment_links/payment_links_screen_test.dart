@@ -1106,7 +1106,7 @@ void main() {
       final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
       final prepareClaimGate = Completer<void>();
       final operations = _FakePaymentLinkOperations(
-        prepareClaimGate: prepareClaimGate,
+        prepareClaimGates: {1: prepareClaimGate},
       );
       final clipboard = _FakePaymentLinkClipboard(
         text: _incomingLink.toUri().toString(),
@@ -1138,12 +1138,159 @@ void main() {
     },
   );
 
+  testWidgets(
+    'account switch during a waiting claim preparation keeps the Card',
+    (tester) async {
+      final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+      final prepareClaimGate = Completer<void>();
+      final operations = _FakePaymentLinkOperations(
+        prepareClaimGates: {1: prepareClaimGate},
+        waitingForFundingConfirmations: true,
+        fundingConfirmationCount: 0,
+      );
+      final clipboard = _FakePaymentLinkClipboard(
+        text: _incomingLink.toUri().toString(),
+      );
+      await _pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: clipboard,
+        accountNotifier: accountNotifier,
+        bootstrap: _twoAccountBootstrap,
+      );
+
+      await tester.tap(find.text('Redeem a card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pump();
+
+      accountNotifier.setActiveAccount('account-2');
+      await tester.pump();
+
+      prepareClaimGate.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+      expect(operations.discardedClaimAddresses, isEmpty);
+      expect(find.textContaining('Active account changed.'), findsOneWidget);
+    },
+  );
+
+  testWidgets('account switch while waiting for confirmations keeps the Card', (
+    tester,
+  ) async {
+    final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+    final operations = _FakePaymentLinkOperations(
+      waitingForFundingConfirmations: true,
+      fundingConfirmationCount: 0,
+    );
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+      accountNotifier: accountNotifier,
+      bootstrap: _twoAccountBootstrap,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Waiting for 6 confirmations.'), findsOneWidget);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.discardedClaimAddresses, isEmpty);
+    expect(find.textContaining('Active account changed.'), findsOneWidget);
+  });
+
+  testWidgets('a confirmation refresh does not delete a retained claim', (
+    tester,
+  ) async {
+    final refreshGate = Completer<void>();
+    final operations = _FakePaymentLinkOperations(
+      prepareClaimGates: {2: refreshGate},
+      waitingForFundingConfirmations: true,
+      fundingConfirmationCount: 0,
+    );
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    await tester.pump(const Duration(seconds: 10));
+    expect(operations.preparedLinks, hasLength(2));
+
+    await tester.tap(find.widgetWithText(AppBackLink, 'Home'));
+    await tester.pumpAndSettle();
+
+    refreshGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.discardedClaimAddresses, isEmpty);
+  });
+
   testWidgets('route dispose keeps a Card that is waiting to be claimable', (
     tester,
   ) async {
     final operations = _FakePaymentLinkOperations(
       waitingForFundingConfirmations: true,
       fundingConfirmationCount: 0,
+    );
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    GoRouter.of(
+      tester.element(
+        find.byKey(const ValueKey('payment_links_desktop_screen')),
+      ),
+    ).go('/home');
+    await tester.pumpAndSettle();
+
+    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.discardedClaimAddresses, isEmpty);
+  });
+
+  testWidgets('route dispose keeps a preview of a listed Received Card', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(
+          _incomingLink,
+          updatedAt: DateTime.utc(2026, 8, 6),
+        ),
+      ],
     );
     final clipboard = _FakePaymentLinkClipboard(
       text: _incomingLink.toUri().toString(),
@@ -2575,7 +2722,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     this.claimCompleters = const {},
     this.createdLoadGate,
     this.receivedLoadGate,
-    this.prepareClaimGate,
+    this.prepareClaimGates = const {},
     this.receivedLoadFailures = 0,
     this.prepareClaimFailures = 0,
     this.prepareClaimError,
@@ -2592,7 +2739,9 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final Map<String, Completer<PaymentLinkClaimResult>> claimCompleters;
   final Completer<void>? createdLoadGate;
   final Completer<void>? receivedLoadGate;
-  final Completer<void>? prepareClaimGate;
+
+  /// Gates the Nth `prepareClaim` call (1-based) so a test can act mid-await.
+  final Map<int, Completer<void>> prepareClaimGates;
   int receivedLoadFailures;
   int prepareClaimFailures;
   final Object? prepareClaimError;
@@ -2799,7 +2948,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   }) async {
     preparedLinks.add(link);
     allowLongSyncCalls.add(allowLongSync);
-    await prepareClaimGate?.future;
+    await prepareClaimGates[preparedLinks.length]?.future;
     final configuredError = prepareClaimError;
     if (configuredError != null) throw configuredError;
     if (prepareClaimFailures > 0) {
