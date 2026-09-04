@@ -402,6 +402,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('home-route'), findsOneWidget);
       expect(published, isEmpty);
+
+      // One more try after the grace, then the edge is published regardless.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump();
+      expect(rustApi.discardCalls, hasLength(4));
+      expect(published, [true, false]);
     },
   );
 

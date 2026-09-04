@@ -478,6 +478,11 @@ void main() {
     expect(find.text('Send failed'), findsOneWidget);
     expect(rustApi.discardCalls, hasLength(3));
     expect(_sendStatusTerminal(tester), isFalse);
+
+    // Leaving arms the grace retry; let it fire so no timer outlives the tree.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
   });
 
   testWidgets('send success falls back to Flutter haptics on Android', (

@@ -107,7 +107,16 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (_phase != _SendStatusPhase.sending) {
       unawaited(_discardProposalIfNeeded('SendStatus(dispose)'));
     }
-    _sendStatusTerminal.resetAfterNavigation(afterRelease: _proposalRelease);
+    _sendStatusTerminal.resetAfterNavigation(
+      afterRelease: _proposalRelease,
+      retryRelease: _proposalConsumed
+          ? null
+          : () => discardSendProposal(
+              proposalId: widget.args.proposalId,
+              sendFlowId: widget.args.sendFlowId,
+              logContext: 'SendStatus(retry)',
+            ),
+    );
     super.dispose();
   }
 

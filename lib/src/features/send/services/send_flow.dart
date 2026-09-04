@@ -217,33 +217,45 @@ class SendStatusTerminalNotifier extends Notifier<bool> {
   /// blocks delivery, and a false → false release would leave the link parked
   /// until some unrelated wallet event happened to run the drain.
   ///
-  /// [afterRelease] is the proposal hand-back the departing receipt still has
-  /// in flight, if any — `discardSendProposal`'s result. Terminal is published
-  /// only once it lands *and* reports the release: the drain that edge
-  /// triggers pre-checks a parked request against the wallet's inputs, and a
-  /// dead send's proposal still locks its inputs until Rust has released it —
-  /// the very "not enough ZEC" this ordering exists to prevent. A release that
-  /// failed clears the flag without the edge; the request stays parked until
-  /// the park's own TTL, which is the honest answer while the inputs are held.
-  void resetAfterNavigation({Future<bool>? afterRelease}) {
+  /// [afterRelease] is the departing receipt's in-flight proposal release
+  /// (`discardSendProposal`'s result); terminal is published once it lands, so
+  /// the drain it triggers never pre-checks a parked request against inputs a
+  /// dead send still holds. A release Rust did not confirm gets one more try
+  /// through [retryRelease] after [debugUnconfirmedReleaseGrace], then the
+  /// edge is published regardless: the card can re-check a shortfall, a
+  /// silently expiring park cannot.
+  void resetAfterNavigation({
+    Future<bool>? afterRelease,
+    Future<bool> Function()? retryRelease,
+  }) {
     final retainedRevision = _revision;
-    void finish({required bool released}) {
+    void finish() {
       if (_disposed || _revision != retainedRevision) return;
-      if (released && !state) markTerminal();
+      if (!state) markTerminal();
       reset();
     }
 
     if (afterRelease == null) {
-      scheduleMicrotask(() => finish(released: true));
+      scheduleMicrotask(finish);
       return;
     }
-    unawaited(
-      afterRelease.then<void>(
-        (released) => finish(released: released),
-        onError: (Object _) => finish(released: false),
-      ),
-    );
+    unawaited(() async {
+      var released = false;
+      try {
+        released = await afterRelease;
+      } catch (_) {}
+      if (!released) {
+        await Future<void>.delayed(debugUnconfirmedReleaseGrace);
+        if (_disposed || _revision != retainedRevision) return;
+        if (retryRelease != null) await retryRelease();
+      }
+      finish();
+    }());
   }
+
+  /// Pause before the one retry a failed release gets; tests shorten it.
+  @visibleForTesting
+  static Duration debugUnconfirmedReleaseGrace = const Duration(seconds: 3);
 }
 
 final sendStatusTerminalProvider =
@@ -629,13 +641,14 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     if (shouldAbort == null) return false;
     if (!await shouldAbort()) return false;
     if (!proposalReleased) {
-      await discardSendProposal(
+      // A release Rust never confirmed leaves the proposal for the receipt
+      // to release; only a confirmed one counts as consumed.
+      proposalConsumed = await discardSendProposal(
         proposalId: args.proposalId,
         sendFlowId: args.sendFlowId,
         logContext: 'SendBroadcast(abort)',
       );
       proposalReleased = true;
-      proposalConsumed = true;
     }
     return true;
   }
@@ -657,13 +670,12 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         if (!downloadConfirmed) {
           if (await abortRequested()) return aborted();
           if (!proposalReleased) {
-            await discardSendProposal(
+            proposalConsumed = await discardSendProposal(
               proposalId: args.proposalId,
               sendFlowId: args.sendFlowId,
               logContext: 'SendBroadcast(params-declined)',
             );
             proposalReleased = true;
-            proposalConsumed = true;
           }
           return SendBroadcastOutcome(
             phase: SendBroadcastPhase.failed,
@@ -869,13 +881,12 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     final message = friendlyBroadcastError(e.toString());
     if (await abortRequested()) return aborted();
     if (!proposalReleased) {
-      await discardSendProposal(
+      proposalConsumed = await discardSendProposal(
         proposalId: args.proposalId,
         sendFlowId: args.sendFlowId,
         logContext: 'SendBroadcast(pre-broadcast-failure)',
       );
       proposalReleased = true;
-      proposalConsumed = true;
     }
     return SendBroadcastOutcome(
       phase: SendBroadcastPhase.failed,

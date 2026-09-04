@@ -78,23 +78,28 @@ void main() {
     expect(published, [true, false]);
   });
 
-  test(
-    'a release Rust never confirmed clears the flag without the edge',
-    () async {
-      notifier.reset();
-      notifier.resetAfterNavigation(afterRelease: Future<bool>.value(false));
-      await flushMicrotasks();
-
-      expect(
-        published,
-        isEmpty,
-        reason:
-            'the inputs are still held until expiry; a drain now would read '
-            'the wallet as short for a payment it can afford',
+  test('a release Rust never confirmed retries once, then publishes', () async {
+    SendStatusTerminalNotifier.debugUnconfirmedReleaseGrace = Duration.zero;
+    addTearDown(() {
+      SendStatusTerminalNotifier.debugUnconfirmedReleaseGrace = const Duration(
+        seconds: 3,
       );
-      expect(container.read(sendStatusTerminalProvider), isFalse);
-    },
-  );
+    });
+    var retries = 0;
+    notifier.reset();
+    notifier.resetAfterNavigation(
+      afterRelease: Future<bool>.value(false),
+      retryRelease: () async {
+        retries++;
+        return true;
+      },
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(retries, 1);
+    expect(published, [true, false]);
+  });
 
   test('a departing receipt leaves a newer send\'s flag alone', () async {
     notifier.reset();

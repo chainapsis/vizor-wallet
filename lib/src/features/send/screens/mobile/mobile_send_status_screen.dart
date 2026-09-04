@@ -73,7 +73,16 @@ class _MobileSendStatusScreenState
     if (_phase != _MobileSendStatusPhase.sending) {
       unawaited(_discardProposalIfNeeded('MobileSendStatus(dispose)'));
     }
-    _sendStatusTerminal.resetAfterNavigation(afterRelease: _proposalRelease);
+    _sendStatusTerminal.resetAfterNavigation(
+      afterRelease: _proposalRelease,
+      retryRelease: _proposalConsumed
+          ? null
+          : () => discardSendProposal(
+              proposalId: widget.args.proposalId,
+              sendFlowId: widget.args.sendFlowId,
+              logContext: 'MobileSendStatus(retry)',
+            ),
+    );
     super.dispose();
   }
 
