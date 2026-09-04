@@ -19,6 +19,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/migration_send_gate_provider.dart'
+    show migrationSendGateProvider;
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -55,6 +58,15 @@ typedef PaymentRequestProposeTransfer =
 /// at the moment a shortfall would be published — before the proposal goes
 /// out and after it comes back.
 typedef PaymentRequestSpendableIsAuthoritativeNow = bool Function();
+
+/// The account's spendable balance *right now*, in zatoshi.
+///
+/// The figure a shortfall quotes has to come from the same moment as the
+/// [PaymentRequestSpendableIsAuthoritativeNow] read that allowed it: the
+/// balance the check was handed is older than every await it has taken since,
+/// and the propose path in particular blocks until the wallet has an
+/// authoritative spendable, which is exactly when the number moves.
+typedef PaymentRequestSpendableBalanceNow = BigInt Function();
 
 /// Releases a proposal. Matches [discardSendProposal].
 typedef PaymentRequestDiscardProposal =
@@ -168,6 +180,7 @@ class PaymentRequestPrecheck {
     required this.proposeTransfer,
     required this.discardProposal,
     required this.spendableIsAuthoritativeNow,
+    required this.spendableBalanceNow,
   });
 
   final PaymentRequestValidateAddress validateAddress;
@@ -178,6 +191,9 @@ class PaymentRequestPrecheck {
   /// the balance was read. Like [run]'s `spendableIsAuthoritative` it has no
   /// default: getting it wrong is the bug this guards.
   final PaymentRequestSpendableIsAuthoritativeNow spendableIsAuthoritativeNow;
+
+  /// Live re-read of the balance itself, for the figure a shortfall quotes.
+  final PaymentRequestSpendableBalanceNow spendableBalanceNow;
 
   /// [spendableIsAuthoritative] says whether [spendableBalance] is a settled
   /// post-sync figure. It has no default on purpose: getting it wrong is the
@@ -276,9 +292,15 @@ class PaymentRequestPrecheck {
       if (!spendableIsAuthoritativeNow()) {
         return const PaymentRequestPrecheckSyncing();
       }
-      return PaymentRequestPrecheckInsufficientFunds(
-        spendableText: _formatZec(spendableBalance),
-      );
+      // Settled, but not necessarily the same figure: quote what the wallet
+      // holds now, and if a scan landed the funds while this check was in
+      // flight there is nothing to refuse — let the proposal decide.
+      final spendableNow = spendableBalanceNow();
+      if (amountZatoshi > spendableNow) {
+        return PaymentRequestPrecheckInsufficientFunds(
+          spendableText: _formatZec(spendableNow),
+        );
+      }
     }
 
     try {
@@ -301,7 +323,7 @@ class PaymentRequestPrecheck {
       );
     } catch (e) {
       log('PaymentRequest: proposal failed: $e');
-      return _mapProposalError(e.toString(), spendableBalance);
+      return _mapProposalError(e.toString());
     }
   }
 
@@ -310,10 +332,7 @@ class PaymentRequestPrecheck {
   /// "Still syncing" and "not enough" are the two answers a user acts on
   /// differently, so they must not be collapsed into one generic failure — and
   /// a sync-time shortfall must land on syncing, never on insufficient.
-  PaymentRequestPrecheckResult _mapProposalError(
-    String raw,
-    BigInt spendableBalance,
-  ) {
+  PaymentRequestPrecheckResult _mapProposalError(String raw) {
     final lower = raw.toLowerCase();
     if (lower.contains('wallet sync is still finishing') ||
         lower.contains('wallet sync failed before balance refresh') ||
@@ -336,8 +355,12 @@ class PaymentRequestPrecheck {
       if (!spendableIsAuthoritativeNow()) {
         return const PaymentRequestPrecheckSyncing();
       }
+      // And the figure is read now too. The wait this proposal just came back
+      // from is a wait for an authoritative spendable, so the balance the
+      // check started with is the one number guaranteed to predate whatever
+      // the wallet settled on.
       return PaymentRequestPrecheckInsufficientFunds(
-        spendableText: _formatZec(spendableBalance),
+        spendableText: _formatZec(spendableBalanceNow()),
       );
     }
     // Wrong-network addresses are refused up front by the validation above;
@@ -354,6 +377,19 @@ class PaymentRequestPrecheck {
       ZecAmount.fromZatoshi(zatoshi).activityDetail.toString();
 }
 
+/// The spendable figure the payment-request card pays from, out of an
+/// account-scoped sync state.
+///
+/// Mirrors the compose form: while a Private migration holds the balance, the
+/// Ironwood note is what can actually be spent. The card's first read and its
+/// live re-read go through this one function rather than drifting apart.
+BigInt paymentRequestSpendableOf(
+  SyncState scoped, {
+  required bool gatedByMigration,
+}) => gatedByMigration
+    ? scoped.displayIronwoodBalance
+    : scoped.displaySpendableBalance;
+
 /// The live pre-check, wired to Rust and the send pipeline.
 final paymentRequestPrecheckProvider = Provider<PaymentRequestPrecheck>((ref) {
   return PaymentRequestPrecheck(
@@ -363,6 +399,18 @@ final paymentRequestPrecheckProvider = Provider<PaymentRequestPrecheck>((ref) {
     // to the active account: an unscoped read answers with the wallet-wide
     // sync fields of a state that may hold no balance for this account.
     spendableIsAuthoritativeNow: () => activeAccountSpendableIsSettled(ref),
+    // Scoped and gated the same way the card's first read is, so the two can
+    // only ever disagree about the moment, never about which balance.
+    spendableBalanceNow: () {
+      final sync = ref.read(syncProvider).value;
+      if (sync == null) return BigInt.zero;
+      return paymentRequestSpendableOf(
+        sync.scopedToAccount(
+          ref.read(accountProvider).value?.activeAccountUuid,
+        ),
+        gatedByMigration: ref.read(migrationSendGateProvider),
+      );
+    },
     proposeTransfer:
         ({
           required String accountUuid,

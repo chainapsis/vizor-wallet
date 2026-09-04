@@ -492,11 +492,10 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     // it is what stops a startup request from reading a zero balance and
     // telling the user they cannot afford a payment they can.
     final sync = (await _readSyncState()).scopedToAccount(accountUuid);
-    // Mirrors the compose form: while a Private migration holds the balance,
-    // the Ironwood note is what can actually be spent.
-    final spendable = ref.read(migrationSendGateProvider)
-        ? sync.displayIronwoodBalance
-        : sync.displaySpendableBalance;
+    final spendable = paymentRequestSpendableOf(
+      sync,
+      gatedByMigration: ref.read(migrationSendGateProvider),
+    );
     // Only a balance from a finished scan may end the check as "not enough".
     // A restored last-completed snapshot is stale by construction, and a sync
     // still short of the tip has not seen every note yet, so both hand the

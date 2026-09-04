@@ -33,6 +33,12 @@ class FakeSendApi {
   /// proposal.
   bool spendableIsAuthoritativeNow;
 
+  /// What a live re-read of the spendable balance reports. Defaults through
+  /// [run] to the balance the check started with, which is what an
+  /// undisturbed wallet says; set it to stand in a scan that moved the
+  /// number while the check was in flight.
+  BigInt? spendableBalanceNow;
+
   /// Runs inside the awaited address validation, so a test can move the
   /// wallet under a check that is already in flight.
   void Function()? whileValidating;
@@ -102,6 +108,7 @@ class FakeSendApi {
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
     spendableIsAuthoritativeNow: () => spendableIsAuthoritativeNow,
+    spendableBalanceNow: () => spendableBalanceNow ?? BigInt.zero,
     validateAddress: validateAddress,
     proposeTransfer: proposeTransfer,
     discardProposal: discardProposal,
@@ -128,13 +135,18 @@ Future<PaymentRequestPrecheckResult> run(
   String? accountUuid = 'account-1',
   BigInt? spendable,
   bool spendableIsAuthoritative = true,
-}) => api.precheck.run(
-  prefill: request ?? prefill(),
-  sendFlowId: 'flow-1',
-  accountUuid: accountUuid,
-  spendableBalance: spendable ?? BigInt.from(100000000),
-  spendableIsAuthoritative: spendableIsAuthoritative,
-);
+}) {
+  final balance = spendable ?? BigInt.from(100000000);
+  // A wallet nobody disturbed still reads the same balance a moment later.
+  api.spendableBalanceNow ??= balance;
+  return api.precheck.run(
+    prefill: request ?? prefill(),
+    sendFlowId: 'flow-1',
+    accountUuid: accountUuid,
+    spendableBalance: balance,
+    spendableIsAuthoritative: spendableIsAuthoritative,
+  );
+}
 
 void main() {
   test('a payable request proposes and hands back a live proposal', () async {
@@ -325,6 +337,47 @@ void main() {
     expect(
       (result as PaymentRequestPrecheckInsufficientFunds).spendableText,
       '0.21 ZEC',
+    );
+  });
+
+  test('a shortfall the wallet has already outgrown defers to the '
+      'proposal', () async {
+    final api = FakeSendApi();
+    // Settled the whole way through, but the scan that finished under the
+    // check landed more than the request asks for.
+    api.spendableBalanceNow = BigInt.from(100000000);
+
+    final result = await run(api, spendable: BigInt.from(21000000));
+
+    expect(
+      result,
+      isA<PaymentRequestPrecheckReady>(),
+      reason: 'there is nothing to refuse once the funds are there',
+    );
+    expect(api.proposeCalls, 1);
+  });
+
+  test('an insufficient-funds proposal failure quotes the balance the wait '
+      'ended on', () async {
+    final api = FakeSendApi(
+      proposeThrows: Exception('InsufficientFunds: available 0.21'),
+    );
+    // The check started mid-scan on a zero, and `proposeSendTransferWith`
+    // waited for an authoritative spendable before Rust could answer at all
+    // — by which time the scan had found 0.21.
+    api.spendableBalanceNow = BigInt.from(21000000);
+
+    final result = await run(
+      api,
+      spendable: BigInt.zero,
+      spendableIsAuthoritative: false,
+    );
+
+    expect(result, isA<PaymentRequestPrecheckInsufficientFunds>());
+    expect(
+      (result as PaymentRequestPrecheckInsufficientFunds).spendableText,
+      '0.21 ZEC',
+      reason: 'quoting the pre-wait zero would tell the user they have none',
     );
   });
 

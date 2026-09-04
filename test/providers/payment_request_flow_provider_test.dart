@@ -41,6 +41,10 @@ class _FakeSendApi {
   /// read the balance and before it decides anything.
   void Function()? whileValidating;
 
+  /// Set by [makeContainer], so the live balance re-read answers from the
+  /// providers the production wiring reads.
+  ProviderContainer? container;
+
   /// Holds every discard open until the test releases it, so "the inputs
   /// are still locked" is an observable state rather than a race.
   Completer<void>? discardGate;
@@ -58,6 +62,16 @@ class _FakeSendApi {
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
     spendableIsAuthoritativeNow: () => spendableIsAuthoritative,
+    spendableBalanceNow: () {
+      final read = container;
+      if (read == null) return BigInt.zero;
+      return paymentRequestSpendableOf(
+        (read.read(syncProvider).value ?? SyncState()).scopedToAccount(
+          read.read(accountProvider).value?.activeAccountUuid,
+        ),
+        gatedByMigration: read.read(migrationSendGateProvider),
+      );
+    },
     validateAddress:
         ({required String address, required String network}) async {
           whileValidating?.call();
@@ -237,6 +251,7 @@ ProviderContainer makeContainer(_FakeSendApi api, {SyncState? sync}) {
       zecHomeUsdUnitPriceProvider.overrideWithValue(null),
     ],
   );
+  api.container = container;
   addTearDown(container.dispose);
   return container;
 }
