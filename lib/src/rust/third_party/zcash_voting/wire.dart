@@ -221,11 +221,20 @@ class DelegationStatusView {
   final String? txHash;
   final SubmissionDiagnosticView? submissionDiagnostic;
 
+  /// True when this bundle's delegation has ended and no further delegation
+  /// step will be planned for it; `submission_diagnostic` says why.
+  ///
+  /// Read this rather than inferring from `phase`: a dispatch that reached
+  /// the chain without a usable transaction hash reports the same phase as a
+  /// healthy submission, and retrying it would resubmit.
+  final bool terminal;
+
   const DelegationStatusView({
     required this.bundleIndex,
     required this.phase,
     this.txHash,
     this.submissionDiagnostic,
+    required this.terminal,
   });
 
   @override
@@ -233,7 +242,8 @@ class DelegationStatusView {
       bundleIndex.hashCode ^
       phase.hashCode ^
       txHash.hashCode ^
-      submissionDiagnostic.hashCode;
+      submissionDiagnostic.hashCode ^
+      terminal.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -243,7 +253,8 @@ class DelegationStatusView {
           bundleIndex == other.bundleIndex &&
           phase == other.phase &&
           txHash == other.txHash &&
-          submissionDiagnostic == other.submissionDiagnostic;
+          submissionDiagnostic == other.submissionDiagnostic &&
+          terminal == other.terminal;
 }
 
 class DelegationSubmissionWire {

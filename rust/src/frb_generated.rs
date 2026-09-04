@@ -7416,6 +7416,7 @@ const _: fn() = || {
         let _: Option<String> = DelegationStatusView.tx_hash;
         let _: Option<zcash_voting::wire::SubmissionDiagnosticView> =
             DelegationStatusView.submission_diagnostic;
+        let _: bool = DelegationStatusView.terminal;
     }
     {
         let DelegationSubmissionWire =
@@ -8605,11 +8606,13 @@ impl SseDecode for zcash_voting::wire::DelegationStatusView {
         let mut var_txHash = <Option<String>>::sse_decode(deserializer);
         let mut var_submissionDiagnostic =
             <Option<zcash_voting::wire::SubmissionDiagnosticView>>::sse_decode(deserializer);
+        let mut var_terminal = <bool>::sse_decode(deserializer);
         return zcash_voting::wire::DelegationStatusView {
             bundle_index: var_bundleIndex,
             phase: var_phase,
             tx_hash: var_txHash,
             submission_diagnostic: var_submissionDiagnostic,
+            terminal: var_terminal,
         };
     }
 }
@@ -13015,6 +13018,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::Delegation
             self.0.phase.into_into_dart().into_dart(),
             self.0.tx_hash.into_into_dart().into_dart(),
             self.0.submission_diagnostic.into_into_dart().into_dart(),
+            self.0.terminal.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -16051,6 +16055,7 @@ impl SseEncode for zcash_voting::wire::DelegationStatusView {
             self.submission_diagnostic,
             serializer,
         );
+        <bool>::sse_encode(self.terminal, serializer);
     }
 }
 

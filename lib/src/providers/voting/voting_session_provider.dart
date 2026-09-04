@@ -543,6 +543,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundPlan,
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
+      if (!hasPendingBundles) {
+        final terminal = terminalDelegationMessage(roundPlan);
+        if (terminal != null) {
+          _setError(terminal, context: context);
+          return;
+        }
+      }
       final needsPir = _needsFreshDelegationPreparation(roundPlan);
       var pirEndpoint = current.pirEndpoint;
       if (needsPir && pirEndpoint == null) {
@@ -911,6 +918,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundPlan,
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
+      if (!hasPendingBundles) {
+        final terminal = terminalDelegationMessage(roundPlan);
+        if (terminal != null) {
+          _setError(terminal, context: context);
+          return;
+        }
+      }
       final needsPir = _needsFreshDelegationPreparation(roundPlan);
       final signatures = hasPendingBundles
           ? await _loadKeystoneSignatures(context)

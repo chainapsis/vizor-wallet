@@ -1427,12 +1427,17 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   /// Whether delegation work can continue without ballot choices.
   ///
   /// A delegation already on the wire is driven to its chain outcome
-  /// regardless of the draft. A delegation that has not been sent yet is not:
-  /// the round's ballot comes first. The SDK marks an in-flight delegation as
-  /// needing signing material too, because advancing it re-signs, so this
-  /// reads only the in-flight flag.
+  /// regardless of the draft. A bundle that has not been sent yet is not: the
+  /// round's ballot comes first, so a round with any unsigned bundle left
+  /// still asks for a vote.
+  ///
+  /// The in-flight flag is read on its own rather than through
+  /// `needsDelegationSigning`, which the SDK also sets for an in-flight
+  /// delegation because advancing one re-signs it.
   bool _canPollDelegationWithoutDraft(VotingSessionState session) {
-    return session.roundPlan?.hasInFlightDelegation ?? false;
+    final roundPlan = session.roundPlan;
+    return (roundPlan?.hasInFlightDelegation ?? false) &&
+        delegationBundleIndexesNeedingSigning(roundPlan).isEmpty;
   }
 
   bool _sessionNeedsDelegation(VotingSessionState? session) {

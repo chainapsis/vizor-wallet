@@ -9659,14 +9659,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   DelegationStatusView dco_decode_delegation_status_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return DelegationStatusView(
       bundleIndex: dco_decode_u_32(arr[0]),
       phase: dco_decode_workflow_phase_view(arr[1]),
       txHash: dco_decode_opt_String(arr[2]),
       submissionDiagnostic:
           dco_decode_opt_box_autoadd_submission_diagnostic_view(arr[3]),
+      terminal: dco_decode_bool(arr[4]),
     );
   }
 
@@ -12908,11 +12909,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_txHash = sse_decode_opt_String(deserializer);
     var var_submissionDiagnostic =
         sse_decode_opt_box_autoadd_submission_diagnostic_view(deserializer);
+    var var_terminal = sse_decode_bool(deserializer);
     return DelegationStatusView(
       bundleIndex: var_bundleIndex,
       phase: var_phase,
       txHash: var_txHash,
       submissionDiagnostic: var_submissionDiagnostic,
+      terminal: var_terminal,
     );
   }
 
@@ -16858,6 +16861,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.submissionDiagnostic,
       serializer,
     );
+    sse_encode_bool(self.terminal, serializer);
   }
 
   @protected

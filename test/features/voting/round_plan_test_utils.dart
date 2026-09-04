@@ -171,6 +171,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     for (var bundleIndex = 0; bundleIndex < state.bundleCount; bundleIndex++) {
       final delegation = delegationByBundle[bundleIndex];
       if (delegation != null &&
+          !delegation.terminal &&
           delegation.phase == rust_wire.WorkflowPhaseView.submittedDelegation) {
         nextSteps.add(
           rust_wire.NextStepView(
@@ -308,6 +309,9 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
           phase:
               delegationByBundle[bundleIndex]?.phase ??
               rust_wire.WorkflowPhaseView.prepared,
+          terminal: delegationByBundle[bundleIndex]?.terminal ?? false,
+          submissionDiagnostic:
+              delegationByBundle[bundleIndex]?.submissionDiagnostic,
         ),
     ],
     hasUnconfirmedShares: state.unconfirmedShareDelegations.any(
@@ -527,6 +531,7 @@ List<rust_wire.DelegationStatusView> _delegationStatuses(
       rust_wire.DelegationStatusView(
         bundleIndex: bundleIndex,
         phase: phases[bundleIndex] ?? rust_wire.WorkflowPhaseView.confirmed,
+        terminal: false,
       ),
   ];
 }
@@ -543,6 +548,15 @@ rust_wire.RoundPlanView withDelegationStatusesFrom(
 ) {
   final phases = {
     for (final record in state.delegation) record.bundleIndex: record.phase,
+  };
+  final terminalBundles = {
+    for (final record in state.delegation)
+      if (record.terminal) record.bundleIndex,
+  };
+  final diagnostics = {
+    for (final record in state.delegation)
+      if (record.submissionDiagnostic != null)
+        record.bundleIndex: record.submissionDiagnostic!,
   };
   return apiRoundPlan(
     roundId: plan.roundId,
@@ -578,6 +592,8 @@ rust_wire.RoundPlanView withDelegationStatusesFrom(
                 bundleIndex: bundleIndex,
                 phase:
                     phases[bundleIndex] ?? rust_wire.WorkflowPhaseView.prepared,
+                terminal: terminalBundles.contains(bundleIndex),
+                submissionDiagnostic: diagnostics[bundleIndex],
               ),
           ],
     recoveredDelegationWork: plan.recoveredDelegationWork,

@@ -53,32 +53,35 @@ class VotingVoteKey {
 int roundPlanBundleCount(rust_wire.RoundPlanView? roundPlan) =>
     roundPlan?.delegationStatuses.length ?? 0;
 
-/// Bundles whose delegation is not yet confirmed on chain.
+/// Bundles whose delegation still has work to drive.
 ///
-/// Covers both bundles still needing signature work and bundles already
-/// submitted and awaiting confirmation, because both still need a delegation
-/// step driven.
+/// Covers both bundles needing signature work and bundles already submitted
+/// and awaiting confirmation, because both still need a delegation step.
+/// Excludes bundles the SDK marks terminal: it plans no step for them, and a
+/// hashless dispatch must never be retried.
 List<int> delegationBundleIndexesNeedingWork(
   rust_wire.RoundPlanView? roundPlan,
 ) {
+  final terminal = _terminalBundleIndexes(roundPlan);
   final indexes = <int>{
     for (final status
         in roundPlan?.delegationStatuses ??
             const <rust_wire.DelegationStatusView>[])
-      if (status.phase != rust_wire.WorkflowPhaseView.confirmed)
+      if (!status.terminal &&
+          status.phase != rust_wire.WorkflowPhaseView.confirmed)
         status.bundleIndex,
     for (final work
         in roundPlan?.recoveredDelegationWork ??
             const <rust_wire.DelegationRecoveryWorkView>[])
-      work.bundleIndex,
+      if (!terminal.contains(work.bundleIndex)) work.bundleIndex,
   };
   return indexes.toList()..sort();
 }
 
 /// Bundles that still need delegation signing material.
 ///
-/// Excludes bundles already submitted: their signature exists and only the
-/// chain outcome is outstanding.
+/// Excludes bundles already submitted (their signature exists and only the
+/// chain outcome is outstanding) and bundles the SDK marks terminal.
 List<int> delegationBundleIndexesNeedingSigning(
   rust_wire.RoundPlanView? roundPlan,
 ) {
@@ -86,9 +89,38 @@ List<int> delegationBundleIndexesNeedingSigning(
     for (final status
         in roundPlan?.delegationStatuses ??
             const <rust_wire.DelegationStatusView>[])
-      if (status.phase != rust_wire.WorkflowPhaseView.confirmed &&
+      if (!status.terminal &&
+          status.phase != rust_wire.WorkflowPhaseView.confirmed &&
           status.phase != rust_wire.WorkflowPhaseView.submittedDelegation)
         status.bundleIndex,
   ];
   return indexes..sort();
+}
+
+Set<int> _terminalBundleIndexes(rust_wire.RoundPlanView? roundPlan) => {
+  for (final status
+      in roundPlan?.delegationStatuses ??
+          const <rust_wire.DelegationStatusView>[])
+    if (status.terminal) status.bundleIndex,
+};
+
+/// Why a bundle's delegation ended without confirming, if one did.
+///
+/// A terminal delegation schedules no further work, so this is the only thing
+/// the wallet can tell the user about it. A hashless dispatch may already be
+/// on the chain, so the message must not read as an invitation to retry.
+String? terminalDelegationMessage(rust_wire.RoundPlanView? roundPlan) {
+  for (final status
+      in roundPlan?.delegationStatuses ??
+          const <rust_wire.DelegationStatusView>[]) {
+    if (!status.terminal) continue;
+    final diagnostic = status.submissionDiagnostic;
+    final reason = diagnostic == null
+        ? 'it ended without confirming'
+        : diagnostic.message;
+    return 'Delegation bundle ${status.bundleIndex + 1} cannot continue: '
+        '$reason. Do not retry it; the transaction may already be on the '
+        'chain.';
+  }
+  return null;
 }

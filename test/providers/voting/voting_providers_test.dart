@@ -1904,6 +1904,80 @@ void main() {
     },
   );
 
+  test('terminal delegation surfaces its reason and runs no work', () async {
+    final rust = FakeVotingRustApi();
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationWorkflows: [
+          // A dispatch that reached the chain without a usable hash reports
+          // the same phase as a healthy submission, so only the terminal flag
+          // separates them.
+          const FakeDelegationRecovery(
+            bundleIndex: 0,
+            phase: rust_wire.WorkflowPhaseView.submittedDelegation,
+            txHash: null,
+            terminal: true,
+            submissionDiagnostic: rust_wire.SubmissionDiagnosticView(
+              kind: 'ambiguous_attempts_exhausted',
+              message: 'submission has no usable hash',
+            ),
+          ),
+        ],
+      ),
+    );
+    final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundles(mnemonic: kTestMnemonic);
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('submission has no usable hash'));
+    expect(state.error?.message, contains('Do not retry'));
+    expect(rust.delegationBundleCalls, isEmpty);
+    expect(rust.storedDelegationTxHashes, isEmpty);
+  });
+
+  test('terminal delegation is not offered for Keystone signing', () async {
+    final rust = FakeVotingRustApi();
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationWorkflows: [
+          const FakeDelegationRecovery(
+            bundleIndex: 0,
+            phase: rust_wire.WorkflowPhaseView.submissionRejected,
+            terminal: true,
+            submissionDiagnostic: rust_wire.SubmissionDiagnosticView(
+              kind: 'chain_rejected',
+              message: 'nullifier already spent',
+            ),
+          ),
+        ],
+      ),
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      recoveryApi: recoveryApi,
+      accountIsHardware: true,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundlesWithKeystoneSignatures();
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('nullifier already spent'));
+    expect(rust.keystoneProofBundleCalls, isEmpty);
+  });
+
   test('submitted delegation regenerates its exact SDK request', () async {
     final rust = FakeVotingRustApi();
     final recoveryApi = FakeVotingRecoveryApi(
@@ -3691,6 +3765,45 @@ void main() {
       'Choose at least one vote before submitting.',
     );
   });
+
+  test(
+    'a round with an unsigned bundle still asks for a vote without a draft',
+    () async {
+      // Bundle 0 is on the wire; bundle 1 has never been signed. Driving the
+      // in-flight one does not excuse starting a submission with no ballot,
+      // because bundle 1's delegation exists only to carry a vote.
+      final rust = FakeVotingRustApi(bundleCount: 2);
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 2,
+          delegationWorkflows: [
+            const FakeDelegationRecovery(
+              bundleIndex: 0,
+              phase: rust_wire.WorkflowPhaseView.submittedDelegation,
+              txHash: 'delegation-0',
+            ),
+          ],
+        ),
+      );
+      final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+      addTearDown(container.dispose);
+
+      final key = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      final failed = await _waitForJobStatus(
+        container,
+        key!,
+        VotingSubmissionJobStatus.error,
+      );
+
+      expect(
+        failed.errorMessage,
+        'Choose at least one vote before submitting.',
+      );
+      expect(rust.delegationBundleCalls, isEmpty);
+    },
+  );
 
   test(
     'software vote-only submission seeds hotkey without delegation',
@@ -10545,6 +10658,8 @@ FakeRoundRecoveryState recoveryState({
         phase: record.phase,
         txHash: record.txHash,
         vanLeafPosition: record.vanLeafPosition,
+        terminal: record.terminal,
+        submissionDiagnostic: record.submissionDiagnostic,
       ),
   };
   for (final record in delegationTxHashes) {
