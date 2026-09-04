@@ -155,6 +155,10 @@ abstract interface class PaymentLinkOperations {
   /// still-to-claim, and its scanned claim wallet is kept so the Received list
   /// can reopen it without the bearer link.
   Future<void> retainPendingClaim(PaymentLinkClaimSession session);
+
+  /// Keeps a Card the user checked but left before any claim session existed,
+  /// so a queued bearer link is not the only copy of it.
+  Future<void> keepReceivedLink(VizorPaymentLink link);
 }
 
 final paymentLinkOperationsProvider = Provider<PaymentLinkOperations>((ref) {
@@ -1116,6 +1120,15 @@ class PaymentLinkService implements PaymentLinkOperations {
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
     await _claimWallet.cancelClaimSync(session.link);
     await _claimWallet.deleteDb(session.directory);
+  }
+
+  @override
+  Future<void> keepReceivedLink(VizorPaymentLink link) {
+    // No claim wallet exists yet, so only the record is persisted; tracked so
+    // a wallet reset drains this write instead of racing it.
+    return _ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .trackRetention(() => _receivedStore.saveReady(link));
   }
 
   @override

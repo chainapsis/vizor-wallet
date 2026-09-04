@@ -50,6 +50,7 @@ void main() {
       find.byKey(const ValueKey('payment_link_long_sync_warning_sheet')),
       findsNothing,
     );
+    expect(operations.keptLinkAddresses, [incomingLink.address]);
 
     await tester.tap(find.text('Paste card link'));
     await tester.pumpAndSettle();

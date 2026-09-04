@@ -732,6 +732,57 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  testWidgets('selector rail announces one indexed block of designs', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await _pump(
+      tester,
+      PaymentLinkCardSelectorRail(
+        artworks: PaymentLinkCardArtwork.values,
+        selected: PaymentLinkCardArtwork.crystal,
+        onSelected: (_) {},
+      ),
+    );
+
+    List<int> announcedIndexes() {
+      final indexes = <int>[];
+      void visit(SemanticsNode node) {
+        if (node.indexInParent != null) indexes.add(node.indexInParent!);
+        node.visitChildren((child) {
+          visit(child);
+          return true;
+        });
+      }
+
+      visit(
+        tester.getSemantics(
+          find.byKey(const ValueKey('payment_link_card_selector_rail')),
+        ),
+      );
+      return indexes;
+    }
+
+    final announced = announcedIndexes();
+    expect(announced, isNotEmpty);
+    expect(announced.toSet().length, announced.length);
+    expect(
+      announced,
+      everyElement(lessThan(PaymentLinkCardArtwork.values.length)),
+    );
+
+    // The loop repeats the designs; every copy outside the announced block is
+    // excluded, so a reader never counts past the design list.
+    await tester.drag(
+      find.byKey(const ValueKey('payment_link_card_selector_scroll')),
+      Offset(-72.0 * PaymentLinkCardArtwork.values.length, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(announcedIndexes(), isEmpty);
+    semantics.dispose();
+  });
+
   testWidgets('selector rail recenters externally selected artwork', (
     tester,
   ) async {

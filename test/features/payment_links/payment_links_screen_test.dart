@@ -1377,6 +1377,55 @@ void main() {
     );
   });
 
+  testWidgets('an account switch leaves the metadata retry reachable', (
+    tester,
+  ) async {
+    final accountNotifier = SwitchablePaymentLinkAccountNotifier();
+    final operations = FakePaymentLinkOperations(
+      fundingMetadataSavedOnCreate: false,
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      accountNotifier: accountNotifier,
+      bootstrap: twoAccountBootstrap,
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create card'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Try saving again'), findsOneWidget);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Try saving again'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('Try saving again'));
+    await tester.pumpAndSettle();
+
+    expect(operations.fundingMetadataRetries, 1);
+  });
+
   testWidgets('enables manual redeem intake', (tester) async {
     final operations = FakePaymentLinkOperations();
     final clipboard = FakePaymentLinkClipboard(
@@ -1491,6 +1540,51 @@ void main() {
 
     expect(operations.allowLongSyncCalls, [isFalse, isFalse, isTrue]);
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
+  });
+
+  testWidgets('declining the long scan warning keeps the Card', (tester) async {
+    final operations = FakePaymentLinkOperations(
+      longSyncConfirmationRequired: true,
+    );
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Go back'));
+    await tester.pumpAndSettle();
+
+    expect(operations.keptLinkAddresses, [incomingLink.address]);
+    expect(operations.receivedRecords.single.address, incomingLink.address);
+  });
+
+  testWidgets('a check that fails to run keeps the Card', (tester) async {
+    final operations = FakePaymentLinkOperations(prepareClaimFailures: 1);
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Try again'), findsOneWidget);
+    expect(operations.keptLinkAddresses, [incomingLink.address]);
+    expect(operations.receivedRecords.single.address, incomingLink.address);
   });
 
   testWidgets('routes an accepted incoming payment link and claims it', (

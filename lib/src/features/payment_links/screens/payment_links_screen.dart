@@ -454,6 +454,18 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       session.waitingForFundingConfirmations ||
       _receivedCards.any((record) => record.address == session.link.address);
 
+  /// Keeps a Card that was checked but never reached a claim session: the
+  /// queued link is already consumed, so only this record still holds it.
+  void _keepUnpreparedLink(VizorPaymentLink link) {
+    if (mounted) {
+      setState(() {
+        _rememberReceivedLink(link);
+        _activeCardsTab = PaymentLinkCardsTab.received;
+      });
+    }
+    unawaited(_paymentLinkOperations.keepReceivedLink(link));
+  }
+
   void _rememberReceivedLink(VizorPaymentLink link) {
     final existingIndex = _receivedCards.indexWhere(
       (record) => record.address == link.address,
@@ -663,6 +675,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   void _handleActiveAccountChanged(String? previous, String? current) {
     if (current != null) _handleClaimDestinationAccountChanged(current);
+    // The pending metadata save belongs to funding that already happened, so
+    // resetting the wizard here would strand its retry behind _showPage.
+    if (_pendingFundingMetadata != null) return;
     final quotedAccount = _fundingQuote?.sourceAccountUuid;
     final priorAccount =
         previous ?? quotedAccount ?? _fundingQuoteRequestedAccountUuid;
@@ -1252,7 +1267,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       });
       if (kAppFormFactor == AppFormFactor.mobile) {
         final confirmed = await showPaymentLinkLongSyncWarningSheet(context);
-        if (!confirmed || !mounted) return;
+        if (!confirmed) {
+          _keepUnpreparedLink(link);
+          return;
+        }
+        if (!mounted) return;
         setState(() => _redeemState = PaymentLinkRedeemVisualState.loading);
         await _prepareDecodedPaymentLink(link, allowLongSync: true);
       }
@@ -1301,6 +1320,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           _retryLink = link;
           _redeemState = PaymentLinkRedeemVisualState.paste;
         });
+        _keepUnpreparedLink(link);
         _showError('Card balance could not be checked. Try again.');
       }
     }
@@ -1428,7 +1448,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   }
 
   void _cancelLongSyncWarning() {
+    final link = _longSyncLink;
     setState(() => _longSyncLink = null);
+    if (link != null) _keepUnpreparedLink(link);
   }
 
   Future<void> _confirmLongSyncWarning() async {

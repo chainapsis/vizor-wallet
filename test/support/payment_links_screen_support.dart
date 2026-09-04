@@ -390,6 +390,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<VizorPaymentLink> claimedLinks = [];
   final List<String> discardedClaimAddresses = [];
   final List<String> retainedClaimAddresses = [];
+  final List<String> keptLinkAddresses = [];
   final List<bool> allowLongSyncCalls = [];
   final List<VizorPaymentLink> preparedLinks = [];
   int createdLoadCalls = 0;
@@ -642,6 +643,20 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
   @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
     discardedClaimAddresses.add(session.link.address);
+  }
+
+  @override
+  Future<void> keepReceivedLink(VizorPaymentLink link) async {
+    keptLinkAddresses.add(link.address);
+    if (!receivedRecords.any((record) => record.address == link.address)) {
+      receivedRecords.insert(
+        0,
+        PaymentLinkReceivedRecord.fromLink(
+          link,
+          updatedAt: DateTime.utc(2026, 8, 6),
+        ),
+      );
+    }
   }
 
   @override

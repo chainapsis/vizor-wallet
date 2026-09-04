@@ -234,9 +234,16 @@ class _PaymentLinkCardSelectorRailState
               itemExtent: _itemStride,
               itemCount: _itemCount,
               semanticChildCount: widget.artworks.length,
+              addSemanticIndexes: false,
               itemBuilder: (context, index) {
                 final artwork = widget.artworks[index % widget.artworks.length];
-                return Center(
+                // The rail repeats the artworks to feel endless; only the block it
+                // starts on is announced, so a reader hears the designs, not the copies.
+                final semanticIndex = index - _baseIndex;
+                final announced =
+                    semanticIndex >= 0 &&
+                    semanticIndex < widget.artworks.length;
+                final selector = Center(
                   child: PaymentLinkCardSelector(
                     key: ValueKey('payment_link_card_selector_${artwork.name}'),
                     artwork: artwork,
@@ -267,6 +274,9 @@ class _PaymentLinkCardSelectorRailState
                     inactiveOpacity: widget.inactiveOpacity,
                   ),
                 );
+                return announced
+                    ? IndexedSemantics(index: semanticIndex, child: selector)
+                    : ExcludeSemantics(child: selector);
               },
             ),
           ),
