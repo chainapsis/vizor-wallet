@@ -854,7 +854,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
-        giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        giftCard: giftCard,
       ),
     );
   }
@@ -1302,11 +1302,7 @@ class _MobileVotingEntryCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppIcon(
-                  AppIcons.vote,
-                  size: 20,
-                  color: colors.icon.accent,
-                ),
+                AppIcon(AppIcons.vote, size: 20, color: colors.icon.accent),
                 const SizedBox(width: AppSpacing.s),
                 Expanded(
                   child: Column(

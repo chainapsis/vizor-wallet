@@ -607,8 +607,7 @@ void main() {
       find.descendant(
         of: entry,
         matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is AppIcon && widget.name == AppIcons.vote,
+          (widget) => widget is AppIcon && widget.name == AppIcons.vote,
         ),
       ),
       findsOneWidget,
@@ -2384,7 +2383,7 @@ void main() {
           recentTransactions: [
             _receivedZecTx(
               txidHex: 'gift-redeemed',
-              zatoshi: BigInt.from(100000),
+              zatoshi: BigInt.from(200000000),
             ),
             _sentZecTx(txidHex: 'gift-created'),
           ],
@@ -2395,7 +2394,7 @@ void main() {
           createdMetadataByTxid: {
             'gift-created': GiftCardActivityMetadata(
               kind: GiftCardActivityKind.created,
-              amountZatoshi: BigInt.from(100000),
+              amountZatoshi: BigInt.from(50000000),
               artworkId: 'ruby',
               message: 'Happy birthday!',
             ),
@@ -2403,7 +2402,7 @@ void main() {
           redeemedMetadataByTxid: {
             'gift-redeemed': GiftCardActivityMetadata(
               kind: GiftCardActivityKind.redeemed,
-              amountZatoshi: BigInt.from(100000),
+              amountZatoshi: BigInt.from(30000000),
               artworkId: 'crystal',
               message: null,
             ),
@@ -2420,6 +2419,11 @@ void main() {
     expect(find.text('Redeemed a Gift Card'), findsOneWidget);
     expect(find.text('Sent'), findsNothing);
     expect(find.text('Received'), findsNothing);
+    // The card amount, not the funding total the transaction carries.
+    expect(find.text('-0.5 ZEC'), findsOneWidget);
+    expect(find.text('+0.3 ZEC'), findsOneWidget);
+    expect(find.text('-0.1954 ZEC'), findsNothing);
+    expect(find.text('+2 ZEC'), findsNothing);
   });
 
   testWidgets('recent activity absorbs a Pay deposit transaction duplicate', (

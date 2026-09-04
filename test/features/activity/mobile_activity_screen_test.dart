@@ -247,9 +247,25 @@ void main() {
             kind: 'sent',
           ),
         ],
-        giftCardActivityIndex: const GiftCardActivityIndex(
-          createdTxids: {'gift-created'},
-          redeemedTxids: {'gift-redeemed'},
+        giftCardActivityIndex: GiftCardActivityIndex(
+          createdTxids: const {'gift-created'},
+          redeemedTxids: const {'gift-redeemed'},
+          createdMetadataByTxid: {
+            'gift-created': GiftCardActivityMetadata(
+              kind: GiftCardActivityKind.created,
+              amountZatoshi: BigInt.from(50000000),
+              artworkId: 'ruby',
+              message: 'Happy birthday!',
+            ),
+          },
+          redeemedMetadataByTxid: {
+            'gift-redeemed': GiftCardActivityMetadata(
+              kind: GiftCardActivityKind.redeemed,
+              amountZatoshi: BigInt.from(30000000),
+              artworkId: 'crystal',
+              message: null,
+            ),
+          },
         ),
       ),
     );
@@ -257,6 +273,11 @@ void main() {
 
     expect(find.text('Redeemed a Gift Card'), findsOneWidget);
     expect(find.text('Created a Gift Card'), findsOneWidget);
+    // The card amount, not the funding total the transaction carries.
+    expect(find.text('-0.5 ZEC'), findsOneWidget);
+    expect(find.text('+0.3 ZEC'), findsOneWidget);
+    expect(find.text('-1 ZEC'), findsNothing);
+    expect(find.text('+1 ZEC'), findsNothing);
     expect(
       find.byWidgetPredicate(
         (widget) => widget is AppIcon && widget.name == AppIcons.giftCard,

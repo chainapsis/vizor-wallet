@@ -153,7 +153,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
-        giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        giftCard: giftCard,
       ),
     );
   }

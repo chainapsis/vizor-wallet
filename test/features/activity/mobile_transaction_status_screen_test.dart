@@ -11,9 +11,11 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -99,10 +101,24 @@ rust_sync.TransactionDetail _detail({
   );
 }
 
+GiftCardActivityMetadata _giftCard({
+  GiftCardActivityKind kind = GiftCardActivityKind.created,
+  BigInt? amountZatoshi,
+  String? message,
+}) {
+  return GiftCardActivityMetadata(
+    kind: kind,
+    amountZatoshi: amountZatoshi ?? BigInt.from(100000),
+    artworkId: 'ruby',
+    message: message,
+  );
+}
+
 Widget _app(
   rust_sync.TransactionInfo tx, {
   rust_sync.TransactionDetail? detail,
-  BigInt? giftCardAmountZatoshi,
+  GiftCardActivityMetadata? giftCard,
+  GiftCardActivityIndex giftCardIndex = GiftCardActivityIndex.empty,
   List<AddressBookContact> contacts = const [],
   Map<String, AccountInfo> ownAccounts = const {},
 }) {
@@ -119,6 +135,9 @@ Widget _app(
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, _) async => giftCardIndex,
+      ),
     ],
     child: MaterialApp(
       home: AppTheme(
@@ -129,7 +148,7 @@ Widget _app(
             txKind: tx.txKind,
             initialTransaction: tx,
             initialDetail: resolvedDetail,
-            giftCardAmountZatoshi: giftCardAmountZatoshi,
+            giftCard: giftCard,
           ),
           historyLoader: (_) async => [tx],
           detailLoader: (_, _) async => resolvedDetail,
@@ -155,12 +174,72 @@ void main() {
   testWidgets('Gift Card detail shows the promised amount, not its funding', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      _app(_tx(), giftCardAmountZatoshi: BigInt.from(100000)),
-    );
+    await tester.binding.setSurfaceSize(const Size(393, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(_app(_tx(), giftCard: _giftCard()));
     await tester.pumpAndSettle();
 
     expect(find.text('0.001 ZEC'), findsOneWidget);
+    expect(find.text('123.12 ZEC'), findsNothing);
+  });
+
+  testWidgets('Gift Card receipt titles the card and hides the link address', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(_tx(), giftCard: _giftCard(message: 'Happy birthday!')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Created a Gift Card'), findsOneWidget);
+    expect(find.text('Sent successfully'), findsNothing);
+    // The single-use link address is not a counterparty worth verifying.
+    expect(find.text('To'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_tx_status_show_full_address')),
+      findsNothing,
+    );
+    expect(
+      find.text(
+        '${_address.substring(0, 6)} ... '
+        '${_address.substring(_address.length - 5)}',
+      ),
+      findsNothing,
+    );
+    expect(find.byType(PaymentLinkGiftCard), findsOneWidget);
+
+    expect(find.text('Message'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_tx_status_message_toggle')),
+    );
+    await tester.pump();
+    expect(find.text('Happy birthday!'), findsOneWidget);
+  });
+
+  testWidgets('Gift Card receipt resolves metadata the route did not carry', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _tx(),
+        giftCardIndex: GiftCardActivityIndex(
+          createdTxids: const {_txid},
+          createdMetadataByTxid: {_txid: _giftCard()},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Created a Gift Card'), findsOneWidget);
+    expect(find.text('0.001 ZEC'), findsOneWidget);
+    // Not the raw funding total the transaction carries.
     expect(find.text('123.12 ZEC'), findsNothing);
   });
 

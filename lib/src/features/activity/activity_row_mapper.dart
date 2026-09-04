@@ -57,7 +57,7 @@ ActivityRowData buildTransactionActivityRow({
   return ActivityRowData(
     stableId: 'tx:${transaction.txidHex}:${_stableTransactionRole(kind)}',
     title: giftCardKind != null
-        ? _giftCardTitle(
+        ? giftCardActivityTitle(
             giftCardKind,
             isInFlight: isInFlight,
             isFailed: isFailed,
@@ -121,7 +121,9 @@ ActivityRowData buildTransactionActivityRow({
   );
 }
 
-String _giftCardTitle(
+/// Shared by the activity row and the transaction receipt so a Gift Card
+/// keeps one title across both surfaces.
+String giftCardActivityTitle(
   GiftCardActivityKind kind, {
   required bool isInFlight,
   required bool isFailed,
