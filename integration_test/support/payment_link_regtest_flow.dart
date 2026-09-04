@@ -337,7 +337,27 @@ Future<rust_sync.WalletBalance> waitForPaymentLinkAccountBalance(
   );
 }
 
+var _regtestChainVerified = false;
+
+/// Fails before any destructive RPC (`generate`, `invalidateblock`,
+/// `prioritisetransaction`) when the node on the RPC port is not regtest.
+Future<void> ensurePaymentLinkRegtestChain() async {
+  if (_regtestChainVerified) return;
+  final info = await paymentLinkZcashdRpc<Map<String, Object?>>(
+    'getblockchaininfo',
+  );
+  final chain = info['chain'];
+  if (chain != paymentLinkRegtestNetwork) {
+    fail(
+      'Refusing to drive $paymentLinkRegtestZcashdRpcUrl: getblockchaininfo '
+      'reported chain "$chain", not $paymentLinkRegtestNetwork.',
+    );
+  }
+  _regtestChainVerified = true;
+}
+
 Future<void> minePaymentLinkRegtestBlocks(int blocks) async {
+  await ensurePaymentLinkRegtestChain();
   e2eLog('mining $blocks regtest block(s)');
   final before = await paymentLinkZcashdRpc<int>('getblockcount');
   await paymentLinkZcashdRpc<List<Object?>>('generate', [blocks]);

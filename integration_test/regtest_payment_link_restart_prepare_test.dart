@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
-import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
@@ -32,12 +31,12 @@ void main() {
         await Clipboard.setData(const ClipboardData(text: ''));
         if (preparedForRestart) return;
         await cleanupDesktopRegtestWallet();
-        await deletePaymentLinkClaimWalletDirectories();
+        await cleanupRegtestPaymentLinkClaimWallets();
         await deletePaymentLinkRestartManifest();
       });
 
       await cleanupDesktopRegtestWallet();
-      await deletePaymentLinkClaimWalletDirectories();
+      await cleanupRegtestPaymentLinkClaimWallets();
       await deletePaymentLinkRestartManifest();
 
       final firstSubmissionGate = Completer<void>();

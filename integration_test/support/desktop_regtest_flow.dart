@@ -396,6 +396,18 @@ Future<void> cleanupDesktopRegtestWallet() async {
   }
 }
 
+/// Regtest-guarded Gift Card claim-wallet sweep: the directory name hashes the
+/// network in, so the guard is what keeps this off a developer's real install.
+Future<void> cleanupRegtestPaymentLinkClaimWallets() async {
+  if (kZcashDefaultNetworkName != ZcashNetwork.regtest.name) {
+    throw StateError(
+      'Refusing to delete Gift Card claim wallets without '
+      'ZCASH_DEFAULT_NETWORK=regtest.',
+    );
+  }
+  await deletePaymentLinkClaimWalletDirectories();
+}
+
 Future<void> stopRustWorkForCleanup() async {
   rust_sync.setSyncMode(mode: 0);
   rust_sync.cancelFullSync();

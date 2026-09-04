@@ -1,21 +1,30 @@
 # End-to-end tests
 
-## Gift Card round trip
+## Gift Cards
 
-Run the macOS regtest flow with the public development deeplink origin:
+Three macOS regtest runners cover the Gift Card (payment-link) flows. They
+share `scripts/e2e/lib-payment-link.sh`, which starts the regtest stack, funds
+the sender account, and passes the regtest + payment-link defines every phase
+needs:
 
 ```bash
-VIZOR_E2E_HIDDEN_WINDOW=true \
-  scripts/e2e/flutter-macos-regtest-payment-link.sh
+# Create, open, and claim a card between two accounts.
+scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh
+
+# Prepare two claims, restart the process, and recover them.
+scripts/e2e/flutter-macos-regtest-payment-link.sh
+
+# Retry a failed claim broadcast and survive a reorg.
+scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh
 ```
 
-The script defaults `VIZOR_DEEPLINK_BASE_URL` to
+The runners default `VIZOR_DEEPLINK_BASE_URL` to
 `https://link-dev.vizor.cash`. Override it explicitly when testing another
 deployment:
 
 ```bash
 VIZOR_DEEPLINK_BASE_URL=https://example.vizor.cash \
-  scripts/e2e/flutter-macos-regtest-payment-link.sh
+  scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh
 ```
 
 This flow uses the desktop app's **Redeem a card → Paste card link** path.

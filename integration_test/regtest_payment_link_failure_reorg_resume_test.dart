@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
-import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
@@ -28,7 +27,7 @@ void main() {
       addTearDown(() async {
         await Clipboard.setData(const ClipboardData(text: ''));
         await cleanupDesktopRegtestWallet();
-        await deletePaymentLinkClaimWalletDirectories();
+        await cleanupRegtestPaymentLinkClaimWallets();
         await deletePaymentLinkRestartManifest();
       });
 
@@ -208,6 +207,7 @@ Future<void> _replaceClaimBranch(
   int forkHeight,
   Set<String> claimTxids,
 ) async {
+  await ensurePaymentLinkRegtestChain();
   final oldTip = await paymentLinkZcashdRpc<int>('getblockcount');
   expect(forkHeight, lessThan(oldTip));
   final invalidatedHash = await paymentLinkZcashdRpc<String>('getblockhash', [

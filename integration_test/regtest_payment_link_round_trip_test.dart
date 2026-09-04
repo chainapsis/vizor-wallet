@@ -50,11 +50,11 @@ void main() {
       addTearDown(() async {
         await Clipboard.setData(const ClipboardData(text: ''));
         await cleanupDesktopRegtestWallet();
-        await deletePaymentLinkClaimWalletDirectories();
+        await cleanupRegtestPaymentLinkClaimWallets();
       });
 
       await cleanupDesktopRegtestWallet();
-      await deletePaymentLinkClaimWalletDirectories();
+      await cleanupRegtestPaymentLinkClaimWallets();
 
       e2eLog('pumping app for payment-link round trip');
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
@@ -242,7 +242,9 @@ void main() {
         link.toUri().toString(),
       );
 
-      await _mineRegtestBlocks(kPaymentLinkClaimConfirmationTarget);
+      // One block past the target so the reconciler's 10s timer cannot land on
+      // the exact confirmation boundary and decide the outcome.
+      await _mineRegtestBlocks(kPaymentLinkClaimConfirmationTarget + 1);
       final minedClaim = await _waitForHistoryTransaction(
         tester,
         accountUuid: receiverAccountUuid,
@@ -252,7 +254,6 @@ void main() {
         txid: pendingClaim.txidHex,
       );
       expect(minedClaim.txidHex, isNot(minedFunding.txidHex));
-      await tester.pump(const Duration(seconds: 10));
       final receivedRow = find.byKey(
         ValueKey('payment_link_received_${link.address}'),
       );
@@ -262,6 +263,7 @@ void main() {
           find.descendant(of: receivedRow, matching: find.text('Received')),
         ),
         description: 'mined claim to transition from Receiving to Received',
+        timeout: const Duration(minutes: 2),
       );
       final receivedRecord = (await operations.loadReceivedLinkRecoveries())
           .singleWhere((record) => record.address == link.address);
@@ -277,7 +279,8 @@ void main() {
       // ordinary wallet still requires ten before that value is spendable.
       await _mineRegtestBlocks(
         _walletSpendableConfirmationTarget -
-            kPaymentLinkClaimConfirmationTarget,
+            kPaymentLinkClaimConfirmationTarget -
+            1,
       );
       await _waitForAccountBalance(
         tester,

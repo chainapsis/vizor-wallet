@@ -3,7 +3,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
-import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 
 import 'support/desktop_regtest_flow.dart';
@@ -20,7 +19,7 @@ void main() {
       addTearDown(() async {
         await Clipboard.setData(const ClipboardData(text: ''));
         await cleanupDesktopRegtestWallet();
-        await deletePaymentLinkClaimWalletDirectories();
+        await cleanupRegtestPaymentLinkClaimWallets();
         await deletePaymentLinkRestartManifest();
       });
 

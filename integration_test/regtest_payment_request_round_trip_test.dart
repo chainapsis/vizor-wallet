@@ -117,7 +117,7 @@ void main() {
 
       await _openWallet(tester);
       await _switchAccount(tester, 1);
-      await _waitForHistoryEntry(
+      final incoming = await _waitForHistoryEntry(
         tester,
         accountUuid: requesterUuid,
         txKind: 'receiving',
@@ -141,7 +141,7 @@ void main() {
       await _expectReceivedMemo(
         tester,
         accountUuid: requesterUuid,
-        displayAmount: BigInt.from(25_000_000),
+        txidHex: incoming.txidHex,
         memo: _requestMessage,
       );
       _log('received memo matched the requested message');
@@ -259,11 +259,12 @@ Future<void> _payRequestLink(WidgetTester tester, String uri) async {
   _log('request payment succeeded');
 }
 
-/// Asserts the received transaction carries [memo] as its encrypted memo.
+/// Asserts the transaction [txidHex] carries [memo] as its encrypted memo.
+/// Matched by txid: the mined scan flips the row's kind while this poll runs.
 Future<void> _expectReceivedMemo(
   WidgetTester tester, {
   required String accountUuid,
-  required BigInt displayAmount,
+  required String txidHex,
   required String memo,
 }) async {
   final dbPath = await getWalletDbPath();
@@ -288,8 +289,8 @@ Future<void> _expectReceivedMemo(
     final received = history
         .where(
           (tx) =>
-              tx.txKind == 'receiving' &&
-              tx.displayAmount == displayAmount &&
+              tx.txidHex == txidHex &&
+              (tx.txKind == 'receiving' || tx.txKind == 'received') &&
               !tx.expiredUnmined,
         )
         .toList();
@@ -299,7 +300,7 @@ Future<void> _expectReceivedMemo(
         network: _network,
         accountUuid: accountUuid,
         txidHex: received.first.txidHex,
-        txKind: 'receiving',
+        txKind: received.first.txKind,
       );
       lastSeenMemo = detail.memo ?? '<none>';
       if (detail.memo?.trim() == memo) return;
@@ -501,7 +502,7 @@ Future<String> _accountUuidAtOrder(int order) async {
   return accounts[order].uuid;
 }
 
-Future<void> _waitForHistoryEntry(
+Future<rust_sync.TransactionInfo> _waitForHistoryEntry(
   WidgetTester tester, {
   required String accountUuid,
   required String txKind,
@@ -528,15 +529,14 @@ Future<void> _waitForHistoryEntry(
                 'mined=${tx.minedHeight}:expired=${tx.expiredUnmined}',
           )
           .join(', ');
-      if (history.any(
-        (tx) =>
-            tx.txKind == txKind &&
+      for (final tx in history) {
+        if (tx.txKind == txKind &&
             tx.displayAmount == displayAmount &&
             (tx.minedHeight == BigInt.zero) == pending &&
-            !tx.expiredUnmined,
-      )) {
-        _log('history matched $txKind tx amount=$displayAmount');
-        return;
+            !tx.expiredUnmined) {
+          _log('history matched $txKind tx amount=$displayAmount');
+          return tx;
+        }
       }
     } catch (e) {
       lastError = e;
