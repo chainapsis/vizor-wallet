@@ -86,9 +86,39 @@ enum VotingSessionPhase {
   error,
 }
 
+/// Stage a bundle or vote is in, as the SDK last reported it.
+///
+/// These mirror the crate's delegation and vote-commit progress kinds plus the
+/// terminal states the session assigns, so the UI switches on a value the
+/// compiler checks instead of a label.
+enum VotingProgressPhase {
+  selectingNotes,
+  buildingPczt,
+  buildingProof,
+  waitingForExistingProof,
+  proofProgress,
+  signingPayload,
+  payloadReady,
+  buildingSharePayloads,
+  signing,
+
+  /// Helper share plans are durable; delivery has not finished.
+  submitting,
+
+  /// The chain accepted the submission but has not confirmed it.
+  submitted,
+
+  /// The chain confirmed the submission.
+  confirmed,
+
+  /// Every step for this key finished, shares included.
+  completed,
+  failed,
+}
+
 /// Last known progress event for a bundle or bundle/proposal key.
 class VotingSessionProgress {
-  final String phase;
+  final VotingProgressPhase phase;
   final int? bundleIndex;
   final int? proposalId;
   final double? proofProgress;

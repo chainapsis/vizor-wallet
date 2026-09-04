@@ -1235,7 +1235,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             for (final key in stepKeys) {
               final item = progress[key];
               progress[key] = VotingSessionProgress(
-                phase: 'failed',
+                phase: VotingProgressPhase.failed,
                 bundleIndex: key.bundleIndex,
                 proposalId: key.proposalId,
                 proofProgress: item?.proofProgress,
@@ -1263,9 +1263,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           if (outcome.disposition ==
               rust_wire.RoundStepDispositionView.advanced) {
             for (final key in stepKeys) {
-              if (progress[key]?.phase != 'completed') {
+              if (progress[key]?.phase != VotingProgressPhase.completed) {
                 progress[key] = VotingSessionProgress(
-                  phase: 'completed',
+                  phase: VotingProgressPhase.completed,
                   bundleIndex: key.bundleIndex,
                   proposalId: key.proposalId,
                   proofProgress: 1,
@@ -1295,9 +1295,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       } catch (_) {
         for (final key in allVoteKeys) {
           final item = progress[key];
-          if (item != null && item.phase != 'completed') {
+          if (item != null && item.phase != VotingProgressPhase.completed) {
             progress[key] = VotingSessionProgress(
-              phase: 'failed',
+              phase: VotingProgressPhase.failed,
               bundleIndex: key.bundleIndex,
               proposalId: key.proposalId,
               proofProgress: item.proofProgress,
@@ -1410,7 +1410,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         stepKeys.add(key);
         progress[key] = VotingSessionProgress(
-          phase: _voteStageLabel(stage),
+          phase: _voteStagePhase(stage),
           bundleIndex: bundleIndex,
           proposalId: proposalId,
           proofProgress: _monotonicProofProgress(
@@ -1432,7 +1432,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
           stepKeys.add(key);
           progress[key] = VotingSessionProgress(
-            phase: 'submitting',
+            phase: VotingProgressPhase.submitting,
             bundleIndex: key.bundleIndex,
             proposalId: key.proposalId,
             proofProgress: 1,
@@ -1447,7 +1447,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           (key) => key.bundleIndex == step.bundleIndex,
         )) {
           progress[key] = VotingSessionProgress(
-            phase: confirmed ? 'confirmed' : 'submitted',
+            phase: confirmed
+                ? VotingProgressPhase.confirmed
+                : VotingProgressPhase.submitted,
             bundleIndex: key.bundleIndex,
             proposalId: key.proposalId,
             proofProgress: 1,
@@ -1465,7 +1467,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         stepKeys.add(key);
         progress[key] = VotingSessionProgress(
-          phase: 'completed',
+          phase: VotingProgressPhase.completed,
           bundleIndex: key.bundleIndex,
           proposalId: key.proposalId,
           proofProgress: 1,
@@ -1478,28 +1480,40 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  static String _voteStageLabel(rust_wire.VoteCommitStageKind stage) {
+  static VotingProgressPhase _voteStagePhase(
+    rust_wire.VoteCommitStageKind stage,
+  ) {
     return switch (stage) {
-      rust_wire.VoteCommitStageKind.proofStarting => 'building_proof',
-      rust_wire.VoteCommitStageKind.proofProgress => 'proof_progress',
+      rust_wire.VoteCommitStageKind.proofStarting =>
+        VotingProgressPhase.buildingProof,
+      rust_wire.VoteCommitStageKind.proofProgress =>
+        VotingProgressPhase.proofProgress,
       rust_wire.VoteCommitStageKind.sharePayloadsBuilding =>
-        'building_share_payloads',
-      rust_wire.VoteCommitStageKind.signing => 'signing',
+        VotingProgressPhase.buildingSharePayloads,
+      rust_wire.VoteCommitStageKind.signing => VotingProgressPhase.signing,
     };
   }
 
-  static String _delegationPhaseLabel(rust_wire.DelegationProgressKind kind) {
+  static VotingProgressPhase _delegationPhase(
+    rust_wire.DelegationProgressKind kind,
+  ) {
     return switch (kind) {
-      rust_wire.DelegationProgressKind.selectingNotes => 'selecting_notes',
+      rust_wire.DelegationProgressKind.selectingNotes =>
+        VotingProgressPhase.selectingNotes,
       rust_wire.DelegationProgressKind.pcztBuilding ||
-      rust_wire.DelegationProgressKind.pcztBuilt => 'building_pczt',
-      rust_wire.DelegationProgressKind.proofStarting => 'building_proof',
+      rust_wire.DelegationProgressKind.pcztBuilt =>
+        VotingProgressPhase.buildingPczt,
+      rust_wire.DelegationProgressKind.proofStarting =>
+        VotingProgressPhase.buildingProof,
       rust_wire.DelegationProgressKind.waitingForExistingProof =>
-        'waiting_for_existing_proof',
+        VotingProgressPhase.waitingForExistingProof,
       rust_wire.DelegationProgressKind.proofProgress ||
-      rust_wire.DelegationProgressKind.proofComplete => 'proof_progress',
-      rust_wire.DelegationProgressKind.signingPayload => 'signing_payload',
-      rust_wire.DelegationProgressKind.payloadReady => 'payload_ready',
+      rust_wire.DelegationProgressKind.proofComplete =>
+        VotingProgressPhase.proofProgress,
+      rust_wire.DelegationProgressKind.signingPayload =>
+        VotingProgressPhase.signingPayload,
+      rust_wire.DelegationProgressKind.payloadReady =>
+        VotingProgressPhase.payloadReady,
     };
   }
 
@@ -1686,7 +1700,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 if (kind == null) return;
                 publishProgress(
                   VotingSessionProgress(
-                    phase: _delegationPhaseLabel(kind),
+                    phase: _delegationPhase(kind),
                     bundleIndex: bundleIndex,
                     proofProgress: _monotonicProofProgress(
                       progress[bundleIndex]?.proofProgress,
@@ -1700,7 +1714,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                     rust_wire.ChainSubmissionOutcomeKind.confirmed) {
                   publishProgress(
                     VotingSessionProgress(
-                      phase: 'confirmed',
+                      phase: VotingProgressPhase.confirmed,
                       bundleIndex: bundleIndex,
                       message: chainOutcome!.transactionHash,
                     ),
@@ -1735,7 +1749,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (error != null) {
         publishProgress(
           VotingSessionProgress(
-            phase: 'failed',
+            phase: VotingProgressPhase.failed,
             bundleIndex: bundleIndex,
             message: error.toString(),
           ),
@@ -1903,11 +1917,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     for (final key in voteKeys) {
       final item = progress[key];
       pipelineProgress += switch (item?.phase) {
-        'completed' => 1,
-        'submitting_shares' => 0.95,
-        'confirmed' => 0.95,
-        'submitted' => 0.85,
-        'failed' => 0,
+        VotingProgressPhase.completed => 1,
+        VotingProgressPhase.confirmed => 0.95,
+        VotingProgressPhase.submitting => 0.95,
+        VotingProgressPhase.submitted => 0.85,
+        VotingProgressPhase.failed => 0,
         _ => (item?.proofProgress ?? 0).clamp(0.0, 1.0) * 0.8,
       };
     }

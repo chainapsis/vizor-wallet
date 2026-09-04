@@ -532,10 +532,13 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       final message = state.voteProgress[key]?.message;
       if (message != null && message.isNotEmpty) return message;
     }
+    // The chain outcome carries the transaction hash to show while shares go
+    // out; earlier phases have nothing to say.
     final messages = state.voteProgress.values
         .where(
           (progress) =>
-              progress.phase == 'submitting_shares' &&
+              (progress.phase == VotingProgressPhase.submitted ||
+                  progress.phase == VotingProgressPhase.confirmed) &&
               progress.message != null &&
               progress.message!.isNotEmpty,
         )
@@ -594,7 +597,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         )
         .length;
     final waiting = state.delegationProgress.values.any(
-      (progress) => progress.phase == 'waiting_for_existing_proof',
+      (progress) =>
+          progress.phase == VotingProgressPhase.waitingForExistingProof,
     );
     final count = '$completed of ${bundleIndexes.length} bundles complete';
     return waiting ? 'Reusing an in-progress proof — $count' : count;
@@ -610,7 +614,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   bool _isDelegationBundleComplete(VotingSessionProgress? progress) {
-    return progress?.phase == 'submitted' || progress?.phase == 'confirmed';
+    return progress?.phase == VotingProgressPhase.submitted ||
+        progress?.phase == VotingProgressPhase.confirmed;
   }
 
   void _retry() {
