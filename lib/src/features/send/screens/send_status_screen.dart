@@ -108,22 +108,25 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (promptCompleter != null && !promptCompleter.isCompleted) {
       promptCompleter.complete(false);
     }
-    if (_phase != _SendStatusPhase.sending) {
+    // Unmounted before the post-frame broadcast ever started: nothing else
+    // owns the proposal, so release it here.
+    final broadcastOwnsProposal =
+        _phase == _SendStatusPhase.sending && _broadcast != null;
+    if (!broadcastOwnsProposal) {
       unawaited(_discardProposalIfNeeded('SendStatus(dispose)'));
     }
     _sendStatusTerminal.resetAfterNavigation(
       // Left mid-broadcast: the runner's abort cleanup owns the proposal, so
       // the edge waits for it.
-      afterRelease: _phase == _SendStatusPhase.sending
-          ? _broadcast?.then((outcome) => outcome.proposalConsumed)
+      afterRelease: broadcastOwnsProposal
+          ? _broadcast!.then((outcome) => outcome.proposalConsumed)
           : _proposalRelease,
-      retryRelease: _proposalConsumed
-          ? null
-          : () => discardSendProposal(
-              proposalId: widget.args.proposalId,
-              sendFlowId: widget.args.sendFlowId,
-              logContext: 'SendStatus(retry)',
-            ),
+      // Idempotent in Rust, so no gate on the (optimistic) consumed flag.
+      retryRelease: () => discardSendProposal(
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+        logContext: 'SendStatus(retry)',
+      ),
     );
     super.dispose();
   }

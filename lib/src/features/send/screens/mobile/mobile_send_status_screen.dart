@@ -74,22 +74,25 @@ class _MobileSendStatusScreenState
 
   @override
   void dispose() {
-    if (_phase != _MobileSendStatusPhase.sending) {
+    // Unmounted before the post-frame broadcast ever started: nothing else
+    // owns the proposal, so release it here.
+    final broadcastOwnsProposal =
+        _phase == _MobileSendStatusPhase.sending && _broadcast != null;
+    if (!broadcastOwnsProposal) {
       unawaited(_discardProposalIfNeeded('MobileSendStatus(dispose)'));
     }
     _sendStatusTerminal.resetAfterNavigation(
       // Left mid-broadcast: the runner's abort cleanup owns the proposal, so
       // the edge waits for it.
-      afterRelease: _phase == _MobileSendStatusPhase.sending
-          ? _broadcast?.then((outcome) => outcome.proposalConsumed)
+      afterRelease: broadcastOwnsProposal
+          ? _broadcast!.then((outcome) => outcome.proposalConsumed)
           : _proposalRelease,
-      retryRelease: _proposalConsumed
-          ? null
-          : () => discardSendProposal(
-              proposalId: widget.args.proposalId,
-              sendFlowId: widget.args.sendFlowId,
-              logContext: 'MobileSendStatus(retry)',
-            ),
+      // Idempotent in Rust, so no gate on the (optimistic) consumed flag.
+      retryRelease: () => discardSendProposal(
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+        logContext: 'MobileSendStatus(retry)',
+      ),
     );
     super.dispose();
   }
