@@ -365,6 +365,16 @@ void main() {
       ),
       const Size(44, 20),
     );
+    expect(find.text('Advanced'), findsNothing);
+    expect(find.text('Private Ironwood recovery'), findsOneWidget);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('settings_enhance_pir_toggle_track')),
+      ),
+      tester.getSize(
+        find.byKey(const ValueKey('network_privacy_toggle_track')),
+      ),
+    );
 
     final status = tester.widget<Text>(
       find.byKey(const ValueKey('network_privacy_status_connected_true')),
@@ -409,6 +419,21 @@ void main() {
     } finally {
       _resetPlatformOverride();
     }
+  });
+
+  testWidgets('private Ironwood recovery is hidden off mainnet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(network: 'test', enhancePirEnabled: true),
+    );
+    await tester.pump();
+
+    expect(find.text('Private Ironwood recovery'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('settings_enhance_pir_toggle')),
+      findsNothing,
+    );
   });
 
   testWidgets('Tor stays effective while switching to direct', (tester) async {
@@ -526,6 +551,8 @@ Widget _settingsHarness({
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
   List<bool>? networkPrivacyCalls,
   List<Override> extraOverrides = const [],
+  String network = 'main',
+  bool enhancePirEnabled = false,
 }) {
   final router = GoRouter(
     initialLocation: '/settings',
@@ -543,7 +570,9 @@ Widget _settingsHarness({
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrapForNetwork(network, enhancePirEnabled: enhancePirEnabled),
+      ),
       syncProvider.overrideWith(FakeSyncNotifier.new),
       networkPrivacyProvider.overrideWith(
         () => _FakeNetworkPrivacyNotifier(
@@ -617,7 +646,10 @@ class _FailedWindowsUpdateNotifier extends WindowsUpdateNotifier {
   );
 }
 
-final _bootstrap = AppBootstrapState(
+AppBootstrapState _bootstrapForNetwork(
+  String network, {
+  bool enhancePirEnabled = false,
+}) => AppBootstrapState(
   initialLocation: '/settings',
   initialAccountState: const AccountState(
     accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
@@ -625,13 +657,14 @@ final _bootstrap = AppBootstrapState(
     activeAddress: 'u1settingsscreenaddress',
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  network: network,
+  rpcEndpointConfig: defaultRpcEndpointConfig(network),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
+  enhancePirEnabled: enhancePirEnabled,
 );
 
 double _toggleTrackOpacity(WidgetTester tester) {

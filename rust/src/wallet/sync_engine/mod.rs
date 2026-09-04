@@ -46,11 +46,13 @@ use {
 
 mod block_source;
 mod enhance;
+mod enhance_pir;
 mod error;
 mod lwd;
 pub(crate) mod mempool;
 
 use enhance::run_enhancement;
+use enhance_pir::{EnhancePirRunError, EnhancePirSync};
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
@@ -1752,6 +1754,29 @@ async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
     }
 }
 
+/// Runs optional private enhancement without making compact synchronization
+/// depend on the separate service. An ordinary failure defers retries until a
+/// new full-sync session; cancellation and mode handoff still stop immediately.
+async fn run_optional_enhance_pir(
+    enhance_pir: &mut EnhancePirSync,
+    db: &mut WalletDatabase,
+    should_exit: &impl Fn() -> bool,
+) -> bool {
+    match Box::pin(enhance_pir.run(db, should_exit)).await {
+        Ok(()) => false,
+        Err(EnhancePirRunError::ExitRequested) => true,
+        Err(EnhancePirRunError::Failed(error)) => {
+            enhance_pir.defer();
+            log::warn!(
+                "[{}] sync: private Ironwood enhancement failed; queued work will retry on a later sync: {}",
+                elapsed(),
+                error,
+            );
+            false
+        }
+    }
+}
+
 /// Discard a completed tip RPC result when cancellation or a mode handoff won
 /// the race. Callers must apply this before interpreting the result or mutating
 /// the wallet DB.
@@ -2310,6 +2335,7 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
+    let mut enhance_pir = EnhancePirSync::new(network, crate::api::sync::enhance_pir_enabled());
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -2646,6 +2672,13 @@ async fn run_sync_impl(
     // was the last in its range (so there's nothing to prefetch until
     // `suggest_scan_ranges` runs again).
     let mut prefetch: Option<Prefetch<ScanBatch>> = None;
+
+    // Retry enhancement work left by an interrupted/older sync even when the wallet
+    // is already at the chain tip and no compact-block batch will run.
+    if run_optional_enhance_pir(&mut enhance_pir, &mut db, &should_exit).await {
+        log::info!("[{}] sync: exiting during private enhancement", elapsed());
+        return Ok(());
+    }
 
     // 5. Sync loop
     loop {
@@ -3379,8 +3412,26 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
-        // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
+        // Complete Ironwood incoming and outgoing details without disclosing transaction IDs. The
+        // independent position queue is populated atomically by compact scan.
+        // Box this transport-heavy future so its Hyper/Tor connector state does
+        // not inflate the already-large sync future exported through FRB.
+        if run_optional_enhance_pir(&mut enhance_pir, &mut db, &should_exit).await {
+            log::info!("[{}] sync: exiting during private enhancement", elapsed());
+            return Ok(());
+        }
+
+        // Legacy enhancement remains available for status and transparent
+        // history. When private recovery is enabled, protected Ironwood
+        // transactions never fall back to GetTransaction(txid).
+        run_enhancement(
+            &mut client,
+            &mut db,
+            db_data_path,
+            network,
+            enhance_pir.enabled(),
+        )
+        .await?;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
@@ -3787,7 +3838,15 @@ async fn run_sync_impl(
             ),
         }
         if deferred_received_outputs && !should_exit() {
-            if let Err(error) = run_enhancement(&mut client, &mut db, db_data_path, network).await {
+            if let Err(error) = run_enhancement(
+                &mut client,
+                &mut db,
+                db_data_path,
+                network,
+                enhance_pir.enabled(),
+            )
+            .await
+            {
                 log::warn!(
                     "[{}] sync: deferred transparent transaction enhancement failed; it will retry on a later sync: {}",
                     elapsed(),

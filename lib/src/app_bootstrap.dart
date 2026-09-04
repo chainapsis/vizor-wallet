@@ -23,6 +23,7 @@ const _networkKey = 'zcash_wallet_network';
 // Mirrors kBiometricUnlockEnabledKey in providers/biometric_unlock_provider.dart;
 // kept local to avoid a bootstrap → provider import cycle.
 const _biometricUnlockEnabledKey = 'zcash_biometric_unlock_enabled';
+const kEnhancePirEnabledKey = 'vizor_enhance_pir_enabled';
 const _e2eLightwalletdUrlOverride = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
 );
@@ -60,6 +61,7 @@ class AppBootstrapState {
     this.biometricUnlockEnabled = false,
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
+    this.enhancePirEnabled = false,
     this.failureKind,
     this.failureMessage,
   });
@@ -75,6 +77,7 @@ class AppBootstrapState {
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
   final bool syncKeepAwakePromptSeen;
+  final bool enhancePirEnabled;
 
   /// Whether biometric unlock was enabled at startup, read synchronously from
   /// secure storage. The unlock screen uses this to paint the biometric
@@ -254,6 +257,11 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag',
     );
+    final enhancePirEnabled = await _readPlainBool(
+      storage,
+      key: kEnhancePirEnabledKey,
+      label: 'private Ironwood enhancement enabled flag',
+    );
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
@@ -355,6 +363,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       biometricUnlockEnabled: biometricUnlockEnabled,
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,
       syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
+      enhancePirEnabled: enhancePirEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,

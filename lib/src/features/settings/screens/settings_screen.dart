@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/config/zcash_explorer.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -17,7 +18,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
-import '../../../core/config/zcash_explorer.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/zcash_explorer_provider.dart';
@@ -400,7 +401,7 @@ class _SettingsPane extends StatelessWidget {
   }
 }
 
-class _SettingsList extends StatelessWidget {
+class _SettingsList extends ConsumerWidget {
   const _SettingsList({
     required this.accountName,
     required this.profilePictureId,
@@ -450,7 +451,9 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback? onUninstall;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enhancePirEnabled = ref.watch(enhancePirProvider);
+    final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -503,11 +506,19 @@ class _SettingsList extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
           title: 'Privacy',
-          rows: const [
-            NetworkPrivacyControl(
+          rows: [
+            const NetworkPrivacyControl(
               key: ValueKey('settings_tor_control'),
               showSurface: false,
             ),
+            if (enhancePirAvailable) ...[
+              const SizedBox(height: AppSpacing.sm),
+              _EnhancePirPrivacyControl(
+                enabled: enhancePirEnabled,
+                onToggle: () =>
+                    unawaited(ref.read(enhancePirProvider.notifier).toggle()),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: AppSpacing.md),
@@ -990,6 +1001,94 @@ class _ThemeOptionIndicator extends StatelessWidget {
               ),
             )
           : null,
+    );
+  }
+}
+
+class _EnhancePirPrivacyControl extends StatelessWidget {
+  const _EnhancePirPrivacyControl({
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 44,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: Row(
+              children: [
+                SizedBox.square(
+                  dimension: 20,
+                  child: Center(
+                    child: AppIcon(
+                      AppIcons.eye,
+                      size: 20,
+                      color: enabled
+                          ? colors.icon.brandCrimson
+                          : colors.icon.muted,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Private Ironwood recovery',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        enabled ? 'On' : 'Off',
+                        key: const ValueKey('settings_enhance_pir_status'),
+                        style: AppTypography.labelLarge.copyWith(
+                          color: enabled
+                              ? colors.text.brandCrimson
+                              : colors.text.secondary,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                PrivacyToggle(
+                  key: const ValueKey('settings_enhance_pir_toggle'),
+                  trackKey: const ValueKey('settings_enhance_pir_toggle_track'),
+                  enabled: enabled,
+                  semanticsLabel: 'Private Ironwood recovery',
+                  onToggle: onToggle,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+          child: Text(
+            'Privately completes future Ironwood incoming and outgoing details during recovery. It does not reprocess past history, and timing and query counts remain visible to the service.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
