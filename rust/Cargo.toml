@@ -152,13 +152,14 @@ features = ["std"]
 
 [dependencies.zakura-pir-enhance]
 git = "https://github.com/zakura-core/wallet-libraries.git"
-rev = "ec25ebdf5161491495be086f5c0364b90e4cbcbf"
+rev = "9fe154792"
 default-features = false
+features = ["wallet-integration"]
 
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "ec25ebdf5161491495be086f5c0364b90e4cbcbf" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "ec25ebdf5161491495be086f5c0364b90e4cbcbf" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "ec25ebdf5161491495be086f5c0364b90e4cbcbf" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "9fe154792" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "9fe154792" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "9fe154792" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }

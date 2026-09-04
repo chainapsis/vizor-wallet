@@ -15,13 +15,11 @@ use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use zakura_pir_enhance::client::record_in_row;
 use zakura_pir_enhance::{
-    AcceptedAnchor, ClientError, ClientResourceLimits, EnhanceGeneration, EnhanceSession,
-    GenerationAcceptance, QuerySession, RECORDS_PER_ROW,
+    apply_record, AcceptedAnchor, ClientError, ClientResourceLimits, EnhanceGeneration,
+    EnhanceSession, GenerationAcceptance, QuerySession, RECORDS_PER_ROW,
 };
 use zcash_client_backend::data_api::enhance_pir::{
-    decrypt_and_store_ironwood_memo, recover_and_store_ironwood_outgoing, EnhancePirRead,
-    EnhancePirSnapshotAnchor, EnhancePirSnapshotStatus, EnhancePirStoreResult,
-    IronwoodEnhanceRecord,
+    EnhancePirRead, EnhancePirSnapshotAnchor, EnhancePirSnapshotStatus, EnhancePirStoreResult,
 };
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
@@ -128,23 +126,14 @@ impl EnhancePirSync {
             for request in requests {
                 let position = u64::from(request.position());
                 let slot = position as usize % RECORDS_PER_ROW;
-                let wire_record = record_in_row(&row, slot);
-                let record = IronwoodEnhanceRecord::from_parts(
-                    *wire_record.ephemeral_key(),
-                    *wire_record.enc_ciphertext(),
-                    *wire_record.cv_net(),
-                    *wire_record.out_ciphertext(),
-                );
-                let incoming = with_wallet_db_write_lock(
-                    "sync_engine.enhance_pir.store_ironwood_memo",
-                    || decrypt_and_store_ironwood_memo(db, request, &record),
-                )
-                .map_err(|error| SyncError::db(format!("store Enhance PIR memo: {error}")))?;
-                let outgoing = with_wallet_db_write_lock(
-                    "sync_engine.enhance_pir.store_ironwood_outgoing",
-                    || recover_and_store_ironwood_outgoing(db, request, &record),
-                )
-                .map_err(|error| SyncError::db(format!("store Enhance PIR output: {error}")))?;
+                let wire_record = record_in_row(&row, slot).map_err(client_protocol_error)?;
+                let result =
+                    with_wallet_db_write_lock("sync_engine.enhance_pir.apply_record", || {
+                        apply_record(db, request, &wire_record)
+                    })
+                    .map_err(|error| SyncError::db(format!("apply Enhance PIR record: {error}")))?;
+                let incoming = result.incoming;
+                let outgoing = result.outgoing;
                 stored += [incoming, outgoing]
                     .into_iter()
                     .filter(|result| *result == EnhancePirStoreResult::Stored)
