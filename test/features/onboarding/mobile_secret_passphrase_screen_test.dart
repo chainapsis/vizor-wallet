@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passph
 import 'package:zcash_wallet/src/features/onboarding/mobile/seed_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
+import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 
 const _mnemonic =
@@ -128,10 +129,20 @@ double _stepsProgress(WidgetTester tester) {
 
 void main() {
   setUp(() {
+    // Copying a secret schedules the real one-minute clipboard auto-clear
+    // timer, which would outlive the widget tree. Hold the expiry open for the
+    // duration of each test; the clearing itself is covered by
+    // test/core/clipboard/sensitive_clipboard_test.dart.
+    SensitiveClipboard.debugExpirationDelay = (_) => Completer<void>().future;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
+  });
+
+  tearDown(() {
+    SensitiveClipboard.debugExpirationDelay = null;
+    SensitiveClipboard.debugCancelPendingExpiration();
   });
 
   testWidgets('starts obscured, reveals, and enables copy', (tester) async {
