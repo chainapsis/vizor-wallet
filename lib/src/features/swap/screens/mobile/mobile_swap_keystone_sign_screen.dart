@@ -306,8 +306,11 @@ class _MobileSwapKeystoneSignScreenState
     context.pop(MobileSwapKeystoneSignFailure(message));
   }
 
-  void _handleCancel() {
-    unawaited(_discardDraft());
+  Future<void> _handleCancel() async {
+    // Awaited: the busy hold lifts on dispose, and a parked link must not be
+    // pre-checked against inputs the draft's proposal still holds.
+    await _discardDraft();
+    if (!mounted) return;
     if (widget.args.startedFromReview) {
       ref
           .read(swapStateProvider.notifier)
