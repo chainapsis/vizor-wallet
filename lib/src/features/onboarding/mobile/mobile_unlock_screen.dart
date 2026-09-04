@@ -8,13 +8,16 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/navigation/payment_uri_unlock_claim.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/device_owner_auth_provider.dart';
+import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
@@ -213,15 +216,36 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
-        // No payment-URI claim here yet. Mobile's answer to a payment request
-        // card — the handoff from Review and Edit into the send wizard —
-        // arrives in the next PR of this stack, and the app-level drain keeps
-        // a delivered link parked on this form factor until it does. Claiming
-        // here would clear that park to present a card whose two answers both
-        // land on an empty composer. The link stays parked instead: `/home`
-        // re-runs the app-level drain, which still says whatever the policy
-        // has to say about a link this wallet cannot open.
+        // Claim the payment-URI prefill (parked while locked) only now, after
+        // the post-unlock work has succeeded. Claiming earlier would drop the
+        // payment if any of the awaits above threw or this screen unmounted —
+        // the prefill would already be cleared with no way to recover it —
+        // and the drain policy inside the claim reads state those awaits
+        // settle.
+        final claimed = claimParkedPaymentUriAfterUnlock(ref);
         context.go('/home');
+        final pendingPrefill = claimed.prefill;
+        final notice = claimed.notice;
+        if (pendingPrefill != null) {
+          // The link becomes a card over the wallet the user just unlocked,
+          // not a jump into the composer.
+          ref
+              .read(paymentRequestFlowProvider.notifier)
+              .present(pendingPrefill, source: PaymentRequestSource.link);
+        } else if (notice != null) {
+          // The link outlived its park window while the user was finding their
+          // passcode, or the wallet it landed on cannot open it. Landing with
+          // no card and no word is the one silent loss of something the user
+          // deliberately asked for. The toast is asked for before this screen
+          // is torn down; `showAppToast` renders it on the app-level host,
+          // which outlives the navigation.
+          showAppToast(
+            context,
+            notice,
+            duration: const Duration(seconds: 4),
+            iconName: AppIcons.warning,
+          );
+        }
       });
     } catch (e, st) {
       log('MobileUnlockScreen._submit: ERROR: $e\n$st');
