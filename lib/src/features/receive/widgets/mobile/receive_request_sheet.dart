@@ -233,7 +233,10 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
         if (uri == null) return;
         unawaited(_copyLink(uri));
       },
-      onShareRequest: (text, png) => unawaited(_share(text, png)),
+      // Returned, not fired: the export button stays busy until the share
+      // sheet has been handed the bytes and dismissed, so a second tap cannot
+      // open a second sheet over the first.
+      onShareRequest: _share,
       onShareError: _reportShareFailed,
     );
   }
