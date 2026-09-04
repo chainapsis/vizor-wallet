@@ -194,6 +194,13 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
     );
   }
 
+  void _backToCompose() {
+    setState(() {
+      _result = null;
+      _showsResult = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
@@ -221,23 +228,28 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
     // The confirmed snapshot is what the result step shows, copies and
     // shares; the live draft stays behind on the compose step.
     final result = _result ?? request;
-    return RequestAmountSheetResult(
-      request: result,
-      onBack: () => setState(() {
-        _result = null;
-        _showsResult = false;
-      }),
-      onClose: _close,
-      onCopyLink: () {
-        final uri = result.requestUri;
-        if (uri == null) return;
-        unawaited(_copyLink(uri));
+    // System Back edits the request like the chevron does, instead of popping
+    // the sheet and losing what was typed.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _backToCompose();
       },
-      // Returned, not fired: the export button stays busy until the share
-      // sheet has been handed the bytes and dismissed, so a second tap cannot
-      // open a second sheet over the first.
-      onShareRequest: _share,
-      onShareError: _reportShareFailed,
+      child: RequestAmountSheetResult(
+        request: result,
+        onBack: _backToCompose,
+        onClose: _close,
+        onCopyLink: () {
+          final uri = result.requestUri;
+          if (uri == null) return;
+          unawaited(_copyLink(uri));
+        },
+        // Returned, not fired: the export button stays busy until the share
+        // sheet has been handed the bytes and dismissed, so a second tap cannot
+        // open a second sheet over the first.
+        onShareRequest: _share,
+        onShareError: _reportShareFailed,
+      ),
     );
   }
 }

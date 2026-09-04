@@ -224,6 +224,29 @@ void main() {
     },
   );
 
+  testWidgets('a route change during the hand-back cancels it', (tester) async {
+    final harness = await _pumpHost(tester);
+    harness.container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    _discardGate = Completer<void>();
+    await tester.tap(find.byKey(const ValueKey('payment_request_continue')));
+    await tester.pumpAndSettle();
+    expect(harness.location, '/home');
+
+    // The card is gone and the app is usable; the user moves on.
+    harness.router.go('/send');
+    await tester.pumpAndSettle();
+
+    _discardGate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(harness.location, '/send');
+    expect(harness.reviewExtra, isNull);
+  });
+
   testWidgets('a newer link during the hand-back keeps the wizard closed', (
     tester,
   ) async {
