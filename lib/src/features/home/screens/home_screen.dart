@@ -773,8 +773,14 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
   }) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final detail = await _loadTransactionDetail(transaction);
     if (!mounted) return;
+    // The receipt takes this transaction and its Gift Card metadata as the
+    // active account's, so a switch during the load has to cancel the handoff.
+    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      return;
+    }
     context.push(
       Uri(
         path: '/activity/tx/${transaction.txidHex}',

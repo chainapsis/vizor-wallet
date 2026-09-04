@@ -159,6 +159,10 @@ abstract interface class PaymentLinkOperations {
   /// Keeps a Card the user checked but left before any claim session existed,
   /// so a queued bearer link is not the only copy of it.
   Future<void> keepReceivedLink(VizorPaymentLink link);
+
+  /// Drops a received Card that can never be claimed again, so neither the
+  /// list nor a relaunch keeps offering it.
+  Future<void> forgetReceivedLink(VizorPaymentLink link);
 }
 
 final paymentLinkOperationsProvider = Provider<PaymentLinkOperations>((ref) {
@@ -1129,6 +1133,14 @@ class PaymentLinkService implements PaymentLinkOperations {
     return _ref
         .read(paymentLinkClaimCoordinatorProvider)
         .trackRetention(() => _receivedStore.saveReady(link));
+  }
+
+  @override
+  Future<void> forgetReceivedLink(VizorPaymentLink link) {
+    // Tracked so a wallet reset drains this write instead of racing it.
+    return _ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .trackRetention(() => _receivedStore.remove(link.address));
   }
 
   @override

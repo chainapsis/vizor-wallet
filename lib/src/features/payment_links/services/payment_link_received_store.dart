@@ -426,6 +426,18 @@ class PaymentLinkReceivedStore {
     });
   }
 
+  /// Forgets a Card the caller has established can never be claimed again.
+  Future<void> remove(String address) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final remaining = records
+          .where((record) => record.address != address)
+          .toList();
+      if (remaining.length == records.length) return;
+      await _writeRecords(remaining);
+    });
+  }
+
   Future<List<PaymentLinkReceivedRecord>> _loadUnlocked() async {
     return _decodeRecords(await _storage.read());
   }

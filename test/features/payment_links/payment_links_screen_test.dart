@@ -2323,6 +2323,72 @@ void main() {
     );
   });
 
+  testWidgets('a claim prepared after the route is gone is still discarded', (
+    tester,
+  ) async {
+    final prepareClaimGate = Completer<void>();
+    final operations = FakePaymentLinkOperations(
+      prepareClaimGates: {1: prepareClaimGate},
+    );
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pump();
+
+    GoRouter.of(
+      tester.element(
+        find.byKey(const ValueKey('payment_links_desktop_screen')),
+      ),
+    ).go('/home');
+    await tester.pumpAndSettle();
+
+    prepareClaimGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a Card that can no longer be claimed leaves Received', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(
+          incomingLink,
+          updatedAt: DateTime.utc(2026, 8, 6),
+        ),
+      ],
+      claimable: false,
+    );
+    await pumpPaymentLinksScreen(tester, operations: operations);
+
+    await tester.tap(find.text('Received'));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(
+      ValueKey('payment_link_received_${incomingLink.address}'),
+    );
+    expect(row, findsOneWidget);
+
+    await tester.tap(find.text('Claim'));
+    await tester.pumpAndSettle();
+
+    expect(row, findsNothing);
+    expect(operations.forgottenLinkAddresses, [incomingLink.address]);
+    expect(operations.receivedRecords, isEmpty);
+  });
+
   testWidgets('shows an interrupted funding draft without reclaim controls', (
     tester,
   ) async {
