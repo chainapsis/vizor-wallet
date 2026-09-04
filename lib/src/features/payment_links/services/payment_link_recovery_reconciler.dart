@@ -29,6 +29,10 @@ const kPaymentLinkAmbiguousFundingExpiryDelta = 60;
 /// How long an ambiguous funding is kept when no submission height was known.
 const kPaymentLinkAmbiguousFundingUndatedRetention = Duration(hours: 24);
 
+/// How long a draft that never started its broadcast is kept before recovery
+/// drops it — long enough for a creation still proposing in this process.
+const kPaymentLinkInertDraftRetention = Duration(minutes: 10);
+
 final paymentLinkRecoveryReconcilerProvider =
     Provider<PaymentLinkRecoveryReconciler>((ref) {
       final claimWallet = PaymentLinkClaimWallet(ref);
@@ -163,6 +167,33 @@ class PaymentLinkRecoveryReconciler {
   final PaymentLinkFundingHistoryLoader _loadTransactionsByAccount;
   final PaymentLinkOwnFundingHistoryLoader _loadLinkFundingHistory;
 
+  /// Removes drafts that were saved but never reached the broadcast boundary
+  /// (app killed mid-propose): they hold nothing and would otherwise sit in
+  /// the list forever.
+  Future<List<PaymentLinkRecoveryRecord>> _dropInertDrafts(
+    List<PaymentLinkRecoveryRecord> records,
+  ) async {
+    final now = DateTime.now().toUtc();
+    final inert = records.where(
+      (record) =>
+          record.isInertDraft &&
+          now.difference(record.updatedAt) > kPaymentLinkInertDraftRetention,
+    );
+    var changed = false;
+    for (final record in inert) {
+      try {
+        await _store.removeUnsubmittedDraft(address: record.link.address);
+        changed = true;
+      } catch (error) {
+        log(
+          'PaymentLinkRecoveryReconciler: inert draft cleanup failed '
+          'address=${record.link.address} error=$error',
+        );
+      }
+    }
+    return changed ? _store.load() : records;
+  }
+
   Future<int> countUnsharedFundedForAccount(String sourceAccountUuid) async {
     if (sourceAccountUuid.isEmpty) return 0;
     return countUnsharedFundedPaymentLinks(
@@ -172,7 +203,8 @@ class PaymentLinkRecoveryReconciler {
   }
 
   Future<List<PaymentLinkRecoveryRecord>> load() async {
-    final records = await _store.load();
+    var records = await _store.load();
+    records = await _dropInertDrafts(records);
     final preparedDrafts = records
         .where(
           (record) =>
