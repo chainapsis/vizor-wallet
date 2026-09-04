@@ -736,6 +736,11 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
           key: const ValueKey('payment_request_memo'),
           label: 'Transaction memo',
           text: memo,
+          // A memo of nothing but whitespace is still bytes the payment
+          // carries, so the row stays — but drawing those bytes draws
+          // nothing, and a row that looks empty is indistinguishable from a
+          // request that asked for no memo at all.
+          placeholder: request.memoIsWhitespaceOnly ? 'Whitespace only' : null,
           expanded: _messageExpanded,
           onToggle: _toggleMessage,
         ),
@@ -1405,6 +1410,7 @@ class _ProseRows extends StatelessWidget {
     required this.text,
     required this.expanded,
     required this.onToggle,
+    this.placeholder,
     super.key,
   });
 
@@ -1412,6 +1418,16 @@ class _ProseRows extends StatelessWidget {
   final String label;
 
   final String text;
+
+  /// Drawn in place of [text] when [text] would render as nothing.
+  ///
+  /// The memo is still [text] and is still what the payment carries; this
+  /// only replaces the glyphs, so a memo made entirely of whitespace reads as
+  /// a memo the payer can see rather than a blank row they would take for an
+  /// empty one. Muted rather than accent, because it is the card describing
+  /// the memo, not the memo's own words.
+  final String? placeholder;
+
   final bool expanded;
   final VoidCallback onToggle;
 
@@ -1420,6 +1436,10 @@ class _ProseRows extends StatelessWidget {
     final colors = context.colors;
     final transparent = colors.background.ground.withValues(alpha: 0);
     final valueStyle = AppTypography.bodyMediumStrong;
+    final value = placeholder ?? text;
+    final valueColor = placeholder == null
+        ? colors.text.accent
+        : colors.text.muted;
     final scaler = MediaQuery.textScalerOf(context);
     // The control is the whole label-over-value block: 54px on mobile,
     // 46 on desktop, so it clears the 44px touch floor by itself instead
@@ -1440,7 +1460,7 @@ class _ProseRows extends StatelessWidget {
           label: expanded
               ? 'Collapse transaction memo'
               : 'Expand transaction memo',
-          value: expanded ? null : '$label, $text',
+          value: expanded ? null : '$label, $value',
           onTap: onToggle,
           child: AppButton(
             key: const ValueKey('payment_request_memo_toggle'),
@@ -1468,10 +1488,12 @@ class _ProseRows extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        expanded ? 'Collapse' : text,
+                        expanded ? 'Collapse' : value,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: valueStyle.copyWith(color: colors.text.accent),
+                        style: valueStyle.copyWith(
+                          color: expanded ? colors.text.accent : valueColor,
+                        ),
                       ),
                     ),
                     const SizedBox(width: AppSpacing.xxs),
@@ -1487,7 +1509,7 @@ class _ProseRows extends StatelessWidget {
         ),
         if (expanded) ...[
           const SizedBox(height: AppSpacing.xxs),
-          Text(text, style: valueStyle.copyWith(color: colors.text.accent)),
+          Text(value, style: valueStyle.copyWith(color: valueColor)),
         ],
       ],
     );
