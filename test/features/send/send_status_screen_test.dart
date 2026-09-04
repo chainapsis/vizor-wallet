@@ -2,6 +2,7 @@
 // path resolution and Sapling params status checks.
 // ignore_for_file: depend_on_referenced_packages
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -228,6 +229,55 @@ void main() {
     );
     expect(_sendStatusTerminal(tester), isTrue);
   });
+
+  testWidgets(
+    'failed outcome releases an unconsumed proposal before going terminal',
+    (tester) async {
+      // The software send's missing-mnemonic branch: the broadcast fails and
+      // Rust still owns the proposal. It is `!Platform.isMacOS`-only in
+      // `runSendBroadcast`, so the outcome is injected rather than provoked.
+      final discardGate = Completer<void>();
+      rustApi.discardGate = discardGate;
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(),
+          broadcastRunner:
+              ({
+                required ref,
+                required args,
+                keystone,
+                required confirmSaplingParamsDownload,
+                shouldAbort,
+              }) async => const SendBroadcastOutcome(
+                phase: SendBroadcastPhase.failed,
+                proposalConsumed: false,
+                error: 'Mnemonic not found for the proposal account.',
+              ),
+        ),
+      );
+      await tester.pump();
+      await _flushBroadcast(tester);
+
+      // The receipt already reads as failed, but the proposal — and with it
+      // the input lock a parked `zcash:` request would propose against — is
+      // still held, so the drain must not be told the send is safe to leave.
+      expect(find.text('Send failed'), findsOneWidget);
+      expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(_sendStatusTerminal(tester), isFalse);
+
+      discardGate.complete();
+      await _flushBroadcast(tester);
+
+      expect(_sendStatusTerminal(tester), isTrue);
+      // Leaving the receipt must not release the proposal a second time.
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('home-route'), findsOneWidget);
+      expect(rustApi.discardCalls, hasLength(1));
+    },
+  );
 
   testWidgets('blocked pop routes home instead of popping', (tester) async {
     rustApi.executeResult = _executeResult(status: 'broadcasted');
@@ -743,6 +793,7 @@ Widget _harness(
   SendReviewArgs args, {
   KeystoneBroadcastArgs? keystone,
   bool isHardware = false,
+  SendStatusBroadcastRunner? broadcastRunner,
 }) {
   final router = GoRouter(
     initialLocation: '/send/status',
@@ -751,7 +802,11 @@ Widget _harness(
       GoRoute(path: '/send', builder: (_, _) => const Text('send-route')),
       GoRoute(
         path: '/send/status',
-        builder: (_, _) => SendStatusScreen(args: args, keystone: keystone),
+        builder: (_, _) => SendStatusScreen(
+          args: args,
+          keystone: keystone,
+          broadcastRunner: broadcastRunner,
+        ),
       ),
     ],
   );
@@ -899,6 +954,10 @@ class _RustApiFake implements RustLibApi {
   Object? executeError;
   StoreAndBroadcastPcztsResult? storeResult;
   int discardFailuresRemaining = 0;
+
+  /// Holds `discardProposal` open so a test can read the terminal flag while
+  /// the release is still in flight.
+  Completer<void>? discardGate;
   int macosExecuteCalls = 0;
   int mnemonicExecuteCalls = 0;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
@@ -913,6 +972,7 @@ class _RustApiFake implements RustLibApi {
     executeError = null;
     storeResult = null;
     discardFailuresRemaining = 0;
+    discardGate = null;
     macosExecuteCalls = 0;
     mnemonicExecuteCalls = 0;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
@@ -931,6 +991,8 @@ class _RustApiFake implements RustLibApi {
     required String sendFlowId,
   }) async {
     discardCalls.add((proposalId, sendFlowId));
+    final gate = discardGate;
+    if (gate != null) await gate.future;
     if (discardFailuresRemaining > 0) {
       discardFailuresRemaining--;
       throw Exception('transient wallet DB unlock failure');
