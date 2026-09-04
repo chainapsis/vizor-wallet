@@ -87,13 +87,12 @@ class _MobileSendStatusScreenState
       afterRelease: broadcastOwnsProposal
           ? _broadcast!.then((outcome) => outcome.proposalConsumed)
           : _proposalRelease,
-      retryRelease: _proposalConsumed
-          ? null
-          : () => discardSendProposal(
-              proposalId: widget.args.proposalId,
-              sendFlowId: widget.args.sendFlowId,
-              logContext: 'MobileSendStatus(retry)',
-            ),
+      // Idempotent in Rust, so no gate on the (optimistic) consumed flag.
+      retryRelease: () => discardSendProposal(
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+        logContext: 'MobileSendStatus(retry)',
+      ),
     );
     super.dispose();
   }
