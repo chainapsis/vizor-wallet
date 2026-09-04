@@ -1194,3 +1194,18 @@ String reverseTxidHex(String txidHex) {
   }
   return bytes.reversed.join();
 }
+
+/// Regtest-guarded Gift Card claim-wallet sweep, the mobile counterpart of
+/// the desktop flow's. Claim wallets from every network share one support
+/// directory, so the sweep is scoped to regtest names.
+Future<void> cleanupMobileE2ePaymentLinkClaimWallets() async {
+  if (kZcashDefaultNetworkName != ZcashNetwork.regtest.name) {
+    throw StateError(
+      'Refusing to delete Gift Card claim wallets without '
+      'ZCASH_DEFAULT_NETWORK=regtest.',
+    );
+  }
+  await deletePaymentLinkClaimWalletDirectories(
+    network: ZcashNetwork.regtest.name,
+  );
+}

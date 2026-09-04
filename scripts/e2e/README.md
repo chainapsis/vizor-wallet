@@ -27,10 +27,29 @@ VIZOR_DEEPLINK_BASE_URL=https://example.vizor.cash \
   scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh
 ```
 
-This flow uses the desktop app's **Redeem a card → Paste card link** path.
-macOS does not register the mobile universal-link handler. A local mock server
-is also not sufficient for mobile association testing because iOS and Android
-retrieve the association files from a publicly reachable HTTPS origin.
+The iOS simulator runs the round trip too, against the mobile Settings ›
+My Gift Cards surface:
+
+```bash
+# Create, open, and claim a card between two accounts, on the simulator.
+scripts/e2e/flutter-ios-regtest-mobile-payment-link-round-trip.sh
+
+# Answer a zcash: payment URI from the mobile payment-request card.
+scripts/e2e/flutter-ios-regtest-mobile-payment-uri-send.sh
+```
+
+Both are part of `scripts/e2e/flutter-ios-regtest-mobile-full.sh` and follow
+the mobile lane rules: `run_mobile_e2e` injects `VIZOR_FORM_FACTOR=mobile`,
+`ZCASH_DEFAULT_NETWORK=regtest`, and `ZCASH_E2E_LIGHTWALLETD_URL`, and the
+Gift Card runner adds `VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true` plus
+`VIZOR_DEEPLINK_BASE_URL`. Set `SIMULATOR_UDID` when more than one simulator
+is booted.
+
+Both flows use the app's **Redeem a card → Paste card link** path.
+Neither macOS nor the simulator registers a mobile universal-link handler,
+and a local mock server is not sufficient for association testing either,
+because iOS and Android retrieve the association files from a publicly
+reachable HTTPS origin.
 
 For a mobile development build, keep the Dart and native values aligned:
 

@@ -44,53 +44,59 @@ cd "$ROOT_DIR"
 # Desktop scenarios without a mobile counterpart yet (feature gaps):
 # custom-endpoint privacy (no mobile endpoint settings UI) and
 # shield-transparent ×2 (no mobile transparent balance / shield UI).
-run_test "1/16 create wallet via passcode onboarding and sync" \
+run_test "1/18 create wallet via passcode onboarding and sync" \
   "scripts/e2e/flutter-ios-regtest-mobile-create-sync.sh"
 
-run_test "2/16 import funded wallet and sync balance" \
+run_test "2/18 import funded wallet and sync balance" \
   "scripts/e2e/flutter-ios-regtest-mobile-import-sync.sh"
 
-run_test "3/16 manage accounts and rotate the passcode" \
+run_test "3/18 manage accounts and rotate the passcode" \
   "scripts/e2e/flutter-ios-regtest-mobile-account-management.sh"
 
-run_test "4/16 import two accounts and send shielded funds" \
+run_test "4/18 import two accounts and send shielded funds" \
   "scripts/e2e/flutter-ios-regtest-mobile-multi-account-send.sh"
 
-run_test "5/16 show mempool receives in activity" \
+run_test "5/18 show mempool receives in activity" \
   "scripts/e2e/flutter-ios-regtest-mobile-mempool-receive.sh"
 
-run_test "6/16 fall back from unavailable endpoint" \
+run_test "6/18 fall back from unavailable endpoint" \
   "scripts/e2e/flutter-ios-regtest-mobile-fallback-endpoint.sh"
 
-run_test "7/16 fall back from slow-height primary and recover" \
+run_test "7/18 fall back from slow-height primary and recover" \
   "scripts/e2e/flutter-ios-regtest-mobile-slow-height-fallback.sh"
 
-run_test "8/16 send Orchard funds before starting Ironwood migration" \
+run_test "8/18 send Orchard funds before starting Ironwood migration" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-pre-migration-send.sh"
 
-run_test "9/16 migrate the minimum viable Orchard balance to Ironwood" \
+run_test "9/18 migrate the minimum viable Orchard balance to Ironwood" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration.sh"
 
-run_test "10/16 migrate twenty Orchard notes through two split stages" \
+run_test "10/18 migrate twenty Orchard notes through two split stages" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-many-notes.sh"
 
-run_test "11/16 isolate an Ironwood migration across two accounts" \
+run_test "11/18 isolate an Ironwood migration across two accounts" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-multi-account.sh"
 
-run_test "12/16 rebuild an Ironwood migration after a chain reorg" \
+run_test "12/18 rebuild an Ironwood migration after a chain reorg" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-reorg.sh"
 
-run_test "13/16 resume an Ironwood migration after process restart" \
+run_test "13/18 resume an Ironwood migration after process restart" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-restart.sh"
 
-run_test "14/16 resume an Ironwood migration after network recovery" \
+run_test "14/18 resume an Ironwood migration after network recovery" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-network-recovery.sh"
 
-run_test "15/16 advance Ironwood migration through native background wakes" \
+run_test "15/18 advance Ironwood migration through native background wakes" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-background-migration.sh"
 
-run_test "16/16 resume a persisted Ironwood proof after process restart" \
+run_test "16/18 resume a persisted Ironwood proof after process restart" \
   "scripts/e2e/flutter-ios-regtest-mobile-ironwood-background-restart.sh"
+
+run_test "17/18 create, open, and claim a Gift Card between two accounts" \
+  "scripts/e2e/flutter-ios-regtest-mobile-payment-link-round-trip.sh"
+
+run_test "18/18 answer a zcash: payment URI and send from its request card" \
+  "scripts/e2e/flutter-ios-regtest-mobile-payment-uri-send.sh"
 
 if [[ "$INCLUDE_ACCOUNT_REIMPORT_MIGRATION" == "1" ]]; then
   run_test "optional: recover migrated balances after account re-import" \

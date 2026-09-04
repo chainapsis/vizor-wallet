@@ -924,8 +924,8 @@ edge in `MobileBottomSafeArea`
   - Each `flutter test integration_test` invocation reinstalls the app: the wallet DB dies with the container while the iOS Keychain persists, so in-test `cleanupE2eWalletState()` (deleteAll + db files, regtest-guarded) runs at test start AND teardown. Cross-invocation wallet reuse is impossible by design.
   - The simulator shares the host loopback: `127.0.0.1` URLs, the in-test lightwalletd proxy, and the python E2E driver all work unchanged. Android emulators would need `10.0.2.2` and are out of scope.
   - Desktop scenarios without mobile counterparts (feature gaps, add when the features land): custom-endpoint privacy (no mobile endpoint settings UI), shield-transparent ×2 (no mobile transparent balance / shield UI), mempool during-sync / expiry variants.
-  - Payment-request round trip and payment-URI send / locked-send: desktop runners only. The mobile receive pane has its own request sheet, so this is a harness gap rather than a feature gap.
-  - Gift Card round trip, restart recovery, and reorg retry: desktop runners only, driving the **Redeem a card → Paste card link** path. Mobile claiming over a universal link also needs a publicly reachable HTTPS origin — see `scripts/e2e/README.md`.
+  - Payment-request round trip and payment-URI locked-send: desktop runners only. The mobile receive pane has its own request sheet, so this is a harness gap rather than a feature gap.
+  - Gift Card restart recovery and reorg retry: desktop runners only. The Gift Card round trip and the payment-URI send have mobile counterparts, both driving the **Redeem a card → Paste card link** path. Mobile claiming over a universal link still needs a publicly reachable HTTPS origin — see `scripts/e2e/README.md`.
 - Zcash regtest Rust integration tests:
   - One-shot runner from repo root: `./run-regtest-rust-tests.sh`
   - The runner always starts by tearing down any existing regtest containers and resetting `.regtest/`, so each run starts from the same clean chain/wallet state.
