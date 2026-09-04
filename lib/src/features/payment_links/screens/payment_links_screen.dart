@@ -985,7 +985,20 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       final link = funding.link;
       if (!funding.fundingMetadataSaved) {
         if (!mounted) return;
-        setState(() => _pendingFundingMetadata = funding);
+        // An account switch mid-send resets the wizard, which would strand the
+        // retry: put Review back with the quote this funding actually used,
+        // and drop the requote the reset started so it cannot clear it again.
+        _fundingQuoteDebounce?.cancel();
+        _fundingQuoteGeneration += 1;
+        setState(() {
+          _pendingFundingMetadata = funding;
+          _fundingQuote = quote;
+          _fundingQuoteInProgress = false;
+          _amountSupportingText = null;
+          _amountSupportingTextIsError = false;
+          _reviewShowsBack = false;
+          _page = PaymentLinksLocalPage.review;
+        });
         _showError(
           'Funding was sent, but the Gift Card could not be saved. '
           'Try again before closing Vizor.',
@@ -1082,6 +1095,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             result.status,
           ),
         );
+        // Review is where the retry lives; it renders from the quote, so it is
+        // only safe to return to while one is still held.
+        if (_fundingQuote != null) {
+          _reviewShowsBack = false;
+          _page = PaymentLinksLocalPage.review;
+        }
       });
       _showError(
         'Funding was sent, but the Gift Card could not be saved. '

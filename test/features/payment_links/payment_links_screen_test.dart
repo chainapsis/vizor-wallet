@@ -1377,6 +1377,64 @@ void main() {
     );
   });
 
+  testWidgets('an account switch mid-send keeps the metadata retry on screen', (
+    tester,
+  ) async {
+    final accountNotifier = SwitchablePaymentLinkAccountNotifier();
+    final fundingGate = Completer<void>();
+    final operations = FakePaymentLinkOperations(
+      createFundedLinkGate: fundingGate,
+      fundingMetadataSavedOnCreate: false,
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      accountNotifier: accountNotifier,
+      bootstrap: twoAccountBootstrap,
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create card'));
+    await tester.pump();
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      findsOneWidget,
+    );
+
+    fundingGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Try saving again'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('Try saving again'));
+    await tester.pumpAndSettle();
+
+    expect(operations.fundingMetadataRetries, 1);
+    expect(operations.createdAmounts, [BigInt.from(10000000)]);
+  });
+
   testWidgets('an account switch leaves the metadata retry reachable', (
     tester,
   ) async {
