@@ -175,6 +175,7 @@ Widget _harness(GoRouter router) {
 
 PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
   spendableIsAuthoritativeNow: () => true,
+  readNetworkName: () => kZcashDefaultNetworkName,
   validateAddress: ({required String address, required String network}) async =>
       const rust_sync.AddressValidationResult(
         isValid: true,
@@ -210,7 +211,7 @@ PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
         required BigInt proposalId,
         required String sendFlowId,
         required String logContext,
-      }) async {},
+      }) async => true,
 );
 
 Future<void> _waitForFieldText(
