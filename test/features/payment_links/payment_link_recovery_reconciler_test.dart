@@ -256,6 +256,26 @@ void main() {
     expect(record.state, PaymentLinkRecoveryState.shared);
   });
 
+  test(
+    'drops a draft that never started its broadcast once it is stale',
+    () async {
+      final fixture = await _inertFixture(
+        updatedAt: DateTime.now().toUtc().subtract(const Duration(hours: 1)),
+      );
+      final reconciler = _reconciler(fixture.store);
+
+      expect(await reconciler.load(), isEmpty);
+    },
+  );
+
+  test('keeps a draft that may still be proposing in this process', () async {
+    final fixture = await _inertFixture(updatedAt: DateTime.now().toUtc());
+    final reconciler = _reconciler(fixture.store);
+
+    final record = (await reconciler.load()).single;
+    expect(record.state, PaymentLinkRecoveryState.draft);
+  });
+
   test('funds an ambiguous submission its Gift Card wallet can see', () async {
     final fixture = await _ambiguousFixture();
     final reconciler = PaymentLinkRecoveryReconciler(
@@ -264,7 +284,12 @@ void main() {
       loadScannedHeight: () async => BigInt.from(200),
       loadTransactionsByAccount: (_) async => const {'source-account': []},
       loadLinkFundingHistory: (_) async => [
-        _transaction(txid: _preparedTxid, txKind: 'received'),
+        // The promised funding: amount plus the claim fee reserve.
+        _transaction(
+          txid: _preparedTxid,
+          txKind: 'received',
+          accountBalanceDelta: 110000,
+        ),
       ],
     );
 
@@ -273,6 +298,28 @@ void main() {
     expect(record.state, PaymentLinkRecoveryState.funded);
     expect(record.fundingTxids, _preparedTxid);
     expect(await reconciler.countUnsharedFundedForAccount('source-account'), 1);
+  });
+
+  test('an unrelated receive does not fund an ambiguous submission', () async {
+    final fixture = await _ambiguousFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(120),
+      loadScannedHeight: () async => BigInt.from(120),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => [
+        _transaction(
+          txid: _secondTxid,
+          txKind: 'received',
+          accountBalanceDelta: 5000,
+        ),
+      ],
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.draft);
+    expect(record.fundingTxids, isNull);
   });
 
   test(
@@ -436,6 +483,39 @@ _ambiguousFixture() async {
   return (store: store, storage: storage);
 }
 
+/// A draft saved before the app died mid-propose: no transaction id and no
+/// submission marker.
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_inertFixture({required DateTime updatedAt}) async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: _preparedAddress,
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(
+    link: link,
+    sourceAccountUuid: 'source-account',
+    updatedAt: updatedAt,
+  );
+  return (store: store, storage: storage);
+}
+
+PaymentLinkRecoveryReconciler _reconciler(PaymentLinkRecoveryStore store) =>
+    PaymentLinkRecoveryReconciler(
+      store,
+      loadCurrentHeight: () async => BigInt.from(200),
+      loadScannedHeight: () async => BigInt.from(200),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
 Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
 _fundedFixture({String fundingTxids = _preparedTxid}) async {
   final storage = _MemoryStorage();
@@ -459,12 +539,13 @@ rust_sync.TransactionInfo _transaction({
   required String txid,
   bool expiredUnmined = false,
   String txKind = 'sent',
+  int accountBalanceDelta = -110000,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
     minedHeight: expiredUnmined ? BigInt.zero : BigInt.from(119),
     expiredUnmined: expiredUnmined,
-    accountBalanceDelta: -110000,
+    accountBalanceDelta: accountBalanceDelta,
     fee: BigInt.from(10000),
     blockTime: BigInt.zero,
     isTransparent: false,

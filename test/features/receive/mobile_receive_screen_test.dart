@@ -640,6 +640,40 @@ void main() {
     expect(shares.single.pngBytes, greaterThan(0));
   });
 
+  testWidgets('system Back on the request result returns to compose', (
+    tester,
+  ) async {
+    await _pumpReceive(
+      tester,
+      _FakeReceiveAddressService(),
+      extraOverrides: [zecLiveUsdUnitPriceProvider.overrideWithValue(70)],
+    );
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_request')));
+    await _settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_input')),
+      '0.5',
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('request_create_button')));
+    await _settle(tester);
+    expect(find.byType(RequestQrSurface), findsOneWidget);
+
+    // The platform Back edits the request like the chevron; it must not pop
+    // the whole sheet and lose the typed amount.
+    await tester.binding.handlePopRoute();
+    await _settle(tester);
+
+    expect(find.byType(RequestQrSurface), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('request_amount_input')))
+          .controller
+          ?.text,
+      '0.5',
+    );
+  });
+
   testWidgets('closing the request message collapses it and drops the text', (
     tester,
   ) async {

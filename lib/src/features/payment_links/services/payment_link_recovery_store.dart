@@ -77,6 +77,15 @@ class PaymentLinkRecoveryRecord {
       (fundingTxids?.trim().isEmpty ?? true) &&
       submittedAtHeight != null;
 
+  /// A draft that never reached the broadcast boundary: no transaction, no
+  /// submission marker. Provably unfunded, so recovery may drop it once it is
+  /// old enough not to be a creation still in progress.
+  bool get isInertDraft =>
+      state == PaymentLinkRecoveryState.draft &&
+      (fundingTxids?.trim().isEmpty ?? true) &&
+      preparedExpiryHeight == null &&
+      submittedAtHeight == null;
+
   PaymentLinkRecoveryRecord copyWith({
     required PaymentLinkRecoveryState state,
     required DateTime updatedAt,
