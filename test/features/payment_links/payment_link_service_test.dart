@@ -1,14 +1,21 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('classifies failures before funding submission starts', () async {
     final failure = StateError('insufficient balance');
 
@@ -744,6 +751,53 @@ void main() {
       );
       expect(storage.writeCount, 0);
     },
+  );
+
+  test('a quiesced reset stops a pending claim from being retained', () async {
+    final storage = _PaymentLinkServiceReceivedStorage();
+    final container = ProviderContainer(
+      overrides: [
+        appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+        paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+          () async => const [],
+        ),
+        paymentLinkReceivedStoreProvider.overrideWithValue(
+          PaymentLinkReceivedStore(storage),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(paymentLinkClaimCoordinatorProvider);
+    await container
+        .read(paymentLinkClaimLifecycleRegistryProvider)
+        .quiesceAndDrain();
+
+    await container
+        .read(paymentLinkServiceProvider)
+        .retainPendingClaim(_claimSession());
+
+    expect(storage.value, isNull);
+  });
+}
+
+class _UnlockedSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+}
+
+PaymentLinkClaimSession _claimSession() {
+  final link = _link();
+  return PaymentLinkClaimSession(
+    link: link,
+    destinationAddress: 'u1receiver',
+    destinationAccountUuid: 'account-1',
+    directory: Directory('/tmp/vizor-payment-link-service-test'),
+    dbPath: '/tmp/vizor-payment-link-service-test/wallet.db',
+    accountUuid: 'payment-link-account',
+    totalZatoshi: link.amountZatoshi,
+    claimableZatoshi: link.amountZatoshi,
+    feeZatoshi: BigInt.from(10000),
   );
 }
 

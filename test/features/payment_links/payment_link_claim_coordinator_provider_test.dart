@@ -143,6 +143,64 @@ void main() {
     lifecycle.resume();
     expect((await coordinator.submit(_session('claim-2'))).txids, 'tx-2');
   });
+
+  test('a retention started before a reset drains before it returns', () async {
+    final retention = Completer<void>();
+    var written = false;
+    final container = ProviderContainer(
+      overrides: [
+        appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+        paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+          () async => const [],
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+    final lifecycle = container.read(paymentLinkClaimLifecycleRegistryProvider);
+
+    final tracked = coordinator.trackRetention('claim-1', () async {
+      await retention.future;
+      written = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    var drained = false;
+    final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(drained, isFalse);
+
+    retention.complete();
+    await tracked;
+    await drain;
+
+    expect(written, isTrue);
+    expect(drained, isTrue);
+  });
+
+  test('a retention started after a reset never writes', () async {
+    var written = false;
+    final container = ProviderContainer(
+      overrides: [
+        appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+        paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+          () async => const [],
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+    final lifecycle = container.read(paymentLinkClaimLifecycleRegistryProvider);
+
+    await lifecycle.quiesceAndDrain();
+    await coordinator.trackRetention('claim-1', () async => written = true);
+
+    expect(written, isFalse);
+
+    lifecycle.resume();
+    await coordinator.trackRetention('claim-1', () async => written = true);
+    expect(written, isTrue);
+  });
 }
 
 PaymentLinkClaimSession _session(String address) {

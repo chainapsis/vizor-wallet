@@ -17,6 +17,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../send/services/sapling_params.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/payment_link_claim_coordinator_provider.dart';
 import 'payment_link_received_store.dart';
 import 'payment_link_recovery_reconciler.dart';
 import 'payment_link_recovery_store.dart';
@@ -1118,11 +1119,16 @@ class PaymentLinkService implements PaymentLinkOperations {
   }
 
   @override
-  Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {
-    // Stop the scan but keep its database: the persisted record reopens this
-    // Card from the already-scanned state instead of rescanning from scratch.
-    await _claimWallet.cancelClaimSync(session.link);
-    await _receivedStore.saveReady(session.link);
+  Future<void> retainPendingClaim(PaymentLinkClaimSession session) {
+    // Stop the scan but keep its database so the Card reopens already scanned;
+    // tracked so a wallet reset drains this write instead of racing it.
+    return _ref.read(paymentLinkClaimCoordinatorProvider).trackRetention(
+      session.link.address,
+      () async {
+        await _claimWallet.cancelClaimSync(session.link);
+        await _receivedStore.saveReady(session.link);
+      },
+    );
   }
 
   Future<void> _refreshMainWalletAfterSend() async {
