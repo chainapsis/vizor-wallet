@@ -500,7 +500,7 @@ PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
         required BigInt proposalId,
         required String sendFlowId,
         required String logContext,
-      }) async {},
+      }) async => true,
 );
 
 /// Delivers [uris] the way the native runner does: an `onUris` method call on

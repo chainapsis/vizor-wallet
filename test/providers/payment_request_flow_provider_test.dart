@@ -49,6 +49,9 @@ class _FakeSendApi {
   /// Holds every discard open until the test releases it, so "the inputs
   /// are still locked" is an observable state rather than a race.
   Completer<void>? discardGate;
+
+  /// How many more discards Rust fails to confirm before one succeeds.
+  int discardFailuresRemaining = 0;
   var nextProposalId = 1;
 
   /// Every entry into the propose path, including the ones that throw. What
@@ -129,6 +132,11 @@ class _FakeSendApi {
           if (pending != null) await pending.future;
           discarded.add(proposalId);
           events.add('discard $proposalId');
+          if (discardFailuresRemaining > 0) {
+            discardFailuresRemaining--;
+            return false;
+          }
+          return true;
         },
   );
 }
@@ -449,6 +457,26 @@ void main() {
     api.discardGate!.complete();
 
     expect(await pendingReview, isA<PaymentRequestReviewOvertaken>());
+  });
+
+  test('a hand-back whose release Rust did not confirm retries once, then '
+      'opens', () async {
+    debugUnconfirmedReleaseGrace = Duration.zero;
+    addTearDown(
+      () => debugUnconfirmedReleaseGrace = const Duration(seconds: 3),
+    );
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardFailuresRemaining = 1;
+    final handoff = await notifier.reviewHandingBack();
+
+    expect(handoff, isA<PaymentRequestReviewReady>());
+    expect(api.discarded, [BigInt.one, BigInt.one]);
   });
 
   test('a lock during a hand-back re-parks the request instead of dropping '

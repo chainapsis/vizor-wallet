@@ -79,8 +79,9 @@ typedef PaymentRequestSpendableIsAuthoritativeNow = bool Function();
 typedef PaymentRequestSpendableBalanceNow = BigInt Function();
 
 /// Releases a proposal. Matches [discardSendProposal].
+/// Returns whether Rust confirmed the release (`discardSendProposal`).
 typedef PaymentRequestDiscardProposal =
-    Future<void> Function({
+    Future<bool> Function({
       required BigInt proposalId,
       required String sendFlowId,
       required String logContext,
@@ -102,29 +103,37 @@ class PaymentRequestProposalHandle {
   final SendReviewArgs reviewArgs;
   final PaymentRequestDiscardProposal _discardProposal;
 
-  var _released = false;
+  var _handedOn = false;
+  var _discardConfirmed = false;
+  Future<bool>? _discardInFlight;
 
-  /// True once the proposal has been handed on to the review screen. A
-  /// released handle never discards: the review screen owns the proposal from
-  /// that point and runs its own discard when it is dismissed.
-  bool get isReleased => _released;
+  /// True once the proposal has been handed on to the review screen or a
+  /// discard has been asked for. A handed-on handle never discards: the
+  /// review screen owns the proposal from that point.
+  bool get isReleased =>
+      _handedOn || _discardConfirmed || _discardInFlight != null;
 
   /// Transfers ownership to the caller without discarding.
   SendReviewArgs release() {
-    _released = true;
+    _handedOn = true;
     return reviewArgs;
   }
 
-  /// Idempotent. Safe to call from any number of exit paths, and a no-op after
-  /// [release].
-  Future<void> discard({String logContext = 'PaymentRequest'}) async {
-    if (_released) return;
-    _released = true;
-    await _discardProposal(
-      proposalId: reviewArgs.proposalId,
-      sendFlowId: reviewArgs.sendFlowId,
-      logContext: logContext,
-    );
+  /// Idempotent: concurrent calls share one release, a confirmed release and
+  /// a handed-on handle are no-ops. A release Rust did not confirm can be
+  /// asked for again.
+  Future<bool> discard({String logContext = 'PaymentRequest'}) {
+    if (_handedOn || _discardConfirmed) return Future<bool>.value(true);
+    return _discardInFlight ??= () async {
+      final released = await _discardProposal(
+        proposalId: reviewArgs.proposalId,
+        sendFlowId: reviewArgs.sendFlowId,
+        logContext: logContext,
+      );
+      _discardConfirmed = released;
+      _discardInFlight = null;
+      return released;
+    }();
   }
 }
 

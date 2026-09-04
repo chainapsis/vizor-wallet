@@ -252,10 +252,6 @@ class SendStatusTerminalNotifier extends Notifier<bool> {
       finish();
     }());
   }
-
-  /// Pause before the one retry a failed release gets; tests shorten it.
-  @visibleForTesting
-  static Duration debugUnconfirmedReleaseGrace = const Duration(seconds: 3);
 }
 
 final sendStatusTerminalProvider =
@@ -408,6 +404,10 @@ Future<SendReviewArgs> proposeSendTransferWith({
     flowKind: flowKind,
   );
 }
+
+/// Pause before the one retry an unconfirmed proposal release gets; tests
+/// shorten it.
+Duration debugUnconfirmedReleaseGrace = const Duration(seconds: 3);
 
 /// Idempotent proposal release for every non-consuming exit path.
 ///

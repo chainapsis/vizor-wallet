@@ -79,11 +79,9 @@ void main() {
   });
 
   test('a release Rust never confirmed retries once, then publishes', () async {
-    SendStatusTerminalNotifier.debugUnconfirmedReleaseGrace = Duration.zero;
+    debugUnconfirmedReleaseGrace = Duration.zero;
     addTearDown(() {
-      SendStatusTerminalNotifier.debugUnconfirmedReleaseGrace = const Duration(
-        seconds: 3,
-      );
+      debugUnconfirmedReleaseGrace = const Duration(seconds: 3);
     });
     var retries = 0;
     notifier.reset();

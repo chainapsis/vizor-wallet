@@ -103,6 +103,7 @@ PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
         final pending = _discardGate;
         if (pending != null) await pending.future;
         _discarded.add(proposalId);
+        return true;
       },
 );
 

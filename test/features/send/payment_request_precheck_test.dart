@@ -104,12 +104,13 @@ class FakeSendApi {
     );
   }
 
-  Future<void> discardProposal({
+  Future<bool> discardProposal({
     required BigInt proposalId,
     required String sendFlowId,
     required String logContext,
   }) async {
     discarded.add(proposalId);
+    return true;
   }
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
