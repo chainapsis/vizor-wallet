@@ -149,6 +149,11 @@ abstract interface class PaymentLinkOperations {
   );
 
   Future<void> discardClaimSession(PaymentLinkClaimSession session);
+
+  /// Keeps a checked Card the user left before claiming: it is persisted as
+  /// still-to-claim, and its scanned claim wallet is kept so the Received list
+  /// can reopen it without the bearer link.
+  Future<void> retainPendingClaim(PaymentLinkClaimSession session);
 }
 
 final paymentLinkOperationsProvider = Provider<PaymentLinkOperations>((ref) {
@@ -1110,6 +1115,14 @@ class PaymentLinkService implements PaymentLinkOperations {
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
     await _claimWallet.cancelClaimSync(session.link);
     await _claimWallet.deleteDb(session.directory);
+  }
+
+  @override
+  Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {
+    // Stop the scan but keep its database: the persisted record reopens this
+    // Card from the already-scanned state instead of rescanning from scratch.
+    await _claimWallet.cancelClaimSync(session.link);
+    await _receivedStore.saveReady(session.link);
   }
 
   Future<void> _refreshMainWalletAfterSend() async {

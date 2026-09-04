@@ -1319,7 +1319,35 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
+  /// Leaving the confirmation wait keeps the Card. Nothing has been persisted
+  /// yet at this point, so releasing only the in-memory session would drop the
+  /// Card entirely and send the recipient back to the external bearer link.
   void _leavePendingClaim() {
+    final session = _receivedClaimSession;
+    final link = _receivedLink;
+    setState(() {
+      _receivedClaimSession = null;
+      _receivedLink = null;
+      _receivedShowsBack = false;
+      if (link != null) {
+        _rememberReceivedLink(link);
+        _activeCardsTab = PaymentLinkCardsTab.received;
+      }
+    });
+    if (session != null) {
+      _releaseClaimSession(session, keepCard: link != null);
+    }
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      context.go('/home');
+    } else {
+      _showPage(PaymentLinksLocalPage.home);
+    }
+  }
+
+  /// Backing out of a claimable preview releases its prepared claim. A session
+  /// left live would make a later account switch pull the user back into
+  /// Redeem, and would hold the temporary claim wallet until route dispose.
+  void _abandonReceivedPreview() {
     final session = _receivedClaimSession;
     setState(() {
       _receivedClaimSession = null;
@@ -1327,15 +1355,28 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _receivedShowsBack = false;
     });
     if (session != null) {
-      unawaited(
-        ref.read(paymentLinkOperationsProvider).discardClaimSession(session),
+      _releaseClaimSession(
+        session,
+        keepCard: _receivedCards.any(
+          (record) => record.address == session.link.address,
+        ),
       );
     }
-    if (kAppFormFactor == AppFormFactor.mobile) {
-      context.go('/home');
-    } else {
-      _showPage(PaymentLinksLocalPage.home);
-    }
+    _showPage(PaymentLinksLocalPage.home);
+  }
+
+  /// A Card that stays in the Received list keeps its scanned claim wallet; an
+  /// abandoned preview deletes it.
+  void _releaseClaimSession(
+    PaymentLinkClaimSession session, {
+    required bool keepCard,
+  }) {
+    final operations = ref.read(paymentLinkOperationsProvider);
+    unawaited(
+      keepCard
+          ? operations.retainPendingClaim(session)
+          : operations.discardClaimSession(session),
+    );
   }
 
   void _cancelLongSyncWarning() {
@@ -2117,7 +2158,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return PaymentLinkReceivedDesktopView(
       card: card,
       decoration: const PaymentLinkConfetti(),
-      onBack: () => _showPage(PaymentLinksLocalPage.home),
+      onBack: _abandonReceivedPreview,
       onClaim: _operationInProgress ? null : _claimReceivedLink,
       onRevealMessage: hasMessage
           ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)

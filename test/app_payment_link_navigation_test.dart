@@ -415,6 +415,9 @@ class _PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {}
 
   @override
+  Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {}
+
+  @override
   Future<PaymentLinkFundingQuote> quoteFunding({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,

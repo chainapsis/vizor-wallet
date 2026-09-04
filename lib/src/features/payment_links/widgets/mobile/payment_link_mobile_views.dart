@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -39,6 +41,8 @@ const _selectorTop = _cardTop + _cardHeight + AppSpacing.md;
 const _selectorHeight = 80.0;
 const _bottomInset = 12.0;
 const _buttonHeight = 50.0;
+// Two lines of supporting text plus its gap above the CTA.
+const _supportingTextAllowance = 44.0;
 
 enum PaymentLinkRedeemMobileState { paste, loading, invalid, unavailable }
 
@@ -1423,11 +1427,26 @@ class _MobilePaymentLinkWizardFrame extends StatelessWidget {
   final String? supportingText;
   final bool supportingTextIsError;
 
+  /// The stage is laid out at fixed Figma offsets while the CTA hangs off the
+  /// bottom, so below this height the two would collide. The software keyboard
+  /// shrinks the body well past it, so the frame scrolls instead.
+  double get _minStageHeight {
+    final contentBottom = selector == null
+        ? _cardTop + _cardHeight
+        : _selectorTop + _selectorHeight;
+    return contentBottom +
+        AppSpacing.md +
+        (supportingText == null ? 0.0 : _supportingTextAllowance) +
+        _buttonHeight +
+        _bottomInset;
+  }
+
   @override
   Widget build(BuildContext context) {
     return _MobilePaymentLinkFrame(
       title: title,
       onBack: onBack,
+      minStageHeight: _minStageHeight,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -1495,20 +1514,26 @@ class _MobilePaymentLinkFrame extends StatelessWidget {
     required this.title,
     required this.onBack,
     required this.body,
+    this.minStageHeight,
   });
 
   final String title;
   final VoidCallback onBack;
   final Widget body;
 
+  /// Height below which the fixed-offset stage stops fitting. Frames that pass
+  /// it scroll instead of letting their controls overlap.
+  final double? minStageHeight;
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final height = constraints.hasBoundedHeight
+        final available = constraints.hasBoundedHeight
             ? constraints.maxHeight
             : _referenceContentHeight;
-        return SizedBox(
+        final height = math.max(available, minStageHeight ?? 0.0);
+        final stage = SizedBox(
           key: const ValueKey('payment_link_mobile_view'),
           width: double.infinity,
           height: height,
@@ -1530,6 +1555,8 @@ class _MobilePaymentLinkFrame extends StatelessWidget {
             ],
           ),
         );
+        if (height <= available) return stage;
+        return SingleChildScrollView(child: stage);
       },
     );
   }

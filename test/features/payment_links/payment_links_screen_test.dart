@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
@@ -706,6 +707,84 @@ void main() {
 
     expect(find.text('Claim the Gift Card'), findsOneWidget);
     expect(find.text('Waiting for 6 confirmations.'), findsNothing);
+  });
+
+  testWidgets('keeps the Card when the confirmation wait is left', (
+    tester,
+  ) async {
+    final operations = _FakePaymentLinkOperations(
+      claimable: false,
+      waitingForFundingConfirmations: true,
+      fundingConfirmationCount: 2,
+    );
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Waiting for 6 confirmations.'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(AppBackLink, 'Home'));
+    await tester.pumpAndSettle();
+
+    // The Card is persisted as still-to-claim and keeps its claim database,
+    // so it stays in the Received list instead of needing the bearer link.
+    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.discardedClaimAddresses, isEmpty);
+    expect(operations.receivedRecords, hasLength(1));
+    expect(operations.receivedRecords.single.address, _incomingLink.address);
+    expect(
+      operations.receivedRecords.single.status,
+      PaymentLinkReceivedStatus.readyToClaim,
+    );
+    expect(find.text('Waiting for 6 confirmations.'), findsNothing);
+    expect(find.text('No Gift Cards yet'), findsNothing);
+    expect(find.text('Claim'), findsOneWidget);
+  });
+
+  testWidgets('leaving a preview stops a later account switch from reopening '
+      'redeem', (tester) async {
+    final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+    final operations = _FakePaymentLinkOperations();
+    final clipboard = _FakePaymentLinkClipboard(
+      text: _incomingLink.toUri().toString(),
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+      accountNotifier: accountNotifier,
+      bootstrap: _twoAccountBootstrap,
+    );
+
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('You\u2019ve received\na gift card!'), findsOneWidget);
+
+    await tester.tap(find.text('Cards'));
+    await tester.pumpAndSettle();
+
+    expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Paste card link'), findsNothing);
+    expect(find.textContaining('Active account changed.'), findsNothing);
+    expect(find.text('No Gift Cards yet'), findsOneWidget);
   });
 
   testWidgets(
@@ -2347,6 +2426,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<VizorPaymentLink> sharedLinks = [];
   final List<VizorPaymentLink> claimedLinks = [];
   final List<String> discardedClaimAddresses = [];
+  final List<String> retainedClaimAddresses = [];
   final List<bool> allowLongSyncCalls = [];
   final List<VizorPaymentLink> preparedLinks = [];
   int createdLoadCalls = 0;
@@ -2598,6 +2678,22 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
     discardedClaimAddresses.add(session.link.address);
+  }
+
+  @override
+  Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {
+    retainedClaimAddresses.add(session.link.address);
+    if (!receivedRecords.any(
+      (record) => record.address == session.link.address,
+    )) {
+      receivedRecords.insert(
+        0,
+        PaymentLinkReceivedRecord.fromLink(
+          session.link,
+          updatedAt: DateTime.utc(2026, 8, 6),
+        ),
+      );
+    }
   }
 
   Future<PaymentLinkClaimResult> _claimLink(VizorPaymentLink link) async {
