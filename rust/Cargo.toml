@@ -118,7 +118,7 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "d126ca17b7b8005ebcd3bdf3d832bcbae1d45e8b"
+rev = "d856fc7d09610fc70821af47eb8fdaa0625dfb9e"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -166,13 +166,13 @@ zcash_note_encryption = "0.4"
 
 [dev-dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "d126ca17b7b8005ebcd3bdf3d832bcbae1d45e8b"
+rev = "d856fc7d09610fc70821af47eb8fdaa0625dfb9e"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
 version = "=0.6.0"
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "d126ca17b7b8005ebcd3bdf3d832bcbae1d45e8b"
+rev = "d856fc7d09610fc70821af47eb8fdaa0625dfb9e"
 default-features = false
 features = ["zakura"]
 
