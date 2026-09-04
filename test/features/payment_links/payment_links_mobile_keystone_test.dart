@@ -225,6 +225,9 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {}
 
   @override
+  Future<void> keepReceivedLink(VizorPaymentLink link) async {}
+
+  @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
     required String sourceAccountUuid,
   }) async {
