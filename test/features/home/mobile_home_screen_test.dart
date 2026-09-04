@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -201,6 +202,7 @@ Widget _app(
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
+  GiftCardActivityIndex? giftCardActivityIndex,
   AppThemeData theme = AppThemeData.dark,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
@@ -318,6 +320,10 @@ Widget _app(
       ),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
+      if (giftCardActivityIndex != null)
+        giftCardActivityIndexProvider.overrideWith(
+          (ref, accountUuid) async => giftCardActivityIndex,
+        ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -601,8 +607,7 @@ void main() {
       find.descendant(
         of: entry,
         matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is AppIcon && widget.name == AppIcons.vote,
+          (widget) => widget is AppIcon && widget.name == AppIcons.vote,
         ),
       ),
       findsOneWidget,
@@ -2364,6 +2369,61 @@ void main() {
       find.byKey(const ValueKey('mobile_home_activity_row_10')),
       findsNothing,
     );
+  });
+
+  testWidgets('recent activity labels Gift Card transactions', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)).copyWith(
+          recentTransactions: [
+            _receivedZecTx(
+              txidHex: 'gift-redeemed',
+              zatoshi: BigInt.from(200000000),
+            ),
+            _sentZecTx(txidHex: 'gift-created'),
+          ],
+        ),
+        giftCardActivityIndex: GiftCardActivityIndex(
+          createdTxids: const {'gift-created'},
+          redeemedTxids: const {'gift-redeemed'},
+          createdMetadataByTxid: {
+            'gift-created': GiftCardActivityMetadata(
+              kind: GiftCardActivityKind.created,
+              amountZatoshi: BigInt.from(50000000),
+              artworkId: 'ruby',
+              message: 'Happy birthday!',
+            ),
+          },
+          redeemedMetadataByTxid: {
+            'gift-redeemed': GiftCardActivityMetadata(
+              kind: GiftCardActivityKind.redeemed,
+              amountZatoshi: BigInt.from(30000000),
+              artworkId: 'crystal',
+              message: null,
+            ),
+          },
+        ),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+      if (find.text('Creating a Gift Card...').evaluate().isNotEmpty) break;
+    }
+
+    expect(find.text('Creating a Gift Card...'), findsOneWidget);
+    expect(find.text('Redeemed a Gift Card'), findsOneWidget);
+    expect(find.text('Sent'), findsNothing);
+    expect(find.text('Received'), findsNothing);
+    // The card amount, not the funding total the transaction carries.
+    expect(find.text('-0.5 ZEC'), findsOneWidget);
+    expect(find.text('+0.3 ZEC'), findsOneWidget);
+    expect(find.text('-0.1954 ZEC'), findsNothing);
+    expect(find.text('+2 ZEC'), findsNothing);
   });
 
   testWidgets('recent activity absorbs a Pay deposit transaction duplicate', (

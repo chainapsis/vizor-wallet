@@ -58,6 +58,8 @@ class MobileKeystoneShieldScreen extends ConsumerStatefulWidget {
       _MobileKeystoneShieldScreenState();
 }
 
+// Shows the shield PCZT QR and then scans the signed result, so the whole
+// screen is a live Keystone session.
 class _MobileKeystoneShieldScreenState
     extends ConsumerState<MobileKeystoneShieldScreen>
     with WidgetsBindingObserver, PaymentUriBusySurfaceHoldMixin {

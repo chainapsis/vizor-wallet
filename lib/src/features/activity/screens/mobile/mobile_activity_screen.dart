@@ -18,6 +18,7 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../activity_feed_sections.dart';
 import '../../activity_row_mapper.dart';
+import '../../gift_card_activity_index.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../swap_activity_row_items_provider.dart';
@@ -117,8 +118,9 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
 
   Future<void> _openTransactionStatus(
     BuildContext context,
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
 
@@ -151,6 +153,28 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
+        giftCard: giftCard,
+      ),
+    );
+  }
+
+  ActivityEntry _transactionEntry(
+    BuildContext context,
+    rust_sync.TransactionInfo transaction,
+    GiftCardActivityMetadata? giftCard, {
+    required bool privacyModeEnabled,
+  }) {
+    return ActivityEntry(
+      timestamp: transactionActivityTimestamp(transaction),
+      row: buildTransactionActivityRow(
+        context: context,
+        transaction: transaction,
+        giftCardKind: giftCard?.kind,
+        giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        privacyModeEnabled: privacyModeEnabled,
+        onTap: () => unawaited(
+          _openTransactionStatus(context, transaction, giftCard: giftCard),
+        ),
       ),
     );
   }
@@ -205,6 +229,10 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     });
 
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final giftCardActivityIndex = accountUuid == null
+        ? GiftCardActivityIndex.empty
+        : ref.watch(giftCardActivityIndexProvider(accountUuid)).value ??
+              GiftCardActivityIndex.empty;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final loadedTransactions = _transactionsAccountUuid == accountUuid
         ? _transactions
@@ -227,14 +255,11 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       if (loadedTransactions != null)
         for (final tx in transactions)
           if (!absorption.absorbs(tx))
-            ActivityEntry(
-              timestamp: transactionActivityTimestamp(tx),
-              row: buildTransactionActivityRow(
-                context: context,
-                transaction: tx,
-                privacyModeEnabled: privacyModeEnabled,
-                onTap: () => unawaited(_openTransactionStatus(context, tx)),
-              ),
+            _transactionEntry(
+              context,
+              tx,
+              giftCardActivityIndex.metadataFor(tx),
+              privacyModeEnabled: privacyModeEnabled,
             ),
       for (final item in swapItems)
         ActivityEntry(

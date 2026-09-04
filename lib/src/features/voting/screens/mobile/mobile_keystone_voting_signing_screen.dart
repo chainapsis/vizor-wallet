@@ -40,7 +40,8 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
       '${presentation.urParts.first.hashCode}',
     );
 
-    // A live signing QR; a payment-request card must wait, not cover it.
+    // Above the keyed flow on purpose: the key changes per bundle, so a hold
+    // taken inside the flow would fall back to zero between bundles.
     return PaymentUriBusySurfaceHold(
       child: MobileKeystonePcztSigningFlow(
         key: flowKey,

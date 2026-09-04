@@ -46,7 +46,6 @@ Widget buildMobilePaymentLinkAmountEmptyUseCase(BuildContext context) {
         artwork: _fixtureArtwork,
         cardWidth: _cardWidth,
         cardHeight: _cardHeight,
-        emptyAmountLabel: 'Enter Amount',
       ),
       cardSelector: _artworkSelector(_fixtureArtwork),
       onBack: _noop,
@@ -761,7 +760,6 @@ class _MobilePaymentLinkInteractivePreviewState
             _handleAmountChanged(_fixtureAmount);
           },
           showMaxButton: true,
-          emptyAmountLabel: 'Enter Amount',
           semanticLabel: 'Gift card amount input',
         ),
         cardSelector: PaymentLinkCardSelectorRail(

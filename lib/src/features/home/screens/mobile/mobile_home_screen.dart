@@ -22,6 +22,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/migration_send_gate_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
@@ -31,6 +32,7 @@ import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
+import '../../../activity/gift_card_activity_index.dart';
 import '../../../activity/activity_row_mapper.dart';
 import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
@@ -816,8 +818,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   Future<void> _openTransactionStatus(
     BuildContext context,
     WidgetRef ref,
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
 
@@ -851,6 +854,30 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
+        giftCard: giftCard,
+      ),
+    );
+  }
+
+  ActivityEntry _transactionEntry(
+    BuildContext context,
+    WidgetRef ref,
+    rust_sync.TransactionInfo transaction,
+    GiftCardActivityMetadata? giftCard, {
+    required bool privacyModeEnabled,
+  }) {
+    return ActivityEntry(
+      timestamp: transactionActivityTimestamp(transaction),
+      row: buildTransactionActivityRow(
+        context: context,
+        transaction: transaction,
+        giftCardKind: giftCard?.kind,
+        giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        privacyModeEnabled: privacyModeEnabled,
+        dateOnlyTimestamp: true,
+        onTap: () => unawaited(
+          _openTransactionStatus(context, ref, transaction, giftCard: giftCard),
+        ),
       ),
     );
   }
@@ -969,8 +996,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
-    final sendDisabled =
-        migrationInProgress && sync.ironwoodBalance <= BigInt.zero;
+    // Same predicate as before, now owned by `migrationSendGateProvider` so
+    // the payment-URI drain in `app.dart` cannot drift away from what this
+    // button does.
+    final sendDisabled = ref.watch(migrationSendGateProvider);
     final shieldedBalance = migrationRequired
         ? sync.orchardBalance + sync.orchardPendingBalance
         : sync.saplingBalance +
@@ -1009,6 +1038,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     );
 
     final uuid = activeAccountUuid;
+    final giftCardActivityIndex = uuid == null
+        ? GiftCardActivityIndex.empty
+        : ref.watch(giftCardActivityIndexProvider(uuid)).value ??
+              GiftCardActivityIndex.empty;
     final swapItems = uuid == null
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(uuid)).value ??
@@ -1023,15 +1056,12 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final entries = <ActivityEntry>[
       for (final tx in sync.recentTransactions)
         if (!absorption.absorbs(tx))
-          ActivityEntry(
-            timestamp: transactionActivityTimestamp(tx),
-            row: buildTransactionActivityRow(
-              context: context,
-              transaction: tx,
-              privacyModeEnabled: privacyModeEnabled,
-              dateOnlyTimestamp: true,
-              onTap: () => unawaited(_openTransactionStatus(context, ref, tx)),
-            ),
+          _transactionEntry(
+            context,
+            ref,
+            tx,
+            giftCardActivityIndex.metadataFor(tx),
+            privacyModeEnabled: privacyModeEnabled,
           ),
       for (final item in swapItems)
         ActivityEntry(
@@ -1272,11 +1302,7 @@ class _MobileVotingEntryCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppIcon(
-                  AppIcons.vote,
-                  size: 20,
-                  color: colors.icon.accent,
-                ),
+                AppIcon(AppIcons.vote, size: 20, color: colors.icon.accent),
                 const SizedBox(width: AppSpacing.s),
                 Expanded(
                   child: Column(
