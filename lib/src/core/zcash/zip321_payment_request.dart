@@ -306,6 +306,23 @@ void _validateBase64Url(String value, String label) {
   if (bytes.length > 512) {
     throw const Zip321ParseException('ZIP-321 memo exceeds 512 bytes.');
   }
+  // ZIP-302's canonical "no memo": 0xF6 followed by nothing but zeros, which
+  // `memo=9g` is the shortest spelling of. `librustzcash` — the locked
+  // `zip321`/`Memo` implementation this parser has to agree with — reads that
+  // field as `Memo::Empty`, so the request is a well-formed shielded request
+  // that simply says nothing, not an unreadable one.
+  //
+  // It has to be answered before the UTF-8 decode below, because 0xF6 is not
+  // valid UTF-8: left to the decode it comes back malformed, is classified
+  // binary, and the whole link is refused as an unsupported memo.
+  //
+  // Only this exact shape. 0xF5 is ZIP-302's reserved prefix for future memo
+  // formats, anything else above 0xF4 is arbitrary bytes, and a 0xF6 with a
+  // non-zero byte after it is none of the three — all of them stay binary,
+  // because a memo this wallet cannot read is not a memo it may drop.
+  if (_isEmptyZip302Memo(bytes)) {
+    return (text: null, isBinary: false);
+  }
   // ZIP-302 memos are a fixed 512-byte field that producers zero-pad on the
   // right, so a full-width encoding of "Invoice 42" arrives as the text plus
   // 502 trailing NULs. Drop that padding before decoding; interior NULs stay
@@ -322,6 +339,16 @@ void _validateBase64Url(String value, String label) {
   } on FormatException {
     return (text: null, isBinary: true);
   }
+}
+
+/// Whether [bytes] are ZIP-302's empty memo: a leading 0xF6 and zeros to the
+/// end of whatever width the producer transmitted.
+bool _isEmptyZip302Memo(List<int> bytes) {
+  if (bytes.isEmpty || bytes.first != 0xF6) return false;
+  for (var i = 1; i < bytes.length; i++) {
+    if (bytes[i] != 0x00) return false;
+  }
+  return true;
 }
 
 List<int> _stripTrailingMemoPadding(List<int> bytes) {

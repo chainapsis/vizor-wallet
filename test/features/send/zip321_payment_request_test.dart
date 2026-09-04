@@ -159,6 +159,66 @@ void main() {
     expect(request.primaryPayment.memoIsBinary, isFalse);
   });
 
+  test('accepts ZIP-302\'s canonical empty memo as no memo at all', () {
+    // `9g` is base64url for the single byte 0xF6, which `librustzcash` reads
+    // as `Memo::Empty`. Refusing it would reject a perfectly payable request
+    // over a memo that says nothing.
+    final request = Zip321PaymentRequest.parse(
+      'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?amount=0.5&memo=9g',
+    );
+
+    expect(request.isSupported, isTrue);
+    expect(request.unsupportedReason, isNull);
+    expect(request.primaryPayment.memoIsBinary, isFalse);
+    expect(request.primaryPayment.memoText, isNull);
+    expect(request.primaryPayment.amount, '0.5');
+  });
+
+  test('accepts a full-width empty ZIP-302 memo field', () {
+    // The same value transmitted at its full 512-byte width: 0xF6 then zeros.
+    final bytes = List<int>.filled(512, 0);
+    bytes[0] = 0xF6;
+    final memo = base64Url.encode(bytes).replaceAll('=', '');
+
+    final request = Zip321PaymentRequest.parse(
+      'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?memo=$memo',
+    );
+
+    expect(request.isSupported, isTrue);
+    expect(request.primaryPayment.memoText, isNull);
+    expect(request.primaryPayment.memoIsBinary, isFalse);
+  });
+
+  test('a 0xF6 followed by a non-zero byte is still an unreadable memo', () {
+    // Not the empty marker — the empty-memo shortcut must not swallow
+    // arbitrary bytes that merely start the same way.
+    final memo = base64Url.encode([0xF6, 0x01]).replaceAll('=', '');
+
+    final request = Zip321PaymentRequest.parse(
+      'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?memo=$memo',
+    );
+
+    expect(request.primaryPayment.memoIsBinary, isTrue);
+    expect(request.isSupported, isFalse);
+    expect(
+      request.unsupportedReason,
+      'Binary ZIP-321 memos are parsed but not supported yet.',
+    );
+  });
+
+  test('ZIP-302\'s reserved future-memo prefix stays unsupported', () {
+    // 0xF5 is reserved for memo formats that do not exist yet; the wallet
+    // cannot claim to have shown the payer one.
+    final memo = base64Url.encode([0xF5, 0x00]).replaceAll('=', '');
+
+    final request = Zip321PaymentRequest.parse(
+      'zcash:ztestsapling10yy2ex5dcqkclhc7z7yrnjq2z6feyjad56ptwlfgmy77dmaqqrl9gyhprdx59qgmsnyfska2kez?memo=$memo',
+    );
+
+    expect(request.primaryPayment.memoIsBinary, isTrue);
+    expect(request.isSupported, isFalse);
+  });
+
   test('still rejects a memo with an interior NUL byte', () {
     final bytes = <int>[
       ...utf8.encode('Inv'),
