@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,6 +31,31 @@ class _CompleterSource implements ZecMarketDataSource {
   }
 }
 
+class _SequenceSource implements ZecMarketDataSource {
+  _SequenceSource(this.results);
+
+  final List<ZecMarketData?> results;
+  int fetchCount = 0;
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    final index = fetchCount++;
+    return index < results.length ? results[index] : results.last;
+  }
+}
+
+class _PendingRetrySource implements ZecMarketDataSource {
+  final retryCompleter = Completer<ZecMarketData?>();
+  int fetchCount = 0;
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() {
+    fetchCount += 1;
+    if (fetchCount == 1) return Future.value(null);
+    return retryCompleter.future;
+  }
+}
+
 class _FakeCache implements ZecMarketDataCache {
   _FakeCache({this.value, this.readError, this.writeError});
 
@@ -56,6 +82,10 @@ class _FakeCache implements ZecMarketDataCache {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('uses a Tor-tolerant market data request timeout', () {
+    expect(zecMarketDataRequestTimeout, const Duration(seconds: 60));
+  });
 
   group('parseZecMarketData', () {
     test('reads ZEC price and 24h change from a CoinGecko response', () {
@@ -200,6 +230,8 @@ void main() {
       ZecMarketDataCache? cache,
       DateTime Function()? now,
       Duration refreshInterval = zecMarketDataRefreshInterval,
+      List<Duration> retryDelays = zecMarketDataRetryDelays,
+      bool Function({required bool isInForeground})? processWorkPolicy,
     }) {
       final container = ProviderContainer(
         overrides: [
@@ -210,6 +242,11 @@ void main() {
           zecMarketDataRefreshIntervalProvider.overrideWithValue(
             refreshInterval,
           ),
+          zecMarketDataRetryDelaysProvider.overrideWithValue(retryDelays),
+          if (processWorkPolicy != null)
+            zecMarketDataProcessWorkPolicyProvider.overrideWithValue(
+              processWorkPolicy,
+            ),
         ],
       );
       addTearDown(container.dispose);
@@ -382,6 +419,7 @@ void main() {
         cache: cache,
         now: () => now,
         refreshInterval: const Duration(milliseconds: 5),
+        retryDelays: const [Duration(milliseconds: 5)],
       );
       final sub = container.listen(zecHomeMarketDataProvider, (_, _) {});
       await Future<void>.delayed(Duration.zero);
@@ -435,6 +473,145 @@ void main() {
       expect(sub.read(), isNull);
       expect(source.fetchCount, 1);
     });
+
+    test('retries transient failures before the regular refresh', () async {
+      final source = _SequenceSource([
+        null,
+        const ZecMarketData(usdPrice: 33.45),
+      ]);
+      final container = makeContainer(
+        swapEnabled: true,
+        source: source,
+        refreshInterval: const Duration(hours: 1),
+        retryDelays: const [Duration(milliseconds: 5)],
+      );
+      final sub = container.listen(zecLiveUsdUnitPriceProvider, (_, _) {});
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(source.fetchCount, 2);
+      expect(sub.read(), 33.45);
+    });
+
+    test(
+      'returns to the regular interval after fast retries are exhausted',
+      () async {
+        final source = _FakeSource(null);
+        final container = makeContainer(
+          swapEnabled: true,
+          source: source,
+          refreshInterval: const Duration(milliseconds: 100),
+          retryDelays: const [
+            Duration(milliseconds: 2),
+            Duration(milliseconds: 4),
+            Duration(milliseconds: 6),
+          ],
+        );
+        container.listen(zecLiveUsdUnitPriceProvider, (_, _) {});
+
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        expect(source.fetchCount, 4);
+
+        await Future<void>.delayed(const Duration(milliseconds: 90));
+        expect(source.fetchCount, 5);
+      },
+    );
+
+    test('cancels a pending fast retry when disposed', () async {
+      final source = _FakeSource(null);
+      final container = makeContainer(
+        swapEnabled: true,
+        source: source,
+        refreshInterval: const Duration(hours: 1),
+        retryDelays: const [Duration(milliseconds: 50)],
+      );
+      final sub = container.listen(zecLiveUsdUnitPriceProvider, (_, _) {});
+
+      await Future<void>.delayed(Duration.zero);
+      expect(source.fetchCount, 1);
+
+      sub.close();
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      expect(source.fetchCount, 1);
+    });
+
+    test(
+      'defers mobile retry while hidden and resumes it in foreground',
+      () async {
+        final source = _SequenceSource([
+          null,
+          const ZecMarketData(usdPrice: 33.45),
+        ]);
+        final container = makeContainer(
+          swapEnabled: true,
+          source: source,
+          refreshInterval: const Duration(hours: 1),
+          retryDelays: const [Duration(milliseconds: 50)],
+          processWorkPolicy: ({required isInForeground}) => isInForeground,
+        );
+        final sub = container.listen(zecLiveUsdUnitPriceProvider, (_, _) {});
+
+        await Future<void>.delayed(Duration.zero);
+        expect(source.fetchCount, 1);
+
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.hidden,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 70));
+        expect(source.fetchCount, 1);
+
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(source.fetchCount, 2);
+        expect(sub.read(), 33.45);
+      },
+    );
+
+    test(
+      'does not overlap an in-flight retry across hide and resume',
+      () async {
+        final source = _PendingRetrySource();
+        final container = makeContainer(
+          swapEnabled: true,
+          source: source,
+          refreshInterval: const Duration(hours: 1),
+          retryDelays: const [Duration(milliseconds: 5)],
+          processWorkPolicy: ({required isInForeground}) => isInForeground,
+        );
+        final sub = container.listen(zecLiveUsdUnitPriceProvider, (_, _) {});
+
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(source.fetchCount, 2);
+
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.hidden,
+        );
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(source.fetchCount, 2);
+
+        source.retryCompleter.complete(const ZecMarketData(usdPrice: 33.45));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(source.fetchCount, 2);
+        expect(sub.read(), 33.45);
+      },
+    );
 
     test('does not fetch while market-price UI is disabled', () async {
       final source = _FakeSource(
