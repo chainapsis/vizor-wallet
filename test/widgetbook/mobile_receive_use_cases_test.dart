@@ -22,9 +22,14 @@ void main() {
     expect(find.text('Account Name'), findsOneWidget);
     expect(find.text('Share shielded address'), findsOneWidget);
     expect(find.text('Copy shielded address'), findsOneWidget);
+    // Share shares its row with the square request button: 300 - 8 - 50.
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
-      const Size(300, 50),
+      const Size(242, 50),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
+      const Size(50, 50),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),

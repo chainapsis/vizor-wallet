@@ -127,6 +127,7 @@ PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
         _discarded.add(proposalId);
         final gate = _discardGate;
         if (gate != null) await gate.future;
+        return true;
       },
 );
 
@@ -184,7 +185,10 @@ class _StallingSendApi {
           required BigInt proposalId,
           required String sendFlowId,
           required String logContext,
-        }) async => _discarded.add(proposalId),
+        }) async {
+          _discarded.add(proposalId);
+          return true;
+        },
   );
 }
 

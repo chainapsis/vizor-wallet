@@ -46,12 +46,26 @@ class _MobileSendStatusScreenState
     extends ConsumerState<MobileSendStatusScreen> {
   var _phase = _MobileSendStatusPhase.sending;
   var _proposalConsumed = false;
-  var _discardScheduled = false;
+
+  /// The one release of this receipt's proposal, once something has claimed
+  /// it — the failed outcome or `dispose`. Handed to the terminal flag on the
+  /// way out so a departure mid-release does not publish "safe to leave"
+  /// before the inputs are actually free.
+  Future<bool>? _proposalRelease;
+
+  /// The running broadcast; a receipt left while still `sending` hands its
+  /// completion to the terminal flag instead of a release of its own.
+  Future<SendBroadcastOutcome>? _broadcast;
   String? _statusMessage;
+
+  /// Captured in [initState] so [dispose] can release the flag without reading
+  /// from `ref` after the element is gone.
+  late final SendStatusTerminalNotifier _sendStatusTerminal;
 
   @override
   void initState() {
     super.initState();
+    _sendStatusTerminal = ref.read(sendStatusTerminalProvider.notifier);
     _proposalConsumed = widget.keystone != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_startBroadcast());
@@ -60,21 +74,41 @@ class _MobileSendStatusScreenState
 
   @override
   void dispose() {
-    if (_phase != _MobileSendStatusPhase.sending) {
-      _scheduleDiscardIfNeeded();
+    // Unmounted before the post-frame broadcast ever started: nothing else
+    // owns the proposal, so release it here.
+    final broadcastOwnsProposal =
+        _phase == _MobileSendStatusPhase.sending && _broadcast != null;
+    if (!broadcastOwnsProposal) {
+      unawaited(_discardProposalIfNeeded('MobileSendStatus(dispose)'));
     }
+    _sendStatusTerminal.resetAfterNavigation(
+      // Left mid-broadcast: the runner's abort cleanup owns the proposal, so
+      // the edge waits for it.
+      afterRelease: broadcastOwnsProposal
+          ? _broadcast!.then((outcome) => outcome.proposalConsumed)
+          : _proposalRelease,
+      // Idempotent in Rust, so no gate on the (optimistic) consumed flag.
+      retryRelease: () => discardSendProposal(
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+        logContext: 'MobileSendStatus(retry)',
+      ),
+    );
     super.dispose();
   }
 
-  void _scheduleDiscardIfNeeded() {
-    if (_proposalConsumed || _discardScheduled) return;
-    _discardScheduled = true;
-    unawaited(
-      discardSendProposal(
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
-        logContext: 'MobileSendStatus(dispose)',
-      ),
+  /// Releases the proposal unless the broadcast already consumed it.
+  ///
+  /// Idempotent by claim rather than by retry: the first caller — the failed
+  /// outcome below or [dispose] — takes the discard and every later call is a
+  /// no-op, so a failure that releases the proposal on screen does not get a
+  /// second release when the receipt is finally left.
+  Future<bool> _discardProposalIfNeeded(String logContext) {
+    if (_proposalConsumed) return Future<bool>.value(true);
+    return _proposalRelease ??= discardSendProposal(
+      proposalId: widget.args.proposalId,
+      sendFlowId: widget.args.sendFlowId,
+      logContext: logContext,
     );
   }
 
@@ -89,14 +123,18 @@ class _MobileSendStatusScreenState
   }
 
   Future<void> _startBroadcast() async {
+    // A broadcast is starting: nothing is safe to leave yet.
+    _sendStatusTerminal.reset();
     final runner = widget.broadcastRunner ?? runSendBroadcast;
-    final outcome = await runner(
+    final broadcast = runner(
       ref: ref,
       args: widget.args,
       keystone: widget.keystone,
       confirmSaplingParamsDownload: _confirmSaplingParamsDownload,
       shouldAbort: () async => !mounted,
     );
+    _broadcast = broadcast;
+    final outcome = await broadcast;
     _proposalConsumed = outcome.proposalConsumed;
     if (outcome.phase == SendBroadcastPhase.aborted || !mounted) return;
 
@@ -120,6 +158,29 @@ class _MobileSendStatusScreenState
       case _MobileSendStatusPhase.sending:
       case _MobileSendStatusPhase.pendingBroadcast:
         break;
+    }
+    if (_phase == _MobileSendStatusPhase.succeeded ||
+        _phase == _MobileSendStatusPhase.failed) {
+      if (_phase == _MobileSendStatusPhase.failed) {
+        // A failed outcome does not always hand the proposal back: the
+        // software send's missing-mnemonic branch returns
+        // `proposalConsumed: false` without touching Rust's PROPOSAL_STORE,
+        // and until now the release waited for `dispose`. Marking the send
+        // terminal first lets `_IncomingLinkHost` drain a parked `zcash:`
+        // request against inputs this dead send still locks, which the
+        // request pre-check reads as insufficient funds. So: release, then
+        // publish "safe to leave".
+        final released = await _discardProposalIfNeeded(
+          'MobileSendStatus(failed)',
+        );
+        // Leaving during the release means `dispose` already reset the flag;
+        // re-raising it here would strand it for the next screen.
+        if (!mounted) return;
+        // A release Rust never confirmed leaves the inputs held until expiry;
+        // the drain must keep waiting rather than pre-check against them.
+        if (!released) return;
+      }
+      _sendStatusTerminal.markTerminal();
     }
   }
 

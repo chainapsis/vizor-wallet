@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
@@ -51,6 +53,50 @@ void main() {
     await flushMicrotasks();
 
     expect(published, [false]);
+  });
+
+  test('a receipt left mid-release publishes terminal only once the release '
+      'lands', () async {
+    // A failed software send that never consumed its proposal: the receipt
+    // is still releasing it when the user leaves.
+    final release = Completer<bool>();
+    notifier.reset();
+    notifier.resetAfterNavigation(afterRelease: release.future);
+    await flushMicrotasks();
+
+    expect(
+      published,
+      isEmpty,
+      reason:
+          'the drain must not be told the send is safe to leave while its '
+          'proposal still locks the inputs a parked request would check',
+    );
+
+    release.complete(true);
+    await flushMicrotasks();
+
+    expect(published, [true, false]);
+  });
+
+  test('a release Rust never confirmed retries once, then publishes', () async {
+    debugUnconfirmedReleaseGrace = Duration.zero;
+    addTearDown(() {
+      debugUnconfirmedReleaseGrace = const Duration(seconds: 3);
+    });
+    var retries = 0;
+    notifier.reset();
+    notifier.resetAfterNavigation(
+      afterRelease: Future<bool>.value(false),
+      retryRelease: () async {
+        retries++;
+        return true;
+      },
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(retries, 1);
+    expect(published, [true, false]);
   });
 
   test('a departing receipt leaves a newer send\'s flag alone', () async {

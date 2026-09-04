@@ -216,13 +216,41 @@ class SendStatusTerminalNotifier extends Notifier<bool> {
   /// flag's false → true edge; once the receipt is gone the route no longer
   /// blocks delivery, and a false → false release would leave the link parked
   /// until some unrelated wallet event happened to run the drain.
-  void resetAfterNavigation() {
+  ///
+  /// [afterRelease] is the departing receipt's in-flight proposal release
+  /// (`discardSendProposal`'s result); terminal is published once it lands, so
+  /// the drain it triggers never pre-checks a parked request against inputs a
+  /// dead send still holds. A release Rust did not confirm gets one more try
+  /// through [retryRelease] after [debugUnconfirmedReleaseGrace], then the
+  /// edge is published regardless: the card can re-check a shortfall, a
+  /// silently expiring park cannot.
+  void resetAfterNavigation({
+    Future<bool>? afterRelease,
+    Future<bool> Function()? retryRelease,
+  }) {
     final retainedRevision = _revision;
-    scheduleMicrotask(() {
+    void finish() {
       if (_disposed || _revision != retainedRevision) return;
       if (!state) markTerminal();
       reset();
-    });
+    }
+
+    if (afterRelease == null) {
+      scheduleMicrotask(finish);
+      return;
+    }
+    unawaited(() async {
+      var released = false;
+      try {
+        released = await afterRelease;
+      } catch (_) {}
+      if (!released) {
+        await Future<void>.delayed(debugUnconfirmedReleaseGrace);
+        if (_disposed || _revision != retainedRevision) return;
+        if (retryRelease != null) await retryRelease();
+      }
+      finish();
+    }());
   }
 }
 
@@ -377,8 +405,17 @@ Future<SendReviewArgs> proposeSendTransferWith({
   );
 }
 
+/// Pause before the one retry an unconfirmed proposal release gets; tests
+/// shorten it.
+Duration debugUnconfirmedReleaseGrace = const Duration(seconds: 3);
+
 /// Idempotent proposal release for every non-consuming exit path.
-Future<void> discardSendProposal({
+///
+/// Returns whether Rust confirmed the release. Never throws: a release that
+/// still fails after its retries is logged and left to height-based expiry,
+/// and the caller that needs to know (the terminal flag's departure edge) reads
+/// the result instead of catching.
+Future<bool> discardSendProposal({
   required BigInt proposalId,
   required String sendFlowId,
   required String logContext,
@@ -391,7 +428,7 @@ Future<void> discardSendProposal({
         sendFlowId: sendFlowId,
       );
       log('$logContext: released proposal $proposalId');
-      return;
+      return true;
     } catch (e) {
       lastError = e;
       log('$logContext: discardProposal cleanup attempt $attempt failed: $e');
@@ -403,6 +440,7 @@ Future<void> discardSendProposal({
   // Rust keeps the owner token when unlock fails, so another idempotent
   // cleanup call can retry while height-based expiry remains the fallback.
   log('$logContext: proposal cleanup remains pending: $lastError');
+  return false;
 }
 
 Future<void> retainSendProposalLockUntilExpiry({
@@ -603,13 +641,14 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     if (shouldAbort == null) return false;
     if (!await shouldAbort()) return false;
     if (!proposalReleased) {
-      await discardSendProposal(
+      // A release Rust never confirmed leaves the proposal for the receipt
+      // to release; only a confirmed one counts as consumed.
+      proposalConsumed = await discardSendProposal(
         proposalId: args.proposalId,
         sendFlowId: args.sendFlowId,
         logContext: 'SendBroadcast(abort)',
       );
       proposalReleased = true;
-      proposalConsumed = true;
     }
     return true;
   }
@@ -631,13 +670,12 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         if (!downloadConfirmed) {
           if (await abortRequested()) return aborted();
           if (!proposalReleased) {
-            await discardSendProposal(
+            proposalConsumed = await discardSendProposal(
               proposalId: args.proposalId,
               sendFlowId: args.sendFlowId,
               logContext: 'SendBroadcast(params-declined)',
             );
             proposalReleased = true;
-            proposalConsumed = true;
           }
           return SendBroadcastOutcome(
             phase: SendBroadcastPhase.failed,
@@ -843,13 +881,12 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     final message = friendlyBroadcastError(e.toString());
     if (await abortRequested()) return aborted();
     if (!proposalReleased) {
-      await discardSendProposal(
+      proposalConsumed = await discardSendProposal(
         proposalId: args.proposalId,
         sendFlowId: args.sendFlowId,
         logContext: 'SendBroadcast(pre-broadcast-failure)',
       );
       proposalReleased = true;
-      proposalConsumed = true;
     }
     return SendBroadcastOutcome(
       phase: SendBroadcastPhase.failed,

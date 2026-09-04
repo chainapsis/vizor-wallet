@@ -63,7 +63,16 @@ class SendStatusScreen extends ConsumerStatefulWidget {
 class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   _SendStatusPhase _phase = _SendStatusPhase.sending;
   bool _proposalConsumed = false;
-  bool _discardScheduled = false;
+
+  /// The one release of this receipt's proposal, once something has claimed
+  /// it — the failed outcome or `dispose`. Handed to the terminal flag on the
+  /// way out so a departure mid-release does not publish "safe to leave"
+  /// before the inputs are actually free.
+  Future<bool>? _proposalRelease;
+
+  /// The running broadcast; a receipt left while still `sending` hands its
+  /// completion to the terminal flag instead of a release of its own.
+  Future<SendBroadcastOutcome>? _broadcast;
   String? _error;
   String? _statusMessage;
   String? _txid;
@@ -99,10 +108,26 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (promptCompleter != null && !promptCompleter.isCompleted) {
       promptCompleter.complete(false);
     }
-    if (_phase != _SendStatusPhase.sending) {
+    // Unmounted before the post-frame broadcast ever started: nothing else
+    // owns the proposal, so release it here.
+    final broadcastOwnsProposal =
+        _phase == _SendStatusPhase.sending && _broadcast != null;
+    if (!broadcastOwnsProposal) {
       unawaited(_discardProposalIfNeeded('SendStatus(dispose)'));
     }
-    _sendStatusTerminal.resetAfterNavigation();
+    _sendStatusTerminal.resetAfterNavigation(
+      // Left mid-broadcast: the runner's abort cleanup owns the proposal, so
+      // the edge waits for it.
+      afterRelease: broadcastOwnsProposal
+          ? _broadcast!.then((outcome) => outcome.proposalConsumed)
+          : _proposalRelease,
+      // Idempotent in Rust, so no gate on the (optimistic) consumed flag.
+      retryRelease: () => discardSendProposal(
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+        logContext: 'SendStatus(retry)',
+      ),
+    );
     super.dispose();
   }
 
@@ -112,10 +137,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   /// outcome below or [dispose] — takes the discard and every later call is a
   /// no-op, so a failure that releases the proposal on screen does not get a
   /// second release when the receipt is finally left.
-  Future<void> _discardProposalIfNeeded(String logContext) async {
-    if (_proposalConsumed || _discardScheduled) return;
-    _discardScheduled = true;
-    await discardSendProposal(
+  Future<bool> _discardProposalIfNeeded(String logContext) {
+    if (_proposalConsumed) return Future<bool>.value(true);
+    return _proposalRelease ??= discardSendProposal(
       proposalId: widget.args.proposalId,
       sendFlowId: widget.args.sendFlowId,
       logContext: logContext,
@@ -191,13 +215,15 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     // A broadcast is starting: nothing is safe to leave yet.
     _sendStatusTerminal.reset();
     final runner = widget.broadcastRunner ?? runSendBroadcast;
-    final outcome = await runner(
+    final broadcast = runner(
       ref: ref,
       args: widget.args,
       keystone: widget.keystone,
       confirmSaplingParamsDownload: _showSaplingParamsDialog,
       shouldAbort: () async => !mounted,
     );
+    _broadcast = broadcast;
+    final outcome = await broadcast;
     _proposalConsumed = outcome.proposalConsumed;
     if (outcome.phase == SendBroadcastPhase.aborted || !mounted) return;
     setState(() {
@@ -226,10 +252,13 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         // request against inputs this dead send still locks, which the
         // request pre-check reads as insufficient funds. So: release, then
         // publish "safe to leave".
-        await _discardProposalIfNeeded('SendStatus(failed)');
+        final released = await _discardProposalIfNeeded('SendStatus(failed)');
         // Leaving during the release means `dispose` already reset the flag;
         // re-raising it here would strand it for the next screen.
         if (!mounted) return;
+        // A release Rust never confirmed leaves the inputs held until expiry;
+        // the drain must keep waiting rather than pre-check against them.
+        if (!released) return;
       }
       _sendStatusTerminal.markTerminal();
     }

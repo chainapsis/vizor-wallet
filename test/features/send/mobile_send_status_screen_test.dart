@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
@@ -53,13 +54,62 @@ Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
   );
 }
 
+/// The "safe to leave this receipt" flag the payment-URI drain reads.
+bool _sendStatusTerminal(WidgetTester tester) {
+  return ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp)),
+    listen: false,
+  ).read(sendStatusTerminalProvider);
+}
+
 bool _statusRouteCanPop(WidgetTester tester) {
   final popScope = tester.widget<PopScope<void>>(find.byType(PopScope<void>));
   return popScope.canPop;
 }
 
+/// Rust stand-in for the one call the receipt makes on its own: releasing a
+/// proposal the broadcast did not consume.
+class _RustApiFake implements RustLibApi {
+  final discardCalls = <(BigInt, String)>[];
+
+  /// Holds `discardProposal` open so a test can read the terminal flag while
+  /// the release is still in flight.
+  Completer<void>? discardGate;
+
+  /// How many more `discardProposal` calls fail before one succeeds.
+  int discardFailuresRemaining = 0;
+
+  @override
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {
+    discardCalls.add((proposalId, sendFlowId));
+    final gate = discardGate;
+    if (gate != null) await gate.future;
+    if (discardFailuresRemaining > 0) {
+      discardFailuresRemaining--;
+      throw Exception('transient wallet DB unlock failure');
+    }
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  late _RustApiFake rustApi;
+
+  setUpAll(() {
+    rustApi = _RustApiFake();
+    RustLib.initMock(api: rustApi);
+  });
+  tearDownAll(RustLib.dispose);
+
   setUp(() {
+    rustApi.discardCalls.clear();
+    rustApi.discardGate = null;
+    rustApi.discardFailuresRemaining = 0;
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
@@ -74,6 +124,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('mobile_send_status_sending')), findsOne);
+    expect(_sendStatusTerminal(tester), isFalse);
     expect(find.text('Sending...'), findsOneWidget);
     expect(
       find.text('Submitting your transaction to the network...'),
@@ -148,6 +199,7 @@ void main() {
     );
     expect(find.text('Done'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);
+    expect(_sendStatusTerminal(tester), isTrue);
     expect(nativeHaptics, ['sendSuccess']);
     expect(platformHaptics, isEmpty);
 
@@ -194,6 +246,8 @@ void main() {
     );
     expect(find.text('Done'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);
+    // A pending broadcast still renders as in progress, so it is not terminal.
+    expect(_sendStatusTerminal(tester), isFalse);
   });
 
   testWidgets('pending broadcast falls back to the generic retry copy', (
@@ -278,6 +332,7 @@ void main() {
     );
     expect(find.text('Return home'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);
+    expect(_sendStatusTerminal(tester), isTrue);
     expect(nativeHaptics, ['sendFailure']);
     expect(platformHaptics, isEmpty);
 
@@ -288,6 +343,194 @@ void main() {
       find.byKey(const ValueKey('mobile_send_status_icon_failed')),
       findsOneWidget,
     );
+  });
+
+  testWidgets(
+    'failed outcome releases an unconsumed proposal before going terminal',
+    (tester) async {
+      // The software send's missing-mnemonic branch: the broadcast fails and
+      // Rust still owns the proposal. It is `!Platform.isMacOS`-only in
+      // `runSendBroadcast`, so the outcome is injected rather than provoked.
+      final discardGate = Completer<void>();
+      rustApi.discardGate = discardGate;
+
+      final broadcast = Completer<SendBroadcastOutcome>();
+      await tester.pumpWidget(_app(broadcastRunner: _runner(broadcast.future)));
+      await tester.pump();
+
+      broadcast.complete(
+        const SendBroadcastOutcome(
+          phase: SendBroadcastPhase.failed,
+          proposalConsumed: false,
+          error: 'Mnemonic not found for the proposal account.',
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // The receipt already reads as failed, but the proposal — and with it
+      // the input lock a parked `zcash:` request would propose against — is
+      // still held, so the drain must not be told the send is safe to leave.
+      expect(find.text('Send failed'), findsOneWidget);
+      expect(rustApi.discardCalls, [(BigInt.one, 'flow-1')]);
+      expect(_sendStatusTerminal(tester), isFalse);
+
+      discardGate.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(_sendStatusTerminal(tester), isTrue);
+
+      // Leaving the receipt must not release the proposal a second time.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(rustApi.discardCalls, hasLength(1));
+    },
+  );
+
+  testWidgets('leaving a failed receipt mid-release delays the drain until the '
+      'proposal is free', (tester) async {
+    final discardGate = Completer<void>();
+    rustApi.discardGate = discardGate;
+
+    // The test owns the container so the flag outlives the receipt; a
+    // `ProviderScope` widget would dispose it together with the screen.
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: MobileSendStatusScreen(
+              args: _args,
+              broadcastRunner: _runner(broadcast.future),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: false,
+        error: 'Mnemonic not found for the proposal account.',
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(container.read(sendStatusTerminalProvider), isFalse);
+
+    final published = <bool>[];
+    container.listen<bool>(
+      sendStatusTerminalProvider,
+      (_, next) => published.add(next),
+    );
+
+    // Back is allowed on a failed receipt; the user leaves while Rust is
+    // still releasing the proposal.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump();
+    expect(
+      published,
+      isEmpty,
+      reason:
+          'publishing terminal here would drain a parked request against '
+          'inputs the dead send still locks',
+    );
+
+    discardGate.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(published, [true, false]);
+    expect(rustApi.discardCalls, hasLength(1));
+  });
+
+  testWidgets('a release Rust never confirms keeps the failed receipt '
+      'non-terminal', (tester) async {
+    rustApi.discardFailuresRemaining = 3;
+
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(_app(broadcastRunner: _runner(broadcast.future)));
+    await tester.pump();
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: false,
+        error: 'Mnemonic not found for the proposal account.',
+      ),
+    );
+    await tester.pump();
+    // The retries back off 100 ms, then 200 ms.
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(rustApi.discardCalls, hasLength(3));
+    expect(_sendStatusTerminal(tester), isFalse);
+
+    // Leaving arms the grace retry; let it fire so no timer outlives the tree.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+  });
+
+  testWidgets('leaving mid-broadcast keeps terminal closed until the runner '
+      'finishes', (tester) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: MobileSendStatusScreen(
+              args: _args,
+              broadcastRunner: _runner(broadcast.future),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final published = <bool>[];
+    container.listen<bool>(
+      sendStatusTerminalProvider,
+      (_, next) => published.add(next),
+    );
+
+    // A sidebar or deep-link `go` can unmount the receipt while `sending`.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump();
+    expect(published, isEmpty);
+
+    // The runner aborts at its next checkpoint and releases the proposal.
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.aborted,
+        proposalConsumed: true,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(published, [true, false]);
   });
 
   testWidgets('send success falls back to Flutter haptics on Android', (

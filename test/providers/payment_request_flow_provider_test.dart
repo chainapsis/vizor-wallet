@@ -49,6 +49,9 @@ class _FakeSendApi {
   /// Holds every discard open until the test releases it, so "the inputs
   /// are still locked" is an observable state rather than a race.
   Completer<void>? discardGate;
+
+  /// How many more discards Rust fails to confirm before one succeeds.
+  int discardFailuresRemaining = 0;
   var nextProposalId = 1;
 
   /// Every entry into the propose path, including the ones that throw. What
@@ -129,6 +132,11 @@ class _FakeSendApi {
           if (pending != null) await pending.future;
           discarded.add(proposalId);
           events.add('discard $proposalId');
+          if (discardFailuresRemaining > 0) {
+            discardFailuresRemaining--;
+            return false;
+          }
+          return true;
         },
   );
 }
@@ -427,6 +435,137 @@ void main() {
 
     expect((handoff as PaymentRequestEditReady).prefill.address, 'u1a');
     expect(api.discarded, [BigInt.one]);
+  });
+
+  test('a hand-back overtaken by an account switch opens nothing', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    final pendingReview = notifier.reviewHandingBack();
+    await pumpEventQueue();
+    expect(container.read(paymentRequestFlowProvider), isNull);
+
+    // The card is already down, so the account listener's clear finds no
+    // state — it still has to stop the hand-back, or the review would open
+    // on the newly active account.
+    notifier.clear(logContext: 'PaymentRequest(account switched)');
+    api.discardGate!.complete();
+
+    expect(await pendingReview, isA<PaymentRequestReviewOvertaken>());
+  });
+
+  test('a hand-back whose release Rust did not confirm retries once, then '
+      'opens', () async {
+    debugUnconfirmedReleaseGrace = Duration.zero;
+    addTearDown(
+      () => debugUnconfirmedReleaseGrace = const Duration(seconds: 3),
+    );
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardFailuresRemaining = 1;
+    final handoff = await notifier.reviewHandingBack();
+
+    expect(handoff, isA<PaymentRequestReviewReady>());
+    expect(api.discarded, [BigInt.one, BigInt.one]);
+  });
+
+  test('a replacement pre-check waits for the retry of an unconfirmed '
+      'release', () async {
+    debugUnconfirmedReleaseGrace = const Duration(milliseconds: 50);
+    addTearDown(
+      () => debugUnconfirmedReleaseGrace = const Duration(seconds: 3),
+    );
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1first'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardFailuresRemaining = 1;
+    final pending = notifier.reviewHandingBack();
+    await pumpEventQueue();
+    // The first release failed; the retry is waiting out its grace.
+    expect(api.events, ['propose 1', 'discard 1']);
+
+    notifier.present(request('u1second'), source: PaymentRequestSource.link);
+    expect(await pending, isA<PaymentRequestReviewOvertaken>());
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await pumpEventQueue();
+
+    expect(
+      api.events,
+      ['propose 1', 'discard 1', 'discard 1', 'propose 2'],
+      reason:
+          'the newer request must not be checked against inputs the '
+          'first proposal still held',
+    );
+  });
+
+  test('a lock during a hand-back re-parks the request instead of dropping '
+      'it', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    final pending = notifier.reviewHandingBack();
+    await pumpEventQueue();
+    // The card is down; only the hand-back still knows the request.
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+
+    (container.read(appSecurityProvider.notifier) as _FakeSecurityNotifier)
+        .lockForTest();
+    api.discardGate!.complete();
+
+    expect(await pending, isA<PaymentRequestReviewOvertaken>());
+    expect(
+      container.read(paymentUriPrefillProvider)?.address,
+      'u1a',
+      reason:
+          'the unlock flow re-presents the parked request; without the park '
+          'the answered request would be gone with nothing to say',
+    );
+  });
+
+  test('a hand-back invalidated by an account switch is not re-parked on '
+      'lock', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    final pending = notifier.reviewHandingBack();
+    await pumpEventQueue();
+
+    notifier.clear(logContext: 'PaymentRequest(account switched)');
+    (container.read(appSecurityProvider.notifier) as _FakeSecurityNotifier)
+        .lockForTest();
+    api.discardGate!.complete();
+
+    expect(await pending, isA<PaymentRequestReviewOvertaken>());
+    expect(
+      container.read(paymentUriPrefillProvider),
+      isNull,
+      reason: 'the request belonged to the account that was switched away',
+    );
   });
 
   test('an edit hand-back overtaken by a newer link opens nothing', () async {

@@ -222,6 +222,7 @@ class _MobileSendPrefillHarness extends StatelessWidget {
           initialRecipient: _zip321Prefill.address,
           initialAmount: _zip321Prefill.amountText,
           initialMemo: _zip321Prefill.memoText,
+          preserveInitialMemoWhitespace: _zip321Prefill.preserveMemoText,
           loadWalletDbPath: () async => '/tmp/capture.db',
           validateAddress: addressValidates
               ? _captureValidateAddress
@@ -254,6 +255,9 @@ class _MobileSendReviewRequestHarness extends StatelessWidget {
           initialAddressType: 'unified',
           initialAmount: _zip321Prefill.amountText,
           initialFeeZatoshi: BigInt.from(10000),
+          isPaymentRequest: true,
+          paymentRequestLabel: 'Coinbase Support',
+          requestedAmountZatoshi: BigInt.from(50000000),
           loadWalletDbPath: () async => '/tmp/capture.db',
           validateAddress: _captureValidateAddress,
           estimateFee: _captureEstimateFee,
@@ -265,6 +269,7 @@ class _MobileSendReviewRequestHarness extends StatelessWidget {
 
 Future<rust_sync.AddressValidationResult> _captureValidateAddress({
   required String address,
+  required String network,
 }) async {
   return const rust_sync.AddressValidationResult(
     isValid: true,
@@ -275,6 +280,7 @@ Future<rust_sync.AddressValidationResult> _captureValidateAddress({
 
 Future<rust_sync.AddressValidationResult> _captureRejectAddress({
   required String address,
+  required String network,
 }) async {
   return const rust_sync.AddressValidationResult(
     isValid: false,
