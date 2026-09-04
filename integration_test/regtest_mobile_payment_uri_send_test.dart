@@ -35,6 +35,9 @@ void main() {
     (tester) async {
       tolerateRenderOverflows();
       addTearDown(() async {
+        // The pasteboard outlives the app container, and this scenario
+        // leaves a mnemonic and an address on it.
+        await Clipboard.setData(const ClipboardData(text: ''));
         await cleanupE2eWalletState();
       });
       await cleanupE2eWalletState();
