@@ -99,6 +99,30 @@ void main() {
       expect(await store.countReceivingForAccount('receiver-account'), 0);
     });
 
+    test('reports the in-flight count while the wallet is locked', () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final mirror = _FakeClaimCountMirror();
+      final link = _link();
+      final store = PaymentLinkReceivedStore(storage, countMirror: mirror);
+
+      await store.saveReady(link);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver-account',
+      );
+      expect(mirror.count, 1);
+
+      // The lost-password and forgot-passcode surfaces run locked.
+      storage.locked = true;
+      expect(await store.countClaimsInFlight(), 1);
+
+      storage.locked = false;
+      await store.markReceived(address: link.address);
+      expect(mirror.count, 0);
+      storage.locked = true;
+      expect(await store.countClaimsInFlight(), 0);
+    });
+
     test(
       'restores a submitting claim before its transaction id is saved',
       () async {
@@ -316,17 +340,32 @@ VizorPaymentLink _link() {
 class _FakePaymentLinkReceivedStorage implements PaymentLinkReceivedStorage {
   String? value;
 
+  /// A locked wallet reads its secrets as null.
+  bool locked = false;
+
   @override
   Future<void> delete() async {
     value = null;
   }
 
   @override
-  Future<String?> read() async => value;
+  Future<String?> read() async => locked ? null : value;
 
   @override
   Future<void> write(String nextValue) async {
     value = nextValue;
+  }
+}
+
+class _FakeClaimCountMirror implements PaymentLinkClaimCountMirror {
+  int? count;
+
+  @override
+  Future<int?> read() async => count;
+
+  @override
+  Future<void> write(int next) async {
+    count = next;
   }
 }
 

@@ -15,6 +15,9 @@ final paymentLinkReceivedStoreProvider = Provider<PaymentLinkReceivedStore>((
 ) {
   return PaymentLinkReceivedStore(
     AppSecureStorePaymentLinkReceivedStorage(AppSecureStore.instance),
+    countMirror: AppSecureStorePaymentLinkClaimCountMirror(
+      AppSecureStore.instance,
+    ),
     onRecordsChanged: () {
       ref.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
     },
@@ -162,6 +165,33 @@ abstract interface class PaymentLinkReceivedStorage {
   Future<void> delete();
 }
 
+/// Locked-readable copy of the in-flight claim count. The records are a
+/// secret the locked app cannot read, but the reset screens exist only while
+/// locked and need this one number.
+abstract interface class PaymentLinkClaimCountMirror {
+  Future<int?> read();
+
+  Future<void> write(int count);
+}
+
+class AppSecureStorePaymentLinkClaimCountMirror
+    implements PaymentLinkClaimCountMirror {
+  const AppSecureStorePaymentLinkClaimCountMirror(this._store);
+
+  final AppSecureStore _store;
+
+  @override
+  Future<int?> read() async {
+    final raw = await _store.readPlain(kPaymentLinkClaimsInFlightCountKey);
+    return raw == null ? null : int.tryParse(raw);
+  }
+
+  @override
+  Future<void> write(int count) {
+    return _store.writePlain(kPaymentLinkClaimsInFlightCountKey, '$count');
+  }
+}
+
 class AppSecureStorePaymentLinkReceivedStorage
     implements PaymentLinkReceivedStorage {
   const AppSecureStorePaymentLinkReceivedStorage(this._store);
@@ -188,8 +218,14 @@ class AppSecureStorePaymentLinkReceivedStorage
 }
 
 class PaymentLinkReceivedStore {
-  PaymentLinkReceivedStore(this._storage, {void Function()? onRecordsChanged})
-    : _onRecordsChanged = onRecordsChanged;
+  PaymentLinkReceivedStore(
+    this._storage, {
+    PaymentLinkClaimCountMirror? countMirror,
+    void Function()? onRecordsChanged,
+  }) : _countMirror = countMirror,
+       _onRecordsChanged = onRecordsChanged;
+
+  final PaymentLinkClaimCountMirror? _countMirror;
 
   final PaymentLinkReceivedStorage _storage;
   final void Function()? _onRecordsChanged;
@@ -208,9 +244,13 @@ class PaymentLinkReceivedStore {
   /// Claims that have been submitted but not yet observed as received, across
   /// every destination account — including records whose destination account
   /// is not yet written, which [countReceivingForAccount] cannot see.
-  Future<int> countClaimsInFlight() async {
-    final records = await load();
-    return records.where((record) => record.isClaimInFlight).length;
+  Future<int> countClaimsInFlight() {
+    return _runExclusive(() async {
+      final raw = await _storage.read();
+      // Locked: the secret payload reads as null; the plain mirror answers.
+      if (raw == null) return await _countMirror?.read() ?? 0;
+      return _decodeRecords(raw).where((r) => r.isClaimInFlight).length;
+    });
   }
 
   Future<int> countReceivingForAccount(String destinationAccountUuid) async {
@@ -387,7 +427,10 @@ class PaymentLinkReceivedStore {
   }
 
   Future<List<PaymentLinkReceivedRecord>> _loadUnlocked() async {
-    final raw = await _storage.read();
+    return _decodeRecords(await _storage.read());
+  }
+
+  List<PaymentLinkReceivedRecord> _decodeRecords(String? raw) {
     if (raw == null || raw.trim().isEmpty) return const [];
 
     try {
@@ -421,14 +464,16 @@ class PaymentLinkReceivedStore {
   Future<void> _writeRecords(List<PaymentLinkReceivedRecord> records) async {
     if (records.isEmpty) {
       await _storage.delete();
-      _onRecordsChanged?.call();
-      return;
+    } else {
+      await _storage.write(
+        jsonEncode({
+          'version': _storageVersion,
+          'records': [for (final record in records) _recordToJson(record)],
+        }),
+      );
     }
-    await _storage.write(
-      jsonEncode({
-        'version': _storageVersion,
-        'records': [for (final record in records) _recordToJson(record)],
-      }),
+    await _countMirror?.write(
+      records.where((record) => record.isClaimInFlight).length,
     );
     _onRecordsChanged?.call();
   }
