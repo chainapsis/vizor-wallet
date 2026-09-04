@@ -37,6 +37,19 @@ const _accountState = AccountState(
 );
 
 void main() {
+  setUp(() {
+    // Copying a secret schedules the real one-minute clipboard auto-clear
+    // timer, which would outlive the widget tree. Hold the expiry open for the
+    // duration of each test; the clearing itself is covered by
+    // test/core/clipboard/sensitive_clipboard_test.dart.
+    SensitiveClipboard.debugExpirationDelay = (_) => Completer<void>().future;
+  });
+
+  tearDown(() {
+    SensitiveClipboard.debugExpirationDelay = null;
+    SensitiveClipboard.debugCancelPendingExpiration();
+  });
+
   testWidgets(
     'reveals the requested account viewing key without making it active',
     (tester) async {
@@ -48,7 +61,6 @@ void main() {
         initiallySafe: true,
       );
       addTearDown(privacyController.dispose);
-      addTearDown(SensitiveClipboard.debugCancelPendingExpiration);
       final requestedUuids = <String>[];
 
       final copiedText = <String>[];
@@ -119,10 +131,6 @@ void main() {
       await tester.pump();
       expect(copiedText, [_ufvk]);
       expect(find.text('Copied'), findsOneWidget);
-      // Cancel the SensitiveClipboard fallback expiry timer so it does not
-      // outlive the widget tree (the fallback path creates a 1-minute timer
-      // on non-iOS/Android platforms, which the test framework would flag).
-      SensitiveClipboard.debugCancelPendingExpiration();
     },
   );
 

@@ -213,12 +213,14 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
-        // No payment-URI claim here yet. The surface that presents a claimed
-        // link — the payment request card and its host — arrives in the next
-        // PR of this stack, and claiming without one would clear the park to
-        // present nothing. The link stays parked instead: `/home` re-runs the
-        // app-level drain, which still says whatever the policy has to say
-        // about a link this wallet cannot open.
+        // No payment-URI claim here yet. Mobile's answer to a payment request
+        // card — the handoff from Review and Edit into the send wizard —
+        // arrives in the next PR of this stack, and the app-level drain keeps
+        // a delivered link parked on this form factor until it does. Claiming
+        // here would clear that park to present a card whose two answers both
+        // land on an empty composer. The link stays parked instead: `/home`
+        // re-runs the app-level drain, which still says whatever the policy
+        // has to say about a link this wallet cannot open.
         context.go('/home');
       });
     } catch (e, st) {

@@ -393,12 +393,63 @@ void main() {
     notifier.present(request('u1a'), source: PaymentRequestSource.link);
     await pumpEventQueue();
 
-    final prefill = notifier.edit();
-    await pumpEventQueue();
+    final handoff = await notifier.editHandingBack();
 
-    expect(prefill!.address, 'u1a');
+    expect((handoff as PaymentRequestEditReady).prefill.address, 'u1a');
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(api.discarded, [BigInt.one]);
+  });
+
+  test('handing the request to the composer completes only once Rust has '
+      'released the proposal', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    var handedBack = false;
+    final pending = notifier.editHandingBack().then((handoff) {
+      handedBack = true;
+      return handoff;
+    });
+    await pumpEventQueue();
+
+    // The card is gone at once; the caller is still waiting on the release.
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(handedBack, isFalse);
+    expect(api.discarded, isEmpty);
+
+    api.discardGate!.complete();
+    final handoff = await pending;
+
+    expect((handoff as PaymentRequestEditReady).prefill.address, 'u1a');
+    expect(api.discarded, [BigInt.one]);
+  });
+
+  test('an edit hand-back overtaken by a newer link opens nothing', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1first'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+
+    api.discardGate = Completer<void>();
+    final pending = notifier.editHandingBack();
+    await pumpEventQueue();
+    expect(container.read(paymentRequestFlowProvider), isNull);
+
+    notifier.present(request('u1second'), source: PaymentRequestSource.link);
+    api.discardGate!.complete();
+    await pumpEventQueue();
+
+    expect(await pending, isA<PaymentRequestEditOvertaken>());
+    final state = container.read(paymentRequestFlowProvider)!;
+    expect(state.prefill.address, 'u1second');
+    expect(state.view.replacedNotice, isTrue);
   });
 
   test('dismiss frees the proposal', () async {

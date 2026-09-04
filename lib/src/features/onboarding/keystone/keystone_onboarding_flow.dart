@@ -161,7 +161,7 @@ class KeystoneOnboardingShell extends StatelessWidget {
     );
 
     return AppDesktopShell(
-      sidebarWidth: 256,
+      sidebarWidth: kAppDesktopSidebarWidth,
       background: _KeystoneOnboardingWindowBackground(activeStep: activeStep),
       sidebar: SlideTransition(
         position: Tween<Offset>(

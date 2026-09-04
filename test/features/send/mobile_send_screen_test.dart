@@ -661,8 +661,7 @@ void main() {
     await tester.pumpWidget(
       _app(
         initialRecipient: _texAddress,
-        validateAddress: ({required address, required network}) =>
-            validation.future,
+        validateAddress: ({required address}) => validation.future,
         accountState: const AccountState(
           accounts: [
             AccountInfo(

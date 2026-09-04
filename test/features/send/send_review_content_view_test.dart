@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/review_buttons_stack.dart';
 import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
+import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_review_layout.dart';
@@ -313,6 +314,109 @@ void main() {
       find.byType(ReviewButtonsStack),
     );
     expect(stack.onPrimaryPressed, isNull);
+  });
+
+  group('payment request framing', () {
+    testWidgets('retitles the screen and keeps the verified recipient', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const SendReviewContentView(
+          amountText: '0.50 ZEC',
+          recipient: SendReviewAddressRecipient(address: _address),
+          feeText: '0.012 ZEC',
+          isPaymentRequest: true,
+        ),
+      );
+
+      expect(find.text('Review payment request'), findsOneWidget);
+      expect(find.text('Review send'), findsNothing);
+      expect(find.text('Requested by'), findsOneWidget);
+      expect(
+        find.text('To'),
+        findsNothing,
+        reason: 'the row is retitled, not duplicated',
+      );
+
+      final row = tester.widget<ReviewInfoRow>(
+        find.byKey(const ValueKey('send_review_requested_by')),
+      );
+      expect(
+        row.value,
+        truncatedAddress(_address),
+        reason: 'the request only renames the row it does not fill it',
+      );
+      expect(row.bottomLeftText, 'Shielded');
+    });
+
+    testWidgets('a contact recipient still heads the request row', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const SendReviewContentView(
+          amountText: '0.50 ZEC',
+          recipient: SendReviewContactRecipient(
+            address: _address,
+            name: 'Blue Door Coffee',
+            profilePictureId: 'pfp-02',
+          ),
+          feeText: '0.012 ZEC',
+          isPaymentRequest: true,
+        ),
+      );
+
+      final row = tester.widget<ReviewInfoRow>(
+        find.byKey(const ValueKey('send_review_requested_by')),
+      );
+      expect(row.label, 'Requested by');
+      expect(row.value, 'Blue Door Coffee');
+      expect(
+        find.descendant(
+          of: find.byType(SendReviewInfoSection),
+          matching: find.byType(AppProfilePicture),
+        ),
+        findsOneWidget,
+      );
+      // The link's `label=` belongs to the payment request card only.
+      expect(find.text('Label from link'), findsNothing);
+      expect(find.byType(ReviewListRow), findsOneWidget);
+    });
+
+    testWidgets('states the requested amount when it was edited', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const SendReviewContentView(
+          amountText: '0.75 ZEC',
+          recipient: SendReviewAddressRecipient(address: _address),
+          feeText: '0.012 ZEC',
+          isPaymentRequest: true,
+          requestedAmountText: '0.50 ZEC',
+        ),
+      );
+
+      expect(find.text('0.75 ZEC'), findsOneWidget);
+      expect(find.text('Requested 0.50 ZEC'), findsOneWidget);
+    });
+
+    testWidgets('an ordinary send is untouched', (tester) async {
+      await _pump(
+        tester,
+        const SendReviewContentView(
+          amountText: '0.50 ZEC',
+          recipient: SendReviewAddressRecipient(address: _address),
+          feeText: '0.012 ZEC',
+        ),
+      );
+
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.textContaining('Requested'), findsNothing);
+      expect(find.text('Label from link'), findsNothing);
+    });
   });
 }
 

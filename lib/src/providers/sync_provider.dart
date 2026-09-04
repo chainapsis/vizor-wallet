@@ -180,6 +180,9 @@ class SyncState {
   bool get isUsingCompletedSpendableSnapshot =>
       displaySpendableFreshness == SpendableBalanceFreshness.lastCompletedSync;
 
+  /// True when the spendable balance is authoritative (scanned to tip, has
+  /// balance data, not using a completed-sync snapshot). The single predicate
+  /// for "is a shortfall real?".
   bool get hasSettledSpendableBalance =>
       hasBalanceData && isSyncedToTip && !isUsingCompletedSpendableSnapshot;
 
@@ -2958,10 +2961,14 @@ final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(
   () => SyncNotifier(),
 );
 
+/// [SyncState.hasSettledSpendableBalance] for [accountUuid], from an unscoped
+/// state. Scoping first is mandatory: an unscoped read answers with another
+/// account's balance, or with wallet-wide fields of a state with no balance.
 bool spendableIsSettledForAccount(SyncState? sync, String? accountUuid) =>
     sync != null &&
     sync.scopedToAccount(accountUuid).hasSettledSpendableBalance;
 
+/// [spendableIsSettledForAccount] for the active account, read live.
 bool activeAccountSpendableIsSettled(Ref ref) => spendableIsSettledForAccount(
   ref.read(syncProvider).value,
   ref.read(accountProvider).value?.activeAccountUuid,

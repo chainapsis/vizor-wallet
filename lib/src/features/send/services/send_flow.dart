@@ -209,10 +209,18 @@ class SendStatusTerminalNotifier extends Notifier<bool> {
   /// provider write; the revision guard stops a departing screen from clearing
   /// a newer one's flag. A microtask rather than a timer, so it cannot outlive
   /// a widget test's tree.
+  ///
+  /// A receipt left before its send went terminal — a pending broadcast the
+  /// user walked away from — publishes terminal first. The payment-URI drain
+  /// parks a `zcash:` link behind a running send and re-runs only on this
+  /// flag's false → true edge; once the receipt is gone the route no longer
+  /// blocks delivery, and a false → false release would leave the link parked
+  /// until some unrelated wallet event happened to run the drain.
   void resetAfterNavigation() {
     final retainedRevision = _revision;
     scheduleMicrotask(() {
       if (_disposed || _revision != retainedRevision) return;
+      if (!state) markTerminal();
       reset();
     });
   }

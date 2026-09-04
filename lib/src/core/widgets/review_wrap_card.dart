@@ -32,8 +32,9 @@ class ReviewWrapCard extends StatelessWidget {
   final EdgeInsetsGeometry padding;
 
   /// Whether the card hugs its content when its parent bounds the height.
-  /// The default fills; a card in a `Flexible` passes [MainAxisSize.min] to
-  /// shrink to short content instead.
+  /// The default fills, which is what every fixed-height-free caller gets
+  /// today; a card in a `Flexible` passes [MainAxisSize.min] to shrink to
+  /// short content instead.
   final MainAxisSize mainAxisSize;
 
   /// Fixed surface override. The failed status screen keeps the dark
