@@ -50,6 +50,12 @@ android {
     buildToolsVersion = "36.0.0"
     ndkVersion = "28.2.13676358"
 
+    dependenciesInfo {
+        // APK channels cannot use the Play-encrypted dependency block. Keep
+        // the default bundle behavior so Play uploads retain SDK insights.
+        includeInApk = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -16,6 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 GENERATOR_PATH = ROOT / "scripts" / "generate-fdroid-metadata.py"
 RUST_WRAPPER_PATH = ROOT / "scripts" / "run-with-android-reproducible-rust.sh"
 REPRODUCIBLE_BUILD_PATH = ROOT / "scripts" / "build-android-reproducible.sh"
+ANDROID_APP_GRADLE_PATH = ROOT / "android" / "app" / "build.gradle.kts"
 SPEC = importlib.util.spec_from_file_location("generate_fdroid_metadata", GENERATOR_PATH)
 assert SPEC is not None and SPEC.loader is not None
 GENERATOR = importlib.util.module_from_spec(SPEC)
@@ -175,6 +176,14 @@ class FdroidMetadataTest(unittest.TestCase):
                 cwd=ROOT,
             )
             self.assertIn("CurrentVersion: 0.0.35", output.read_text(encoding="utf-8"))
+
+
+class AndroidApkMetadataTest(unittest.TestCase):
+    def test_disables_dependency_metadata_only_for_apks(self) -> None:
+        build_config = ANDROID_APP_GRADLE_PATH.read_text(encoding="utf-8")
+        self.assertIn("dependenciesInfo {", build_config)
+        self.assertIn("includeInApk = false", build_config)
+        self.assertNotIn("includeInBundle = false", build_config)
 
 
 class FdroidBuildScriptTest(unittest.TestCase):
