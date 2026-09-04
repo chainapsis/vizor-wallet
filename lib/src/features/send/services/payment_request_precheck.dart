@@ -180,7 +180,7 @@ class PaymentRequestPrecheck {
     required this.proposeTransfer,
     required this.discardProposal,
     required this.spendableIsAuthoritativeNow,
-    required this.spendableBalanceNow,
+    this.spendableBalanceNow,
   });
 
   final PaymentRequestValidateAddress validateAddress;
@@ -193,7 +193,15 @@ class PaymentRequestPrecheck {
   final PaymentRequestSpendableIsAuthoritativeNow spendableIsAuthoritativeNow;
 
   /// Live re-read of the balance itself, for the figure a shortfall quotes.
-  final PaymentRequestSpendableBalanceNow spendableBalanceNow;
+  /// Optional: a caller that omits it quotes the balance [run] started with,
+  /// which is only right when that figure cannot move during the check (the
+  /// production wiring always passes a live reader).
+  final PaymentRequestSpendableBalanceNow? spendableBalanceNow;
+
+  BigInt _spendableNow(BigInt fallback) {
+    final read = spendableBalanceNow;
+    return read == null ? fallback : read();
+  }
 
   /// [spendableIsAuthoritative] says whether [spendableBalance] is a settled
   /// post-sync figure. It has no default on purpose: getting it wrong is the
@@ -295,7 +303,7 @@ class PaymentRequestPrecheck {
       // Settled, but not necessarily the same figure: quote what the wallet
       // holds now, and if a scan landed the funds while this check was in
       // flight there is nothing to refuse — let the proposal decide.
-      final spendableNow = spendableBalanceNow();
+      final spendableNow = _spendableNow(spendableBalance);
       if (amountZatoshi > spendableNow) {
         return PaymentRequestPrecheckInsufficientFunds(
           spendableText: _formatZec(spendableNow),
@@ -323,7 +331,7 @@ class PaymentRequestPrecheck {
       );
     } catch (e) {
       log('PaymentRequest: proposal failed: $e');
-      return _mapProposalError(e.toString());
+      return _mapProposalError(e.toString(), spendableBalance);
     }
   }
 
@@ -332,7 +340,10 @@ class PaymentRequestPrecheck {
   /// "Still syncing" and "not enough" are the two answers a user acts on
   /// differently, so they must not be collapsed into one generic failure — and
   /// a sync-time shortfall must land on syncing, never on insufficient.
-  PaymentRequestPrecheckResult _mapProposalError(String raw) {
+  PaymentRequestPrecheckResult _mapProposalError(
+    String raw,
+    BigInt spendableBalance,
+  ) {
     final lower = raw.toLowerCase();
     if (lower.contains('wallet sync is still finishing') ||
         lower.contains('wallet sync failed before balance refresh') ||
@@ -360,7 +371,7 @@ class PaymentRequestPrecheck {
       // check started with is the one number guaranteed to predate whatever
       // the wallet settled on.
       return PaymentRequestPrecheckInsufficientFunds(
-        spendableText: _formatZec(spendableBalanceNow()),
+        spendableText: _formatZec(_spendableNow(spendableBalance)),
       );
     }
     // Wrong-network addresses are refused up front by the validation above;
