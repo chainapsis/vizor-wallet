@@ -13,9 +13,11 @@ import '../../../../../main.dart' show log;
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/navigation/payment_uri_busy_surface_provider.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
@@ -33,7 +35,9 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
+import '../../../../providers/payment_request_flow_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../models/send_scan_result.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
 import '../../services/send_proving_key_warmup.dart';
@@ -104,6 +108,7 @@ class _ReviewRecipientPresentation {
 typedef MobileSendAddressValidator =
     Future<rust_sync.AddressValidationResult> Function({
       required String address,
+      required String network,
     });
 
 typedef MobileSendFeeEstimator =
@@ -119,7 +124,7 @@ typedef MobileSendFeeEstimator =
 /// [networkName] is the network the wallet is actually on, not the build
 /// default: the scanner refuses an address that does not belong to it.
 typedef MobileSendScanner =
-    Future<String?> Function(
+    Future<SendScanResult?> Function(
       BuildContext context, {
       required String networkName,
     });
@@ -175,15 +180,59 @@ class MobileSendAmountArgs {
     required this.sendFlowId,
     required this.recipient,
     required this.addressType,
+    this.amountText,
+    this.fiatAmountText,
+    this.amountInputMode = MobileSendAmountInputMode.zec,
+    this.memo,
+    this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
+    this.isPaymentRequest = false,
+    this.requestedBy,
+    this.requestedAmountZatoshi,
   });
 
   final String sendFlowId;
   final String recipient;
   final String addressType;
+
+  /// Any amount already composed on the recipient step — a ZIP-321 payment URI
+  /// prefills one and can step back in place, so the pushed amount page has to
+  /// carry it forward or the payee-requested amount is silently dropped.
+  final String? amountText;
+  final String? fiatAmountText;
+  final MobileSendAmountInputMode amountInputMode;
+  final String? memo;
+  final bool preserveMemoWhitespace;
   final String? contactLabel;
   final String? contactPictureId;
+
+  /// Payment-request framing carried from the recipient step, already gated
+  /// on the recipient still being the one the request named (see
+  /// `_isAnsweringPaymentRequest`); the amount and review pages cannot change
+  /// the recipient, so passing it on is safe.
+  final bool isPaymentRequest;
+  final String? requestedBy;
+  final BigInt? requestedAmountZatoshi;
+}
+
+/// What the pushed `/send/amount` page hands back when it pops.
+///
+/// The recipient page below it keeps its own copy of the amount so it can seed
+/// the next push (a ZIP-321 link prefills one). That copy goes stale the moment
+/// the pushed page is edited, so the pushed page returns the amount it actually
+/// holds and the recipient page adopts it.
+class MobileSendAmountResult {
+  const MobileSendAmountResult({
+    required this.amountText,
+    required this.fiatAmountText,
+    required this.amountInputMode,
+  });
+
+  /// Canonical ZEC text, whichever input mode composed it.
+  final String amountText;
+  final String fiatAmountText;
+  final MobileSendAmountInputMode amountInputMode;
 }
 
 class MobileSendReviewDraftArgs {
@@ -195,9 +244,23 @@ class MobileSendReviewDraftArgs {
     this.feeZatoshi,
     this.isMaxMode = false,
     this.memo,
+    this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
+    this.isPaymentRequest = false,
+    this.requestedBy,
+    this.requestedAmountZatoshi,
   });
+
+  /// Retitles the step "Review payment request".
+  final bool isPaymentRequest;
+
+  /// Sanitised requester label from the request, when it carried one.
+  final String? requestedBy;
+
+  /// The amount the request asked for; shown only when the reviewed amount
+  /// differs from it.
+  final BigInt? requestedAmountZatoshi;
 
   final String sendFlowId;
   final String recipient;
@@ -206,6 +269,7 @@ class MobileSendReviewDraftArgs {
   final BigInt? feeZatoshi;
   final bool isMaxMode;
   final String? memo;
+  final bool preserveMemoWhitespace;
   final String? contactLabel;
   final String? contactPictureId;
 }
@@ -223,8 +287,16 @@ class MobileSendAmountScreen extends StatelessWidget {
       initialSendFlowId: args.sendFlowId,
       initialRecipient: args.recipient,
       initialAddressType: args.addressType,
+      initialAmount: args.amountText,
+      initialFiatAmount: args.fiatAmountText,
+      initialAmountInputMode: args.amountInputMode,
+      initialMemo: args.memo,
+      preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
+      isPaymentRequest: args.isPaymentRequest,
+      paymentRequestLabel: args.requestedBy,
+      requestedAmountZatoshi: args.requestedAmountZatoshi,
     );
   }
 }
@@ -248,8 +320,12 @@ class MobileSendReviewScreen extends StatelessWidget {
       refreshReviewFeeOnInit: true,
       initialMaxMode: args.isMaxMode,
       initialMemo: args.memo,
+      preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
+      isPaymentRequest: args.isPaymentRequest,
+      paymentRequestLabel: args.requestedBy,
+      requestedAmountZatoshi: args.requestedAmountZatoshi,
     );
   }
 }
@@ -272,9 +348,6 @@ const _kMobileSendAmountZecHintEndInset = 3.7;
 const _kMobileSendAmountInputMinWidth = 32.0;
 const _kMobileSendAmountInputFallbackMaxWidth = 220.0;
 const _kMobileSendAmountCursorBlinkHalfPeriod = Duration(milliseconds: 500);
-const _kMobileSendAmountPriceLoadingWidth = 48.0;
-const _kMobileSendAmountPriceLoadingHeight = 12.0;
-const _kMobileSendAmountPriceLoadingPeriod = Duration(milliseconds: 1200);
 const _kMobileSendAmountFontSize = 48.0;
 const _kMobileSendAmountLineHeightPx = 40.0;
 const _kMobileSendAmountUnitFontSize = 38.0;
@@ -317,9 +390,13 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialMaxMode = false,
     this.refreshReviewFeeOnInit = false,
     this.initialMemo,
+    this.preserveInitialMemoWhitespace = false,
     this.initialContactLabel,
     this.initialContactPictureId,
     this.initialRecipientFocused = false,
+    this.isPaymentRequest = false,
+    this.paymentRequestLabel,
+    this.requestedAmountZatoshi,
     super.key,
   });
 
@@ -344,6 +421,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final bool initialMaxMode;
   final bool refreshReviewFeeOnInit;
   final String? initialMemo;
+  final bool preserveInitialMemoWhitespace;
   final String? initialSendFlowId;
   final bool useRouteSteps;
 
@@ -351,6 +429,19 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final String? initialContactLabel;
   final String? initialContactPictureId;
   final bool initialRecipientFocused;
+
+  /// This send answers a ZIP-321 payment request: the review step is retitled
+  /// and its recipient row says who asked. Nothing about the proposal, the
+  /// broadcast or the receipt changes.
+  final bool isPaymentRequest;
+
+  /// Sanitised `label=` from the request. Carried through to the proposal
+  /// and the status receipt; the review UI never renders it.
+  final String? paymentRequestLabel;
+
+  /// The amount the request asked for. Rendered under the review info block
+  /// only when the reviewed amount differs from it.
+  final BigInt? requestedAmountZatoshi;
 
   /// Preview/test seam for the direct Rust validation call.
   final MobileSendAddressValidator? validateAddress;
@@ -373,11 +464,29 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   late final String _sendFlowId = widget.initialSendFlowId ?? newSendFlowId();
 
   var _step = _SendStep.recipient;
+  // True when a ZIP-321 prefill jumped straight to the amount step while the
+  // address is still validating; lets us bounce back to the recipient step if
+  // the prefilled address turns out invalid (see _maybeFallBackToRecipientStep).
+  var _amountJumpPendingAddressCheck = false;
   var _phase = _SendPhase.compose;
   var _isConfirmingSend = false;
 
+  /// Captured in [initState] so the hold can be given back from [dispose]
+  /// and from an async continuation that outlives the element.
+  late final PaymentUriBusySurfaceNotifier _paymentUriBusySurface;
+
+  /// Whether this screen holds the `paymentUriBusySurfaceProvider` hold it
+  /// takes for the confirmation window — see [_confirmAndSend].
+  var _holdsConfirmBusySurface = false;
+
   // Recipient state.
   String _addressType = '';
+
+  /// True when the last validation refused the address only because it belongs
+  /// to another Zcash network. `_addressType` stays `'invalid'` so every gate
+  /// that already refuses bad addresses keeps refusing this one; the flag only
+  /// changes the sentence under the field.
+  bool _addressWrongNetwork = false;
   String? _contactLabel;
   String? _contactPictureId;
   int _addressSeq = 0;
@@ -395,6 +504,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   // Review state.
   String _memo = '';
+  bool _preserveMemoWhitespace = false;
   BigInt? _feeZatoshi;
   _MobileSendFeeQuote? _reviewFeeQuote;
   bool _isRefreshingReviewFee = false;
@@ -408,6 +518,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   @override
   void initState() {
     super.initState();
+    _paymentUriBusySurface = ref.read(paymentUriBusySurfaceProvider.notifier);
     try {
       ref.read(sendProvingKeyWarmupProvider).call();
     } catch (error) {
@@ -416,11 +527,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _addressFocus.addListener(_handleAddressFocusChanged);
     _amountFocus.addListener(_handleAmountFocusChanged);
     final initial = widget.initialRecipient;
+    var hasInitialAddressType = false;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
       final initialAddressType = widget.initialAddressType?.trim();
       if (initialAddressType != null && initialAddressType.isNotEmpty) {
         _addressType = initialAddressType;
+        hasInitialAddressType = true;
       } else {
         unawaited(_validateAddress());
       }
@@ -431,11 +544,24 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     _contactPictureId = widget.initialContactPictureId;
     final initialMemo = widget.initialMemo;
-    if (initialMemo != null && initialMemo.trim().isNotEmpty) {
-      _memo = initialMemo.trim();
+    if (initialMemo != null) {
+      final memo = widget.preserveInitialMemoWhitespace
+          ? initialMemo
+          : initialMemo.trim();
+      if (memo.isNotEmpty) {
+        _memo = memo;
+        _preserveMemoWhitespace = widget.preserveInitialMemoWhitespace;
+      }
     }
     if (widget.initialAmountStep || widget.initialAmount != null) {
       _step = widget.initialReview ? _SendStep.review : _SendStep.amount;
+      // A ZIP-321 payment URI can prefill the amount and skip to the amount
+      // step; if the prefilled address validates as invalid, bounce back to the
+      // recipient step instead of letting the user continue past the error.
+      _amountJumpPendingAddressCheck =
+          !widget.initialReview &&
+          widget.initialRecipient != null &&
+          !hasInitialAddressType;
       _amountText = widget.initialAmount?.trim() ?? '';
       _amountInputMode = widget.initialAmountInputMode;
       _fiatAmountText = widget.initialFiatAmount?.trim() ?? '';
@@ -473,6 +599,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   void dispose() {
+    if (_holdsConfirmBusySurface) {
+      _holdsConfirmBusySurface = false;
+      _paymentUriBusySurface.releaseAfterNavigation();
+    }
     _addressFocus.removeListener(_handleAddressFocusChanged);
     _amountFocus.removeListener(_handleAmountFocusChanged);
     _addressController.dispose();
@@ -506,10 +636,43 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _step == _SendStep.recipient &&
       _addressFocus.hasFocus;
 
-  bool get _routePopAllowed =>
-      _phase == _SendPhase.compose &&
-      (widget.useRouteSteps || _step == _SendStep.recipient) &&
-      !_isConfirmingSend;
+  // Whether this screen's own page has anything under it.
+  //
+  // Asks the route this screen sits in, not the navigator: `GoRouter.canPop()`
+  // answers "is there more than one page on the stack", which a modal bottom
+  // sheet pushed *above* a rootless /send (scanner, memo editor, fee info,
+  // full-address sheet) flips to true — and, because that read happens at
+  // build time, the true survives the sheet closing and sends the system back
+  // out of the app again. `ModalRoute.isFirst` is a fact about this route's
+  // position and no sheet can move it.
+  //
+  // Null means no enclosing route at all (bare widgetbook hosts): the two
+  // callers keep their existing defaults for that case, which differ.
+  ModalRoute<Object?>? get _enclosingRoute => ModalRoute.of(context);
+
+  // Null (no route) keeps today's `?? false`: fall back to /home rather than
+  // calling `context.pop()` where there may be nothing to pop.
+  bool get _canPopRoute {
+    final route = _enclosingRoute;
+    return route != null && !route.isFirst;
+  }
+
+  // Drives `PopScope.canPop`, so it decides whether the Android system back /
+  // gesture is handled by the framework or handed to [_handleBack]. It has to
+  // agree with the toolbar arrow: a payment-URI deep link enters through `go`,
+  // which makes `/send` the whole stack, and leaving `canPop` true there lets
+  // the press bubble out of the app (backgrounding it) while the arrow lands
+  // on /home. Reporting `false` when nothing can be popped routes the press
+  // into `onPopInvokedWithResult` → [_handleBack] instead.
+  bool get _routePopAllowed {
+    if (_phase != _SendPhase.compose) return false;
+    if (_isConfirmingSend) return false;
+    if (!widget.useRouteSteps && _step != _SendStep.recipient) return false;
+    // Without an enclosing route (bare widgetbook renders) there is no way to
+    // tell whether a pop would go anywhere, so keep the framework default.
+    final route = _enclosingRoute;
+    return route == null || !route.isFirst;
+  }
 
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';
@@ -526,26 +689,55 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final seq = ++_addressSeq;
     final address = _addressController.text.trim();
     if (address.isEmpty) {
-      if (mounted && seq == _addressSeq) setState(() => _addressType = '');
+      if (mounted && seq == _addressSeq) {
+        setState(() {
+          _addressType = '';
+          _addressWrongNetwork = false;
+        });
+      }
       return;
     }
     try {
       final result =
-          await (widget.validateAddress ??
-              ({required String address}) => rust_sync.validateAddress(
-                address: address,
-                network: ref.read(rpcEndpointProvider).networkName,
-              ))(
+          await (widget.validateAddress ?? rust_sync.validateAddress)(
             address: address,
+            network: ref.read(rpcEndpointProvider).networkName,
           );
       if (!mounted || seq != _addressSeq) return;
-      setState(
-        () => _addressType = result.isValid ? result.addressType : 'invalid',
-      );
+      setState(() {
+        _addressType = result.isValid ? result.addressType : 'invalid';
+        _addressWrongNetwork = result.wrongNetwork;
+        _maybeFallBackToRecipientStep();
+      });
     } catch (e) {
       log('MobileSend: address validation error: $e');
       if (!mounted || seq != _addressSeq) return;
-      setState(() => _addressType = 'error');
+      setState(() {
+        _addressType = 'error';
+        _addressWrongNetwork = false;
+        _maybeFallBackToRecipientStep();
+      });
+    }
+  }
+
+  /// A ZIP-321 payment URI can jump straight to the amount step with the
+  /// address + amount prefilled. If the prefilled address does not come back
+  /// usable, fall back to the recipient step so the address error is shown
+  /// instead of letting the user continue past it.
+  ///
+  /// Both outcomes bounce: `'invalid'` (validation ran and rejected the
+  /// address, shown as "Invalid address") and `'error'` (validation itself
+  /// failed, e.g. offline, shown as "Address validation failed"). The amount
+  /// step gates its CTA on [_hasValidAddress], which excludes both, so leaving
+  /// the user on the amount step after an `'error'` strands them behind a
+  /// disabled "Enter amount to continue" button with no way to re-validate.
+  /// The recipient step re-runs validation whenever the address changes.
+  /// Runs once, for the initial prefill.
+  void _maybeFallBackToRecipientStep() {
+    if (!_amountJumpPendingAddressCheck) return;
+    _amountJumpPendingAddressCheck = false;
+    if (_step == _SendStep.amount && !_hasValidAddress) {
+      _step = _SendStep.recipient;
     }
   }
 
@@ -556,6 +748,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _contactPictureId = null;
       }
       _addressType = '';
+      _addressWrongNetwork = false;
       _invalidateReviewFeeQuote();
       _clearMaxMode();
     });
@@ -582,12 +775,36 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       context,
       networkName: ref.read(rpcEndpointProvider).networkName,
     );
-    if (scanned == null || scanned.trim().isEmpty || !mounted) return;
-    _addressController.value = TextEditingValue(
-      text: scanned.trim(),
-      selection: TextSelection.collapsed(offset: scanned.trim().length),
-    );
-    _handleAddressChanged();
+    if (scanned == null || !mounted) return;
+    switch (scanned) {
+      case SendScanPaymentRequest(:final prefill):
+        // A QR that already names an amount is the same object a `zcash:`
+        // link is, so it gets the same answer: the card, over whatever is on
+        // screen — not a half-filled composer.
+        ref
+            .read(paymentRequestFlowProvider.notifier)
+            .present(prefill, source: PaymentRequestSource.qrCode);
+      case SendScanAddress(:final address, :final downgrade):
+        final recipient = address.trim();
+        if (recipient.isEmpty) return;
+        _addressController.value = TextEditingValue(
+          text: recipient,
+          selection: TextSelection.collapsed(offset: recipient.length),
+        );
+        _handleAddressChanged();
+        // A request the scan refused still surrendered its address, and the
+        // composer just took it. Say what was left behind — otherwise the
+        // payer answers a request they never saw the terms of.
+        final downgradeMessage = sendScanDowngradeMessage(downgrade);
+        if (downgradeMessage != null) {
+          showAppToast(
+            context,
+            downgradeMessage,
+            iconName: AppIcons.warning,
+            tone: AppToastTone.destructive,
+          );
+        }
+    }
   }
 
   Future<void> _pasteAddress() async {
@@ -622,18 +839,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (!_hasValidAddress) return;
     _addressFocus.unfocus();
     if (widget.useRouteSteps) {
-      unawaited(
-        context.push<void>(
-          '/send/amount',
-          extra: MobileSendAmountArgs(
-            sendFlowId: _sendFlowId,
-            recipient: _addressController.text.trim(),
-            addressType: _addressType,
-            contactLabel: _contactLabel,
-            contactPictureId: _contactPictureId,
-          ),
-        ),
-      );
+      unawaited(_pushAmountStep());
       return;
     }
     setState(() => _step = _SendStep.amount);
@@ -641,6 +847,72 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       if (mounted) _amountFocus.requestFocus();
     });
     unawaited(_validateAmount());
+  }
+
+  Future<void> _pushAmountStep() async {
+    final amountText = _amountText.trim();
+    final fiatAmountText = _fiatAmountText.trim();
+    final result = await context.push<MobileSendAmountResult>(
+      '/send/amount',
+      extra: MobileSendAmountArgs(
+        sendFlowId: _sendFlowId,
+        recipient: _addressController.text.trim(),
+        addressType: _addressType,
+        // A ZIP-321 deep link prefills the amount on this same screen and
+        // can step back to the recipient in place (there is no amount page
+        // to pop). Carrying the amount forward keeps the payee-requested
+        // value instead of stranding it in the hidden root state.
+        amountText: amountText.isEmpty ? null : amountText,
+        fiatAmountText: fiatAmountText.isEmpty ? null : fiatAmountText,
+        amountInputMode: _amountInputMode,
+        memo: _memo,
+        preserveMemoWhitespace: _preserveMemoWhitespace,
+        contactLabel: _contactLabel,
+        contactPictureId: _contactPictureId,
+        isPaymentRequest: _isAnsweringPaymentRequest,
+        requestedBy: _activePaymentRequestLabel,
+        requestedAmountZatoshi: _isAnsweringPaymentRequest
+            ? widget.requestedAmountZatoshi
+            : null,
+      ),
+    );
+    if (!mounted) return;
+    _adoptAmountStepResult(result);
+  }
+
+  /// The amount this screen would hand back to the page below if it popped now.
+  MobileSendAmountResult get _amountStepResult => MobileSendAmountResult(
+    amountText: _amountText.trim(),
+    fiatAmountText: _fiatAmountText.trim(),
+    amountInputMode: _amountInputMode,
+  );
+
+  /// Takes over whatever the pushed amount page composed.
+  ///
+  /// A null result means the page popped without one — the Android system back
+  /// and the iOS edge swipe pop through the framework and cannot carry a
+  /// value. Dropping the carried amount there is deliberate: re-seeding the
+  /// next push from this screen's copy would resurrect a number the user has
+  /// already edited past, which is the bug this hand-back exists to remove.
+  void _adoptAmountStepResult(MobileSendAmountResult? result) {
+    final amountText = result?.amountText ?? '';
+    final fiatAmountText = result?.fiatAmountText ?? '';
+    final amountInputMode = result?.amountInputMode ?? _amountInputMode;
+    if (amountText == _amountText &&
+        fiatAmountText == _fiatAmountText &&
+        amountInputMode == _amountInputMode) {
+      return;
+    }
+    setState(() {
+      _amountText = amountText;
+      _fiatAmountText = fiatAmountText;
+      _amountInputMode = amountInputMode;
+    });
+    _setAmountControllerText(
+      amountInputMode == MobileSendAmountInputMode.usd
+          ? fiatAmountText
+          : amountText,
+    );
   }
 
   // ── Amount step ────────────────────────────────────────────────────
@@ -1083,8 +1355,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       }
     } catch (e) {
       if (!mounted || seq != _validateSeq) return;
-      final msg = e.toString();
-      if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
+      // Lowercase first, like the max and review estimates in this file: what
+      // Rust actually sends up is "Propose failed: Insufficient balance (have
+      // …, need … including fee)", so a case-sensitive match on either literal
+      // never fired and this warning could not reach the composer at all.
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('insufficientfunds') || msg.contains('insufficient')) {
         setState(() => _amountError = _notEnoughZecText);
       } else {
         log('MobileSend: fee estimation failed (non-blocking): $e');
@@ -1095,6 +1371,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   bool get _amountReady =>
       !_isResolvingMax &&
+      _hasValidAddress &&
+      !_amountJumpPendingAddressCheck &&
       _amountError == null &&
       (!_amountInputIsUsd || ref.read(zecLiveUsdUnitPriceProvider) != null) &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
@@ -1126,8 +1404,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             feeZatoshi: _feeZatoshi,
             isMaxMode: _isMaxMode && _hasCurrentMaxQuote,
             memo: _memo,
+            preserveMemoWhitespace: _preserveMemoWhitespace,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
+            // The pushed review page decides the "Review payment request"
+            // framing from these; without them it reads as an ordinary send.
+            isPaymentRequest: _isAnsweringPaymentRequest,
+            requestedBy: _activePaymentRequestLabel,
+            requestedAmountZatoshi: _isAnsweringPaymentRequest
+                ? widget.requestedAmountZatoshi
+                : null,
           ),
         ),
       );
@@ -1140,7 +1426,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   // ── Review step ────────────────────────────────────────────────────
 
-  String get _effectiveMemo => _isShieldedAddress ? _memo.trim() : '';
+  String get _effectiveMemo {
+    if (!_isShieldedAddress) return '';
+    return _preserveMemoWhitespace ? _memo : _memo.trim();
+  }
 
   Future<void> _refreshReviewQuote() {
     if (_isMaxMode) return _resolveMaxEstimate();
@@ -1296,11 +1585,41 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       builder: (_) => _MemoSheet(initial: _memo),
     );
     if (next == null || !mounted) return;
-    setState(() => _memo = next);
+    setState(() {
+      _memo = next;
+      _preserveMemoWhitespace = false;
+    });
     unawaited(_refreshReviewQuote());
   }
 
   Future<void> _showFeeInfo() => showMobileTxFeeInfoSheet(context);
+
+  /// Whether this send is still answering the payment request it opened from.
+  ///
+  /// The request's framing is a claim about who the money is going to, so it
+  /// only holds while the recipient is the one the request named. Retype the
+  /// address and this is an ordinary send again — the same rule
+  /// `_activePaymentRequest` applies on desktop, and the reason an
+  /// attacker-supplied label can never be shown over an address the request
+  /// did not ask for.
+  bool get _isAnsweringPaymentRequest =>
+      widget.isPaymentRequest &&
+      (widget.initialRecipient?.trim() ?? '') == _addressController.text.trim();
+
+  /// The request's label, or null once the recipient no longer matches.
+  String? get _activePaymentRequestLabel =>
+      _isAnsweringPaymentRequest ? widget.paymentRequestLabel : null;
+
+  /// The requested amount, but only while the reviewed amount is a different
+  /// number. The info block above already states what is being sent; repeating
+  /// the same figure as "Requested" would be noise.
+  String? get _requestedAmountNotice {
+    if (!_isAnsweringPaymentRequest) return null;
+    final requested = widget.requestedAmountZatoshi;
+    if (requested == null) return null;
+    if (requested == parseZecAmount(_amountText.trim())) return null;
+    return ZecAmount.fromZatoshi(requested).activityDetail.toString();
+  }
 
   void _openStatusRoute(Object extra) {
     if (widget.useRouteSteps) {
@@ -1312,8 +1631,44 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     context.pushReplacement('/send/status', extra: extra);
   }
 
+  /// Confirm & send, under a `paymentUriBusySurfaceProvider` hold.
+  ///
+  /// Between the tap on Confirm and the status route being on screen, a
+  /// `zcash:` link would otherwise be delivered as a card over the review —
+  /// the drain policy's "a broadcast is running on `/send/status`" row
+  /// cannot see a send that has not reached that route yet. The card then
+  /// outlives the route change (it is hosted above the router), and its
+  /// Review or Edit would dispose the status screen mid-broadcast: the
+  /// transaction is on the network with no receipt, or the proposal leaks
+  /// if the broadcast had not started. The hold parks the link for the
+  /// window; when it lifts, the app re-runs the drain against `/send/status`,
+  /// which waits for the receipt.
   Future<void> _confirmAndSend() async {
     if (_phase != _SendPhase.compose || _isConfirmingSend) return;
+    _acquireConfirmBusySurface();
+    try {
+      await _confirmAndSendHeld();
+    } finally {
+      _releaseConfirmBusySurface();
+    }
+  }
+
+  void _acquireConfirmBusySurface() {
+    if (_holdsConfirmBusySurface) return;
+    _holdsConfirmBusySurface = true;
+    _paymentUriBusySurface.acquire();
+  }
+
+  /// Safe after the element is gone: the notifier is app-scoped, and this
+  /// runs from an async continuation, never from `dispose` (which has its
+  /// own release).
+  void _releaseConfirmBusySurface() {
+    if (!_holdsConfirmBusySurface) return;
+    _holdsConfirmBusySurface = false;
+    _paymentUriBusySurface.release();
+  }
+
+  Future<void> _confirmAndSendHeld() async {
     if (_isResolvingMax || (_isMaxMode && !_hasCurrentMaxQuote)) return;
     if (!_hasCurrentReviewFeeQuote) {
       unawaited(_refreshReviewQuote());
@@ -1451,11 +1806,28 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     switch (_step) {
       case _SendStep.recipient:
-        context.pop();
+        // First compose step: pop to wherever we came from, or fall back to
+        // /home when there's nothing to pop. A payment-URI deep link can make
+        // /send the navigation root, leaving the back button with nowhere to go.
+        if (_canPopRoute) {
+          context.pop();
+        } else {
+          context.go('/home');
+        }
       case _SendStep.amount:
         _amountFocus.unfocus();
         if (widget.useRouteSteps) {
-          context.pop();
+          if (_canPopRoute) {
+            // Normal flow: amount is a pushed /send/amount page — pop it back
+            // to the recipient page, handing up the amount composed here so
+            // the page below does not re-push its stale copy.
+            context.pop(_amountStepResult);
+          } else {
+            // A prefilled-amount deep link landed on the amount step of the
+            // root /send route (no page to pop), so popping is a dead end.
+            // Step back to recipient in place; the address is already filled.
+            setState(() => _step = _SendStep.recipient);
+          }
           return;
         }
         setState(() => _step = _SendStep.recipient);
@@ -1592,7 +1964,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _SendPhase.compose => switch (_step) {
         _SendStep.recipient => 'Select Recipient',
         _SendStep.amount => 'Enter Amount',
-        _SendStep.review => 'Review Send',
+        _SendStep.review =>
+          _isAnsweringPaymentRequest ? 'Review payment request' : 'Review Send',
       },
       _SendPhase.failed => 'Send failed',
     };
@@ -1945,7 +2318,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (showError) {
       line = Text(
         _addressType == 'invalid'
-            ? 'Invalid address'
+            // A wrong-network address is well-formed, so "Invalid address"
+            // would send the user hunting for a typo that is not there.
+            ? (_addressWrongNetwork
+                  ? kWrongNetworkAddressMessage
+                  : 'Invalid address')
             : 'Address validation failed',
         style: AppTypography.labelLarge.copyWith(
           color: colors.text.destructive,
@@ -2486,7 +2863,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xxs),
-                  const _AmountPriceLoadingBar(),
+                  const AmountPriceLoadingBar(
+                    key: ValueKey('mobile_send_amount_price_loading'),
+                    animated: true,
+                  ),
                 ] else
                   Text(
                     metaText,
@@ -2576,8 +2956,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           ),
                           const SizedBox(height: AppSpacing.xs),
                           _ReviewInfoRow(
+                            // A request only retitles the row. The headline
+                            // stays the recipient the wallet resolved, so an
+                            // unverified link label never stands in for the
+                            // identity being paid.
                             leading: recipient.buildReviewLeading(),
-                            title: 'To',
+                            title: _isAnsweringPaymentRequest
+                                ? 'Requested by'
+                                : 'To',
                             headline: recipient.headline,
                             bottom: _ReviewAddressLine(
                               address: _compactReviewAddress(address),
@@ -2592,10 +2978,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       ),
                     ),
                   ),
+                  if (_requestedAmountNotice != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Requested $_requestedAmountNotice',
+                      key: const ValueKey('mobile_send_review_requested'),
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.base),
                   _ReviewWrap(
                     isShielded: _isShieldedAddress,
-                    memo: _memo.trim(),
+                    memo: _effectiveMemo,
                     feeText: feeText,
                     onMemoTap: () => unawaited(_editMemo()),
                     onFeeInfoTap: () => unawaited(_showFeeInfo()),
@@ -2755,144 +3152,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ],
       ),
     );
-  }
-}
-
-class _AmountPriceLoadingBar extends StatefulWidget {
-  const _AmountPriceLoadingBar();
-
-  @override
-  State<_AmountPriceLoadingBar> createState() => _AmountPriceLoadingBarState();
-}
-
-class _AmountPriceLoadingBarState extends State<_AmountPriceLoadingBar>
-    with SingleTickerProviderStateMixin {
-  AnimationController? _controller;
-
-  AnimationController get _activeController {
-    return _controller ??= AnimationController(
-      vsync: this,
-      duration: _kMobileSendAmountPriceLoadingPeriod,
-    );
-  }
-
-  bool get _shouldAnimate {
-    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return false;
-    return TickerMode.valuesOf(context).enabled;
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncAnimation();
-  }
-
-  void _syncAnimation() {
-    final controller = _controller;
-    if (_shouldAnimate) {
-      if (!_activeController.isAnimating) _activeController.repeat();
-      return;
-    }
-    if (controller != null) {
-      controller
-        ..stop()
-        ..value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final baseColor = colors.background.overlay.withValues(alpha: 0.15);
-    final highlightColor = colors.background.raised;
-    final staticPainter = _AmountPriceLoadingPainter(
-      progress: 0,
-      baseColor: baseColor,
-      highlightColor: highlightColor,
-      animate: false,
-    );
-
-    return SizedBox(
-      key: const ValueKey('mobile_send_amount_price_loading'),
-      width: _kMobileSendAmountPriceLoadingWidth,
-      height: _kMobileSendAmountPriceLoadingHeight,
-      child: _shouldAnimate
-          ? AnimatedBuilder(
-              animation: _activeController,
-              builder: (context, _) {
-                return CustomPaint(
-                  painter: _AmountPriceLoadingPainter(
-                    progress: _activeController.value,
-                    baseColor: baseColor,
-                    highlightColor: highlightColor,
-                  ),
-                );
-              },
-            )
-          : CustomPaint(painter: staticPainter),
-    );
-  }
-}
-
-class _AmountPriceLoadingPainter extends CustomPainter {
-  const _AmountPriceLoadingPainter({
-    required this.progress,
-    required this.baseColor,
-    required this.highlightColor,
-    this.animate = true,
-  });
-
-  final double progress;
-  final Color baseColor;
-  final Color highlightColor;
-  final bool animate;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(AppRadii.full));
-    if (!animate) {
-      final shader = LinearGradient(
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-        colors: [highlightColor, baseColor],
-      ).createShader(rect);
-      canvas.drawRRect(rrect, Paint()..shader = shader);
-      return;
-    }
-
-    canvas.drawRRect(rrect, Paint()..color = baseColor);
-    canvas.save();
-    canvas.clipRRect(rrect);
-    final sweepWidth = size.width * 1.6;
-    final left = -sweepWidth + progress * (size.width + sweepWidth);
-    final sweepRect = Rect.fromLTWH(left, 0, sweepWidth, size.height);
-    final shader = LinearGradient(
-      begin: Alignment.centerLeft,
-      end: Alignment.centerRight,
-      colors: [
-        baseColor.withValues(alpha: 0),
-        highlightColor,
-        baseColor.withValues(alpha: 0),
-      ],
-      stops: const [0, 0.5, 1],
-    ).createShader(sweepRect);
-    canvas.drawRect(sweepRect, Paint()..shader = shader);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _AmountPriceLoadingPainter oldDelegate) {
-    return progress != oldDelegate.progress ||
-        baseColor != oldDelegate.baseColor ||
-        highlightColor != oldDelegate.highlightColor ||
-        animate != oldDelegate.animate;
   }
 }
 

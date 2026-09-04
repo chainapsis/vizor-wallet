@@ -49,9 +49,14 @@ class _MobileSendStatusScreenState
   var _discardScheduled = false;
   String? _statusMessage;
 
+  /// Captured in [initState] so [dispose] can release the flag without reading
+  /// from `ref` after the element is gone.
+  late final SendStatusTerminalNotifier _sendStatusTerminal;
+
   @override
   void initState() {
     super.initState();
+    _sendStatusTerminal = ref.read(sendStatusTerminalProvider.notifier);
     _proposalConsumed = widget.keystone != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_startBroadcast());
@@ -63,6 +68,7 @@ class _MobileSendStatusScreenState
     if (_phase != _MobileSendStatusPhase.sending) {
       _scheduleDiscardIfNeeded();
     }
+    _sendStatusTerminal.resetAfterNavigation();
     super.dispose();
   }
 
@@ -89,6 +95,8 @@ class _MobileSendStatusScreenState
   }
 
   Future<void> _startBroadcast() async {
+    // A broadcast is starting: nothing is safe to leave yet.
+    _sendStatusTerminal.reset();
     final runner = widget.broadcastRunner ?? runSendBroadcast;
     final outcome = await runner(
       ref: ref,
@@ -110,6 +118,10 @@ class _MobileSendStatusScreenState
       };
       _statusMessage = outcome.statusMessage;
     });
+    if (_phase == _MobileSendStatusPhase.succeeded ||
+        _phase == _MobileSendStatusPhase.failed) {
+      _sendStatusTerminal.markTerminal();
+    }
     // Success and failure use custom native haptic patterns without system
     // notification sounds.
     switch (_phase) {

@@ -28,8 +28,10 @@ import '../../features/send/screens/mobile/mobile_keystone_sign_screen.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
+import '../../core/formatting/zec_amount.dart' show parseZecAmount;
 import '../../features/send/services/send_flow.dart'
-    show KeystoneBroadcastArgs, SendReviewArgs;
+    show KeystoneBroadcastArgs, SendReviewArgs, sanitisePaymentRequestLabel;
+import '../../features/send/models/send_prefill_args.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_status_screen.dart';
 import '../../rust/api/sync.dart' as rust_sync;
@@ -47,6 +49,7 @@ import '../layout/mobile/app_mobile_shell.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
 import '../widgets/app_icon.dart';
 import 'mobile_tab_history.dart';
+import 'payload_page_key.dart';
 
 /// The mobile route tree: the shared entry/onboarding routes, a
 /// stateful tab shell (home / swap / activity / settings), and
@@ -150,11 +153,34 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/send',
       pageBuilder: (context, state) {
         final extra = state.extra;
+        // A ZIP-321 payment URI arrives as SendPrefillArgs (address + amount +
+        // memo); other callers still pass a bare recipient string. Unpack the
+        // prefill so the multi-step mobile flow lands on the address step (or
+        // the amount step when the URI carried an amount) with the fields
+        // populated, matching the desktop /send prefill behaviour.
+        final prefill = extra is SendPrefillArgs ? extra : null;
         return CupertinoPage(
-          key: state.pageKey,
+          // `_MobileSendScreenState` seeds every `initial*` field in
+          // `initState` and has no `didUpdateWidget`, so the page has to
+          // change identity with the prefill or a second request answered
+          // onto `/send` keeps the first request's recipient.
+          key: payloadScopedPageKey(state, prefill?.id),
           child: MobileSendScreen(
             useRouteSteps: true,
-            initialRecipient: extra is String ? extra : null,
+            initialRecipient:
+                prefill?.address ?? (extra is String ? extra : null),
+            initialAmount: prefill?.amountText,
+            initialMemo: prefill?.memoText,
+            preserveInitialMemoWhitespace: prefill?.preserveMemoText ?? false,
+            // Editing a payment request keeps the request's framing on the
+            // review step; a hand-composed send has none of this.
+            isPaymentRequest: prefill?.source == kPaymentUriPrefillSource,
+            paymentRequestLabel: prefill?.source == kPaymentUriPrefillSource
+                ? sanitisePaymentRequestLabel(prefill?.label)
+                : null,
+            requestedAmountZatoshi: prefill?.source == kPaymentUriPrefillSource
+                ? parseZecAmount(prefill?.amountText ?? '')
+                : null,
           ),
         );
       },
@@ -173,10 +199,16 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/send/review',
       pageBuilder: (context, state) {
         final extra = state.extra;
-        final child = extra is MobileSendReviewDraftArgs
-            ? MobileSendReviewScreen(args: extra)
-            : const MobileSendScreen(useRouteSteps: true);
-        return CupertinoPage(key: state.pageKey, child: child);
+        final draft = extra is MobileSendReviewDraftArgs ? extra : null;
+        return CupertinoPage(
+          // `MobileSendReviewScreen` is a keyless pass-through to the same
+          // `MobileSendScreen` state, so the draft's identity is what keeps a
+          // second request from being confirmed against the first one.
+          key: payloadScopedPageKey(state, draft?.sendFlowId),
+          child: draft != null
+              ? MobileSendReviewScreen(args: draft)
+              : const MobileSendScreen(useRouteSteps: true),
+        );
       },
     ),
     GoRoute(

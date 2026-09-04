@@ -14,11 +14,15 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/formatting/zec_amount.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../providers/account_models.dart';
 import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../screens/mobile/mobile_send_screen.dart'
+    show MobileSendReviewDraftArgs;
 import '../services/send_flow.dart';
 import 'payment_request_surface.dart';
 import 'send_recipient_resolver.dart';
@@ -36,6 +40,8 @@ class PaymentRequestHost extends ConsumerWidget {
   final GoRouter router;
 
   final Widget child;
+
+  bool get _isMobile => kAppFormFactor == AppFormFactor.mobile;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -123,6 +129,31 @@ class PaymentRequestHost extends ConsumerWidget {
         edit();
         return;
       }
+      if (_isMobile) {
+        // Mobile's review step owns proposal creation, so the proposal the
+        // pre-check made would be a second one. Hand it back and give the
+        // wizard the fee it already computed — but only navigate once it is
+        // back: the review step re-quotes the fee as it mounts, and Rust
+        // cannot select inputs a proposal still holds, so a wallet whose
+        // funds sit in those inputs would answer that quote with "not enough
+        // ZEC" for the very payment the card just found affordable.
+        unawaited(() async {
+          switch (await notifier.reviewHandingBack()) {
+            case PaymentRequestReviewReady(:final args):
+              _releaseRetainedSendStatus(ref);
+              router.go('/send/review', extra: _mobileDraftFor(args));
+            case PaymentRequestReviewOvertaken():
+              // A newer link owns the card now, and it carries the replaced
+              // notice that accounts for this tap. Opening the first
+              // request's review under it would be a send the user did not
+              // choose, behind a card they are about to dismiss.
+              break;
+            case PaymentRequestReviewUnavailable():
+              break;
+          }
+        }());
+        return;
+      }
       final args = notifier.review();
       if (args == null) return;
       _releaseRetainedSendStatus(ref);
@@ -152,6 +183,29 @@ class PaymentRequestHost extends ConsumerWidget {
       ],
     );
   }
+
+  /// Desktop `/send/review` takes a [SendReviewArgs] — a proposal that already
+  /// exists. The mobile wizard's review step is a phase of the compose screen
+  /// and creates its proposal on "Confirm & send", so its route extra is a
+  /// draft instead. Handing mobile a draft keeps exactly one proposal alive at
+  /// a time on either form factor.
+  MobileSendReviewDraftArgs _mobileDraftFor(SendReviewArgs args) =>
+      MobileSendReviewDraftArgs(
+        sendFlowId: args.sendFlowId,
+        recipient: args.address,
+        addressType: args.addressType,
+        // `activityDetail` keeps all 8 fraction digits and trims trailing
+        // zeros, so this round-trips through `parseZecAmount` exactly.
+        amountText: ZecAmount.fromZatoshi(
+          args.amountZatoshi,
+        ).activityDetail.amountText,
+        feeZatoshi: args.feeZatoshi,
+        memo: args.memo,
+        preserveMemoWhitespace: args.memo != null,
+        isPaymentRequest: args.isPaymentRequest,
+        requestedBy: args.requestedBy,
+        requestedAmountZatoshi: args.requestedAmountZatoshi,
+      );
 
   /// A finished `/send/status` keeps its route payload retained so a router
   /// refresh can restore it. Navigating the card's answer onto `/send` or
