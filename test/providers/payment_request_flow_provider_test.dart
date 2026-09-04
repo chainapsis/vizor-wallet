@@ -629,6 +629,59 @@ void main() {
     expect(container.read(paymentRequestFlowProvider)!.view.memo, 'invoice 42');
   });
 
+  test('a memo keeps its surrounding whitespace on the card', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(
+          request('u1a', memoText: '  invoice 42\n'),
+          source: PaymentRequestSource.link,
+        );
+    await pumpEventQueue();
+
+    final view = container.read(paymentRequestFlowProvider)!.view;
+    expect(
+      view.memo,
+      '  invoice 42\n',
+      reason:
+          'the pre-check proposes these exact bytes, so the card has to '
+          'show them unchanged or the payer reads a memo they do not pay',
+    );
+    expect(view.displayMemo, '  invoice 42\n');
+    expect(view.memoIsWhitespaceOnly, isFalse);
+  });
+
+  test('a whitespace-only memo still reaches the card, flagged', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(
+          request('u1a', memoText: '   '),
+          source: PaymentRequestSource.link,
+        );
+    await pumpEventQueue();
+
+    final view = container.read(paymentRequestFlowProvider)!.view;
+    expect(
+      view.displayMemo,
+      '   ',
+      reason:
+          'those bytes are paid, so the memo is present — dropping it here '
+          'would hide from the payer a memo their transaction carries',
+    );
+    expect(
+      view.memoIsWhitespaceOnly,
+      isTrue,
+      reason:
+          'rendering the value verbatim draws nothing, so the surface needs '
+          'to be told to show a placeholder instead',
+    );
+  });
+
   test('a shortfall read mid-sync never lands on insufficient funds', () async {
     final api = _FakeSendApi();
     final container = makeContainer(

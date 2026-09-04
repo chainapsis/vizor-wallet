@@ -247,7 +247,9 @@ class PaymentRequestPrecheck {
     // through untouched when the prefill says to preserve it — the compose
     // form does the same through `preserveMemoText`, and the two paths have
     // to put identical bytes on chain or "Review" and "Edit then review"
-    // become different payments.
+    // become different payments. `outgoingMemoText` is the single owner of
+    // that rule, and the payment-request card renders the same getter, so
+    // what the payer reads and what this proposal pays cannot drift apart.
     //
     // Nothing here drops a memo for a transparent-like recipient. Every
     // request that reaches this service — link or scanned QR — was built by
@@ -256,9 +258,7 @@ class PaymentRequestPrecheck {
     // the link is invalid before a card exists. One owner for that rule; a
     // second, silent one here would only ever describe a request the parser
     // already refused.
-    final memo = prefill.preserveMemoText
-        ? prefill.memoText
-        : prefill.memoText?.trim();
+    final memo = prefill.outgoingMemoText;
 
     final amountText = prefill.amountText?.trim();
     if (amountText == null || amountText.isEmpty) {
@@ -318,7 +318,7 @@ class PaymentRequestPrecheck {
         address: address,
         addressType: addressType,
         amountZatoshi: amountZatoshi,
-        memo: (memo != null && memo.isNotEmpty) ? memo : null,
+        memo: memo,
         isPaymentRequest: true,
         requestedBy: prefill.label,
         requestedAmountZatoshi: amountZatoshi,

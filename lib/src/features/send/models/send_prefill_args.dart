@@ -28,6 +28,23 @@ class SendPrefillArgs {
 
   String get fingerprint =>
       '$id|$address|${amountText ?? ''}|${memoText ?? ''}|$preserveMemoText';
+
+  /// The memo bytes a send built from this prefill will actually pay, or null
+  /// when it will pay none.
+  ///
+  /// [memoText] is what the request carried; this is what survives
+  /// [preserveMemoText]. One owner, because two of them read it: the
+  /// pre-check proposes exactly these bytes, and the payment-request card
+  /// displays exactly these bytes. A trim on one side and not the other would
+  /// show the payer a memo the transaction does not pay.
+  ///
+  /// Whitespace-only survives when the request said to preserve it: those are
+  /// real bytes the payment carries, so they are a memo, not an absence. The
+  /// card is what has to make them visible.
+  String? get outgoingMemoText {
+    final raw = preserveMemoText ? memoText : memoText?.trim();
+    return (raw == null || raw.isEmpty) ? null : raw;
+  }
 }
 
 SendPrefillArgs sendPrefillArgsFromZip321Payment({

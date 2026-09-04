@@ -494,10 +494,32 @@ void main() {
     },
   );
 
+  test(
+    'a whitespace-only memo the link says to preserve is still proposed',
+    () async {
+      final api = FakeSendApi();
+      await run(api, request: prefill(memoText: '   ', preserveMemoText: true));
+
+      expect(
+        api.lastProposedMemo,
+        '   ',
+        reason:
+            'the payment carries those bytes, so the card cannot treat the '
+            'request as memo-less — see `memoIsWhitespaceOnly`',
+      );
+    },
+  );
+
   test('a shielded recipient keeps the memo', () async {
     final api = FakeSendApi();
     await run(api, request: prefill(memoText: 'thanks'));
     expect(api.lastProposedMemo, 'thanks');
+  });
+
+  test('an empty memo is proposed as no memo at all', () async {
+    final api = FakeSendApi();
+    await run(api, request: prefill(memoText: '', preserveMemoText: true));
+    expect(api.lastProposedMemo, isNull);
   });
 
   group('proposal handle', () {

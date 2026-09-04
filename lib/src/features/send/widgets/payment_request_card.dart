@@ -472,9 +472,30 @@ class PaymentRequestView {
     return raw;
   }
 
+  /// The memo exactly as the payment will carry it, or null when the request
+  /// carries none.
+  ///
+  /// Deliberately not trimmed or collapsed, unlike [displayRequesterLabel]
+  /// and [displayNote]. Those two are off-chain text the link says *about*
+  /// itself, so tidying them costs nothing. This is the on-chain memo: the
+  /// pre-check hands these exact bytes to the proposal, so trimming here
+  /// would show the payer a memo their transaction does not pay, and would
+  /// erase a whitespace-only memo from the card while still sending it.
   String? get displayMemo {
-    final raw = memo?.trim();
+    final raw = memo;
     return (raw == null || raw.isEmpty) ? null : raw;
+  }
+
+  /// True when [displayMemo] is present but every character in it is
+  /// whitespace.
+  ///
+  /// Those bytes are still paid, so the memo is present, not absent — but
+  /// rendering them verbatim draws nothing. The card surface uses this to put
+  /// a visible placeholder in the memo's value slot rather than leave a row
+  /// that reads as empty.
+  bool get memoIsWhitespaceOnly {
+    final raw = displayMemo;
+    return raw != null && raw.trim().isEmpty;
   }
 
   String? get displayNote {

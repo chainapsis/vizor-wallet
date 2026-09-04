@@ -623,7 +623,10 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
       // that does not subscribe to them returns null and stays null. The host
       // watches the price and applies `withFiatText` on every build instead.
       requesterLabel: sanitisePaymentRequestLabel(prefill.label),
-      memo: prefill.memoText,
+      // The bytes the pre-check will propose, not the raw field: the card is
+      // a preview of the payment, so a memo it shows and a memo it pays have
+      // to be the same string.
+      memo: prefill.outgoingMemoText,
       note: prefill.message,
       status: status,
       replacedNotice: replacedNotice,
