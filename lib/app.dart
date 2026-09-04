@@ -70,6 +70,7 @@ import 'src/features/payment_links/models/vizor_payment_link.dart';
 import 'src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
+import 'src/features/payment_links/services/payment_link_surface.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
@@ -1576,9 +1577,8 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   bool get _paymentRequestCardPresented =>
       ref.read(paymentRequestFlowProvider) != null;
 
-  bool get _paymentLinksSurfaceRegistered => widget.router.configuration.routes
-      .whereType<GoRoute>()
-      .any((route) => route.path == '/payment-links');
+  bool get _paymentLinksSurfaceRegistered =>
+      paymentLinkSurfaceRegistered(widget.router);
 
   void _showDeferredPaymentLinkMessage(VizorPaymentLink link, String message) {
     if (identical(_lastDeferredLink, link)) return;
