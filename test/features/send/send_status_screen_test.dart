@@ -89,6 +89,21 @@ void main() {
     expect(_sendStatusTerminal(tester), isTrue);
   });
 
+  testWidgets('a whitespace-only memo keeps its Message row on the receipt', (
+    tester,
+  ) async {
+    rustApi.executeResult = _executeResult(status: 'broadcasted');
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_harness(_reviewArgs(memo: '   ')));
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text('Message'), findsOneWidget);
+    expect(find.text('Whitespace only'), findsOneWidget);
+  });
+
   testWidgets('donation status keeps every sidebar section inactive', (
     tester,
   ) async {

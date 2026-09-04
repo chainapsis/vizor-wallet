@@ -74,6 +74,20 @@ void main() {
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
   });
 
+  testWidgets('a whitespace-only memo keeps its Message row, with a '
+      'placeholder', (tester) async {
+    // An edited ZIP-321 request can carry a memo made only of whitespace, and
+    // the proposal sends it verbatim — so the review must not drop the row.
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(_reviewArgs(addressType: 'unified', memo: '   ')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Message'), findsOneWidget);
+    expect(find.text('Whitespace only'), findsOneWidget);
+  });
+
   testWidgets('renders the address-variant review layout', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(

@@ -14,6 +14,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
@@ -205,7 +206,7 @@ class RequestResultCard extends StatelessWidget {
 
   /// Receives the request QR as PNG bytes. Presentation only: writing the
   /// file is the caller's job.
-  final ValueChanged<Uint8List>? onSaveQrImage;
+  final FutureOr<void> Function(Uint8List png)? onSaveQrImage;
 
   /// Called when the QR could not be encoded at all, so the press is
   /// reported rather than swallowed.
@@ -686,7 +687,7 @@ class RequestAmountSurface extends StatelessWidget {
   final VoidCallback? onNext;
   final VoidCallback? onBack;
   final VoidCallback? onCopyLink;
-  final ValueChanged<Uint8List>? onSaveQrImage;
+  final FutureOr<void> Function(Uint8List png)? onSaveQrImage;
   final VoidCallback? onSaveQrImageError;
   final VoidCallback? onAddMessage;
   final VoidCallback? onToggleAmountUnit;

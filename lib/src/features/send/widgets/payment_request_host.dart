@@ -8,6 +8,8 @@
 /// `paymentRequestFlowProvider` clears.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -88,15 +90,30 @@ class PaymentRequestHost extends ConsumerWidget {
         );
 
     void edit() {
-      final prefill = notifier.edit();
-      if (prefill == null) return;
-      _releaseRetainedSendStatus(ref);
-      // Both `/send` pages are keyed on the prefill's id, so this remounts the
-      // composer and discards anything already typed there. That is intended:
-      // Edit is the user asking for this request to be loaded, and a composer
-      // that kept half of a different payment's fields would be the more
-      // dangerous outcome of the two.
-      router.go('/send', extra: prefill);
+      // The card comes down at once, but the composer opens only when Rust
+      // has released the card's proposal: the composer re-quotes the fee as
+      // it mounts, and Rust cannot select inputs a proposal still holds, so a
+      // wallet whose funds sit in those inputs would answer that quote with
+      // "not enough ZEC" for the very payment the card just found affordable.
+      unawaited(() async {
+        switch (await notifier.editHandingBack()) {
+          case PaymentRequestEditReady(:final prefill):
+            _releaseRetainedSendStatus(ref);
+            // Both `/send` pages are keyed on the prefill's id, so this
+            // remounts the composer and discards anything already typed
+            // there. That is intended: Edit is the user asking for this
+            // request to be loaded, and a composer that kept half of a
+            // different payment's fields would be the more dangerous outcome
+            // of the two.
+            router.go('/send', extra: prefill);
+          case PaymentRequestEditOvertaken():
+            // A newer link owns the card now, and it carries the replaced
+            // notice that accounts for this tap.
+            break;
+          case PaymentRequestEditUnavailable():
+            break;
+        }
+      }());
     }
 
     void review() {

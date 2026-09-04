@@ -13,6 +13,7 @@ import '../../../core/widgets/pool_badge.dart';
 import '../../../core/widgets/review_list_row.dart'
     show kPaymentRequestRequesterTooltip;
 import '../../../core/widgets/review_wrap_card.dart';
+import 'send_review_layout.dart';
 
 /// Desktop width of the payment-request modal card.
 ///
@@ -740,7 +741,9 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
           // carries, so the row stays — but drawing those bytes draws
           // nothing, and a row that looks empty is indistinguishable from a
           // request that asked for no memo at all.
-          placeholder: request.memoIsWhitespaceOnly ? 'Whitespace only' : null,
+          placeholder: request.memoIsWhitespaceOnly
+              ? kWhitespaceOnlyMemoPlaceholder
+              : null,
           expanded: _messageExpanded,
           onToggle: _toggleMessage,
         ),

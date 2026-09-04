@@ -572,7 +572,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                   );
                 },
                 onSaveQrImage: (png) =>
-                    unawaited(_saveRequestQrImage(png, shownRequest.amountZec)),
+                    _saveRequestQrImage(png, shownRequest.amountZec),
                 onSaveQrImageError: _reportRequestQrSaveFailed,
               ),
             if (infoDialogType != null)

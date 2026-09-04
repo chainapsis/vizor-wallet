@@ -2,6 +2,7 @@
 // mobile define, in the mobile lane. Nothing here asserts a literal metric —
 // only token constants, copy and structure, all of which hold in both.
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show Colors, Material, MaterialApp;
@@ -834,6 +835,42 @@ void main() {
   });
 
   group('RequestQrExportButton', () {
+    testWidgets(
+      'the button stays busy until the hand-off completes',
+      (tester) async {
+        // The desktop save dialog and the mobile share sheet both outlive the
+        // PNG render; a second press while one is open would start a second
+        // export.
+        final handoff = Completer<void>();
+        var delivered = 0;
+        await _pump(
+          tester,
+          RequestQrExportButton(
+            key: const ValueKey('export_button'),
+            uri: 'zcash:u1exportbusy',
+            label: 'Save QR image',
+            onBytes: (_) {
+              delivered++;
+              return handoff.future;
+            },
+          ),
+        );
+
+        await tester.tap(find.byKey(const ValueKey('export_button')));
+        await tester.pump();
+        await _settleEncode(tester);
+
+        expect(delivered, 1);
+        expect(_exportButton(tester, 'export_button').onPressed, isNull);
+
+        handoff.complete();
+        await tester.pump();
+
+        expect(_exportButton(tester, 'export_button').onPressed, isNotNull);
+      },
+      timeout: _encodeTimeout,
+    );
+
     testWidgets(
       'an encode that fails calls onError and frees the button',
       (tester) async {

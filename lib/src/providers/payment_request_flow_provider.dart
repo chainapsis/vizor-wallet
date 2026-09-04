@@ -97,6 +97,34 @@ final class PaymentRequestReviewOvertaken extends PaymentRequestReviewHandoff {
   const PaymentRequestReviewOvertaken();
 }
 
+/// What an Edit tap resolved to — the same three answers as
+/// [PaymentRequestReviewHandoff], for the same reason: the composer that Edit
+/// opens re-quotes the fee as it mounts, and a quote asked while the card's
+/// proposal still holds its inputs can come back "not enough ZEC" for the very
+/// payment the card just found affordable.
+sealed class PaymentRequestEditHandoff {
+  const PaymentRequestEditHandoff();
+}
+
+/// The proposal is back with Rust (or there was none); the composer can open
+/// on [prefill].
+final class PaymentRequestEditReady extends PaymentRequestEditHandoff {
+  const PaymentRequestEditReady(this.prefill);
+
+  final SendPrefillArgs prefill;
+}
+
+/// No card to edit.
+final class PaymentRequestEditUnavailable extends PaymentRequestEditHandoff {
+  const PaymentRequestEditUnavailable();
+}
+
+/// A newer link replaced the card during the hand-back; the composer must not
+/// open on the request the user is no longer looking at.
+final class PaymentRequestEditOvertaken extends PaymentRequestEditHandoff {
+  const PaymentRequestEditOvertaken();
+}
+
 class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// Bumped by every state change. A pre-check that finishes after its card is
   /// gone (replaced, cancelled, reviewed) must not write into the newer card,
@@ -395,13 +423,29 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     return args;
   }
 
-  /// Clears the card, releases any proposal, and returns the request for the
-  /// composer.
-  SendPrefillArgs? edit() {
+  /// Hands the request to the composer, completing only once Rust has
+  /// released the card's proposal.
+  ///
+  /// Clears the card at once, like [dismiss]; the caller navigates only when
+  /// the returned future says the composer is safe to open — see
+  /// [PaymentRequestEditHandoff] for why waiting matters and why the three
+  /// outcomes are distinct.
+  Future<PaymentRequestEditHandoff> editHandingBack() async {
     final current = state;
-    if (current == null) return null;
-    _clear(logContext: 'PaymentRequest(edit)');
-    return current.prefill;
+    if (current == null) return const PaymentRequestEditUnavailable();
+    final proposal = current.proposal;
+    final generation = ++_generation;
+    _publish(null);
+    if (proposal != null) {
+      final release = proposal.discard(logContext: 'PaymentRequest(edit)');
+      _track(release);
+      await release;
+      if (generation != _generation) {
+        _noteReplacedRequest();
+        return const PaymentRequestEditOvertaken();
+      }
+    }
+    return PaymentRequestEditReady(current.prefill);
   }
 
   /// Cancel, the ⨯, the scrim, and the Android back gesture.

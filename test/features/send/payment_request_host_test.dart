@@ -81,6 +81,10 @@ class _FakeAccountNotifier extends AccountNotifier {
 
 final _discarded = <BigInt>[];
 
+/// Holds the pre-check's `discardProposal` open so a test can look at the
+/// router while the card's proposal is still being released.
+Completer<void>? _discardGate;
+
 PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
   readNetworkName: () => kZcashDefaultNetworkName,
   spendableIsAuthoritativeNow: () => true,
@@ -119,7 +123,11 @@ PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
         required BigInt proposalId,
         required String sendFlowId,
         required String logContext,
-      }) async => _discarded.add(proposalId),
+      }) async {
+        _discarded.add(proposalId);
+        final gate = _discardGate;
+        if (gate != null) await gate.future;
+      },
 );
 
 /// A pre-check whose propose leg can be made to fail with the error Rust
@@ -334,6 +342,7 @@ String _location(ProviderContainer container) =>
 void main() {
   setUp(() {
     _discarded.clear();
+    _discardGate = null;
     _probeMounts = 0;
     _probeDeactivations = 0;
   });
@@ -528,6 +537,32 @@ void main() {
     expect(_location(container), '/send');
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(_discarded, [BigInt.from(11)]);
+  });
+
+  testWidgets('Edit opens the composer only once the proposal is released', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    _discardGate = gate;
+    final container = await _pumpHost(tester);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Edit'));
+    await tester.pump();
+
+    // The card is gone at once, but the composer — which re-quotes the fee
+    // as it mounts — must not open against inputs the proposal still holds.
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(_discarded, [BigInt.from(11)]);
+    expect(_location(container), '/home');
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(_location(container), '/send');
   });
 
   testWidgets('Cancel dismisses the card and releases the proposal', (

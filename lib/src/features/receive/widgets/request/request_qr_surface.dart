@@ -3,6 +3,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show CircularProgressIndicator;
@@ -275,7 +276,11 @@ class RequestQrExportButton extends StatefulWidget {
   final String label;
 
   /// Receives the encoded PNG. Nothing is written or shared here.
-  final ValueChanged<Uint8List>? onBytes;
+  /// Receives the rendered PNG. Awaited: the button stays busy until the
+  /// hand-off — a native save dialog, a share sheet — has completed, so a
+  /// second press cannot start a second export while the first is still
+  /// pending. A synchronous callback is fine too.
+  final FutureOr<void> Function(Uint8List png)? onBytes;
 
   /// Called instead of [onBytes] when the encode fails.
   ///
@@ -306,7 +311,7 @@ class _RequestQrExportButtonState extends State<RequestQrExportButton> {
     try {
       final png = await renderRequestQrPng(uri);
       if (!mounted) return;
-      onBytes(png);
+      await onBytes(png);
     } catch (e) {
       // The exception stays in the log; the callback is what the user sees.
       log('RequestQr: ERROR rendering the request QR: $e');

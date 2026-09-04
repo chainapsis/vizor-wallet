@@ -10,6 +10,7 @@
 /// Presentation only: no providers, no routing, no clipboard or share calls.
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show InputDecoration, TextField;
@@ -162,7 +163,7 @@ class RequestAmountSheetResult extends StatelessWidget {
   /// Receives the share message and the request QR as PNG bytes, so the
   /// caller can hand a payer both at once — some apps show the picture, some
   /// only carry the link, and a request should survive either.
-  final void Function(String text, Uint8List png)? onShareRequest;
+  final FutureOr<void> Function(String text, Uint8List png)? onShareRequest;
 
   /// Called when the QR could not be encoded, so the share that never
   /// happened says so instead of looking like one that did.

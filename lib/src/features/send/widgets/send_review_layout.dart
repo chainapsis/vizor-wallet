@@ -278,6 +278,14 @@ class SendReviewContentColumn extends StatelessWidget {
 /// Collapsed, it is a single `ReviewListRow` whose pill holds the truncated
 /// memo and the expand glyph. Expanded, the pill swaps to a "Collapse"
 /// affordance and the full memo renders underneath the row.
+/// Drawn in the memo's value slot when the memo would render as nothing.
+///
+/// A memo made entirely of whitespace is still a memo — it is what the
+/// payment carries and what the recipient decrypts — so the row stays and says
+/// so, instead of a blank value the payer would take for an empty one. The
+/// payment-request card uses the same words for the same memo.
+const kWhitespaceOnlyMemoPlaceholder = 'Whitespace only';
+
 class ReviewMemoRows extends StatelessWidget {
   const ReviewMemoRows({
     required this.memoText,
@@ -286,7 +294,10 @@ class ReviewMemoRows extends StatelessWidget {
     super.key,
   });
 
-  /// Full memo text; the collapsed row truncates it to one line.
+  /// Full memo text; the collapsed row truncates it to one line. Non-empty:
+  /// a memo made only of whitespace is shown as
+  /// [kWhitespaceOnlyMemoPlaceholder], muted, because it is the screen
+  /// describing the memo rather than the memo's own words.
   final String memoText;
 
   final bool expanded;
@@ -296,10 +307,16 @@ class ReviewMemoRows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
+    final placeholder = memoText.trim().isEmpty
+        ? kWhitespaceOnlyMemoPlaceholder
+        : null;
+    final valueColor = placeholder == null ? null : colors.text.muted;
     if (!expanded) {
       return ReviewListRow(
         label: 'Message',
-        value: memoText,
+        value: placeholder ?? memoText,
+        valueColor: valueColor,
         trailingIconName: AppIcons.expand,
         onPressed: onToggle,
       );
@@ -317,9 +334,9 @@ class ReviewMemoRows extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            memoText,
+            placeholder ?? memoText,
             style: AppTypography.bodyMediumStrong.copyWith(
-              color: context.colors.text.accent,
+              color: valueColor ?? colors.text.accent,
             ),
           ),
         ),

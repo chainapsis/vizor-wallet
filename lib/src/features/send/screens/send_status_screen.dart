@@ -298,7 +298,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = widget.args.memo;
-    final hasMemo = memo != null && memo.trim().isNotEmpty;
+    // Present means non-empty, not non-blank: an edited request whose memo is
+    // only whitespace still sends that memo, so the row has to say so rather
+    // than omit a memo the transaction carries.
+    final hasMemo = memo != null && memo.isNotEmpty;
     final canOpenExplorer =
         (_phase == _SendStatusPhase.succeeded ||
             _phase == _SendStatusPhase.pendingBroadcast) &&
