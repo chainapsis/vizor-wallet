@@ -35,9 +35,12 @@ retrieve the association files from a publicly reachable HTTPS origin.
 For a mobile development build, keep the Dart and native values aligned:
 
 - Pass `--dart-define=VIZOR_DEEPLINK_BASE_URL=https://link-dev.vizor.cash` to
-  Flutter so generated and accepted links use the development origin.
-- Android reads the same `VIZOR_DEEPLINK_BASE_URL` environment variable (or
-  Gradle property) and injects its host into the manifest and native allowlist.
+  Flutter so generated and accepted links use the development origin. This is
+  the only knob Android has: `android/app/build.gradle.kts` decodes the same
+  define out of Flutter's `dart-defines` Gradle property and injects its host
+  into the manifest and native allowlist, so there is no separate environment
+  variable or Gradle property to set. Without the define, Android falls back to
+  the production origin.
 - iOS defaults `VIZOR_DEEPLINK_HOST` to `link.vizor.cash`; set the Xcode build
   setting to `link-dev.vizor.cash` for the development-signed build so its
   associated-domain entitlement and native allowlist match the Dart value.

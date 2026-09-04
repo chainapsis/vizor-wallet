@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
@@ -717,6 +718,37 @@ void main() {
     expect(differentSharePayloadName, sameLinkName);
     expect(sameLinkName, isNot(contains(link.address)));
     expect(sameLinkName, isNot(contains('abandon')));
+  });
+
+  test('claim wallet directory name carries the link network', () {
+    final mainName = paymentLinkClaimWalletDirectoryName(_link());
+    final regtestName = paymentLinkClaimWalletDirectoryName(
+      VizorPaymentLink(
+        network: 'regtest',
+        address: _link().address,
+        amountZatoshi: _link().amountZatoshi,
+        mnemonic: _link().mnemonic,
+        birthdayHeight: _link().birthdayHeight,
+        label: _link().label,
+        createdAt: _link().createdAt,
+      ),
+    );
+
+    expect(
+      mainName,
+      matches(
+        RegExp('^${kPaymentLinkClaimWalletDirectoryPrefix}main_[0-9a-f]{64}\$'),
+      ),
+    );
+    expect(
+      regtestName,
+      matches(
+        RegExp(
+          '^${kPaymentLinkClaimWalletDirectoryPrefix}regtest_[0-9a-f]{64}\$',
+        ),
+      ),
+    );
+    expect(regtestName, isNot(mainName));
   });
 
   test(

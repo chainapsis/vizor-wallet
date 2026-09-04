@@ -75,9 +75,19 @@ void main() {
           supportDirectory.deleteSync(recursive: true);
         }
       });
-      final claimDirectory = Directory(
-        '${supportDirectory.path}${Platform.pathSeparator}'
-        '$kPaymentLinkClaimWalletDirectoryPrefix${List.filled(64, 'a').join()}',
+      final mainName = paymentLinkClaimWalletDirectoryNameFor(
+        network: 'main',
+        identityHash: List.filled(64, 'a').join(),
+      );
+      final regtestName = paymentLinkClaimWalletDirectoryNameFor(
+        network: 'regtest',
+        identityHash: List.filled(64, 'b').join(),
+      );
+      final mainClaimDirectory = Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}$mainName',
+      )..createSync();
+      final regtestClaimDirectory = Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}$regtestName',
       )..createSync();
       final unrelatedDirectory = Directory(
         '${supportDirectory.path}${Platform.pathSeparator}'
@@ -88,10 +98,44 @@ void main() {
         resolveSupportDirectory: () async => supportDirectory,
       );
 
-      expect(claimDirectory.existsSync(), isFalse);
+      expect(mainClaimDirectory.existsSync(), isFalse);
+      expect(regtestClaimDirectory.existsSync(), isFalse);
       expect(unrelatedDirectory.existsSync(), isTrue);
     },
   );
+
+  test('claim cleanup filtered by network spares other networks', () async {
+    final supportDirectory = Directory.systemTemp.createTempSync(
+      'vizor-payment-link-reset-network',
+    );
+    addTearDown(() {
+      if (supportDirectory.existsSync()) {
+        supportDirectory.deleteSync(recursive: true);
+      }
+    });
+    final mainName = paymentLinkClaimWalletDirectoryNameFor(
+      network: 'main',
+      identityHash: List.filled(64, 'a').join(),
+    );
+    final regtestName = paymentLinkClaimWalletDirectoryNameFor(
+      network: 'regtest',
+      identityHash: List.filled(64, 'b').join(),
+    );
+    final mainClaimDirectory = Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}$mainName',
+    )..createSync();
+    final regtestClaimDirectory = Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}$regtestName',
+    )..createSync();
+
+    await deletePaymentLinkClaimWalletDirectories(
+      network: ZcashNetwork.regtest.name,
+      resolveSupportDirectory: () async => supportDirectory,
+    );
+
+    expect(regtestClaimDirectory.existsSync(), isFalse);
+    expect(mainClaimDirectory.existsSync(), isTrue);
+  });
 
   test('wallet reset surfaces payment-link claim cleanup failure', () async {
     await expectLater(
@@ -119,10 +163,14 @@ void main() {
         supportDirectory.deleteSync(recursive: true);
       }
     });
-    final firstName =
-        '$kPaymentLinkClaimWalletDirectoryPrefix${List.filled(64, 'a').join()}';
-    final secondName =
-        '$kPaymentLinkClaimWalletDirectoryPrefix${List.filled(64, 'b').join()}';
+    final firstName = paymentLinkClaimWalletDirectoryNameFor(
+      network: 'main',
+      identityHash: List.filled(64, 'a').join(),
+    );
+    final secondName = paymentLinkClaimWalletDirectoryNameFor(
+      network: 'main',
+      identityHash: List.filled(64, 'b').join(),
+    );
     Directory(
       '${supportDirectory.path}${Platform.pathSeparator}$firstName',
     ).createSync();

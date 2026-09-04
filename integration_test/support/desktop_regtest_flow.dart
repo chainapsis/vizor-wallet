@@ -396,8 +396,9 @@ Future<void> cleanupDesktopRegtestWallet() async {
   }
 }
 
-/// Regtest-guarded Gift Card claim-wallet sweep: the directory name hashes the
-/// network in, so the guard is what keeps this off a developer's real install.
+/// Regtest-guarded Gift Card claim-wallet sweep. Claim wallets from every
+/// network share one support directory, so the sweep is scoped to regtest
+/// names; a developer's unfinished mainnet claim keeps its retained DB.
 Future<void> cleanupRegtestPaymentLinkClaimWallets() async {
   if (kZcashDefaultNetworkName != ZcashNetwork.regtest.name) {
     throw StateError(
@@ -405,7 +406,9 @@ Future<void> cleanupRegtestPaymentLinkClaimWallets() async {
       'ZCASH_DEFAULT_NETWORK=regtest.',
     );
   }
-  await deletePaymentLinkClaimWalletDirectories();
+  await deletePaymentLinkClaimWalletDirectories(
+    network: ZcashNetwork.regtest.name,
+  );
 }
 
 Future<void> stopRustWorkForCleanup() async {

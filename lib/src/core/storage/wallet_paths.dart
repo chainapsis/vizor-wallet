@@ -5,8 +5,23 @@ import 'package:path_provider/path_provider.dart';
 import 'app_secure_store.dart';
 
 const kPaymentLinkClaimWalletDirectoryPrefix = 'payment_link_claim_';
+
+/// Claim-wallet directories are named
+/// `payment_link_claim_<network>_<sha256>`. The hash cannot be reversed, so the
+/// network segment is the only thing that lets a sweep delete one network's
+/// claim wallets without touching another's retained recovery state.
 final _paymentLinkClaimWalletDirectoryPattern = RegExp(
-  r'^payment_link_claim_[0-9a-f]{64}$',
+  r'^payment_link_claim_[a-z0-9]+_[0-9a-f]{64}$',
+);
+
+String paymentLinkClaimWalletDirectoryNameFor({
+  required String network,
+  required String identityHash,
+}) => '$kPaymentLinkClaimWalletDirectoryPrefix${network}_$identityHash';
+
+RegExp _paymentLinkClaimWalletDirectoryPatternFor(String network) => RegExp(
+  '^$kPaymentLinkClaimWalletDirectoryPrefix'
+  '${RegExp.escape(network)}_[0-9a-f]{64}\$',
 );
 
 Future<Directory> getWalletSupportDirectory() async {
@@ -30,11 +45,17 @@ Future<String> getTorDataDirectoryPath() async {
   return '${dir.path}${Platform.pathSeparator}tor';
 }
 
+/// Deletes claim-wallet directories for [network] only, or for every network
+/// when it is null.
 Future<void> deletePaymentLinkClaimWalletDirectories({
+  String? network,
   Future<Directory> Function() resolveSupportDirectory =
       getWalletSupportDirectory,
   Future<void> Function(Directory directory)? deleteDirectory,
 }) async {
+  final pattern = network == null
+      ? _paymentLinkClaimWalletDirectoryPattern
+      : _paymentLinkClaimWalletDirectoryPatternFor(network);
   final supportDirectory = await resolveSupportDirectory();
   if (!await supportDirectory.exists()) return;
 
@@ -43,7 +64,7 @@ Future<void> deletePaymentLinkClaimWalletDirectories({
   await for (final entity in supportDirectory.list(followLinks: false)) {
     if (entity is! Directory) continue;
     final directoryName = entity.path.split(Platform.pathSeparator).last;
-    if (!_paymentLinkClaimWalletDirectoryPattern.hasMatch(directoryName)) {
+    if (!pattern.hasMatch(directoryName)) {
       continue;
     }
     try {
