@@ -70,6 +70,7 @@ class _ActivityTransactionStatusScreenState
   bool _isLoading = false;
   String? _error;
   String? _activeAccountUuid;
+  String? _argsAccountUuid;
   bool _messageExpanded = false;
   String? _verifyAddress;
 
@@ -79,6 +80,7 @@ class _ActivityTransactionStatusScreenState
     _transaction = widget.args.initialTransaction;
     _detail = widget.args.initialDetail;
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    _argsAccountUuid = _activeAccountUuid;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -638,12 +640,11 @@ class _ActivityTransactionStatusScreenState
 
   /// A row tapped before the Gift Card index finished loading arrives with no
   /// metadata, so the receipt resolves it here instead of staying generic.
-  GiftCardActivityMetadata? _resolvedGiftCard(rust_sync.TransactionInfo? tx) {
-    if (tx == null) return null;
-    final accountUuid =
-        _activeAccountUuid ??
-        ref.watch(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return null;
+  GiftCardActivityMetadata? _resolvedGiftCard(
+    rust_sync.TransactionInfo? tx,
+    String? accountUuid,
+  ) {
+    if (tx == null || accountUuid == null) return null;
     return ref
         .watch(giftCardActivityIndexProvider(accountUuid))
         .value
@@ -681,7 +682,17 @@ class _ActivityTransactionStatusScreenState
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ?? const [];
     final privacyModeEnabled = ref.watch(privacyModeProvider);
-    final giftCard = widget.args.giftCard ?? _resolvedGiftCard(tx);
+    final activeAccountUuid =
+        ref.watch(accountProvider).value?.activeAccountUuid ??
+        _activeAccountUuid;
+    // The args metadata was resolved for the account that was active when the
+    // row was tapped; under another account only that account's index counts.
+    final suppliedGiftCard =
+        _argsAccountUuid == null || _argsAccountUuid == activeAccountUuid
+        ? widget.args.giftCard
+        : null;
+    final giftCard =
+        suppliedGiftCard ?? _resolvedGiftCard(tx, activeAccountUuid);
 
     final sentRecipientAddress = detail?.primaryAddress?.trim();
     Widget? redesignedContent;

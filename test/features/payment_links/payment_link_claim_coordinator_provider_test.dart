@@ -159,7 +159,7 @@ void main() {
     final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
     final lifecycle = container.read(paymentLinkClaimLifecycleRegistryProvider);
 
-    final tracked = coordinator.trackRetention('claim-1', () async {
+    final tracked = coordinator.trackRetention(() async {
       await retention.future;
       written = true;
     });
@@ -193,14 +193,62 @@ void main() {
     final lifecycle = container.read(paymentLinkClaimLifecycleRegistryProvider);
 
     await lifecycle.quiesceAndDrain();
-    await coordinator.trackRetention('claim-1', () async => written = true);
+    await coordinator.trackRetention(() async => written = true);
 
     expect(written, isFalse);
 
     lifecycle.resume();
-    await coordinator.trackRetention('claim-1', () async => written = true);
+    await coordinator.trackRetention(() async => written = true);
     expect(written, isTrue);
   });
+
+  test(
+    'overlapping retentions for one Card each hold the reset open',
+    () async {
+      final first = Completer<void>();
+      final second = Completer<void>();
+      var firstWritten = false;
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+            () async => const [],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      final lifecycle = container.read(
+        paymentLinkClaimLifecycleRegistryProvider,
+      );
+
+      // Both retentions belong to the same Card: leave, reopen, leave again
+      // while the first cancel is still unwinding.
+      final firstRetention = coordinator.trackRetention(() async {
+        await first.future;
+        firstWritten = true;
+      });
+      final secondRetention = coordinator.trackRetention(() => second.future);
+      await Future<void>.delayed(Duration.zero);
+
+      var drained = false;
+      final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+
+      second.complete();
+      await secondRetention;
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+      expect(firstWritten, isFalse);
+
+      first.complete();
+      await firstRetention;
+      await drain;
+
+      expect(firstWritten, isTrue);
+      expect(drained, isTrue);
+    },
+  );
 }
 
 PaymentLinkClaimSession _session(String address) {

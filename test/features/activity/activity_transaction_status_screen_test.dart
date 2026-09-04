@@ -120,6 +120,40 @@ void main() {
     expect(find.text('Happy birthday!'), findsOneWidget);
   });
 
+  testWidgets('drops passed-in Gift Card metadata after an account switch', (
+    tester,
+  ) async {
+    final accountNotifier = _SwitchableAccountNotifier();
+    await _pumpScreen(
+      tester,
+      accountNotifier: accountNotifier,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+        ),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'ruby',
+          message: 'Happy birthday!',
+        ),
+      ),
+    );
+
+    expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(GiftCardActivityDetailView), findsNothing);
+    expect(find.text('Created Gift Card'), findsNothing);
+    expect(find.text('Happy birthday!'), findsNothing);
+  });
+
   testWidgets('renders the redesigned receipt for a confirmed receive', (
     tester,
   ) async {
@@ -780,6 +814,7 @@ Future<void> _pumpScreen(
   List<AddressBookContact> contacts = const [],
   Map<String, AccountInfo> ownAccounts = const {},
   GiftCardActivityIndex? giftCardActivityIndex,
+  AccountNotifier? accountNotifier,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1512, 982));
   addTearDown(() async {
@@ -804,6 +839,8 @@ Future<void> _pumpScreen(
     ProviderScope(
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap),
+        if (accountNotifier != null)
+          accountProvider.overrideWith(() => accountNotifier),
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             SyncState(
@@ -848,6 +885,23 @@ final _bootstrap = AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+class _SwitchableAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [
+      AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0),
+      AccountInfo(uuid: 'account-2', name: 'Account 2', order: 1),
+    ],
+    activeAccountUuid: 'account-1',
+  );
+
+  void setActiveAccount(String uuid) {
+    state = AsyncData(
+      state.requireValue.copyWith(activeAccountUuid: uuid, activeAddress: null),
+    );
+  }
+}
 
 class _FakeAddressBookRepository implements AddressBookRepository {
   _FakeAddressBookRepository([this._contacts = const []]);

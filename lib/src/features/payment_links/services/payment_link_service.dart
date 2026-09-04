@@ -1123,7 +1123,6 @@ class PaymentLinkService implements PaymentLinkOperations {
     // Stop the scan but keep its database so the Card reopens already scanned;
     // tracked so a wallet reset drains this write instead of racing it.
     return _ref.read(paymentLinkClaimCoordinatorProvider).trackRetention(
-      session.link.address,
       () async {
         await _claimWallet.cancelClaimSync(session.link);
         await _receivedStore.saveReady(session.link);

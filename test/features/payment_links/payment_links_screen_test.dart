@@ -1,30 +1,20 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:zcash_wallet/app.dart';
-import 'package:zcash_wallet/src/app_bootstrap.dart';
-import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
-import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
@@ -34,22 +24,16 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
-import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/payment_links_screen_support.dart';
 
 void main() {
-  setUpAll(() async {
-    final loader = FontLoader('Geist')
-      ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
-      ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'))
-      ..addFont(rootBundle.load('assets/fonts/Geist-SemiBold.ttf'));
-    await loader.load();
-  });
+  setUpAll(loadPaymentLinksTestFonts);
 
   testWidgets('shows the truthful landing and help copy', (tester) async {
-    await _pumpPaymentLinksScreen(tester);
+    await pumpPaymentLinksScreen(tester);
 
     expect(
       find.byKey(const ValueKey('payment_links_desktop_screen')),
@@ -100,7 +84,7 @@ void main() {
   testWidgets('landing text actions expose visible desktop hover feedback', (
     tester,
   ) async {
-    await _pumpPaymentLinksScreen(tester);
+    await pumpPaymentLinksScreen(tester);
 
     final hoverFeedback = find.byKey(
       const ValueKey('payment_link_text_action_hover_How Gift Cards work'),
@@ -120,9 +104,9 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    final operations = _FakePaymentLinkOperations();
-    final clipboard = _FakePaymentLinkClipboard();
-    await _pumpPaymentLinksScreen(
+    final operations = FakePaymentLinkOperations();
+    final clipboard = FakePaymentLinkClipboard();
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -203,8 +187,8 @@ void main() {
     expect(amountSemantics.evaluate().single.value, '1.25');
 
     final editableRoot = tester.renderObject(amountEditor);
-    final caretRect = _globalCaretRect(
-      _findRenderEditable(editableRoot),
+    final caretRect = globalCaretRect(
+      findRenderEditable(editableRoot),
       '1.25'.length,
     );
     final editorRect = tester.getRect(amountEditor);
@@ -396,10 +380,10 @@ void main() {
   testWidgets(
     'retries recovery metadata without submitting Gift Card funding twice',
     (tester) async {
-      final operations = _FakePaymentLinkOperations(
+      final operations = FakePaymentLinkOperations(
         fundingMetadataSavedOnCreate: false,
       );
-      await _pumpPaymentLinksScreen(tester, operations: operations);
+      await pumpPaymentLinksScreen(tester, operations: operations);
 
       await tester.tap(find.text('Create new card'));
       await tester.pumpAndSettle();
@@ -442,7 +426,7 @@ void main() {
   testWidgets(
     'disables Continue when the Card amount and fees exceed balance',
     (tester) async {
-      await _pumpPaymentLinksScreen(
+      await pumpPaymentLinksScreen(
         tester,
         spendableBalance: BigInt.from(100000000),
       );
@@ -478,7 +462,7 @@ void main() {
   testWidgets('estimates the Card fee automatically after sync completes', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations();
+    final operations = FakePaymentLinkOperations();
     final syncNotifier = FakeSyncNotifier(
       SyncState(
         accountUuid: 'account-1',
@@ -491,7 +475,7 @@ void main() {
         displaySpendableBalance: BigInt.from(14223000000),
       ),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       syncNotifier: syncNotifier,
@@ -552,11 +536,11 @@ void main() {
   testWidgets('uses one confirmation after an uncertain funding restart', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(
-      records: [_fundedRecovery],
+    final operations = FakePaymentLinkOperations(
+      records: [fundedRecovery],
       fundingConfirmationCount: 0,
     );
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    await pumpPaymentLinksScreen(tester, operations: operations);
 
     expect(find.text('Preparing...'), findsOneWidget);
     expect(find.bySemanticsLabel('Copy Gift Card link'), findsNothing);
@@ -570,11 +554,11 @@ void main() {
   });
 
   testWidgets('removes an unshared Card after funding expires', (tester) async {
-    final operations = _FakePaymentLinkOperations(
-      records: [_fundedRecovery],
+    final operations = FakePaymentLinkOperations(
+      records: [fundedRecovery],
       fundingConfirmationCount: 0,
     );
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    await pumpPaymentLinksScreen(tester, operations: operations);
 
     expect(find.text('Preparing...'), findsOneWidget);
 
@@ -589,8 +573,8 @@ void main() {
   testWidgets('makes the link available after funding is accepted', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(fundingConfirmationCount: 0);
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    final operations = FakePaymentLinkOperations(fundingConfirmationCount: 0);
+    await pumpPaymentLinksScreen(tester, operations: operations);
 
     await tester.tap(find.text('Create new card'));
     await tester.pumpAndSettle();
@@ -617,11 +601,11 @@ void main() {
   testWidgets(
     'waits for one confirmation when broadcast acceptance is unsure',
     (tester) async {
-      final operations = _FakePaymentLinkOperations(
+      final operations = FakePaymentLinkOperations(
         fundingBroadcastAcceptedOnCreate: false,
         fundingConfirmationCount: 0,
       );
-      await _pumpPaymentLinksScreen(tester, operations: operations);
+      await pumpPaymentLinksScreen(tester, operations: operations);
 
       await tester.tap(find.text('Create new card'));
       await tester.pumpAndSettle();
@@ -654,11 +638,11 @@ void main() {
   testWidgets('shows a separate state when a valid link has no balance', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(claimable: false);
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final operations = FakePaymentLinkOperations(claimable: false);
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -676,15 +660,15 @@ void main() {
   testWidgets('waits for six confirmations before exposing the claim action', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       claimable: false,
       waitingForFundingConfirmations: true,
       fundingConfirmationCount: 2,
     );
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -713,15 +697,15 @@ void main() {
   testWidgets('keeps the Card when the confirmation wait is left', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       claimable: false,
       waitingForFundingConfirmations: true,
       fundingConfirmationCount: 2,
     );
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -739,10 +723,10 @@ void main() {
 
     // The Card is persisted as still-to-claim and keeps its claim database,
     // so it stays in the Received list instead of needing the bearer link.
-    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.retainedClaimAddresses, [incomingLink.address]);
     expect(operations.discardedClaimAddresses, isEmpty);
     expect(operations.receivedRecords, hasLength(1));
-    expect(operations.receivedRecords.single.address, _incomingLink.address);
+    expect(operations.receivedRecords.single.address, incomingLink.address);
     expect(
       operations.receivedRecords.single.status,
       PaymentLinkReceivedStatus.readyToClaim,
@@ -754,17 +738,17 @@ void main() {
 
   testWidgets('leaving a preview stops a later account switch from reopening '
       'redeem', (tester) async {
-    final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
-    final operations = _FakePaymentLinkOperations();
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final accountNotifier = SwitchablePaymentLinkAccountNotifier();
+    final operations = FakePaymentLinkOperations();
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
       accountNotifier: accountNotifier,
-      bootstrap: _twoAccountBootstrap,
+      bootstrap: twoAccountBootstrap,
     );
 
     await tester.tap(find.text('Redeem a card'));
@@ -777,7 +761,7 @@ void main() {
     await tester.tap(find.text('Cards'));
     await tester.pumpAndSettle();
 
-    expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
 
     accountNotifier.setActiveAccount('account-2');
     await tester.pump();
@@ -791,10 +775,10 @@ void main() {
   testWidgets(
     'hardware creation opens Keystone signing and releases on cancel',
     (tester) async {
-      final hardwareSigning = _FakePaymentLinkHardwareSigningService();
-      await _pumpPaymentLinksScreen(
+      final hardwareSigning = FakePaymentLinkHardwareSigningService();
+      await pumpPaymentLinksScreen(
         tester,
-        bootstrap: _hardwareBootstrap,
+        bootstrap: hardwareBootstrap,
         hardwareSigning: hardwareSigning,
       );
 
@@ -857,8 +841,8 @@ void main() {
   testWidgets('sends the selected artwork and message through creation', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations();
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(tester, operations: operations);
 
     await tester.tap(find.text('Create new card'));
     await tester.pumpAndSettle();
@@ -895,8 +879,8 @@ void main() {
   testWidgets(
     'requotes and returns to amount when the active account changes',
     (tester) async {
-      final operations = _FakePaymentLinkOperations();
-      final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+      final operations = FakePaymentLinkOperations();
+      final accountNotifier = SwitchablePaymentLinkAccountNotifier();
       final syncNotifier = FakeSyncNotifier(
         SyncState(
           accountUuid: 'account-1',
@@ -908,11 +892,11 @@ void main() {
           displaySpendableBalance: BigInt.from(14223000000),
         ),
       );
-      await _pumpPaymentLinksScreen(
+      await pumpPaymentLinksScreen(
         tester,
         operations: operations,
         accountNotifier: accountNotifier,
-        bootstrap: _twoAccountBootstrap,
+        bootstrap: twoAccountBootstrap,
         syncNotifier: syncNotifier,
       );
 
@@ -983,12 +967,12 @@ void main() {
     tester,
   ) async {
     final createCompleter = Completer<PaymentLinkHardwarePcztDraft>();
-    final hardwareSigning = _FakePaymentLinkHardwareSigningService(
+    final hardwareSigning = FakePaymentLinkHardwareSigningService(
       createCompleter: createCompleter,
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
-      bootstrap: _hardwareBootstrap,
+      bootstrap: hardwareBootstrap,
       hardwareSigning: hardwareSigning,
     );
 
@@ -1024,14 +1008,14 @@ void main() {
   testWidgets('account switch cancels an open Keystone Gift Card request', (
     tester,
   ) async {
-    final accountNotifier = _SwitchablePaymentLinkAccountNotifier(
-      _twoAccountHardwareState,
+    final accountNotifier = SwitchablePaymentLinkAccountNotifier(
+      twoAccountHardwareState,
     );
-    final hardwareSigning = _FakePaymentLinkHardwareSigningService();
-    await _pumpPaymentLinksScreen(
+    final hardwareSigning = FakePaymentLinkHardwareSigningService();
+    await pumpPaymentLinksScreen(
       tester,
       accountNotifier: accountNotifier,
-      bootstrap: _twoAccountHardwareBootstrap,
+      bootstrap: twoAccountHardwareBootstrap,
       hardwareSigning: hardwareSigning,
     );
 
@@ -1069,17 +1053,17 @@ void main() {
   testWidgets('account switch during a claim releases the prepared session', (
     tester,
   ) async {
-    final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
-    final operations = _FakePaymentLinkOperations();
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final accountNotifier = SwitchablePaymentLinkAccountNotifier();
+    final operations = FakePaymentLinkOperations();
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
       accountNotifier: accountNotifier,
-      bootstrap: _twoAccountBootstrap,
+      bootstrap: twoAccountBootstrap,
     );
 
     await tester.tap(find.text('Redeem a card'));
@@ -1096,27 +1080,27 @@ void main() {
 
     expect(find.text('You\u2019ve received\na gift card!'), findsNothing);
     expect(find.text('Paste card link'), findsOneWidget);
-    expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
     expect(find.textContaining('Active account changed.'), findsOneWidget);
   });
 
   testWidgets(
     'account switch during claim preparation releases the prepared session',
     (tester) async {
-      final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+      final accountNotifier = SwitchablePaymentLinkAccountNotifier();
       final prepareClaimGate = Completer<void>();
-      final operations = _FakePaymentLinkOperations(
+      final operations = FakePaymentLinkOperations(
         prepareClaimGates: {1: prepareClaimGate},
       );
-      final clipboard = _FakePaymentLinkClipboard(
-        text: _incomingLink.toUri().toString(),
+      final clipboard = FakePaymentLinkClipboard(
+        text: incomingLink.toUri().toString(),
       );
-      await _pumpPaymentLinksScreen(
+      await pumpPaymentLinksScreen(
         tester,
         operations: operations,
         clipboard: clipboard,
         accountNotifier: accountNotifier,
-        bootstrap: _twoAccountBootstrap,
+        bootstrap: twoAccountBootstrap,
       );
 
       await tester.tap(find.text('Redeem a card'));
@@ -1133,7 +1117,7 @@ void main() {
 
       expect(find.text('You\u2019ve received\na gift card!'), findsNothing);
       expect(find.text('Paste card link'), findsOneWidget);
-      expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+      expect(operations.discardedClaimAddresses, [incomingLink.address]);
       expect(find.textContaining('Active account changed.'), findsOneWidget);
     },
   );
@@ -1141,22 +1125,22 @@ void main() {
   testWidgets(
     'account switch during a waiting claim preparation keeps the Card',
     (tester) async {
-      final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
+      final accountNotifier = SwitchablePaymentLinkAccountNotifier();
       final prepareClaimGate = Completer<void>();
-      final operations = _FakePaymentLinkOperations(
+      final operations = FakePaymentLinkOperations(
         prepareClaimGates: {1: prepareClaimGate},
         waitingForFundingConfirmations: true,
         fundingConfirmationCount: 0,
       );
-      final clipboard = _FakePaymentLinkClipboard(
-        text: _incomingLink.toUri().toString(),
+      final clipboard = FakePaymentLinkClipboard(
+        text: incomingLink.toUri().toString(),
       );
-      await _pumpPaymentLinksScreen(
+      await pumpPaymentLinksScreen(
         tester,
         operations: operations,
         clipboard: clipboard,
         accountNotifier: accountNotifier,
-        bootstrap: _twoAccountBootstrap,
+        bootstrap: twoAccountBootstrap,
       );
 
       await tester.tap(find.text('Redeem a card'));
@@ -1171,7 +1155,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+      expect(operations.retainedClaimAddresses, [incomingLink.address]);
       expect(operations.discardedClaimAddresses, isEmpty);
       expect(find.textContaining('Active account changed.'), findsOneWidget);
     },
@@ -1180,20 +1164,20 @@ void main() {
   testWidgets('account switch while waiting for confirmations keeps the Card', (
     tester,
   ) async {
-    final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
-    final operations = _FakePaymentLinkOperations(
+    final accountNotifier = SwitchablePaymentLinkAccountNotifier();
+    final operations = FakePaymentLinkOperations(
       waitingForFundingConfirmations: true,
       fundingConfirmationCount: 0,
     );
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
       accountNotifier: accountNotifier,
-      bootstrap: _twoAccountBootstrap,
+      bootstrap: twoAccountBootstrap,
     );
 
     await tester.tap(find.text('Redeem a card'));
@@ -1207,7 +1191,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.retainedClaimAddresses, [incomingLink.address]);
     expect(operations.discardedClaimAddresses, isEmpty);
     expect(find.textContaining('Active account changed.'), findsOneWidget);
   });
@@ -1216,15 +1200,15 @@ void main() {
     tester,
   ) async {
     final refreshGate = Completer<void>();
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       prepareClaimGates: {2: refreshGate},
       waitingForFundingConfirmations: true,
       fundingConfirmationCount: 0,
     );
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -1245,21 +1229,21 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.retainedClaimAddresses, [incomingLink.address]);
     expect(operations.discardedClaimAddresses, isEmpty);
   });
 
   testWidgets('route dispose keeps a Card that is waiting to be claimable', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       waitingForFundingConfirmations: true,
       fundingConfirmationCount: 0,
     );
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -1277,25 +1261,25 @@ void main() {
     ).go('/home');
     await tester.pumpAndSettle();
 
-    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.retainedClaimAddresses, [incomingLink.address]);
     expect(operations.discardedClaimAddresses, isEmpty);
   });
 
   testWidgets('route dispose keeps a preview of a listed Received Card', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       receivedRecords: [
         PaymentLinkReceivedRecord.fromLink(
-          _incomingLink,
+          incomingLink,
           updatedAt: DateTime.utc(2026, 8, 6),
         ),
       ],
     );
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -1313,16 +1297,16 @@ void main() {
     ).go('/home');
     await tester.pumpAndSettle();
 
-    expect(operations.retainedClaimAddresses, [_incomingLink.address]);
+    expect(operations.retainedClaimAddresses, [incomingLink.address]);
     expect(operations.discardedClaimAddresses, isEmpty);
   });
 
   testWidgets('route dispose releases a claimable preview', (tester) async {
-    final operations = _FakePaymentLinkOperations();
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final operations = FakePaymentLinkOperations();
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -1340,37 +1324,35 @@ void main() {
     ).go('/home');
     await tester.pumpAndSettle();
 
-    expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
     expect(operations.retainedClaimAddresses, isEmpty);
   });
 
   testWidgets('created Cards list only the accounts that funded them', (
     tester,
   ) async {
-    final accountNotifier = _SwitchablePaymentLinkAccountNotifier();
-    final operations = _FakePaymentLinkOperations(
-      records: [_fundedRecovery, _otherAccountRecovery, _unknownOriginRecovery],
+    final accountNotifier = SwitchablePaymentLinkAccountNotifier();
+    final operations = FakePaymentLinkOperations(
+      records: [fundedRecovery, otherAccountRecovery, unknownOriginRecovery],
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       accountNotifier: accountNotifier,
-      bootstrap: _twoAccountBootstrap,
+      bootstrap: twoAccountBootstrap,
     );
 
     expect(
-      find.byKey(ValueKey('payment_link_recovery_${_incomingLink.address}')),
+      find.byKey(ValueKey('payment_link_recovery_${incomingLink.address}')),
       findsOneWidget,
     );
     expect(
-      find.byKey(
-        ValueKey('payment_link_recovery_${_otherAccountLink.address}'),
-      ),
+      find.byKey(ValueKey('payment_link_recovery_${otherAccountLink.address}')),
       findsNothing,
     );
     expect(
       find.byKey(
-        ValueKey('payment_link_recovery_${_unknownOriginLink.address}'),
+        ValueKey('payment_link_recovery_${unknownOriginLink.address}'),
       ),
       findsOneWidget,
     );
@@ -1380,29 +1362,27 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(
-      find.byKey(ValueKey('payment_link_recovery_${_incomingLink.address}')),
+      find.byKey(ValueKey('payment_link_recovery_${incomingLink.address}')),
       findsNothing,
     );
     expect(
-      find.byKey(
-        ValueKey('payment_link_recovery_${_otherAccountLink.address}'),
-      ),
+      find.byKey(ValueKey('payment_link_recovery_${otherAccountLink.address}')),
       findsOneWidget,
     );
     expect(
       find.byKey(
-        ValueKey('payment_link_recovery_${_unknownOriginLink.address}'),
+        ValueKey('payment_link_recovery_${unknownOriginLink.address}'),
       ),
       findsOneWidget,
     );
   });
 
   testWidgets('enables manual redeem intake', (tester) async {
-    final operations = _FakePaymentLinkOperations();
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final operations = FakePaymentLinkOperations();
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -1438,10 +1418,10 @@ void main() {
   testWidgets('pastes the clipboard Card without consuming a queued link', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations();
+    final operations = FakePaymentLinkOperations();
     final clipboardRead = Completer<String?>();
-    final clipboard = _FakePaymentLinkClipboard(readCompleter: clipboardRead);
-    await _pumpPaymentLinksScreen(
+    final clipboard = FakePaymentLinkClipboard(readCompleter: clipboardRead);
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -1457,30 +1437,27 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
-    clipboardRead.complete(_secondIncomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
+    clipboardRead.complete(secondIncomingLink.toUri().toString());
     await tester.pumpAndSettle();
 
-    expect(
-      operations.preparedLinks.single.address,
-      _secondIncomingLink.address,
-    );
+    expect(operations.preparedLinks.single.address, secondIncomingLink.address);
     expect(
       container.read(paymentLinkIntakeProvider).pendingLink?.address,
-      _incomingLink.address,
+      incomingLink.address,
     );
   });
 
   testWidgets('confirms before checking a Gift Card with a long scan', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       longSyncConfirmationRequired: true,
     );
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -1516,64 +1493,14 @@ void main() {
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
   });
 
-  testWidgets(
-    'mobile confirms before checking a Gift Card with a long scan',
-    (tester) async {
-      final operations = _FakePaymentLinkOperations(
-        longSyncConfirmationRequired: true,
-      );
-      final clipboard = _FakePaymentLinkClipboard(
-        text: _incomingLink.toUri().toString(),
-      );
-      await _pumpPaymentLinksScreen(
-        tester,
-        operations: operations,
-        clipboard: clipboard,
-      );
-
-      expect(
-        find.byKey(const ValueKey('payment_links_mobile_screen')),
-        findsOneWidget,
-      );
-      await tester.tap(
-        find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Paste card link'));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.byKey(const ValueKey('payment_link_long_sync_warning_sheet')),
-        findsOneWidget,
-      );
-      expect(operations.allowLongSyncCalls, [isFalse]);
-
-      await tester.tap(find.text('Go back'));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('payment_link_long_sync_warning_sheet')),
-        findsNothing,
-      );
-
-      await tester.tap(find.text('Paste card link'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Check Gift Card'));
-      await tester.pumpAndSettle();
-
-      expect(operations.allowLongSyncCalls, [isFalse, isFalse, isTrue]);
-      expect(find.text('You’ve received a gift!'), findsOneWidget);
-    },
-    tags: ['mobile'],
-  );
-
   testWidgets('routes an accepted incoming payment link and claims it', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations();
-    await _pumpPaymentLinksScreen(
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -1581,7 +1508,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
 
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
@@ -1596,7 +1523,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(operations.claimedLinks.map((link) => link.toUri().toString()), [
-      _incomingLink.toUri().toString(),
+      incomingLink.toUri().toString(),
     ]);
     expect(find.text('Gift claim submitted'), findsOneWidget);
     expect(find.text('Receiving...'), findsOneWidget);
@@ -1605,8 +1532,8 @@ void main() {
   testWidgets('defers an incoming Gift Card while another card is being made', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations();
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(tester, operations: operations);
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
     );
@@ -1620,7 +1547,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -1642,11 +1569,11 @@ void main() {
   testWidgets('retries an incoming link without requiring the clipboard', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(prepareClaimFailures: 1);
-    await _pumpPaymentLinksScreen(
+    final operations = FakePaymentLinkOperations(prepareClaimFailures: 1);
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -1654,7 +1581,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
 
     expect(find.text('Try again'), findsOneWidget);
@@ -1674,16 +1601,16 @@ void main() {
   testWidgets('names the network when a pasted card is for another network', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       prepareClaimError: const PaymentLinkNetworkMismatchException(
         linkNetwork: 'test',
         walletNetwork: 'main',
       ),
     );
-    final clipboard = _FakePaymentLinkClipboard(
-      text: _incomingLink.toUri().toString(),
+    final clipboard = FakePaymentLinkClipboard(
+      text: incomingLink.toUri().toString(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       clipboard: clipboard,
@@ -1710,11 +1637,11 @@ void main() {
   testWidgets('discards a previous claim wallet when its identity changes', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations();
-    await _pumpPaymentLinksScreen(
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -1722,20 +1649,20 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cards'));
     await tester.pumpAndSettle();
 
     final differentBirthdayLink = VizorPaymentLink(
-      network: _incomingLink.network,
-      address: _incomingLink.address,
-      amountZatoshi: _incomingLink.amountZatoshi,
-      mnemonic: _incomingLink.mnemonic,
-      birthdayHeight: _incomingLink.birthdayHeight - 1,
-      label: _incomingLink.label,
-      createdAt: _incomingLink.createdAt,
-      presentation: _incomingLink.presentation,
+      network: incomingLink.network,
+      address: incomingLink.address,
+      amountZatoshi: incomingLink.amountZatoshi,
+      mnemonic: incomingLink.mnemonic,
+      birthdayHeight: incomingLink.birthdayHeight - 1,
+      label: incomingLink.label,
+      createdAt: incomingLink.createdAt,
+      presentation: incomingLink.presentation,
     );
     container
         .read(paymentLinkIntakeProvider.notifier)
@@ -1743,24 +1670,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(operations.allowLongSyncCalls, [isFalse, isFalse]);
-    expect(operations.discardedClaimAddresses, [_incomingLink.address]);
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
   });
 
   testWidgets('does not reopen an in-flight received Gift Card', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       receivedRecords: [
         PaymentLinkReceivedRecord(
-          network: _incomingLink.network,
-          address: _incomingLink.address,
-          amountZatoshi: _incomingLink.amountZatoshi,
-          createdAt: _incomingLink.createdAt,
-          artworkId: _incomingLink.presentation?.artworkId,
-          message: _incomingLink.presentation?.message,
+          network: incomingLink.network,
+          address: incomingLink.address,
+          amountZatoshi: incomingLink.amountZatoshi,
+          createdAt: incomingLink.createdAt,
+          artworkId: incomingLink.presentation?.artworkId,
+          message: incomingLink.presentation?.message,
           status: PaymentLinkReceivedStatus.submitting,
-          claimLink: _incomingLink,
+          claimLink: incomingLink,
           destinationAccountUuid: 'account-1',
           claimTxids: null,
           updatedAt: DateTime.utc(2026, 8, 6, 2),
@@ -1768,10 +1695,10 @@ void main() {
       ],
       prepareClaimError: const PaymentLinkClaimInFlightException(),
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -1779,7 +1706,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
@@ -1797,14 +1724,14 @@ void main() {
     (tester) async {
       final createdLoadGate = Completer<void>();
       final receivedLoadGate = Completer<void>();
-      final operations = _FakePaymentLinkOperations(
+      final operations = FakePaymentLinkOperations(
         createdLoadGate: createdLoadGate,
         receivedLoadGate: receivedLoadGate,
       );
-      await _pumpPaymentLinksScreen(
+      await pumpPaymentLinksScreen(
         tester,
         operations: operations,
-        bootstrap: _homeBootstrap,
+        bootstrap: homeBootstrap,
       );
       final container = ProviderScope.containerOf(
         tester.element(find.byType(MaterialApp)),
@@ -1812,7 +1739,7 @@ void main() {
 
       container
           .read(paymentLinkIntakeProvider.notifier)
-          .receive(_incomingLink.toUri().toString());
+          .receive(incomingLink.toUri().toString());
       for (var i = 0; i < 10 && operations.receivedLoadCalls == 0; i++) {
         await tester.pump(const Duration(milliseconds: 10));
       }
@@ -1838,61 +1765,26 @@ void main() {
   testWidgets('retries a transient Received load before showing an error', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(receivedLoadFailures: 1);
+    final operations = FakePaymentLinkOperations(receivedLoadFailures: 1);
 
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    await pumpPaymentLinksScreen(tester, operations: operations);
     await tester.pumpAndSettle();
 
     expect(operations.receivedLoadCalls, 2);
     expect(find.text('Received Gift Cards could not be loaded.'), findsNothing);
   });
 
-  testWidgets(
-    'mobile keeps a checked Gift Card out of Received until claim starts',
-    (tester) async {
-      final operations = _FakePaymentLinkOperations();
-      await _pumpPaymentLinksScreen(
-        tester,
-        operations: operations,
-        bootstrap: _homeBootstrap,
-      );
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(MaterialApp)),
-      );
-
-      container
-          .read(paymentLinkIntakeProvider.notifier)
-          .receive(_incomingLink.toUri().toString());
-      await tester.pumpAndSettle();
-
-      expect(find.text('You’ve received a gift!'), findsOneWidget);
-      expect(operations.receivedRecords, isEmpty);
-
-      await tester.tap(
-        find.byKey(const ValueKey('payment_link_mobile_claim_button')),
-      );
-      await tester.pump(const Duration(milliseconds: 250));
-
-      expect(operations.receivedRecords, hasLength(1));
-      expect(
-        operations.receivedRecords.single.status,
-        PaymentLinkReceivedStatus.receiving,
-      );
-    },
-    tags: ['mobile'],
-  );
-
   testWidgets('shows selected artwork and Receiving while claim is pending', (
     tester,
   ) async {
     final claimCompleter = Completer<PaymentLinkClaimResult>();
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       claimCompleter: claimCompleter,
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -1900,7 +1792,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
 
     expect(
@@ -1936,13 +1828,13 @@ void main() {
       PaymentLinkCardArtwork.ruby.assetPath,
     );
 
-    claimCompleter.complete(_broadcastedClaimResult);
+    claimCompleter.complete(broadcastedClaimResult);
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Receiving...'), findsOneWidget);
     expect(find.text('Gift claim submitted'), findsOneWidget);
 
-    operations.receivedClaimStatuses[_incomingLink.address] =
+    operations.receivedClaimStatuses[incomingLink.address] =
         PaymentLinkReceivedStatus.received;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
@@ -1964,11 +1856,11 @@ void main() {
   testWidgets('restores an in-flight received Card after the screen restarts', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations();
-    await _pumpPaymentLinksScreen(
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -1976,7 +1868,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump(const Duration(milliseconds: 250));
@@ -1986,7 +1878,7 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    await pumpPaymentLinksScreen(tester, operations: operations);
     await tester.tap(find.text('Received').first);
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -1999,13 +1891,13 @@ void main() {
 
   testWidgets('keeps a pending broadcast in Receiving state', (tester) async {
     final claimCompleter = Completer<PaymentLinkClaimResult>();
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       claimCompleter: claimCompleter,
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -2013,7 +1905,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
@@ -2039,13 +1931,13 @@ void main() {
     tester,
   ) async {
     final claimCompleter = Completer<PaymentLinkClaimResult>();
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       claimCompleter: claimCompleter,
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -2053,7 +1945,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
@@ -2079,16 +1971,16 @@ void main() {
   ) async {
     final firstClaim = Completer<PaymentLinkClaimResult>();
     final secondClaim = Completer<PaymentLinkClaimResult>();
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       claimCompleters: {
-        _incomingLink.address: firstClaim,
-        _secondIncomingLink.address: secondClaim,
+        incomingLink.address: firstClaim,
+        secondIncomingLink.address: secondClaim,
       },
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -2096,28 +1988,28 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
     expect(operations.claimedLinks.map((link) => link.address), [
-      _incomingLink.address,
+      incomingLink.address,
     ]);
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_secondIncomingLink.toUri().toString());
+        .receive(secondIncomingLink.toUri().toString());
     await tester.pumpAndSettle();
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
     await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
 
     expect(operations.claimedLinks.map((link) => link.address), [
-      _incomingLink.address,
-      _secondIncomingLink.address,
+      incomingLink.address,
+      secondIncomingLink.address,
     ]);
-    firstClaim.complete(_broadcastedClaimResult);
-    secondClaim.complete(_broadcastedClaimResult);
+    firstClaim.complete(broadcastedClaimResult);
+    secondClaim.complete(broadcastedClaimResult);
     await tester.pump();
   });
 
@@ -2125,11 +2017,11 @@ void main() {
     tester,
   ) async {
     final claim = Completer<PaymentLinkClaimResult>();
-    final operations = _FakePaymentLinkOperations(claimCompleter: claim);
-    await _pumpPaymentLinksScreen(
+    final operations = FakePaymentLinkOperations(claimCompleter: claim);
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -2137,19 +2029,19 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(operations.allowLongSyncCalls, [isFalse]);
     expect(operations.claimedLinks, hasLength(1));
-    claim.complete(_broadcastedClaimResult);
+    claim.complete(broadcastedClaimResult);
     await tester.pump();
   });
 
@@ -2157,13 +2049,13 @@ void main() {
     tester,
   ) async {
     final claimCompleter = Completer<PaymentLinkClaimResult>();
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       claimCompleter: claimCompleter,
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -2171,7 +2063,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
@@ -2189,13 +2081,13 @@ void main() {
     tester,
   ) async {
     final claimCompleter = Completer<PaymentLinkClaimResult>();
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       claimCompleter: claimCompleter,
     );
-    await _pumpPaymentLinksScreen(
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
-      bootstrap: _homeBootstrap,
+      bootstrap: homeBootstrap,
     );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
@@ -2203,7 +2095,7 @@ void main() {
 
     container
         .read(paymentLinkIntakeProvider.notifier)
-        .receive(_incomingLink.toUri().toString());
+        .receive(incomingLink.toUri().toString());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim the Gift Card'));
     await tester.pump();
@@ -2226,8 +2118,8 @@ void main() {
   testWidgets('copies a persisted created link without reclaim controls', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(records: [_sharedRecovery]);
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    final operations = FakePaymentLinkOperations(records: [sharedRecovery]);
+    await pumpPaymentLinksScreen(tester, operations: operations);
 
     expect(find.text('4.45 ZEC'), findsOneWidget);
     expect(find.bySemanticsLabel('Copy Gift Card link'), findsOneWidget);
@@ -2236,15 +2128,15 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('Copy Gift Card link'));
     await tester.pumpAndSettle();
-    expect(operations.sharedLinks, [_incomingLink]);
+    expect(operations.sharedLinks, [incomingLink]);
   });
 
   testWidgets('saves the selected artwork QR image to the chosen path', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(records: [_fundedRecovery]);
-    final imageSaver = _FakePaymentLinkQrImageSaver();
-    await _pumpPaymentLinksScreen(
+    final operations = FakePaymentLinkOperations(records: [fundedRecovery]);
+    final imageSaver = FakePaymentLinkQrImageSaver();
+    await pumpPaymentLinksScreen(
       tester,
       operations: operations,
       qrImageSaver: imageSaver,
@@ -2258,7 +2150,7 @@ void main() {
       find.byType(PaymentLinkQrShareCard),
     );
     expect(shareCard.artwork, PaymentLinkCardArtwork.ruby);
-    expect(shareCard.qrData, _incomingLink.toUri().toString());
+    expect(shareCard.qrData, incomingLink.toUri().toString());
 
     await tester.tap(find.text('Save QR code'));
     await tester.pump();
@@ -2275,32 +2167,8 @@ void main() {
       imageSaver.savedImages.single.take(8),
       orderedEquals(const [137, 80, 78, 71, 13, 10, 26, 10]),
     );
-    expect(operations.sharedLinks, [_incomingLink]);
+    expect(operations.sharedLinks, [incomingLink]);
   });
-
-  testWidgets('mobile home lists a funded card and copies its link', (
-    tester,
-  ) async {
-    final operations = _FakePaymentLinkOperations(records: [_sharedRecovery]);
-    await _pumpPaymentLinksScreen(tester, operations: operations);
-
-    // Before this list existed the mobile home only offered Create/Redeem,
-    // so a funded link was unreachable once the Ready page was left.
-    expect(
-      find.byKey(
-        const ValueKey('payment_link_mobile_recovery_u1paymentlinkaddress'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('4.45 ZEC'), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('payment_link_mobile_card_copy_action')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(operations.sharedLinks, [_incomingLink]);
-  }, tags: ['mobile']);
 
   testWidgets('received cards show only for the account they landed in, '
       'except unclaimed ones', (tester) async {
@@ -2309,21 +2177,21 @@ void main() {
       required PaymentLinkReceivedStatus status,
       required String destinationAccountUuid,
     }) => PaymentLinkReceivedRecord(
-      network: _incomingLink.network,
+      network: incomingLink.network,
       address: address,
-      amountZatoshi: _incomingLink.amountZatoshi,
-      createdAt: _incomingLink.createdAt,
-      artworkId: _incomingLink.presentation?.artworkId,
-      message: _incomingLink.presentation?.message,
+      amountZatoshi: incomingLink.amountZatoshi,
+      createdAt: incomingLink.createdAt,
+      artworkId: incomingLink.presentation?.artworkId,
+      message: incomingLink.presentation?.message,
       status: status,
-      claimLink: _incomingLink,
+      claimLink: incomingLink,
       destinationAccountUuid: destinationAccountUuid,
       claimTxids: status == PaymentLinkReceivedStatus.readyToClaim
           ? null
           : 'claim-txid',
       updatedAt: DateTime.utc(2026, 8, 6, 2),
     );
-    final operations = _FakePaymentLinkOperations(
+    final operations = FakePaymentLinkOperations(
       receivedRecords: [
         record(
           address: 'u1landedhere',
@@ -2342,7 +2210,7 @@ void main() {
         ),
       ],
     );
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    await pumpPaymentLinksScreen(tester, operations: operations);
 
     await tester.tap(find.text('Received'));
     await tester.pumpAndSettle();
@@ -2361,849 +2229,14 @@ void main() {
     );
   });
 
-  testWidgets('mobile received tab lists an in-flight claim', (tester) async {
-    final operations = _FakePaymentLinkOperations(
-      receivedRecords: [
-        PaymentLinkReceivedRecord(
-          network: _incomingLink.network,
-          address: _incomingLink.address,
-          amountZatoshi: _incomingLink.amountZatoshi,
-          createdAt: _incomingLink.createdAt,
-          artworkId: _incomingLink.presentation?.artworkId,
-          message: _incomingLink.presentation?.message,
-          status: PaymentLinkReceivedStatus.receiving,
-          claimLink: _incomingLink,
-          destinationAccountUuid: 'account-1',
-          claimTxids: 'claim-txid',
-          updatedAt: DateTime.utc(2026, 8, 6, 2),
-        ),
-      ],
-    );
-    await _pumpPaymentLinksScreen(tester, operations: operations);
-
-    await tester.tap(
-      find.byKey(const ValueKey('payment_links_mobile_received_tab')),
-    );
-    // The receiving row spins a loader, so this never settles.
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    expect(
-      find.byKey(
-        const ValueKey('payment_link_mobile_received_u1paymentlinkaddress'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Receiving...'), findsOneWidget);
-  }, tags: ['mobile']);
-
   testWidgets('shows an interrupted funding draft without reclaim controls', (
     tester,
   ) async {
-    final operations = _FakePaymentLinkOperations(records: [_draftRecovery]);
-    await _pumpPaymentLinksScreen(tester, operations: operations);
+    final operations = FakePaymentLinkOperations(records: [draftRecovery]);
+    await pumpPaymentLinksScreen(tester, operations: operations);
 
     expect(find.text('Funding incomplete'), findsOneWidget);
     expect(find.text('Copy link'), findsNothing);
     expect(find.text('Reclaim'), findsNothing);
   });
-}
-
-Future<void> _pumpPaymentLinksScreen(
-  WidgetTester tester, {
-  _FakePaymentLinkOperations? operations,
-  _FakePaymentLinkClipboard? clipboard,
-  PaymentLinkHardwareSigningService? hardwareSigning,
-  PaymentLinkQrImageSaver? qrImageSaver,
-  AccountNotifier? accountNotifier,
-  AppBootstrapState? bootstrap,
-  BigInt? spendableBalance,
-  FakeSyncNotifier? syncNotifier,
-}) async {
-  await tester.binding.setSurfaceSize(const Size(1080, 720));
-  addTearDown(() => tester.binding.setSurfaceSize(null));
-  final paymentLinkOperations = operations ?? _FakePaymentLinkOperations();
-  final paymentLinkClipboard = clipboard ?? _FakePaymentLinkClipboard();
-  final appBootstrap = bootstrap ?? _bootstrap;
-  final initialAccountUuid =
-      appBootstrap.initialAccountState.activeAccountUuid ?? 'account-1';
-
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(appBootstrap),
-        if (accountNotifier != null)
-          accountProvider.overrideWith(() => accountNotifier),
-        paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
-        paymentLinkClipboardProvider.overrideWithValue(paymentLinkClipboard),
-        if (qrImageSaver != null)
-          paymentLinkQrImageSaverProvider.overrideWithValue(qrImageSaver),
-        if (hardwareSigning != null)
-          paymentLinkHardwareSigningServiceProvider.overrideWithValue(
-            hardwareSigning,
-          ),
-        syncProvider.overrideWith(
-          () =>
-              syncNotifier ??
-              FakeSyncNotifier(
-                SyncState(
-                  accountUuid: initialAccountUuid,
-                  hasAccountScopedData: true,
-                  isSyncComplete: true,
-                  percentage: 1,
-                  displayTargetPercentage: 1,
-                  spendableBalance:
-                      spendableBalance ?? BigInt.from(14223000000),
-                  displaySpendableBalance:
-                      spendableBalance ?? BigInt.from(14223000000),
-                ),
-              ),
-        ),
-        ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
-          return const IronwoodHomeMigrationCtaState.hidden();
-        }),
-        ironwoodHomeMigrationPresentationProvider.overrideWithValue(
-          const IronwoodHomeMigrationCtaState.hidden(),
-        ),
-        ironwoodPostMigrationStateProvider.overrideWith((ref) async {
-          return const IronwoodPostMigrationState.unavailable();
-        }),
-        ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
-          return const IronwoodMigrationAnnouncementState.hidden();
-        }),
-        ironwoodMigrationCoordinatorProvider.overrideWith(
-          _FakeMigrationCoordinator.new,
-        ),
-      ],
-      child: const ZcashWalletApp(),
-    ),
-  );
-  await tester.pump();
-  for (var i = 0; i < 20; i++) {
-    final hasDesktopScreen = find
-        .byKey(const ValueKey('payment_links_desktop_screen'))
-        .evaluate()
-        .isNotEmpty;
-    final hasMobileScreen = find
-        .byKey(const ValueKey('payment_links_mobile_screen'))
-        .evaluate()
-        .isNotEmpty;
-    if (hasDesktopScreen || hasMobileScreen) {
-      break;
-    }
-    await tester.pump(const Duration(milliseconds: 50));
-  }
-  await tester.pump(const Duration(milliseconds: 100));
-}
-
-const _accountState = AccountState(
-  accounts: [
-    AccountInfo(
-      uuid: 'account-1',
-      name: 'Primary Vault',
-      order: 0,
-      profilePictureId: kDefaultProfilePictureId,
-    ),
-  ],
-  activeAccountUuid: 'account-1',
-  activeAddress: 'u1accountsaddress',
-);
-
-final _bootstrap = AppBootstrapState(
-  initialLocation: '/payment-links',
-  initialAccountState: _accountState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
-
-final _homeBootstrap = AppBootstrapState(
-  initialLocation: '/home',
-  initialAccountState: _accountState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
-
-const _hardwareAccountState = AccountState(
-  accounts: [
-    AccountInfo(
-      uuid: 'hardware-account',
-      name: 'Keystone',
-      order: 0,
-      profilePictureId: kDefaultProfilePictureId,
-      isHardware: true,
-    ),
-  ],
-  activeAccountUuid: 'hardware-account',
-  activeAddress: 'u1hardwareaddress',
-);
-
-final _hardwareBootstrap = AppBootstrapState(
-  initialLocation: '/payment-links',
-  initialAccountState: _hardwareAccountState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
-
-const _twoAccountHardwareState = AccountState(
-  accounts: [
-    AccountInfo(
-      uuid: 'hardware-account',
-      name: 'Keystone',
-      order: 0,
-      profilePictureId: kDefaultProfilePictureId,
-      isHardware: true,
-    ),
-    AccountInfo(
-      uuid: 'account-2',
-      name: 'Savings',
-      order: 1,
-      profilePictureId: kDefaultProfilePictureId,
-    ),
-  ],
-  activeAccountUuid: 'hardware-account',
-  activeAddress: 'u1hardwareaddress',
-);
-
-final _twoAccountHardwareBootstrap = AppBootstrapState(
-  initialLocation: '/payment-links',
-  initialAccountState: _twoAccountHardwareState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
-
-const _twoAccountState = AccountState(
-  accounts: [
-    AccountInfo(
-      uuid: 'account-1',
-      name: 'Primary Vault',
-      order: 0,
-      profilePictureId: kDefaultProfilePictureId,
-    ),
-    AccountInfo(
-      uuid: 'account-2',
-      name: 'Savings',
-      order: 1,
-      profilePictureId: kDefaultProfilePictureId,
-    ),
-  ],
-  activeAccountUuid: 'account-1',
-  activeAddress: 'u1accountsaddress',
-);
-
-final _twoAccountBootstrap = AppBootstrapState(
-  initialLocation: '/payment-links',
-  initialAccountState: _twoAccountState,
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
-
-final _incomingLink = VizorPaymentLink(
-  network: 'main',
-  address: 'u1paymentlinkaddress',
-  amountZatoshi: BigInt.from(445000000),
-  mnemonic: List.filled(24, 'abandon').join(' '),
-  birthdayHeight: 3000000,
-  label: 'Payment link',
-  createdAt: DateTime.utc(2026, 8, 6),
-  presentation: const PaymentLinkPresentation(
-    artworkId: 'ruby',
-    message: 'Congratulations!',
-  ),
-);
-
-final _secondIncomingLink = VizorPaymentLink(
-  network: 'main',
-  address: 'u1secondpaymentlinkaddress',
-  amountZatoshi: BigInt.from(225000000),
-  mnemonic: List.filled(24, 'legal').join(' '),
-  birthdayHeight: 3000001,
-  label: 'Second payment link',
-  createdAt: DateTime.utc(2026, 8, 7),
-  presentation: const PaymentLinkPresentation(
-    artworkId: 'gift',
-    message: 'A second gift!',
-  ),
-);
-
-final _sharedRecovery = PaymentLinkRecoveryRecord(
-  link: _incomingLink,
-  sourceAccountUuid: 'account-1',
-  state: PaymentLinkRecoveryState.shared,
-  updatedAt: DateTime.utc(2026, 8, 6),
-  fundingTxids: 'funding-txid',
-);
-
-final _fundedRecovery = PaymentLinkRecoveryRecord(
-  link: _incomingLink,
-  sourceAccountUuid: 'account-1',
-  state: PaymentLinkRecoveryState.funded,
-  updatedAt: DateTime.utc(2026, 8, 6),
-  fundingTxids: 'funding-txid',
-);
-
-final _otherAccountLink = VizorPaymentLink(
-  network: 'main',
-  address: 'u1otheraccountpaymentlinkaddress',
-  amountZatoshi: BigInt.from(100000000),
-  mnemonic: List.filled(24, 'abandon').join(' '),
-  birthdayHeight: 3000000,
-  label: 'Payment link',
-  createdAt: DateTime.utc(2026, 8, 5),
-);
-
-final _otherAccountRecovery = PaymentLinkRecoveryRecord(
-  link: _otherAccountLink,
-  sourceAccountUuid: 'account-2',
-  state: PaymentLinkRecoveryState.funded,
-  updatedAt: DateTime.utc(2026, 8, 5),
-  fundingTxids: 'funding-txid-2',
-);
-
-final _unknownOriginRecovery = PaymentLinkRecoveryRecord(
-  link: _unknownOriginLink,
-  sourceAccountUuid: '',
-  state: PaymentLinkRecoveryState.funded,
-  updatedAt: DateTime.utc(2026, 8, 4),
-  fundingTxids: 'funding-txid-3',
-);
-
-final _unknownOriginLink = VizorPaymentLink(
-  network: 'main',
-  address: 'u1unknownoriginpaymentlinkaddress',
-  amountZatoshi: BigInt.from(200000000),
-  mnemonic: List.filled(24, 'abandon').join(' '),
-  birthdayHeight: 3000000,
-  label: 'Payment link',
-  createdAt: DateTime.utc(2026, 8, 4),
-);
-
-final _draftRecovery = PaymentLinkRecoveryRecord(
-  link: _incomingLink,
-  sourceAccountUuid: 'account-1',
-  state: PaymentLinkRecoveryState.draft,
-  updatedAt: DateTime.utc(2026, 8, 6),
-);
-
-class _FakePaymentLinkOperations implements PaymentLinkOperations {
-  _FakePaymentLinkOperations({
-    List<PaymentLinkRecoveryRecord> records = const [],
-    List<PaymentLinkReceivedRecord> receivedRecords = const [],
-    this.claimCompleter,
-    this.claimCompleters = const {},
-    this.createdLoadGate,
-    this.receivedLoadGate,
-    this.prepareClaimGates = const {},
-    this.receivedLoadFailures = 0,
-    this.prepareClaimFailures = 0,
-    this.prepareClaimError,
-    this.fundingMetadataSavedOnCreate = true,
-    this.fundingBroadcastAcceptedOnCreate = true,
-    this.fundingConfirmationCount = kPaymentLinkShareConfirmationTarget,
-    this.claimable = true,
-    this.waitingForFundingConfirmations = false,
-    this.longSyncConfirmationRequired = false,
-  }) : records = List.of(records),
-       receivedRecords = List.of(receivedRecords);
-
-  final Completer<PaymentLinkClaimResult>? claimCompleter;
-  final Map<String, Completer<PaymentLinkClaimResult>> claimCompleters;
-  final Completer<void>? createdLoadGate;
-  final Completer<void>? receivedLoadGate;
-
-  /// Gates the Nth `prepareClaim` call (1-based) so a test can act mid-await.
-  final Map<int, Completer<void>> prepareClaimGates;
-  int receivedLoadFailures;
-  int prepareClaimFailures;
-  final Object? prepareClaimError;
-  final bool fundingMetadataSavedOnCreate;
-  final bool fundingBroadcastAcceptedOnCreate;
-  int fundingConfirmationCount;
-  bool expireFundingOnInspect = false;
-  bool claimable;
-  bool waitingForFundingConfirmations;
-  final bool longSyncConfirmationRequired;
-  final List<PaymentLinkRecoveryRecord> records;
-  final List<PaymentLinkReceivedRecord> receivedRecords;
-  final Map<String, PaymentLinkReceivedStatus> receivedClaimStatuses = {};
-  final List<BigInt> createdAmounts = [];
-  final List<String> createdFromAccounts = [];
-  final List<String?> createdArtworkIds = [];
-  final List<String?> createdMessages = [];
-  final List<String> quotedAccounts = [];
-  final List<String> maxQuotedAccounts = [];
-  final List<VizorPaymentLink> sharedLinks = [];
-  final List<VizorPaymentLink> claimedLinks = [];
-  final List<String> discardedClaimAddresses = [];
-  final List<String> retainedClaimAddresses = [];
-  final List<bool> allowLongSyncCalls = [];
-  final List<VizorPaymentLink> preparedLinks = [];
-  int createdLoadCalls = 0;
-  int receivedLoadCalls = 0;
-  int fundingMetadataRetries = 0;
-
-  @override
-  Future<PaymentLinkFundingQuote> quoteMaxFunding({
-    required String sourceAccountUuid,
-  }) async {
-    maxQuotedAccounts.add(sourceAccountUuid);
-    return PaymentLinkFundingQuote(
-      sourceAccountUuid: sourceAccountUuid,
-      recipientAmountZatoshi: BigInt.from(14222980000),
-      fundingFeeZatoshi: BigInt.from(10000),
-      claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
-    );
-  }
-
-  @override
-  Future<PaymentLinkFundingQuote> quoteFunding({
-    required BigInt amountZatoshi,
-    required String sourceAccountUuid,
-  }) async {
-    quotedAccounts.add(sourceAccountUuid);
-    return PaymentLinkFundingQuote(
-      sourceAccountUuid: sourceAccountUuid,
-      recipientAmountZatoshi: amountZatoshi,
-      fundingFeeZatoshi: BigInt.from(10000),
-      claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
-    );
-  }
-
-  @override
-  Future<PaymentLinkFundingResult> createFundedLink({
-    required BigInt amountZatoshi,
-    required String sourceAccountUuid,
-    PaymentLinkPresentation? presentation,
-  }) async {
-    createdAmounts.add(amountZatoshi);
-    createdFromAccounts.add(sourceAccountUuid);
-    createdArtworkIds.add(presentation?.artworkId);
-    createdMessages.add(presentation?.message);
-    final link = VizorPaymentLink(
-      network: 'main',
-      address: 'u1createdpaymentlinkaddress',
-      amountZatoshi: amountZatoshi,
-      mnemonic: List.filled(24, 'abandon').join(' '),
-      birthdayHeight: 3000000,
-      label: 'Payment link',
-      createdAt: DateTime.utc(2026, 8, 6),
-      presentation: presentation,
-    );
-    records.add(
-      PaymentLinkRecoveryRecord(
-        link: link,
-        sourceAccountUuid: sourceAccountUuid,
-        state: fundingMetadataSavedOnCreate
-            ? PaymentLinkRecoveryState.funded
-            : PaymentLinkRecoveryState.draft,
-        updatedAt: DateTime.utc(2026, 8, 6),
-        fundingTxids: fundingMetadataSavedOnCreate ? 'funding-txid' : null,
-      ),
-    );
-    return PaymentLinkFundingResult(
-      link: link,
-      txids: 'funding-txid',
-      fundingMetadataSaved: fundingMetadataSavedOnCreate,
-      broadcastAccepted: fundingBroadcastAcceptedOnCreate,
-    );
-  }
-
-  @override
-  Future<void> retryFundingMetadata({
-    required String address,
-    required String fundingTxids,
-  }) async {
-    fundingMetadataRetries += 1;
-    final index = records.indexWhere(
-      (record) => record.link.address == address,
-    );
-    records[index] = records[index].copyWith(
-      state: PaymentLinkRecoveryState.funded,
-      fundingTxids: fundingTxids,
-      updatedAt: DateTime.utc(2026, 8, 6, 1),
-    );
-  }
-
-  @override
-  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() async {
-    createdLoadCalls += 1;
-    await createdLoadGate?.future;
-    return List.unmodifiable(records);
-  }
-
-  @override
-  Future<PaymentLinkRecoveryRecord> markCreatedLinkShared(
-    VizorPaymentLink link,
-  ) async {
-    sharedLinks.add(link);
-    final index = records.indexWhere(
-      (record) => record.link.address == link.address,
-    );
-    final updated = records[index].copyWith(
-      state: PaymentLinkRecoveryState.shared,
-      updatedAt: DateTime.utc(2026, 8, 6, 1),
-    );
-    records[index] = updated;
-    return updated;
-  }
-
-  @override
-  Future<Map<String, PaymentLinkFundingProgress>> inspectCreatedLinkFundings(
-    List<PaymentLinkRecoveryRecord> records,
-  ) async {
-    final expiredAddresses = expireFundingOnInspect
-        ? {
-            for (final record in records)
-              if (record.state == PaymentLinkRecoveryState.funded)
-                record.link.address,
-          }
-        : const <String>{};
-    this.records.removeWhere(
-      (record) => expiredAddresses.contains(record.link.address),
-    );
-    return {
-      for (final record in records)
-        if (!expiredAddresses.contains(record.link.address))
-          record.link.address: PaymentLinkFundingProgress(
-            confirmationCount: fundingConfirmationCount,
-          ),
-    };
-  }
-
-  @override
-  Future<List<PaymentLinkReceivedRecord>> loadReceivedLinkRecoveries() async {
-    receivedLoadCalls += 1;
-    await receivedLoadGate?.future;
-    if (receivedLoadFailures > 0) {
-      receivedLoadFailures -= 1;
-      throw StateError('transient Received load failure');
-    }
-    return List.unmodifiable(receivedRecords);
-  }
-
-  @override
-  Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
-    List<PaymentLinkReceivedRecord> records,
-  ) async {
-    for (var index = 0; index < receivedRecords.length; index++) {
-      final record = receivedRecords[index];
-      final status = receivedClaimStatuses[record.address] ?? record.status;
-      receivedRecords[index] = switch (status) {
-        PaymentLinkReceivedStatus.readyToClaim => record.copyWith(
-          status: status,
-          destinationAccountUuid: null,
-          claimTxids: null,
-          updatedAt: DateTime.utc(2026, 8, 6, 3),
-        ),
-        PaymentLinkReceivedStatus.submitting => record.copyWith(
-          status: status,
-          destinationAccountUuid: record.destinationAccountUuid ?? 'account-1',
-          claimTxids: null,
-          updatedAt: DateTime.utc(2026, 8, 6, 3),
-        ),
-        PaymentLinkReceivedStatus.receiving => record,
-        PaymentLinkReceivedStatus.received => record.copyWith(
-          status: status,
-          claimLink: null,
-          updatedAt: DateTime.utc(2026, 8, 6, 3),
-        ),
-      };
-    }
-    return List.unmodifiable(receivedRecords);
-  }
-
-  @override
-  Future<PaymentLinkClaimSession> prepareClaim(
-    VizorPaymentLink link, {
-    bool allowLongSync = false,
-  }) async {
-    preparedLinks.add(link);
-    allowLongSyncCalls.add(allowLongSync);
-    await prepareClaimGates[preparedLinks.length]?.future;
-    final configuredError = prepareClaimError;
-    if (configuredError != null) throw configuredError;
-    if (prepareClaimFailures > 0) {
-      prepareClaimFailures -= 1;
-      throw StateError('transient claim preparation failure');
-    }
-    if (longSyncConfirmationRequired && !allowLongSync) {
-      throw const PaymentLinkLongSyncConfirmationRequired();
-    }
-    return PaymentLinkClaimSession(
-      link: link,
-      destinationAddress: 'u1receiver',
-      destinationAccountUuid: 'account-1',
-      directory: Directory('/tmp/vizor-payment-link-test'),
-      dbPath: '/tmp/vizor-payment-link-test/wallet.db',
-      accountUuid: 'payment-link-account',
-      totalZatoshi: claimable ? link.amountZatoshi : BigInt.zero,
-      claimableZatoshi: claimable ? link.amountZatoshi : BigInt.zero,
-      feeZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
-      fundingConfirmationCount: fundingConfirmationCount,
-      waitingForFundingConfirmations: waitingForFundingConfirmations,
-    );
-  }
-
-  @override
-  Future<PaymentLinkClaimResult> claimPreparedLink(
-    PaymentLinkClaimSession session,
-  ) async {
-    if (!receivedRecords.any(
-      (record) => record.address == session.link.address,
-    )) {
-      receivedRecords.insert(
-        0,
-        PaymentLinkReceivedRecord.fromLink(
-          session.link,
-          updatedAt: DateTime.utc(2026, 8, 6),
-        ),
-      );
-    }
-    try {
-      final result = await _claimLink(session.link);
-      _replaceReceivedRecord(
-        session.link.address,
-        (record) => record.copyWith(
-          status: PaymentLinkReceivedStatus.receiving,
-          destinationAccountUuid: session.destinationAccountUuid,
-          claimTxids: result.txids,
-          updatedAt: DateTime.utc(2026, 8, 6, 2),
-        ),
-      );
-      return result;
-    } catch (_) {
-      _replaceReceivedRecord(
-        session.link.address,
-        (record) => record.copyWith(
-          status: PaymentLinkReceivedStatus.readyToClaim,
-          destinationAccountUuid: null,
-          claimTxids: null,
-          updatedAt: DateTime.utc(2026, 8, 6, 2),
-        ),
-      );
-      rethrow;
-    }
-  }
-
-  @override
-  Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
-    discardedClaimAddresses.add(session.link.address);
-  }
-
-  @override
-  Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {
-    retainedClaimAddresses.add(session.link.address);
-    if (!receivedRecords.any(
-      (record) => record.address == session.link.address,
-    )) {
-      receivedRecords.insert(
-        0,
-        PaymentLinkReceivedRecord.fromLink(
-          session.link,
-          updatedAt: DateTime.utc(2026, 8, 6),
-        ),
-      );
-    }
-  }
-
-  Future<PaymentLinkClaimResult> _claimLink(VizorPaymentLink link) async {
-    claimedLinks.add(link);
-    return claimCompleters[link.address]?.future ??
-        claimCompleter?.future ??
-        _broadcastedClaimResult;
-  }
-
-  void _replaceReceivedRecord(
-    String address,
-    PaymentLinkReceivedRecord Function(PaymentLinkReceivedRecord record) update,
-  ) {
-    final index = receivedRecords.indexWhere(
-      (record) => record.address == address,
-    );
-    if (index >= 0) receivedRecords[index] = update(receivedRecords[index]);
-  }
-}
-
-class _SwitchablePaymentLinkAccountNotifier extends AccountNotifier {
-  _SwitchablePaymentLinkAccountNotifier([this.initialState = _twoAccountState]);
-
-  final AccountState initialState;
-
-  @override
-  AccountState build() => initialState;
-
-  void setActiveAccount(String uuid) {
-    final current = state.value ?? initialState;
-    state = AsyncData(
-      current.copyWith(
-        activeAccountUuid: uuid,
-        activeAddress: 'u1${uuid}address',
-      ),
-    );
-  }
-}
-
-const _broadcastedClaimResult = PaymentLinkClaimResult(
-  txids: 'claim-txid',
-  status: PaymentLinkClaimBroadcastStatus.broadcasted,
-);
-
-class _FakePaymentLinkClipboard implements PaymentLinkClipboard {
-  _FakePaymentLinkClipboard({this.text, this.readCompleter});
-
-  String? text;
-  final Completer<String?>? readCompleter;
-  final List<String> copiedSecrets = [];
-  int clearCalls = 0;
-
-  @override
-  Future<void> clear() async {
-    clearCalls += 1;
-    text = '';
-  }
-
-  @override
-  Future<void> copySecret(String text) async {
-    copiedSecrets.add(text);
-    this.text = text;
-  }
-
-  @override
-  Future<String?> readText() => readCompleter?.future ?? Future.value(text);
-}
-
-class _FakePaymentLinkQrImageSaver implements PaymentLinkQrImageSaver {
-  final List<Uint8List> savedImages = [];
-
-  @override
-  Future<bool> savePng(Uint8List pngBytes) async {
-    savedImages.add(Uint8List.fromList(pngBytes));
-    return true;
-  }
-}
-
-class _FakePaymentLinkHardwareSigningService
-    implements PaymentLinkHardwareSigningService {
-  _FakePaymentLinkHardwareSigningService({this.createCompleter});
-
-  final Completer<PaymentLinkHardwarePcztDraft>? createCompleter;
-  final createdAmounts = <BigInt>[];
-  final createdFromAccounts = <String>[];
-  final createdArtworkIds = <String?>[];
-  final createdMessages = <String?>[];
-  final discardedDrafts = <BigInt>[];
-
-  PaymentLinkHardwarePcztDraft get draft => PaymentLinkHardwarePcztDraft(
-    link: _incomingLink,
-    pcztBytes: const [1, 2, 3],
-    needsSaplingParams: false,
-    feeZatoshi: BigInt.from(10000),
-    proposalId: BigInt.one,
-    sendFlowId: 'test-payment-link-hardware',
-  );
-
-  @override
-  Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
-    required BigInt amountZatoshi,
-    required String sourceAccountUuid,
-    PaymentLinkPresentation? presentation,
-  }) async {
-    createdAmounts.add(amountZatoshi);
-    createdFromAccounts.add(sourceAccountUuid);
-    createdArtworkIds.add(presentation?.artworkId);
-    createdMessages.add(presentation?.message);
-    return createCompleter?.future ?? draft;
-  }
-
-  @override
-  Future<List<String>> encodeSigningUrParts({
-    required PaymentLinkHardwarePcztDraft draft,
-  }) async => const ['ur:zcash-sign-batch/test'];
-
-  @override
-  Future<List<int>> decodeSigningResponse({
-    required PaymentLinkHardwarePcztDraft draft,
-    required List<int> responseCbor,
-  }) async => const [10, 11];
-
-  @override
-  Future<List<int>> addProofsForSigning({
-    required PaymentLinkHardwarePcztDraft draft,
-    String? spendParamsPath,
-    String? outputParamsPath,
-  }) async => const [7, 8, 9];
-
-  @override
-  Future<void> discardPcztDraft({
-    required PaymentLinkHardwarePcztDraft draft,
-  }) async {
-    discardedDrafts.add(draft.proposalId);
-  }
-
-  @override
-  Future<PaymentLinkHardwareFundingResult> broadcastSignedPczt({
-    required PaymentLinkHardwarePcztDraft draft,
-    required List<int> pcztWithProofsBytes,
-    required List<int> pcztWithSignaturesBytes,
-    String? spendParamsPath,
-    String? outputParamsPath,
-    void Function()? onSubmissionStarted,
-  }) async {
-    return const PaymentLinkHardwareFundingResult(
-      txids: 'hardware-funding-txid',
-      status: 'broadcasted',
-      fundingMetadataSaved: true,
-    );
-  }
-}
-
-class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
-  @override
-  IronwoodMigrationCoordinatorState build() =>
-      const IronwoodMigrationCoordinatorState();
-}
-
-Rect _globalCaretRect(RenderEditable editable, int offset) {
-  final caretLocal = editable.getLocalRectForCaret(
-    TextPosition(offset: offset),
-  );
-  return editable.localToGlobal(caretLocal.topLeft) & caretLocal.size;
-}
-
-RenderEditable _findRenderEditable(RenderObject root) {
-  if (root is RenderEditable) return root;
-  RenderEditable? found;
-  root.visitChildren((child) {
-    found ??= _findRenderEditable(child);
-  });
-  return found!;
 }
