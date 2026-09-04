@@ -216,13 +216,27 @@ class SendStatusTerminalNotifier extends Notifier<bool> {
   /// flag's false → true edge; once the receipt is gone the route no longer
   /// blocks delivery, and a false → false release would leave the link parked
   /// until some unrelated wallet event happened to run the drain.
-  void resetAfterNavigation() {
+  ///
+  /// [afterRelease] is the proposal hand-back the departing receipt still has
+  /// in flight, if any. Terminal is published only once it lands: the drain
+  /// that edge triggers pre-checks a parked request against the wallet's
+  /// inputs, and a dead send's proposal still locks its inputs until Rust has
+  /// released it — the very "not enough ZEC" this ordering exists to prevent.
+  void resetAfterNavigation({Future<void>? afterRelease}) {
     final retainedRevision = _revision;
-    scheduleMicrotask(() {
+    void finish() {
       if (_disposed || _revision != retainedRevision) return;
       if (!state) markTerminal();
       reset();
-    });
+    }
+
+    if (afterRelease == null) {
+      scheduleMicrotask(finish);
+      return;
+    }
+    unawaited(
+      afterRelease.then<void>((_) => finish(), onError: (Object _) => finish()),
+    );
   }
 }
 

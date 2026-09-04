@@ -63,7 +63,12 @@ class SendStatusScreen extends ConsumerStatefulWidget {
 class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   _SendStatusPhase _phase = _SendStatusPhase.sending;
   bool _proposalConsumed = false;
-  bool _discardScheduled = false;
+
+  /// The one release of this receipt's proposal, once something has claimed
+  /// it — the failed outcome or `dispose`. Handed to the terminal flag on the
+  /// way out so a departure mid-release does not publish "safe to leave"
+  /// before the inputs are actually free.
+  Future<void>? _proposalRelease;
   String? _error;
   String? _statusMessage;
   String? _txid;
@@ -102,7 +107,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (_phase != _SendStatusPhase.sending) {
       unawaited(_discardProposalIfNeeded('SendStatus(dispose)'));
     }
-    _sendStatusTerminal.resetAfterNavigation();
+    _sendStatusTerminal.resetAfterNavigation(afterRelease: _proposalRelease);
     super.dispose();
   }
 
@@ -112,10 +117,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   /// outcome below or [dispose] — takes the discard and every later call is a
   /// no-op, so a failure that releases the proposal on screen does not get a
   /// second release when the receipt is finally left.
-  Future<void> _discardProposalIfNeeded(String logContext) async {
-    if (_proposalConsumed || _discardScheduled) return;
-    _discardScheduled = true;
-    await discardSendProposal(
+  Future<void> _discardProposalIfNeeded(String logContext) {
+    if (_proposalConsumed) return Future<void>.value();
+    return _proposalRelease ??= discardSendProposal(
       proposalId: widget.args.proposalId,
       sendFlowId: widget.args.sendFlowId,
       logContext: logContext,

@@ -294,6 +294,63 @@ void main() {
     },
   );
 
+  testWidgets('leaving a failed receipt mid-release delays the drain until the '
+      'proposal is free', (tester) async {
+    final discardGate = Completer<void>();
+    rustApi.discardGate = discardGate;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(),
+        broadcastRunner:
+            ({
+              required ref,
+              required args,
+              keystone,
+              required confirmSaplingParamsDownload,
+              shouldAbort,
+            }) async => const SendBroadcastOutcome(
+              phase: SendBroadcastPhase.failed,
+              proposalConsumed: false,
+              error: 'Mnemonic not found for the proposal account.',
+            ),
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(_sendStatusTerminal(tester), isFalse);
+
+    final published = <bool>[];
+    ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    ).listen<bool>(
+      sendStatusTerminalProvider,
+      (_, next) => published.add(next),
+    );
+
+    // Back is allowed on a failed receipt; the user leaves while Rust is
+    // still releasing the proposal.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('home-route'), findsOneWidget);
+    expect(
+      published,
+      isEmpty,
+      reason:
+          'publishing terminal here would drain a parked request against '
+          'inputs the dead send still locks',
+    );
+
+    discardGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(published, [true, false]);
+    expect(rustApi.discardCalls, hasLength(1));
+  });
+
   testWidgets('blocked pop routes home instead of popping', (tester) async {
     rustApi.executeResult = _executeResult(status: 'broadcasted');
 
