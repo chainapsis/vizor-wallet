@@ -16,6 +16,8 @@ param(
   [string]$CodeSignParams = $env:VIZOR_WINDOWS_CODE_SIGN_PARAMS,
   [string]$CodeSignParallel = $env:VIZOR_WINDOWS_CODE_SIGN_PARALLEL,
   [string]$CodeSignExclude = $env:VIZOR_WINDOWS_CODE_SIGN_EXCLUDE,
+  [ValidateSet("x64", "arm64")]
+  [string]$Arch,
   [switch]$Msi,
   [switch]$Clean
 )
@@ -77,6 +79,22 @@ function Get-FvmVersion {
 
   $config = Get-Content -Raw -Path ".fvmrc" | ConvertFrom-Json
   return $config.flutter
+}
+
+function Get-HostWindowsPackArch {
+  $osArch = $null
+  try {
+    $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+  } catch {
+    $osArch = $null
+  }
+  if ($osArch -eq [System.Runtime.InteropServices.Architecture]::Arm64) {
+    return "arm64"
+  }
+  if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
+    return "arm64"
+  }
+  return "x64"
 }
 
 function Get-PubspecVersion {
@@ -271,6 +289,14 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
   $Version = Get-PubspecVersion
 }
 
+$hostArch = Get-HostWindowsPackArch
+if ([string]::IsNullOrWhiteSpace($Arch)) {
+  $Arch = $hostArch
+} elseif ($Arch -ne $hostArch) {
+  throw "Flutter builds Windows for the host architecture only. This host is $hostArch; cannot package $Arch."
+}
+Write-Host "Packaging Windows $Arch $Network release."
+
 if ($Network -eq "mainnet") {
   if ([string]::IsNullOrWhiteSpace($PackId)) {
     $PackId = "com.keplr.vizor"
@@ -279,7 +305,7 @@ if ($Network -eq "mainnet") {
     $PackTitle = "Vizor"
   }
   if ([string]::IsNullOrWhiteSpace($Channel)) {
-    $Channel = "win-x64-mainnet"
+    $Channel = "win-$Arch-mainnet"
   }
   if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = "build\velopack\mainnet"
@@ -294,7 +320,7 @@ if ($Network -eq "mainnet") {
     $PackTitle = "Vizor Testnet"
   }
   if ([string]::IsNullOrWhiteSpace($Channel)) {
-    $Channel = "win-x64-testnet"
+    $Channel = "win-$Arch-testnet"
   }
   if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = "build\velopack\testnet"
@@ -335,7 +361,7 @@ if (-not [string]::IsNullOrWhiteSpace($UpdateReleaseBaseUrl)) {
   $env:VIZOR_UPDATE_RELEASE_BASE_URL = $UpdateReleaseBaseUrl.Trim()
 }
 
-$packDir = Join-Path $repoRoot "build\windows\x64\runner\Release"
+$packDir = Join-Path $repoRoot "build\windows\$Arch\runner\Release"
 $mainExe = Join-Path $packDir "Vizor.exe"
 $resolvedOutputDir = Join-Path $repoRoot $OutputDir
 
@@ -361,7 +387,7 @@ $flutterBuildArgs = @(
   "--dart-define=VIZOR_WALLET_LINK_BACKEND_URL=$WalletLinkBackendUrl"
 )
 
-$cmakeCache = Join-Path $repoRoot "build\windows\x64\CMakeCache.txt"
+$cmakeCache = Join-Path $repoRoot "build\windows\$Arch\CMakeCache.txt"
 if (Test-Path $cmakeCache) {
   Remove-Item -LiteralPath $cmakeCache -Force
 }
@@ -390,6 +416,10 @@ $packArgs = @(
   "--noPortable",
   "--skipVeloAppCheck"
 )
+
+if ($Arch -eq "arm64") {
+  $packArgs += @("--runtime", "win-arm64")
+}
 
 if ($Msi) {
   $packArgs += "--msi"
@@ -431,4 +461,4 @@ if (-not [string]::IsNullOrWhiteSpace($UpdateFeedSigningKey)) {
   Write-Warning "VIZOR_UPDATE_FEED_SIGNING_KEY_B64 is not set. Release feed signature was not created."
 }
 
-Write-Host "Velopack $Network package created in $resolvedOutputDir"
+Write-Host "Velopack $Network $Arch package created in $resolvedOutputDir"
