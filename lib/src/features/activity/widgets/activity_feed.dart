@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -293,7 +294,6 @@ class _ActivityFeedSliverItemView extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (item.type) {
       _ActivityFeedSliverItemType.title => const _ActivityFeedCentered(
-        width: 420,
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: AppSpacing.s),
           child: _ActivityFeedTitleRow(),
@@ -301,10 +301,9 @@ class _ActivityFeedSliverItemView extends StatelessWidget {
       ),
       _ActivityFeedSliverItemType.gap => SizedBox(height: item.height),
       _ActivityFeedSliverItemType.message => _ActivityFeedCentered(
-        width: 396,
+        surface: true,
         child: _ActivityFeedMessageCard(
           text: item.text!,
-          width: 396,
           isError: item.isError,
         ),
       ),
@@ -324,16 +323,24 @@ class _ActivityFeedSliverItemView extends StatelessWidget {
 }
 
 class _ActivityFeedCentered extends StatelessWidget {
-  const _ActivityFeedCentered({required this.width, required this.child});
+  const _ActivityFeedCentered({required this.child, this.surface = false});
 
-  final double width;
   final Widget child;
+  final bool surface;
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SizedBox(width: width, child: child),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final paneWidth = constraints.maxWidth;
+        final width = surface
+            ? AppDesktopContentMetrics.surfaceWidthForPane(paneWidth)
+            : AppDesktopContentMetrics.widthForPane(paneWidth);
+        return Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(width: width, child: child),
+        );
+      },
     );
   }
 }
@@ -412,7 +419,7 @@ class _ActivityFeedCardSegment extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return _ActivityFeedCentered(
-      width: 396,
+      surface: true,
       child: CustomPaint(
         painter: _ActivityFeedCardSegmentShadowPainter(
           position: position,
@@ -598,7 +605,7 @@ ValueKey<String>? _stableRowKey(ActivityRowData row) {
 class _ActivityFeedMessageCard extends StatelessWidget {
   const _ActivityFeedMessageCard({
     required this.text,
-    required this.width,
+    this.width,
     this.isError = false,
   });
 

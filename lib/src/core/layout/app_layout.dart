@@ -17,19 +17,22 @@ const _windowAppearanceChannel = MethodChannel(
   'com.zcash.wallet/window_appearance',
 );
 
-/// Two fixed-aspect-ratio layouts the desktop app supports.
+/// Two desktop window shapes the app can boot into or infer from the
+/// current size.
 ///
-/// - [large]: landscape, width:height = 1080:720 (3:2 = 1.5, wider than tall)
-/// - [small]: portrait,  width:height =  65:133  (≈ 0.489, taller than wide)
+/// - [large]: landscape default, 1080×720
+/// - [small]: portrait default, 416×851
 ///
-/// Mobile and web are permanently [small]. On desktop the OS window is
-/// reshaped to the selected ratio and its aspect ratio is enforced for
-/// user drag-resize.
+/// Mobile and web are permanently [small]. On desktop the OS window
+/// starts at [defaultSize] with [minimumSize] as the drag-resize floor.
+/// After launch, width and height resize independently — the window is
+/// not locked to [aspectRatio].
 enum AppLayoutMode {
   large,
   small;
 
-  /// Width / height for this layout.
+  /// Width / height for this layout's default size. Used only to infer
+  /// the current mode from an observed window; it is not enforced.
   double get aspectRatio {
     switch (this) {
       case AppLayoutMode.large:
@@ -39,7 +42,7 @@ enum AppLayoutMode {
     }
   }
 
-  /// Default window size applied at startup and on explicit toggle.
+  /// Default window size applied at startup.
   Size get defaultSize {
     switch (this) {
       case AppLayoutMode.large:
@@ -49,12 +52,15 @@ enum AppLayoutMode {
     }
   }
 
-  /// Minimum allowed drag-resize size — prevents the window from
-  /// collapsing below the design system's large desktop canvas.
+  /// Minimum allowed drag-resize size.
+  ///
+  /// Large-mode width is 75% of the 1080 Figma canvas so the window can
+  /// sit closer to the 420px content column. Height stays at the design
+  /// canvas (720).
   Size get minimumSize {
     switch (this) {
       case AppLayoutMode.large:
-        return const Size(1080, 720);
+        return const Size(810, 720);
       case AppLayoutMode.small:
         return const Size(416, 851);
     }
@@ -94,7 +100,8 @@ Future<void> initializeDesktopWindow({
     await _applyWindowsClientAreaLayout(initialMode, center: true);
   } else {
     await windowManager.setMinimumSize(initialMode.minimumSize);
-    await windowManager.setAspectRatio(initialMode.aspectRatio);
+    // 0 clears any leftover ratio lock so drag-resize is free on both axes.
+    await windowManager.setAspectRatio(0);
     await windowManager.setSize(initialMode.defaultSize, animate: false);
   }
 }
@@ -125,21 +132,13 @@ class AppLayoutState {
   const AppLayoutState(this.mode);
 }
 
-/// Riverpod notifier that owns the current layout mode and, on desktop,
-/// drives the OS window to match.
+/// Riverpod notifier that owns the current layout mode.
 ///
-/// Observes [WindowListener] events so that when the user breaks out of
-/// the configured aspect-ratio constraint (macOS green-button zoom,
-/// Windows maximize/snap, manual drag past the limit) — or restores
-/// the window back to the other ratio's shape — the notifier infers
-/// the current layout from the observed window ratio using a single
-/// midpoint threshold.
-///
-/// The inference is idempotent, so the listener doesn't need a
-/// re-entrancy guard against the notifier's own `setSize` events:
-/// `setSize(large default)` → observed ratio ≈ 1.33 → infers large →
-/// state was already large → no-op. `setSize(small default)` → observed
-/// ratio ≈ 0.489 → infers small → state was already small → no-op.
+/// Startup sizes the window once. After that, the user resizes freely;
+/// [setMode] does not snap the window back to a default size. Window
+/// listener events only infer [AppLayoutMode] from the observed ratio
+/// so screens that still call [setMode] stay in sync without reshaping
+/// the window.
 class AppLayoutNotifier extends Notifier<AppLayoutState> with WindowListener {
   @override
   AppLayoutState build() {
@@ -157,23 +156,9 @@ class AppLayoutNotifier extends Notifier<AppLayoutState> with WindowListener {
   Future<void> setMode(AppLayoutMode mode) async {
     if (!isDesktopLayoutPlatform) return;
     if (state.mode == mode) return;
+    // Geometry is user-controlled after [initializeDesktopWindow]. Keep
+    // the recorded mode in sync without resetting size or aspect ratio.
     state = AppLayoutState(mode);
-    try {
-      if (Platform.isWindows) {
-        await _applyWindowsClientAreaLayout(mode);
-      } else {
-        await windowManager.setMinimumSize(mode.minimumSize);
-        await windowManager.setAspectRatio(mode.aspectRatio);
-        await windowManager.setSize(mode.defaultSize, animate: false);
-      }
-    } catch (e, st) {
-      // On platform-call failure, log and fall back to the assumption
-      // that the window is in [large]. The auto-switch listener will
-      // subsequently correct this if the window is actually shaped
-      // like small.
-      debugPrint('AppLayoutNotifier.setMode($mode) failed: $e\n$st');
-      state = const AppLayoutState(AppLayoutMode.large);
-    }
   }
 
   Future<void> toggle() => setMode(
@@ -231,6 +216,7 @@ Future<void> _applyWindowsClientAreaLayout(
     // Windows targets the redesigned content area directly. Its native frame is
     // added by the plugin after the Flutter client-area size is selected.
     contentTopInset: _windowsContentTopInset,
+    enforceAspectRatio: false,
     resize: resize,
     center: center,
   );

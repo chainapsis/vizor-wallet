@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_content.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -225,6 +226,14 @@ void main() {
 
     expect(contentCenter, moreOrLessEquals(paneCenter, epsilon: 0.1));
     expect(contentTop, moreOrLessEquals(expectedContentTop, epsilon: 0.1));
+    expect(
+      tester.getSize(contentFinder).width,
+      moreOrLessEquals(
+        AppDesktopContentMetrics.widthForPane(paneWidth),
+        epsilon: 0.1,
+      ),
+    );
+    expect(tester.getSize(contentFinder).width, greaterThan(420));
   });
 
   testWidgets('home desktop send action opens send screen', (tester) async {

@@ -116,6 +116,9 @@ abstract final class AppWindowSizing {
   static const double minHeight = 720;
   static const double maxWidth = 1296;
   static const double maxHeight = 864;
+
+  /// Content column width at the 1080×720 design window. Larger panes
+  /// grow the column with extra window width.
   static const double contentAreaMaxWidth = 420;
   static const double paneRadius = 20;
 }

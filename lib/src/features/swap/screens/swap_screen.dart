@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -270,12 +271,14 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                             const [],
                       )?.label,
                     );
-                    // Figma container (420×656, 16px vertical padding): the
-                    // title is pinned under the toolbar, the attribution and
-                    // CTA are pinned at the bottom, and the swap section
-                    // flexes to center the widget between them. Pinning only
-                    // engages when the pane offers the design height;
-                    // shorter panes pack the column and scroll instead.
+                    // Figma container (420×656 at the design window, 16px
+                    // vertical padding): the title is pinned under the
+                    // toolbar, the attribution and CTA are pinned at the
+                    // bottom, and the swap section flexes to center the
+                    // widget between them. Extra pane width grows the
+                    // column. Pinning only engages when the pane offers
+                    // the design height; shorter panes pack the column
+                    // and scroll instead.
                     final pinned =
                         constraints.minHeight >= _swapBodyPinnedMinHeight;
                     final column = Column(
@@ -298,21 +301,17 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         ),
                       ],
                     );
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 420),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.s,
-                          ),
-                          child: pinned
-                              ? SizedBox(
-                                  height: constraints.minHeight,
-                                  child: column,
-                                )
-                              : column,
-                        ),
+                    return AppDesktopContentColumn(
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s,
                       ),
+                      child: pinned
+                          ? SizedBox(
+                              height: constraints.minHeight,
+                              child: column,
+                            )
+                          : column,
                     );
                   },
                 ),

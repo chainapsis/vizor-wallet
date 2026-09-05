@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/formatting/address_display.dart';
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
@@ -175,12 +176,13 @@ class SendReviewInfoSection extends StatelessWidget {
   }
 }
 
-/// The 420px content column shared by the review and status views: Body-L
-/// SemiBold title over the screen sections with the Figma 32px gap.
+/// Content column shared by the review and status views: Body-L SemiBold
+/// title over the screen sections with the Figma 32px gap.
 ///
-/// The column is horizontally centered but top-pinned in the content area. In
-/// the Figma frames, the title starts 16px below `Content Area` rather than
-/// vertically centering the whole group in the pane.
+/// At the 1080 design window this is 420px; extra pane width is given to
+/// the column. It is horizontally centered but top-pinned in the content
+/// area. In the Figma frames, the title starts 16px below `Content Area`
+/// rather than vertically centering the whole group in the pane.
 ///
 /// Scrolling is owned by the containing pane scaffold.
 class SendReviewContentColumn extends StatelessWidget {
@@ -202,36 +204,30 @@ class SendReviewContentColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SizedBox(
-        width: AppWindowSizing.contentAreaMaxWidth,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s,
-            vertical: AppSpacing.sm,
+    return AppDesktopContentColumn(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s,
+        vertical: AppSpacing.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            // Figma `Body L` SemiBold — branch pattern is the
+            // bodyLarge token with an inline weight bump.
+            style: AppTypography.bodyLarge.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                // Figma `Body L` SemiBold — branch pattern is the
-                // bodyLarge token with an inline weight bump.
-                style: AppTypography.bodyLarge.copyWith(
-                  color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              for (final child in children) ...[
-                const SizedBox(height: _sectionGap),
-                child,
-              ],
-            ],
-          ),
-        ),
+          for (final child in children) ...[
+            const SizedBox(height: _sectionGap),
+            child,
+          ],
+        ],
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
@@ -235,8 +236,6 @@ class _SettingsEndpointPane extends StatefulWidget {
 }
 
 class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
-  static const _contentWidth = 420.0;
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -244,26 +243,25 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
         widget.activeTab == _EndpointTab.list &&
         (widget.canUpdate || widget.isSubmitting || widget.submitError != null);
 
-    return AppPaneFloatingBar(
-      visible: showFloatingBar,
-      // The scrim box is the 420 content column in the design, not the full
-      // pane width.
-      overlayWidth: _contentWidth,
-      bar: _FloatingUpdateBar(
-        submitError: widget.submitError,
-        isSubmitting: widget.isSubmitting,
-        canUpdate: widget.canUpdate,
-        showButton: widget.canUpdate || widget.isSubmitting,
-        onSubmit: widget.onSubmit,
-      ),
-      builder: (context, bottomReserve) => AppPaneScrollScaffold(
-        toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
-        padding: EdgeInsets.only(bottom: bottomReserve),
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            width: _contentWidth,
-            child: Padding(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final contentWidth = AppDesktopContentMetrics.widthForPane(
+          constraints.maxWidth,
+        );
+        return AppPaneFloatingBar(
+          visible: showFloatingBar,
+          overlayWidth: contentWidth,
+          bar: _FloatingUpdateBar(
+            submitError: widget.submitError,
+            isSubmitting: widget.isSubmitting,
+            canUpdate: widget.canUpdate,
+            showButton: widget.canUpdate || widget.isSubmitting,
+            onSubmit: widget.onSubmit,
+          ),
+          builder: (context, bottomReserve) => AppPaneScrollScaffold(
+            toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+            padding: EdgeInsets.only(bottom: bottomReserve),
+            child: AppDesktopContentColumn(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.s,
                 vertical: AppSpacing.sm,
@@ -322,8 +320,8 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

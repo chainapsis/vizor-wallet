@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -1419,8 +1420,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 class _SendComposeLayout extends StatelessWidget {
   const _SendComposeLayout({required this.child, required this.reviewButton});
 
-  static const contentWidth = 420.0;
-  static const fieldsWidth = 396.0;
   static const reviewButtonWidth = 196.0;
   static const _containerHorizontalPadding = AppSpacing.s;
   static const _containerVerticalPadding = AppSpacing.sm;
@@ -1442,6 +1441,12 @@ class _SendComposeLayout extends StatelessWidget {
             : height < (_containerVerticalPadding * 2)
             ? 0.0
             : height - (_containerVerticalPadding * 2);
+        final contentWidth = AppDesktopContentMetrics.widthForPane(
+          constraints.maxWidth,
+        );
+        final fieldsWidth = AppDesktopContentMetrics.surfaceWidthForPane(
+          constraints.maxWidth,
+        );
 
         return Center(
           child: SizedBox(
@@ -1616,7 +1621,7 @@ class _SendContactAutocompleteOptionsState
 
     return SizedBox(
       key: const ValueKey('send_contact_autocomplete_options'),
-      width: _SendComposeLayout.fieldsWidth,
+      width: double.infinity,
       height: popoverHeight,
       child: DecoratedBox(
         key: const ValueKey('send_contact_autocomplete_surface'),

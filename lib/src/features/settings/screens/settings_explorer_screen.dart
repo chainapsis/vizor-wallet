@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -128,127 +129,121 @@ class _SettingsExplorerScreenState
         padding: EdgeInsets.zero,
         child: AppPaneScrollScaffold(
           toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: SizedBox(
-              width: 420,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.s,
-                  vertical: AppSpacing.sm,
+          child: AppDesktopContentColumn(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s,
+              vertical: AppSpacing.sm,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Explorer',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Explorer',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.headlineLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    Text(
-                      current.trim().isEmpty
-                          ? 'Current: ${defaultZcashExplorerHost(networkName)} (default)'
-                          : 'Current: ${explorerSettingsLabel(current, networkName: networkName)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.base),
-                    _ExplorerOptionCard(
-                      key: const ValueKey('explorer_option_cipherscan'),
-                      iconName: AppIcons.globe,
-                      label: kDefaultZcashExplorerLabel,
-                      subtitle: defaultZcashExplorerHost(networkName),
-                      selected: _choice == _ExplorerChoice.cipherscan,
-                      onTap: _isSubmitting
-                          ? null
-                          : () => setState(() {
-                              _choice = _ExplorerChoice.cipherscan;
-                              _submitError = null;
-                            }),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    _ExplorerOptionCard(
-                      key: const ValueKey('explorer_option_custom'),
-                      iconName: AppIcons.edit,
-                      label: 'Custom',
-                      subtitle: 'Any explorer you prefer',
-                      selected: _choice == _ExplorerChoice.custom,
-                      onTap: _isSubmitting
-                          ? null
-                          : () => setState(() {
-                              _choice = _ExplorerChoice.custom;
-                              _submitError = null;
-                              if (_customController.text.trim().isEmpty &&
-                                  current.trim().isNotEmpty) {
-                                _customController.text = current;
-                              }
-                            }),
-                    ),
-                    if (_choice == _ExplorerChoice.custom) ...[
-                      const SizedBox(height: AppSpacing.md),
-                      AppTextField(
-                        key: const ValueKey('explorer_custom_field'),
-                        label: 'Explorer URL',
-                        hintText: 'https://explorer.example/tx/{txid}',
-                        controller: _customController,
-                        keyboardType: TextInputType.url,
-                        textInputAction: TextInputAction.done,
-                        messageText: customMessage,
-                        tone: customMessage == null
-                            ? AppTextFieldTone.neutral
-                            : AppTextFieldTone.destructive,
-                        onChanged: (_) => setState(() => _submitError = null),
-                        onSubmitted: (_) => _submit(),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        kZcashExplorerTemplateHint,
-                        style: AppTypography.bodySmall.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: AppSpacing.md),
-                    AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      kZcashExplorerPrivacyCopy,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.primary,
-                      ),
-                    ),
-                    if (_submitError != null) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        _submitError!,
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.destructive,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: AppSpacing.md),
-                    Center(
-                      child: AppButton(
-                        key: const ValueKey('explorer_update'),
-                        onPressed: _canUpdate(current) ? _submit : null,
-                        minWidth: 196,
-                        child: Text(
-                          _isSubmitting ? 'Updating...' : 'Update explorer',
-                        ),
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: AppSpacing.s),
+                Text(
+                  current.trim().isEmpty
+                      ? 'Current: ${defaultZcashExplorerHost(networkName)} (default)'
+                      : 'Current: ${explorerSettingsLabel(current, networkName: networkName)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
                 ),
-              ),
+                const SizedBox(height: AppSpacing.base),
+                _ExplorerOptionCard(
+                  key: const ValueKey('explorer_option_cipherscan'),
+                  iconName: AppIcons.globe,
+                  label: kDefaultZcashExplorerLabel,
+                  subtitle: defaultZcashExplorerHost(networkName),
+                  selected: _choice == _ExplorerChoice.cipherscan,
+                  onTap: _isSubmitting
+                      ? null
+                      : () => setState(() {
+                          _choice = _ExplorerChoice.cipherscan;
+                          _submitError = null;
+                        }),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                _ExplorerOptionCard(
+                  key: const ValueKey('explorer_option_custom'),
+                  iconName: AppIcons.edit,
+                  label: 'Custom',
+                  subtitle: 'Any explorer you prefer',
+                  selected: _choice == _ExplorerChoice.custom,
+                  onTap: _isSubmitting
+                      ? null
+                      : () => setState(() {
+                          _choice = _ExplorerChoice.custom;
+                          _submitError = null;
+                          if (_customController.text.trim().isEmpty &&
+                              current.trim().isNotEmpty) {
+                            _customController.text = current;
+                          }
+                        }),
+                ),
+                if (_choice == _ExplorerChoice.custom) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  AppTextField(
+                    key: const ValueKey('explorer_custom_field'),
+                    label: 'Explorer URL',
+                    hintText: 'https://explorer.example/tx/{txid}',
+                    controller: _customController,
+                    keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.done,
+                    messageText: customMessage,
+                    tone: customMessage == null
+                        ? AppTextFieldTone.neutral
+                        : AppTextFieldTone.destructive,
+                    onChanged: (_) => setState(() => _submitError = null),
+                    onSubmitted: (_) => _submit(),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    kZcashExplorerTemplateHint,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.md),
+                AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  kZcashExplorerPrivacyCopy,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+                if (_submitError != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    _submitError!,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.destructive,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.md),
+                Center(
+                  child: AppButton(
+                    key: const ValueKey('explorer_update'),
+                    onPressed: _canUpdate(current) ? _submit : null,
+                    minWidth: 196,
+                    child: Text(
+                      _isSubmitting ? 'Updating...' : 'Update explorer',
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
