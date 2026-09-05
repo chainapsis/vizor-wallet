@@ -1,8 +1,9 @@
 pub mod db;
 pub mod delegation;
-pub(crate) mod helper_transport;
 pub mod hotkey;
 pub mod network;
+pub(crate) mod route;
+pub mod signer;
 pub(crate) mod transport;
 
 #[cfg(test)]

@@ -47,6 +47,7 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
     required this.activeStep,
     this.activeStepProgress,
     this.activeStepDetail,
+    this.warning,
     super.key,
   });
 
@@ -54,11 +55,16 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
   final double? activeStepProgress;
   final String? activeStepDetail;
 
+  /// See [VotingSubmissionProgressPresentation.warning].
+  final String? warning;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final warning = this.warning;
     final noticeStyle = AppTypography.bodyLarge.copyWith(
-      color: colors.text.accent,
+      // Same metrics either way, so the measured layout below is unaffected.
+      color: warning == null ? colors.text.accent : colors.text.destructive,
       fontWeight: FontWeight.w600,
     );
     final titleStyle = AppTypography.displayLarge.copyWith(
@@ -67,7 +73,11 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
     final proofNoticeStyle = AppTypography.bodyMedium.copyWith(
       color: colors.text.primary,
     );
-    final noticeText = activeStepDetail ?? 'Don’t leave this window.';
+    // A warning outranks the step detail: it is persistent and actionable,
+    // while the detail is progress chatter the step list below repeats. The
+    // notice height is measured from this string, so the layout adapts.
+    final noticeText =
+        warning ?? activeStepDetail ?? 'Don’t leave this window.';
     return PopScope<void>(
       canPop: false,
       child: Scaffold(

@@ -22,12 +22,15 @@ This document focuses on what Vizor's integration is responsible for.
 
 | File | Responsibility |
 | --- | --- |
-| `db.rs` | Opens the voting sidecar DB via `VotingDb::open_wallet_sidecar` at the deterministic path next to the wallet DB. The voting schema is isolated from the wallet `user_version`. |
+| `db.rs` | Opens the voting sidecar DB via `VotingDb::open_wallet_sidecar` at the deterministic path next to the wallet DB. The crate keeps one connection per sidecar path and owns busy handling; the voting schema is isolated from the wallet `user_version`. |
 | `network.rs` | Converts between wallet-layer network enums and `zcash_voting::Network` so wallet modules do not depend on API-layer helpers. |
 | `hotkey.rs` | Reconstructs app-owned voting hotkeys from stored opaque secret bytes before handing them to crate operations. The secret is never persisted by Rust. |
-| `delegation.rs` | Prepares, proves, and signs delegation bundles (software and Keystone paths), forwarding `DelegationProgress` to callers. Wallet seed signing stays here. |
-| `transport.rs` | Fetches the voting snapshot anchor over the process route policy (`open_lwd_channel` + `anchor_tree_state_with_retry_on`) and refuses to proceed when Tor is selected but unusable, so PIR cache warm-up does not dial lightwalletd directly. This module owns the route decision and *dial* retry; the crate owns the *RPC* retry. PIR HTTP still uses the crate's `HyperTransport`. |
-| `../../api/voting.rs` | FRB boundary. Thin wrappers that open the sidecar DB and call crate lifecycle APIs (`delegate::*`, `vote::*`, `share::*`, `confirmation::*`, `session::*`, `precompute::*`). |
+| `signer.rs` | The wallet seed boundary. Implements the crate's `SpendAuthSigner` over the account mnemonic: verifies the seed fingerprint, derives and randomizes the SpendAuth key, and returns only the detached signature. |
+| `delegation.rs` | Opens the crate's `DelegationPipeline` for an account and round (wallet DB opener, lightwalletd inputs, hotkey, bundle policy) and wraps the stage calls the FRB boundary still exposes: bundle setup, eligibility, snapshot PIR precompute, background proof, Keystone requests, and PIR cache warm-up. |
+| `route.rs` | `VizorRoute`, the request executor behind every routed SDK transport. Tor requests go through the wallet's Tor client and fail closed while Tor is selected but unusable; direct requests use the crate's `DirectRoute`. Chain and helper traffic use it; PIR proof fetches and vote-tree sync stay on the crate's clearnet transport by design. |
+| `transport.rs` | Fetches the voting snapshot anchor over the process route policy (`open_lwd_channel` + `anchor_tree_state_with_retry_on`) so delegation inputs never dial lightwalletd directly. This module owns the route decision and *dial* retry; the crate owns the *RPC* retry. |
+| `../../api/voting_session.rs` | `VotingRoundSession`, the opaque FRB handle over `zcash_voting::RoundExecutor`. One session binds the sidecar, account, round, proposal roster, routed transports, and hotkey; Dart records ballot intents, reads the plan, and advances steps. |
+| `../../api/voting.rs` | The remaining stage-level FRB boundary: hotkey generation, delegation preparation, Keystone signature storage, vote-tree warm-up, share tracking passes, recovery reads, resets, and config resolution. |
 | `../../api/voting_helpers.rs` | API-only helper glue for delegation input resolution and bundle-parameter construction used by the FRB boundary. |
 
 ## Account Invariants And Secret Boundaries
@@ -46,10 +49,11 @@ vote signing.
   signing. Hotkey generation and vote signing do not require mnemonic access.
 
 The wallet seed never leaves the wallet boundary. Delegation signing in
-`delegation.rs::sign_delegation_request` consumes a crate-provided
-`DelegationSigningRequest`, verifies the seed fingerprint, derives the account
-SpendAuth key, randomizes it with `alpha`, and returns only the detached
-signature plus sighash. The crate never receives root seed material.
+`signer.rs` consumes a crate-provided `DelegationSigningRequest`, verifies the
+seed fingerprint, derives the account SpendAuth key, randomizes it with
+`alpha`, and returns only the detached signature. The crate never receives
+root seed material; the round session hands it a `SpendAuthSigner` callback or
+a stored Keystone signature.
 
 ### Session Pinning
 
@@ -102,45 +106,69 @@ delete durable `zcash_voting` recovery rows.
 
 ## Lifecycle And Recovery
 
-Vizor calls the crate's stage-oriented APIs rather than writing storage rows
-directly. The mapping from FRB functions to crate APIs:
+Casting and delegating run through one SDK round session. Dart opens
+`open_voting_round_session` with the account, round, roster, chain endpoints,
+PIR endpoints, and (when votes may be cast) the stored hotkey, then drives the
+crate's plan:
+
+| Session call (`api/voting_session.rs`) | Crate API |
+| --- | --- |
+| `plan` | `RoundExecutor::plan` (`session::resume_plan`) |
+| `set_ballot_intents` | `RoundExecutor::set_ballot_intents` — writes intent and re-plans under the round lock |
+| `advance_step` / `advance_next` | `RoundExecutor::{advance_step, advance_next}` — proves and signs delegations through `DelegationPipeline`, casts every planned draft of a bundle (tree sync with node failover, VAN witness, proofs, atomic persistence, helper plans, `ChainSubmissionClient::advance_until_terminal`, share delivery once confirmed), resumes persisted vote work, and confirms shares |
+| `keystone_signing_requests` | `DelegationPipeline::keystone_request` |
+| `begin_share_tracking_pass` | share tracking handle bound to the session's helper client |
+
+Every step streams `RoundStepProgressView` events and ends with exactly one
+`RoundStepOutcomeView` (carrying the re-planned `RoundPlanView`) or one
+`RoundStepFailureView`. Delegation steps lock per bundle; chain and share steps
+lock per round. Dart keeps scheduling, cancellation, progress projection, the
+network route, and secret custody. Failures reach Dart as typed
+`VotingErrorView` values and step failure kinds; no phase, kind, or error text
+is matched as a string.
+
+Preparation and recovery reads stay stage-level:
 
 | Stage | FRB entry (`api/voting.rs`) | Crate API |
 | --- | --- | --- |
 | Background PIR cache warm-up | `warm_pir_proof_cache` | `selection::select_notes_with_lwd`, `precompute::{cache_pir_proofs, prune_pir_proof_cache}` — bundle-, round-, and hotkey-independent; keyed by `(wallet_id, network, root, nullifier)`, read by the delegation prove path |
-| Bundle setup | `setup_delegation_bundles` | `delegate::ensure_round_context`, `VotingDb::ensure_bundles_with_skipped_suffix_with_policy` |
-| Background software delegation proof | `precompute_delegation_proof` | `delegate::{prepare_delegation_bundle, setup, prove}` — persists ZKP1 after snapshot PIR warm-up without receiving the mnemonic or signing; Keystone stays on its PCZT-first flow |
-| Delegation sign / fallback prove | `build_prove_and_sign_delegation_payload_with_progress`, Keystone variant | Software reuses a persisted proof or proves on demand, then calls `delegate::{signing_request, signed_bundle}`; Keystone calls `delegate::{keystone_request, prove, signed_bundle}` |
-| Delegation submit/confirm | `mark_delegation_submitted`, `confirm_delegation_submission` | `VotingDb::mark_delegation_submitted`, `confirmation::confirm_delegation_submission` |
-| Vote commit | `build_vote_commitments_with_progress`, `recover_vote_commitment` | `vote::prepare_commit_batch`, `vote::persist_prepared_commit_batch`, `vote::recover_signed_commitments` |
-| Vote submit/confirm | `mark_vote_submitted`, `confirm_vote_submission` | `VotingDb::mark_vote_submitted`, `confirmation::confirm_vote_submission` |
-| Share plan/submit/confirm | `preflight_voting_helpers`, `prepare_committed_share_delivery`, `submit_prepared_shares_to_helpers`, `confirm_share_with_helpers`, `track_pending_shares` | `HelperFleetPreflight`, `CommittedVote::{prepare_share_delivery, submit_prepared_shares}`, `share_tracking::{confirm_pending_share, track_pending_shares}` |
-| Ballot intent / restart | `set_ballot_intent`, `get_round_plan`, `get_round_recovery_state` | `VotingDb::set_ballot_intent`, `session::resume_plan`, `recovery::round_snapshot` |
+| Bundle setup / eligibility | `setup_delegation_bundles`, `check_voting_eligibility`, `precompute_snapshot_bundles` | `DelegationPipeline::{setup_bundles, eligibility, precompute_pir}` |
+| Background software delegation proof | `precompute_delegation_proof` | `DelegationPipeline::ensure_proof` — persists ZKP1 after snapshot PIR warm-up without receiving the mnemonic or signing |
+| Keystone signatures | `build_keystone_delegation_requests`, `store_keystone_signatures_batch`, `get_keystone_signatures`, `delete_skipped_bundles` | `DelegationPipeline::keystone_request`, `VotingDb` Keystone signature rows (`SetupAlreadyPersisted` on conflicting re-signs) |
+| Share tracking | `begin_share_tracking_pass`, `track_pending_shares`, `confirm_share_with_helpers`, `list_pending_share_rounds` | `share_tracking::{track_pending_shares, confirm_pending_share}`, `share::pending_rounds_for_accounts` |
+| Ballot intent / restart | `set_ballot_intent`, `get_round_plan` | `VotingDb::set_ballot_intent`, `session::resume_plan` |
 
-The `confirmation::*` APIs parse chain `tx` events and atomically record tx
-hashes, VAN positions, and VC positions. Restart recovery is driven by
-`session::resume_plan`, which returns the ordered remaining `NextStep`s and the
-proposals still open. Vizor's Dart recovery code consumes the crate's phase
-strings; it does not derive its own phases.
+Restart recovery is driven by `session::resume_plan`, which returns the ordered
+remaining `NextStep`s and the proposals still open. Dart consumes the crate's
+typed plan enums (`NextStepKind`, `RoundPlanActionKind`, `WorkflowPhaseView`);
+it does not derive its own phases.
+
+The round plan is the wallet's whole view of durable round state. Dart keeps no
+indexed mirror of delegation, vote, or share rows: bundle counts and delegation
+work come from `delegation_statuses`, outstanding share work from
+`has_unconfirmed_shares` and `blocking_share_work`, and the next tracking delay
+from `share::next_tracking_delay_for_round`. Durable share records never cross
+the bridge.
 
 ```mermaid
 stateDiagram-v2
     state "Delegation Bundle" as Delegation {
         [*] --> Prepared
-        Prepared --> Signed: prove + sign
-        Signed --> Submitted: mark_delegation_submitted
-        Submitted --> Confirmed: confirm_delegation_submission
+        Prepared --> Signed: Delegate (prove + sign)
+        Signed --> Submitted: chain episode
+        Submitted --> Confirmed: AdvanceDelegation
         Confirmed --> [*]
     }
     state "Vote Commitment" as Vote {
-        [*] --> Committed
-        Committed --> Submitted2: mark_vote_submitted
-        Submitted2 --> Confirmed2: confirm_vote_submission
-        Confirmed2 --> [*]
+        [*] --> Committed: CastVote (prove + persist)
+        Committed --> Submitted2: chain episode
+        Submitted2 --> Confirmed2: AdvanceVote / AdvanceVoteBatch
+        Confirmed2 --> SharesDelivered: SubmitShares
+        SharesDelivered --> [*]
     }
     state "Helper Share" as Share {
         [*] --> SubmittedShare
-        SubmittedShare --> ConfirmedShare: two configured helpers confirm
+        SubmittedShare --> ConfirmedShare: ConfirmShare (two configured helpers confirm)
         ConfirmedShare --> [*]
     }
 ```
@@ -164,10 +192,10 @@ placement, generation binding, and restart reuse:
 Overdue recovery submits immediately (`submit_at = 0`), while early
 under-placement replenishment preserves the original schedule in both the
 helper payload and durable record. The canonical scheduling, delivery,
-retry, and polling policy lives in the SDK. Dart calls the batch-oriented
-adapter in `api/voting.rs`; it neither materializes plans nor submits
-individual helper payloads. The SDK also enforces the process-wide ceiling of
-16 concurrent helper POSTs.
+retry, and polling policy lives in the SDK. The round session delivers a
+confirmed vote's shares inside the same step that confirmed it; Dart neither
+materializes plans nor submits individual helper payloads. The SDK also
+enforces the process-wide ceiling of 16 concurrent helper POSTs.
 
 Definite acceptances, outcome-unknown deliveries, and in-flight markers left by
 an interrupted process remain tracked after the vote screen closes. An
@@ -229,7 +257,7 @@ Vizor requests fresh discovery after leaving the mutation boundary.
 `zcash_voting::wire` is the canonical owner of protocol wire JSON and wallet view
 DTOs (field names, `serde` renames, base64/hex shaping, JSON-safe integer
 bounds), for example `DelegationSubmissionWire`, `VoteCommitmentWire`,
-`VanWitness`, `DraftVote`, `SignedVoteCommitmentsView`, and `RoundPlanView`. See
+`VanWitness`, `RoundPlanView`, `RoundStepOutcomeView`, and `VotingErrorView`. See
 `zcash_voting::wire` for the full set.
 
 Vizor keeps no FRB-local `Api*Wire` mirrors for these types. FRB codegen scans
