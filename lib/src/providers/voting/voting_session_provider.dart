@@ -1072,6 +1072,65 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }, cleanupProcessStateOnError: false);
   }
 
+  /// The ballot intents for `draftVotes`, skipping every other listed proposal.
+  static List<rust_session.ApiBallotIntent> _ballotIntentsFor({
+    required List<VotingDraftVote> draftVotes,
+    List<int>? allProposalIds,
+  }) {
+    final draftVotesByProposal = {
+      for (final draftVote in draftVotes) draftVote.proposalId: draftVote,
+    };
+    final proposalIds = {...?allProposalIds, ...draftVotesByProposal.keys}
+        .toList()
+      ..sort();
+    return [
+      for (final proposalId in proposalIds)
+        rust_session.ApiBallotIntent(
+          proposalId: proposalId,
+          skipped: !draftVotesByProposal.containsKey(proposalId),
+          choice: draftVotesByProposal[proposalId]?.choice,
+        ),
+    ];
+  }
+
+  /// Makes the ballot durable before any delegation runs.
+  ///
+  /// The SDK plans a `Delegate` obligation only for a bundle that still has a
+  /// vote to cast, so a round whose intents are not yet durable has no
+  /// delegation work at all. Delegating first therefore did nothing, and the
+  /// cast that followed — which is what recorded the intents — was then
+  /// refused because the delegation it now required had already had its turn.
+  /// Recording the ballot first is what makes the two agree.
+  ///
+  /// Safe to repeat: `set_ballot_intents` replaces the stored decision for
+  /// each proposal and re-plans, and `castVotes` records the same intents
+  /// again so it stays correct when called on its own.
+  Future<void> recordBallotIntents({
+    required List<VotingDraftVote> draftVotes,
+    List<int>? allProposalIds,
+  }) {
+    return _enqueue(() async {
+      final context = await _loadContext(_roundId);
+      final intents = _ballotIntentsFor(
+        draftVotes: draftVotes,
+        allProposalIds: allProposalIds,
+      );
+      if (intents.isEmpty) return;
+      final rust = ref.read(votingRustApiProvider);
+      final session = _openRoundSession(rust, context);
+      try {
+        final plan = await session.setBallotIntents(intents);
+        _throwIfContextStale(context, 'record-ballot-intents');
+        _setStateForContext(
+          context,
+          (state.value ?? await future).copyWith(roundPlan: plan),
+        );
+      } finally {
+        _closeRoundSession(session);
+      }
+    });
+  }
+
   Future<void> castVotes({
     required List<VotingDraftVote> draftVotes,
     List<int>? allProposalIds,
@@ -1089,25 +1148,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final draftVotesByProposal = {
         for (final draftVote in draftVotes) draftVote.proposalId: draftVote,
       };
-      final intentProposalIds = {
-        ...?allProposalIds,
-        ...draftVotesByProposal.keys,
-      }.toList()..sort();
       final rosterOptionCounts = {
         for (final proposal in proposalsFromRound(context.round))
           proposal.id: proposal.options.length,
       };
-      final intents = <rust_session.ApiBallotIntent>[];
-      for (final proposalId in intentProposalIds) {
-        final draftVote = draftVotesByProposal[proposalId];
-        intents.add(
-          rust_session.ApiBallotIntent(
-            proposalId: proposalId,
-            skipped: draftVote == null,
-            choice: draftVote?.choice,
-          ),
-        );
-      }
+      final intents = _ballotIntentsFor(
+        draftVotes: draftVotes,
+        allProposalIds: allProposalIds,
+      );
 
       List<int>? storedHotkeySecret;
       if (draftVotes.isNotEmpty) {
@@ -1230,9 +1278,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final initialSteps = roundPlan.nextSteps.where(_isVoteStep).toList();
         totalBundleTasks = initialSteps.length;
         allVoteKeys.addAll(initialSteps.map(_voteKeyForStep));
-        totalQuestions = {
+        // A batch step stands for every proposal in its unit but carries only
+        // the first one's id, so counting distinct step ids reports a
+        // six-proposal ballot as one question. That is what a resume looks
+        // like: the casts are already recorded and the remaining work is one
+        // batch submission per bundle. Fall back to the ballot itself, which
+        // is what the label is counting.
+        final steppedProposalIds = {
           for (final step in initialSteps) step.proposalId,
-        }.length;
+        };
+        final hasBatchStep = initialSteps.any(
+          (step) => step.kind == rust_wire.NextStepKind.advanceVoteBatch,
+        );
+        totalQuestions = hasBatchStep
+            ? (draftVotesByProposal.isNotEmpty
+                  ? draftVotesByProposal.length
+                  : proposalsFromRound(context.round).length)
+            : steppedProposalIds.length;
         final startTiming = _roundShareTiming(context, _nowSeconds());
         _logVoteTiming(
           'cast votes start '
@@ -1345,10 +1407,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           roundPlan = outcome.plan;
           final remaining = roundPlan.nextSteps.where(_isVoteStep).toList();
           completedBundleTasks = totalBundleTasks - remaining.length;
-          final remainingProposals = {
-            for (final remainingStep in remaining) remainingStep.proposalId,
-          };
-          completedQuestions = totalQuestions - remainingProposals.length;
+          if (hasBatchStep) {
+            // Per-proposal completion does not exist inside a batch: its
+            // proposals land together. Track the ballot against the batch work
+            // instead, so the count still ends at the full ballot.
+            completedQuestions = totalBundleTasks == 0
+                ? 0
+                : (totalQuestions * completedBundleTasks) ~/ totalBundleTasks;
+          } else {
+            final remainingProposals = {
+              for (final remainingStep in remaining) remainingStep.proposalId,
+            };
+            completedQuestions = totalQuestions - remainingProposals.length;
+          }
           if (outcome.disposition ==
               rust_wire.RoundStepDispositionView.advanced) {
             for (final key in stepKeys) {
@@ -1869,6 +1940,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// Delegation steps the plan lists for the given bundles. A plan that
   /// predates the SDK planner yields synthetic `Delegate` steps, which the
   /// SDK validates against its own fresh plan.
+  /// The delegation steps to dispatch for `bundleIndexes`.
+  ///
+  /// The two inputs come from different places: the wanted set is derived from
+  /// `delegation_statuses`, while dispatch is driven by `next_steps`. When
+  /// they disagree a `Delegate` step is still dispatched for the uncovered
+  /// bundle, and the disagreement is logged.
+  ///
+  /// That disagreement should no longer happen for the case that caused it:
+  /// the SDK plans a `Delegate` obligation only for a bundle that still has a
+  /// vote to cast, so delegating before the ballot was durable found no work
+  /// at all. The ballot is now recorded first, which is what makes the two
+  /// agree. The synthesised step is kept for the cases that remain, but it is
+  /// not a fix: the SDK resolves each step to an obligation under the round
+  /// lock, so a step matching no obligation comes back `NoWork` and surfaces
+  /// as "the round has no delegation work for it". The log line is what says
+  /// the plan and the statuses disagreed in the first place.
   static List<rust_wire.NextStepView> _delegationStepsFor(
     rust_wire.RoundPlanView? roundPlan,
     List<int> bundleIndexes,
@@ -1880,18 +1967,35 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         if (_isDelegationStep(step) && wanted.contains(step.bundleIndex)) step,
     ];
     final covered = {for (final step in planned) step.bundleIndex};
+    final uncovered = [
+      for (final bundleIndex in bundleIndexes)
+        if (!covered.contains(bundleIndex)) bundleIndex,
+    ];
+    if (uncovered.isNotEmpty) {
+      debugPrint(
+        '[zcash] Voting: no planned delegation step for '
+        'bundles ${uncovered.join(',')}; dispatching one anyway',
+      );
+    }
     return [
       ...planned,
-      for (final bundleIndex in bundleIndexes)
-        if (!covered.contains(bundleIndex))
-          rust_wire.NextStepView(
-            kind: rust_wire.NextStepKind.delegate,
-            bundleIndex: bundleIndex,
-            proposalId: 0,
-            choice: 0,
-            shareIndex: 0,
-          ),
+      for (final bundleIndex in uncovered)
+        rust_wire.NextStepView(
+          kind: rust_wire.NextStepKind.delegate,
+          bundleIndex: bundleIndex,
+          proposalId: 0,
+          choice: 0,
+          shareIndex: 0,
+        ),
     ];
+  }
+
+  /// TEMPORARY diagnostic: the network the voting layer binds.
+  static String _loggedVotingNetwork(String networkName) {
+    debugPrint(
+      '[zcash] Voting: context network=$networkName',
+    );
+    return networkName;
   }
 
   Future<List<int>?> _hotkeyForVoteCasting(
@@ -3209,7 +3313,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       dbPath: dbPath,
       accountUuid: accountUuid,
       isHardwareAccount: isHardwareAccount,
-      network: endpoint.networkName,
+      network: _loggedVotingNetwork(endpoint.networkName),
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       config: config,
       round: round,

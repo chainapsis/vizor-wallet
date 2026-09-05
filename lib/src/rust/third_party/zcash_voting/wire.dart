@@ -557,6 +557,7 @@ enum RoundStepFailureKindView {
   signing,
   helperDeliveryIncomplete,
   voteEnded,
+  delegationTargetMismatch,
 }
 
 /// Failure of one round step with the refreshed plan when it could be read.
@@ -987,6 +988,8 @@ enum VotingErrorKindView {
   setupAlreadyPersisted,
   dbBusy,
   pirUnavailable,
+  delegationTargetMismatch,
+  delegationAlreadyBroadcast,
 
   /// Any category this host does not know. Serde deserializes unknown
   /// category strings into it, so a newer crate can add kinds without

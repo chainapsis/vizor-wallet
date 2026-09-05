@@ -10773,6 +10773,7 @@ impl SseDecode for zcash_voting::wire::RoundStepFailureKindView {
             9 => zcash_voting::wire::RoundStepFailureKindView::Signing,
             10 => zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete,
             11 => zcash_voting::wire::RoundStepFailureKindView::VoteEnded,
+            12 => zcash_voting::wire::RoundStepFailureKindView::DelegationTargetMismatch,
             _ => unreachable!("Invalid variant for RoundStepFailureKindView: {}", inner),
         };
     }
@@ -11448,7 +11449,9 @@ impl SseDecode for zcash_voting::wire::VotingErrorKindView {
             8 => zcash_voting::wire::VotingErrorKindView::SetupAlreadyPersisted,
             9 => zcash_voting::wire::VotingErrorKindView::DbBusy,
             10 => zcash_voting::wire::VotingErrorKindView::PirUnavailable,
-            11 => zcash_voting::wire::VotingErrorKindView::Other,
+            11 => zcash_voting::wire::VotingErrorKindView::DelegationTargetMismatch,
+            12 => zcash_voting::wire::VotingErrorKindView::DelegationAlreadyBroadcast,
+            13 => zcash_voting::wire::VotingErrorKindView::Other,
             _ => unreachable!("Invalid variant for VotingErrorKindView: {}", inner),
         };
     }
@@ -14389,6 +14392,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundStepF
                 10.into_dart()
             }
             zcash_voting::wire::RoundStepFailureKindView::VoteEnded => 11.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::DelegationTargetMismatch => {
+                12.into_dart()
+            }
             _ => unreachable!(),
         }
     }
@@ -15257,7 +15263,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VotingErro
             zcash_voting::wire::VotingErrorKindView::SetupAlreadyPersisted => 8.into_dart(),
             zcash_voting::wire::VotingErrorKindView::DbBusy => 9.into_dart(),
             zcash_voting::wire::VotingErrorKindView::PirUnavailable => 10.into_dart(),
-            zcash_voting::wire::VotingErrorKindView::Other => 11.into_dart(),
+            zcash_voting::wire::VotingErrorKindView::DelegationTargetMismatch => 11.into_dart(),
+            zcash_voting::wire::VotingErrorKindView::DelegationAlreadyBroadcast => 12.into_dart(),
+            zcash_voting::wire::VotingErrorKindView::Other => 13.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -17837,6 +17845,7 @@ impl SseEncode for zcash_voting::wire::RoundStepFailureKindView {
                 zcash_voting::wire::RoundStepFailureKindView::Signing => 9,
                 zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete => 10,
                 zcash_voting::wire::RoundStepFailureKindView::VoteEnded => 11,
+                zcash_voting::wire::RoundStepFailureKindView::DelegationTargetMismatch => 12,
                 _ => {
                     unimplemented!("");
                 }
@@ -18346,7 +18355,9 @@ impl SseEncode for zcash_voting::wire::VotingErrorKindView {
                 zcash_voting::wire::VotingErrorKindView::SetupAlreadyPersisted => 8,
                 zcash_voting::wire::VotingErrorKindView::DbBusy => 9,
                 zcash_voting::wire::VotingErrorKindView::PirUnavailable => 10,
-                zcash_voting::wire::VotingErrorKindView::Other => 11,
+                zcash_voting::wire::VotingErrorKindView::DelegationTargetMismatch => 11,
+                zcash_voting::wire::VotingErrorKindView::DelegationAlreadyBroadcast => 12,
+                zcash_voting::wire::VotingErrorKindView::Other => 13,
                 _ => {
                     unimplemented!("");
                 }
