@@ -1,4 +1,5 @@
 import Flutter
+import QuartzCore
 import Security
 import UIKit
 import UserNotifications
@@ -7,6 +8,41 @@ import XCTest
 @testable import Runner
 
 class RunnerTests: XCTestCase {
+
+  func testScreenshotShieldAppliesInlineOnMainThread() {
+    let applied = expectation(description: "secure flag applied inline")
+
+    DispatchQueue.main.async {
+      var didApply = false
+      SecureScreenshotShield.performOnMain {
+        didApply = true
+      }
+
+      XCTAssertTrue(didApply)
+      applied.fulfill()
+    }
+
+    wait(for: [applied], timeout: 1)
+  }
+
+  func testScreenshotShieldRestoresWindowLayerBeforeRegrafting() {
+    let hostLayer = CALayer()
+    let secureLayer = CALayer()
+    let canvasLayer = CALayer()
+    let windowLayer = CALayer()
+    hostLayer.addSublayer(secureLayer)
+    secureLayer.addSublayer(canvasLayer)
+    canvasLayer.addSublayer(windowLayer)
+
+    SecureScreenshotShield.restoreLayerHierarchy(
+      windowLayer: windowLayer,
+      secureLayer: secureLayer
+    )
+
+    XCTAssertTrue(windowLayer.superlayer === hostLayer)
+    XCTAssertNil(secureLayer.superlayer)
+    XCTAssertFalse(canvasLayer.sublayers?.contains(windowLayer) ?? false)
+  }
 
   func testMigrationNotificationAuthorizationStatusIsFailClosed() {
     XCTAssertEqual(
