@@ -66,7 +66,8 @@ The repository pins Flutter with FVM. Install the following before building:
 - Flutter dependencies for your target platform
 - A current stable Rust toolchain with Cargo and `rustfmt`
 - Platform tooling as needed: Xcode and CocoaPods for Apple platforms, Android
-  Studio/SDK for Android, Visual Studio with desktop C++ tools for Windows, or
+  Studio/SDK for Android, Visual Studio with desktop C++ tools for Windows
+  (include the ARM64 C++ tools when building natively on Windows ARM64), or
   the Flutter Linux desktop prerequisites for Linux
 - Docker Desktop or another Docker installation with Compose for regtest work
 

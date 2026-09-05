@@ -7,18 +7,18 @@ WINDOWS_RELEASE_FLAVOR_CONFIGS = {
   "mainnet" => {
     pack_id: "com.keplr.vizor",
     pack_title: "Vizor",
-    channel: "win-x64-mainnet",
     network: "mainnet"
   },
   "testnet" => {
     pack_id: "com.keplr.vizor.testnet",
     pack_title: "Vizor Testnet",
-    channel: "win-x64-testnet",
     network: "testnet"
   }
 }.freeze
 
 DEFAULT_WINDOWS_RELEASE_FLAVORS = ["mainnet", "testnet"].freeze
+WINDOWS_RELEASE_ARCHS = ["x64", "arm64"].freeze
+DEFAULT_WINDOWS_RELEASE_ARCH = "x64".freeze
 
 def normalize_windows_release_flavor(flavor)
   normalized = flavor.to_s.strip.downcase
@@ -49,6 +49,32 @@ def single_windows_release_flavor(options = {})
   raw.empty? ? "mainnet" : normalize_windows_release_flavor(raw)
 end
 
+def normalize_windows_release_arch(arch)
+  normalized = arch.to_s.strip.downcase
+  case normalized
+  when "arm64", "aarch64"
+    "arm64"
+  when "x64", "amd64", "x86_64"
+    "x64"
+  else
+    UI.user_error!("Unsupported Windows release arch: #{arch}. Expected one of: #{WINDOWS_RELEASE_ARCHS.join(", ")}")
+  end
+end
+
+def windows_host_is_arm64?
+  return true if ENV["PROCESSOR_ARCHITECTURE"].to_s.casecmp("ARM64").zero?
+
+  os_arch = `powershell.exe -NoProfile -Command "[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture"`.to_s.strip
+  os_arch.casecmp("Arm64").zero?
+end
+
+def windows_release_arch
+  raw = ENV["VIZOR_WINDOWS_ARCH"].to_s.strip
+  return normalize_windows_release_arch(raw) unless raw.empty?
+
+  @windows_release_arch ||= windows_host_is_arm64? ? "arm64" : DEFAULT_WINDOWS_RELEASE_ARCH
+end
+
 def windows_cmd_quote(value)
   value = value.to_s
   "\"#{value.gsub('"', '\"')}\""
@@ -63,7 +89,8 @@ def windows_release_metadata(flavor: "mainnet")
 
   version = tag_info.fetch(:base_version)
   asset_version = tag_info.fetch(:asset_version)
-  channel = flavor_config.fetch(:channel)
+  arch = windows_release_arch
+  channel = "win-#{arch}-#{flavor_config.fetch(:network)}"
   pack_id = flavor_config.fetch(:pack_id)
   output_dir_arg = File.join("dist", "windows", "velopack", flavor)
   dist_dir = File.join(VizorRelease.workspace_root, "dist", "windows")
@@ -73,6 +100,7 @@ def windows_release_metadata(flavor: "mainnet")
 
   {
     flavor: flavor,
+    arch: arch,
     pack_id: pack_id,
     pack_title: flavor_config.fetch(:pack_title),
     network: flavor_config.fetch(:network),
@@ -196,6 +224,7 @@ platform :windows do
       "-ExecutionPolicy", "Bypass",
       "-File", windows_cmd_quote(script_path),
       "-Network", windows_cmd_quote(metadata.fetch(:network)),
+      "-Arch", windows_cmd_quote(metadata.fetch(:arch)),
       "-Version", windows_cmd_quote(metadata.fetch(:asset_version)),
       "-OutputDir", windows_cmd_quote(metadata.fetch(:output_dir_arg)),
       "-UpdateRepositoryUrl", windows_cmd_quote(metadata.fetch(:update_repository_url))
