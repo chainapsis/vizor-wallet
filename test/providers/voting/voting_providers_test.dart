@@ -879,6 +879,104 @@ void main() {
     },
   );
 
+  test(
+    'recording a ballot persists the bundle plan when the round has none',
+    () async {
+      // The eligibility check reports voting weight without persisting a
+      // bundle plan, so a fresh round reaches intent recording with no bundle
+      // rows. The SDK can plan no vote work for a round in that state, so the
+      // wallet must run setup before writing the ballot.
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: FakeRoundRecoveryState(
+            roundId: kRoundId,
+            bundleCount: 0,
+            delegation: const [],
+            votes: const [],
+            commitmentBundles: const [],
+            shares: const [],
+            shareDelegations: const [],
+            unconfirmedShareDelegations: const [],
+          ),
+          roundPlan: apiRoundPlan(
+            roundId: kRoundId,
+            pendingRecovery: false,
+            nextSteps: const [],
+            openProposals: Uint32List.fromList([7]),
+            allDecided: false,
+            bundleCount: 0,
+          ),
+        ),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        votingSessionProvider(kRoundId),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(votingSessionProvider(kRoundId).future);
+      expect(rust.setupDelegationBundlesCallCount, 0);
+
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .recordBallotIntents(
+            draftVotes: [
+              VotingDraftVote(proposalId: 7, choice: 1, numOptions: 2),
+            ],
+          );
+
+      expect(rust.setupDelegationBundlesCallCount, 1);
+    },
+  );
+
+  test('recording a ballot does not re-run setup when bundles exist', () async {
+    final rust = FakeVotingRustApi();
+    final container = _sessionContainer(
+      rust: rust,
+      recoveryApi: FakeVotingRecoveryApi(
+        state: FakeRoundRecoveryState(
+          roundId: kRoundId,
+          bundleCount: 1,
+          delegation: const [],
+          votes: const [],
+          commitmentBundles: const [],
+          shares: const [],
+          shareDelegations: const [],
+          unconfirmedShareDelegations: const [],
+        ),
+        roundPlan: apiRoundPlan(
+          roundId: kRoundId,
+          pendingRecovery: false,
+          nextSteps: const [],
+          openProposals: Uint32List.fromList([7]),
+          allDecided: false,
+          bundleCount: 1,
+        ),
+      ),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      votingSessionProvider(kRoundId),
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(votingSessionProvider(kRoundId).future);
+
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .recordBallotIntents(
+          draftVotes: [
+            VotingDraftVote(proposalId: 7, choice: 1, numOptions: 2),
+          ],
+        );
+
+    expect(rust.setupDelegationBundlesCallCount, 0);
+  });
+
   test('config switch unchanged keeps rounds provider cache', () async {
     final http = FakeVotingHttpClient(
       responses: {
@@ -11014,6 +11112,7 @@ rust_wire.RoundPlanView _withImmediateShareConfirmed(
     completedForDisplay: plan.completedForDisplay,
     completedVoteDisplay: plan.completedVoteDisplay,
     needsDraftSetup: plan.needsDraftSetup,
+    needsBundleSetup: plan.needsBundleSetup,
     needsDelegationSigning: plan.needsDelegationSigning,
     hasInFlightDelegation: plan.hasInFlightDelegation,
     needsVotePolling: plan.needsVotePolling,
@@ -11758,6 +11857,8 @@ class FakeVotingRustApi
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
+  /// How many times the wallet asked the SDK to persist the bundle plan.
+  int setupDelegationBundlesCallCount = 0;
   int _activeDelegationProofs = 0;
   int maxConcurrentDelegationProofs = 0;
   int _activeBackgroundDelegationProofs = 0;
@@ -12201,6 +12302,7 @@ class FakeVotingRustApi
   Future<rust_api.ApiBundleLayout> setupDelegationBundles({
     required rust_api.ApiVotingRoundContext ctx,
   }) async {
+    setupDelegationBundlesCallCount++;
     lastSetupRoundParams = ctx.roundParams;
     lastPirLayout = ctx.pirLayout;
     accountUuids.add(ctx.accountUuid);

@@ -11123,8 +11123,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RoundPlanView dco_decode_round_plan_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 25)
-      throw Exception('unexpected arr length: expect 25 but see ${arr.length}');
+    if (arr.length != 26)
+      throw Exception('unexpected arr length: expect 26 but see ${arr.length}');
     return RoundPlanView(
       roundId: dco_decode_String(arr[0]),
       pendingRecovery: dco_decode_bool(arr[1]),
@@ -11137,25 +11137,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       completedVoteDisplay:
           dco_decode_opt_box_autoadd_completed_vote_display_view(arr[8]),
       needsDraftSetup: dco_decode_bool(arr[9]),
-      needsDelegationSigning: dco_decode_bool(arr[10]),
-      hasInFlightDelegation: dco_decode_bool(arr[11]),
-      needsVotePolling: dco_decode_bool(arr[12]),
-      hasRemainingVoteOrShareWork: dco_decode_bool(arr[13]),
-      hasRecoverableVoteOrShareWork: dco_decode_bool(arr[14]),
-      primaryAction: dco_decode_round_plan_action_kind(arr[15]),
-      nextSteps: dco_decode_list_next_step_view(arr[16]),
-      delegationStatuses: dco_decode_list_delegation_status_view(arr[17]),
+      needsBundleSetup: dco_decode_bool(arr[10]),
+      needsDelegationSigning: dco_decode_bool(arr[11]),
+      hasInFlightDelegation: dco_decode_bool(arr[12]),
+      needsVotePolling: dco_decode_bool(arr[13]),
+      hasRemainingVoteOrShareWork: dco_decode_bool(arr[14]),
+      hasRecoverableVoteOrShareWork: dco_decode_bool(arr[15]),
+      primaryAction: dco_decode_round_plan_action_kind(arr[16]),
+      nextSteps: dco_decode_list_next_step_view(arr[17]),
+      delegationStatuses: dco_decode_list_delegation_status_view(arr[18]),
       recoveredDelegationWork: dco_decode_list_delegation_recovery_work_view(
-        arr[18],
+        arr[19],
       ),
-      recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[19]),
-      openProposals: dco_decode_list_prim_u_32_strict(arr[20]),
-      unrosteredIntents: dco_decode_list_prim_u_32_strict(arr[21]),
+      recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[20]),
+      openProposals: dco_decode_list_prim_u_32_strict(arr[21]),
+      unrosteredIntents: dco_decode_list_prim_u_32_strict(arr[22]),
       immediateShareKey: dco_decode_opt_box_autoadd_immediate_share_key(
-        arr[22],
+        arr[23],
       ),
-      immediateShareConfirmed: dco_decode_bool(arr[23]),
-      allDecided: dco_decode_bool(arr[24]),
+      immediateShareConfirmed: dco_decode_bool(arr[24]),
+      allDecided: dco_decode_bool(arr[25]),
     );
   }
 
@@ -15126,6 +15127,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_completedVoteDisplay =
         sse_decode_opt_box_autoadd_completed_vote_display_view(deserializer);
     var var_needsDraftSetup = sse_decode_bool(deserializer);
+    var var_needsBundleSetup = sse_decode_bool(deserializer);
     var var_needsDelegationSigning = sse_decode_bool(deserializer);
     var var_hasInFlightDelegation = sse_decode_bool(deserializer);
     var var_needsVotePolling = sse_decode_bool(deserializer);
@@ -15159,6 +15161,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       completedForDisplay: var_completedForDisplay,
       completedVoteDisplay: var_completedVoteDisplay,
       needsDraftSetup: var_needsDraftSetup,
+      needsBundleSetup: var_needsBundleSetup,
       needsDelegationSigning: var_needsDelegationSigning,
       hasInFlightDelegation: var_hasInFlightDelegation,
       needsVotePolling: var_needsVotePolling,
@@ -18810,6 +18813,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       serializer,
     );
     sse_encode_bool(self.needsDraftSetup, serializer);
+    sse_encode_bool(self.needsBundleSetup, serializer);
     sse_encode_bool(self.needsDelegationSigning, serializer);
     sse_encode_bool(self.hasInFlightDelegation, serializer);
     sse_encode_bool(self.needsVotePolling, serializer);

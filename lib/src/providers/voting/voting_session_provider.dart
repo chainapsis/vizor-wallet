@@ -1117,6 +1117,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       if (intents.isEmpty) return;
       final rust = ref.read(votingRustApiProvider);
+      // Bundle rows must exist before a choice intent is recorded. The
+      // eligibility check reports voting weight without persisting a bundle
+      // plan, so a fresh round reaches here with none whenever nothing has
+      // run setup for it yet. The SDK can plan no vote work for a round in
+      // that state (it reports `needsBundleSetup`), so persist the plan
+      // first; `setupDelegationBundles` ensures the round row too, and is
+      // idempotent once the bundles exist.
+      if (roundPlanBundleCount(context.roundPlan) == 0) {
+        await rust.setupDelegationBundles(ctx: _apiRoundContext(context));
+        _throwIfContextStale(context, 'record-ballot-intents-bundle-setup');
+      }
       final session = _openRoundSession(rust, context);
       try {
         final plan = await session.setBallotIntents(intents);
