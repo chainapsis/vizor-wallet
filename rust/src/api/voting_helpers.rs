@@ -44,5 +44,3 @@ pub(super) fn delegation_static_inputs(
     let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     Ok((voting_network, bundle_policy))
 }
-
-

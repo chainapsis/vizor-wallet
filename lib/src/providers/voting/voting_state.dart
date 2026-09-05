@@ -276,6 +276,15 @@ class VotingSessionState {
   final UnmodifiableListView<rust_delegate.KeystoneSigningRequest>
   keystoneSigningRequests;
   final String? keystoneScanError;
+
+  /// Why a bundle's delegation ended, when one did and the round carries on.
+  ///
+  /// A terminal delegation plans no further work, so nothing downstream will
+  /// raise it, but it is not a failure of the round either: the other bundles
+  /// still delegate and still vote. It rides alongside the phase rather than
+  /// becoming one, because failing the session here would stop a round that
+  /// can still be voted from ever reaching the ballot.
+  final String? terminalDelegationNotice;
   final int? currentBundleIndex;
   final VotingVoteKey? currentVoteKey;
   final int voteSubmissionCompletedCount;
@@ -304,6 +313,7 @@ class VotingSessionState {
     List<rust_delegate.KeystoneSigningRequest> keystoneSigningRequests =
         const [],
     this.keystoneScanError,
+    this.terminalDelegationNotice,
     this.currentBundleIndex,
     this.currentVoteKey,
     this.voteSubmissionCompletedCount = 0,
@@ -377,6 +387,8 @@ class VotingSessionState {
     List<rust_delegate.KeystoneSigningRequest>? keystoneSigningRequests,
     bool clearKeystoneSigningRequest = false,
     String? keystoneScanError,
+    String? terminalDelegationNotice,
+    bool clearTerminalDelegationNotice = false,
     bool clearKeystoneScanError = false,
     int? currentBundleIndex,
     bool clearCurrentBundleIndex = false,
@@ -418,6 +430,9 @@ class VotingSessionState {
       keystoneSigningRequests: clearKeystoneSigningRequest
           ? const []
           : keystoneSigningRequests ?? this.keystoneSigningRequests,
+      terminalDelegationNotice: clearTerminalDelegationNotice
+          ? null
+          : terminalDelegationNotice ?? this.terminalDelegationNotice,
       keystoneScanError: clearKeystoneScanError
           ? null
           : keystoneScanError ?? this.keystoneScanError,

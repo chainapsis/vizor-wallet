@@ -78,10 +78,7 @@ impl VizorRoute {
                 )
                 .await
             }
-            _ => {
-                tor.http_get(uri, apply_headers, collect, 0, |_| None)
-                    .await
-            }
+            _ => tor.http_get(uri, apply_headers, collect, 0, |_| None).await,
         }
         .map_err(classify_tor_error)?;
         let status = response.status().as_u16();
@@ -128,6 +125,22 @@ impl RouteHttp for VizorRoute {
                 None => self.direct.execute(request, on_dispatch).await,
             }
         })
+    }
+
+    /// Both routes call the hook before they can observe a connection-setup
+    /// failure, so a pre-dispatch phase reported after it stays definite.
+    ///
+    /// The direct route is `DirectRoute`, whose pooled Hyper client fuses
+    /// connection setup with the first write. The Tor route calls the hook
+    /// from librustzcash's header callback, which runs once the circuit and
+    /// TLS handshake are ready. The contract that buys this — report
+    /// `BeforeDispatch` only for failures the client attributes to
+    /// connection setup, never for one that may have followed a write — is
+    /// what `classify_tor_error` enforces: it names the Tor-bootstrap, TLS,
+    /// connect-timeout, spawn, URL and request-construction errors, and
+    /// leaves every wire error, `HttpError::Hyper` included, after dispatch.
+    fn hook_precedes_connection_setup(&self) -> bool {
+        true
     }
 }
 
@@ -239,7 +252,6 @@ impl tower_service::Service<Uri> for DirectRouteConnector {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -290,8 +302,13 @@ mod tests {
         ] {
             assert_eq!(classify_tor_error(error).phase, RoutePhase::AfterDispatch);
         }
-        let oversized = Error::Io(std::io::Error::other("helper response body exceeded 1 bytes"));
-        assert_eq!(classify_tor_error(oversized).phase, RoutePhase::ResponseRead);
+        let oversized = Error::Io(std::io::Error::other(
+            "helper response body exceeded 1 bytes",
+        ));
+        assert_eq!(
+            classify_tor_error(oversized).phase,
+            RoutePhase::ResponseRead
+        );
     }
 
     #[tokio::test]
@@ -342,7 +359,10 @@ mod tests {
                 Duration::from_millis(20),
             )
             .await;
-        assert!(matches!(result, Err(HelperTransportError::Transport(_))), "{result:?}");
+        assert!(
+            matches!(result, Err(HelperTransportError::Transport(_))),
+            "{result:?}"
+        );
         server.join().unwrap();
     }
 
@@ -360,7 +380,10 @@ mod tests {
                 Duration::from_millis(200),
             )
             .await;
-        assert!(matches!(result, Err(HelperTransportError::Transport(_))), "{result:?}");
+        assert!(
+            matches!(result, Err(HelperTransportError::Transport(_))),
+            "{result:?}"
+        );
         assert!(started.elapsed() < Duration::from_secs(1));
     }
 
@@ -377,7 +400,10 @@ mod tests {
                 Duration::from_millis(500),
             )
             .await;
-        assert!(matches!(result, Err(HelperTransportError::Transport(_))), "{result:?}");
+        assert!(
+            matches!(result, Err(HelperTransportError::Transport(_))),
+            "{result:?}"
+        );
         // Nothing may have reached the clearnet listener.
         listener.set_nonblocking(true).unwrap();
         assert!(listener.accept().is_err());

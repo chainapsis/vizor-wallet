@@ -39,12 +39,18 @@ class FakeDelegationRecovery {
     required this.phase,
     this.txHash,
     this.vanLeafPosition,
+    this.terminal = false,
+    this.submissionDiagnostic,
   });
 
   final int bundleIndex;
   final rust_wire.WorkflowPhaseView phase;
   final String? txHash;
   final BigInt? vanLeafPosition;
+
+  /// The delegation ended and the SDK plans no further step for it.
+  final bool terminal;
+  final rust_wire.SubmissionDiagnosticView? submissionDiagnostic;
 }
 
 class FakeVoteRecovery {

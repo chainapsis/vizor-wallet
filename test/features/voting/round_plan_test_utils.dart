@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:zcash_wallet/src/rust/api/voting_session.dart' as rust_session;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
     as rust_share_policy;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
@@ -69,6 +70,7 @@ rust_wire.RoundPlanView apiRoundPlan({
   required List<rust_wire.NextStepView> nextSteps,
   required Uint32List openProposals,
   required bool allDecided,
+  Uint32List? unrosteredIntents,
   bool? blockingRecovery,
   bool blockingShareWork = false,
   bool? hasUnconfirmedShares,
@@ -144,6 +146,7 @@ rust_wire.RoundPlanView apiRoundPlan({
     recoveredDelegationWork: resolvedDelegationWork,
     recoveredVoteWork: resolvedVoteWork,
     openProposals: openProposals,
+    unrosteredIntents: unrosteredIntents ?? Uint32List(0),
     immediateShareKey: immediateShareKey,
     immediateShareConfirmed: immediateShareConfirmed,
     allDecided: allDecided,
@@ -171,6 +174,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     for (var bundleIndex = 0; bundleIndex < state.bundleCount; bundleIndex++) {
       final delegation = delegationByBundle[bundleIndex];
       if (delegation != null &&
+          !delegation.terminal &&
           delegation.phase == rust_wire.WorkflowPhaseView.submittedDelegation) {
         nextSteps.add(
           rust_wire.NextStepView(
@@ -308,6 +312,9 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
           phase:
               delegationByBundle[bundleIndex]?.phase ??
               rust_wire.WorkflowPhaseView.prepared,
+          terminal: delegationByBundle[bundleIndex]?.terminal ?? false,
+          submissionDiagnostic:
+              delegationByBundle[bundleIndex]?.submissionDiagnostic,
         ),
     ],
     hasUnconfirmedShares: state.unconfirmedShareDelegations.any(
@@ -466,6 +473,29 @@ rust_wire.RoundPlanActionKind _primaryAction({
   return rust_wire.RoundPlanActionKind.idle;
 }
 
+/// The event payload `advance_*` carries for a typed bridge failure.
+///
+/// Mirrors the Rust `From<VotingErrorView>` so a scripted step failure reaches
+/// the session through the same fields production sends.
+rust_session.ApiRoundStepError apiRoundStepError(
+  rust_wire.VotingErrorView view,
+) {
+  return rust_session.ApiRoundStepError(
+    kind: view.kind,
+    retryable: view.retryable,
+    message: view.message,
+    bundleIndex: view.bundleIndex,
+    setupField: view.setupField,
+    snapshotHeight: view.snapshotHeight,
+    requiredWeightZatoshi: view.requiredWeightZatoshi,
+    selectedWeightZatoshi: view.selectedWeightZatoshi,
+    bundleNoteSlots: view.bundleNoteSlots,
+    selectedNotes: view.selectedNotes,
+    httpStatus: view.httpStatus,
+    endpoint: view.endpoint,
+  );
+}
+
 /// Builds the typed bridge failure a scripted fake would surface for `kind`.
 ///
 /// Production Rust returns `VotingErrorView` from every voting FRB call and the
@@ -480,7 +510,7 @@ VotingRustException votingRustError(
   BigInt? snapshotHeight,
   BigInt? requiredWeightZatoshi,
   BigInt? selectedWeightZatoshi,
-  int? requiredNotes,
+  int? bundleNoteSlots,
   int? selectedNotes,
 }) {
   return VotingRustException(
@@ -492,7 +522,7 @@ VotingRustException votingRustError(
       snapshotHeight: snapshotHeight,
       requiredWeightZatoshi: requiredWeightZatoshi,
       selectedWeightZatoshi: selectedWeightZatoshi,
-      requiredNotes: requiredNotes,
+      bundleNoteSlots: bundleNoteSlots,
       selectedNotes: selectedNotes,
     ),
   );
@@ -527,6 +557,7 @@ List<rust_wire.DelegationStatusView> _delegationStatuses(
       rust_wire.DelegationStatusView(
         bundleIndex: bundleIndex,
         phase: phases[bundleIndex] ?? rust_wire.WorkflowPhaseView.confirmed,
+        terminal: false,
       ),
   ];
 }
@@ -543,6 +574,15 @@ rust_wire.RoundPlanView withDelegationStatusesFrom(
 ) {
   final phases = {
     for (final record in state.delegation) record.bundleIndex: record.phase,
+  };
+  final terminalBundles = {
+    for (final record in state.delegation)
+      if (record.terminal) record.bundleIndex,
+  };
+  final diagnostics = {
+    for (final record in state.delegation)
+      if (record.submissionDiagnostic != null)
+        record.bundleIndex: record.submissionDiagnostic!,
   };
   return apiRoundPlan(
     roundId: plan.roundId,
@@ -578,11 +618,14 @@ rust_wire.RoundPlanView withDelegationStatusesFrom(
                 bundleIndex: bundleIndex,
                 phase:
                     phases[bundleIndex] ?? rust_wire.WorkflowPhaseView.prepared,
+                terminal: terminalBundles.contains(bundleIndex),
+                submissionDiagnostic: diagnostics[bundleIndex],
               ),
           ],
     recoveredDelegationWork: plan.recoveredDelegationWork,
     recoveredVoteWork: plan.recoveredVoteWork,
     openProposals: plan.openProposals,
+    unrosteredIntents: plan.unrosteredIntents,
     immediateShareKey: plan.immediateShareKey,
     immediateShareConfirmed: plan.immediateShareConfirmed,
     allDecided: plan.allDecided,

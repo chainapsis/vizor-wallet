@@ -543,6 +543,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundPlan,
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
+      if (!hasPendingBundles) {
+        final terminal = terminalDelegationMessage(roundPlan);
+        if (terminal != null) {
+          _setError(terminal, context: context);
+          return;
+        }
+      }
       final needsPir = _needsFreshDelegationPreparation(roundPlan);
       var pirEndpoint = current.pirEndpoint;
       if (needsPir && pirEndpoint == null) {
@@ -655,7 +662,39 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
         ),
       );
+      _noteTerminalDelegation(
+        context,
+        state.value ?? current,
+        refreshedRoundPlan,
+      );
     }, cleanupProcessStateOnError: false);
+  }
+
+  /// Records a delegation the SDK ended, without failing the round.
+  ///
+  /// A terminal bundle plans no further work, so nothing downstream will ever
+  /// raise it, and the user has to be told before they vote with a round that
+  /// cannot carry every bundle's weight. It must not become the session's
+  /// error, though: the submission job treats an error phase after delegation
+  /// as fatal and returns, so a round with one dead bundle and one healthy one
+  /// would never reach the ballot at all. That trades a silent bundle for an
+  /// unvotable round, which is worse.
+  ///
+  /// The round-wide case — a terminal bundle and nothing left to run — is
+  /// still an error, and is raised before any work is attempted.
+  void _noteTerminalDelegation(
+    _VotingSessionContext context,
+    VotingSessionState current,
+    rust_wire.RoundPlanView? roundPlan,
+  ) {
+    final terminal = terminalDelegationMessage(roundPlan);
+    _setStateForContext(
+      context,
+      current.copyWith(
+        terminalDelegationNotice: terminal,
+        clearTerminalDelegationNotice: terminal == null,
+      ),
+    );
   }
 
   Future<void> prepareKeystoneSigning() {
@@ -911,6 +950,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundPlan,
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
+      if (!hasPendingBundles) {
+        final terminal = terminalDelegationMessage(roundPlan);
+        if (terminal != null) {
+          _setError(terminal, context: context);
+          return;
+        }
+      }
       final needsPir = _needsFreshDelegationPreparation(roundPlan);
       final signatures = hasPendingBundles
           ? await _loadKeystoneSignatures(context)
@@ -1017,6 +1063,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearKeystoneScanError: true,
           clearCurrentBundleIndex: true,
         ),
+      );
+      _noteTerminalDelegation(
+        context,
+        state.value ?? current,
+        refreshedRoundPlan,
       );
     }, cleanupProcessStateOnError: false);
   }
@@ -1154,6 +1205,28 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             ? await session.plan()
             : await session.setBallotIntents(intents);
         _throwIfContextStale(context, 'vote-plan');
+        // A decision recorded before its proposal left the authenticated
+        // roster outlives that proposal, and the SDK withholds casting until
+        // the host clears it: the round's immediate helper share is derived
+        // from the complete set of choices, so a stale intent would make that
+        // set disagree with the roster. The plan reports only the ids that
+        // are still clearable.
+        if (roundPlan.unrosteredIntents.isNotEmpty) {
+          roundPlan = await session.clearBallotIntents(
+            roundPlan.unrosteredIntents.toList(growable: false),
+          );
+          _throwIfContextStale(context, 'vote-plan');
+          if (roundPlan.unrosteredIntents.isNotEmpty) {
+            // The SDK withholds every CastVote while an unrostered intent
+            // stands, so carrying on here would read as a cast that quietly
+            // did nothing. The planner reports only clearable ids, so this
+            // means the clear did not take.
+            throw StateError(
+              'Ballot intents for proposals outside the round roster could '
+              'not be cleared: ${roundPlan.unrosteredIntents.join(', ')}.',
+            );
+          }
+        }
         final initialSteps = roundPlan.nextSteps.where(_isVoteStep).toList();
         totalBundleTasks = initialSteps.length;
         allVoteKeys.addAll(initialSteps.map(_voteKeyForStep));
@@ -1219,6 +1292,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 );
               },
             );
+            if (outcome.disposition ==
+                    rust_wire.RoundStepDispositionView.noWork &&
+                outcome.plan.nextSteps.any((candidate) => candidate == step)) {
+              // A no-work answer is normally benign — a background tracking
+              // pass can confirm the share a `submitShares` step was for, and
+              // the SDK drops the step when it re-plans. Only a step the
+              // refreshed plan still lists is stuck, and re-selecting it would
+              // loop forever. This throws inside the per-bundle try so the
+              // bundle fails and the rest of the plan still runs, which is
+              // what this loop promises everywhere else.
+              throw StateError(
+                'The SDK reported no work for a step its plan still lists: '
+                '${step.kind} bundle=${step.bundleIndex} '
+                'proposal=${step.proposalId}.',
+              );
+            }
           } on _StaleVotingSessionAction {
             rethrow;
           } on _ChainSubmissionCancelled {
@@ -1272,12 +1361,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 );
               }
             }
-          } else if (remaining.contains(step)) {
-            throw StateError(
-              'The SDK reported no work for a step its plan still lists: '
-              '${step.kind} bundle=${step.bundleIndex} '
-              'proposal=${step.proposalId}.',
-            );
           }
           _logVoteTiming(
             'step ${step.kind.name} bundle=${step.bundleIndex} '
@@ -1615,6 +1698,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (terminal == null) {
         throw StateError('Round step completed without a result.');
       }
+      // Work the bridge does before the SDK sees the step — the delegation
+      // pipeline's lightwalletd anchor fetch, signer material, the PIR fleet —
+      // reports here rather than as a step failure, so its kind and
+      // retryability survive.
+      final error = terminal.error;
+      if (error != null) throw votingRustExceptionFromStepError(error);
       final failure = terminal.failure;
       if (failure != null) throw VotingRoundStepFailure(step, failure);
       final outcome = terminal.outcome;
@@ -1878,7 +1967,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   bool _hotkeyAlreadyBound(_VotingSessionContext context) {
-    if (context.roundPlan?.hotkeyBound ?? false) return true;
     return context.roundPlan?.hotkeyBound ?? false;
   }
 
@@ -2760,8 +2848,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   static bool _needsFreshDelegationPreparation(
     rust_wire.RoundPlanView? roundPlan,
   ) {
-    if (delegationBundleIndexesNeedingSigning(roundPlan).isNotEmpty)
+    if (delegationBundleIndexesNeedingSigning(roundPlan).isNotEmpty) {
       return true;
+    }
     if (roundPlan == null) return false;
     return roundPlanNeedsDraftSetup(roundPlan) ||
         roundPlan.recoveredDelegationWork.any(
@@ -3731,11 +3820,36 @@ class _StaleVotingSessionAction implements Exception {
 }
 
 /// An SDK round step ended in a typed failure.
-class VotingRoundStepFailure implements Exception {
+class VotingRoundStepFailure implements Exception, VotingRustExceptionSource {
   const VotingRoundStepFailure(this.step, this.failure);
 
   final rust_wire.NextStepView step;
   final rust_wire.RoundStepFailureView failure;
+
+  /// Eligibility is the one step-failure category the app presents as a
+  /// state of the account rather than an error of the action: it suppresses
+  /// retry and switches the round to its not-eligible copy. The step failure
+  /// carries only a kind and a message, so the classified view it exposes
+  /// carries no payload and the message builder falls back to naming the
+  /// round's snapshot block generically.
+  @override
+  VotingRustException? get votingRustException {
+    final kind = switch (failure.kind) {
+      rust_wire.RoundStepFailureKindView.insufficientEligibility =>
+        rust_wire.VotingErrorKindView.insufficientEligibility,
+      rust_wire.RoundStepFailureKindView.noSpendableNotes =>
+        rust_wire.VotingErrorKindView.noSpendableNotes,
+      _ => null,
+    };
+    if (kind == null) return null;
+    return VotingRustException(
+      rust_wire.VotingErrorView(
+        kind: kind,
+        retryable: false,
+        message: failure.message,
+      ),
+    );
+  }
 
   @override
   String toString() => failure.message;

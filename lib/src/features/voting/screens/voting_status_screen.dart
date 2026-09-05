@@ -41,11 +41,18 @@ class VotingSubmissionProgressPresentation {
     required this.activeStep,
     this.activeStepProgress,
     this.activeStepDetail,
+    this.warning,
   });
 
   final VotingSubmissionProgressStep activeStep;
   final double? activeStepProgress;
   final String? activeStepDetail;
+
+  /// Something the round cannot recover from that is still not a failure of
+  /// the submission — today, a delegation the SDK ended while other bundles
+  /// carry on. Platform builders must surface it; the round finishes either
+  /// way, so this is the only place the user hears about it.
+  final String? warning;
 }
 
 VotingSubmissionProgressStep votingSubmissionProgressStepFor({
@@ -424,6 +431,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
                   activeStep == VotingSubmissionProgressStep.delegating
                   ? delegationDetail
                   : null,
+              warning: state.terminalDelegationNotice,
             ),
           );
         }
@@ -452,6 +460,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           walletSnapshotHeight: state.walletSnapshotHeight,
           walletChainTipHeight: state.walletChainTipHeight,
           errorMessage: _sessionErrorMessage(state, localError),
+          terminalDelegationNotice: state.terminalDelegationNotice,
           onRetry: _retry,
           onClear: job?.status == VotingSubmissionJobStatus.error
               ? _clearError
@@ -782,6 +791,7 @@ class _StatusContent extends StatelessWidget {
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
     this.errorMessage,
+    this.terminalDelegationNotice,
     this.onRetry,
     this.onClear,
     this.onScanKeystone,
@@ -811,6 +821,11 @@ class _StatusContent extends StatelessWidget {
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
   final String? errorMessage;
+
+  /// A delegation the SDK ended, shown alongside whatever the round is still
+  /// doing. Not an error: the remaining bundles still delegate and vote.
+  final String? terminalDelegationNotice;
+
   final VoidCallback? onRetry;
   final VoidCallback? onClear;
   final VoidCallback? onScanKeystone;
@@ -824,6 +839,7 @@ class _StatusContent extends StatelessWidget {
         child: const _SoftwareAccountRequiredContent(),
       );
     }
+    final terminalNotice = terminalDelegationNotice;
     final voteStepComplete =
         completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
     final finalizingSubmission =
@@ -917,6 +933,17 @@ class _StatusContent extends StatelessWidget {
                 active: finalizingSubmission,
                 complete: submissionJobComplete,
               ),
+              if (terminalNotice != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  key: const ValueKey('voting_status_terminal_delegation'),
+                  terminalNotice,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: context.colors.text.destructive,
+                  ),
+                ),
+              ],
               if (phase == VotingSessionPhase.error) ...[
                 const SizedBox(height: AppSpacing.sm),
                 Text(

@@ -33,9 +33,8 @@ use super::voting::{
 };
 use super::voting_helpers::seed_from_mnemonic;
 
-type RoutedExecutor = RoundExecutor<
-    Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>>,
->;
+type RoutedExecutor =
+    RoundExecutor<Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>>>;
 
 /// One proposal from the authenticated round configuration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,13 +90,81 @@ pub enum ApiRoundStepEventKind {
     Result,
 }
 
+/// A typed bridge failure carried by a result event.
+///
+/// Mirrors [`VotingErrorView`] field for field instead of embedding it. The
+/// bridge marks a type as a Dart exception only while it is used purely as an
+/// error type; using the view as a struct field here would demote it to plain
+/// data, and `#[frb(sync)]` entry points depend on that marker — the
+/// generated `executeSync` rethrows only `FrbException`s and turns everything
+/// else into a `PanicException`, which would cost
+/// [`open_voting_round_session`] its typed failure.
+///
+/// [`From`] destructures the view exhaustively, so a field added upstream
+/// fails the build here rather than silently disappearing on this path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiRoundStepError {
+    pub kind: zcash_voting::wire::VotingErrorKindView,
+    pub retryable: bool,
+    pub message: String,
+    pub bundle_index: Option<u32>,
+    pub setup_field: Option<zcash_voting::wire::DelegationSetupFieldView>,
+    pub snapshot_height: Option<u64>,
+    pub required_weight_zatoshi: Option<u64>,
+    pub selected_weight_zatoshi: Option<u64>,
+    pub bundle_note_slots: Option<u32>,
+    pub selected_notes: Option<u32>,
+    pub http_status: Option<u16>,
+    pub endpoint: Option<String>,
+}
+
+impl From<VotingErrorView> for ApiRoundStepError {
+    fn from(error: VotingErrorView) -> Self {
+        let VotingErrorView {
+            kind,
+            retryable,
+            message,
+            bundle_index,
+            setup_field,
+            snapshot_height,
+            required_weight_zatoshi,
+            selected_weight_zatoshi,
+            bundle_note_slots,
+            selected_notes,
+            http_status,
+            endpoint,
+        } = error;
+        Self {
+            kind,
+            retryable,
+            message,
+            bundle_index,
+            setup_field,
+            snapshot_height,
+            required_weight_zatoshi,
+            selected_weight_zatoshi,
+            bundle_note_slots,
+            selected_notes,
+            http_status,
+            endpoint,
+        }
+    }
+}
+
 /// One event of a streamed step: progress while it runs, then one result.
+///
+/// The result event carries exactly one of `outcome`, `failure`, or `error`.
+/// `failure` is a step the SDK ran and rejected; `error` is everything that
+/// stopped the step from producing either, including the work this boundary
+/// does before handing over (signer material, delegation pipeline, PIR fleet)
+/// and a view conversion that fails after the step already ran.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApiRoundStepEvent {
     pub kind: ApiRoundStepEventKind,
     pub progress: Option<RoundStepProgressView>,
     pub outcome: Option<RoundStepOutcomeView>,
     pub failure: Option<RoundStepFailureView>,
+    pub error: Option<ApiRoundStepError>,
 }
 
 /// SDK-owned execution of one round for one account.
@@ -108,7 +175,7 @@ pub struct VotingRoundSession {
     pir_server_urls: Vec<String>,
     pir_layout: zcash_voting::config::PirLayout,
     hotkey_secret: Option<Zeroizing<Vec<u8>>>,
-    pipeline: Mutex<Option<Arc<VizorDelegationPipeline>>>,
+    pipeline: tokio::sync::OnceCell<Arc<VizorDelegationPipeline>>,
     control: ChainSubmissionControl,
     health: HelperHealth,
     database: Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
@@ -119,6 +186,12 @@ pub struct VotingRoundSession {
 /// `stored_hotkey_secret` is required only for sessions that cast votes.
 /// Chain and helper traffic use the wallet's network route; PIR and vote-tree
 /// traffic use the SDK's direct transport.
+///
+/// Synchronous on purpose for now: opening the sidecar can run schema
+/// migrations, which would be better off the Dart isolate that draws the UI,
+/// but the voting session fakes and their gate-based tests assume the handle
+/// exists without an intervening event-loop turn. Moving it needs that
+/// harness work, not just this signature.
 #[frb(sync)]
 pub fn open_voting_round_session(
     ctx: ApiVotingRoundContext,
@@ -143,9 +216,11 @@ pub fn open_voting_round_session(
         ChainSubmissionClientConfig::for_network(inputs.network, chain_endpoints),
         helper_client(&health),
     )
-    .map_err(|failure| VotingErrorView::from(zcash_voting::VotingError::InvalidInput {
-        message: failure.message().to_string(),
-    }))?
+    .map_err(|failure| {
+        VotingErrorView::from(zcash_voting::VotingError::InvalidInput {
+            message: failure.message().to_string(),
+        })
+    })?
     .with_binding(RoundBinding {
         round_id: ctx.round_params.vote_round_id.clone(),
         network: inputs.network,
@@ -165,7 +240,7 @@ pub fn open_voting_round_session(
         pir_server_urls,
         pir_layout: ctx.pir_layout,
         hotkey_secret: stored_hotkey_secret.map(Zeroizing::new),
-        pipeline: Mutex::new(None),
+        pipeline: tokio::sync::OnceCell::new(),
         control: ChainSubmissionControl::new(operation_epoch),
         health,
         database: Arc::new(Mutex::new(Some(database))),
@@ -219,24 +294,58 @@ impl VotingRoundSession {
         RoundPlanView::try_from(plan).map_err(VotingErrorView::from)
     }
 
+    /// Clears durable ballot intents for proposals outside the bound roster
+    /// and re-plans.
+    ///
+    /// A decision recorded before a proposal left the authenticated
+    /// configuration outlives that proposal. The planner reports those in
+    /// `RoundPlanView::unrostered_intents` and withholds `CastVote` until
+    /// they are cleared, because the round's immediate helper share is
+    /// derived from the complete set of choices and a stale intent would
+    /// make that set disagree with the roster.
+    ///
+    /// Pass the ids the plan reported. The SDK refuses to clear an intent
+    /// whose vote the chain lifecycle already owns, but the planner omits
+    /// exactly those from `unrostered_intents`, so a plan-sourced list is
+    /// always clearable.
+    pub async fn clear_ballot_intents(
+        &self,
+        proposal_ids: Vec<u32>,
+    ) -> Result<RoundPlanView, VotingErrorView> {
+        let db = self.executor.database();
+        let round_id = self.inputs.round_params.vote_round_id.clone();
+        for proposal_id in proposal_ids {
+            db.clear_ballot_intent(&round_id, proposal_id)
+                .map_err(VotingErrorView::from)?;
+        }
+        let plan = self.executor.plan().map_err(VotingErrorView::from)?;
+        RoundPlanView::try_from(plan).map_err(VotingErrorView::from)
+    }
+
     /// Runs the first planned step, streaming progress then one result.
+    ///
+    /// See [`VotingRoundSession::advance`] for why this reports failures on
+    /// the sink instead of returning them.
     pub async fn advance_next(
         &self,
         host: ApiRoundHostContext,
         signer: Option<ApiDelegationSignerInput>,
         sink: StreamSink<ApiRoundStepEvent>,
-    ) -> Result<(), VotingErrorView> {
+    ) {
         self.advance(None, host, signer, sink).await
     }
 
     /// Runs one planned step, streaming progress then one result.
+    ///
+    /// See [`VotingRoundSession::advance`] for why this reports failures on
+    /// the sink instead of returning them.
     pub async fn advance_step(
         &self,
         step: NextStepView,
         host: ApiRoundHostContext,
         signer: Option<ApiDelegationSignerInput>,
         sink: StreamSink<ApiRoundStepEvent>,
-    ) -> Result<(), VotingErrorView> {
+    ) {
         self.advance(Some(step), host, signer, sink).await
     }
 
@@ -273,30 +382,32 @@ impl VotingRoundSession {
         )
     }
 
+    /// The session's delegation pipeline, built once.
+    ///
+    /// Single-flight: a batch runs several delegation steps concurrently on
+    /// one session, and opening the pipeline fetches the snapshot anchor from
+    /// lightwalletd. A check-then-set cache would let every step in the batch
+    /// pay for its own fetch and its own chance to fail. A failed build leaves
+    /// the cell empty, so a later step can still succeed.
     async fn pipeline(&self) -> Result<Arc<VizorDelegationPipeline>, VotingErrorView> {
-        if let Some(pipeline) = self
-            .pipeline
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-        {
-            return Ok(pipeline);
-        }
-        let hotkey = match self.hotkey_secret.as_ref() {
-            Some(secret) => Some(
-                hotkey::voting_hotkey_from_stored_secret(secret.to_vec(), self.inputs.network)
-                    .map_err(VotingErrorView::from)?,
-            ),
-            None => None,
-        };
-        let pipeline = delegation::open_pipeline(&self.inputs, hotkey)
+        self.pipeline
+            .get_or_try_init(|| async {
+                let hotkey = match self.hotkey_secret.as_ref() {
+                    Some(secret) => Some(
+                        hotkey::voting_hotkey_from_stored_secret(
+                            secret.to_vec(),
+                            self.inputs.network,
+                        )
+                        .map_err(VotingErrorView::from)?,
+                    ),
+                    None => None,
+                };
+                delegation::open_pipeline(&self.inputs, hotkey)
+                    .await
+                    .map_err(VotingErrorView::from)
+            })
             .await
-            .map_err(VotingErrorView::from)?;
-        *self
-            .pipeline
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Arc::clone(&pipeline));
-        Ok(pipeline)
+            .map(Arc::clone)
     }
 
     async fn delegation_inputs(
@@ -308,9 +419,9 @@ impl VotingRoundSession {
         };
         let signer = match signer.kind {
             ApiDelegationSignerKind::Mnemonic => {
-                let mnemonic = signer.mnemonic.ok_or_else(|| {
-                    invalid_input("mnemonic signer needs a mnemonic".to_string())
-                })?;
+                let mnemonic = signer
+                    .mnemonic
+                    .ok_or_else(|| invalid_input("mnemonic signer needs a mnemonic".to_string()))?;
                 let seed = seed_from_mnemonic(mnemonic).map_err(VotingErrorView::from)?;
                 DelegationSigner::Software(Arc::new(SeedSpendAuthSigner::new(seed)))
             }
@@ -337,13 +448,45 @@ impl VotingRoundSession {
         }))
     }
 
+    /// Runs a step and emits exactly one result event, whatever happened.
+    ///
+    /// A streaming function's `Result` never reaches Dart: the bridge sends it
+    /// on the task port, and the generated Dart drops that future
+    /// (`unawaited`) while handing the caller only the sink's stream. An `Err`
+    /// return would therefore close the stream with no event at all, turning
+    /// every typed failure raised before the step — a lightwalletd anchor
+    /// fetch for the delegation pipeline, signer material, the PIR fleet —
+    /// into a bare "stream ended" on the Dart side. Returning `()` keeps that
+    /// unreachable: every path has to produce an event.
     async fn advance(
         &self,
         step: Option<NextStepView>,
         host: ApiRoundHostContext,
         signer: Option<ApiDelegationSignerInput>,
         sink: StreamSink<ApiRoundStepEvent>,
-    ) -> Result<(), VotingErrorView> {
+    ) {
+        let sink = Arc::new(sink);
+        let event = match self.run_step(step, host, signer, Arc::clone(&sink)).await {
+            Ok(event) => event,
+            Err(error) => ApiRoundStepEvent {
+                kind: ApiRoundStepEventKind::Result,
+                progress: None,
+                outcome: None,
+                failure: None,
+                error: Some(ApiRoundStepError::from(error)),
+            },
+        };
+        let _ = sink.add(event);
+    }
+
+    /// Runs one step, streaming progress, and returns its result event.
+    async fn run_step(
+        &self,
+        step: Option<NextStepView>,
+        host: ApiRoundHostContext,
+        signer: Option<ApiDelegationSignerInput>,
+        sink: Arc<StreamSink<ApiRoundStepEvent>>,
+    ) -> Result<ApiRoundStepEvent, VotingErrorView> {
         let delegation = self.delegation_inputs(signer).await?;
         let host = RoundHostContext {
             configured_helper_urls: host.configured_helper_urls,
@@ -355,8 +498,7 @@ impl VotingRoundSession {
             chain_policy: ChainAdvancePolicy::default(),
             max_proof_concurrency: host.max_proof_concurrency.max(1) as usize,
         };
-        let sink = Arc::new(sink);
-        let progress_sink = Arc::clone(&sink);
+        let progress_sink = sink;
         let reporter = RoundStepProgressBridge::new(move |progress| {
             let Ok(view) = RoundStepProgressView::try_from(progress) else {
                 return;
@@ -366,6 +508,7 @@ impl VotingRoundSession {
                 progress: Some(view),
                 outcome: None,
                 failure: None,
+                error: None,
             });
         });
         let result = match step {
@@ -380,29 +523,32 @@ impl VotingRoundSession {
                     .await
             }
         };
-        let event = match result {
+        Ok(match result {
             Ok(outcome) => ApiRoundStepEvent {
                 kind: ApiRoundStepEventKind::Result,
                 progress: None,
-                outcome: Some(RoundStepOutcomeView::try_from(outcome).map_err(VotingErrorView::from)?),
+                outcome: Some(
+                    RoundStepOutcomeView::try_from(outcome).map_err(VotingErrorView::from)?,
+                ),
                 failure: None,
+                error: None,
             },
             Err(failure) => ApiRoundStepEvent {
                 kind: ApiRoundStepEventKind::Result,
                 progress: None,
                 outcome: None,
-                failure: Some(RoundStepFailureView::try_from(failure).map_err(VotingErrorView::from)?),
+                failure: Some(
+                    RoundStepFailureView::try_from(failure).map_err(VotingErrorView::from)?,
+                ),
+                error: None,
             },
-        };
-        let _ = sink.add(event);
-        Ok(())
+        })
     }
 }
 
 fn invalid_input(message: String) -> VotingErrorView {
     VotingErrorView::from(zcash_voting::VotingError::InvalidInput { message })
 }
-
 
 fn internal(message: String) -> VotingErrorView {
     VotingErrorView::from(zcash_voting::VotingError::Internal { message })

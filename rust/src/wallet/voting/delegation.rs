@@ -13,17 +13,14 @@ use std::sync::Arc;
 
 use zcash_voting::config::PirLayout;
 pub use zcash_voting::delegate::DelegationProgress;
-use zcash_voting::delegate::{
-    DelegationLwdInputs, DelegationProofStatus,
-};
+use zcash_voting::delegate::{DelegationLwdInputs, DelegationProofStatus};
 use zcash_voting::precompute::SnapshotBundlePrecomputeReport;
 use zcash_voting::round::BundleLayout;
 use zcash_voting::selection::select_notes_with_wallet_db;
 pub use zcash_voting::VotingEligibilityReport;
 use zcash_voting::{
-    BundlePolicy, DelegationPipeline, HyperTransport,
-    NoopProgressReporter, PirFleet, VotingError, VotingHotkey,
-    WalletDbOpener,
+    BundlePolicy, DelegationPipeline, HyperTransport, NoopProgressReporter, PirFleet, VotingError,
+    VotingHotkey, WalletDbOpener,
 };
 
 use crate::wallet::db::WalletDatabase;
@@ -87,10 +84,12 @@ pub async fn open_pipeline(
 ) -> Result<Arc<VizorDelegationPipeline>, VotingError> {
     zcash_voting::validate_round_params(&inputs.round_params)
         .map_err(|error| invalid_input(format!("Invalid voting round params: {error}")))?;
-    let tree_state =
-        fetch_snapshot_tree_state(&inputs.lightwalletd_url, inputs.round_params.snapshot_height)
-            .await
-            .map_err(internal)?;
+    let tree_state = fetch_snapshot_tree_state(
+        &inputs.lightwalletd_url,
+        inputs.round_params.snapshot_height,
+    )
+    .await
+    .map_err(internal)?;
     let lwd = DelegationLwdInputs::from_anchor_tree_state(
         inputs.network,
         inputs.round_params.clone(),
@@ -194,7 +193,7 @@ pub async fn precompute_snapshot_bundles(
         let round_id = pipeline.round_id().to_string();
         fleet.with_failover(|session| {
             zcash_voting::precompute::precompute_snapshot_bundles(
-                pipeline.voting_db(),
+                &pipeline.voting_db(),
                 &round_id,
                 &notes,
                 bundle_policy,

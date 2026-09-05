@@ -184,6 +184,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiRoundHostContext dco_decode_api_round_host_context(dynamic raw);
 
   @protected
+  ApiRoundStepError dco_decode_api_round_step_error(dynamic raw);
+
+  @protected
   ApiRoundStepEvent dco_decode_api_round_step_event(dynamic raw);
 
   @protected
@@ -233,6 +236,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiRoundStepError dco_decode_box_autoadd_api_round_step_error(dynamic raw);
+
+  @protected
   ApiVotingRoundContext dco_decode_box_autoadd_api_voting_round_context(
     dynamic raw,
   );
@@ -262,6 +268,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegationProgressKind dco_decode_box_autoadd_delegation_progress_kind(
+    dynamic raw,
+  );
+
+  @protected
+  DelegationSetupFieldView dco_decode_box_autoadd_delegation_setup_field_view(
     dynamic raw,
   );
 
@@ -413,6 +424,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DelegationRecoveryWorkView dco_decode_delegation_recovery_work_view(
     dynamic raw,
   );
+
+  @protected
+  DelegationSetupFieldView dco_decode_delegation_setup_field_view(dynamic raw);
 
   @protected
   DelegationStatusView dco_decode_delegation_status_view(dynamic raw);
@@ -767,6 +781,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_api_delegation_signer_input(dynamic raw);
 
   @protected
+  ApiRoundStepError? dco_decode_opt_box_autoadd_api_round_step_error(
+    dynamic raw,
+  );
+
+  @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
@@ -794,6 +813,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DelegationProgressKind? dco_decode_opt_box_autoadd_delegation_progress_kind(
     dynamic raw,
   );
+
+  @protected
+  DelegationSetupFieldView?
+  dco_decode_opt_box_autoadd_delegation_setup_field_view(dynamic raw);
 
   @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
@@ -1255,6 +1278,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiRoundStepError sse_decode_api_round_step_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiRoundStepEvent sse_decode_api_round_step_event(
     SseDeserializer deserializer,
   );
@@ -1320,6 +1348,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiRoundStepError sse_decode_box_autoadd_api_round_step_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiVotingRoundContext sse_decode_box_autoadd_api_voting_round_context(
     SseDeserializer deserializer,
   );
@@ -1357,6 +1390,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegationProgressKind sse_decode_box_autoadd_delegation_progress_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationSetupFieldView sse_decode_box_autoadd_delegation_setup_field_view(
     SseDeserializer deserializer,
   );
 
@@ -1540,6 +1578,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegationRecoveryWorkView sse_decode_delegation_recovery_work_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationSetupFieldView sse_decode_delegation_setup_field_view(
     SseDeserializer deserializer,
   );
 
@@ -1994,6 +2037,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiRoundStepError? sse_decode_opt_box_autoadd_api_round_step_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
@@ -2027,6 +2075,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegationProgressKind? sse_decode_opt_box_autoadd_delegation_progress_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationSetupFieldView?
+  sse_decode_opt_box_autoadd_delegation_setup_field_view(
     SseDeserializer deserializer,
   );
 
@@ -2613,6 +2667,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_round_step_error(
+    ApiRoundStepError self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_round_step_event(
     ApiRoundStepEvent self,
     SseSerializer serializer,
@@ -2688,6 +2748,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_api_round_step_error(
+    ApiRoundStepError self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_api_voting_round_context(
     ApiVotingRoundContext self,
     SseSerializer serializer,
@@ -2729,6 +2795,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_delegation_progress_kind(
     DelegationProgressKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_delegation_setup_field_view(
+    DelegationSetupFieldView self,
     SseSerializer serializer,
   );
 
@@ -2951,6 +3023,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_delegation_recovery_work_view(
     DelegationRecoveryWorkView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_setup_field_view(
+    DelegationSetupFieldView self,
     SseSerializer serializer,
   );
 
@@ -3507,6 +3585,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_api_round_step_error(
+    ApiRoundStepError? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
@@ -3542,6 +3626,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_delegation_progress_kind(
     DelegationProgressKind? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_delegation_setup_field_view(
+    DelegationSetupFieldView? self,
     SseSerializer serializer,
   );
 
