@@ -20,8 +20,9 @@ use crate::wallet::{
 use zcash_voting::config;
 use zcash_voting::wire::{
     ConfigSwitchKind, DynamicConfigAttempt, PirLayout, ResolveVotingConfigOptions,
-    ResolvedVotingConfig, ResolvedVotingConfigSummary,
+    ResolvedVotingConfig, ResolvedVotingConfigSummary, VotingErrorView,
 };
+use zcash_voting::VotingError;
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
 
@@ -80,7 +81,7 @@ pub fn select_pir_snapshot_endpoint(
     diagnostics: Vec<ApiPirSnapshotEndpointDiagnostic>,
     expected_snapshot_height: u64,
     match_index: u64,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, VotingErrorView> {
     let diagnostics = diagnostics.into_iter().map(Into::into).collect::<Vec<_>>();
     if zcash_voting::pir_snapshot::matching_pir_snapshot_endpoints(
         &diagnostics,
@@ -96,7 +97,7 @@ pub fn select_pir_snapshot_endpoint(
         match_index,
     )
     .map(|resolution| Some(resolution.endpoint))
-    .map_err(|error| error.to_string())
+    .map_err(view)
 }
 
 /// Prefix for coarse cast-vote stage timings (`log show` subsystem `frb_user`).
@@ -246,10 +247,12 @@ pub struct ApiKeystoneSignatureInput {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Outcome of an idempotent Keystone signature batch write.
+///
+/// A tuple for a different signing context fails the whole batch with
+/// `VotingError::KeystoneSignatureConflict`, which names the bundle.
 pub struct ApiKeystoneSignatureBatchResult {
     pub inserted: u32,
     pub already_present: u32,
-    pub conflicting_bundle_index: Option<u32>,
 }
 
 /// One account and round with durable unconfirmed helper shares.
@@ -291,32 +294,12 @@ pub fn trusted_voting_round_params_from_config(
     snapshot_height: u64,
     nc_root: Vec<u8>,
     nullifier_imt_root: Vec<u8>,
-) -> Result<zcash_voting::wire::VotingRoundParams, String> {
+) -> Result<zcash_voting::wire::VotingRoundParams, VotingErrorView> {
     catch(|| {
         resolved_config
             .trusted_voting_round_params(round_id, snapshot_height, nc_root, nullifier_imt_root)
-            .map_err(|e| e.to_string())
+            .map_err(|error| invalid_input(error.to_string()))
     })
-}
-
-fn share_record(
-    share: zcash_voting::wire::ShareDelegationRecordView,
-) -> zcash_voting::ShareDelegationRecord {
-    // Convert API view type into core share-tracking record shape.
-    zcash_voting::ShareDelegationRecord {
-        round_id: share.round_id,
-        bundle_index: share.bundle_index,
-        proposal_id: share.proposal_id,
-        share_index: share.share_index,
-        sent_to_urls: share.sent_to_urls,
-        ambiguous_urls: share.ambiguous_urls,
-        attempting_urls: Vec::new(),
-        target_count: share.target_count,
-        nullifier: share.nullifier,
-        confirmed: share.confirmed,
-        submit_at: share.submit_at,
-        created_at: share.created_at,
-    }
 }
 
 /// One helper share identified within its round.
@@ -474,10 +457,10 @@ fn helper_delivery_db(
     db_path: &str,
     account_uuid: &str,
     database: &Mutex<Option<Arc<zcash_voting::round::VotingDb>>>,
-) -> Result<Arc<zcash_voting::round::VotingDb>, String> {
+) -> Result<Arc<zcash_voting::round::VotingDb>, VotingError> {
     let mut database = database
         .lock()
-        .map_err(|_| "voting helper database lock poisoned".to_string())?;
+        .map_err(|_| internal("voting helper database lock poisoned"))?;
     if let Some(db) = database.as_ref() {
         return Ok(db.clone());
     }
@@ -510,7 +493,7 @@ pub async fn track_pending_shares(
     configured_helper_urls: Vec<String>,
     now_seconds: u64,
     vote_end_time_seconds: Option<u64>,
-) -> Result<ApiShareTrackingReport, String> {
+) -> Result<ApiShareTrackingReport, VotingErrorView> {
     let cancel = || pass_handle.is_cancelled();
 
     // Open under the sidecar lock so a concurrent opener cannot race schema
@@ -519,7 +502,8 @@ pub async fn track_pending_shares(
         &pass_handle.db_path,
         &pass_handle.account_uuid,
         &pass_handle.database,
-    )?;
+    )
+    .map_err(view)?;
 
     let client = helper_client(&pass_handle.health);
     let params = zcash_voting::share_tracking::ShareTrackingParams {
@@ -532,7 +516,7 @@ pub async fn track_pending_shares(
 
     let report = zcash_voting::share_tracking::track_pending_shares(&db, &params, &client, &cancel)
         .await
-        .map_err(|e| format!("track_pending_shares failed: {e}"))?;
+        .map_err(view)?;
 
     Ok(ApiShareTrackingReport {
         confirmed: report
@@ -581,12 +565,13 @@ pub async fn confirm_share_with_helpers(
     proposal_id: u32,
     share_index: u32,
     now_seconds: u64,
-) -> Result<bool, String> {
+) -> Result<bool, VotingErrorView> {
     let db = helper_delivery_db(
         &pass_handle.db_path,
         &pass_handle.account_uuid,
         &pass_handle.database,
-    )?;
+    )
+    .map_err(view)?;
     let client = helper_client(&pass_handle.health);
     let cancel = || pass_handle.is_cancelled();
     let report = zcash_voting::share_tracking::confirm_pending_share(
@@ -605,25 +590,32 @@ pub async fn confirm_share_with_helpers(
         &cancel,
     )
     .await
-    .map_err(|e| format!("confirm_pending_share failed: {e}"))?;
+    .map_err(view)?;
 
     Ok(report.confirmed)
 }
 
-/// Return the next share-tracking delay in seconds using crate policy.
+/// Seconds until this round's next helper-share tracking pass should run.
 ///
-/// Vizor wakes the tracker when the next share reaches its status-check grace
-/// boundary. The SDK's default policy caps future waits for wallets that also
-/// use the tracking pass as a general heartbeat; Vizor refreshes round state
-/// separately with a lightweight heartbeat and whenever the voting UI becomes
-/// visible, so that cap would only cause redundant SQLite and helper passes.
+/// `None` means the round has no unconfirmed shares left, which is also the
+/// signal to stop background tracking. The SDK reads the durable share rows
+/// itself, so they never cross this boundary.
+///
+/// The SDK's own `next_tracking_delay_for_round` returns the soonest *future*
+/// check time, so a share that is already past its grace boundary waits behind
+/// an unrelated future one. Vizor polls the ready share instead, and lifts the
+/// future-check cap: that cap exists for wallets using the tracking pass as a
+/// general heartbeat, and Vizor refreshes round state separately, so it would
+/// only cause redundant SQLite and helper passes.
 pub fn next_share_tracking_delay_seconds(
-    shares: Vec<zcash_voting::wire::ShareDelegationRecordView>,
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
     now_seconds: u64,
-) -> Result<Option<u64>, String> {
+) -> Result<Option<u64>, VotingErrorView> {
     catch(|| {
-        // Convert wire views into core records consumed by share policy.
-        let shares = shares.into_iter().map(share_record).collect::<Vec<_>>();
+        let db = db::open_voting_db(&db_path, &account_uuid)?;
+        let shares = db.get_unconfirmed_delegations(&round_id)?;
         let mut policy = zcash_voting::share::ShareTimingPolicy::default();
         let ready_delay = shares
             .iter()
@@ -655,12 +647,11 @@ pub fn next_share_tracking_delay_seconds(
 /// Vizor v2 uses the same random app-owned hotkey model for software and
 /// Keystone accounts. The app persists this random per-round hotkey in secure
 /// storage and reuses it for delegation setup and vote commitment signing.
-pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
+pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, VotingErrorView> {
     catch(|| {
         // Voting hotkeys are app-owned random secrets, not wallet-seed-derived.
-        let network = keys::parse_network(&network)?;
+        let network = keys::parse_network(&network).map_err(invalid_input)?;
         zcash_voting::hotkey::generate_random_voting_hotkey(voting_network(network))
-            .map_err(|e| format!("Voting hotkey generation failed: {e}"))
             .map(|hotkey| {
                 // FRB returns owned bytes, so this copy cannot be zeroized by Rust
                 // after Dart receives it.
@@ -669,14 +660,16 @@ pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
     })
 }
 
-/// Executes an API helper and converts Rust panics into string errors.
+/// Executes an API helper and converts Rust panics into typed errors.
 ///
-/// This preserves the existing `Result<T, String>` contract used by FRB entry
-/// points so callers receive a normal error instead of an unwind crossing FFI.
-fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
-    // Convert unwind payloads into stable string errors for FFI callers.
+/// Every FRB entry point returns `VotingErrorView` so Dart classifies failures
+/// by kind; a panic crossing this boundary becomes an `Internal` error instead
+/// of an unwind crossing FFI.
+fn catch<T>(
+    f: impl FnOnce() -> Result<T, VotingError> + panic::UnwindSafe,
+) -> Result<T, VotingErrorView> {
     match panic::catch_unwind(f) {
-        Ok(result) => result,
+        Ok(result) => result.map_err(VotingErrorView::from),
         Err(e) => {
             let msg = if let Some(s) = e.downcast_ref::<&str>() {
                 s.to_string()
@@ -685,19 +678,36 @@ fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result
             } else {
                 "Unknown panic".to_string()
             };
-            Err(format!("Rust panic: {msg}"))
+            Err(VotingErrorView::from(internal(format!("Rust panic: {msg}"))))
         }
     }
+}
+
+fn invalid_input(message: impl Into<String>) -> VotingError {
+    VotingError::InvalidInput {
+        message: message.into(),
+    }
+}
+
+fn internal(message: impl Into<String>) -> VotingError {
+    VotingError::Internal {
+        message: message.into(),
+    }
+}
+
+/// Converts a typed error at the FRB boundary.
+fn view(error: VotingError) -> VotingErrorView {
+    VotingErrorView::from(error)
 }
 
 /// Round inputs for the SDK delegation pipeline, from the FRB round context.
 pub(super) fn delegation_static_inputs_for(
     ctx: &ApiVotingRoundContext,
-) -> Result<delegation::RoundInputs, String> {
+) -> Result<delegation::RoundInputs, VotingError> {
     round_inputs(ctx)
 }
 
-fn round_inputs(ctx: &ApiVotingRoundContext) -> Result<delegation::RoundInputs, String> {
+fn round_inputs(ctx: &ApiVotingRoundContext) -> Result<delegation::RoundInputs, VotingError> {
     let (network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     Ok(delegation::RoundInputs {
@@ -720,10 +730,11 @@ fn round_inputs(ctx: &ApiVotingRoundContext) -> Result<delegation::RoundInputs, 
 /// selection, or bundle setup fails.
 pub async fn setup_delegation_bundles(
     ctx: ApiVotingRoundContext,
-) -> Result<ApiBundleLayout, String> {
-    delegation::setup_delegation_bundles(round_inputs(&ctx)?)
+) -> Result<ApiBundleLayout, VotingErrorView> {
+    delegation::setup_delegation_bundles(round_inputs(&ctx).map_err(view)?)
         .await
         .map(Into::into)
+        .map_err(view)
 }
 
 /// Check whether the account has enough selected notes to vote in this round.
@@ -738,11 +749,13 @@ pub async fn setup_delegation_bundles(
 /// selection, or eligibility calculation fails.
 pub async fn check_voting_eligibility(
     ctx: ApiVotingRoundContext,
-) -> Result<ApiVotingEligibility, String> {
-    let report = delegation::check_voting_eligibility(round_inputs(&ctx)?).await?;
+) -> Result<ApiVotingEligibility, VotingErrorView> {
+    let report = delegation::check_voting_eligibility(round_inputs(&ctx).map_err(view)?)
+        .await
+        .map_err(view)?;
     let eligibility = report.eligibility;
     let distinct_note_count = u32::try_from(eligibility.distinct_note_count)
-        .map_err(|_| "distinct note count does not fit in u32".to_string())?;
+        .map_err(|_| view(internal("distinct note count does not fit in u32")))?;
     Ok(ApiVotingEligibility {
         is_eligible: eligibility.is_eligible(),
         distinct_note_count,
@@ -760,11 +773,16 @@ pub async fn check_voting_eligibility(
 pub async fn precompute_snapshot_bundles(
     ctx: ApiVotingRoundContext,
     pir_server_url: String,
-) -> Result<ApiSnapshotBundlePrecomputeResult, String> {
+) -> Result<ApiSnapshotBundlePrecomputeResult, VotingErrorView> {
     let pir_layout = ctx.pir_layout;
-    delegation::precompute_snapshot_bundles(round_inputs(&ctx)?, &pir_server_url, pir_layout)
-        .await
-        .map(Into::into)
+    delegation::precompute_snapshot_bundles(
+        round_inputs(&ctx).map_err(view)?,
+        &pir_server_url,
+        pir_layout,
+    )
+    .await
+    .map(Into::into)
+    .map_err(view)
 }
 
 /// Generate and persist ZKP1 for one software delegation bundle without signing.
@@ -784,9 +802,11 @@ pub async fn precompute_delegation_proof(
     pir_server_urls: Vec<String>,
     stored_hotkey_secret: Vec<u8>,
     bundle_index: u32,
-) -> Result<bool, String> {
-    let inputs = round_inputs(&ctx)?;
-    let voting_hotkey = hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, inputs.network)?;
+) -> Result<bool, VotingErrorView> {
+    let inputs = round_inputs(&ctx).map_err(view)?;
+    let voting_hotkey =
+        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, inputs.network)
+            .map_err(view)?;
     delegation::precompute_delegation_proof(
         inputs,
         &pir_server_urls,
@@ -795,6 +815,7 @@ pub async fn precompute_delegation_proof(
         bundle_index,
     )
     .await
+    .map_err(view)
 }
 
 /// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
@@ -849,8 +870,8 @@ pub async fn warm_pir_proof_cache(
     pir_server_url: String,
     pir_layout: PirLayout,
     _keep_roots: Vec<Vec<u8>>,
-) -> Result<ApiPirCacheWarmupResult, String> {
-    let wallet_network = keys::parse_network(&network)?;
+) -> Result<ApiPirCacheWarmupResult, VotingErrorView> {
+    let wallet_network = keys::parse_network(&network).map_err(|message| view(invalid_input(message)))?;
     let network = voting_network(wallet_network);
     delegation::warm_pir_proof_cache(
         &db_path,
@@ -863,6 +884,7 @@ pub async fn warm_pir_proof_cache(
     )
     .await
     .map(ApiPirCacheWarmupResult::from)
+    .map_err(view)
 }
 
 /// Build and redact voting PCZTs that Keystone can sign in one or more batches.
@@ -876,9 +898,11 @@ pub async fn build_keystone_delegation_requests(
     ctx: ApiVotingRoundContext,
     stored_hotkey_secret: Vec<u8>,
     bundle_indices: Vec<u32>,
-) -> Result<Vec<zcash_voting::wire::KeystoneSigningRequest>, String> {
+) -> Result<Vec<zcash_voting::wire::KeystoneSigningRequest>, VotingErrorView> {
     if bundle_indices.is_empty() {
-        return Err("Keystone delegation bundle indexes must not be empty".to_string());
+        return Err(view(invalid_input(
+            "Keystone delegation bundle indexes must not be empty",
+        )));
     }
     let unique_bundle_count = bundle_indices
         .iter()
@@ -886,37 +910,41 @@ pub async fn build_keystone_delegation_requests(
         .collect::<std::collections::HashSet<_>>()
         .len();
     if unique_bundle_count != bundle_indices.len() {
-        return Err("Keystone delegation bundle indexes must be unique".to_string());
+        return Err(view(invalid_input(
+            "Keystone delegation bundle indexes must be unique",
+        )));
     }
-    let inputs = round_inputs(&ctx)?;
-    let voting_hotkey = hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, inputs.network)?;
-    let pipeline = delegation::open_pipeline(&inputs, Some(voting_hotkey)).await?;
+    let inputs = round_inputs(&ctx).map_err(view)?;
+    let voting_hotkey =
+        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, inputs.network)
+            .map_err(view)?;
+    let pipeline = delegation::open_pipeline(&inputs, Some(voting_hotkey))
+        .await
+        .map_err(view)?;
     tokio::task::spawn_blocking(move || {
         bundle_indices
             .into_iter()
-            .map(|bundle_index| {
-                pipeline
-                    .keystone_request(bundle_index)
-                    .map_err(|e| format!("delegate::keystone_request failed: {e}"))
-            })
+            .map(|bundle_index| pipeline.keystone_request(bundle_index))
             .collect::<Result<Vec<_>, _>>()
     })
     .await
-    .map_err(|e| format!("Keystone request task failed: {e}"))?
+    .map_err(|error| view(internal(format!("Keystone request task failed: {error}"))))?
+    .map_err(view)
 }
 
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
 /// Existing tuples for the same sighash and randomized key are accepted as
 /// idempotent retries, even when randomized signing produced different valid
-/// signature bytes. A tuple for a different signing context is a conflict, and
-/// any validation or database error rolls back the complete batch.
+/// signature bytes. A tuple for a different signing context is a
+/// `KeystoneSignatureConflict` error, and any validation or database error
+/// rolls back the complete batch.
 pub fn store_keystone_signatures_batch(
     db_path: String,
     account_uuid: String,
     round_id: String,
     signatures: Vec<ApiKeystoneSignatureInput>,
-) -> Result<ApiKeystoneSignatureBatchResult, String> {
+) -> Result<ApiKeystoneSignatureBatchResult, VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         let signatures = signatures
@@ -928,21 +956,11 @@ pub fn store_keystone_signatures_batch(
                 rk: signature.rk,
             })
             .collect::<Vec<_>>();
-        match db.store_keystone_signatures_batch(&round_id, &signatures) {
-            Ok(result) => Ok(ApiKeystoneSignatureBatchResult {
-                inserted: result.inserted,
-                already_present: result.already_present,
-                conflicting_bundle_index: None,
-            }),
-            Err(zcash_voting::VotingError::KeystoneSignatureConflict { bundle_index }) => {
-                Ok(ApiKeystoneSignatureBatchResult {
-                    inserted: 0,
-                    already_present: 0,
-                    conflicting_bundle_index: Some(bundle_index),
-                })
-            }
-            Err(error) => Err(format!("store Keystone signature batch failed: {error}")),
-        }
+        let result = db.store_keystone_signatures_batch(&round_id, &signatures)?;
+        Ok(ApiKeystoneSignatureBatchResult {
+            inserted: result.inserted,
+            already_present: result.already_present,
+        })
     })
 }
 
@@ -956,12 +974,11 @@ pub fn get_keystone_signatures(
     db_path: String,
     account_uuid: String,
     round_id: String,
-) -> Result<Vec<zcash_voting::wire::KeystoneSignatureRecord>, String> {
+) -> Result<Vec<zcash_voting::wire::KeystoneSignatureRecord>, VotingErrorView> {
     catch(|| {
         // Load all persisted Keystone signatures for this round.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         db.get_keystone_signatures(&round_id)
-            .map_err(|e| format!("get_keystone_signatures failed: {e}"))
     })
 }
 
@@ -973,17 +990,16 @@ pub fn delete_skipped_bundles(
     account_uuid: String,
     round_id: String,
     keep_count: u32,
-) -> Result<u32, String> {
+) -> Result<u32, VotingErrorView> {
     catch(|| {
         // Delete skipped bundle rows and downcast deleted count for FRB.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         db.delete_skipped_bundles(&round_id, keep_count)
             .and_then(|deleted| {
-                u32::try_from(deleted).map_err(|_| zcash_voting::VotingError::Internal {
-                    message: format!("deleted bundle count {deleted} does not fit in u32"),
+                u32::try_from(deleted).map_err(|_| {
+                    internal(format!("deleted bundle count {deleted} does not fit in u32"))
                 })
             })
-            .map_err(|e| format!("delete_skipped_bundles failed: {e}"))
     })
 }
 
@@ -1002,13 +1018,12 @@ pub fn sync_vote_tree(
     account_uuid: String,
     round_id: String,
     node_url: String,
-) -> Result<u32, String> {
+) -> Result<u32, VotingErrorView> {
     catch(|| {
         // Sync and cache vote tree state for this wallet/round.
         let started = Instant::now();
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        let height = zcash_voting::precompute::sync_vote_tree(&db, &round_id, &node_url)
-            .map_err(|e| format!("sync_vote_tree failed: {e}"))?;
+        let height = zcash_voting::precompute::sync_vote_tree(&db, &round_id, &node_url)?;
         log::info!(
             "{VOTING_VOTE_LOG} sync-tree complete round={round_id} height={height} elapsed={:.3}s",
             started.elapsed().as_secs_f64()
@@ -1030,7 +1045,7 @@ pub fn reset_vote_tree(
     db_path: String,
     account_uuid: String,
     round_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
 
@@ -1043,8 +1058,7 @@ pub fn reset_vote_tree(
         } else {
             "round"
         };
-        zcash_voting::precompute::reset_vote_tree(&db, scoped_round_id)
-            .map_err(|e| format!("reset vote tree failed: {e}"))?;
+        zcash_voting::precompute::reset_vote_tree(&db, scoped_round_id)?;
         log::info!(
             "voting: reset vote-tree state \
              (account_uuid={}, scope={}, round_id={:?})",
@@ -1070,7 +1084,7 @@ pub fn reset_voting_session_state(
     db_path: String,
     account_uuid: String,
     round_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
 
@@ -1083,8 +1097,7 @@ pub fn reset_voting_session_state(
         } else {
             "round"
         };
-        zcash_voting::precompute::reset_voting_session_state(&db, scoped_round_id)
-            .map_err(|e| format!("reset voting session state failed: {e}"))?;
+        zcash_voting::precompute::reset_voting_session_state(&db, scoped_round_id)?;
         log::info!(
             "voting: reset process-local session state \
              (account_uuid={}, scope={}, round_id={:?})",
@@ -1104,12 +1117,13 @@ pub fn reset_voting_session_state(
 /// round-independent `pir_proof_cache` rows for the same wallet id — browse-
 /// only warm-up can persist those without ever creating a round. Use this only
 /// at account deletion boundaries, not for ordinary voting-session retries.
-pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Result<u32, String> {
+pub fn delete_voting_account_state(
+    db_path: String,
+    account_uuid: String,
+) -> Result<u32, VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        let round_count = db
-            .clear_wallet_state()
-            .map_err(|e| format!("clear wallet voting state failed: {e}"))?;
+        let round_count = db.clear_wallet_state()?;
 
         log::info!(
             "voting: deleted durable account state (account_uuid={}, rounds={})",
@@ -1127,7 +1141,7 @@ pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Res
 pub fn list_pending_share_rounds(
     db_path: String,
     mut account_uuids: Vec<String>,
-) -> Result<Vec<ApiPendingShareRound>, String> {
+) -> Result<Vec<ApiPendingShareRound>, VotingErrorView> {
     account_uuids.retain(|account_uuid| !account_uuid.is_empty());
     catch(move || {
         let sidecar_path =
@@ -1140,8 +1154,7 @@ pub fn list_pending_share_rounds(
         };
         let db = db::open_voting_db(&db_path, &first)?;
         let wallet_ids: Vec<&str> = account_uuids.iter().map(String::as_str).collect();
-        let mut pending = zcash_voting::share::pending_rounds_for_accounts(&db, &wallet_ids)
-            .map_err(|e| format!("list pending voting share rounds failed: {e}"))?
+        let mut pending = zcash_voting::share::pending_rounds_for_accounts(&db, &wallet_ids)?
             .into_iter()
             .map(|round| ApiPendingShareRound {
                 account_uuid: round.wallet_id,
@@ -1156,21 +1169,6 @@ pub fn list_pending_share_rounds(
     })
 }
 
-/// Load the full recovery/share-tracking summary for one voting round.
-pub fn get_round_recovery_state(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-) -> Result<zcash_voting::wire::RoundRecoveryStateView, String> {
-    catch(|| {
-        // Load persisted round snapshot and expose wire-safe view fields.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::recovery::round_snapshot(&db, &round_id)
-            .map(zcash_voting::wire::RoundRecoveryStateView::from)
-            .map_err(|e| format!("round_snapshot failed: {e}"))
-    })
-}
-
 /// Compute the resumable voting-session plan for a round. The plan reports the
 /// ordered remaining work (`next_steps`) and which proposals are still open.
 pub fn get_round_plan(
@@ -1178,13 +1176,12 @@ pub fn get_round_plan(
     account_uuid: String,
     round_id: String,
     proposal_ids: Vec<u32>,
-) -> Result<zcash_voting::wire::RoundPlanView, String> {
+) -> Result<zcash_voting::wire::RoundPlanView, VotingErrorView> {
     catch(|| {
         // Derive resumable next steps and convert to wire view.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)
-            .map_err(|e| format!("resume_plan failed: {e}"))?;
-        zcash_voting::wire::RoundPlanView::try_from(plan).map_err(|e| e.to_string())
+        let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)?;
+        zcash_voting::wire::RoundPlanView::try_from(plan)
     })
 }
 
@@ -1199,7 +1196,7 @@ pub fn set_ballot_intent(
     num_options: u32,
     skipped: bool,
     choice: Option<u32>,
-) -> Result<(), String> {
+) -> Result<(), VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         // `skipped` takes precedence; otherwise a concrete choice is required.
@@ -1207,12 +1204,11 @@ pub fn set_ballot_intent(
             zcash_voting::session::Decision::Skipped
         } else {
             let c = choice.ok_or_else(|| {
-                "set_ballot_intent: choice must be Some when skipped is false".to_string()
+                invalid_input("set_ballot_intent: choice must be Some when skipped is false")
             })?;
             zcash_voting::session::Decision::Choice(c)
         };
         db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
-            .map_err(|e| format!("set_ballot_intent failed: {e}"))
     })
 }
 
@@ -1271,10 +1267,16 @@ pub struct VotingConfigResolution {
 pub fn resolve_static_voting_config(
     source: String,
     static_bytes: Vec<u8>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, VotingErrorView> {
     config::resolve_static_voting_config(&source, &static_bytes)
         .map(|resolved| resolved.dynamic_config_urls)
-        .map_err(|error| error.to_string())
+        .map_err(config_error)
+}
+
+/// Config failures are input problems at this boundary: the wallet handed the
+/// resolver bytes it could not authenticate or decode.
+fn config_error(error: impl std::fmt::Display) -> VotingErrorView {
+    view(invalid_input(error.to_string()))
 }
 
 /// Resolve and authenticate voting config from wallet-fetched bytes.
@@ -1298,9 +1300,9 @@ pub fn resolve_voting_config_from_attempts(
     static_bytes: Vec<u8>,
     attempts: Vec<ApiDynamicConfigAttempt>,
     previous: Option<ResolvedVotingConfig>,
-) -> Result<VotingConfigResolution, String> {
-    let resolved_static = config::resolve_static_voting_config(&source, &static_bytes)
-        .map_err(|error| error.to_string())?;
+) -> Result<VotingConfigResolution, VotingErrorView> {
+    let resolved_static =
+        config::resolve_static_voting_config(&source, &static_bytes).map_err(config_error)?;
     let (next, skipped) = config::resolve_dynamic_voting_config_from_attempts(
         resolved_static,
         attempts
@@ -1309,7 +1311,7 @@ pub fn resolve_voting_config_from_attempts(
             .collect(),
         ResolveVotingConfigOptions::default(),
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(config_error)?;
 
     let switch_kind = config::decide_config_switch(
         previous.as_ref().map(ResolvedVotingConfigSummary::from),
@@ -1346,6 +1348,64 @@ mod tests {
     };
     use zcash_client_backend::proto::service::TreeState;
     use zcash_voting::BundlePolicy;
+
+    /// Sets a bundle's delegation transaction hash directly.
+    ///
+    /// The SDK's writer for this is crate-private: only its chain-submission
+    /// lifecycle may record submissions. These fixtures set up durable state
+    /// for adapter tests, so they write the row the same way.
+    fn fixture_delegation_tx_hash(db: &zcash_voting::round::VotingDb, bundle_index: u32, tx_hash: &str) {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE bundles SET delegation_tx_hash = ?1
+             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4",
+            rusqlite::params![tx_hash, ROUND_ID, db.wallet_id(), i64::from(bundle_index)],
+        )
+        .unwrap();
+    }
+
+    /// Sets a vote's transaction hash directly. See `fixture_delegation_tx_hash`.
+    fn fixture_vote_tx_hash(
+        db: &zcash_voting::round::VotingDb,
+        bundle_index: u32,
+        proposal_id: u32,
+        tx_hash: &str,
+    ) {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE votes SET tx_hash = ?1
+             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4 AND proposal_id = ?5",
+            rusqlite::params![
+                tx_hash,
+                ROUND_ID,
+                db.wallet_id(),
+                i64::from(bundle_index),
+                i64::from(proposal_id)
+            ],
+        )
+        .unwrap();
+    }
+
+    /// Sets a bundle's VAN leaf position directly. See `fixture_delegation_tx_hash`.
+    fn fixture_van_position(
+        db: &zcash_voting::round::VotingDb,
+        round_id: &str,
+        bundle_index: u32,
+        position: u32,
+    ) {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE bundles SET van_leaf_position = ?1
+             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4",
+            rusqlite::params![
+                i64::from(position),
+                round_id,
+                db.wallet_id(),
+                i64::from(bundle_index)
+            ],
+        )
+        .unwrap();
+    }
 
     fn b64(bytes: impl AsRef<[u8]>) -> String {
         base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -1765,45 +1825,29 @@ mod tests {
     }
 
     #[test]
-    fn next_share_tracking_delay_uses_earliest_ready_or_future_wakeup() {
-        let ready = zcash_voting::wire::ShareDelegationRecordView {
-            round_id: ROUND_ID.to_string(),
-            bundle_index: 0,
-            proposal_id: 7,
-            share_index: 0,
-            sent_to_urls: vec!["https://helper.example".to_string()],
-            ambiguous_urls: vec![],
-            target_count: 1,
-            nullifier: vec![1; 32],
-            phase: zcash_voting::wire::WorkflowPhaseView::SubmittedShare,
-            confirmed: false,
-            submit_at: 100,
-            created_at: 50,
-        };
-        let future = zcash_voting::wire::ShareDelegationRecordView {
-            submit_at: 1_000,
-            ..ready.clone()
-        };
-        let near_future = zcash_voting::wire::ShareDelegationRecordView {
-            submit_at: 115,
-            ..ready.clone()
-        };
+    fn next_share_tracking_delay_reports_nothing_to_track_for_a_fresh_round() {
+        // Delay policy itself is the SDK's; this checks the wrapper opens the
+        // round's sidecar and reports "stop tracking" when no share is pending.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
         assert_eq!(
-            next_share_tracking_delay_seconds(vec![ready.clone()], 130).unwrap(),
-            Some(15)
-        );
-        assert_eq!(
-            next_share_tracking_delay_seconds(vec![future.clone()], 120).unwrap(),
-            Some(890)
-        );
-        assert_eq!(
-            next_share_tracking_delay_seconds(vec![ready.clone(), future], 120).unwrap(),
-            Some(15)
-        );
-        assert_eq!(
-            next_share_tracking_delay_seconds(vec![ready.clone(), near_future], 120).unwrap(),
-            Some(5)
+            next_share_tracking_delay_seconds(
+                db_path.to_str().unwrap().to_string(),
+                TEST_ACCOUNT_UUID.to_string(),
+                ROUND_ID.to_string(),
+                130,
+            )
+            .unwrap(),
+            None
         );
     }
 
@@ -2075,8 +2119,7 @@ mod tests {
         .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
-        db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx-0")
-            .unwrap();
+        fixture_delegation_tx_hash(&db, 0, "delegation-tx-0");
         let conn = db.conn();
         zcash_voting::storage::queries::store_vote(
             &conn,
@@ -2089,8 +2132,7 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        db.mark_vote_submitted(ROUND_ID, 1, 2, "vote-tx-1-2")
-            .unwrap();
+        fixture_vote_tx_hash(&db, 1, 2, "vote-tx-1-2");
         {
             let conn = db.conn();
             conn.execute(
@@ -2121,12 +2163,13 @@ mod tests {
         )
         .unwrap();
 
-        let state = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
+        let state = zcash_voting::wire::RoundRecoveryStateView::from(
+            zcash_voting::recovery::round_snapshot(
+                &db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap(),
+                ROUND_ID,
+            )
+            .unwrap(),
+        );
 
         assert_eq!(state.bundle_count, 2);
         assert_eq!(
@@ -2161,12 +2204,13 @@ mod tests {
                 },
             )
             .unwrap();
-        let confirmed_state = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
+        let confirmed_state = zcash_voting::wire::RoundRecoveryStateView::from(
+            zcash_voting::recovery::round_snapshot(
+                &db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap(),
+                ROUND_ID,
+            )
+            .unwrap(),
+        );
         assert!(confirmed_state.unconfirmed_share_delegations.is_empty());
     }
 
@@ -2343,7 +2387,7 @@ mod tests {
             vec![signature(KEYSTONE_SIG_LEN - 1)],
         )
         .unwrap_err();
-        assert!(err.contains("sig must be exactly"), "{err}");
+        assert!(err.message.contains("sig must be exactly"), "{err}");
     }
 
     #[test]
@@ -2416,9 +2460,12 @@ mod tests {
                 ..signature
             }],
         )
-        .unwrap();
-        assert_eq!(conflict.conflicting_bundle_index, Some(0));
-        assert_eq!(conflict.inserted, 0);
+        .unwrap_err();
+        assert_eq!(
+            conflict.kind,
+            zcash_voting::wire::VotingErrorKindView::KeystoneSignatureConflict
+        );
+        assert_eq!(conflict.bundle_index, Some(0));
         let records = get_keystone_signatures(
             db_path.to_str().unwrap().to_string(),
             TEST_ACCOUNT_UUID.to_string(),
@@ -2455,7 +2502,7 @@ mod tests {
             vec![input(0), input(99)],
         )
         .unwrap_err();
-        assert!(err.contains("bundle 99"));
+        assert!(err.message.contains("bundle 99"));
 
         let records = get_keystone_signatures(
             db_path.to_str().unwrap().to_string(),
@@ -2509,7 +2556,7 @@ mod tests {
             None,
         )
         .unwrap_err();
-        assert!(err.contains("choice must be Some"));
+        assert!(err.message.contains("choice must be Some"));
     }
 
     #[test]
@@ -2549,15 +2596,15 @@ mod tests {
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
-        db.mark_delegation_submitted(ROUND_ID, 0, "delegation-submitted-tx")
-            .unwrap();
+        fixture_delegation_tx_hash(&db, 0, "delegation-submitted-tx");
 
-        let snapshot = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
+        let snapshot = zcash_voting::wire::RoundRecoveryStateView::from(
+            zcash_voting::recovery::round_snapshot(
+                &db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap(),
+                ROUND_ID,
+            )
+            .unwrap(),
+        );
         assert_eq!(snapshot.delegation.len(), 1);
         assert_eq!(
             snapshot.delegation[0].tx_hash.as_deref(),
@@ -2576,7 +2623,7 @@ mod tests {
             )))
             .unwrap_err();
 
-        assert!(err.contains("Unknown network"));
+        assert!(err.message.contains("Unknown network"));
     }
 
     #[test]
@@ -2591,7 +2638,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Unknown network"));
+        assert!(err.message.contains("Unknown network"));
     }
 
     #[test]
@@ -2606,7 +2653,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("must not contain an empty URL"), "{err}");
+        assert!(err.message.contains("must not contain an empty URL"), "{err}");
     }
 
     #[test]
@@ -2623,7 +2670,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Unknown network"));
+        assert!(err.message.contains("Unknown network"));
     }
 
     #[test]
@@ -2640,7 +2687,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Voting hotkey reconstruction failed"));
+        assert!(err.message.contains("Voting hotkey reconstruction failed"));
     }
 
     #[test]
@@ -2656,7 +2703,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Unknown network"));
+        assert!(err.message.contains("Unknown network"));
     }
 
     #[test]
@@ -2672,7 +2719,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Voting hotkey reconstruction failed"));
+        assert!(err.message.contains("Voting hotkey reconstruction failed"));
     }
 
     #[test]
@@ -2688,7 +2735,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("must not be empty"));
+        assert!(err.message.contains("must not be empty"));
     }
 
     #[test]
@@ -2704,7 +2751,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("must be unique"));
+        assert!(err.message.contains("must be unique"));
     }
 
     #[test]
@@ -3042,7 +3089,6 @@ mod tests {
                 ],
             )
             .unwrap();
-        db.store_van_position(round_id, bundle_index, position)
-            .unwrap();
+        fixture_van_position(db, round_id, bundle_index, position);
     }
 }

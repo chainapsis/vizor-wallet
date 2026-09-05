@@ -1129,10 +1129,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   void _pinLiveShareTracking(VotingSessionKey key) {
     final hasUnconfirmedShares =
-        _sessionForJob(
-          key,
-        )?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ??
-        false;
+        _sessionForJob(key)?.roundPlan?.hasUnconfirmedShares ?? false;
     if (!hasUnconfirmedShares) return;
     final sessionNotifier = ref.read(
       votingSubmissionSessionProvider(key).notifier,
@@ -1278,15 +1275,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (session == null) return false;
     return session.hasConfirmedVotingEligibility &&
         _hasCompletedSubmissionArtifacts(session) &&
-        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan);
+        hasConfirmedImmediateShare(session.roundPlan);
   }
 
   bool _hasExpiredUnconfirmedImmediateShare(
     VotingSessionState? session, {
     DateTime? now,
   }) {
-    if (session == null ||
-        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan)) {
+    if (session == null || hasConfirmedImmediateShare(session.roundPlan)) {
       return false;
     }
     final voteEnd = session.round?.voteEndTime;
@@ -1343,8 +1339,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     bool requireNoUnconfirmedShares = false,
   }) {
     if (requireNoUnconfirmedShares &&
-        (session?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ??
-            false)) {
+        (session?.roundPlan?.hasUnconfirmedShares ?? false)) {
       return false;
     }
     if (!_canCompleteSubmission(session)) return false;
@@ -1415,15 +1410,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _canRecoverWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      return _roundPlanHasNoOpenProposals(session) &&
-          roundPlan.hasRecoverableVoteOrShareWork;
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
-            resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
-            resumePlan.unconfirmedShareDelegations.isNotEmpty);
+    return roundPlan != null &&
+        _roundPlanHasNoOpenProposals(session) &&
+        roundPlan.hasRecoverableVoteOrShareWork;
   }
 
   bool _roundPlanHasNoOpenProposals(VotingSessionState session) {
@@ -1432,27 +1421,18 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   bool _hasRemainingVoteOrShareWork(VotingSessionState session) {
-    final roundPlan = session.roundPlan;
-    if (roundPlan != null && roundPlan.hasRemainingVoteOrShareWork) {
-      return true;
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
-            resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
-            resumePlan.hasBlockingShareWork);
+    return session.roundPlan?.hasRemainingVoteOrShareWork ?? false;
   }
 
+  /// Whether delegation work can continue without ballot choices.
+  ///
+  /// A delegation already on the wire is driven to its chain outcome
+  /// regardless of the draft. A delegation that has not been sent yet is not:
+  /// the round's ballot comes first. The SDK marks an in-flight delegation as
+  /// needing signing material too, because advancing it re-signs, so this
+  /// reads only the in-flight flag.
   bool _canPollDelegationWithoutDraft(VotingSessionState session) {
-    final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      if (roundPlan.needsDelegationSigning) return false;
-      if (roundPlan.hasInFlightDelegation) return true;
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        resumePlan.submittedDelegationBundleIndexes.isNotEmpty &&
-        resumePlan.pendingDelegationBundleIndexes.isEmpty;
+    return session.roundPlan?.hasInFlightDelegation ?? false;
   }
 
   bool _sessionNeedsDelegation(VotingSessionState? session) {
@@ -1460,11 +1440,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     final roundPlan = session.roundPlan;
     if (_planNeedsDelegation(roundPlan)) return true;
     if (roundPlan != null && roundPlanNeedsDraftSetup(roundPlan)) return true;
-    if (roundPlan != null) {
-      return _canPollDelegationWithoutDraft(session);
-    }
-    return session.resumePlan?.submittedDelegationBundleIndexes.isNotEmpty ??
-        false;
+    return roundPlan != null && _canPollDelegationWithoutDraft(session);
   }
 
   bool _sessionNeedsDelegationSubmission(VotingSessionState? session) {
@@ -1477,20 +1453,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _sessionNeedsDelegationSigning(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      return roundPlan.needsDelegationSigning ||
-          roundPlanNeedsDraftSetup(roundPlan);
-    }
-    return session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
-        false;
+    return roundPlan != null &&
+        (roundPlan.needsDelegationSigning ||
+            roundPlanNeedsDraftSetup(roundPlan));
   }
 
   bool _sessionNeedsVotePolling(VotingSessionState? session) {
     if (session == null) return false;
-    if (_planNeedsVotePolling(session.roundPlan)) return true;
-    if (session.roundPlan != null) return false;
-    return session.resumePlan?.submittedVoteConfirmationKeys.isNotEmpty ??
-        false;
+    return _planNeedsVotePolling(session.roundPlan);
   }
 
   bool _planNeedsDelegation(rust_wire.RoundPlanView? roundPlan) {

@@ -8,7 +8,7 @@
 
 use std::{path::Path, sync::Arc};
 
-use zcash_voting::storage::VotingDb;
+use zcash_voting::{storage::VotingDb, VotingError};
 
 /// Opens the account-scoped voting sidecar next to the wallet database.
 ///
@@ -17,10 +17,10 @@ use zcash_voting::storage::VotingDb;
 ///
 /// # Errors
 ///
-/// Returns an error if the sidecar cannot be opened or migrated.
-pub fn open_voting_db(db_path: &str, account_uuid: &str) -> Result<Arc<VotingDb>, String> {
+/// Returns the SDK's typed error (`DbBusy`, `Storage`, ...) unchanged when the
+/// sidecar cannot be opened or migrated, so callers keep its kind.
+pub fn open_voting_db(db_path: &str, account_uuid: &str) -> Result<Arc<VotingDb>, VotingError> {
     VotingDb::open_wallet_sidecar(Path::new(db_path), account_uuid)
-        .map_err(|error| format!("Error opening voting database: {error}"))
 }
 
 #[cfg(test)]

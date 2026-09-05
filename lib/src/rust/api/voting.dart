@@ -10,7 +10,7 @@ import '../third_party/zcash_voting/share_policy.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `round_inputs`, `routed_transport`, `share_record`, `share_tracking_pass_for`
+// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `internal`, `invalid_input`, `is_cancelled`, `round_inputs`, `routed_transport`, `share_tracking_pass_for`, `view`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
@@ -158,18 +158,20 @@ Future<bool> confirmShareWithHelpers({
   nowSeconds: nowSeconds,
 );
 
-/// Return the next share-tracking delay in seconds using crate policy.
+/// Seconds until this round's next helper-share tracking pass should run.
 ///
-/// Vizor wakes the tracker when the next share reaches its status-check grace
-/// boundary. The SDK's default policy caps future waits for wallets that also
-/// use the tracking pass as a general heartbeat; Vizor refreshes round state
-/// separately with a lightweight heartbeat and whenever the voting UI becomes
-/// visible, so that cap would only cause redundant SQLite and helper passes.
+/// `None` means the round has no unconfirmed shares left, which is also the
+/// signal to stop background tracking. The SDK reads the durable share rows
+/// itself, so they never cross this boundary.
 Future<BigInt?> nextShareTrackingDelaySeconds({
-  required List<ShareDelegationRecordView> shares,
+  required String dbPath,
+  required String accountUuid,
+  required String roundId,
   required BigInt nowSeconds,
 }) => RustLib.instance.api.crateApiVotingNextShareTrackingDelaySeconds(
-  shares: shares,
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
   nowSeconds: nowSeconds,
 );
 
@@ -295,8 +297,9 @@ Future<List<KeystoneSigningRequest>> buildKeystoneDelegationRequests({
 ///
 /// Existing tuples for the same sighash and randomized key are accepted as
 /// idempotent retries, even when randomized signing produced different valid
-/// signature bytes. A tuple for a different signing context is a conflict, and
-/// any validation or database error rolls back the complete batch.
+/// signature bytes. A tuple for a different signing context is a
+/// `KeystoneSignatureConflict` error, and any validation or database error
+/// rolls back the complete batch.
 Future<ApiKeystoneSignatureBatchResult> storeKeystoneSignaturesBatch({
   required String dbPath,
   required String accountUuid,
@@ -427,17 +430,6 @@ Future<List<ApiPendingShareRound>> listPendingShareRounds({
 }) => RustLib.instance.api.crateApiVotingListPendingShareRounds(
   dbPath: dbPath,
   accountUuids: accountUuids,
-);
-
-/// Load the full recovery/share-tracking summary for one voting round.
-Future<RoundRecoveryStateView> getRoundRecoveryState({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-}) => RustLib.instance.api.crateApiVotingGetRoundRecoveryState(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
 );
 
 /// Compute the resumable voting-session plan for a round. The plan reports the
@@ -625,22 +617,20 @@ class ApiDynamicConfigMirrorFailure {
 }
 
 /// Outcome of an idempotent Keystone signature batch write.
+///
+/// A tuple for a different signing context fails the whole batch with
+/// `VotingError::KeystoneSignatureConflict`, which names the bundle.
 class ApiKeystoneSignatureBatchResult {
   final int inserted;
   final int alreadyPresent;
-  final int? conflictingBundleIndex;
 
   const ApiKeystoneSignatureBatchResult({
     required this.inserted,
     required this.alreadyPresent,
-    this.conflictingBundleIndex,
   });
 
   @override
-  int get hashCode =>
-      inserted.hashCode ^
-      alreadyPresent.hashCode ^
-      conflictingBundleIndex.hashCode;
+  int get hashCode => inserted.hashCode ^ alreadyPresent.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -648,8 +638,7 @@ class ApiKeystoneSignatureBatchResult {
       other is ApiKeystoneSignatureBatchResult &&
           runtimeType == other.runtimeType &&
           inserted == other.inserted &&
-          alreadyPresent == other.alreadyPresent &&
-          conflictingBundleIndex == other.conflictingBundleIndex;
+          alreadyPresent == other.alreadyPresent;
 }
 
 /// One Keystone delegation signature tuple to persist atomically.

@@ -79,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 1540663893;
+  int get rustContentHash => -98097519;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -631,12 +631,6 @@ abstract class RustLibApi extends BaseApi {
     required List<int> proposalIds,
   });
 
-  Future<RoundRecoveryStateView> crateApiVotingGetRoundRecoveryState({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  });
-
   Future<ShieldTransparentStatus> crateApiSyncGetShieldTransparentStatus({
     required String dbPath,
     required String network,
@@ -810,7 +804,9 @@ abstract class RustLibApi extends BaseApi {
   List<String> crateApiWalletMnemonicWordList();
 
   Future<BigInt?> crateApiVotingNextShareTrackingDelaySeconds({
-    required List<ShareDelegationRecordView> shares,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required BigInt nowSeconds,
   });
 
@@ -1942,7 +1938,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_keystone_signing_request,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingBuildKeystoneDelegationRequestsConstMeta,
         argValues: [ctx, storedHotkeySecret, bundleIndices],
@@ -1997,7 +1993,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_voting_eligibility,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingCheckVotingEligibilityConstMeta,
         argValues: [ctx],
@@ -2421,7 +2417,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingConfirmShareWithHelpersConstMeta,
         argValues: [
@@ -3118,7 +3114,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingDeleteSkippedBundlesConstMeta,
         argValues: [dbPath, accountUuid, roundId, keepCount],
@@ -3153,7 +3149,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingDeleteVotingAccountStateConstMeta,
         argValues: [dbPath, accountUuid],
@@ -4053,7 +4049,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingGenerateVotingHotkeyConstMeta,
         argValues: [network],
@@ -4401,7 +4397,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_keystone_signature_record,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingGetKeystoneSignaturesConstMeta,
         argValues: [dbPath, accountUuid, roundId],
@@ -4844,7 +4840,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_round_plan_view,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingGetRoundPlanConstMeta,
         argValues: [dbPath, accountUuid, roundId, proposalIds],
@@ -4857,43 +4853,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     debugName: "get_round_plan",
     argNames: ["dbPath", "accountUuid", "roundId", "proposalIds"],
   );
-
-  @override
-  Future<RoundRecoveryStateView> crateApiVotingGetRoundRecoveryState({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(dbPath, serializer);
-          sse_encode_String(accountUuid, serializer);
-          sse_encode_String(roundId, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 91,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_round_recovery_state_view,
-          decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiVotingGetRoundRecoveryStateConstMeta,
-        argValues: [dbPath, accountUuid, roundId],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiVotingGetRoundRecoveryStateConstMeta =>
-      const TaskConstMeta(
-        debugName: "get_round_recovery_state",
-        argNames: ["dbPath", "accountUuid", "roundId"],
-      );
 
   @override
   Future<ShieldTransparentStatus> crateApiSyncGetShieldTransparentStatus({
@@ -4911,7 +4870,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 92,
+            funcId: 91,
             port: port_,
           );
         },
@@ -4938,7 +4897,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 93)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 92)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_8,
@@ -4968,7 +4927,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 94,
+            funcId: 93,
             port: port_,
           );
         },
@@ -5002,7 +4961,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 95,
+            funcId: 94,
             port: port_,
           );
         },
@@ -5043,7 +5002,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 96,
+            funcId: 95,
             port: port_,
           );
         },
@@ -5082,7 +5041,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 97,
+            funcId: 96,
             port: port_,
           );
         },
@@ -5119,7 +5078,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 98,
+            funcId: 97,
             port: port_,
           );
         },
@@ -5156,7 +5115,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 99,
+            funcId: 98,
             port: port_,
           );
         },
@@ -5184,11 +5143,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 100,
-          )!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 99)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -5228,7 +5183,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 101,
+            funcId: 100,
             port: port_,
           );
         },
@@ -5292,7 +5247,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 102,
+            funcId: 101,
             port: port_,
           );
         },
@@ -5360,7 +5315,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 103,
+            funcId: 102,
             port: port_,
           );
         },
@@ -5426,7 +5381,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 104,
+            funcId: 103,
             port: port_,
           );
         },
@@ -5469,7 +5424,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 105,
+            funcId: 104,
             port: port_,
           );
         },
@@ -5503,7 +5458,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 106,
+            funcId: 105,
           )!;
         },
         codec: SseCodec(
@@ -5531,7 +5486,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 107,
+            funcId: 106,
           )!;
         },
         codec: SseCodec(
@@ -5571,7 +5526,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 108,
+            funcId: 107,
             port: port_,
           );
         },
@@ -5614,7 +5569,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 109,
+            funcId: 108,
           )!;
         },
         codec: SseCodec(
@@ -5640,7 +5595,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 110,
+            funcId: 109,
           )!;
         },
         codec: SseCodec(
@@ -5666,7 +5621,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 111,
+            funcId: 110,
           )!;
         },
         codec: SseCodec(
@@ -5694,7 +5649,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 112,
+            funcId: 111,
             port: port_,
           );
         },
@@ -5729,7 +5684,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 113,
+            funcId: 112,
           )!;
         },
         codec: SseCodec(
@@ -5763,7 +5718,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 114,
+            funcId: 113,
             port: port_,
           );
         },
@@ -5797,13 +5752,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 115,
+            funcId: 114,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_api_pending_share_round,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingListPendingShareRoundsConstMeta,
         argValues: [dbPath, accountUuids],
@@ -5849,7 +5804,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 116,
+            funcId: 115,
             port: port_,
           );
         },
@@ -5919,7 +5874,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 117,
+            funcId: 116,
             port: port_,
           );
         },
@@ -5990,7 +5945,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 118,
+            funcId: 117,
             port: port_,
           );
         },
@@ -6040,7 +5995,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 119,
+            funcId: 118,
           )!;
         },
         codec: SseCodec(
@@ -6059,28 +6014,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<BigInt?> crateApiVotingNextShareTrackingDelaySeconds({
-    required List<ShareDelegationRecordView> shares,
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
     required BigInt nowSeconds,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_list_share_delegation_record_view(shares, serializer);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(roundId, serializer);
           sse_encode_u_64(nowSeconds, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 120,
+            funcId: 119,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_u_64,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingNextShareTrackingDelaySecondsConstMeta,
-        argValues: [shares, nowSeconds],
+        argValues: [dbPath, accountUuid, roundId, nowSeconds],
         apiImpl: this,
       ),
     );
@@ -6089,7 +6048,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiVotingNextShareTrackingDelaySecondsConstMeta =>
       const TaskConstMeta(
         debugName: "next_share_tracking_delay_seconds",
-        argNames: ["shares", "nowSeconds"],
+        argNames: ["dbPath", "accountUuid", "roundId", "nowSeconds"],
       );
 
   @override
@@ -6114,7 +6073,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 121,
+            funcId: 120,
           )!;
         },
         codec: SseCodec(
@@ -6161,7 +6120,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 122,
+            funcId: 121,
             port: port_,
           );
         },
@@ -6200,13 +6159,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 123,
+            funcId: 122,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingPrecomputeDelegationProofConstMeta,
         argValues: [ctx, pirServerUrls, storedHotkeySecret, bundleIndex],
@@ -6236,13 +6195,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 124,
+            funcId: 123,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_snapshot_bundle_precompute_result,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingPrecomputeSnapshotBundlesConstMeta,
         argValues: [ctx, pirServerUrl],
@@ -6274,7 +6233,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 125,
+            funcId: 124,
             port: port_,
           );
         },
@@ -6319,7 +6278,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 126,
+            funcId: 125,
             port: port_,
           );
         },
@@ -6379,7 +6338,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 127,
+            funcId: 126,
             port: port_,
           );
         },
@@ -6439,7 +6398,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 128,
+            funcId: 127,
             port: port_,
           );
         },
@@ -6498,7 +6457,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 129,
+            funcId: 128,
             port: port_,
           );
         },
@@ -6543,7 +6502,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 130,
+            funcId: 129,
             port: port_,
           );
         },
@@ -6584,7 +6543,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 131,
+            funcId: 130,
             port: port_,
           );
         },
@@ -6643,7 +6602,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 132,
+            funcId: 131,
             port: port_,
           );
         },
@@ -6705,7 +6664,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 133,
+            funcId: 132,
             port: port_,
           );
         },
@@ -6753,7 +6712,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 134,
+            funcId: 133,
             port: port_,
           );
         },
@@ -6812,7 +6771,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 135,
+            funcId: 134,
             port: port_,
           );
         },
@@ -6868,7 +6827,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 136,
+            funcId: 135,
             port: port_,
           );
         },
@@ -6898,7 +6857,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 137,
+            funcId: 136,
           )!;
         },
         codec: SseCodec(
@@ -6931,13 +6890,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 138,
+            funcId: 137,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingResetVoteTreeConstMeta,
         argValues: [dbPath, accountUuid, roundId],
@@ -6968,13 +6927,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 139,
+            funcId: 138,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingResetVotingSessionStateConstMeta,
         argValues: [dbPath, accountUuid, roundId],
@@ -7003,13 +6962,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 140,
+            funcId: 139,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingResolveStaticVotingConfigConstMeta,
         argValues: [source, staticBytes],
@@ -7045,13 +7004,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 141,
+            funcId: 140,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_voting_config_resolution,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingResolveVotingConfigFromAttemptsConstMeta,
         argValues: [source, staticBytes, attempts, previous],
@@ -7080,7 +7039,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 142,
+            funcId: 141,
             port: port_,
           );
         },
@@ -7121,7 +7080,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 143,
+            funcId: 142,
             port: port_,
           );
         },
@@ -7170,7 +7129,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 144,
+            funcId: 143,
             port: port_,
           );
         },
@@ -7208,7 +7167,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 145,
+            funcId: 144,
             port: port_,
           );
         },
@@ -7263,7 +7222,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 146,
+            funcId: 145,
             port: port_,
           );
         },
@@ -7328,12 +7287,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 147,
+            funcId: 146,
           )!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingSelectPirSnapshotEndpointConstMeta,
         argValues: [diagnostics, expectedSnapshotHeight, matchIndex],
@@ -7358,7 +7317,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 148,
+            funcId: 147,
           )!;
         },
         codec: SseCodec(
@@ -7402,13 +7361,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 149,
+            funcId: 148,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingSetBallotIntentConstMeta,
         argValues: [
@@ -7449,7 +7408,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 150,
+            funcId: 149,
           )!;
         },
         codec: SseCodec(
@@ -7479,7 +7438,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 151,
+            funcId: 150,
           )!;
         },
         codec: SseCodec(
@@ -7514,7 +7473,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 152,
+            funcId: 151,
             port: port_,
           );
         },
@@ -7547,13 +7506,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 153,
+            funcId: 152,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_bundle_layout,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingSetupDelegationBundlesConstMeta,
         argValues: [ctx],
@@ -7588,7 +7547,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 154,
+            funcId: 153,
             port: port_,
           );
         },
@@ -7642,7 +7601,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 155,
+            funcId: 154,
             port: port_,
           );
         },
@@ -7692,7 +7651,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 156,
+              funcId: 155,
               port: port_,
             );
           },
@@ -7733,7 +7692,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 157,
+              funcId: 156,
               port: port_,
             );
           },
@@ -7765,7 +7724,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 158,
+            funcId: 157,
             port: port_,
           );
         },
@@ -7792,7 +7751,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 159,
+            funcId: 158,
           )!;
         },
         codec: SseCodec(
@@ -7818,7 +7777,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 160,
+            funcId: 159,
             port: port_,
           );
         },
@@ -7865,7 +7824,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 161,
+            funcId: 160,
             port: port_,
           );
         },
@@ -7938,7 +7897,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 162,
+            funcId: 161,
             port: port_,
           );
         },
@@ -8000,13 +7959,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 163,
+            funcId: 162,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_keystone_signature_batch_result,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingStoreKeystoneSignaturesBatchConstMeta,
         argValues: [dbPath, accountUuid, roundId, signatures],
@@ -8035,7 +7994,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 164,
+            funcId: 163,
             port: port_,
           );
         },
@@ -8074,13 +8033,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 165,
+            funcId: 164,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingSyncVoteTreeConstMeta,
         argValues: [dbPath, accountUuid, roundId, nodeUrl],
@@ -8103,7 +8062,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 166,
+            funcId: 165,
           )!;
         },
         codec: SseCodec(
@@ -8130,7 +8089,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 167,
+            funcId: 166,
           )!;
         },
         codec: SseCodec(
@@ -8166,7 +8125,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 168,
+            funcId: 167,
             port: port_,
           );
         },
@@ -8205,7 +8164,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 169,
+            funcId: 168,
             port: port_,
           );
         },
@@ -8246,7 +8205,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 170,
+            funcId: 169,
             port: port_,
           );
         },
@@ -8294,13 +8253,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 171,
+            funcId: 170,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_share_tracking_report,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingTrackPendingSharesConstMeta,
         argValues: [
@@ -8348,13 +8307,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 172,
+            funcId: 171,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_voting_round_params,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingTrustedVotingRoundParamsFromConfigConstMeta,
         argValues: [
@@ -8398,7 +8357,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 173,
+            funcId: 172,
             port: port_,
           );
         },
@@ -8430,7 +8389,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 174,
+            funcId: 173,
             port: port_,
           );
         },
@@ -8458,7 +8417,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 175,
+            funcId: 174,
           )!;
         },
         codec: SseCodec(
@@ -8488,7 +8447,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 176,
+            funcId: 175,
           )!;
         },
         codec: SseCodec(
@@ -8514,7 +8473,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 177,
+            funcId: 176,
           )!;
         },
         codec: SseCodec(
@@ -8560,13 +8519,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 178,
+            funcId: 177,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_api_pir_cache_warmup_result,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_voting_error_view,
         ),
         constMeta: kCrateApiVotingWarmPirProofCacheConstMeta,
         argValues: [
@@ -8608,7 +8567,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 179,
+            funcId: 178,
           )!;
         },
         codec: SseCodec(
@@ -8642,7 +8601,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 180,
+            funcId: 179,
             port: port_,
           );
         },
@@ -8679,7 +8638,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 181,
+            funcId: 180,
             port: port_,
           );
         },
@@ -8984,12 +8943,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   dco_decode_api_keystone_signature_batch_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return ApiKeystoneSignatureBatchResult(
       inserted: dco_decode_u_32(arr[0]),
       alreadyPresent: dco_decode_u_32(arr[1]),
-      conflictingBundleIndex: dco_decode_opt_box_autoadd_u_32(arr[2]),
     );
   }
 
@@ -9468,6 +9426,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView dco_decode_box_autoadd_submission_diagnostic_view(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_submission_diagnostic_view(raw);
+  }
+
+  @protected
   int dco_decode_box_autoadd_u_16(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -9666,20 +9632,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  DelegationRecoveryView dco_decode_delegation_recovery_view(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
-    return DelegationRecoveryView(
-      bundleIndex: dco_decode_u_32(arr[0]),
-      phase: dco_decode_workflow_phase_view(arr[1]),
-      txHash: dco_decode_opt_String(arr[2]),
-      vanLeafPosition: dco_decode_opt_box_autoadd_u_64(arr[3]),
-    );
-  }
-
-  @protected
   DelegationRecoveryWorkKindView dco_decode_delegation_recovery_work_kind_view(
     dynamic raw,
   ) {
@@ -9707,12 +9659,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   DelegationStatusView dco_decode_delegation_status_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return DelegationStatusView(
       bundleIndex: dco_decode_u_32(arr[0]),
       phase: dco_decode_workflow_phase_view(arr[1]),
       txHash: dco_decode_opt_String(arr[2]),
+      submissionDiagnostic:
+          dco_decode_opt_box_autoadd_submission_diagnostic_view(arr[3]),
     );
   }
 
@@ -10112,16 +10066,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<DelegationRecoveryView> dco_decode_list_delegation_recovery_view(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>)
-        .map(dco_decode_delegation_recovery_view)
-        .toList();
-  }
-
-  @protected
   List<DelegationRecoveryWorkView>
   dco_decode_list_delegation_recovery_work_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -10320,15 +10264,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<RecoverableCommitmentBundle>
-  dco_decode_list_recoverable_commitment_bundle(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>)
-        .map(dco_decode_recoverable_commitment_bundle)
-        .toList();
-  }
-
-  @protected
   List<ScanRangeInfo> dco_decode_list_scan_range_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_scan_range_info).toList();
@@ -10350,32 +10285,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<ShareDelegationRecordView> dco_decode_list_share_delegation_record_view(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>)
-        .map(dco_decode_share_delegation_record_view)
-        .toList();
-  }
-
-  @protected
   List<ShareDeliveryOutcomeView> dco_decode_list_share_delivery_outcome_view(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>)
         .map(dco_decode_share_delivery_outcome_view)
-        .toList();
-  }
-
-  @protected
-  List<ShareWorkflowRecoveryView> dco_decode_list_share_workflow_recovery_view(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>)
-        .map(dco_decode_share_workflow_recovery_view)
         .toList();
   }
 
@@ -10429,12 +10344,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<VoteKeyView> dco_decode_list_vote_key_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_vote_key_view).toList();
-  }
-
-  @protected
-  List<VoteRecoveryView> dco_decode_list_vote_recovery_view(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_vote_recovery_view).toList();
   }
 
   @protected
@@ -10940,6 +10849,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView?
+  dco_decode_opt_box_autoadd_submission_diagnostic_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_submission_diagnostic_view(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_16(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_16(raw);
@@ -11060,22 +10978,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RecoverableCommitmentBundle dco_decode_recoverable_commitment_bundle(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
-    return RecoverableCommitmentBundle(
-      bundleIndex: dco_decode_u_32(arr[0]),
-      proposalId: dco_decode_u_32(arr[1]),
-      commitmentBundleJson: dco_decode_String(arr[2]),
-      vcTreePosition: dco_decode_u_64(arr[3]),
-    );
-  }
-
-  @protected
   ResolvedVotingConfig dco_decode_resolved_voting_config(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -11105,57 +11007,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RoundPlanView dco_decode_round_plan_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 23)
-      throw Exception('unexpected arr length: expect 23 but see ${arr.length}');
+    if (arr.length != 24)
+      throw Exception('unexpected arr length: expect 24 but see ${arr.length}');
     return RoundPlanView(
       roundId: dco_decode_String(arr[0]),
       pendingRecovery: dco_decode_bool(arr[1]),
       blockingRecovery: dco_decode_bool(arr[2]),
       blockingShareWork: dco_decode_bool(arr[3]),
-      hotkeyBound: dco_decode_bool(arr[4]),
-      completedVoteArtifact: dco_decode_bool(arr[5]),
-      completedForDisplay: dco_decode_bool(arr[6]),
+      hasUnconfirmedShares: dco_decode_bool(arr[4]),
+      hotkeyBound: dco_decode_bool(arr[5]),
+      completedVoteArtifact: dco_decode_bool(arr[6]),
+      completedForDisplay: dco_decode_bool(arr[7]),
       completedVoteDisplay:
-          dco_decode_opt_box_autoadd_completed_vote_display_view(arr[7]),
-      needsDraftSetup: dco_decode_bool(arr[8]),
-      needsDelegationSigning: dco_decode_bool(arr[9]),
-      hasInFlightDelegation: dco_decode_bool(arr[10]),
-      needsVotePolling: dco_decode_bool(arr[11]),
-      hasRemainingVoteOrShareWork: dco_decode_bool(arr[12]),
-      hasRecoverableVoteOrShareWork: dco_decode_bool(arr[13]),
-      primaryAction: dco_decode_round_plan_action_kind(arr[14]),
-      nextSteps: dco_decode_list_next_step_view(arr[15]),
-      delegationStatuses: dco_decode_list_delegation_status_view(arr[16]),
+          dco_decode_opt_box_autoadd_completed_vote_display_view(arr[8]),
+      needsDraftSetup: dco_decode_bool(arr[9]),
+      needsDelegationSigning: dco_decode_bool(arr[10]),
+      hasInFlightDelegation: dco_decode_bool(arr[11]),
+      needsVotePolling: dco_decode_bool(arr[12]),
+      hasRemainingVoteOrShareWork: dco_decode_bool(arr[13]),
+      hasRecoverableVoteOrShareWork: dco_decode_bool(arr[14]),
+      primaryAction: dco_decode_round_plan_action_kind(arr[15]),
+      nextSteps: dco_decode_list_next_step_view(arr[16]),
+      delegationStatuses: dco_decode_list_delegation_status_view(arr[17]),
       recoveredDelegationWork: dco_decode_list_delegation_recovery_work_view(
-        arr[17],
+        arr[18],
       ),
-      recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[18]),
-      openProposals: dco_decode_list_prim_u_32_strict(arr[19]),
+      recoveredVoteWork: dco_decode_list_vote_recovery_work_view(arr[19]),
+      openProposals: dco_decode_list_prim_u_32_strict(arr[20]),
       immediateShareKey: dco_decode_opt_box_autoadd_immediate_share_key(
-        arr[20],
+        arr[21],
       ),
-      immediateShareConfirmed: dco_decode_bool(arr[21]),
-      allDecided: dco_decode_bool(arr[22]),
-    );
-  }
-
-  @protected
-  RoundRecoveryStateView dco_decode_round_recovery_state_view(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
-    return RoundRecoveryStateView(
-      roundId: dco_decode_String(arr[0]),
-      bundleCount: dco_decode_u_32(arr[1]),
-      delegation: dco_decode_list_delegation_recovery_view(arr[2]),
-      votes: dco_decode_list_vote_recovery_view(arr[3]),
-      commitmentBundles: dco_decode_list_recoverable_commitment_bundle(arr[4]),
-      shares: dco_decode_list_share_workflow_recovery_view(arr[5]),
-      shareDelegations: dco_decode_list_share_delegation_record_view(arr[6]),
-      unconfirmedShareDelegations: dco_decode_list_share_delegation_record_view(
-        arr[7],
-      ),
+      immediateShareConfirmed: dco_decode_bool(arr[22]),
+      allDecided: dco_decode_bool(arr[23]),
     );
   }
 
@@ -11315,30 +11198,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ShareDelegationRecordView dco_decode_share_delegation_record_view(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
-    return ShareDelegationRecordView(
-      roundId: dco_decode_String(arr[0]),
-      bundleIndex: dco_decode_u_32(arr[1]),
-      proposalId: dco_decode_u_32(arr[2]),
-      shareIndex: dco_decode_u_32(arr[3]),
-      sentToUrls: dco_decode_list_String(arr[4]),
-      ambiguousUrls: dco_decode_list_String(arr[5]),
-      targetCount: dco_decode_u_32(arr[6]),
-      nullifier: dco_decode_list_prim_u_8_strict(arr[7]),
-      phase: dco_decode_workflow_phase_view(arr[8]),
-      confirmed: dco_decode_bool(arr[9]),
-      submitAt: dco_decode_u_64(arr[10]),
-      createdAt: dco_decode_u_64(arr[11]),
-    );
-  }
-
-  @protected
   ShareDeliveryOutcomeView dco_decode_share_delivery_outcome_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -11362,22 +11221,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       bundleIndex: dco_decode_u_32(arr[0]),
       proposalId: dco_decode_u_32(arr[1]),
       shareIndex: dco_decode_u_32(arr[2]),
-    );
-  }
-
-  @protected
-  ShareWorkflowRecoveryView dco_decode_share_workflow_recovery_view(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
-    return ShareWorkflowRecoveryView(
-      bundleIndex: dco_decode_u_32(arr[0]),
-      proposalId: dco_decode_u_32(arr[1]),
-      shareIndex: dco_decode_u_32(arr[2]),
-      phase: dco_decode_workflow_phase_view(arr[3]),
     );
   }
 
@@ -11519,6 +11362,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       broadcastedCount: dco_decode_u_32(arr[2]),
       totalCount: dco_decode_u_32(arr[3]),
       message: dco_decode_opt_String(arr[4]),
+    );
+  }
+
+  @protected
+  SubmissionDiagnosticView dco_decode_submission_diagnostic_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return SubmissionDiagnosticView(
+      kind: dco_decode_String(arr[0]),
+      message: dco_decode_String(arr[1]),
     );
   }
 
@@ -11718,23 +11573,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return VoteKeyView(
       bundleIndex: dco_decode_u_32(arr[0]),
       proposalId: dco_decode_u_32(arr[1]),
-    );
-  }
-
-  @protected
-  VoteRecoveryView dco_decode_vote_recovery_view(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
-    return VoteRecoveryView(
-      bundleIndex: dco_decode_u_32(arr[0]),
-      proposalId: dco_decode_u_32(arr[1]),
-      choice: dco_decode_u_32(arr[2]),
-      phase: dco_decode_workflow_phase_view(arr[3]),
-      txHash: dco_decode_opt_String(arr[4]),
-      vcTreePosition: dco_decode_opt_box_autoadd_u_64(arr[5]),
-      hasCommitmentBundle: dco_decode_bool(arr[6]),
     );
   }
 
@@ -12218,13 +12056,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_inserted = sse_decode_u_32(deserializer);
     var var_alreadyPresent = sse_decode_u_32(deserializer);
-    var var_conflictingBundleIndex = sse_decode_opt_box_autoadd_u_32(
-      deserializer,
-    );
     return ApiKeystoneSignatureBatchResult(
       inserted: var_inserted,
       alreadyPresent: var_alreadyPresent,
-      conflictingBundleIndex: var_conflictingBundleIndex,
     );
   }
 
@@ -12794,6 +12628,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView sse_decode_box_autoadd_submission_diagnostic_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_submission_diagnostic_view(deserializer));
+  }
+
+  @protected
   int sse_decode_box_autoadd_u_16(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_16(deserializer));
@@ -13031,23 +12873,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  DelegationRecoveryView sse_decode_delegation_recovery_view(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_bundleIndex = sse_decode_u_32(deserializer);
-    var var_phase = sse_decode_workflow_phase_view(deserializer);
-    var var_txHash = sse_decode_opt_String(deserializer);
-    var var_vanLeafPosition = sse_decode_opt_box_autoadd_u_64(deserializer);
-    return DelegationRecoveryView(
-      bundleIndex: var_bundleIndex,
-      phase: var_phase,
-      txHash: var_txHash,
-      vanLeafPosition: var_vanLeafPosition,
-    );
-  }
-
-  @protected
   DelegationRecoveryWorkKindView sse_decode_delegation_recovery_work_kind_view(
     SseDeserializer deserializer,
   ) {
@@ -13081,10 +12906,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_bundleIndex = sse_decode_u_32(deserializer);
     var var_phase = sse_decode_workflow_phase_view(deserializer);
     var var_txHash = sse_decode_opt_String(deserializer);
+    var var_submissionDiagnostic =
+        sse_decode_opt_box_autoadd_submission_diagnostic_view(deserializer);
     return DelegationStatusView(
       bundleIndex: var_bundleIndex,
       phase: var_phase,
       txHash: var_txHash,
+      submissionDiagnostic: var_submissionDiagnostic,
     );
   }
 
@@ -13617,20 +13445,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<DelegationRecoveryView> sse_decode_list_delegation_recovery_view(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <DelegationRecoveryView>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_delegation_recovery_view(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
   List<DelegationRecoveryWorkView>
   sse_decode_list_delegation_recovery_work_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -13950,19 +13764,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<RecoverableCommitmentBundle>
-  sse_decode_list_recoverable_commitment_bundle(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <RecoverableCommitmentBundle>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_recoverable_commitment_bundle(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
   List<ScanRangeInfo> sse_decode_list_scan_range_info(
     SseDeserializer deserializer,
   ) {
@@ -14006,20 +13807,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<ShareDelegationRecordView> sse_decode_list_share_delegation_record_view(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <ShareDelegationRecordView>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_share_delegation_record_view(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
   List<ShareDeliveryOutcomeView> sse_decode_list_share_delivery_outcome_view(
     SseDeserializer deserializer,
   ) {
@@ -14029,20 +13816,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <ShareDeliveryOutcomeView>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_share_delivery_outcome_view(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
-  List<ShareWorkflowRecoveryView> sse_decode_list_share_workflow_recovery_view(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <ShareWorkflowRecoveryView>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_share_workflow_recovery_view(deserializer));
     }
     return ans_;
   }
@@ -14139,20 +13912,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <VoteKeyView>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_vote_key_view(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
-  List<VoteRecoveryView> sse_decode_list_vote_recovery_view(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <VoteRecoveryView>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_vote_recovery_view(deserializer));
     }
     return ans_;
   }
@@ -14902,6 +14661,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SubmissionDiagnosticView?
+  sse_decode_opt_box_autoadd_submission_diagnostic_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_submission_diagnostic_view(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -15082,23 +14855,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RecoverableCommitmentBundle sse_decode_recoverable_commitment_bundle(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_bundleIndex = sse_decode_u_32(deserializer);
-    var var_proposalId = sse_decode_u_32(deserializer);
-    var var_commitmentBundleJson = sse_decode_String(deserializer);
-    var var_vcTreePosition = sse_decode_u_64(deserializer);
-    return RecoverableCommitmentBundle(
-      bundleIndex: var_bundleIndex,
-      proposalId: var_proposalId,
-      commitmentBundleJson: var_commitmentBundleJson,
-      vcTreePosition: var_vcTreePosition,
-    );
-  }
-
-  @protected
   ResolvedVotingConfig sse_decode_resolved_voting_config(
     SseDeserializer deserializer,
   ) {
@@ -15145,6 +14901,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_pendingRecovery = sse_decode_bool(deserializer);
     var var_blockingRecovery = sse_decode_bool(deserializer);
     var var_blockingShareWork = sse_decode_bool(deserializer);
+    var var_hasUnconfirmedShares = sse_decode_bool(deserializer);
     var var_hotkeyBound = sse_decode_bool(deserializer);
     var var_completedVoteArtifact = sse_decode_bool(deserializer);
     var var_completedForDisplay = sse_decode_bool(deserializer);
@@ -15177,6 +14934,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       pendingRecovery: var_pendingRecovery,
       blockingRecovery: var_blockingRecovery,
       blockingShareWork: var_blockingShareWork,
+      hasUnconfirmedShares: var_hasUnconfirmedShares,
       hotkeyBound: var_hotkeyBound,
       completedVoteArtifact: var_completedVoteArtifact,
       completedForDisplay: var_completedForDisplay,
@@ -15196,36 +14954,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       immediateShareKey: var_immediateShareKey,
       immediateShareConfirmed: var_immediateShareConfirmed,
       allDecided: var_allDecided,
-    );
-  }
-
-  @protected
-  RoundRecoveryStateView sse_decode_round_recovery_state_view(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_roundId = sse_decode_String(deserializer);
-    var var_bundleCount = sse_decode_u_32(deserializer);
-    var var_delegation = sse_decode_list_delegation_recovery_view(deserializer);
-    var var_votes = sse_decode_list_vote_recovery_view(deserializer);
-    var var_commitmentBundles = sse_decode_list_recoverable_commitment_bundle(
-      deserializer,
-    );
-    var var_shares = sse_decode_list_share_workflow_recovery_view(deserializer);
-    var var_shareDelegations = sse_decode_list_share_delegation_record_view(
-      deserializer,
-    );
-    var var_unconfirmedShareDelegations =
-        sse_decode_list_share_delegation_record_view(deserializer);
-    return RoundRecoveryStateView(
-      roundId: var_roundId,
-      bundleCount: var_bundleCount,
-      delegation: var_delegation,
-      votes: var_votes,
-      commitmentBundles: var_commitmentBundles,
-      shares: var_shares,
-      shareDelegations: var_shareDelegations,
-      unconfirmedShareDelegations: var_unconfirmedShareDelegations,
     );
   }
 
@@ -15415,39 +15143,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ShareDelegationRecordView sse_decode_share_delegation_record_view(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_roundId = sse_decode_String(deserializer);
-    var var_bundleIndex = sse_decode_u_32(deserializer);
-    var var_proposalId = sse_decode_u_32(deserializer);
-    var var_shareIndex = sse_decode_u_32(deserializer);
-    var var_sentToUrls = sse_decode_list_String(deserializer);
-    var var_ambiguousUrls = sse_decode_list_String(deserializer);
-    var var_targetCount = sse_decode_u_32(deserializer);
-    var var_nullifier = sse_decode_list_prim_u_8_strict(deserializer);
-    var var_phase = sse_decode_workflow_phase_view(deserializer);
-    var var_confirmed = sse_decode_bool(deserializer);
-    var var_submitAt = sse_decode_u_64(deserializer);
-    var var_createdAt = sse_decode_u_64(deserializer);
-    return ShareDelegationRecordView(
-      roundId: var_roundId,
-      bundleIndex: var_bundleIndex,
-      proposalId: var_proposalId,
-      shareIndex: var_shareIndex,
-      sentToUrls: var_sentToUrls,
-      ambiguousUrls: var_ambiguousUrls,
-      targetCount: var_targetCount,
-      nullifier: var_nullifier,
-      phase: var_phase,
-      confirmed: var_confirmed,
-      submitAt: var_submitAt,
-      createdAt: var_createdAt,
-    );
-  }
-
-  @protected
   ShareDeliveryOutcomeView sse_decode_share_delivery_outcome_view(
     SseDeserializer deserializer,
   ) {
@@ -15474,23 +15169,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       bundleIndex: var_bundleIndex,
       proposalId: var_proposalId,
       shareIndex: var_shareIndex,
-    );
-  }
-
-  @protected
-  ShareWorkflowRecoveryView sse_decode_share_workflow_recovery_view(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_bundleIndex = sse_decode_u_32(deserializer);
-    var var_proposalId = sse_decode_u_32(deserializer);
-    var var_shareIndex = sse_decode_u_32(deserializer);
-    var var_phase = sse_decode_workflow_phase_view(deserializer);
-    return ShareWorkflowRecoveryView(
-      bundleIndex: var_bundleIndex,
-      proposalId: var_proposalId,
-      shareIndex: var_shareIndex,
-      phase: var_phase,
     );
   }
 
@@ -15657,6 +15335,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       totalCount: var_totalCount,
       message: var_message,
     );
+  }
+
+  @protected
+  SubmissionDiagnosticView sse_decode_submission_diagnostic_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_String(deserializer);
+    var var_message = sse_decode_String(deserializer);
+    return SubmissionDiagnosticView(kind: var_kind, message: var_message);
   }
 
   @protected
@@ -15876,27 +15564,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return VoteKeyView(
       bundleIndex: var_bundleIndex,
       proposalId: var_proposalId,
-    );
-  }
-
-  @protected
-  VoteRecoveryView sse_decode_vote_recovery_view(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_bundleIndex = sse_decode_u_32(deserializer);
-    var var_proposalId = sse_decode_u_32(deserializer);
-    var var_choice = sse_decode_u_32(deserializer);
-    var var_phase = sse_decode_workflow_phase_view(deserializer);
-    var var_txHash = sse_decode_opt_String(deserializer);
-    var var_vcTreePosition = sse_decode_opt_box_autoadd_u_64(deserializer);
-    var var_hasCommitmentBundle = sse_decode_bool(deserializer);
-    return VoteRecoveryView(
-      bundleIndex: var_bundleIndex,
-      proposalId: var_proposalId,
-      choice: var_choice,
-      phase: var_phase,
-      txHash: var_txHash,
-      vcTreePosition: var_vcTreePosition,
-      hasCommitmentBundle: var_hasCommitmentBundle,
     );
   }
 
@@ -16459,7 +16126,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.inserted, serializer);
     sse_encode_u_32(self.alreadyPresent, serializer);
-    sse_encode_opt_box_autoadd_u_32(self.conflictingBundleIndex, serializer);
   }
 
   @protected
@@ -16948,6 +16614,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_submission_diagnostic_view(
+    SubmissionDiagnosticView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_submission_diagnostic_view(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_16(self, serializer);
@@ -17150,18 +16825,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_delegation_recovery_view(
-    DelegationRecoveryView self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.bundleIndex, serializer);
-    sse_encode_workflow_phase_view(self.phase, serializer);
-    sse_encode_opt_String(self.txHash, serializer);
-    sse_encode_opt_box_autoadd_u_64(self.vanLeafPosition, serializer);
-  }
-
-  @protected
   void sse_encode_delegation_recovery_work_kind_view(
     DelegationRecoveryWorkKindView self,
     SseSerializer serializer,
@@ -17191,6 +16854,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.bundleIndex, serializer);
     sse_encode_workflow_phase_view(self.phase, serializer);
     sse_encode_opt_String(self.txHash, serializer);
+    sse_encode_opt_box_autoadd_submission_diagnostic_view(
+      self.submissionDiagnostic,
+      serializer,
+    );
   }
 
   @protected
@@ -17609,18 +17276,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_list_delegation_recovery_view(
-    List<DelegationRecoveryView> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_delegation_recovery_view(item, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_list_delegation_recovery_work_view(
     List<DelegationRecoveryWorkView> self,
     SseSerializer serializer,
@@ -17915,18 +17570,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_list_recoverable_commitment_bundle(
-    List<RecoverableCommitmentBundle> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_recoverable_commitment_bundle(item, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_list_scan_range_info(
     List<ScanRangeInfo> self,
     SseSerializer serializer,
@@ -17963,18 +17606,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_list_share_delegation_record_view(
-    List<ShareDelegationRecordView> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_share_delegation_record_view(item, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_list_share_delivery_outcome_view(
     List<ShareDeliveryOutcomeView> self,
     SseSerializer serializer,
@@ -17983,18 +17614,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_share_delivery_outcome_view(item, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_list_share_workflow_recovery_view(
-    List<ShareWorkflowRecoveryView> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_share_workflow_recovery_view(item, serializer);
     }
   }
 
@@ -18079,18 +17698,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_vote_key_view(item, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_list_vote_recovery_view(
-    List<VoteRecoveryView> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_vote_recovery_view(item, serializer);
     }
   }
 
@@ -18695,6 +18302,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_submission_diagnostic_view(
+    SubmissionDiagnosticView? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_submission_diagnostic_view(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -18839,18 +18459,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_recoverable_commitment_bundle(
-    RecoverableCommitmentBundle self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.bundleIndex, serializer);
-    sse_encode_u_32(self.proposalId, serializer);
-    sse_encode_String(self.commitmentBundleJson, serializer);
-    sse_encode_u_64(self.vcTreePosition, serializer);
-  }
-
-  @protected
   void sse_encode_resolved_voting_config(
     ResolvedVotingConfig self,
     SseSerializer serializer,
@@ -18887,6 +18495,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.pendingRecovery, serializer);
     sse_encode_bool(self.blockingRecovery, serializer);
     sse_encode_bool(self.blockingShareWork, serializer);
+    sse_encode_bool(self.hasUnconfirmedShares, serializer);
     sse_encode_bool(self.hotkeyBound, serializer);
     sse_encode_bool(self.completedVoteArtifact, serializer);
     sse_encode_bool(self.completedForDisplay, serializer);
@@ -18915,31 +18524,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     );
     sse_encode_bool(self.immediateShareConfirmed, serializer);
     sse_encode_bool(self.allDecided, serializer);
-  }
-
-  @protected
-  void sse_encode_round_recovery_state_view(
-    RoundRecoveryStateView self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.roundId, serializer);
-    sse_encode_u_32(self.bundleCount, serializer);
-    sse_encode_list_delegation_recovery_view(self.delegation, serializer);
-    sse_encode_list_vote_recovery_view(self.votes, serializer);
-    sse_encode_list_recoverable_commitment_bundle(
-      self.commitmentBundles,
-      serializer,
-    );
-    sse_encode_list_share_workflow_recovery_view(self.shares, serializer);
-    sse_encode_list_share_delegation_record_view(
-      self.shareDelegations,
-      serializer,
-    );
-    sse_encode_list_share_delegation_record_view(
-      self.unconfirmedShareDelegations,
-      serializer,
-    );
   }
 
   @protected
@@ -19097,26 +18681,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_share_delegation_record_view(
-    ShareDelegationRecordView self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.roundId, serializer);
-    sse_encode_u_32(self.bundleIndex, serializer);
-    sse_encode_u_32(self.proposalId, serializer);
-    sse_encode_u_32(self.shareIndex, serializer);
-    sse_encode_list_String(self.sentToUrls, serializer);
-    sse_encode_list_String(self.ambiguousUrls, serializer);
-    sse_encode_u_32(self.targetCount, serializer);
-    sse_encode_list_prim_u_8_strict(self.nullifier, serializer);
-    sse_encode_workflow_phase_view(self.phase, serializer);
-    sse_encode_bool(self.confirmed, serializer);
-    sse_encode_u_64(self.submitAt, serializer);
-    sse_encode_u_64(self.createdAt, serializer);
-  }
-
-  @protected
   void sse_encode_share_delivery_outcome_view(
     ShareDeliveryOutcomeView self,
     SseSerializer serializer,
@@ -19134,18 +18698,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.bundleIndex, serializer);
     sse_encode_u_32(self.proposalId, serializer);
     sse_encode_u_32(self.shareIndex, serializer);
-  }
-
-  @protected
-  void sse_encode_share_workflow_recovery_view(
-    ShareWorkflowRecoveryView self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.bundleIndex, serializer);
-    sse_encode_u_32(self.proposalId, serializer);
-    sse_encode_u_32(self.shareIndex, serializer);
-    sse_encode_workflow_phase_view(self.phase, serializer);
   }
 
   @protected
@@ -19260,6 +18812,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.broadcastedCount, serializer);
     sse_encode_u_32(self.totalCount, serializer);
     sse_encode_opt_String(self.message, serializer);
+  }
+
+  @protected
+  void sse_encode_submission_diagnostic_view(
+    SubmissionDiagnosticView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.kind, serializer);
+    sse_encode_String(self.message, serializer);
   }
 
   @protected
@@ -19430,21 +18992,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.bundleIndex, serializer);
     sse_encode_u_32(self.proposalId, serializer);
-  }
-
-  @protected
-  void sse_encode_vote_recovery_view(
-    VoteRecoveryView self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.bundleIndex, serializer);
-    sse_encode_u_32(self.proposalId, serializer);
-    sse_encode_u_32(self.choice, serializer);
-    sse_encode_workflow_phase_view(self.phase, serializer);
-    sse_encode_opt_String(self.txHash, serializer);
-    sse_encode_opt_box_autoadd_u_64(self.vcTreePosition, serializer);
-    sse_encode_bool(self.hasCommitmentBundle, serializer);
   }
 
   @protected

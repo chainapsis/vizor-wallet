@@ -6,10 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/duration_format.dart';
 import '../../features/voting/voting_error_messages.dart';
+import '../../services/voting/voting_rust_exception.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
-import '../../features/voting/voting_share_status.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/api/voting_session.dart' as rust_session;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
@@ -23,8 +23,6 @@ import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
-
-final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
 
 /// The PCZT value-pool tag for Ironwood actions.
 ///
@@ -50,11 +48,17 @@ const _shareTrackingCancellationPollInterval = Duration(milliseconds: 250);
 
 /// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
-  return isVotingShareTrackingOpen(
-    roundStatus: round.status,
-    voteEndTime: round.voteEndTime,
-    now: now ?? DateTime.now(),
-  );
+  final status = round.status.trim().toLowerCase();
+  if (!const {
+    'active',
+    'open',
+    '1',
+    'session_status_active',
+  }.contains(status)) {
+    return false;
+  }
+  final voteEnd = round.voteEndTime;
+  return voteEnd != null && (now ?? DateTime.now()).isBefore(voteEnd);
 }
 
 /// Orchestrates one round's voting lifecycle for the UI.
@@ -71,7 +75,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   bool _retainAutomaticShareTracking() => true;
 
   void _releaseAutomaticShareTracking() {
-    _cancelShareTrackingSchedule();
     _disposeHelperDeliveryContext();
   }
 
@@ -93,15 +96,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Set<String> _completedSnapshotBundlePrecomputes = {};
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
-  int _shareTrackingScheduleEpoch = 0;
   Future<void>? _activeAutomaticShareTrackingPass;
   final Set<Future<void>> _activeShareTrackingPasses = {};
   VotingHelperDeliveryContext? _helperDeliveryContext;
   final Set<VotingShareTrackingPassHandle> _activeShareTrackingPassHandles = {};
-  final Set<String> _unrecoverableShareGenerations = {};
   final Set<VotingRoundSession> _activeRoundSessions = {};
   bool _automaticShareTrackingStopped = false;
-  bool _shareTrackingRoundClosed = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
   _VotingSessionContext? _currentContext;
@@ -178,12 +178,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       isHardwareAccount: context.isHardwareAccount,
       config: context.config,
       round: context.round,
-      resumePlan: context.resumePlan,
       roundPlan: context.roundPlan,
       phase: _phaseForPlans(context.roundPlan),
     );
     _shareTrackingTimer?.cancel();
-    await _scheduleShareTracking(context, context.resumePlan);
+    await _scheduleShareTracking(context, context.roundPlan);
     return initialState;
   }
 
@@ -335,12 +334,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           isHardwareAccount: context.isHardwareAccount,
           config: context.config,
           round: context.round,
-          resumePlan: context.resumePlan,
           roundPlan: context.roundPlan,
           phase: _phaseForPlans(context.roundPlan),
         ),
       );
-      unawaited(_scheduleShareTracking(context, context.resumePlan));
+      unawaited(_scheduleShareTracking(context, context.roundPlan));
     } catch (error, stackTrace) {
       if (!_isCurrentGeneration(generation) ||
           _sessionAccountUuid != accountUuid) {
@@ -358,7 +356,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return _enqueue(_refreshEligibleWeightUnlocked).then((_) {
       final current = state.value;
       final error = current?.error;
-      if (error != null && !isVotingEligibilityErrorText(error.message)) {
+      if (error != null && !error.isEligibilityFailure) {
         throw error.cause ?? StateError(error.message);
       }
       return current?.eligibleWeightZatoshi;
@@ -528,9 +526,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
-      if (_needsFreshDelegationPreparation(plan, roundPlan) &&
+      if (_needsFreshDelegationPreparation(roundPlan) &&
           _needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
         current = await future;
@@ -539,16 +536,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
         context = await _loadContext(_roundId);
-        plan = context.resumePlan;
         roundPlan = context.roundPlan;
       }
 
-      final delegationBundleIndexes = _chainDelegationBundleIndexes(
-        plan,
+      final delegationBundleIndexes = delegationBundleIndexesNeedingWork(
         roundPlan,
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
-      final needsPir = _needsFreshDelegationPreparation(plan, roundPlan);
+      final needsPir = _needsFreshDelegationPreparation(roundPlan);
       var pirEndpoint = current.pirEndpoint;
       if (needsPir && pirEndpoint == null) {
         pirEndpoint = await _resolvePirEndpoint(context);
@@ -575,7 +570,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
         final nextState = (state.value ?? current).copyWith(
           phase: VotingSessionPhase.delegating,
-          resumePlan: plan,
           clearCurrentBundleIndex: true,
           clearError: true,
         );
@@ -636,27 +630,26 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '[zcash] Voting: loading resume plan after delegation '
         'round=${context.round.roundId}',
       );
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       debugPrint(
         '[zcash] Voting: resume plan after delegation loaded '
         'round=${context.round.roundId} '
-        'pendingDelegations=${refreshedPlan.pendingDelegationBundleIndexes.length} '
-        'pendingVotes=${refreshedPlan.pendingVoteSubmissionKeys.length} '
+        'pendingDelegations='
+        '${delegationBundleIndexesNeedingWork(refreshedRoundPlan).length} '
+        'needsVotePolling=${refreshedRoundPlan.needsVotePolling} '
         'pendingRecovery=${refreshedRoundPlan.pendingRecovery} '
         'elapsed=${formatElapsedSeconds(resumeTimer.elapsed)}',
       );
       final nextPhase =
-          refreshedPlan.pendingDelegationBundleIndexes
-              .where((index) => !completedBundleIndexes.contains(index))
-              .isEmpty
+          delegationBundleIndexesNeedingSigning(
+            refreshedRoundPlan,
+          ).where((index) => !completedBundleIndexes.contains(index)).isEmpty
           ? VotingSessionPhase.delegated
           : VotingSessionPhase.readyToDelegate;
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
           phase: nextPhase,
-          resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           delegationProgress: progress,
           clearCurrentBundleIndex: true,
@@ -728,7 +721,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       try {
-        final result = await rust.storeKeystoneSignaturesBatch(
+        // A conflicting tuple fails the whole batch with a typed error; a
+        // successful write needs no inspection.
+        await rust.storeKeystoneSignaturesBatch(
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
@@ -746,12 +741,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ),
           ],
         );
-        if (result.conflictingBundleIndex != null) {
+      } on VotingRustException catch (error) {
+        if (error.kind ==
+            rust_wire.VotingErrorKindView.keystoneSignatureConflict) {
           reject(
             'This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.',
           );
           return;
         }
+        reject(
+          'Could not save the Keystone signatures. Scan the same Keystone result again.',
+        );
+        return;
       } catch (error) {
         reject(
           'Could not save the Keystone signatures. Scan the same Keystone result again.',
@@ -812,10 +813,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
 
-      final plan = current.resumePlan ?? context.resumePlan;
+      final roundPlan = current.roundPlan ?? context.roundPlan;
       final signatures = await _loadKeystoneSignatures(context);
       final signedPrefixCount = resolvedKeystoneBundlePrefixCount(
-        plan: plan,
+        roundPlan: roundPlan,
         signatures: signatures,
       );
       if (signedPrefixCount <= 0) {
@@ -825,12 +826,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      if (signedPrefixCount >= plan.bundleCount) {
+      if (signedPrefixCount >= roundPlanBundleCount(roundPlan)) {
         _setStateForContext(
           context,
           (state.value ?? current).copyWith(
             phase: VotingSessionPhase.readyToDelegate,
-            resumePlan: plan,
             keystoneSignatures: signatures,
             clearKeystoneSigningRequest: true,
             clearKeystoneScanError: true,
@@ -844,7 +844,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       debugPrint(
         '[zcash] Voting: Keystone skipping remaining bundles '
         'round=${context.round.roundId} keepCount=$signedPrefixCount '
-        'bundleCount=${plan.bundleCount}',
+        'bundleCount=${roundPlanBundleCount(roundPlan)}',
       );
       await ref
           .read(votingRustApiProvider)
@@ -857,7 +857,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final bundleSetup = await ref
           .read(votingRustApiProvider)
           .setupDelegationBundles(ctx: _apiRoundContext(context));
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final retainedSignatures = {
         for (final entry in signatures.entries)
@@ -867,7 +866,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         context,
         (state.value ?? current).copyWith(
           phase: VotingSessionPhase.readyToDelegate,
-          resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           eligibleWeightZatoshi: bundleSetup.eligibleWeight,
           privacyTrimDroppedValueZatoshi:
@@ -893,9 +891,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
-      if (_needsFreshDelegationPreparation(plan, roundPlan) &&
+      if (_needsFreshDelegationPreparation(roundPlan) &&
           _needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
         current = await future;
@@ -904,19 +901,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
         context = await _loadContext(_roundId);
-        plan = context.resumePlan;
         roundPlan = context.roundPlan;
       }
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
       );
       final completedBundleIndexes = <int>{};
-      final delegationBundleIndexes = _chainDelegationBundleIndexes(
-        plan,
+      final delegationBundleIndexes = delegationBundleIndexesNeedingWork(
         roundPlan,
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
-      final needsPir = _needsFreshDelegationPreparation(plan, roundPlan);
+      final needsPir = _needsFreshDelegationPreparation(roundPlan);
       final signatures = hasPendingBundles
           ? await _loadKeystoneSignatures(context)
           : current.keystoneSignatures;
@@ -1004,19 +999,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
       }
 
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final nextPhase =
-          refreshedPlan.pendingDelegationBundleIndexes
-              .where((index) => !completedBundleIndexes.contains(index))
-              .isEmpty
+          delegationBundleIndexesNeedingSigning(
+            refreshedRoundPlan,
+          ).where((index) => !completedBundleIndexes.contains(index)).isEmpty
           ? VotingSessionPhase.delegated
           : VotingSessionPhase.readyToDelegate;
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
           phase: nextPhase,
-          resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           delegationProgress: progress,
           keystoneSignatures: signatures,
@@ -1242,7 +1235,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             for (final key in stepKeys) {
               final item = progress[key];
               progress[key] = VotingSessionProgress(
-                phase: 'failed',
+                phase: VotingProgressPhase.failed,
                 bundleIndex: key.bundleIndex,
                 proposalId: key.proposalId,
                 proofProgress: item?.proofProgress,
@@ -1270,9 +1263,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           if (outcome.disposition ==
               rust_wire.RoundStepDispositionView.advanced) {
             for (final key in stepKeys) {
-              if (progress[key]?.phase != 'completed') {
+              if (progress[key]?.phase != VotingProgressPhase.completed) {
                 progress[key] = VotingSessionProgress(
-                  phase: 'completed',
+                  phase: VotingProgressPhase.completed,
                   bundleIndex: key.bundleIndex,
                   proposalId: key.proposalId,
                   proofProgress: 1,
@@ -1302,9 +1295,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       } catch (_) {
         for (final key in allVoteKeys) {
           final item = progress[key];
-          if (item != null && item.phase != 'completed') {
+          if (item != null && item.phase != VotingProgressPhase.completed) {
             progress[key] = VotingSessionProgress(
-              phase: 'failed',
+              phase: VotingProgressPhase.failed,
               bundleIndex: key.bundleIndex,
               proposalId: key.proposalId,
               proofProgress: item.proofProgress,
@@ -1312,17 +1305,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             );
           }
         }
-        final failedPlan = await _loadResumePlan(context);
         roundPlan = await _loadRoundPlan(context);
         _setStateForContext(
           context,
           (state.value ?? current).copyWith(
-            resumePlan: failedPlan,
             roundPlan: roundPlan,
             voteProgress: progress,
           ),
         );
-        await _scheduleShareTracking(context, failedPlan);
+        await _scheduleShareTracking(context, roundPlan);
         rethrow;
       } finally {
         _closeRoundSession(session);
@@ -1333,7 +1324,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '[zcash] Voting: loading resume plan after vote flow '
         'round=${context.round.roundId}',
       );
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
       if (!hasBlockingWork) {
@@ -1342,8 +1332,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       debugPrint(
         '[zcash] Voting: resume plan after vote flow loaded '
         'round=${context.round.roundId} '
-        'pendingVotes=${refreshedPlan.pendingVoteSubmissionKeys.length} '
-        'unconfirmedShares=${refreshedPlan.unconfirmedShareDelegations.length} '
+        'needsVotePolling=${refreshedRoundPlan.needsVotePolling} '
+        'unconfirmedShares=${refreshedRoundPlan.hasUnconfirmedShares} '
         'pendingRecovery=${refreshedRoundPlan.pendingRecovery} '
         'elapsed=${formatElapsedSeconds(resumeTimer.elapsed)}',
       );
@@ -1351,7 +1341,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         context,
         (state.value ?? current).copyWith(
           phase: _phaseForPlans(refreshedRoundPlan),
-          resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           voteProgress: progress,
           voteSubmissionCompletedCount: completedQuestions,
@@ -1364,7 +1353,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentVoteKey: true,
         ),
       );
-      await _scheduleShareTracking(context, refreshedPlan);
+      await _scheduleShareTracking(context, refreshedRoundPlan);
     }, cleanupProcessStateOnError: false);
     return operation;
   }
@@ -1421,7 +1410,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         stepKeys.add(key);
         progress[key] = VotingSessionProgress(
-          phase: _voteStageLabel(stage),
+          phase: _voteStagePhase(stage),
           bundleIndex: bundleIndex,
           proposalId: proposalId,
           proofProgress: _monotonicProofProgress(
@@ -1443,7 +1432,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
           stepKeys.add(key);
           progress[key] = VotingSessionProgress(
-            phase: 'submitting',
+            phase: VotingProgressPhase.submitting,
             bundleIndex: key.bundleIndex,
             proposalId: key.proposalId,
             proofProgress: 1,
@@ -1458,7 +1447,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           (key) => key.bundleIndex == step.bundleIndex,
         )) {
           progress[key] = VotingSessionProgress(
-            phase: confirmed ? 'confirmed' : 'submitted',
+            phase: confirmed
+                ? VotingProgressPhase.confirmed
+                : VotingProgressPhase.submitted,
             bundleIndex: key.bundleIndex,
             proposalId: key.proposalId,
             proofProgress: 1,
@@ -1476,7 +1467,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         stepKeys.add(key);
         progress[key] = VotingSessionProgress(
-          phase: 'completed',
+          phase: VotingProgressPhase.completed,
           bundleIndex: key.bundleIndex,
           proposalId: key.proposalId,
           proofProgress: 1,
@@ -1489,28 +1480,40 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  static String _voteStageLabel(rust_wire.VoteCommitStageKind stage) {
+  static VotingProgressPhase _voteStagePhase(
+    rust_wire.VoteCommitStageKind stage,
+  ) {
     return switch (stage) {
-      rust_wire.VoteCommitStageKind.proofStarting => 'building_proof',
-      rust_wire.VoteCommitStageKind.proofProgress => 'proof_progress',
+      rust_wire.VoteCommitStageKind.proofStarting =>
+        VotingProgressPhase.buildingProof,
+      rust_wire.VoteCommitStageKind.proofProgress =>
+        VotingProgressPhase.proofProgress,
       rust_wire.VoteCommitStageKind.sharePayloadsBuilding =>
-        'building_share_payloads',
-      rust_wire.VoteCommitStageKind.signing => 'signing',
+        VotingProgressPhase.buildingSharePayloads,
+      rust_wire.VoteCommitStageKind.signing => VotingProgressPhase.signing,
     };
   }
 
-  static String _delegationPhaseLabel(rust_wire.DelegationProgressKind kind) {
+  static VotingProgressPhase _delegationPhase(
+    rust_wire.DelegationProgressKind kind,
+  ) {
     return switch (kind) {
-      rust_wire.DelegationProgressKind.selectingNotes => 'selecting_notes',
+      rust_wire.DelegationProgressKind.selectingNotes =>
+        VotingProgressPhase.selectingNotes,
       rust_wire.DelegationProgressKind.pcztBuilding ||
-      rust_wire.DelegationProgressKind.pcztBuilt => 'building_pczt',
-      rust_wire.DelegationProgressKind.proofStarting => 'building_proof',
+      rust_wire.DelegationProgressKind.pcztBuilt =>
+        VotingProgressPhase.buildingPczt,
+      rust_wire.DelegationProgressKind.proofStarting =>
+        VotingProgressPhase.buildingProof,
       rust_wire.DelegationProgressKind.waitingForExistingProof =>
-        'waiting_for_existing_proof',
+        VotingProgressPhase.waitingForExistingProof,
       rust_wire.DelegationProgressKind.proofProgress ||
-      rust_wire.DelegationProgressKind.proofComplete => 'proof_progress',
-      rust_wire.DelegationProgressKind.signingPayload => 'signing_payload',
-      rust_wire.DelegationProgressKind.payloadReady => 'payload_ready',
+      rust_wire.DelegationProgressKind.proofComplete =>
+        VotingProgressPhase.proofProgress,
+      rust_wire.DelegationProgressKind.signingPayload =>
+        VotingProgressPhase.signingPayload,
+      rust_wire.DelegationProgressKind.payloadReady =>
+        VotingProgressPhase.payloadReady,
     };
   }
 
@@ -1697,7 +1700,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 if (kind == null) return;
                 publishProgress(
                   VotingSessionProgress(
-                    phase: _delegationPhaseLabel(kind),
+                    phase: _delegationPhase(kind),
                     bundleIndex: bundleIndex,
                     proofProgress: _monotonicProofProgress(
                       progress[bundleIndex]?.proofProgress,
@@ -1711,7 +1714,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                     rust_wire.ChainSubmissionOutcomeKind.confirmed) {
                   publishProgress(
                     VotingSessionProgress(
-                      phase: 'confirmed',
+                      phase: VotingProgressPhase.confirmed,
                       bundleIndex: bundleIndex,
                       message: chainOutcome!.transactionHash,
                     ),
@@ -1746,7 +1749,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (error != null) {
         publishProgress(
           VotingSessionProgress(
-            phase: 'failed',
+            phase: VotingProgressPhase.failed,
             bundleIndex: bundleIndex,
             message: error.toString(),
           ),
@@ -1876,12 +1879,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   bool _hotkeyAlreadyBound(_VotingSessionContext context) {
     if (context.roundPlan?.hotkeyBound ?? false) return true;
-    final plan = context.resumePlan;
-    return plan.submittedDelegationBundleIndexes.isNotEmpty ||
-        plan.pendingVoteSubmissionKeys.isNotEmpty ||
-        plan.submittedVoteConfirmationKeys.isNotEmpty ||
-        plan.commitmentBundlesByKey.isNotEmpty ||
-        plan.shareDelegations.isNotEmpty;
+    return context.roundPlan?.hotkeyBound ?? false;
   }
 
   double? _voteSubmissionProgress({
@@ -1919,11 +1917,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     for (final key in voteKeys) {
       final item = progress[key];
       pipelineProgress += switch (item?.phase) {
-        'completed' => 1,
-        'submitting_shares' => 0.95,
-        'confirmed' => 0.95,
-        'submitted' => 0.85,
-        'failed' => 0,
+        VotingProgressPhase.completed => 1,
+        VotingProgressPhase.confirmed => 0.95,
+        VotingProgressPhase.submitting => 0.95,
+        VotingProgressPhase.submitted => 0.85,
+        VotingProgressPhase.failed => 0,
         _ => (item?.proofProgress ?? 0).clamp(0.0, 1.0) * 0.8,
       };
     }
@@ -1951,13 +1949,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Map<int, VotingSessionProgress> progress,
   }) async {
     try {
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       _throwIfContextStale(context, 'delegation-batch-failure-refresh');
       _setStateForContext(
         context,
         (state.value ?? fallbackState).copyWith(
-          resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           delegationProgress: Map<int, VotingSessionProgress>.of(progress),
           clearCurrentBundleIndex: true,
@@ -1976,9 +1972,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> runShareTrackingPass() {
-    if (_automaticShareTrackingStopped || _shareTrackingRoundClosed) {
-      return Future.value();
-    }
+    if (_automaticShareTrackingStopped) return Future.value();
     final inFlight = _activeAutomaticShareTrackingPass;
     if (inFlight != null) return inFlight;
     if (_ownsAutomaticShareTracking && !_retainAutomaticShareTracking()) {
@@ -1995,36 +1989,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _activeAutomaticShareTrackingPass = pass;
     _activeShareTrackingPasses.add(pass);
     return pass;
-  }
-
-  /// Runs an externally triggered pass unless this session just completed one.
-  ///
-  /// App-resume restoration and a visible proposal screen can independently
-  /// request the same refresh. In-flight work is already shared by
-  /// [runShareTrackingPass]; this also coalesces callers that arrive just after
-  /// that work settles. Timers and submission recovery continue to call
-  /// [runShareTrackingPass] directly so protocol deadlines are never delayed.
-  Future<void> runShareTrackingPassIfStale() {
-    if (_automaticShareTrackingStopped || _shareTrackingRoundClosed) {
-      return Future.value();
-    }
-    final inFlight = _activeAutomaticShareTrackingPass;
-    if (inFlight != null) return inFlight;
-
-    final context = _currentContext;
-    if (context != null) {
-      final key = VotingSessionKey(
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-      );
-      final freshness = ref.read(votingShareTrackingTriggerFreshnessProvider);
-      if (ref
-          .read(votingShareTrackingRegistryProvider)
-          .hasFreshSuccessfulPass(key, freshness: freshness)) {
-        return Future.value();
-      }
-    }
-    return runShareTrackingPass();
   }
 
   /// Reconciles the designated immediate share without reopening recovery.
@@ -2048,25 +2012,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         if (_isDisposed || !ref.mounted) return;
         final context = await _loadContext(_roundId);
         _currentContext = context;
-        var plan = await _loadResumePlan(context);
         var roundPlan = await _loadRoundPlan(context);
-        if (hasConfirmedImmediateShare(roundPlan, plan)) {
+        if (hasConfirmedImmediateShare(roundPlan)) {
           confirmed = true;
           return;
         }
 
-        final immediateKey = roundPlan.immediateShareKey;
-        if (immediateKey == null) return;
-        rust_wire.ShareDelegationRecordView? immediateShare;
-        for (final share in plan.shareDelegations) {
-          if (share.bundleIndex == immediateKey.bundleIndex &&
-              share.proposalId == immediateKey.proposalId &&
-              share.shareIndex == immediateKey.shareIndex) {
-            immediateShare = share;
-            break;
-          }
-        }
-        if (immediateShare == null || immediateShare.confirmed) return;
+        final immediateShare = roundPlan.immediateShareKey;
+        if (immediateShare == null) return;
         if (_finalConfirmationCheckCancelled(context)) return;
 
         final configuredHelperUrls = _configuredHelperTransportUrls(context);
@@ -2115,17 +2068,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         // confirmation back into an expiry error if a follow-up read fails.
         confirmed = true;
         try {
-          plan = await _loadResumePlan(context);
           roundPlan = await _loadRoundPlan(context);
           _setStateForContext(
             context,
             (state.value ?? current).copyWith(
               phase: _phaseForPlans(roundPlan),
-              resumePlan: plan,
               roundPlan: roundPlan,
             ),
           );
-          if (plan.unconfirmedShareDelegations.isEmpty) {
+          if (!roundPlan.hasUnconfirmedShares) {
             _releaseAutomaticShareTracking();
           }
         } catch (error) {
@@ -2144,25 +2095,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _runShareTrackingPass() {
     return _enqueueShareTracking(() async {
-      _cancelShareTrackingSchedule();
+      _shareTrackingTimer?.cancel();
+      _shareTrackingTimer = null;
       if (_automaticShareTrackingStopped) return;
       final current = await future;
       if (_isDisposed || !ref.mounted) return;
       final context = await _loadContext(_roundId);
       if (_shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundClosed(context);
+        _releaseAutomaticShareTrackingIfRoundExpired(context);
         return;
       }
       _currentContext = context;
-      var plan = context.resumePlan;
-      var roundPlan = context.roundPlan;
+      var roundPlan = await _loadRoundPlan(context);
       if (ref.read(appSecurityProvider).requiresUnlock ||
           !shouldTrackPendingVotingShares(context.round)) {
         _setStateForContext(
           context,
           current.copyWith(
             phase: _phaseForPlans(roundPlan),
-            resumePlan: plan,
             roundPlan: roundPlan,
           ),
         );
@@ -2173,7 +2123,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         context,
         current.copyWith(
           phase: VotingSessionPhase.submittingShares,
-          resumePlan: plan,
           roundPlan: roundPlan,
         ),
       );
@@ -2201,95 +2150,34 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           context,
           passHandle,
         );
-        final unconfirmedShares = plan.unconfirmedShareDelegations;
-        final confirmationOnly =
-            unconfirmedShares.isNotEmpty &&
-            unconfirmedShares.every(
-              (share) => _unrecoverableShareGenerations.contains(
-                _shareGenerationKey(share),
-              ),
-            );
-        if (confirmationOnly) {
-          final confirmed = <rust_api.ApiShareKey>[];
-          var cancelled = false;
-          for (final share in unconfirmedShares) {
-            if (_shareTrackingCancelled(context)) {
-              cancelled = true;
-              break;
-            }
-            final didConfirm = await rust.confirmShareWithHelpers(
-              passHandle: passHandle,
-              configuredHelperUrls: configuredHelperUrls,
-              bundleIndex: share.bundleIndex,
-              proposalId: share.proposalId,
-              shareIndex: share.shareIndex,
-              nowSeconds: BigInt.from(nowSeconds),
-            );
-            if (didConfirm) {
-              confirmed.add(
-                rust_api.ApiShareKey(
-                  bundleIndex: share.bundleIndex,
-                  proposalId: share.proposalId,
-                  shareIndex: share.shareIndex,
-                ),
-              );
-            }
-          }
-          report = rust_api.ApiShareTrackingReport(
-            confirmed: confirmed,
-            resubmitted: const [],
-            ambiguous: const [],
-            unrecoverable: const [],
-            cancelled: cancelled,
-            nextDelaySeconds: null,
-          );
-        } else {
-          report = await rust.trackPendingShares(
-            passHandle: passHandle,
-            configuredHelperUrls: configuredHelperUrls,
-            nowSeconds: BigInt.from(nowSeconds),
-            voteEndTimeSeconds: voteEndSeconds == null
-                ? null
-                : BigInt.from(voteEndSeconds),
-          );
-        }
+        report = await rust.trackPendingShares(
+          passHandle: passHandle,
+          configuredHelperUrls: configuredHelperUrls,
+          nowSeconds: BigInt.from(nowSeconds),
+          voteEndTimeSeconds: voteEndSeconds == null
+              ? null
+              : BigInt.from(voteEndSeconds),
+        );
       } finally {
         cancellationWatchdog?.cancel();
         _activeShareTrackingPassHandles.remove(passHandle);
         passHandle.dispose();
       }
 
-      final newlyUnrecoverable = report.unrecoverable.where((key) {
-        for (final share in plan.unconfirmedShareDelegations) {
-          if (share.bundleIndex == key.bundleIndex &&
-              share.proposalId == key.proposalId &&
-              share.shareIndex == key.shareIndex) {
-            return _unrecoverableShareGenerations.add(
-              _shareGenerationKey(share),
-            );
-          }
-        }
-        return false;
-      }).length;
-      if (newlyUnrecoverable > 0) {
-        // These cannot be repaired by retrying. Log each durable share
-        // generation once, then use confirmation-only checks on later passes.
+      if (report.unrecoverable.isNotEmpty) {
+        // These cannot be repaired by retrying; log once per pass rather than
+        // spinning on them silently.
         debugPrint(
-          '[zcash] Voting: $newlyUnrecoverable share(s) missing '
+          '[zcash] Voting: ${report.unrecoverable.length} share(s) missing '
           'recovery material round=${context.round.roundId}',
         );
       }
 
       if (report.cancelled || _shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundClosed(context);
+        _releaseAutomaticShareTrackingIfRoundExpired(context);
         return;
       }
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
-      final liveShareGenerations = refreshedPlan.unconfirmedShareDelegations
-          .map(_shareGenerationKey)
-          .toSet();
-      _unrecoverableShareGenerations.retainAll(liveShareGenerations);
       final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
       if (!hasBlockingWork) {
         await _clearPersistedDraftChoices(context);
@@ -2298,28 +2186,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         context,
         (state.value ?? current).copyWith(
           phase: _phaseForPlans(refreshedRoundPlan),
-          resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
         ),
       );
-      await _scheduleShareTracking(context, refreshedPlan);
-      ref
-          .read(votingShareTrackingRegistryProvider)
-          .recordSuccessfulPass(
-            VotingSessionKey(
-              accountUuid: context.accountUuid,
-              roundId: context.round.roundId,
-            ),
-          );
+      await _scheduleShareTracking(context, refreshedRoundPlan);
     });
-  }
-
-  static String _shareGenerationKey(rust_wire.ShareDelegationRecordView share) {
-    final nullifier = share.nullifier
-        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-        .join();
-    return '${share.bundleIndex}:${share.proposalId}:${share.shareIndex}:'
-        '$nullifier';
   }
 
   Future<void> stopAndDrainShareTracking() async {
@@ -2354,9 +2225,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _scheduleShareTracking(
     _VotingSessionContext context,
-    VotingResumePlan plan, {
-    DateTime? preservedFullPassAt,
-  }) async {
+    rust_wire.RoundPlanView? roundPlan,
+  ) async {
     if (!_ownsAutomaticShareTracking) {
       _shareTrackingTimer?.cancel();
       _shareTrackingTimer = null;
@@ -2364,8 +2234,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return;
     }
     if (_automaticShareTrackingStopped ||
-        _shareTrackingRoundClosed ||
-        plan.unconfirmedShareDelegations.isEmpty ||
+        !(roundPlan?.hasUnconfirmedShares ?? false) ||
         !shouldTrackPendingVotingShares(context.round) ||
         ref.read(appSecurityProvider).requiresUnlock) {
       _shareTrackingTimer?.cancel();
@@ -2375,88 +2244,32 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
     if (!_isCurrentContext(context)) return;
     if (!_retainAutomaticShareTracking()) return;
-    final scheduleEpoch = _cancelShareTrackingSchedule();
-    // The timer may outlive the action that loaded [context]. Capture the
-    // exact plan used for this schedule so a later round-deadline refresh does
-    // not fall back to an older snapshot and conclude that there are no shares
-    // left to track.
-    final scheduledContext = context.withResumePlan(plan);
+    _shareTrackingTimer?.cancel();
+    _shareTrackingTimer = null;
 
-    // A status heartbeat is only an earlier observation point. Keep the
-    // protocol wake as an absolute instant so a slow/failed status request
-    // cannot restart its countdown and postpone helper/DB work.
-    final DateTime fullPassAt;
-    if (preservedFullPassAt != null) {
-      fullPassAt = preservedFullPassAt;
-    } else {
-      final delayCalculatedAt = DateTime.now();
-      final delaySeconds = await ref
-          .read(votingRustApiProvider)
-          .nextShareTrackingDelaySeconds(
-            shares: plan.unconfirmedShareDelegations,
-            nowSeconds: BigInt.from(
-              delayCalculatedAt.toUtc().millisecondsSinceEpoch ~/ 1000,
-            ),
-          );
-      if (!_isCurrentContext(context) ||
-          scheduleEpoch != _shareTrackingScheduleEpoch) {
-        return;
-      }
-      if (delaySeconds == null) {
-        _releaseAutomaticShareTracking();
-        return;
-      }
-      fullPassAt = delayCalculatedAt.add(
-        Duration(seconds: delaySeconds.toInt()),
-      );
-    }
-    // The status-only wake reads [_currentContext]. Publish the exact plan
-    // used for this schedule so its next rearm cannot fall back to the plan
-    // that existed before the preceding full pass completed.
-    _currentContext = scheduledContext;
-    final now = DateTime.now();
-    final remaining = scheduledContext.round.voteEndTime!.difference(now);
-    if (remaining <= Duration.zero) {
-      _armShareTrackingTimer(
-        scheduledContext,
-        Duration.zero,
-        scheduleEpoch,
-        _ShareTrackingWake.roundStatus,
-        fullPassAt,
-      );
+    final delaySeconds = await ref
+        .read(votingRustApiProvider)
+        .nextShareTrackingDelaySeconds(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          nowSeconds: BigInt.from(
+            DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
+          ),
+        );
+    if (delaySeconds == null) {
+      _releaseAutomaticShareTracking();
       return;
     }
-    final untilFullPass = fullPassAt.difference(now);
-    final protocolDelay = untilFullPass.isNegative
-        ? Duration.zero
-        : untilFullPass;
-    var delay = protocolDelay;
-    var wake = _ShareTrackingWake.fullPass;
-    if (remaining <= delay) {
-      delay = remaining;
-      wake = _ShareTrackingWake.roundStatus;
-    }
-    final roundRefreshInterval = ref.read(
-      votingShareTrackingRoundRefreshIntervalProvider,
-    );
-    if (roundRefreshInterval > Duration.zero && roundRefreshInterval < delay) {
-      delay = roundRefreshInterval;
-      wake = _ShareTrackingWake.roundStatus;
-    }
-    _armShareTrackingTimer(
-      scheduledContext,
-      delay,
-      scheduleEpoch,
-      wake,
-      fullPassAt,
-    );
+    if (!_isCurrentContext(context)) return;
+    final delay = Duration(seconds: delaySeconds.toInt());
+    _armShareTrackingTimer(context, _delayCappedAtVoteEnd(context, delay));
   }
 
   void _scheduleShareTrackingFailureRetry() {
     if (_isDisposed ||
         !_ownsAutomaticShareTracking ||
         _automaticShareTrackingStopped ||
-        _shareTrackingRoundClosed ||
         ref.read(appSecurityProvider).requiresUnlock) {
       _releaseAutomaticShareTracking();
       return;
@@ -2469,6 +2282,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final context = _currentContext;
     if (context == null ||
         !_isCurrentContext(context) ||
+        !shouldTrackPendingVotingShares(context.round) ||
         !_retainAutomaticShareTracking()) {
       _releaseAutomaticShareTracking();
       return;
@@ -2477,146 +2291,28 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       votingShareTrackingFailureRetryDelayProvider,
     );
     final delay = configuredDelay.isNegative ? Duration.zero : configuredDelay;
-    final scheduleEpoch = _cancelShareTrackingSchedule();
-    final now = DateTime.now();
-    final fullPassAt = now.add(delay);
-    final remaining = context.round.voteEndTime!.difference(now);
-    final crossesCachedDeadline =
-        remaining > Duration.zero && remaining <= delay;
-    final wake = remaining <= Duration.zero || crossesCachedDeadline
-        ? _ShareTrackingWake.roundStatus
-        : _ShareTrackingWake.fullPass;
-    _armShareTrackingTimer(
-      context,
-      crossesCachedDeadline ? remaining : delay,
-      scheduleEpoch,
-      wake,
-      fullPassAt,
-    );
+    _armShareTrackingTimer(context, _delayCappedAtVoteEnd(context, delay));
   }
 
-  int _cancelShareTrackingSchedule() {
-    final scheduleEpoch = ++_shareTrackingScheduleEpoch;
-    _shareTrackingTimer?.cancel();
-    _shareTrackingTimer = null;
-    return scheduleEpoch;
-  }
-
-  void _armShareTrackingTimer(
+  Duration _delayCappedAtVoteEnd(
     _VotingSessionContext context,
     Duration delay,
-    int scheduleEpoch,
-    _ShareTrackingWake wake,
-    DateTime fullPassAt,
   ) {
-    if (scheduleEpoch != _shareTrackingScheduleEpoch) return;
+    final remaining = context.round.voteEndTime!.difference(DateTime.now());
+    if (remaining.isNegative) return Duration.zero;
+    return delay < remaining ? delay : remaining;
+  }
+
+  void _armShareTrackingTimer(_VotingSessionContext context, Duration delay) {
+    _shareTrackingTimer?.cancel();
     _shareTrackingTimer = Timer(delay, () {
       _shareTrackingTimer = null;
-      if (scheduleEpoch != _shareTrackingScheduleEpoch ||
-          !_isCurrentContext(context)) {
+      if (!_isCurrentContext(context)) return;
+      if (!shouldTrackPendingVotingShares(context.round)) {
+        _releaseAutomaticShareTracking();
         return;
       }
-      if (wake == _ShareTrackingWake.fullPass) {
-        unawaited(_runShareTrackingPassInBackground());
-      } else {
-        unawaited(_runShareTrackingRoundStatusRefreshInBackground(fullPassAt));
-      }
-    });
-  }
-
-  void _scheduleShareTrackingRoundStatusRetry(
-    _VotingSessionContext context,
-    DateTime fullPassAt,
-  ) {
-    if (_automaticShareTrackingStopped ||
-        _shareTrackingRoundClosed ||
-        _isDisposed ||
-        !ref.mounted ||
-        !_isCurrentContext(context) ||
-        ref.read(appSecurityProvider).requiresUnlock ||
-        !_retainAutomaticShareTracking()) {
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    final configuredDelay = ref.read(
-      votingShareTrackingFailureRetryDelayProvider,
-    );
-    final retryDelay = configuredDelay.isNegative
-        ? Duration.zero
-        : configuredDelay;
-    final now = DateTime.now();
-    final untilVoteEnd = context.round.voteEndTime!.difference(now);
-    final rawUntilFullPass = fullPassAt.difference(now);
-    final untilFullPass = rawUntilFullPass.isNegative
-        ? Duration.zero
-        : rawUntilFullPass;
-    var delay = retryDelay;
-    var wake = _ShareTrackingWake.roundStatus;
-    // Preserve the cached deadline as the hard round-status boundary, while
-    // allowing the already-planned full pass to win before that boundary.
-    if (untilVoteEnd > Duration.zero && untilVoteEnd < delay) {
-      delay = untilVoteEnd;
-    }
-    if (untilVoteEnd > Duration.zero &&
-        untilFullPass < untilVoteEnd &&
-        untilFullPass <= delay) {
-      delay = untilFullPass;
-      wake = _ShareTrackingWake.fullPass;
-    }
-    final retryEpoch = _cancelShareTrackingSchedule();
-    _armShareTrackingTimer(context, delay, retryEpoch, wake, fullPassAt);
-  }
-
-  Future<void> _runShareTrackingRoundStatusRefreshInBackground(
-    DateTime fullPassAt,
-  ) async {
-    await _enqueueShareTracking(() async {
-      _cancelShareTrackingSchedule();
-      final context = _currentContext;
-      if (context == null ||
-          _automaticShareTrackingStopped ||
-          _shareTrackingRoundClosed ||
-          _isDisposed ||
-          !ref.mounted ||
-          !_isCurrentContext(context) ||
-          ref.read(appSecurityProvider).requiresUnlock) {
-        return;
-      }
-      try {
-        final api = ref.read(
-          votingApiClientProvider(context.config.apiServers),
-        );
-        final round = VotingRoundDetails.fromStatus(
-          await api.getRoundStatus(context.round.roundId),
-        );
-        if (_automaticShareTrackingStopped ||
-            _isDisposed ||
-            !ref.mounted ||
-            !_isCurrentContext(context) ||
-            ref.read(appSecurityProvider).requiresUnlock) {
-          return;
-        }
-        final refreshedContext = context.withRound(round);
-        _currentContext = refreshedContext;
-        final current = state.value ?? VotingSessionState(roundId: _roundId);
-        _setStateForContext(refreshedContext, current.copyWith(round: round));
-        if (!shouldTrackPendingVotingShares(round)) {
-          _shareTrackingRoundClosed = true;
-          _releaseAutomaticShareTrackingIfRoundClosed(refreshedContext);
-          return;
-        }
-        await _scheduleShareTracking(
-          refreshedContext,
-          refreshedContext.resumePlan,
-          preservedFullPassAt: fullPassAt,
-        );
-      } catch (error, stackTrace) {
-        debugPrint(
-          '[zcash] Voting: share tracking round refresh failed '
-          'round=${context.round.roundId} error=$error\n$stackTrace',
-        );
-        _scheduleShareTrackingRoundStatusRetry(context, fullPassAt);
-      }
+      unawaited(_runShareTrackingPassInBackground());
     });
   }
 
@@ -2657,10 +2353,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   bool _shareTrackingCancelled(_VotingSessionContext context) {
-    if (_automaticShareTrackingStopped ||
-        _shareTrackingRoundClosed ||
-        _isDisposed ||
-        !ref.mounted) {
+    if (_automaticShareTrackingStopped || _isDisposed || !ref.mounted) {
       return true;
     }
     return !_isCurrentContext(context) ||
@@ -2668,13 +2361,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         !shouldTrackPendingVotingShares(context.round);
   }
 
-  void _releaseAutomaticShareTrackingIfRoundClosed(
+  void _releaseAutomaticShareTrackingIfRoundExpired(
     _VotingSessionContext context,
   ) {
     if (!shouldTrackPendingVotingShares(context.round)) {
-      if (_ownsAutomaticShareTracking && !_isDisposed && ref.mounted) {
-        ref.invalidate(votingSessionProvider(_roundId));
-      }
       _releaseAutomaticShareTracking();
     }
   }
@@ -3031,7 +2721,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         if (cleanupProcessStateOnError) {
           await _cleanupCurrentSessionState(reason: 'action-failed');
         }
-        if (publishError) _setError(_actionErrorMessage(e), cause: e);
+        if (publishError) {
+          _setError(
+            _actionErrorMessage(e),
+            cause: e,
+            isEligibilityFailure:
+                votingRustExceptionOf(e)?.isEligibilityFailure ?? false,
+          );
+        }
         onError?.call();
         if (propagateError) rethrow;
       } finally {
@@ -3061,34 +2758,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   static bool _needsFreshDelegationPreparation(
-    VotingResumePlan plan,
     rust_wire.RoundPlanView? roundPlan,
   ) {
-    if (plan.pendingDelegationBundleIndexes.isNotEmpty) return true;
+    if (delegationBundleIndexesNeedingSigning(roundPlan).isNotEmpty)
+      return true;
     if (roundPlan == null) return false;
     return roundPlanNeedsDraftSetup(roundPlan) ||
         roundPlan.recoveredDelegationWork.any(
           (work) =>
               work.kind == rust_wire.DelegationRecoveryWorkKindView.delegate,
         );
-  }
-
-  static List<int> _chainDelegationBundleIndexes(
-    VotingResumePlan plan,
-    rust_wire.RoundPlanView? roundPlan,
-  ) {
-    final indexes = <int>{...plan.pendingDelegationBundleIndexes};
-    for (final record in plan.recoveryState.delegation) {
-      if (record.phase == VotingWorkflowPhase.submittedDelegation) {
-        indexes.add(record.bundleIndex);
-      }
-    }
-    for (final work
-        in roundPlan?.recoveredDelegationWork ??
-            const <rust_wire.DelegationRecoveryWorkView>[]) {
-      indexes.add(work.bundleIndex);
-    }
-    return indexes.toList()..sort();
   }
 
   Future<void> _prepareKeystoneSigningUnlocked() async {
@@ -3110,12 +2789,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       context = await _loadContext(_roundId);
     }
 
-    var plan = current.resumePlan ?? context.resumePlan;
     var roundPlan = current.roundPlan ?? context.roundPlan;
     var signatures = await _loadKeystoneSignatures(context);
-    var unsignedBundleIndexes = plan.pendingDelegationBundleIndexes
-        .where((bundleIndex) => !signatures.containsKey(bundleIndex))
-        .toList();
+    var unsignedBundleIndexes = delegationBundleIndexesNeedingSigning(
+      roundPlan,
+    ).where((bundleIndex) => !signatures.containsKey(bundleIndex)).toList();
     final existingHotkey = await _readStoredHotkey(context);
     if (existingHotkey == null &&
         (signatures.isNotEmpty || (roundPlan?.hotkeyBound ?? false))) {
@@ -3128,7 +2806,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         (state.value ?? current).copyWith(
           phase: VotingSessionPhase.readyToDelegate,
           isHardwareAccount: true,
-          resumePlan: plan,
           keystoneSignatures: signatures,
           clearKeystoneSigningRequest: true,
           clearKeystoneScanError: true,
@@ -3148,7 +2825,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.keystoneSigning,
         isHardwareAccount: true,
-        resumePlan: plan,
         keystoneSignatures: signatures,
         currentBundleIndex: unsignedBundleIndexes.first,
         clearKeystoneSigningRequest: true,
@@ -3177,10 +2853,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         reason: 'keystone-stale-setup',
       );
       await rust.setupDelegationBundles(ctx: _apiRoundContext(context));
-      plan = await _loadResumePlan(context);
       roundPlan = await _loadRoundPlan(context);
       signatures = await _loadKeystoneSignatures(context);
-      final maxBundleIndex = plan.bundleCount;
+      final maxBundleIndex = roundPlanBundleCount(roundPlan);
       if (maxBundleIndex >= 0) {
         signatures = {
           for (final entry in signatures.entries)
@@ -3188,16 +2863,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               entry.key: entry.value,
         };
       }
-      unsignedBundleIndexes = plan.pendingDelegationBundleIndexes
-          .where((bundleIndex) => !signatures.containsKey(bundleIndex))
-          .toList();
+      unsignedBundleIndexes = delegationBundleIndexesNeedingSigning(
+        roundPlan,
+      ).where((bundleIndex) => !signatures.containsKey(bundleIndex)).toList();
       if (unsignedBundleIndexes.isEmpty) {
         _setStateForContext(
           context,
           (state.value ?? current).copyWith(
             phase: VotingSessionPhase.readyToDelegate,
             isHardwareAccount: true,
-            resumePlan: plan,
             roundPlan: roundPlan,
             keystoneSignatures: signatures,
             clearKeystoneSigningRequest: true,
@@ -3213,7 +2887,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         (state.value ?? current).copyWith(
           phase: VotingSessionPhase.keystoneSigning,
           isHardwareAccount: true,
-          resumePlan: plan,
           roundPlan: roundPlan,
           keystoneSignatures: signatures,
           currentBundleIndex: unsignedBundleIndexes.first,
@@ -3245,7 +2918,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.keystoneSigning,
         isHardwareAccount: true,
-        resumePlan: plan,
         roundPlan: roundPlan,
         eligibleWeightZatoshi: requests.first.eligibleWeightZatoshi,
         keystoneSigningRequests: requests,
@@ -3268,7 +2940,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         phase: VotingSessionPhase.resolvingPir,
         config: context.config,
         round: context.round,
-        resumePlan: context.resumePlan,
         roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
         clearError: true,
@@ -3304,7 +2975,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         pirDiagnostics: resolution.diagnostics,
         config: context.config,
         round: context.round,
-        resumePlan: context.resumePlan,
         roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
       ),
@@ -3315,13 +2985,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final bundleSetup = await ref
         .read(votingRustApiProvider)
         .setupDelegationBundles(ctx: _apiRoundContext(context));
-    final refreshedPlan = await _loadResumePlan(context);
     final refreshedRoundPlan = await _loadRoundPlan(context);
     _setStateForContext(
       context,
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.readyToDelegate,
-        resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
         eligibleWeightZatoshi: bundleSetup.eligibleWeight,
         privacyTrimDroppedValueZatoshi:
@@ -3354,7 +3022,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final eligibility = await ref
           .read(votingRustApiProvider)
           .checkVotingEligibility(ctx: _apiRoundContext(context));
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final successPhase = current.phase == VotingSessionPhase.error
           ? VotingSessionPhase.idle
@@ -3363,7 +3030,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         phase: eligibility.isEligible ? successPhase : VotingSessionPhase.error,
         config: context.config,
         round: context.round,
-        resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
         eligibleWeightZatoshi: eligibility.eligibleWeightZatoshi,
         privacyTrimDroppedValueZatoshi:
@@ -3377,44 +3043,35 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             ? base
             : base.copyWith(
                 error: VotingSessionError(
-                  message: _minimumVotingEligibilityErrorMessage(
-                    eligibility: eligibility,
+                  message: minimumVotingEligibilityMessage(
                     snapshotHeight: context.round.snapshotHeight,
                   ),
+                  isEligibilityFailure: true,
                 ),
               ),
       );
     } catch (error) {
       final message = friendlyVotingErrorMessage(error);
-      final eligibilityError = isVotingEligibilityErrorText(message);
+      final eligibilityError =
+          votingRustExceptionOf(error)?.isEligibilityFailure ?? false;
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
           phase: VotingSessionPhase.error,
           config: context.config,
           round: context.round,
-          resumePlan: context.resumePlan,
           roundPlan: context.roundPlan,
           eligibleWeightZatoshi: eligibilityError ? BigInt.zero : null,
           privacyTrimDroppedValueZatoshi: eligibilityError ? BigInt.zero : null,
           isHardwareAccount: context.isHardwareAccount,
-          error: VotingSessionError(message: message, cause: error),
+          error: VotingSessionError(
+            message: message,
+            cause: error,
+            isEligibilityFailure: eligibilityError,
+          ),
         ),
       );
     }
-  }
-
-  String _minimumVotingEligibilityErrorMessage({
-    required rust_api.ApiVotingEligibility eligibility,
-    required int snapshotHeight,
-  }) {
-    return 'minimum voting eligibility requires at least one eligible voting '
-        'bundle with $_minimumVotingBundleWeightZatoshi zatoshi voting weight; '
-        'selected '
-        '${eligibility.distinctNoteCount} distinct notes across eligible '
-        'bundles with ${eligibility.eligibleWeightZatoshi} zatoshi eligible '
-        'bundle weight at '
-        'snapshot height $snapshotHeight';
   }
 
   Future<_VotingSessionContext> _loadContext(
@@ -3447,14 +3104,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final endpoint = ref.read(votingRpcEndpointConfigProvider);
     final dbPath = await ref.read(votingWalletDbPathProvider).call();
     checkAction();
-    final resumePlan = await ref
-        .read(votingRecoveryServiceProvider)
-        .loadResumePlan(
-          dbPath: dbPath,
-          accountUuid: accountUuid,
-          roundId: round.roundId,
-        );
-    // Build a temporary context without roundPlan to derive proposalIds.
     final proposals = proposalsFromRound(round);
     final proposalIds = proposals.map((p) => p.id).toList();
     final roundPlan = await ref
@@ -3476,7 +3125,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       config: config,
       round: round,
       roundParams: roundParams,
-      resumePlan: resumePlan,
       roundPlan: roundPlan,
     );
     return context;
@@ -3504,16 +3152,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         .call(accountUuid);
     _sessionIsHardwareAccount = isHardware;
     return isHardware;
-  }
-
-  Future<VotingResumePlan> _loadResumePlan(_VotingSessionContext context) {
-    return ref
-        .read(votingRecoveryServiceProvider)
-        .loadResumePlan(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-        );
   }
 
   /// Loads the crate planner's round plan.
@@ -3622,7 +3260,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         phase: phase,
         config: context.config,
         round: context.round,
-        resumePlan: context.resumePlan,
         roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
         walletScannedHeight: readiness.scannedHeight,
@@ -3640,6 +3277,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     Object? cause,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     _VotingSessionContext? context,
+    bool isEligibilityFailure = false,
   }) {
     if (!_canUpdateSessionUi(context)) return;
     final current = state.value ?? VotingSessionState(roundId: _roundId);
@@ -3650,6 +3288,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           message: message,
           cause: cause,
           pirDiagnostics: pirDiagnostics ?? const [],
+          isEligibilityFailure: isEligibilityFailure,
         ),
         pirDiagnostics: pirDiagnostics,
       ),
@@ -3905,14 +3544,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   static bool _isKeystoneSetupOverwriteError(Object error) {
-    final normalized = error
-        .toString()
-        .toLowerCase()
-        .replaceAll('_', ' ')
-        .replaceAll('-', ' ');
-    return normalized.contains('refusing to overwrite pczt sighash') ||
-        normalized.contains('refusing to overwrite pczt hash') ||
-        normalized.contains('refusing to overwrite padded note secrets');
+    return error is VotingRustException &&
+        error.kind == rust_wire.VotingErrorKindView.setupAlreadyPersisted;
   }
 }
 
@@ -3976,6 +3609,23 @@ class _BundleWorkOutcome<T> {
   final StackTrace? stackTrace;
 }
 
+/// The bridge failure that best describes a batch of per-bundle failures.
+///
+/// An eligibility failure wins because it is round-wide rather than specific
+/// to the bundle that reported it first.
+VotingRustException? _representativeVotingRustException(
+  Iterable<Object> errors,
+) {
+  VotingRustException? first;
+  for (final error in errors) {
+    final rustError = votingRustExceptionOf(error);
+    if (rustError == null) continue;
+    if (rustError.isEligibilityFailure) return rustError;
+    first ??= rustError;
+  }
+  return first;
+}
+
 class _VoteBundleFailure {
   const _VoteBundleFailure({
     required this.bundleIndex,
@@ -3988,10 +3638,17 @@ class _VoteBundleFailure {
   final Object error;
 }
 
-class _VoteBundleBatchException implements Exception {
+class _VoteBundleBatchException
+    implements Exception, VotingRustExceptionSource {
   const _VoteBundleBatchException(this.failures);
 
   final List<_VoteBundleFailure> failures;
+
+  @override
+  VotingRustException? get votingRustException =>
+      _representativeVotingRustException(
+        failures.map((failure) => failure.error),
+      );
 
   @override
   String toString() {
@@ -4018,10 +3675,17 @@ class _DelegationBundleFailure {
   final Object error;
 }
 
-class _DelegationBundleBatchException implements Exception {
+class _DelegationBundleBatchException
+    implements Exception, VotingRustExceptionSource {
   const _DelegationBundleBatchException(this.failures);
 
   final List<_DelegationBundleFailure> failures;
+
+  @override
+  VotingRustException? get votingRustException =>
+      _representativeVotingRustException(
+        failures.map((failure) => failure.error),
+      );
 
   @override
   String toString() {
@@ -4046,7 +3710,6 @@ class _VotingSessionContext {
   final rust_config.ResolvedVotingConfig config;
   final VotingRoundDetails round;
   final rust_wire.VotingRoundParams roundParams;
-  final VotingResumePlan resumePlan;
   final rust_wire.RoundPlanView? roundPlan;
 
   const _VotingSessionContext({
@@ -4059,44 +3722,9 @@ class _VotingSessionContext {
     required this.config,
     required this.round,
     required this.roundParams,
-    required this.resumePlan,
     this.roundPlan,
   });
-
-  _VotingSessionContext withResumePlan(VotingResumePlan resumePlan) {
-    return _VotingSessionContext(
-      sessionGeneration: sessionGeneration,
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      isHardwareAccount: isHardwareAccount,
-      network: network,
-      lightwalletdUrl: lightwalletdUrl,
-      config: config,
-      round: round,
-      roundParams: roundParams,
-      resumePlan: resumePlan,
-      roundPlan: roundPlan,
-    );
-  }
-
-  _VotingSessionContext withRound(VotingRoundDetails round) {
-    return _VotingSessionContext(
-      sessionGeneration: sessionGeneration,
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      isHardwareAccount: isHardwareAccount,
-      network: network,
-      lightwalletdUrl: lightwalletdUrl,
-      config: config,
-      round: round,
-      roundParams: roundParams,
-      resumePlan: resumePlan,
-      roundPlan: roundPlan,
-    );
-  }
 }
-
-enum _ShareTrackingWake { fullPass, roundStatus }
 
 class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();
@@ -4241,7 +3869,6 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
         final bundleSetup = await ref
             .read(votingRustApiProvider)
             .setupDelegationBundles(ctx: _apiRoundContext(context));
-        final refreshedPlan = await _loadResumePlan(context);
         final refreshedRoundPlan = await _loadRoundPlan(context);
         final successPhase = current.phase == VotingSessionPhase.error
             ? VotingSessionPhase.idle
@@ -4252,7 +3879,6 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
             phase: successPhase,
             config: context.config,
             round: context.round,
-            resumePlan: refreshedPlan,
             roundPlan: refreshedRoundPlan,
             eligibleWeightZatoshi: bundleSetup.eligibleWeight,
             privacyTrimDroppedValueZatoshi:

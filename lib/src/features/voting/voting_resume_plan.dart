@@ -1,20 +1,4 @@
-import 'dart:collection';
-
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
-
-/// Workflow phases reported by the SDK for delegation, vote, and share rows.
-///
-/// These alias the typed wire enum; a new SDK phase is a compile-time event
-/// here rather than an unmatched string.
-abstract final class VotingWorkflowPhase {
-  static const prepared = rust_wire.WorkflowPhaseView.prepared;
-  static const signed = rust_wire.WorkflowPhaseView.signed;
-  static const submittedDelegation =
-      rust_wire.WorkflowPhaseView.submittedDelegation;
-  static const submittedVote = rust_wire.WorkflowPhaseView.submittedVote;
-  static const submittedShare = rust_wire.WorkflowPhaseView.submittedShare;
-  static const confirmed = rust_wire.WorkflowPhaseView.confirmed;
-}
 
 bool hasBlockingRoundRecoveryWork(rust_wire.RoundPlanView? roundPlan) {
   return roundPlan?.blockingRecovery ?? false;
@@ -29,10 +13,7 @@ bool hasCompletedVoteForDisplay(rust_wire.RoundPlanView? roundPlan) {
 /// Delayed shares intentionally remain background work, but the submission
 /// confirmation screen must not advance until this one round-level share has
 /// been durably confirmed by the crate's configured-helper quorum.
-bool hasConfirmedImmediateShare(
-  rust_wire.RoundPlanView? roundPlan,
-  VotingResumePlan? _,
-) {
+bool hasConfirmedImmediateShare(rust_wire.RoundPlanView? roundPlan) {
   if (roundPlan?.immediateShareKey == null) return true;
   return roundPlan!.immediateShareConfirmed;
 }
@@ -67,88 +48,47 @@ class VotingVoteKey {
       'VotingVoteKey(bundleIndex: $bundleIndex, proposalId: $proposalId)';
 }
 
-/// Immutable keyed view of persisted recovery records for a voting round.
+/// Eligible bundles the round persisted. The SDK reports one delegation
+/// status per bundle, so its length is the round's bundle count.
+int roundPlanBundleCount(rust_wire.RoundPlanView? roundPlan) =>
+    roundPlan?.delegationStatuses.length ?? 0;
+
+/// Bundles whose delegation is not yet confirmed on chain.
 ///
-/// The crate `RoundPlanView` decides high-level recovery and display state. This
-/// object preserves raw records in stable order so Dart can retry the exact
-/// bundle/proposal/share work selected by that plan.
-class VotingResumePlan {
-  final rust_wire.RoundRecoveryStateView recoveryState;
-  final UnmodifiableListView<int> pendingDelegationBundleIndexes;
-  final UnmodifiableMapView<int, rust_wire.WorkflowPhaseView>
-  delegationPhasesByIndex;
-  final UnmodifiableListView<int> submittedDelegationBundleIndexes;
-  final UnmodifiableMapView<VotingVoteKey, rust_wire.VoteRecoveryView>
-  votesByKey;
-  final UnmodifiableMapView<VotingVoteKey, rust_wire.WorkflowPhaseView>
-  votePhasesByKey;
-  final UnmodifiableMapView<VotingVoteKey, String> voteTxHashesByKey;
-  final UnmodifiableMapView<
-    VotingVoteKey,
-    rust_wire.RecoverableCommitmentBundle
-  >
-  commitmentBundlesByKey;
-  final UnmodifiableListView<VotingVoteKey> pendingVoteSubmissionKeys;
-  final UnmodifiableListView<VotingVoteKey> submittedVoteConfirmationKeys;
-  final UnmodifiableListView<VotingVoteKey> incompleteVoteRecoveryKeys;
-  final UnmodifiableListView<rust_wire.ShareDelegationRecordView>
-  shareDelegations;
-  final UnmodifiableListView<rust_wire.ShareDelegationRecordView>
-  unconfirmedShareDelegations;
+/// Covers both bundles still needing signature work and bundles already
+/// submitted and awaiting confirmation, because both still need a delegation
+/// step driven.
+List<int> delegationBundleIndexesNeedingWork(
+  rust_wire.RoundPlanView? roundPlan,
+) {
+  final indexes = <int>{
+    for (final status
+        in roundPlan?.delegationStatuses ??
+            const <rust_wire.DelegationStatusView>[])
+      if (status.phase != rust_wire.WorkflowPhaseView.confirmed)
+        status.bundleIndex,
+    for (final work
+        in roundPlan?.recoveredDelegationWork ??
+            const <rust_wire.DelegationRecoveryWorkView>[])
+      work.bundleIndex,
+  };
+  return indexes.toList()..sort();
+}
 
-  VotingResumePlan({
-    required this.recoveryState,
-    required List<int> pendingDelegationBundleIndexes,
-    required Map<int, rust_wire.WorkflowPhaseView> delegationPhasesByIndex,
-    required List<int> submittedDelegationBundleIndexes,
-    required Map<VotingVoteKey, rust_wire.VoteRecoveryView> votesByKey,
-    required Map<VotingVoteKey, rust_wire.WorkflowPhaseView> votePhasesByKey,
-    required Map<VotingVoteKey, String> voteTxHashesByKey,
-    required Map<VotingVoteKey, rust_wire.RecoverableCommitmentBundle>
-    commitmentBundlesByKey,
-    required List<VotingVoteKey> pendingVoteSubmissionKeys,
-    required List<VotingVoteKey> submittedVoteConfirmationKeys,
-    required List<VotingVoteKey> incompleteVoteRecoveryKeys,
-    required List<rust_wire.ShareDelegationRecordView> shareDelegations,
-    required List<rust_wire.ShareDelegationRecordView>
-    unconfirmedShareDelegations,
-  }) : pendingDelegationBundleIndexes = UnmodifiableListView(
-         pendingDelegationBundleIndexes,
-       ),
-       delegationPhasesByIndex = UnmodifiableMapView(delegationPhasesByIndex),
-       submittedDelegationBundleIndexes = UnmodifiableListView(
-         submittedDelegationBundleIndexes,
-       ),
-       votesByKey = UnmodifiableMapView(votesByKey),
-       votePhasesByKey = UnmodifiableMapView(votePhasesByKey),
-       voteTxHashesByKey = UnmodifiableMapView(voteTxHashesByKey),
-       commitmentBundlesByKey = UnmodifiableMapView(commitmentBundlesByKey),
-       pendingVoteSubmissionKeys = UnmodifiableListView(
-         pendingVoteSubmissionKeys,
-       ),
-       submittedVoteConfirmationKeys = UnmodifiableListView(
-         submittedVoteConfirmationKeys,
-       ),
-       incompleteVoteRecoveryKeys = UnmodifiableListView(
-         incompleteVoteRecoveryKeys,
-       ),
-       shareDelegations = UnmodifiableListView(shareDelegations),
-       unconfirmedShareDelegations = UnmodifiableListView(
-         unconfirmedShareDelegations,
-       );
-
-  String get roundId => recoveryState.roundId;
-
-  int get bundleCount => recoveryState.bundleCount;
-
-  /// Shares with no accepted helper server still need foreground retry work.
-  ///
-  /// High-level recovery and completed-vote display decisions come from
-  /// [rust_wire.RoundPlanView]. This value is only the local share retry shape.
-  bool get hasBlockingShareWork =>
-      unconfirmedShareDelegations.any((record) => record.sentToUrls.isEmpty);
-
-  rust_wire.RecoverableCommitmentBundle? commitmentBundleFor(
-    VotingVoteKey key,
-  ) => commitmentBundlesByKey[key];
+/// Bundles that still need delegation signing material.
+///
+/// Excludes bundles already submitted: their signature exists and only the
+/// chain outcome is outstanding.
+List<int> delegationBundleIndexesNeedingSigning(
+  rust_wire.RoundPlanView? roundPlan,
+) {
+  final indexes = <int>[
+    for (final status
+        in roundPlan?.delegationStatuses ??
+            const <rust_wire.DelegationStatusView>[])
+      if (status.phase != rust_wire.WorkflowPhaseView.confirmed &&
+          status.phase != rust_wire.WorkflowPhaseView.submittedDelegation)
+        status.bundleIndex,
+  ];
+  return indexes..sort();
 }

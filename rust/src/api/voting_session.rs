@@ -128,13 +128,14 @@ pub fn open_voting_round_session(
     stored_hotkey_secret: Option<Vec<u8>>,
     operation_epoch: u64,
 ) -> Result<VotingRoundSession, VotingErrorView> {
-    let inputs = delegation_static_inputs_for(&ctx).map_err(invalid_input)?;
+    let inputs = delegation_static_inputs_for(&ctx).map_err(VotingErrorView::from)?;
     if let Some(secret) = stored_hotkey_secret.as_ref() {
         // Validate early so a bad secret fails at open, not mid-step.
         hotkey::voting_hotkey_from_stored_secret(secret.clone(), inputs.network)
-            .map_err(invalid_input)?;
+            .map_err(VotingErrorView::from)?;
     }
-    let database = db::open_voting_db(&ctx.db_path, &ctx.account_uuid).map_err(storage)?;
+    let database =
+        db::open_voting_db(&ctx.db_path, &ctx.account_uuid).map_err(VotingErrorView::from)?;
     let health = HelperHealth::default();
     let executor = RoundExecutor::with_transport(
         Arc::clone(&database),
@@ -284,13 +285,13 @@ impl VotingRoundSession {
         let hotkey = match self.hotkey_secret.as_ref() {
             Some(secret) => Some(
                 hotkey::voting_hotkey_from_stored_secret(secret.to_vec(), self.inputs.network)
-                    .map_err(invalid_input)?,
+                    .map_err(VotingErrorView::from)?,
             ),
             None => None,
         };
         let pipeline = delegation::open_pipeline(&self.inputs, hotkey)
             .await
-            .map_err(storage)?;
+            .map_err(VotingErrorView::from)?;
         *self
             .pipeline
             .lock()
@@ -310,7 +311,7 @@ impl VotingRoundSession {
                 let mnemonic = signer.mnemonic.ok_or_else(|| {
                     invalid_input("mnemonic signer needs a mnemonic".to_string())
                 })?;
-                let seed = seed_from_mnemonic(mnemonic).map_err(invalid_input)?;
+                let seed = seed_from_mnemonic(mnemonic).map_err(VotingErrorView::from)?;
                 DelegationSigner::Software(Arc::new(SeedSpendAuthSigner::new(seed)))
             }
             ApiDelegationSignerKind::KeystoneStored => {
@@ -326,7 +327,8 @@ impl VotingRoundSession {
                 DelegationSigner::Keystone(KeystoneSignatureSource::Provided { sig, sighash })
             }
         };
-        let pir = delegation::pir_fleet(&self.pir_server_urls, self.pir_layout).map_err(invalid_input)?;
+        let pir = delegation::pir_fleet(&self.pir_server_urls, self.pir_layout)
+            .map_err(VotingErrorView::from)?;
         let driver = self.pipeline().await?;
         Ok(Some(DelegationStepInputs {
             driver,
@@ -401,9 +403,6 @@ fn invalid_input(message: String) -> VotingErrorView {
     VotingErrorView::from(zcash_voting::VotingError::InvalidInput { message })
 }
 
-fn storage(message: String) -> VotingErrorView {
-    VotingErrorView::from(zcash_voting::VotingError::Storage { message })
-}
 
 fn internal(message: String) -> VotingErrorView {
     VotingErrorView::from(zcash_voting::VotingError::Internal { message })
