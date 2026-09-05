@@ -91,15 +91,36 @@ class ReceiveAddressService {
   }
 
   Future<String> renewShieldedAddress({required String accountUuid}) async {
-    final dbPath = await getWalletDbPath();
-    final network = _network;
     final accountNotifier = _ref.read(accountProvider.notifier);
     final addressRequest = accountNotifier.isHardwareAccount(accountUuid)
         ? ReceiveAddressRequest.orchard
         : ReceiveAddressRequest.shielded;
 
-    final address = await _withDatabaseLockRetry(
-      operationName: 'renew shielded receive address',
+    final address = await _nextAvailableAddress(
+      accountUuid: accountUuid,
+      addressRequest: addressRequest,
+    );
+
+    accountNotifier.updateActiveAddressForAccount(accountUuid, address);
+    return address;
+  }
+
+  Future<String> reserveOrchardAddress({required String accountUuid}) {
+    return _nextAvailableAddress(
+      accountUuid: accountUuid,
+      addressRequest: ReceiveAddressRequest.orchard,
+    );
+  }
+
+  Future<String> _nextAvailableAddress({
+    required String accountUuid,
+    required ReceiveAddressRequest addressRequest,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final network = _network;
+
+    return _withDatabaseLockRetry(
+      operationName: 'reserve shielded receive address',
       operation: () => rust_sync.getNextAvailableAddress(
         dbPath: dbPath,
         network: network,
@@ -107,9 +128,6 @@ class ReceiveAddressService {
         addressRequest: addressRequest.wireName,
       ),
     );
-
-    accountNotifier.updateActiveAddressForAccount(accountUuid, address);
-    return address;
   }
 
   String get _network {
