@@ -186,6 +186,12 @@ pub struct VotingRoundSession {
 /// `stored_hotkey_secret` is required only for sessions that cast votes.
 /// Chain and helper traffic use the wallet's network route; PIR and vote-tree
 /// traffic use the SDK's direct transport.
+///
+/// Synchronous on purpose for now: opening the sidecar can run schema
+/// migrations, which would be better off the Dart isolate that draws the UI,
+/// but the voting session fakes and their gate-based tests assume the handle
+/// exists without an intervening event-loop turn. Moving it needs that
+/// harness work, not just this signature.
 #[frb(sync)]
 pub fn open_voting_round_session(
     ctx: ApiVotingRoundContext,

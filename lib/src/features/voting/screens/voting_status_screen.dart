@@ -41,11 +41,18 @@ class VotingSubmissionProgressPresentation {
     required this.activeStep,
     this.activeStepProgress,
     this.activeStepDetail,
+    this.warning,
   });
 
   final VotingSubmissionProgressStep activeStep;
   final double? activeStepProgress;
   final String? activeStepDetail;
+
+  /// Something the round cannot recover from that is still not a failure of
+  /// the submission — today, a delegation the SDK ended while other bundles
+  /// carry on. Platform builders must surface it; the round finishes either
+  /// way, so this is the only place the user hears about it.
+  final String? warning;
 }
 
 VotingSubmissionProgressStep votingSubmissionProgressStepFor({
@@ -424,6 +431,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
                   activeStep == VotingSubmissionProgressStep.delegating
                   ? delegationDetail
                   : null,
+              warning: state.terminalDelegationNotice,
             ),
           );
         }

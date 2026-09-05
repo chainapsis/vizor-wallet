@@ -1216,6 +1216,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             roundPlan.unrosteredIntents.toList(growable: false),
           );
           _throwIfContextStale(context, 'vote-plan');
+          if (roundPlan.unrosteredIntents.isNotEmpty) {
+            // The SDK withholds every CastVote while an unrostered intent
+            // stands, so carrying on here would read as a cast that quietly
+            // did nothing. The planner reports only clearable ids, so this
+            // means the clear did not take.
+            throw StateError(
+              'Ballot intents for proposals outside the round roster could '
+              'not be cleared: ${roundPlan.unrosteredIntents.join(', ')}.',
+            );
+          }
         }
         final initialSteps = roundPlan.nextSteps.where(_isVoteStep).toList();
         totalBundleTasks = initialSteps.length;
@@ -1282,6 +1292,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 );
               },
             );
+            if (outcome.disposition ==
+                    rust_wire.RoundStepDispositionView.noWork &&
+                outcome.plan.nextSteps.any((candidate) => candidate == step)) {
+              // A no-work answer is normally benign — a background tracking
+              // pass can confirm the share a `submitShares` step was for, and
+              // the SDK drops the step when it re-plans. Only a step the
+              // refreshed plan still lists is stuck, and re-selecting it would
+              // loop forever. This throws inside the per-bundle try so the
+              // bundle fails and the rest of the plan still runs, which is
+              // what this loop promises everywhere else.
+              throw StateError(
+                'The SDK reported no work for a step its plan still lists: '
+                '${step.kind} bundle=${step.bundleIndex} '
+                'proposal=${step.proposalId}.',
+              );
+            }
           } on _StaleVotingSessionAction {
             rethrow;
           } on _ChainSubmissionCancelled {
@@ -1335,12 +1361,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 );
               }
             }
-          } else if (remaining.contains(step)) {
-            throw StateError(
-              'The SDK reported no work for a step its plan still lists: '
-              '${step.kind} bundle=${step.bundleIndex} '
-              'proposal=${step.proposalId}.',
-            );
           }
           _logVoteTiming(
             'step ${step.kind.name} bundle=${step.bundleIndex} '
