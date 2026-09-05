@@ -662,24 +662,39 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
         ),
       );
-      _reportTerminalDelegation(context, refreshedRoundPlan);
+      _noteTerminalDelegation(
+        context,
+        state.value ?? current,
+        refreshedRoundPlan,
+      );
     }, cleanupProcessStateOnError: false);
   }
 
-  /// Surfaces a delegation the SDK ended, whatever else the round managed.
+  /// Records a delegation the SDK ended, without failing the round.
   ///
   /// A terminal bundle plans no further work, so nothing downstream will ever
-  /// raise it. Other bundles succeeding does not make it any less stuck, and
-  /// the user has to be told before they try to vote with a round that cannot
-  /// carry every bundle's weight. State is set first so the refreshed plan and
-  /// progress survive the phase flip.
-  void _reportTerminalDelegation(
+  /// raise it, and the user has to be told before they vote with a round that
+  /// cannot carry every bundle's weight. It must not become the session's
+  /// error, though: the submission job treats an error phase after delegation
+  /// as fatal and returns, so a round with one dead bundle and one healthy one
+  /// would never reach the ballot at all. That trades a silent bundle for an
+  /// unvotable round, which is worse.
+  ///
+  /// The round-wide case — a terminal bundle and nothing left to run — is
+  /// still an error, and is raised before any work is attempted.
+  void _noteTerminalDelegation(
     _VotingSessionContext context,
+    VotingSessionState current,
     rust_wire.RoundPlanView? roundPlan,
   ) {
     final terminal = terminalDelegationMessage(roundPlan);
-    if (terminal == null) return;
-    _setError(terminal, context: context);
+    _setStateForContext(
+      context,
+      current.copyWith(
+        terminalDelegationNotice: terminal,
+        clearTerminalDelegationNotice: terminal == null,
+      ),
+    );
   }
 
   Future<void> prepareKeystoneSigning() {
@@ -1049,7 +1064,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
         ),
       );
-      _reportTerminalDelegation(context, refreshedRoundPlan);
+      _noteTerminalDelegation(
+        context,
+        state.value ?? current,
+        refreshedRoundPlan,
+      );
     }, cleanupProcessStateOnError: false);
   }
 
@@ -1263,17 +1282,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 );
               },
             );
-            if (outcome.disposition ==
-                rust_wire.RoundStepDispositionView.noWork) {
-              // The SDK plans a step only when it has work for it, so a
-              // no-work answer means this step and the round disagree.
-              // Failing the bundle is what keeps the loop from re-selecting
-              // the same step forever; the other bundles still run.
-              throw StateError(
-                'Vote step for bundle ${step.bundleIndex} proposal '
-                '${step.proposalId} is no longer in the round plan.',
-              );
-            }
           } on _StaleVotingSessionAction {
             rethrow;
           } on _ChainSubmissionCancelled {

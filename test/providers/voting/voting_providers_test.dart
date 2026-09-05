@@ -1976,10 +1976,17 @@ void main() {
     // a reason to leave the user believing the round carries both bundles.
     expect(rust.delegationBundleCalls, contains(1));
     expect(rust.delegationBundleCalls, isNot(contains(0)));
-    expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('bundle 1'));
-    expect(state.error?.message, contains('submission has no usable hash'));
-    expect(state.error?.message, contains('Do not retry'));
+    expect(state.terminalDelegationNotice, contains('bundle 1'));
+    expect(
+      state.terminalDelegationNotice,
+      contains('submission has no usable hash'),
+    );
+    expect(state.terminalDelegationNotice, contains('Do not retry'));
+    // It must stay a notice. The submission job treats an error phase after
+    // delegation as fatal and returns, so failing here would keep a round
+    // that still has a healthy bundle from ever reaching the ballot.
+    expect(state.phase, isNot(VotingSessionPhase.error));
+    expect(state.error, isNull);
   });
 
   test('a failure raised before a step keeps its bridge classification', () async {
