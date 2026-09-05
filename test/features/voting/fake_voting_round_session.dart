@@ -186,6 +186,9 @@ abstract interface class FakeRoundSessionDriver {
   List<String> get roundSessionSteps;
 
   List<String> get sessionBallotIntents;
+
+  /// Proposal ids the session was asked to clear as unrostered intents.
+  List<int> get sessionClearedBallotIntents;
 }
 
 /// Test double for the SDK round session.
@@ -215,6 +218,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
   final List<int>? storedHotkeySecret;
   BigInt operationEpoch;
   final Map<int, rust_session.ApiBallotIntent> _intents = {};
+  final Set<int> _clearedUnrosteredIntents = {};
   final Set<String> _recoveredKeys = {};
   final Set<FakeChainSubmissionPassHandle> _passHandles = {};
   final Completer<void> _cancelled = Completer<void>();
@@ -258,6 +262,18 @@ class FakeVotingRoundSession implements VotingRoundSession {
 
   @override
   Future<rust_wire.RoundPlanView> plan() => _plan();
+
+  @override
+  Future<rust_wire.RoundPlanView> clearBallotIntents(
+    List<int> proposalIds,
+  ) async {
+    _clearedUnrosteredIntents.addAll(proposalIds);
+    for (final proposalId in proposalIds) {
+      _intents.remove(proposalId);
+    }
+    driver.sessionClearedBallotIntents.addAll(proposalIds);
+    return _plan();
+  }
 
   @override
   Future<rust_wire.RoundPlanView> setBallotIntents(
@@ -356,6 +372,10 @@ class FakeVotingRoundSession implements VotingRoundSession {
       pendingRecovery: steps.isNotEmpty,
       nextSteps: steps,
       openProposals: base?.openProposals ?? Uint32List.fromList(_rosterIds),
+      unrosteredIntents: Uint32List.fromList([
+        for (final proposalId in base?.unrosteredIntents ?? const <int>[])
+          if (!_clearedUnrosteredIntents.contains(proposalId)) proposalId,
+      ]),
       allDecided: base?.allDecided ?? false,
       hotkeyBound: base?.hotkeyBound ?? false,
       completedVoteArtifact: base?.completedVoteArtifact ?? false,
@@ -912,6 +932,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
         chainOutcome: null,
         message: message,
         plan: await _plan(),
+        shareDeliveries: const [],
       ),
     );
   }

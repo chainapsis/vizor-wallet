@@ -33,9 +33,8 @@ use super::voting::{
 };
 use super::voting_helpers::seed_from_mnemonic;
 
-type RoutedExecutor = RoundExecutor<
-    Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>>,
->;
+type RoutedExecutor =
+    RoundExecutor<Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>>>;
 
 /// One proposal from the authenticated round configuration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,9 +142,11 @@ pub fn open_voting_round_session(
         ChainSubmissionClientConfig::for_network(inputs.network, chain_endpoints),
         helper_client(&health),
     )
-    .map_err(|failure| VotingErrorView::from(zcash_voting::VotingError::InvalidInput {
-        message: failure.message().to_string(),
-    }))?
+    .map_err(|failure| {
+        VotingErrorView::from(zcash_voting::VotingError::InvalidInput {
+            message: failure.message().to_string(),
+        })
+    })?
     .with_binding(RoundBinding {
         round_id: ctx.round_params.vote_round_id.clone(),
         network: inputs.network,
@@ -216,6 +217,34 @@ impl VotingRoundSession {
             .executor
             .set_ballot_intents(&intents)
             .map_err(VotingErrorView::from)?;
+        RoundPlanView::try_from(plan).map_err(VotingErrorView::from)
+    }
+
+    /// Clears durable ballot intents for proposals outside the bound roster
+    /// and re-plans.
+    ///
+    /// A decision recorded before a proposal left the authenticated
+    /// configuration outlives that proposal. The planner reports those in
+    /// `RoundPlanView::unrostered_intents` and withholds `CastVote` until
+    /// they are cleared, because the round's immediate helper share is
+    /// derived from the complete set of choices and a stale intent would
+    /// make that set disagree with the roster.
+    ///
+    /// Pass the ids the plan reported. The SDK refuses to clear an intent
+    /// whose vote the chain lifecycle already owns, but the planner omits
+    /// exactly those from `unrostered_intents`, so a plan-sourced list is
+    /// always clearable.
+    pub async fn clear_ballot_intents(
+        &self,
+        proposal_ids: Vec<u32>,
+    ) -> Result<RoundPlanView, VotingErrorView> {
+        let db = self.executor.database();
+        let round_id = self.inputs.round_params.vote_round_id.clone();
+        for proposal_id in proposal_ids {
+            db.clear_ballot_intent(&round_id, proposal_id)
+                .map_err(VotingErrorView::from)?;
+        }
+        let plan = self.executor.plan().map_err(VotingErrorView::from)?;
         RoundPlanView::try_from(plan).map_err(VotingErrorView::from)
     }
 
@@ -308,9 +337,9 @@ impl VotingRoundSession {
         };
         let signer = match signer.kind {
             ApiDelegationSignerKind::Mnemonic => {
-                let mnemonic = signer.mnemonic.ok_or_else(|| {
-                    invalid_input("mnemonic signer needs a mnemonic".to_string())
-                })?;
+                let mnemonic = signer
+                    .mnemonic
+                    .ok_or_else(|| invalid_input("mnemonic signer needs a mnemonic".to_string()))?;
                 let seed = seed_from_mnemonic(mnemonic).map_err(VotingErrorView::from)?;
                 DelegationSigner::Software(Arc::new(SeedSpendAuthSigner::new(seed)))
             }
@@ -384,14 +413,18 @@ impl VotingRoundSession {
             Ok(outcome) => ApiRoundStepEvent {
                 kind: ApiRoundStepEventKind::Result,
                 progress: None,
-                outcome: Some(RoundStepOutcomeView::try_from(outcome).map_err(VotingErrorView::from)?),
+                outcome: Some(
+                    RoundStepOutcomeView::try_from(outcome).map_err(VotingErrorView::from)?,
+                ),
                 failure: None,
             },
             Err(failure) => ApiRoundStepEvent {
                 kind: ApiRoundStepEventKind::Result,
                 progress: None,
                 outcome: None,
-                failure: Some(RoundStepFailureView::try_from(failure).map_err(VotingErrorView::from)?),
+                failure: Some(
+                    RoundStepFailureView::try_from(failure).map_err(VotingErrorView::from)?,
+                ),
             },
         };
         let _ = sink.add(event);
@@ -402,7 +435,6 @@ impl VotingRoundSession {
 fn invalid_input(message: String) -> VotingErrorView {
     VotingErrorView::from(zcash_voting::VotingError::InvalidInput { message })
 }
-
 
 fn internal(message: String) -> VotingErrorView {
     VotingErrorView::from(zcash_voting::VotingError::Internal { message })

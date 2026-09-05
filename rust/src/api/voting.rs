@@ -10,9 +10,7 @@ use std::{
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
-use super::voting_helpers::{
-    delegation_static_inputs,
-};
+use super::voting_helpers::delegation_static_inputs;
 use crate::wallet::{
     keys,
     voting::{db, delegation, hotkey, network::voting_network},
@@ -389,7 +387,8 @@ impl VotingShareTrackingPassHandle {
 
 /// Process-wide routed transport for helper and vote-chain traffic, so
 /// connections and TLS sessions are reused across passes.
-pub(super) fn routed_transport() -> Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>> {
+pub(super) fn routed_transport(
+) -> Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>> {
     static TRANSPORT: std::sync::OnceLock<
         Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>>,
     > = std::sync::OnceLock::new();
@@ -626,12 +625,11 @@ pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, VotingErrorVie
     catch(|| {
         // Voting hotkeys are app-owned random secrets, not wallet-seed-derived.
         let network = keys::parse_network(&network).map_err(invalid_input)?;
-        zcash_voting::hotkey::generate_random_voting_hotkey(voting_network(network))
-            .map(|hotkey| {
-                // FRB returns owned bytes, so this copy cannot be zeroized by Rust
-                // after Dart receives it.
-                hotkey.stored_secret().to_vec()
-            })
+        zcash_voting::hotkey::generate_random_voting_hotkey(voting_network(network)).map(|hotkey| {
+            // FRB returns owned bytes, so this copy cannot be zeroized by Rust
+            // after Dart receives it.
+            hotkey.stored_secret().to_vec()
+        })
     })
 }
 
@@ -653,7 +651,9 @@ fn catch<T>(
             } else {
                 "Unknown panic".to_string()
             };
-            Err(VotingErrorView::from(internal(format!("Rust panic: {msg}"))))
+            Err(VotingErrorView::from(internal(format!(
+                "Rust panic: {msg}"
+            ))))
         }
     }
 }
@@ -846,7 +846,8 @@ pub async fn warm_pir_proof_cache(
     pir_layout: PirLayout,
     _keep_roots: Vec<Vec<u8>>,
 ) -> Result<ApiPirCacheWarmupResult, VotingErrorView> {
-    let wallet_network = keys::parse_network(&network).map_err(|message| view(invalid_input(message)))?;
+    let wallet_network =
+        keys::parse_network(&network).map_err(|message| view(invalid_input(message)))?;
     let network = voting_network(wallet_network);
     delegation::warm_pir_proof_cache(
         &db_path,
@@ -972,7 +973,9 @@ pub fn delete_skipped_bundles(
         db.delete_skipped_bundles(&round_id, keep_count)
             .and_then(|deleted| {
                 u32::try_from(deleted).map_err(|_| {
-                    internal(format!("deleted bundle count {deleted} does not fit in u32"))
+                    internal(format!(
+                        "deleted bundle count {deleted} does not fit in u32"
+                    ))
                 })
             })
     })
@@ -1310,10 +1313,10 @@ pub fn resolve_voting_config_from_attempts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine as _;
     use crate::wallet::voting::test_support::{
         test_api_round_params, test_note_info, ROUND_ID, TEST_ACCOUNT_UUID,
     };
+    use base64::Engine as _;
     use ff::PrimeField;
     use pasta_curves::group::{Group, GroupEncoding};
     use std::{
@@ -1329,7 +1332,11 @@ mod tests {
     /// The SDK's writer for this is crate-private: only its chain-submission
     /// lifecycle may record submissions. These fixtures set up durable state
     /// for adapter tests, so they write the row the same way.
-    fn fixture_delegation_tx_hash(db: &zcash_voting::round::VotingDb, bundle_index: u32, tx_hash: &str) {
+    fn fixture_delegation_tx_hash(
+        db: &zcash_voting::round::VotingDb,
+        bundle_index: u32,
+        tx_hash: &str,
+    ) {
         let conn = db.conn();
         conn.execute(
             "UPDATE bundles SET delegation_tx_hash = ?1
@@ -2042,7 +2049,9 @@ mod tests {
 
         assert!(zcash_voting::precompute::van_witness(&db, ROUND_ID, 0, round_one_height).is_err());
 
-        let round_two_witness = zcash_voting::precompute::van_witness(&db, OTHER_ROUND_ID, 0, round_two_height).unwrap();
+        let round_two_witness =
+            zcash_voting::precompute::van_witness(&db, OTHER_ROUND_ID, 0, round_two_height)
+                .unwrap();
         assert_eq!(round_two_witness.position, 0);
     }
 
@@ -2628,7 +2637,10 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.message.contains("must not contain an empty URL"), "{err}");
+        assert!(
+            err.message.contains("must not contain an empty URL"),
+            "{err}"
+        );
     }
 
     #[test]

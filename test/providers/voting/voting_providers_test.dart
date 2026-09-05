@@ -10945,6 +10945,7 @@ rust_wire.RoundPlanView _withImmediateShareConfirmed(
     recoveredDelegationWork: plan.recoveredDelegationWork,
     recoveredVoteWork: plan.recoveredVoteWork,
     openProposals: plan.openProposals,
+    unrosteredIntents: plan.unrosteredIntents,
     immediateShareKey: plan.immediateShareKey,
     immediateShareConfirmed: true,
     allDecided: plan.allDecided,
@@ -11768,6 +11769,9 @@ class FakeVotingRustApi
   final roundSessionSteps = <String>[];
   @override
   final sessionBallotIntents = <String>[];
+
+  @override
+  final sessionClearedBallotIntents = <int>[];
 
   @override
   VotingRustApi get api => this;

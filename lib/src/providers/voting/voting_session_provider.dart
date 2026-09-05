@@ -1168,6 +1168,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             ? await session.plan()
             : await session.setBallotIntents(intents);
         _throwIfContextStale(context, 'vote-plan');
+        // A decision recorded before its proposal left the authenticated
+        // roster outlives that proposal, and the SDK withholds casting until
+        // the host clears it: the round's immediate helper share is derived
+        // from the complete set of choices, so a stale intent would make that
+        // set disagree with the roster. The plan reports only the ids that
+        // are still clearable.
+        if (roundPlan.unrosteredIntents.isNotEmpty) {
+          roundPlan = await session.clearBallotIntents(
+            roundPlan.unrosteredIntents.toList(growable: false),
+          );
+          _throwIfContextStale(context, 'vote-plan');
+        }
         final initialSteps = roundPlan.nextSteps.where(_isVoteStep).toList();
         totalBundleTasks = initialSteps.length;
         allVoteKeys.addAll(initialSteps.map(_voteKeyForStep));
@@ -2774,8 +2786,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   static bool _needsFreshDelegationPreparation(
     rust_wire.RoundPlanView? roundPlan,
   ) {
-    if (delegationBundleIndexesNeedingSigning(roundPlan).isNotEmpty)
+    if (delegationBundleIndexesNeedingSigning(roundPlan).isNotEmpty) {
       return true;
+    }
     if (roundPlan == null) return false;
     return roundPlanNeedsDraftSetup(roundPlan) ||
         roundPlan.recoveredDelegationWork.any(
@@ -3745,11 +3758,36 @@ class _StaleVotingSessionAction implements Exception {
 }
 
 /// An SDK round step ended in a typed failure.
-class VotingRoundStepFailure implements Exception {
+class VotingRoundStepFailure implements Exception, VotingRustExceptionSource {
   const VotingRoundStepFailure(this.step, this.failure);
 
   final rust_wire.NextStepView step;
   final rust_wire.RoundStepFailureView failure;
+
+  /// Eligibility is the one step-failure category the app presents as a
+  /// state of the account rather than an error of the action: it suppresses
+  /// retry and switches the round to its not-eligible copy. The step failure
+  /// carries only a kind and a message, so the classified view it exposes
+  /// carries no payload and the message builder falls back to naming the
+  /// round's snapshot block generically.
+  @override
+  VotingRustException? get votingRustException {
+    final kind = switch (failure.kind) {
+      rust_wire.RoundStepFailureKindView.insufficientEligibility =>
+        rust_wire.VotingErrorKindView.insufficientEligibility,
+      rust_wire.RoundStepFailureKindView.noSpendableNotes =>
+        rust_wire.VotingErrorKindView.noSpendableNotes,
+      _ => null,
+    };
+    if (kind == null) return null;
+    return VotingRustException(
+      rust_wire.VotingErrorView(
+        kind: kind,
+        retryable: false,
+        message: failure.message,
+      ),
+    );
+  }
 
   @override
   String toString() => failure.message;

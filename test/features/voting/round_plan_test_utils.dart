@@ -69,6 +69,7 @@ rust_wire.RoundPlanView apiRoundPlan({
   required List<rust_wire.NextStepView> nextSteps,
   required Uint32List openProposals,
   required bool allDecided,
+  Uint32List? unrosteredIntents,
   bool? blockingRecovery,
   bool blockingShareWork = false,
   bool? hasUnconfirmedShares,
@@ -144,6 +145,7 @@ rust_wire.RoundPlanView apiRoundPlan({
     recoveredDelegationWork: resolvedDelegationWork,
     recoveredVoteWork: resolvedVoteWork,
     openProposals: openProposals,
+    unrosteredIntents: unrosteredIntents ?? Uint32List(0),
     immediateShareKey: immediateShareKey,
     immediateShareConfirmed: immediateShareConfirmed,
     allDecided: allDecided,
@@ -484,7 +486,7 @@ VotingRustException votingRustError(
   BigInt? snapshotHeight,
   BigInt? requiredWeightZatoshi,
   BigInt? selectedWeightZatoshi,
-  int? requiredNotes,
+  int? bundleNoteSlots,
   int? selectedNotes,
 }) {
   return VotingRustException(
@@ -496,7 +498,7 @@ VotingRustException votingRustError(
       snapshotHeight: snapshotHeight,
       requiredWeightZatoshi: requiredWeightZatoshi,
       selectedWeightZatoshi: selectedWeightZatoshi,
-      requiredNotes: requiredNotes,
+      bundleNoteSlots: bundleNoteSlots,
       selectedNotes: selectedNotes,
     ),
   );
@@ -599,6 +601,7 @@ rust_wire.RoundPlanView withDelegationStatusesFrom(
     recoveredDelegationWork: plan.recoveredDelegationWork,
     recoveredVoteWork: plan.recoveredVoteWork,
     openProposals: plan.openProposals,
+    unrosteredIntents: plan.unrosteredIntents,
     immediateShareKey: plan.immediateShareKey,
     immediateShareConfirmed: plan.immediateShareConfirmed,
     allDecided: plan.allDecided,

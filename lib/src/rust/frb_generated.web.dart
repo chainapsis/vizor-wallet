@@ -268,6 +268,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  DelegationSetupFieldView dco_decode_box_autoadd_delegation_setup_field_view(
+    dynamic raw,
+  );
+
+  @protected
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
@@ -415,6 +420,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DelegationRecoveryWorkView dco_decode_delegation_recovery_work_view(
     dynamic raw,
   );
+
+  @protected
+  DelegationSetupFieldView dco_decode_delegation_setup_field_view(dynamic raw);
 
   @protected
   DelegationStatusView dco_decode_delegation_status_view(dynamic raw);
@@ -796,6 +804,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DelegationProgressKind? dco_decode_opt_box_autoadd_delegation_progress_kind(
     dynamic raw,
   );
+
+  @protected
+  DelegationSetupFieldView?
+  dco_decode_opt_box_autoadd_delegation_setup_field_view(dynamic raw);
 
   @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
@@ -1363,6 +1375,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  DelegationSetupFieldView sse_decode_box_autoadd_delegation_setup_field_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
@@ -1542,6 +1559,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegationRecoveryWorkView sse_decode_delegation_recovery_work_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationSetupFieldView sse_decode_delegation_setup_field_view(
     SseDeserializer deserializer,
   );
 
@@ -2029,6 +2051,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegationProgressKind? sse_decode_opt_box_autoadd_delegation_progress_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationSetupFieldView?
+  sse_decode_opt_box_autoadd_delegation_setup_field_view(
     SseDeserializer deserializer,
   );
 
@@ -2735,6 +2763,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_delegation_setup_field_view(
+    DelegationSetupFieldView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
@@ -2953,6 +2987,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_delegation_recovery_work_view(
     DelegationRecoveryWorkView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_setup_field_view(
+    DelegationSetupFieldView self,
     SseSerializer serializer,
   );
 
@@ -3544,6 +3584,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_delegation_progress_kind(
     DelegationProgressKind? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_delegation_setup_field_view(
+    DelegationSetupFieldView? self,
     SseSerializer serializer,
   );
 

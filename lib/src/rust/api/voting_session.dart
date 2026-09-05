@@ -60,6 +60,22 @@ abstract class VotingRoundSession implements RustOpaqueInterface {
   /// Cancels every step in flight or queued on this session.
   void cancel();
 
+  /// Clears durable ballot intents for proposals outside the bound roster
+  /// and re-plans.
+  ///
+  /// A decision recorded before a proposal left the authenticated
+  /// configuration outlives that proposal. The planner reports those in
+  /// `RoundPlanView::unrostered_intents` and withholds `CastVote` until
+  /// they are cleared, because the round's immediate helper share is
+  /// derived from the complete set of choices and a stale intent would
+  /// make that set disagree with the roster.
+  ///
+  /// Pass the ids the plan reported. The SDK refuses to clear an intent
+  /// whose vote the chain lifecycle already owns, but the planner omits
+  /// exactly those from `unrostered_intents`, so a plan-sourced list is
+  /// always clearable.
+  Future<RoundPlanView> clearBallotIntents({required List<int> proposalIds});
+
   /// Builds redacted Keystone signing requests for the given bundles.
   Future<List<KeystoneSigningRequest>> keystoneSigningRequests({
     required List<int> bundleIndices,

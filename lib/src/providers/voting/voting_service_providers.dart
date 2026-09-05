@@ -412,6 +412,12 @@ abstract interface class VotingRoundSession {
     List<rust_session.ApiBallotIntent> intents,
   );
 
+  /// Clears durable intents for proposals outside the round's roster.
+  ///
+  /// The SDK withholds casting while `RoundPlanView.unrosteredIntents` is
+  /// non-empty, so these must be cleared before a cast can be planned.
+  Future<rust_voting.RoundPlanView> clearBallotIntents(List<int> proposalIds);
+
   /// Runs one planned step, streaming progress and then exactly one result.
   Stream<rust_session.ApiRoundStepEvent> advanceStep({
     required rust_voting.NextStepView step,
@@ -745,6 +751,11 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
   Future<rust_voting.RoundPlanView> setBallotIntents(
     List<rust_session.ApiBallotIntent> intents,
   ) => _typed(() => inner.setBallotIntents(intents: intents));
+
+  @override
+  Future<rust_voting.RoundPlanView> clearBallotIntents(
+    List<int> proposalIds,
+  ) => _typed(() => inner.clearBallotIntents(proposalIds: proposalIds));
 
   @override
   Stream<rust_session.ApiRoundStepEvent> advanceStep({
