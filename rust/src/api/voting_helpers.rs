@@ -39,41 +39,4 @@ pub(super) fn delegation_static_inputs(
     Ok((voting_network, bundle_policy))
 }
 
-/// Fetch lightwalletd-backed delegation inputs after local validation succeeds.
-pub(super) async fn resolve_delegation_lwd_inputs(
-    lightwalletd_url: &str,
-    round_params: zcash_voting::wire::VotingRoundParams,
-    round_name: &str,
-    voting_network: zcash_voting::Network,
-) -> Result<zcash_voting::delegate::DelegationLwdInputs, String> {
-    zcash_voting::delegate::gather_delegation_lwd_inputs(
-        zcash_voting::delegate::ResolveDelegationLwdParams {
-            lightwalletd_url,
-            network: voting_network,
-            round_params,
-            round_name,
-        },
-    )
-    .await
-    .map_err(|e| e.to_string())
-}
 
-/// Build the common `PrepareDelegationBundleParams` shape for wallet-layer
-/// delegation helpers from API-owned inputs.
-pub(super) fn prepare_delegation_bundle_params<'a>(
-    lwd: zcash_voting::delegate::DelegationLwdInputs,
-    session_json: Option<&'a str>,
-    account_uuid: &'a str,
-    voting_hotkey: &'a zcash_voting::VotingHotkey,
-    bundle_index: u32,
-    bundle_policy: zcash_voting::BundlePolicy,
-) -> zcash_voting::delegate::PrepareDelegationBundleParams<'a> {
-    zcash_voting::delegate::PrepareDelegationBundleParams {
-        lwd,
-        session_json,
-        account_uuid,
-        voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    }
-}

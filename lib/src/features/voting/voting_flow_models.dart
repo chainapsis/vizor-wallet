@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/app_secure_store.dart';
 import '../../providers/voting/voting_state.dart';
-import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 
 const int _minProposalId = 1;
 const int _maxProposalId = 15;
@@ -100,6 +99,22 @@ class VotingSessionKey {
   int get hashCode => Object.hash(roundId, accountUuid);
 }
 
+/// One proposal choice the wallet is about to cast.
+///
+/// Durable ballot intent and the SDK roster carry everything else the cast
+/// needs; this is only what the user decided.
+class VotingDraftVote {
+  const VotingDraftVote({
+    required this.proposalId,
+    required this.choice,
+    required this.numOptions,
+  });
+
+  final int proposalId;
+  final int choice;
+  final int numOptions;
+}
+
 class VotingDraftState {
   const VotingDraftState({this.choices = const {}});
 
@@ -116,19 +131,14 @@ class VotingDraftState {
     return VotingDraftState(choices: nextChoices);
   }
 
-  List<rust_voting.DraftVote> toDraftVotes(
-    List<VotingProposalView> proposals, {
-    bool singleShare = false,
-  }) {
+  List<VotingDraftVote> toDraftVotes(List<VotingProposalView> proposals) {
     return [
       for (final proposal in proposals)
         if (choices[proposal.id] != null)
-          rust_voting.DraftVote(
+          VotingDraftVote(
             proposalId: proposal.id,
             choice: choices[proposal.id]!,
             numOptions: proposal.options.length,
-            vcTreePosition: BigInt.zero,
-            singleShare: singleShare,
           ),
     ];
   }

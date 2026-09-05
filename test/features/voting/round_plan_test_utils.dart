@@ -5,7 +5,6 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 
-
 /// Mirrors the SDK's `summarize_plan_work` so fixtures stay faithful to the
 /// derived predicates the app now reads instead of matching step kinds.
 class _PlanWork {
@@ -35,18 +34,20 @@ _PlanWork _planWork(
   var hasRecoverable = false;
   for (final step in nextSteps) {
     switch (step.kind) {
-      case 'delegate':
+      case rust_wire.NextStepKind.delegate:
         needsDelegationSigning = true;
-      case 'advance_delegation':
+      case rust_wire.NextStepKind.advanceDelegation:
         hasInFlightDelegation = true;
-      case 'cast_vote':
-      case 'advance_vote':
-      case 'advance_vote_batch':
-      case 'submit_shares':
+      case rust_wire.NextStepKind.advanceImportedDelegation:
+        hasInFlightDelegation = true;
+      case rust_wire.NextStepKind.castVote:
+      case rust_wire.NextStepKind.advanceVote:
+      case rust_wire.NextStepKind.advanceVoteBatch:
+      case rust_wire.NextStepKind.submitShares:
         needsVotePolling = true;
         hasRemaining = true;
         hasRecoverable = true;
-      case 'confirm_share':
+      case rust_wire.NextStepKind.confirmShare:
         hasRecoverable = true;
         if (blockingShareWork) hasRemaining = true;
     }
@@ -73,7 +74,7 @@ rust_wire.RoundPlanView apiRoundPlan({
   bool? completedForDisplay,
   rust_wire.CompletedVoteDisplayView? completedVoteDisplay,
   bool? needsDraftSetup,
-  String? primaryAction,
+  rust_wire.RoundPlanActionKind? primaryAction,
   List<rust_wire.DelegationStatusView> delegationStatuses = const [],
   List<rust_wire.DelegationRecoveryWorkView>? recoveredDelegationWork,
   List<rust_wire.VoteRecoveryWorkView>? recoveredVoteWork,
@@ -86,7 +87,9 @@ rust_wire.RoundPlanView apiRoundPlan({
   final resolvedBlockingRecovery =
       blockingRecovery ??
       (pendingRecovery &&
-          (nextSteps.any((step) => step.kind != 'confirm_share') ||
+          (nextSteps.any(
+                (step) => step.kind != rust_wire.NextStepKind.confirmShare,
+              ) ||
               blockingShareWork));
   final resolvedCompletedForDisplay =
       completedForDisplay ??
@@ -153,10 +156,11 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     };
     for (var bundleIndex = 0; bundleIndex < state.bundleCount; bundleIndex++) {
       final delegation = delegationByBundle[bundleIndex];
-      if (delegation != null && delegation.phase == 'submitted_delegation') {
+      if (delegation != null &&
+          delegation.phase == rust_wire.WorkflowPhaseView.submittedDelegation) {
         nextSteps.add(
           rust_wire.NextStepView(
-            kind: 'advance_delegation',
+            kind: rust_wire.NextStepKind.advanceDelegation,
             bundleIndex: bundleIndex,
             proposalId: 0,
             choice: 0,
@@ -165,7 +169,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
         );
         recoveredDelegationWork.add(
           rust_wire.DelegationRecoveryWorkView(
-            kind: 'advance_delegation',
+            kind: rust_wire.DelegationRecoveryWorkKindView.advanceDelegation,
             bundleIndex: bundleIndex,
             phase: delegation.phase,
             txHash: delegation.txHash,
@@ -177,10 +181,10 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
 
   for (final vote in state.votes) {
     final txHash = vote.txHash;
-    if (vote.phase == 'signed') {
+    if (vote.phase == rust_wire.WorkflowPhaseView.signed) {
       nextSteps.add(
         rust_wire.NextStepView(
-          kind: 'advance_vote',
+          kind: rust_wire.NextStepKind.advanceVote,
           bundleIndex: vote.bundleIndex,
           proposalId: vote.proposalId,
           choice: 0,
@@ -189,16 +193,17 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
       );
       recoveredVoteWork.add(
         rust_wire.VoteRecoveryWorkView(
-          kind: 'advance_vote',
+          kind: rust_wire.VoteRecoveryWorkKindView.advanceVote,
           bundleIndex: vote.bundleIndex,
           proposalId: vote.proposalId,
           shareIndexes: Uint32List(0),
         ),
       );
-    } else if (vote.phase == 'submitted_vote' && txHash != null) {
+    } else if (vote.phase == rust_wire.WorkflowPhaseView.submittedVote &&
+        txHash != null) {
       nextSteps.add(
         rust_wire.NextStepView(
-          kind: 'advance_vote',
+          kind: rust_wire.NextStepKind.advanceVote,
           bundleIndex: vote.bundleIndex,
           proposalId: vote.proposalId,
           choice: 0,
@@ -207,7 +212,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
       );
       recoveredVoteWork.add(
         rust_wire.VoteRecoveryWorkView(
-          kind: 'advance_vote',
+          kind: rust_wire.VoteRecoveryWorkKindView.advanceVote,
           bundleIndex: vote.bundleIndex,
           proposalId: vote.proposalId,
           txHash: txHash,
@@ -225,7 +230,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
   for (final share in state.unconfirmedShareDelegations) {
     nextSteps.add(
       rust_wire.NextStepView(
-        kind: 'confirm_share',
+        kind: rust_wire.NextStepKind.confirmShare,
         bundleIndex: share.bundleIndex,
         proposalId: share.proposalId,
         choice: 0,
@@ -257,7 +262,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
   for (final group in shareGroups.values) {
     recoveredVoteWork.add(
       rust_wire.VoteRecoveryWorkView(
-        kind: 'submit_shares',
+        kind: rust_wire.VoteRecoveryWorkKindView.submitShares,
         bundleIndex: group.bundleIndex,
         proposalId: group.proposalId,
         vcTreePosition: group.position,
@@ -270,7 +275,9 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     (share) => share.sentToUrls.isEmpty,
   );
   final blockingRecovery =
-      nextSteps.any((step) => step.kind != 'confirm_share') ||
+      nextSteps.any(
+        (step) => step.kind != rust_wire.NextStepKind.confirmShare,
+      ) ||
       blockingShareWork;
   final completedForDisplay = completedVoteArtifact && !blockingRecovery;
 
@@ -280,7 +287,9 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     blockingRecovery: blockingRecovery,
     blockingShareWork: blockingShareWork,
     hotkeyBound:
-        recoveredDelegationWork.any((work) => work.phase != 'prepared') ||
+        recoveredDelegationWork.any(
+          (work) => work.phase != rust_wire.WorkflowPhaseView.prepared,
+        ) ||
         completedVoteArtifact,
     completedVoteArtifact: completedVoteArtifact,
     completedForDisplay: completedForDisplay,
@@ -330,14 +339,19 @@ List<rust_wire.DelegationRecoveryWorkView> _delegationRecoveryWork(
 ) {
   return [
     for (final step in steps)
-      if (step.kind == 'delegate' || step.kind == 'advance_delegation')
+      if (step.kind == rust_wire.NextStepKind.delegate ||
+          step.kind == rust_wire.NextStepKind.advanceDelegation)
         rust_wire.DelegationRecoveryWorkView(
-          kind: step.kind,
+          kind: step.kind == rust_wire.NextStepKind.delegate
+              ? rust_wire.DelegationRecoveryWorkKindView.delegate
+              : rust_wire.DelegationRecoveryWorkKindView.advanceDelegation,
           bundleIndex: step.bundleIndex,
-          phase: step.kind == 'advance_delegation'
-              ? 'submitted_delegation'
-              : 'prepared',
-          txHash: step.kind == 'advance_delegation' ? 'delegation-tx' : null,
+          phase: step.kind == rust_wire.NextStepKind.advanceDelegation
+              ? rust_wire.WorkflowPhaseView.submittedDelegation
+              : rust_wire.WorkflowPhaseView.prepared,
+          txHash: step.kind == rust_wire.NextStepKind.advanceDelegation
+              ? 'delegation-tx'
+              : null,
         ),
   ];
 }
@@ -349,7 +363,8 @@ List<rust_wire.VoteRecoveryWorkView> _voteRecoveryWork(
       <String, ({int bundleIndex, int proposalId, List<int> shares})>{};
   final work = <rust_wire.VoteRecoveryWorkView>[];
   for (final step in steps) {
-    if (step.kind == 'advance_vote' || step.kind == 'advance_vote_batch') {
+    if (step.kind == rust_wire.NextStepKind.advanceVote ||
+        step.kind == rust_wire.NextStepKind.advanceVoteBatch) {
       // A step kind no longer says whether the transaction was dispatched:
       // submitting and polling are one `advance_vote` call. The recorded
       // `txHash` carries that distinction, so it defaults to absent
@@ -357,13 +372,15 @@ List<rust_wire.VoteRecoveryWorkView> _voteRecoveryWork(
       // generation passes `recoveredVoteWork` explicitly.
       work.add(
         rust_wire.VoteRecoveryWorkView(
-          kind: step.kind,
+          kind: step.kind == rust_wire.NextStepKind.advanceVote
+              ? rust_wire.VoteRecoveryWorkKindView.advanceVote
+              : rust_wire.VoteRecoveryWorkKindView.advanceVoteBatch,
           bundleIndex: step.bundleIndex,
           proposalId: step.proposalId,
           shareIndexes: Uint32List(0),
         ),
       );
-    } else if (step.kind == 'submit_shares') {
+    } else if (step.kind == rust_wire.NextStepKind.submitShares) {
       final key = '${step.bundleIndex}:${step.proposalId}';
       final existing = groupedShares[key];
       if (existing == null) {
@@ -380,7 +397,7 @@ List<rust_wire.VoteRecoveryWorkView> _voteRecoveryWork(
   for (final grouped in groupedShares.values) {
     work.add(
       rust_wire.VoteRecoveryWorkView(
-        kind: 'submit_shares',
+        kind: rust_wire.VoteRecoveryWorkKindView.submitShares,
         bundleIndex: grouped.bundleIndex,
         proposalId: grouped.proposalId,
         vcTreePosition: BigInt.zero,
@@ -391,33 +408,36 @@ List<rust_wire.VoteRecoveryWorkView> _voteRecoveryWork(
   return work;
 }
 
-String _primaryAction({
+rust_wire.RoundPlanActionKind _primaryAction({
   required List<rust_wire.NextStepView> nextSteps,
   required bool blockingRecovery,
   required bool blockingShareWork,
   required bool completedForDisplay,
 }) {
-  if (completedForDisplay) return 'done';
-  if (!blockingRecovery) return 'idle';
+  if (completedForDisplay) return rust_wire.RoundPlanActionKind.done;
+  if (!blockingRecovery) return rust_wire.RoundPlanActionKind.idle;
   if (nextSteps.any(
-    (step) => step.kind == 'delegate' || step.kind == 'advance_delegation',
+    (step) =>
+        step.kind == rust_wire.NextStepKind.delegate ||
+        step.kind == rust_wire.NextStepKind.advanceDelegation,
   )) {
-    return 'delegate';
+    return rust_wire.RoundPlanActionKind.delegate;
   }
   if (nextSteps.any(
     (step) =>
-        step.kind == 'cast_vote' ||
-        step.kind == 'vote' ||
-        step.kind == 'advance_vote' ||
-        step.kind == 'advance_vote',
+        step.kind == rust_wire.NextStepKind.castVote ||
+        step.kind == rust_wire.NextStepKind.advanceVote ||
+        step.kind == rust_wire.NextStepKind.advanceVoteBatch,
   )) {
-    return 'vote';
+    return rust_wire.RoundPlanActionKind.vote;
   }
   if (blockingShareWork ||
       nextSteps.any(
-        (step) => step.kind == 'submit_shares' || step.kind == 'confirm_share',
+        (step) =>
+            step.kind == rust_wire.NextStepKind.submitShares ||
+            step.kind == rust_wire.NextStepKind.confirmShare,
       )) {
-    return 'submit_shares';
+    return rust_wire.RoundPlanActionKind.submitShares;
   }
-  return 'idle';
+  return rust_wire.RoundPlanActionKind.idle;
 }

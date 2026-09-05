@@ -69,7 +69,7 @@ class VotingSubmissionJobState {
   final int keystoneBatchMessageCount;
   final int keystoneBatchTotalCount;
   final String? keystoneQrError;
-  final List<rust_wire.DraftVote>? pendingDraftVotes;
+  final List<VotingDraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
   final Map<int, int> pendingProposalOptionCounts;
   final bool pendingRecoveryWithoutDraft;
@@ -94,7 +94,7 @@ class VotingSubmissionJobState {
     int? keystoneBatchTotalCount,
     String? keystoneQrError,
     bool clearKeystoneQrError = false,
-    List<rust_wire.DraftVote>? pendingDraftVotes,
+    List<VotingDraftVote>? pendingDraftVotes,
     bool clearPendingDraftVotes = false,
     List<int>? pendingProposalIds,
     Map<int, int>? pendingProposalOptionCounts,
@@ -566,7 +566,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       final recoveredDraftVotes =
           userDraftVotes.isEmpty && _roundPlanHasNoOpenProposals(activeSession)
           ? _draftVotesFromRoundPlan(activeSession.roundPlan, proposals)
-          : const <rust_wire.DraftVote>[];
+          : const <VotingDraftVote>[];
       final draftVotes = userDraftVotes.isNotEmpty
           ? userDraftVotes
           : recoveredDraftVotes;
@@ -882,7 +882,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     VotingSessionNotifier sessionNotifier, {
     required VotingSessionKey key,
     required int generation,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
     required List<int> intentProposalIds,
     required Map<int, int> proposalOptionCounts,
     VotingSessionState? initialSession,
@@ -989,7 +989,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   void _storePendingKeystoneState({
     required VotingSessionKey key,
     required int generation,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
     required List<int> intentProposalIds,
     required Map<int, int> proposalOptionCounts,
     required bool pendingRecoveryWithoutDraft,
@@ -1502,26 +1502,24 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     return roundPlan?.needsVotePolling ?? false;
   }
 
-  List<rust_wire.DraftVote> _draftVotesFromRoundPlan(
+  List<VotingDraftVote> _draftVotesFromRoundPlan(
     rust_wire.RoundPlanView? roundPlan,
     List<VotingProposalView> proposals,
   ) {
     if (roundPlan == null) return const [];
     final choicesByProposal = <int, int>{};
     for (final step in roundPlan.nextSteps) {
-      if (step.kind != 'cast_vote') continue;
+      if (step.kind != rust_wire.NextStepKind.castVote) continue;
       choicesByProposal.putIfAbsent(step.proposalId, () => step.choice);
     }
     if (choicesByProposal.isEmpty) return const [];
     return [
       for (final proposal in proposals)
         if (choicesByProposal[proposal.id] != null)
-          rust_wire.DraftVote(
+          VotingDraftVote(
             proposalId: proposal.id,
             choice: choicesByProposal[proposal.id]!,
             numOptions: proposal.options.length,
-            vcTreePosition: BigInt.zero,
-            singleShare: false,
           ),
     ];
   }

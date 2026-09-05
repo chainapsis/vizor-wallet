@@ -74,7 +74,7 @@ class VotingRecoveryService {
   /// Bundle/proposal pairs are keyed together because voting is bundle-indexed:
   /// one proposal can have independent state for each note bundle.
   VotingResumePlan buildResumePlan(rust_voting.RoundRecoveryStateView state) {
-    final delegationPhasesByIndex = <int, String>{
+    final delegationPhasesByIndex = <int, rust_voting.WorkflowPhaseView>{
       for (final record in state.delegation) record.bundleIndex: record.phase,
     };
     final submittedDelegationBundleIndexes =
@@ -112,7 +112,7 @@ class VotingRecoveryService {
             proposalId: record.proposalId,
           ): record.txHash!,
     };
-    final votePhasesByKey = <VotingVoteKey, String>{
+    final votePhasesByKey = <VotingVoteKey, rust_voting.WorkflowPhaseView>{
       for (final record in state.votes)
         VotingVoteKey(
           bundleIndex: record.bundleIndex,

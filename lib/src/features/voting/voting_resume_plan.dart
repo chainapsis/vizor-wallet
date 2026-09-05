@@ -2,17 +2,18 @@ import 'dart:collection';
 
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 
-/// Phase strings emitted by Rust voting recovery.
+/// Workflow phases reported by the SDK for delegation, vote, and share rows.
 ///
-/// Keep these in sync with `WorkflowPhase::as_str` in
-/// `zcash_voting::phases::WorkflowPhase`.
+/// These alias the typed wire enum; a new SDK phase is a compile-time event
+/// here rather than an unmatched string.
 abstract final class VotingWorkflowPhase {
-  static const prepared = 'prepared';
-  static const signed = 'signed';
-  static const submittedDelegation = 'submitted_delegation';
-  static const submittedVote = 'submitted_vote';
-  static const submittedShare = 'submitted_share';
-  static const confirmed = 'confirmed';
+  static const prepared = rust_wire.WorkflowPhaseView.prepared;
+  static const signed = rust_wire.WorkflowPhaseView.signed;
+  static const submittedDelegation =
+      rust_wire.WorkflowPhaseView.submittedDelegation;
+  static const submittedVote = rust_wire.WorkflowPhaseView.submittedVote;
+  static const submittedShare = rust_wire.WorkflowPhaseView.submittedShare;
+  static const confirmed = rust_wire.WorkflowPhaseView.confirmed;
 }
 
 bool hasBlockingRoundRecoveryWork(rust_wire.RoundPlanView? roundPlan) {
@@ -74,11 +75,13 @@ class VotingVoteKey {
 class VotingResumePlan {
   final rust_wire.RoundRecoveryStateView recoveryState;
   final UnmodifiableListView<int> pendingDelegationBundleIndexes;
-  final UnmodifiableMapView<int, String> delegationPhasesByIndex;
+  final UnmodifiableMapView<int, rust_wire.WorkflowPhaseView>
+  delegationPhasesByIndex;
   final UnmodifiableListView<int> submittedDelegationBundleIndexes;
   final UnmodifiableMapView<VotingVoteKey, rust_wire.VoteRecoveryView>
   votesByKey;
-  final UnmodifiableMapView<VotingVoteKey, String> votePhasesByKey;
+  final UnmodifiableMapView<VotingVoteKey, rust_wire.WorkflowPhaseView>
+  votePhasesByKey;
   final UnmodifiableMapView<VotingVoteKey, String> voteTxHashesByKey;
   final UnmodifiableMapView<
     VotingVoteKey,
@@ -96,10 +99,10 @@ class VotingResumePlan {
   VotingResumePlan({
     required this.recoveryState,
     required List<int> pendingDelegationBundleIndexes,
-    required Map<int, String> delegationPhasesByIndex,
+    required Map<int, rust_wire.WorkflowPhaseView> delegationPhasesByIndex,
     required List<int> submittedDelegationBundleIndexes,
     required Map<VotingVoteKey, rust_wire.VoteRecoveryView> votesByKey,
-    required Map<VotingVoteKey, String> votePhasesByKey,
+    required Map<VotingVoteKey, rust_wire.WorkflowPhaseView> votePhasesByKey,
     required Map<VotingVoteKey, String> voteTxHashesByKey,
     required Map<VotingVoteKey, rust_wire.RecoverableCommitmentBundle>
     commitmentBundlesByKey,
