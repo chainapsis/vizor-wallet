@@ -5,6 +5,61 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 
+
+/// Mirrors the SDK's `summarize_plan_work` so fixtures stay faithful to the
+/// derived predicates the app now reads instead of matching step kinds.
+class _PlanWork {
+  const _PlanWork({
+    required this.needsDelegationSigning,
+    required this.hasInFlightDelegation,
+    required this.needsVotePolling,
+    required this.hasRemainingVoteOrShareWork,
+    required this.hasRecoverableVoteOrShareWork,
+  });
+
+  final bool needsDelegationSigning;
+  final bool hasInFlightDelegation;
+  final bool needsVotePolling;
+  final bool hasRemainingVoteOrShareWork;
+  final bool hasRecoverableVoteOrShareWork;
+}
+
+_PlanWork _planWork(
+  List<rust_wire.NextStepView> nextSteps,
+  bool blockingShareWork,
+) {
+  var needsDelegationSigning = false;
+  var hasInFlightDelegation = false;
+  var needsVotePolling = false;
+  var hasRemaining = false;
+  var hasRecoverable = false;
+  for (final step in nextSteps) {
+    switch (step.kind) {
+      case 'delegate':
+        needsDelegationSigning = true;
+      case 'advance_delegation':
+        hasInFlightDelegation = true;
+      case 'cast_vote':
+      case 'advance_vote':
+      case 'advance_vote_batch':
+      case 'submit_shares':
+        needsVotePolling = true;
+        hasRemaining = true;
+        hasRecoverable = true;
+      case 'confirm_share':
+        hasRecoverable = true;
+        if (blockingShareWork) hasRemaining = true;
+    }
+  }
+  return _PlanWork(
+    needsDelegationSigning: needsDelegationSigning,
+    hasInFlightDelegation: hasInFlightDelegation,
+    needsVotePolling: needsVotePolling,
+    hasRemainingVoteOrShareWork: hasRemaining,
+    hasRecoverableVoteOrShareWork: hasRecoverable,
+  );
+}
+
 rust_wire.RoundPlanView apiRoundPlan({
   required String roundId,
   required bool pendingRecovery,
@@ -43,6 +98,8 @@ rust_wire.RoundPlanView apiRoundPlan({
           nextSteps.isEmpty &&
           openProposals.isNotEmpty);
 
+  final work = _planWork(nextSteps, blockingShareWork);
+
   return rust_wire.RoundPlanView(
     roundId: roundId,
     pendingRecovery: pendingRecovery,
@@ -53,6 +110,11 @@ rust_wire.RoundPlanView apiRoundPlan({
     completedForDisplay: resolvedCompletedForDisplay,
     completedVoteDisplay: completedVoteDisplay,
     needsDraftSetup: resolvedNeedsDraftSetup,
+    needsDelegationSigning: work.needsDelegationSigning,
+    hasInFlightDelegation: work.hasInFlightDelegation,
+    needsVotePolling: work.needsVotePolling,
+    hasRemainingVoteOrShareWork: work.hasRemainingVoteOrShareWork,
+    hasRecoverableVoteOrShareWork: work.hasRecoverableVoteOrShareWork,
     primaryAction:
         primaryAction ??
         _primaryAction(
@@ -94,7 +156,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
       if (delegation != null && delegation.phase == 'submitted_delegation') {
         nextSteps.add(
           rust_wire.NextStepView(
-            kind: 'poll_delegation',
+            kind: 'advance_delegation',
             bundleIndex: bundleIndex,
             proposalId: 0,
             choice: 0,
@@ -103,7 +165,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
         );
         recoveredDelegationWork.add(
           rust_wire.DelegationRecoveryWorkView(
-            kind: 'poll_delegation',
+            kind: 'advance_delegation',
             bundleIndex: bundleIndex,
             phase: delegation.phase,
             txHash: delegation.txHash,
@@ -118,7 +180,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     if (vote.phase == 'signed') {
       nextSteps.add(
         rust_wire.NextStepView(
-          kind: 'submit_vote',
+          kind: 'advance_vote',
           bundleIndex: vote.bundleIndex,
           proposalId: vote.proposalId,
           choice: 0,
@@ -127,7 +189,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
       );
       recoveredVoteWork.add(
         rust_wire.VoteRecoveryWorkView(
-          kind: 'submit_vote',
+          kind: 'advance_vote',
           bundleIndex: vote.bundleIndex,
           proposalId: vote.proposalId,
           shareIndexes: Uint32List(0),
@@ -136,7 +198,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     } else if (vote.phase == 'submitted_vote' && txHash != null) {
       nextSteps.add(
         rust_wire.NextStepView(
-          kind: 'poll_vote',
+          kind: 'advance_vote',
           bundleIndex: vote.bundleIndex,
           proposalId: vote.proposalId,
           choice: 0,
@@ -145,7 +207,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
       );
       recoveredVoteWork.add(
         rust_wire.VoteRecoveryWorkView(
-          kind: 'poll_vote',
+          kind: 'advance_vote',
           bundleIndex: vote.bundleIndex,
           proposalId: vote.proposalId,
           txHash: txHash,
@@ -268,14 +330,14 @@ List<rust_wire.DelegationRecoveryWorkView> _delegationRecoveryWork(
 ) {
   return [
     for (final step in steps)
-      if (step.kind == 'delegate' || step.kind == 'poll_delegation')
+      if (step.kind == 'delegate' || step.kind == 'advance_delegation')
         rust_wire.DelegationRecoveryWorkView(
           kind: step.kind,
           bundleIndex: step.bundleIndex,
-          phase: step.kind == 'poll_delegation'
+          phase: step.kind == 'advance_delegation'
               ? 'submitted_delegation'
               : 'prepared',
-          txHash: step.kind == 'poll_delegation' ? 'delegation-tx' : null,
+          txHash: step.kind == 'advance_delegation' ? 'delegation-tx' : null,
         ),
   ];
 }
@@ -287,13 +349,17 @@ List<rust_wire.VoteRecoveryWorkView> _voteRecoveryWork(
       <String, ({int bundleIndex, int proposalId, List<int> shares})>{};
   final work = <rust_wire.VoteRecoveryWorkView>[];
   for (final step in steps) {
-    if (step.kind == 'submit_vote' || step.kind == 'poll_vote') {
+    if (step.kind == 'advance_vote' || step.kind == 'advance_vote_batch') {
+      // A step kind no longer says whether the transaction was dispatched:
+      // submitting and polling are one `advance_vote` call. The recorded
+      // `txHash` carries that distinction, so it defaults to absent
+      // (undispatched) here. A test that needs an already-dispatched
+      // generation passes `recoveredVoteWork` explicitly.
       work.add(
         rust_wire.VoteRecoveryWorkView(
           kind: step.kind,
           bundleIndex: step.bundleIndex,
           proposalId: step.proposalId,
-          txHash: step.kind == 'poll_vote' ? 'submitted-vote-tx' : null,
           shareIndexes: Uint32List(0),
         ),
       );
@@ -334,7 +400,7 @@ String _primaryAction({
   if (completedForDisplay) return 'done';
   if (!blockingRecovery) return 'idle';
   if (nextSteps.any(
-    (step) => step.kind == 'delegate' || step.kind == 'poll_delegation',
+    (step) => step.kind == 'delegate' || step.kind == 'advance_delegation',
   )) {
     return 'delegate';
   }
@@ -342,8 +408,8 @@ String _primaryAction({
     (step) =>
         step.kind == 'cast_vote' ||
         step.kind == 'vote' ||
-        step.kind == 'submit_vote' ||
-        step.kind == 'poll_vote',
+        step.kind == 'advance_vote' ||
+        step.kind == 'advance_vote',
   )) {
     return 'vote';
   }

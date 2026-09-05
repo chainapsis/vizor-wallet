@@ -399,9 +399,15 @@ class VotingConfigLoader {
       );
     }
     if (resolution.config.skippedRoundIds.isNotEmpty) {
+      const sampleLimit = 5;
+      final skipped = resolution.config.skippedRoundIds;
+      final sampleIds = skipped.take(sampleLimit).toList(growable: false);
+      final sample = sampleIds.join(',');
+      final remaining = skipped.length - sampleIds.length;
       debugPrint(
-        '[zcash] Voting: skipped unauthenticated round ids: '
-        '${resolution.config.skippedRoundIds.join(",")}',
+        '[zcash] Voting: skipped unauthenticated rounds '
+        'count=${skipped.length} sample=$sample'
+        '${remaining > 0 ? ", plus $remaining more" : ""}',
       );
     }
     return resolution;

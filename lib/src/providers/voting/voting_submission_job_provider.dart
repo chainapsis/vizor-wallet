@@ -658,7 +658,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       String? softwareMnemonic;
-      if (!activeSession.isHardwareAccount && needsDelegationSigning) {
+      if (!activeSession.isHardwareAccount && needsDelegation) {
         final softwareSecret = await ref
             .read(accountProvider.notifier)
             .getSoftwareWalletSecretForAccount(key.accountUuid);
@@ -1417,7 +1417,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     final roundPlan = session.roundPlan;
     if (roundPlan != null) {
       return _roundPlanHasNoOpenProposals(session) &&
-          roundPlan.nextSteps.any(_stepCanRecoverWithoutDraft);
+          roundPlan.hasRecoverableVoteOrShareWork;
     }
     final resumePlan = session.resumePlan;
     return resumePlan != null &&
@@ -1433,14 +1433,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _hasRemainingVoteOrShareWork(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      for (final step in roundPlan.nextSteps) {
-        if (step.kind == 'confirm_share') {
-          if (roundPlan.blockingShareWork) return true;
-          continue;
-        }
-        if (_stepCanRecoverWithoutDraft(step)) return true;
-      }
+    if (roundPlan != null && roundPlan.hasRemainingVoteOrShareWork) {
+      return true;
     }
     final resumePlan = session.resumePlan;
     return resumePlan != null &&
@@ -1452,25 +1446,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   bool _canPollDelegationWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
     if (roundPlan != null) {
-      var hasSubmittedDelegation = false;
-      for (final step in roundPlan.nextSteps) {
-        if (step.kind == 'delegate') return false;
-        if (step.kind == 'poll_delegation') hasSubmittedDelegation = true;
-      }
-      if (hasSubmittedDelegation) return true;
+      if (roundPlan.needsDelegationSigning) return false;
+      if (roundPlan.hasInFlightDelegation) return true;
     }
     final resumePlan = session.resumePlan;
     return resumePlan != null &&
         resumePlan.submittedDelegationBundleIndexes.isNotEmpty &&
         resumePlan.pendingDelegationBundleIndexes.isEmpty;
-  }
-
-  bool _stepCanRecoverWithoutDraft(rust_wire.NextStepView step) {
-    return step.kind == 'cast_vote' ||
-        step.kind == 'submit_vote' ||
-        step.kind == 'submit_shares' ||
-        step.kind == 'poll_vote' ||
-        step.kind == 'confirm_share';
   }
 
   bool _sessionNeedsDelegation(VotingSessionState? session) {
@@ -1496,7 +1478,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   bool _sessionNeedsDelegationSigning(VotingSessionState session) {
     final roundPlan = session.roundPlan;
     if (roundPlan != null) {
-      return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
+      return roundPlan.needsDelegationSigning ||
           roundPlanNeedsDraftSetup(roundPlan);
     }
     return session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
@@ -1512,21 +1494,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   bool _planNeedsDelegation(rust_wire.RoundPlanView? roundPlan) {
-    return roundPlan?.nextSteps.any(
-          (step) => step.kind == 'delegate' || step.kind == 'poll_delegation',
-        ) ??
-        false;
+    if (roundPlan == null) return false;
+    return roundPlan.needsDelegationSigning || roundPlan.hasInFlightDelegation;
   }
 
   bool _planNeedsVotePolling(rust_wire.RoundPlanView? roundPlan) {
-    return roundPlan?.nextSteps.any(
-          (step) =>
-              step.kind == 'cast_vote' ||
-              step.kind == 'submit_vote' ||
-              step.kind == 'submit_shares' ||
-              step.kind == 'poll_vote',
-        ) ??
-        false;
+    return roundPlan?.needsVotePolling ?? false;
   }
 
   List<rust_wire.DraftVote> _draftVotesFromRoundPlan(

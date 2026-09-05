@@ -49,6 +49,17 @@ fn normalize_pir_server_urls(pir_server_urls: &[String]) -> Result<Vec<String>, 
     Ok(normalized)
 }
 
+fn pir_server_urls_for_proof(
+    pir_server_urls: &[String],
+    proof_persisted: bool,
+) -> Result<Vec<String>, String> {
+    if proof_persisted {
+        Ok(Vec::new())
+    } else {
+        normalize_pir_server_urls(pir_server_urls)
+    }
+}
+
 fn is_retryable_pir_query_error(error: &str) -> bool {
     let message = error.to_ascii_lowercase();
     let has_pir_context = message.contains("pir parallel fetch failed")
@@ -299,7 +310,7 @@ async fn prove_delegation_bundle<F>(
     prepared: &PreparedDelegationBundle,
     pir_connect: PirConnectThread,
     on_progress: Arc<F>,
-) -> Result<(), String>
+) -> Result<zcash_voting::delegate::DelegationProofStatus, String>
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
@@ -335,16 +346,14 @@ where
 
             retry_voting_db_locks_coordinated(&proof_db_path, || {
                 prepared
-                    .prove(&proof_voting_db, &pir_client, &reporter)
-                    .map(|_| ())
-                    .map_err(|e| format!("delegate::prove failed: {e}"))
-            })?;
-            Ok(())
+                    .ensure_proof(&proof_voting_db, &pir_client, &reporter)
+                    .map(|completion| completion.status)
+                    .map_err(|e| format!("delegate::ensure_proof failed: {e}"))
+            })
         })
     })
     .await
-    .map_err(|e| format!("delegation proof task failed: {e}"))??;
-    Ok(())
+    .map_err(|e| format!("delegation proof task failed: {e}"))?
 }
 
 /// Select notes and create/reuse delegation bundle rows for a round.
@@ -860,7 +869,7 @@ pub async fn precompute_delegation_proof(
     }
 
     let noop_progress = Arc::new(|_: DelegationProgress| {});
-    prove_delegation_bundle(
+    let proof_status = prove_delegation_bundle(
         db_path,
         &pir_server_urls,
         pir_layout,
@@ -870,7 +879,10 @@ pub async fn precompute_delegation_proof(
         noop_progress,
     )
     .await?;
-    Ok(true)
+    Ok(matches!(
+        proof_status,
+        zcash_voting::delegate::DelegationProofStatus::Generated
+    ))
 }
 
 /// Build, prove, and sign one delegation payload.
@@ -895,7 +907,6 @@ pub async fn build_prove_and_sign_delegation_payload<F>(
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
-    let pir_server_urls = normalize_pir_server_urls(pir_server_urls)?;
     let on_progress = Arc::new(on_progress);
     let account_uuid = prepare_params.account_uuid;
 
@@ -908,6 +919,7 @@ where
         &prepare_params.lwd.round_params.vote_round_id,
         prepare_params.bundle_index,
     )?;
+    let pir_server_urls = pir_server_urls_for_proof(pir_server_urls, proof_prechecked)?;
 
     // Overlap independent warm-ups with local preparation/PCZT setup when the
     // proof is still missing. A background-completed proof needs no PIR client.
@@ -1066,11 +1078,21 @@ pub async fn build_prove_delegation_payload_with_keystone_signature<F>(
 where
     F: Fn(DelegationProgress) + Send + Sync + 'static,
 {
-    let pir_server_urls = normalize_pir_server_urls(pir_server_urls)?;
     let on_progress = Arc::new(on_progress);
+    let proof_prechecked = has_persisted_delegation_proof(
+        db_path,
+        account_uuid,
+        &prepare_params.lwd.round_params.vote_round_id,
+        prepare_params.bundle_index,
+    )?;
+    let pir_server_urls = pir_server_urls_for_proof(pir_server_urls, proof_prechecked)?;
 
     start_proving_cache_warmup();
-    let pir_connect = spawn_pir_connect(&pir_server_urls[0], pir_layout)?;
+    let pir_connect = if proof_prechecked {
+        None
+    } else {
+        Some(spawn_pir_connect(&pir_server_urls[0], pir_layout)?)
+    };
 
     on_progress(DelegationProgress::SelectingNotes);
     let preparation = (|| {
@@ -1086,20 +1108,37 @@ where
     let (voting_db, prepared_bundle) = match preparation {
         Ok(value) => value,
         Err(error) => {
-            drain_pir_connect_after_error(pir_connect).await;
+            if let Some(pir_connect) = pir_connect {
+                drain_pir_connect_after_error(pir_connect).await;
+            }
             return Err(error);
         }
     };
-    prove_delegation_bundle(
-        db_path,
-        &pir_server_urls,
-        pir_layout,
-        account_uuid,
-        &prepared_bundle,
-        pir_connect,
-        on_progress.clone(),
-    )
-    .await?;
+    let proof_persisted = voting_db
+        .delegation_phase(&prepared_bundle.round_id, prepared_bundle.bundle_index)
+        .map(phase_has_persisted_delegation_proof)
+        .map_err(|e| format!("load delegation phase failed: {e}"))?;
+    if proof_persisted {
+        if let Some(pir_connect) = pir_connect {
+            drain_pir_connect_after_error(pir_connect).await;
+        }
+        on_progress(DelegationProgress::ProofComplete);
+    } else {
+        let pir_connect = match pir_connect {
+            Some(pir_connect) => pir_connect,
+            None => spawn_pir_connect(&pir_server_urls[0], pir_layout)?,
+        };
+        prove_delegation_bundle(
+            db_path,
+            &pir_server_urls,
+            pir_layout,
+            account_uuid,
+            &prepared_bundle,
+            pir_connect,
+            on_progress.clone(),
+        )
+        .await?;
+    }
 
     on_progress(DelegationProgress::SigningPayload);
     let signer = zcash_voting::delegate::PreparedSigner::signature_from_bytes(
@@ -1253,6 +1292,15 @@ mod tests {
         );
         assert!(normalize_pir_server_urls(&[]).is_err());
         assert!(normalize_pir_server_urls(&[" ".to_string()]).is_err());
+    }
+
+    #[test]
+    fn persisted_delegation_proof_does_not_require_a_pir_endpoint() {
+        assert_eq!(
+            pir_server_urls_for_proof(&[], true).unwrap(),
+            Vec::<String>::new()
+        );
+        assert!(pir_server_urls_for_proof(&[], false).is_err());
     }
 
     #[test]

@@ -7,8 +7,8 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `SignedVoteBatchView`, `VoteBatchConfirmation`, `VoteCommitmentBatchWire`, `VoteRecord`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `SignedVoteBatchView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteRecord`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
 
 class CompletedVoteChoiceView {
   final int proposalId;
@@ -46,31 +46,6 @@ class CompletedVoteDisplayView {
           votedAt == other.votedAt;
 }
 
-/// Parsed confirmation data for a submitted delegation transaction.
-class DelegationConfirmation {
-  /// Confirmed transaction hash.
-  final String txHash;
-
-  /// Confirmed vote-authority-note leaf position.
-  final int vanLeafPosition;
-
-  const DelegationConfirmation({
-    required this.txHash,
-    required this.vanLeafPosition,
-  });
-
-  @override
-  int get hashCode => txHash.hashCode ^ vanLeafPosition.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is DelegationConfirmation &&
-          runtimeType == other.runtimeType &&
-          txHash == other.txHash &&
-          vanLeafPosition == other.vanLeafPosition;
-}
-
 class DelegationPirPrecomputeResultView {
   final int cachedCount;
   final int fetchedCount;
@@ -106,7 +81,9 @@ class DelegationRecoveryView {
   final int bundleIndex;
   final String phase;
   final String? txHash;
-  final int? vanLeafPosition;
+
+  /// Confirmed VAN leaf position, if delegation has been projected.
+  final BigInt? vanLeafPosition;
 
   const DelegationRecoveryView({
     required this.bundleIndex,
@@ -377,6 +354,28 @@ class RoundPlanView {
   final bool completedForDisplay;
   final CompletedVoteDisplayView? completedVoteDisplay;
   final bool needsDraftSetup;
+
+  /// True when delegation work needs fresh or restored wallet signing material.
+  ///
+  /// Read these derived flags instead of matching `NextStepView::kind`
+  /// strings: the SDK computes them from an exhaustive match, so a new step
+  /// kind cannot silently read as "no work" in a host allowlist.
+  final bool needsDelegationSigning;
+
+  /// True when a delegation is in flight. Consult `needs_delegation_signing`
+  /// to learn whether the next pass also needs signing material.
+  final bool hasInFlightDelegation;
+
+  /// True when vote or helper-share submission work remains to drive.
+  final bool needsVotePolling;
+
+  /// True when any vote or share work remains, counting share confirmation
+  /// only when it is blocking.
+  final bool hasRemainingVoteOrShareWork;
+
+  /// True when any vote or share work remains, counting share confirmation
+  /// unconditionally.
+  final bool hasRecoverableVoteOrShareWork;
   final String primaryAction;
   final List<NextStepView> nextSteps;
   final List<DelegationStatusView> delegationStatuses;
@@ -399,6 +398,11 @@ class RoundPlanView {
     required this.completedForDisplay,
     this.completedVoteDisplay,
     required this.needsDraftSetup,
+    required this.needsDelegationSigning,
+    required this.hasInFlightDelegation,
+    required this.needsVotePolling,
+    required this.hasRemainingVoteOrShareWork,
+    required this.hasRecoverableVoteOrShareWork,
     required this.primaryAction,
     required this.nextSteps,
     required this.delegationStatuses,
@@ -421,6 +425,11 @@ class RoundPlanView {
       completedForDisplay.hashCode ^
       completedVoteDisplay.hashCode ^
       needsDraftSetup.hashCode ^
+      needsDelegationSigning.hashCode ^
+      hasInFlightDelegation.hashCode ^
+      needsVotePolling.hashCode ^
+      hasRemainingVoteOrShareWork.hashCode ^
+      hasRecoverableVoteOrShareWork.hashCode ^
       primaryAction.hashCode ^
       nextSteps.hashCode ^
       delegationStatuses.hashCode ^
@@ -445,6 +454,12 @@ class RoundPlanView {
           completedForDisplay == other.completedForDisplay &&
           completedVoteDisplay == other.completedVoteDisplay &&
           needsDraftSetup == other.needsDraftSetup &&
+          needsDelegationSigning == other.needsDelegationSigning &&
+          hasInFlightDelegation == other.hasInFlightDelegation &&
+          needsVotePolling == other.needsVotePolling &&
+          hasRemainingVoteOrShareWork == other.hasRemainingVoteOrShareWork &&
+          hasRecoverableVoteOrShareWork ==
+              other.hasRecoverableVoteOrShareWork &&
           primaryAction == other.primaryAction &&
           nextSteps == other.nextSteps &&
           delegationStatuses == other.delegationStatuses &&
@@ -665,27 +680,6 @@ class SignedVoteCommitmentView {
           wire == other.wire;
 }
 
-class SignedVoteCommitmentsView {
-  final int bundleIndex;
-  final List<SignedVoteCommitmentView> commitments;
-
-  const SignedVoteCommitmentsView({
-    required this.bundleIndex,
-    required this.commitments,
-  });
-
-  @override
-  int get hashCode => bundleIndex.hashCode ^ commitments.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is SignedVoteCommitmentsView &&
-          runtimeType == other.runtimeType &&
-          bundleIndex == other.bundleIndex &&
-          commitments == other.commitments;
-}
-
 class VoteCommitmentWire {
   final String vanNullifier;
   final String voteAuthorityNoteNew;
@@ -735,37 +729,6 @@ class VoteCommitmentWire {
           anchorHeight == other.anchorHeight &&
           rVpk == other.rVpk &&
           voteAuthSig == other.voteAuthSig;
-}
-
-/// Parsed confirmation data for a submitted cast-vote transaction.
-class VoteConfirmation {
-  /// Confirmed transaction hash.
-  final String txHash;
-
-  /// Confirmed vote-authority-note leaf position.
-  final int vanLeafPosition;
-
-  /// Confirmed vote commitment tree position.
-  final BigInt vcTreePosition;
-
-  const VoteConfirmation({
-    required this.txHash,
-    required this.vanLeafPosition,
-    required this.vcTreePosition,
-  });
-
-  @override
-  int get hashCode =>
-      txHash.hashCode ^ vanLeafPosition.hashCode ^ vcTreePosition.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is VoteConfirmation &&
-          runtimeType == other.runtimeType &&
-          txHash == other.txHash &&
-          vanLeafPosition == other.vanLeafPosition &&
-          vcTreePosition == other.vcTreePosition;
 }
 
 class VoteRecoveryView {

@@ -46,11 +46,13 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
   const MobileVotingSubmissionProgressScreen({
     required this.activeStep,
     this.activeStepProgress,
+    this.activeStepDetail,
     super.key,
   });
 
   final VotingSubmissionProgressStep activeStep;
   final double? activeStepProgress;
+  final String? activeStepDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +67,7 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
     final proofNoticeStyle = AppTypography.bodyMedium.copyWith(
       color: colors.text.primary,
     );
+    final noticeText = activeStepDetail ?? 'Don’t leave this window.';
     return PopScope<void>(
       canPop: false,
       child: Scaffold(
@@ -92,7 +95,7 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                         final contentWidth =
                             constraints.maxWidth - AppSpacing.sm * 2;
                         final noticeHeight = _measureTextHeight(
-                          text: 'Don’t leave this window.',
+                          text: noticeText,
                           style: noticeStyle,
                           maxWidth: contentWidth,
                           textDirection: textDirection,
@@ -159,7 +162,7 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                                     left: 0,
                                     right: 0,
                                     child: Text(
-                                      'Don’t leave this window.',
+                                      noticeText,
                                       key: const ValueKey(
                                         'mobile_voting_submission_notice',
                                       ),
