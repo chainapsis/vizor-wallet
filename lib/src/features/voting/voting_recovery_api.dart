@@ -1,5 +1,6 @@
 import '../../rust/api/voting.dart' as rust_voting;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
+import '../../services/voting/voting_rust_exception.dart';
 
 /// Injectable boundary around the Rust voting recovery API.
 ///
@@ -36,11 +37,13 @@ class RustVotingRecoveryApi implements VotingRecoveryApi {
     required String roundId,
     required List<int> proposalIds,
   }) {
-    return rust_voting.getRoundPlan(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      proposalIds: proposalIds,
+    return _typed(
+      () => rust_voting.getRoundPlan(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
+        proposalIds: proposalIds,
+      ),
     );
   }
 
@@ -54,14 +57,26 @@ class RustVotingRecoveryApi implements VotingRecoveryApi {
     required bool skipped,
     int? choice,
   }) {
-    return rust_voting.setBallotIntent(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      proposalId: proposalId,
-      numOptions: numOptions,
-      skipped: skipped,
-      choice: choice,
+    return _typed(
+      () => rust_voting.setBallotIntent(
+        dbPath: dbPath,
+        accountUuid: accountUuid,
+        roundId: roundId,
+        proposalId: proposalId,
+        numOptions: numOptions,
+        skipped: skipped,
+        choice: choice,
+      ),
     );
+  }
+}
+
+/// Rethrows a bridge `VotingErrorView` as [VotingRustException] so recovery
+/// failures carry their message and kind like every other bridge call.
+Future<T> _typed<T>(Future<T> Function() call) async {
+  try {
+    return await call();
+  } on rust_voting.VotingErrorView catch (error) {
+    throw VotingRustException(error);
   }
 }

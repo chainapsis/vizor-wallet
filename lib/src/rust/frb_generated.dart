@@ -1268,7 +1268,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_voting_error_view,
+            decodeErrorData: null,
           ),
           constMeta:
               kCrateApiVotingSessionVotingRoundSessionAdvanceNextConstMeta,
@@ -1320,7 +1320,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_voting_error_view,
+            decodeErrorData: null,
           ),
           constMeta:
               kCrateApiVotingSessionVotingRoundSessionAdvanceStepConstMeta,
@@ -9124,16 +9124,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiRoundStepError dco_decode_api_round_step_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    return ApiRoundStepError(
+      kind: dco_decode_voting_error_kind_view(arr[0]),
+      retryable: dco_decode_bool(arr[1]),
+      message: dco_decode_String(arr[2]),
+      bundleIndex: dco_decode_opt_box_autoadd_u_32(arr[3]),
+      setupField: dco_decode_opt_box_autoadd_delegation_setup_field_view(
+        arr[4],
+      ),
+      snapshotHeight: dco_decode_opt_box_autoadd_u_64(arr[5]),
+      requiredWeightZatoshi: dco_decode_opt_box_autoadd_u_64(arr[6]),
+      selectedWeightZatoshi: dco_decode_opt_box_autoadd_u_64(arr[7]),
+      bundleNoteSlots: dco_decode_opt_box_autoadd_u_32(arr[8]),
+      selectedNotes: dco_decode_opt_box_autoadd_u_32(arr[9]),
+      httpStatus: dco_decode_opt_box_autoadd_u_16(arr[10]),
+      endpoint: dco_decode_opt_String(arr[11]),
+    );
+  }
+
+  @protected
   ApiRoundStepEvent dco_decode_api_round_step_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return ApiRoundStepEvent(
       kind: dco_decode_api_round_step_event_kind(arr[0]),
       progress: dco_decode_opt_box_autoadd_round_step_progress_view(arr[1]),
       outcome: dco_decode_opt_box_autoadd_round_step_outcome_view(arr[2]),
       failure: dco_decode_opt_box_autoadd_round_step_failure_view(arr[3]),
+      error: dco_decode_opt_box_autoadd_api_round_step_error(arr[4]),
     );
   }
 
@@ -9305,6 +9330,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_api_round_host_context(raw);
+  }
+
+  @protected
+  ApiRoundStepError dco_decode_box_autoadd_api_round_step_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_api_round_step_error(raw);
   }
 
   @protected
@@ -10726,6 +10757,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return raw == null
         ? null
         : dco_decode_box_autoadd_api_delegation_signer_input(raw);
+  }
+
+  @protected
+  ApiRoundStepError? dco_decode_opt_box_autoadd_api_round_step_error(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_api_round_step_error(raw);
   }
 
   @protected
@@ -12284,6 +12325,45 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiRoundStepError sse_decode_api_round_step_error(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_voting_error_kind_view(deserializer);
+    var var_retryable = sse_decode_bool(deserializer);
+    var var_message = sse_decode_String(deserializer);
+    var var_bundleIndex = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_setupField = sse_decode_opt_box_autoadd_delegation_setup_field_view(
+      deserializer,
+    );
+    var var_snapshotHeight = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_requiredWeightZatoshi = sse_decode_opt_box_autoadd_u_64(
+      deserializer,
+    );
+    var var_selectedWeightZatoshi = sse_decode_opt_box_autoadd_u_64(
+      deserializer,
+    );
+    var var_bundleNoteSlots = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_selectedNotes = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_httpStatus = sse_decode_opt_box_autoadd_u_16(deserializer);
+    var var_endpoint = sse_decode_opt_String(deserializer);
+    return ApiRoundStepError(
+      kind: var_kind,
+      retryable: var_retryable,
+      message: var_message,
+      bundleIndex: var_bundleIndex,
+      setupField: var_setupField,
+      snapshotHeight: var_snapshotHeight,
+      requiredWeightZatoshi: var_requiredWeightZatoshi,
+      selectedWeightZatoshi: var_selectedWeightZatoshi,
+      bundleNoteSlots: var_bundleNoteSlots,
+      selectedNotes: var_selectedNotes,
+      httpStatus: var_httpStatus,
+      endpoint: var_endpoint,
+    );
+  }
+
+  @protected
   ApiRoundStepEvent sse_decode_api_round_step_event(
     SseDeserializer deserializer,
   ) {
@@ -12298,11 +12378,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_failure = sse_decode_opt_box_autoadd_round_step_failure_view(
       deserializer,
     );
+    var var_error = sse_decode_opt_box_autoadd_api_round_step_error(
+      deserializer,
+    );
     return ApiRoundStepEvent(
       kind: var_kind,
       progress: var_progress,
       outcome: var_outcome,
       failure: var_failure,
+      error: var_error,
     );
   }
 
@@ -12512,6 +12596,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_api_round_host_context(deserializer));
+  }
+
+  @protected
+  ApiRoundStepError sse_decode_box_autoadd_api_round_step_error(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_api_round_step_error(deserializer));
   }
 
   @protected
@@ -14456,6 +14548,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiRoundStepError? sse_decode_opt_box_autoadd_api_round_step_error(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_api_round_step_error(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -16355,6 +16460,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_api_round_step_error(
+    ApiRoundStepError self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_voting_error_kind_view(self.kind, serializer);
+    sse_encode_bool(self.retryable, serializer);
+    sse_encode_String(self.message, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.bundleIndex, serializer);
+    sse_encode_opt_box_autoadd_delegation_setup_field_view(
+      self.setupField,
+      serializer,
+    );
+    sse_encode_opt_box_autoadd_u_64(self.snapshotHeight, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.requiredWeightZatoshi, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.selectedWeightZatoshi, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.bundleNoteSlots, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.selectedNotes, serializer);
+    sse_encode_opt_box_autoadd_u_16(self.httpStatus, serializer);
+    sse_encode_opt_String(self.endpoint, serializer);
+  }
+
+  @protected
   void sse_encode_api_round_step_event(
     ApiRoundStepEvent self,
     SseSerializer serializer,
@@ -16373,6 +16501,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.failure,
       serializer,
     );
+    sse_encode_opt_box_autoadd_api_round_step_error(self.error, serializer);
   }
 
   @protected
@@ -16524,6 +16653,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_api_round_host_context(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_api_round_step_error(
+    ApiRoundStepError self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_api_round_step_error(self, serializer);
   }
 
   @protected
@@ -18161,6 +18299,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_api_round_step_error(
+    ApiRoundStepError? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_api_round_step_error(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -19388,6 +19539,9 @@ class VotingRoundSessionImpl extends RustOpaque implements VotingRoundSession {
   );
 
   /// Runs the first planned step, streaming progress then one result.
+  ///
+  /// See [`VotingRoundSession::advance`] for why this reports failures on
+  /// the sink instead of returning them.
   Stream<ApiRoundStepEvent> advanceNext({
     required ApiRoundHostContext host,
     ApiDelegationSignerInput? signer,
@@ -19398,6 +19552,9 @@ class VotingRoundSessionImpl extends RustOpaque implements VotingRoundSession {
   );
 
   /// Runs one planned step, streaming progress then one result.
+  ///
+  /// See [`VotingRoundSession::advance`] for why this reports failures on
+  /// the sink instead of returning them.
   Stream<ApiRoundStepEvent> advanceStep({
     required NextStepView step,
     required ApiRoundHostContext host,

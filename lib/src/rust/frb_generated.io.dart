@@ -184,6 +184,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiRoundHostContext dco_decode_api_round_host_context(dynamic raw);
 
   @protected
+  ApiRoundStepError dco_decode_api_round_step_error(dynamic raw);
+
+  @protected
   ApiRoundStepEvent dco_decode_api_round_step_event(dynamic raw);
 
   @protected
@@ -231,6 +234,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiRoundHostContext dco_decode_box_autoadd_api_round_host_context(
     dynamic raw,
   );
+
+  @protected
+  ApiRoundStepError dco_decode_box_autoadd_api_round_step_error(dynamic raw);
 
   @protected
   ApiVotingRoundContext dco_decode_box_autoadd_api_voting_round_context(
@@ -775,6 +781,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_api_delegation_signer_input(dynamic raw);
 
   @protected
+  ApiRoundStepError? dco_decode_opt_box_autoadd_api_round_step_error(
+    dynamic raw,
+  );
+
+  @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
@@ -1267,6 +1278,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiRoundStepError sse_decode_api_round_step_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiRoundStepEvent sse_decode_api_round_step_event(
     SseDeserializer deserializer,
   );
@@ -1328,6 +1344,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiRoundHostContext sse_decode_box_autoadd_api_round_host_context(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiRoundStepError sse_decode_box_autoadd_api_round_step_error(
     SseDeserializer deserializer,
   );
 
@@ -2016,6 +2037,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiRoundStepError? sse_decode_opt_box_autoadd_api_round_step_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
@@ -2641,6 +2667,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_round_step_error(
+    ApiRoundStepError self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_round_step_event(
     ApiRoundStepEvent self,
     SseSerializer serializer,
@@ -2712,6 +2744,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_api_round_host_context(
     ApiRoundHostContext self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_round_step_error(
+    ApiRoundStepError self,
     SseSerializer serializer,
   );
 
@@ -3543,6 +3581,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_api_delegation_signer_input(
     ApiDelegationSignerInput? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_round_step_error(
+    ApiRoundStepError? self,
     SseSerializer serializer,
   );
 

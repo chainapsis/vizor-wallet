@@ -84,7 +84,7 @@ fn wire__crate__api__voting_session__VotingRoundSession_advance_next_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
+                transform_result_sse::<_, ()>(
                     (move || async move {
                         let mut api_that_guard = None;
                         let decode_indices_ =
@@ -103,14 +103,15 @@ fn wire__crate__api__voting_session__VotingRoundSession_advance_next_impl(
                             }
                         }
                         let api_that_guard = api_that_guard.unwrap();
-                        let output_ok =
+                        let output_ok = Result::<_, ()>::Ok({
                             crate::api::voting_session::VotingRoundSession::advance_next(
                                 &*api_that_guard,
                                 api_host,
                                 api_signer,
                                 api_sink,
                             )
-                            .await?;
+                            .await;
+                        })?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -157,7 +158,7 @@ fn wire__crate__api__voting_session__VotingRoundSession_advance_step_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>(
+                transform_result_sse::<_, ()>(
                     (move || async move {
                         let mut api_that_guard = None;
                         let decode_indices_ =
@@ -176,7 +177,7 @@ fn wire__crate__api__voting_session__VotingRoundSession_advance_step_impl(
                             }
                         }
                         let api_that_guard = api_that_guard.unwrap();
-                        let output_ok =
+                        let output_ok = Result::<_, ()>::Ok({
                             crate::api::voting_session::VotingRoundSession::advance_step(
                                 &*api_that_guard,
                                 api_step,
@@ -184,7 +185,8 @@ fn wire__crate__api__voting_session__VotingRoundSession_advance_step_impl(
                                 api_signer,
                                 api_sink,
                             )
-                            .await?;
+                            .await;
+                        })?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -8154,6 +8156,39 @@ impl SseDecode for crate::api::voting_session::ApiRoundHostContext {
     }
 }
 
+impl SseDecode for crate::api::voting_session::ApiRoundStepError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <zcash_voting::wire::VotingErrorKindView>::sse_decode(deserializer);
+        let mut var_retryable = <bool>::sse_decode(deserializer);
+        let mut var_message = <String>::sse_decode(deserializer);
+        let mut var_bundleIndex = <Option<u32>>::sse_decode(deserializer);
+        let mut var_setupField =
+            <Option<zcash_voting::wire::DelegationSetupFieldView>>::sse_decode(deserializer);
+        let mut var_snapshotHeight = <Option<u64>>::sse_decode(deserializer);
+        let mut var_requiredWeightZatoshi = <Option<u64>>::sse_decode(deserializer);
+        let mut var_selectedWeightZatoshi = <Option<u64>>::sse_decode(deserializer);
+        let mut var_bundleNoteSlots = <Option<u32>>::sse_decode(deserializer);
+        let mut var_selectedNotes = <Option<u32>>::sse_decode(deserializer);
+        let mut var_httpStatus = <Option<u16>>::sse_decode(deserializer);
+        let mut var_endpoint = <Option<String>>::sse_decode(deserializer);
+        return crate::api::voting_session::ApiRoundStepError {
+            kind: var_kind,
+            retryable: var_retryable,
+            message: var_message,
+            bundle_index: var_bundleIndex,
+            setup_field: var_setupField,
+            snapshot_height: var_snapshotHeight,
+            required_weight_zatoshi: var_requiredWeightZatoshi,
+            selected_weight_zatoshi: var_selectedWeightZatoshi,
+            bundle_note_slots: var_bundleNoteSlots,
+            selected_notes: var_selectedNotes,
+            http_status: var_httpStatus,
+            endpoint: var_endpoint,
+        };
+    }
+}
+
 impl SseDecode for crate::api::voting_session::ApiRoundStepEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -8165,11 +8200,14 @@ impl SseDecode for crate::api::voting_session::ApiRoundStepEvent {
             <Option<zcash_voting::wire::RoundStepOutcomeView>>::sse_decode(deserializer);
         let mut var_failure =
             <Option<zcash_voting::wire::RoundStepFailureView>>::sse_decode(deserializer);
+        let mut var_error =
+            <Option<crate::api::voting_session::ApiRoundStepError>>::sse_decode(deserializer);
         return crate::api::voting_session::ApiRoundStepEvent {
             kind: var_kind,
             progress: var_progress,
             outcome: var_outcome,
             failure: var_failure,
+            error: var_error,
         };
     }
 }
@@ -10098,6 +10136,19 @@ impl SseDecode for Option<crate::api::voting_session::ApiDelegationSignerInput> 
             return Some(
                 <crate::api::voting_session::ApiDelegationSignerInput>::sse_decode(deserializer),
             );
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::voting_session::ApiRoundStepError> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::voting_session::ApiRoundStepError>::sse_decode(
+                deserializer,
+            ));
         } else {
             return None;
         }
@@ -12386,6 +12437,37 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting_session::ApiRoundHostC
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting_session::ApiRoundStepError {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.retryable.into_into_dart().into_dart(),
+            self.message.into_into_dart().into_dart(),
+            self.bundle_index.into_into_dart().into_dart(),
+            self.setup_field.into_into_dart().into_dart(),
+            self.snapshot_height.into_into_dart().into_dart(),
+            self.required_weight_zatoshi.into_into_dart().into_dart(),
+            self.selected_weight_zatoshi.into_into_dart().into_dart(),
+            self.bundle_note_slots.into_into_dart().into_dart(),
+            self.selected_notes.into_into_dart().into_dart(),
+            self.http_status.into_into_dart().into_dart(),
+            self.endpoint.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting_session::ApiRoundStepError
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting_session::ApiRoundStepError>
+    for crate::api::voting_session::ApiRoundStepError
+{
+    fn into_into_dart(self) -> crate::api::voting_session::ApiRoundStepError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::voting_session::ApiRoundStepEvent {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -12393,6 +12475,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting_session::ApiRoundStepE
             self.progress.into_into_dart().into_dart(),
             self.outcome.into_into_dart().into_dart(),
             self.failure.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -15772,6 +15855,27 @@ impl SseEncode for crate::api::voting_session::ApiRoundHostContext {
     }
 }
 
+impl SseEncode for crate::api::voting_session::ApiRoundStepError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <zcash_voting::wire::VotingErrorKindView>::sse_encode(self.kind, serializer);
+        <bool>::sse_encode(self.retryable, serializer);
+        <String>::sse_encode(self.message, serializer);
+        <Option<u32>>::sse_encode(self.bundle_index, serializer);
+        <Option<zcash_voting::wire::DelegationSetupFieldView>>::sse_encode(
+            self.setup_field,
+            serializer,
+        );
+        <Option<u64>>::sse_encode(self.snapshot_height, serializer);
+        <Option<u64>>::sse_encode(self.required_weight_zatoshi, serializer);
+        <Option<u64>>::sse_encode(self.selected_weight_zatoshi, serializer);
+        <Option<u32>>::sse_encode(self.bundle_note_slots, serializer);
+        <Option<u32>>::sse_encode(self.selected_notes, serializer);
+        <Option<u16>>::sse_encode(self.http_status, serializer);
+        <Option<String>>::sse_encode(self.endpoint, serializer);
+    }
+}
+
 impl SseEncode for crate::api::voting_session::ApiRoundStepEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -15779,6 +15883,7 @@ impl SseEncode for crate::api::voting_session::ApiRoundStepEvent {
         <Option<zcash_voting::wire::RoundStepProgressView>>::sse_encode(self.progress, serializer);
         <Option<zcash_voting::wire::RoundStepOutcomeView>>::sse_encode(self.outcome, serializer);
         <Option<zcash_voting::wire::RoundStepFailureView>>::sse_encode(self.failure, serializer);
+        <Option<crate::api::voting_session::ApiRoundStepError>>::sse_encode(self.error, serializer);
     }
 }
 
@@ -17232,6 +17337,16 @@ impl SseEncode for Option<crate::api::voting_session::ApiDelegationSignerInput> 
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::voting_session::ApiDelegationSignerInput>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::voting_session::ApiRoundStepError> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::voting_session::ApiRoundStepError>::sse_encode(value, serializer);
         }
     }
 }

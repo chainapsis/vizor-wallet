@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/misc.dart' show Override, ProviderListenable;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
+import 'package:zcash_wallet/src/services/voting/voting_rust_exception.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -1940,6 +1941,78 @@ void main() {
     expect(state.error?.message, contains('Do not retry'));
     expect(rust.delegationBundleCalls, isEmpty);
     expect(rust.storedDelegationTxHashes, isEmpty);
+  });
+
+  test('a terminal bundle is reported even when another bundle works', () async {
+    final rust = FakeVotingRustApi(bundleCount: 2);
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 2,
+        delegationWorkflows: [
+          const FakeDelegationRecovery(
+            bundleIndex: 0,
+            phase: rust_wire.WorkflowPhaseView.submittedDelegation,
+            txHash: null,
+            terminal: true,
+            submissionDiagnostic: rust_wire.SubmissionDiagnosticView(
+              kind: 'ambiguous_attempts_exhausted',
+              message: 'submission has no usable hash',
+            ),
+          ),
+        ],
+      ),
+    );
+    final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundles(mnemonic: kTestMnemonic);
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    // Bundle 1 is live and runs; bundle 0 is dead and plans no work, so
+    // nothing downstream would ever raise it. Finishing the live half is not
+    // a reason to leave the user believing the round carries both bundles.
+    expect(rust.delegationBundleCalls, contains(1));
+    expect(rust.delegationBundleCalls, isNot(contains(0)));
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('bundle 1'));
+    expect(state.error?.message, contains('submission has no usable hash'));
+    expect(state.error?.message, contains('Do not retry'));
+  });
+
+  test('a failure raised before a step keeps its bridge classification', () async {
+    final rust = FakeVotingRustApi();
+    // The delegation pipeline fetches its snapshot anchor from lightwalletd
+    // when the step opens, so this is the ordinary transient failure on that
+    // path. It is raised before the SDK sees the step, which is exactly the
+    // shape a streaming function cannot report by returning an error.
+    rust.roundStepBridgeErrors['delegate:0'] = votingRustError(
+      rust_wire.VotingErrorKindView.internal,
+      message: 'voting note selection failed: lightwalletd is unreachable',
+      retryable: true,
+    );
+    final container = _sessionContainer(rust: rust);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundles(mnemonic: kTestMnemonic);
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(state.error?.message, contains('lightwalletd is unreachable'));
+    // The bare "the stream ended" text is what this failure decays to when the
+    // error never crosses the bridge.
+    expect(state.error?.message, isNot(contains('without a result')));
+    final cause = state.error?.cause;
+    expect(cause, isNotNull);
+    final bridgeError = votingRustExceptionOf(cause!);
+    expect(bridgeError, isNotNull);
+    expect(bridgeError!.kind, rust_wire.VotingErrorKindView.internal);
+    expect(bridgeError.retryable, isTrue);
   });
 
   test('terminal delegation is not offered for Keystone signing', () async {
@@ -11561,6 +11634,9 @@ rust_api.ApiChainSubmissionCallResult _submittedWithoutHashChainSubmission() {
 
 class FakeVotingRustApi
     implements VotingRustApi, FakeRoundSessionDriver, FakeRoundStepApi {
+  @override
+  final Map<String, VotingRustException> roundStepBridgeErrors = {};
+
   FakeVotingRustApi({
     this.setupDelay = Duration.zero,
     this.setupGate,

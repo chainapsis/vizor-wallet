@@ -11,8 +11,8 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'voting.dart';
 
-// These functions are ignored because they are not marked as `pub`: `advance`, `delegation_inputs`, `internal`, `invalid_input`, `pipeline`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `advance`, `delegation_inputs`, `internal`, `invalid_input`, `pipeline`, `run_step`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 /// Opens a session bound to `ctx`'s account and round.
 ///
@@ -38,12 +38,18 @@ VotingRoundSession openVotingRoundSession({
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingRoundSession>>
 abstract class VotingRoundSession implements RustOpaqueInterface {
   /// Runs the first planned step, streaming progress then one result.
+  ///
+  /// See [`VotingRoundSession::advance`] for why this reports failures on
+  /// the sink instead of returning them.
   Stream<ApiRoundStepEvent> advanceNext({
     required ApiRoundHostContext host,
     ApiDelegationSignerInput? signer,
   });
 
   /// Runs one planned step, streaming progress then one result.
+  ///
+  /// See [`VotingRoundSession::advance`] for why this reports failures on
+  /// the sink instead of returning them.
   Stream<ApiRoundStepEvent> advanceStep({
     required NextStepView step,
     required ApiRoundHostContext host,
@@ -227,23 +233,110 @@ class ApiRoundHostContext {
           maxProofConcurrency == other.maxProofConcurrency;
 }
 
+/// A typed bridge failure carried by a result event.
+///
+/// Mirrors [`VotingErrorView`] field for field instead of embedding it. The
+/// bridge marks a type as a Dart exception only while it is used purely as an
+/// error type; using the view as a struct field here would demote it to plain
+/// data, and `#[frb(sync)]` entry points depend on that marker — the
+/// generated `executeSync` rethrows only `FrbException`s and turns everything
+/// else into a `PanicException`, which would cost
+/// [`open_voting_round_session`] its typed failure.
+///
+/// [`From`] destructures the view exhaustively, so a field added upstream
+/// fails the build here rather than silently disappearing on this path.
+class ApiRoundStepError {
+  final VotingErrorKindView kind;
+  final bool retryable;
+  final String message;
+  final int? bundleIndex;
+  final DelegationSetupFieldView? setupField;
+  final BigInt? snapshotHeight;
+  final BigInt? requiredWeightZatoshi;
+  final BigInt? selectedWeightZatoshi;
+  final int? bundleNoteSlots;
+  final int? selectedNotes;
+  final int? httpStatus;
+  final String? endpoint;
+
+  const ApiRoundStepError({
+    required this.kind,
+    required this.retryable,
+    required this.message,
+    this.bundleIndex,
+    this.setupField,
+    this.snapshotHeight,
+    this.requiredWeightZatoshi,
+    this.selectedWeightZatoshi,
+    this.bundleNoteSlots,
+    this.selectedNotes,
+    this.httpStatus,
+    this.endpoint,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      retryable.hashCode ^
+      message.hashCode ^
+      bundleIndex.hashCode ^
+      setupField.hashCode ^
+      snapshotHeight.hashCode ^
+      requiredWeightZatoshi.hashCode ^
+      selectedWeightZatoshi.hashCode ^
+      bundleNoteSlots.hashCode ^
+      selectedNotes.hashCode ^
+      httpStatus.hashCode ^
+      endpoint.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiRoundStepError &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          retryable == other.retryable &&
+          message == other.message &&
+          bundleIndex == other.bundleIndex &&
+          setupField == other.setupField &&
+          snapshotHeight == other.snapshotHeight &&
+          requiredWeightZatoshi == other.requiredWeightZatoshi &&
+          selectedWeightZatoshi == other.selectedWeightZatoshi &&
+          bundleNoteSlots == other.bundleNoteSlots &&
+          selectedNotes == other.selectedNotes &&
+          httpStatus == other.httpStatus &&
+          endpoint == other.endpoint;
+}
+
 /// One event of a streamed step: progress while it runs, then one result.
+///
+/// The result event carries exactly one of `outcome`, `failure`, or `error`.
+/// `failure` is a step the SDK ran and rejected; `error` is everything that
+/// stopped the step from producing either, including the work this boundary
+/// does before handing over (signer material, delegation pipeline, PIR fleet)
+/// and a view conversion that fails after the step already ran.
 class ApiRoundStepEvent {
   final ApiRoundStepEventKind kind;
   final RoundStepProgressView? progress;
   final RoundStepOutcomeView? outcome;
   final RoundStepFailureView? failure;
+  final ApiRoundStepError? error;
 
   const ApiRoundStepEvent({
     required this.kind,
     this.progress,
     this.outcome,
     this.failure,
+    this.error,
   });
 
   @override
   int get hashCode =>
-      kind.hashCode ^ progress.hashCode ^ outcome.hashCode ^ failure.hashCode;
+      kind.hashCode ^
+      progress.hashCode ^
+      outcome.hashCode ^
+      failure.hashCode ^
+      error.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -253,7 +346,8 @@ class ApiRoundStepEvent {
           kind == other.kind &&
           progress == other.progress &&
           outcome == other.outcome &&
-          failure == other.failure;
+          failure == other.failure &&
+          error == other.error;
 }
 
 enum ApiRoundStepEventKind { progress, result }

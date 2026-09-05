@@ -7,6 +7,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
+import 'package:zcash_wallet/src/services/voting/voting_rust_exception.dart';
 import 'fake_rust_api_shapes.dart' as rust_api;
 import 'package:zcash_wallet/src/rust/api/voting_session.dart' as rust_session;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
@@ -182,6 +183,15 @@ abstract interface class FakeRoundSessionDriver {
     required String roundId,
     required List<int> proposalIds,
   });
+
+  /// Bridge failures to raise before a step reaches the SDK, keyed
+  /// `'<stepKind>:<bundleIndex>'` and consumed on first use.
+  ///
+  /// These are delivered as the step's result event, not thrown into the
+  /// stream, because that is the only channel production has: the bridge
+  /// drops a streaming function's `Result`, so `advance_*` reports every
+  /// failure — including one raised before the step runs — as an event.
+  Map<String, VotingRustException> get roundStepBridgeErrors;
 
   List<String> get roundSessionSteps;
 
@@ -392,7 +402,13 @@ class FakeVotingRoundSession implements VotingRoundSession {
     required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
   }) async* {
-    driver.roundSessionSteps.add('${step.kind.name}:${step.bundleIndex}');
+    final stepKey = '${step.kind.name}:${step.bundleIndex}';
+    driver.roundSessionSteps.add(stepKey);
+    final bridgeError = driver.roundStepBridgeErrors.remove(stepKey);
+    if (bridgeError != null) {
+      yield _bridgeError(bridgeError);
+      return;
+    }
     try {
       switch (step.kind) {
         case rust_wire.NextStepKind.delegate:
@@ -934,6 +950,17 @@ class FakeVotingRoundSession implements VotingRoundSession {
         plan: await _plan(),
         shareDeliveries: const [],
       ),
+    );
+  }
+
+  /// One result event carrying a typed bridge failure, as `advance_*` sends it.
+  rust_session.ApiRoundStepEvent _bridgeError(VotingRustException error) {
+    return rust_session.ApiRoundStepEvent(
+      kind: rust_session.ApiRoundStepEventKind.result,
+      progress: null,
+      outcome: null,
+      failure: null,
+      error: apiRoundStepError(error.view),
     );
   }
 

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:zcash_wallet/src/rust/api/voting_session.dart' as rust_session;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
     as rust_share_policy;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
@@ -470,6 +471,29 @@ rust_wire.RoundPlanActionKind _primaryAction({
     return rust_wire.RoundPlanActionKind.submitShares;
   }
   return rust_wire.RoundPlanActionKind.idle;
+}
+
+/// The event payload `advance_*` carries for a typed bridge failure.
+///
+/// Mirrors the Rust `From<VotingErrorView>` so a scripted step failure reaches
+/// the session through the same fields production sends.
+rust_session.ApiRoundStepError apiRoundStepError(
+  rust_wire.VotingErrorView view,
+) {
+  return rust_session.ApiRoundStepError(
+    kind: view.kind,
+    retryable: view.retryable,
+    message: view.message,
+    bundleIndex: view.bundleIndex,
+    setupField: view.setupField,
+    snapshotHeight: view.snapshotHeight,
+    requiredWeightZatoshi: view.requiredWeightZatoshi,
+    selectedWeightZatoshi: view.selectedWeightZatoshi,
+    bundleNoteSlots: view.bundleNoteSlots,
+    selectedNotes: view.selectedNotes,
+    httpStatus: view.httpStatus,
+    endpoint: view.endpoint,
+  );
 }
 
 /// Builds the typed bridge failure a scripted fake would surface for `kind`.

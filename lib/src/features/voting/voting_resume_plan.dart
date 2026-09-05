@@ -104,12 +104,17 @@ Set<int> _terminalBundleIndexes(rust_wire.RoundPlanView? roundPlan) => {
     if (status.terminal) status.bundleIndex,
 };
 
-/// Why a bundle's delegation ended without confirming, if one did.
+/// Why each bundle whose delegation ended without confirming did, if any did.
 ///
 /// A terminal delegation schedules no further work, so this is the only thing
 /// the wallet can tell the user about it. A hashless dispatch may already be
 /// on the chain, so the message must not read as an invitation to retry.
+///
+/// Every terminal bundle is named: a round can end one bundle and still have
+/// live work in another, and the live work finishing is not a reason to leave
+/// the dead one unreported.
 String? terminalDelegationMessage(rust_wire.RoundPlanView? roundPlan) {
+  final reasons = <String>[];
   for (final status
       in roundPlan?.delegationStatuses ??
           const <rust_wire.DelegationStatusView>[]) {
@@ -118,9 +123,12 @@ String? terminalDelegationMessage(rust_wire.RoundPlanView? roundPlan) {
     final reason = diagnostic == null
         ? 'it ended without confirming'
         : diagnostic.message;
-    return 'Delegation bundle ${status.bundleIndex + 1} cannot continue: '
-        '$reason. Do not retry it; the transaction may already be on the '
-        'chain.';
+    reasons.add('bundle ${status.bundleIndex + 1} ($reason)');
   }
-  return null;
+  if (reasons.isEmpty) return null;
+  final subject = reasons.length == 1
+      ? 'Delegation ${reasons.single}'
+      : 'Delegation for ${reasons.join(', ')}';
+  return '$subject cannot continue. Do not retry it; the transaction may '
+      'already be on the chain.';
 }

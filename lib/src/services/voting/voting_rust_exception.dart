@@ -1,3 +1,4 @@
+import '../../rust/api/voting_session.dart';
 import '../../rust/third_party/zcash_voting/wire.dart';
 
 /// A typed failure from the Rust voting bridge.
@@ -44,9 +45,39 @@ abstract interface class VotingRustExceptionSource {
   VotingRustException? get votingRustException;
 }
 
+/// The typed failure a streamed round step reported, as a bridge exception.
+///
+/// A step's failure arrives as event data rather than as the call's error,
+/// because the bridge drops a streaming function's `Result`. The payload
+/// mirrors [VotingErrorView] field for field, so rebuilding the view here
+/// gives that failure the same classification as any other bridge failure.
+VotingRustException votingRustExceptionFromStepError(ApiRoundStepError error) {
+  return VotingRustException(
+    VotingErrorView(
+      kind: error.kind,
+      retryable: error.retryable,
+      message: error.message,
+      bundleIndex: error.bundleIndex,
+      setupField: error.setupField,
+      snapshotHeight: error.snapshotHeight,
+      requiredWeightZatoshi: error.requiredWeightZatoshi,
+      selectedWeightZatoshi: error.selectedWeightZatoshi,
+      bundleNoteSlots: error.bundleNoteSlots,
+      selectedNotes: error.selectedNotes,
+      httpStatus: error.httpStatus,
+      endpoint: error.endpoint,
+    ),
+  );
+}
+
 /// The bridge failure behind [error], looking through batch wrappers.
 VotingRustException? votingRustExceptionOf(Object error) {
   if (error is VotingRustException) return error;
+  // A bridge call that is not routed through the wrapping adapters throws the
+  // generated view itself, whose `toString` is `Instance of 'VotingErrorView'`.
+  // Classifying it here keeps that failure legible everywhere instead of
+  // reducing the one diagnostic that says why to no information at all.
+  if (error is VotingErrorView) return VotingRustException(error);
   if (error is VotingRustExceptionSource) return error.votingRustException;
   return null;
 }

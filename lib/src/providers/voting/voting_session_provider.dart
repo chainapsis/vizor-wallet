@@ -662,7 +662,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
         ),
       );
+      _reportTerminalDelegation(context, refreshedRoundPlan);
     }, cleanupProcessStateOnError: false);
+  }
+
+  /// Surfaces a delegation the SDK ended, whatever else the round managed.
+  ///
+  /// A terminal bundle plans no further work, so nothing downstream will ever
+  /// raise it. Other bundles succeeding does not make it any less stuck, and
+  /// the user has to be told before they try to vote with a round that cannot
+  /// carry every bundle's weight. State is set first so the refreshed plan and
+  /// progress survive the phase flip.
+  void _reportTerminalDelegation(
+    _VotingSessionContext context,
+    rust_wire.RoundPlanView? roundPlan,
+  ) {
+    final terminal = terminalDelegationMessage(roundPlan);
+    if (terminal == null) return;
+    _setError(terminal, context: context);
   }
 
   Future<void> prepareKeystoneSigning() {
@@ -1032,6 +1049,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
         ),
       );
+      _reportTerminalDelegation(context, refreshedRoundPlan);
     }, cleanupProcessStateOnError: false);
   }
 
@@ -1245,6 +1263,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 );
               },
             );
+            if (outcome.disposition ==
+                rust_wire.RoundStepDispositionView.noWork) {
+              // The SDK plans a step only when it has work for it, so a
+              // no-work answer means this step and the round disagree.
+              // Failing the bundle is what keeps the loop from re-selecting
+              // the same step forever; the other bundles still run.
+              throw StateError(
+                'Vote step for bundle ${step.bundleIndex} proposal '
+                '${step.proposalId} is no longer in the round plan.',
+              );
+            }
           } on _StaleVotingSessionAction {
             rethrow;
           } on _ChainSubmissionCancelled {
@@ -1641,6 +1670,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (terminal == null) {
         throw StateError('Round step completed without a result.');
       }
+      // Work the bridge does before the SDK sees the step — the delegation
+      // pipeline's lightwalletd anchor fetch, signer material, the PIR fleet —
+      // reports here rather than as a step failure, so its kind and
+      // retryability survive.
+      final error = terminal.error;
+      if (error != null) throw votingRustExceptionFromStepError(error);
       final failure = terminal.failure;
       if (failure != null) throw VotingRoundStepFailure(step, failure);
       final outcome = terminal.outcome;
@@ -1904,7 +1939,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   bool _hotkeyAlreadyBound(_VotingSessionContext context) {
-    if (context.roundPlan?.hotkeyBound ?? false) return true;
     return context.roundPlan?.hotkeyBound ?? false;
   }
 

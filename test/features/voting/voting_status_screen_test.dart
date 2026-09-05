@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
+import 'package:zcash_wallet/src/services/voting/voting_rust_exception.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -5260,6 +5261,9 @@ class _VotingStatusChainPassHandle implements FakeChainSubmissionPassHandle {
 
 class _VotingStatusRustApi extends _NoopVotingRustApi
     implements FakeRoundSessionDriver, FakeRoundStepApi {
+  @override
+  final Map<String, VotingRustException> roundStepBridgeErrors = {};
+
   _VotingStatusRustApi(
     this.recoveryApi, {
     this.bundleCount = 1,
