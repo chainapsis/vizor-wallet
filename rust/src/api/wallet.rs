@@ -950,6 +950,15 @@ pub fn get_unified_address(
     })
 }
 
+/// Returns the provided Unified Address re-encoded with only its Orchard
+/// receiver.
+pub fn orchard_only_unified_address(address: String, network: String) -> Result<String, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        keys::orchard_only_unified_address(&address, network)
+    })
+}
+
 /// Export a single account's Unified Full Viewing Key (UFVK). Works for both
 /// software and hardware (Keystone) accounts.
 pub fn get_account_ufvk(

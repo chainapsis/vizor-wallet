@@ -112,6 +112,14 @@ class ReceiveAddressService {
     return address;
   }
 
+  Future<String> loadOrchardAddress({required String accountUuid}) async {
+    final unifiedAddress = await loadShieldedAddress(accountUuid: accountUuid);
+    return rust_wallet.orchardOnlyUnifiedAddress(
+      address: unifiedAddress,
+      network: _network,
+    );
+  }
+
   String get _network {
     final network = _ref.read(appBootstrapProvider).network;
     return network.isEmpty ? kZcashDefaultNetworkName : network;

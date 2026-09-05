@@ -4,10 +4,10 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_addres
 
 void main() {
   test(
-    'blocks quote preparation when shielded wallet address is unavailable',
+    'blocks quote preparation when Orchard wallet address is unavailable',
     () {
       final service = SwapZecStagingAddressService(
-        loadCurrentShieldedAddress: ({required accountUuid}) async {
+        loadOrchardAddress: ({required accountUuid}) async {
           throw Exception('address unavailable');
         },
       );
@@ -19,49 +19,52 @@ void main() {
     },
   );
 
-  test('uses shielded unified address for the ZEC refund path', () async {
-    var shieldedLoads = 0;
+  test('uses Orchard-only unified address for the ZEC refund path', () async {
+    var orchardLoads = 0;
     final service = SwapZecStagingAddressService(
-      loadCurrentShieldedAddress: ({required accountUuid}) async {
-        shieldedLoads++;
+      loadOrchardAddress: ({required accountUuid}) async {
+        orchardLoads++;
         expect(accountUuid, 'account-1');
-        return 'u1fresh-shielded-refund';
+        return 'u1current-orchard-refund';
       },
     );
 
     final staging = await service.prepareForQuote(accountUuid: 'account-1');
 
-    expect(shieldedLoads, 1);
-    expect(staging.address, 'u1fresh-shielded-refund');
+    expect(orchardLoads, 1);
+    expect(staging.address, 'u1current-orchard-refund');
     final plan = staging.toAddressPlan(
       direction: SwapDirection.zecToExternal,
       externalAsset: SwapAsset.usdc,
       userExternalAddress: '0xrecipient',
     );
     expect(plan.oneClickRecipient, '0xrecipient');
-    expect(plan.oneClickRefundTo, 'u1fresh-shielded-refund');
+    expect(plan.oneClickRefundTo, 'u1current-orchard-refund');
   });
 
-  test('uses shielded unified address for external to ZEC delivery', () async {
-    var shieldedLoads = 0;
-    final service = SwapZecStagingAddressService(
-      loadCurrentShieldedAddress: ({required accountUuid}) async {
-        shieldedLoads++;
-        expect(accountUuid, 'account-1');
-        return 'u1fresh-shielded-recipient';
-      },
-    );
+  test(
+    'uses Orchard-only unified address for external to ZEC deposit',
+    () async {
+      var orchardLoads = 0;
+      final service = SwapZecStagingAddressService(
+        loadOrchardAddress: ({required accountUuid}) async {
+          orchardLoads++;
+          expect(accountUuid, 'account-1');
+          return 'u1current-orchard-deposit';
+        },
+      );
 
-    final staging = await service.prepareForQuote(accountUuid: 'account-1');
+      final staging = await service.prepareForQuote(accountUuid: 'account-1');
 
-    expect(shieldedLoads, 1);
-    expect(staging.address, 'u1fresh-shielded-recipient');
-    final plan = staging.toAddressPlan(
-      direction: SwapDirection.externalToZec,
-      externalAsset: SwapAsset.usdc,
-      userExternalAddress: '0xrefund',
-    );
-    expect(plan.oneClickRecipient, 'u1fresh-shielded-recipient');
-    expect(plan.oneClickRefundTo, '0xrefund');
-  });
+      expect(orchardLoads, 1);
+      expect(staging.address, 'u1current-orchard-deposit');
+      final plan = staging.toAddressPlan(
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        userExternalAddress: '0xrefund',
+      );
+      expect(plan.oneClickRecipient, 'u1current-orchard-deposit');
+      expect(plan.oneClickRefundTo, '0xrefund');
+    },
+  );
 }

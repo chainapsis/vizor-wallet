@@ -7816,13 +7816,13 @@ void main() {
       findsNothing,
     );
     expect(
-      find.textContaining('Could not prepare a fresh wallet receive address.'),
+      find.textContaining('Could not prepare the wallet receive address.'),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('review quote uses shielded unified address as ZEC recipient', (
+  testWidgets('review quote uses Orchard-only UA as ZEC recipient', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -9367,7 +9367,7 @@ Widget _routerHarness(
       SpendableBalanceFreshness.authoritative,
   Duration? statusPollInterval,
   Duration? priceRefreshInterval,
-  LoadShieldedAddress? loadShieldedAddress,
+  LoadOrchardAddress? loadShieldedAddress,
   bool seedSwapActivityFixtures = true,
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
@@ -9411,20 +9411,13 @@ Widget _routerHarness(
       ),
       swapZecStagingAddressServiceProvider.overrideWith(
         (ref) => SwapZecStagingAddressService(
-          loadCurrentShieldedAddress:
-              loadShieldedAddress ??
-              ({required accountUuid}) {
-                return ref
-                    .read(receiveAddressServiceProvider)
-                    .loadShieldedAddress(accountUuid: accountUuid);
-              },
-          prepareFreshShieldedAddress:
+          loadOrchardAddress:
               loadShieldedAddress ??
               ({required accountUuid}) {
                 final receiveAddressService = ref.read(
                   receiveAddressServiceProvider,
                 );
-                return receiveAddressService.renewShieldedAddress(
+                return receiveAddressService.loadOrchardAddress(
                   accountUuid: accountUuid,
                 );
               },

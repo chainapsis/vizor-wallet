@@ -14,6 +14,7 @@ use zcash_client_backend::data_api::{
 };
 use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, AccountUuid};
 use zcash_keys::{
+    address::{Address, UnifiedAddress},
     encoding::encode_transparent_address,
     keys::{ReceiverRequirement, UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
 };
@@ -1005,6 +1006,27 @@ pub fn get_address_from_db(
     current_receive_address(&db, network, account_id, ufvk)
 }
 
+/// Returns a [`UnifiedAddress`] containing only the Orchard receiver from the
+/// provided address.
+pub(crate) fn orchard_only_unified_address(
+    address: &str,
+    network: WalletNetwork,
+) -> Result<String, String> {
+    let Address::Unified(address) = Address::decode(&network, address)
+        .ok_or_else(|| "Invalid Unified Address for the selected network".to_string())?
+    else {
+        return Err("Expected a Unified Address".to_string());
+    };
+    let orchard = address
+        .orchard()
+        .copied()
+        .ok_or_else(|| "Unified Address does not contain an Orchard receiver".to_string())?;
+    let address = UnifiedAddress::from_receivers(Some(orchard), None, None)
+        .ok_or_else(|| "Could not construct Orchard-only Unified Address".to_string())?;
+
+    Ok(address.encode(&network))
+}
+
 /// Export a single account's Unified Full Viewing Key (UFVK), encoded for
 /// the given network. Works for every account source (`Derived`, software
 /// `Imported`, and hardware/Keystone `Imported`) — unlike
@@ -1572,6 +1594,34 @@ mod tests {
                 .unwrap()
                 .unified_address
         );
+    }
+
+    #[test]
+    fn test_orchard_only_unified_address_strips_sapling() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let (_, address) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        let original = Address::decode(&WalletNetwork::Main, &address).unwrap();
+        let Address::Unified(original) = original else {
+            panic!("expected a Unified Address");
+        };
+        assert!(original.has_sapling());
+
+        let filtered = orchard_only_unified_address(&address, WalletNetwork::Main).unwrap();
+        let filtered = Address::decode(&WalletNetwork::Main, &filtered).unwrap();
+        let Address::Unified(filtered) = filtered else {
+            panic!("expected a Unified Address");
+        };
+        assert_eq!(filtered.orchard(), original.orchard());
+        assert!(!filtered.has_sapling());
+        assert!(!filtered.has_transparent());
     }
 
     #[test]
