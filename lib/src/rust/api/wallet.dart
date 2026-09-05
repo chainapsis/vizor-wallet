@@ -258,6 +258,16 @@ Future<String> getUnifiedAddress({
   accountUuid: accountUuid,
 );
 
+/// Returns the provided Unified Address re-encoded with only its Orchard
+/// receiver.
+Future<String> orchardOnlyUnifiedAddress({
+  required String address,
+  required String network,
+}) => RustLib.instance.api.crateApiWalletOrchardOnlyUnifiedAddress(
+  address: address,
+  network: network,
+);
+
 /// Export a single account's Unified Full Viewing Key (UFVK). Works for both
 /// software and hardware (Keystone) accounts.
 Future<String> getAccountUfvk({
