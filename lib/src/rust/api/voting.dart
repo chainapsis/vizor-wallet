@@ -163,6 +163,13 @@ Future<bool> confirmShareWithHelpers({
 /// `None` means the round has no unconfirmed shares left, which is also the
 /// signal to stop background tracking. The SDK reads the durable share rows
 /// itself, so they never cross this boundary.
+///
+/// The SDK's own `next_tracking_delay_for_round` returns the soonest *future*
+/// check time, so a share that is already past its grace boundary waits behind
+/// an unrelated future one. Vizor polls the ready share instead, and lifts the
+/// future-check cap: that cap exists for wallets using the tracking pass as a
+/// general heartbeat, and Vizor refreshes round state separately, so it would
+/// only cause redundant SQLite and helper passes.
 Future<BigInt?> nextShareTrackingDelaySeconds({
   required String dbPath,
   required String accountUuid,

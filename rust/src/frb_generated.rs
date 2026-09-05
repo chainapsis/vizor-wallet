@@ -7563,6 +7563,7 @@ const _: fn() = || {
         let _: Option<zcash_voting::wire::CompletedVoteDisplayView> =
             RoundPlanView.completed_vote_display;
         let _: bool = RoundPlanView.needs_draft_setup;
+        let _: bool = RoundPlanView.needs_bundle_setup;
         let _: bool = RoundPlanView.needs_delegation_signing;
         let _: bool = RoundPlanView.has_in_flight_delegation;
         let _: bool = RoundPlanView.needs_vote_polling;
@@ -10691,6 +10692,7 @@ impl SseDecode for zcash_voting::wire::RoundPlanView {
         let mut var_completedVoteDisplay =
             <Option<zcash_voting::wire::CompletedVoteDisplayView>>::sse_decode(deserializer);
         let mut var_needsDraftSetup = <bool>::sse_decode(deserializer);
+        let mut var_needsBundleSetup = <bool>::sse_decode(deserializer);
         let mut var_needsDelegationSigning = <bool>::sse_decode(deserializer);
         let mut var_hasInFlightDelegation = <bool>::sse_decode(deserializer);
         let mut var_needsVotePolling = <bool>::sse_decode(deserializer);
@@ -10722,6 +10724,7 @@ impl SseDecode for zcash_voting::wire::RoundPlanView {
             completed_for_display: var_completedForDisplay,
             completed_vote_display: var_completedVoteDisplay,
             needs_draft_setup: var_needsDraftSetup,
+            needs_bundle_setup: var_needsBundleSetup,
             needs_delegation_signing: var_needsDelegationSigning,
             has_in_flight_delegation: var_hasInFlightDelegation,
             needs_vote_polling: var_needsVotePolling,
@@ -10773,6 +10776,7 @@ impl SseDecode for zcash_voting::wire::RoundStepFailureKindView {
             9 => zcash_voting::wire::RoundStepFailureKindView::Signing,
             10 => zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete,
             11 => zcash_voting::wire::RoundStepFailureKindView::VoteEnded,
+            12 => zcash_voting::wire::RoundStepFailureKindView::DelegationTargetMismatch,
             _ => unreachable!("Invalid variant for RoundStepFailureKindView: {}", inner),
         };
     }
@@ -11448,7 +11452,9 @@ impl SseDecode for zcash_voting::wire::VotingErrorKindView {
             8 => zcash_voting::wire::VotingErrorKindView::SetupAlreadyPersisted,
             9 => zcash_voting::wire::VotingErrorKindView::DbBusy,
             10 => zcash_voting::wire::VotingErrorKindView::PirUnavailable,
-            11 => zcash_voting::wire::VotingErrorKindView::Other,
+            11 => zcash_voting::wire::VotingErrorKindView::DelegationTargetMismatch,
+            12 => zcash_voting::wire::VotingErrorKindView::DelegationAlreadyBroadcast,
+            13 => zcash_voting::wire::VotingErrorKindView::Other,
             _ => unreachable!("Invalid variant for VotingErrorKindView: {}", inner),
         };
     }
@@ -14305,6 +14311,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundPlanV
             self.0.completed_for_display.into_into_dart().into_dart(),
             self.0.completed_vote_display.into_into_dart().into_dart(),
             self.0.needs_draft_setup.into_into_dart().into_dart(),
+            self.0.needs_bundle_setup.into_into_dart().into_dart(),
             self.0.needs_delegation_signing.into_into_dart().into_dart(),
             self.0.has_in_flight_delegation.into_into_dart().into_dart(),
             self.0.needs_vote_polling.into_into_dart().into_dart(),
@@ -14389,6 +14396,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundStepF
                 10.into_dart()
             }
             zcash_voting::wire::RoundStepFailureKindView::VoteEnded => 11.into_dart(),
+            zcash_voting::wire::RoundStepFailureKindView::DelegationTargetMismatch => {
+                12.into_dart()
+            }
             _ => unreachable!(),
         }
     }
@@ -15257,7 +15267,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::VotingErro
             zcash_voting::wire::VotingErrorKindView::SetupAlreadyPersisted => 8.into_dart(),
             zcash_voting::wire::VotingErrorKindView::DbBusy => 9.into_dart(),
             zcash_voting::wire::VotingErrorKindView::PirUnavailable => 10.into_dart(),
-            zcash_voting::wire::VotingErrorKindView::Other => 11.into_dart(),
+            zcash_voting::wire::VotingErrorKindView::DelegationTargetMismatch => 11.into_dart(),
+            zcash_voting::wire::VotingErrorKindView::DelegationAlreadyBroadcast => 12.into_dart(),
+            zcash_voting::wire::VotingErrorKindView::Other => 13.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -17771,6 +17783,7 @@ impl SseEncode for zcash_voting::wire::RoundPlanView {
             serializer,
         );
         <bool>::sse_encode(self.needs_draft_setup, serializer);
+        <bool>::sse_encode(self.needs_bundle_setup, serializer);
         <bool>::sse_encode(self.needs_delegation_signing, serializer);
         <bool>::sse_encode(self.has_in_flight_delegation, serializer);
         <bool>::sse_encode(self.needs_vote_polling, serializer);
@@ -17837,6 +17850,7 @@ impl SseEncode for zcash_voting::wire::RoundStepFailureKindView {
                 zcash_voting::wire::RoundStepFailureKindView::Signing => 9,
                 zcash_voting::wire::RoundStepFailureKindView::HelperDeliveryIncomplete => 10,
                 zcash_voting::wire::RoundStepFailureKindView::VoteEnded => 11,
+                zcash_voting::wire::RoundStepFailureKindView::DelegationTargetMismatch => 12,
                 _ => {
                     unimplemented!("");
                 }
@@ -18346,7 +18360,9 @@ impl SseEncode for zcash_voting::wire::VotingErrorKindView {
                 zcash_voting::wire::VotingErrorKindView::SetupAlreadyPersisted => 8,
                 zcash_voting::wire::VotingErrorKindView::DbBusy => 9,
                 zcash_voting::wire::VotingErrorKindView::PirUnavailable => 10,
-                zcash_voting::wire::VotingErrorKindView::Other => 11,
+                zcash_voting::wire::VotingErrorKindView::DelegationTargetMismatch => 11,
+                zcash_voting::wire::VotingErrorKindView::DelegationAlreadyBroadcast => 12,
+                zcash_voting::wire::VotingErrorKindView::Other => 13,
                 _ => {
                     unimplemented!("");
                 }

@@ -408,6 +408,10 @@ class RoundPlanView {
   final CompletedVoteDisplayView? completedVoteDisplay;
   final bool needsDraftSetup;
 
+  /// True when the round holds a ballot choice but no bundle rows yet, so
+  /// the host must persist the bundle plan before any vote work is planned.
+  final bool needsBundleSetup;
+
   /// True when delegation work needs fresh or restored wallet signing material.
   ///
   /// Read these derived flags instead of matching `NextStepView::kind`
@@ -456,6 +460,7 @@ class RoundPlanView {
     required this.completedForDisplay,
     this.completedVoteDisplay,
     required this.needsDraftSetup,
+    required this.needsBundleSetup,
     required this.needsDelegationSigning,
     required this.hasInFlightDelegation,
     required this.needsVotePolling,
@@ -485,6 +490,7 @@ class RoundPlanView {
       completedForDisplay.hashCode ^
       completedVoteDisplay.hashCode ^
       needsDraftSetup.hashCode ^
+      needsBundleSetup.hashCode ^
       needsDelegationSigning.hashCode ^
       hasInFlightDelegation.hashCode ^
       needsVotePolling.hashCode ^
@@ -516,6 +522,7 @@ class RoundPlanView {
           completedForDisplay == other.completedForDisplay &&
           completedVoteDisplay == other.completedVoteDisplay &&
           needsDraftSetup == other.needsDraftSetup &&
+          needsBundleSetup == other.needsBundleSetup &&
           needsDelegationSigning == other.needsDelegationSigning &&
           hasInFlightDelegation == other.hasInFlightDelegation &&
           needsVotePolling == other.needsVotePolling &&
@@ -557,6 +564,7 @@ enum RoundStepFailureKindView {
   signing,
   helperDeliveryIncomplete,
   voteEnded,
+  delegationTargetMismatch,
 }
 
 /// Failure of one round step with the refreshed plan when it could be read.
@@ -987,6 +995,8 @@ enum VotingErrorKindView {
   setupAlreadyPersisted,
   dbBusy,
   pirUnavailable,
+  delegationTargetMismatch,
+  delegationAlreadyBroadcast,
 
   /// Any category this host does not know. Serde deserializes unknown
   /// category strings into it, so a newer crate can add kinds without

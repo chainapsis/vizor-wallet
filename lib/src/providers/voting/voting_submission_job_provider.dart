@@ -677,6 +677,25 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       if (needsDelegation) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
+        // The ballot has to be durable before delegation, not after it. The
+        // SDK plans a `Delegate` obligation only for a bundle that still has
+        // a vote to cast, so delegating an unrecorded ballot finds no work at
+        // all, and the cast that follows is then refused for wanting the
+        // delegation it just skipped.
+        await sessionNotifier.recordBallotIntents(
+          draftVotes: draftVotes,
+          allProposalIds: intentProposalIds,
+        );
+        if (!_isCurrentJob(key: key, generation: generation)) return;
+        final afterIntents = _sessionForJob(key);
+        if (afterIntents?.phase == VotingSessionPhase.error) {
+          _failFromSession(
+            key: key,
+            generation: generation,
+            session: afterIntents!,
+          );
+          return;
+        }
         await sessionNotifier.delegatePendingBundles(
           mnemonic: softwareMnemonic,
         );
@@ -1436,8 +1455,28 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   /// delegation because advancing one re-signs it.
   bool _canPollDelegationWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    return (roundPlan?.hasInFlightDelegation ?? false) &&
-        delegationBundleIndexesNeedingSigning(roundPlan).isEmpty;
+    if (roundPlan == null || !roundPlan.hasInFlightDelegation) return false;
+    // A submission the chain-submission lifecycle owns — submitting, tracking,
+    // or recovering — already carries its signature, so it is not signing work
+    // standing between this round and a poll. Counting it as unsigned is what
+    // left a rejected delegation unable to be retried without re-picking every
+    // vote, because the job refuses a draftless submit unless polling is
+    // possible.
+    final awaitingSignature = delegationBundleIndexesNeedingSigning(roundPlan)
+        .where((bundleIndex) => !_bundleSubmissionIsManaged(roundPlan, bundleIndex));
+    return awaitingSignature.isEmpty;
+  }
+
+  bool _bundleSubmissionIsManaged(
+    rust_wire.RoundPlanView roundPlan,
+    int bundleIndex,
+  ) {
+    for (final status in roundPlan.delegationStatuses) {
+      if (status.bundleIndex == bundleIndex) {
+        return status.phase == rust_wire.WorkflowPhaseView.submissionManaged;
+      }
+    }
+    return false;
   }
 
   bool _sessionNeedsDelegation(VotingSessionState? session) {

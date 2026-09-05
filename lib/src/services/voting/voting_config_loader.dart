@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import '../../core/config/network_config.dart';
 import '../../rust/api/voting.dart' as rust_config_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
+import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
+import 'voting_endpoint_mapper.dart';
 import 'voting_http.dart';
 import 'voting_models.dart';
 
@@ -52,6 +54,16 @@ const kE2eStaticVotingConfigSource = String.fromEnvironment(
   kE2eStaticVotingConfigSourceEnvKey,
 );
 
+const kStageVotingHarnessStaticConfigSourceEnvKey =
+    'ZCASH_STAGE_VOTING_STATIC_CONFIG_URL';
+const kStageVotingHarnessStaticConfigSource = String.fromEnvironment(
+  kStageVotingHarnessStaticConfigSourceEnvKey,
+);
+const kStageVotingHarnessConfigEnabled =
+    kStageVotingReleaseHarnessEnabled &&
+    kZcashDefaultNetworkRaw == 'test' &&
+    kStageVotingHarnessStaticConfigSource != '';
+
 /// Ordered production trust-anchor mirrors, canonical origin first.
 ///
 /// Every entry carries the same `?checksum=sha256:` pin, so whichever origin
@@ -72,6 +84,8 @@ const kStageStaticVotingConfigMirrors = <String>[
 const kDefaultStaticVotingConfigSource =
     kZcashDefaultNetworkRaw == 'regtest' && kE2eStaticVotingConfigSource != ''
     ? kE2eStaticVotingConfigSource
+    : kStageVotingHarnessConfigEnabled
+    ? kStageVotingHarnessStaticConfigSource
     : kZcashDefaultNetworkRaw == 'test'
     ? kStageStaticVotingConfigSource
     : kProductionStaticVotingConfigSource;
@@ -80,6 +94,8 @@ const kDefaultStaticVotingConfigSource =
 const kDefaultStaticVotingConfigMirrors =
     kZcashDefaultNetworkRaw == 'regtest' && kE2eStaticVotingConfigSource != ''
     ? <String>[kE2eStaticVotingConfigSource]
+    : kStageVotingHarnessConfigEnabled
+    ? <String>[kStageVotingHarnessStaticConfigSource]
     : kZcashDefaultNetworkRaw == 'test'
     ? kStageStaticVotingConfigMirrors
     : kProductionStaticVotingConfigMirrors;
@@ -160,6 +176,21 @@ class VotingConfigMirrorFailure {
 /// else reached Rust with bytes in hand and was rejected there, so it is
 /// treated as an integrity failure — erring toward over-reporting a tamper
 /// signal rather than silently classifying a novel error as a network blip.
+/// Renders a mirror failure for a log line.
+///
+/// The config resolver is called through the generated bridge functions
+/// directly, so an SDK rejection arrives as a bare `VotingErrorView`, whose
+/// `toString` is `Instance of 'VotingErrorView'`. Interpolating it raw turns
+/// the one diagnostic that says *why* a mirror was rejected into no
+/// information at all, which is exactly the case an integrity failure has to
+/// be legible in.
+String describeVotingConfigMirrorError(Object error) {
+  if (error is rust_wire.VotingErrorView) {
+    return '${error.kind.name}: ${error.message}';
+  }
+  return '$error';
+}
+
 VotingConfigMirrorFailureKind classifyVotingConfigMirrorFailure(Object error) {
   if (error is VotingHttpException ||
       error is TimeoutException ||
@@ -576,7 +607,7 @@ class VotingConfigLoader {
     final kind = classifyVotingConfigMirrorFailure(error);
     debugPrint(
       '[zcash] Voting: ${stage.name} mirror $url passed over '
-      '(${kind.name}): $error',
+      '(${kind.name}): ${describeVotingConfigMirrorError(error)}',
     );
     if (observer == null) return;
     try {
