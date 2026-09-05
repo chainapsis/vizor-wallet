@@ -204,9 +204,8 @@ class _VotingProposalDetailViewState
           preparing: votingPowerPreparing,
         );
         final votingError = state.error;
-        final votingEligibilityError = votingError == null
-            ? false
-            : isVotingEligibilityErrorText(votingError.message);
+        final votingEligibilityError =
+            votingError?.isEligibilityFailure ?? false;
         _maybePrecomputeSnapshotBundles(state);
         return VotingActivePollContent(
           showDesktopToolbar: widget.showDesktopToolbar,
@@ -1829,16 +1828,17 @@ class _PendingVoteRecovery {
         !roundPlan.completedVoteArtifact) {
       return null;
     }
-    if (roundPlan.primaryAction == 'delegate' ||
+    if (roundPlan.primaryAction == rust_wire.RoundPlanActionKind.delegate ||
         roundPlan.recoveredDelegationWork.isNotEmpty) {
       return const _PendingVoteRecovery(
         message:
             'This vote has local progress, but delegation is not fully confirmed yet. The app should continue recovery before accepting another vote.',
       );
     }
-    if (roundPlan.primaryAction == 'vote' ||
+    if (roundPlan.primaryAction == rust_wire.RoundPlanActionKind.vote ||
         roundPlan.recoveredVoteWork.any(
-          (work) => work.kind != 'submit_shares',
+          (work) =>
+              work.kind != rust_wire.VoteRecoveryWorkKindView.submitShares,
         )) {
       return const _PendingVoteRecovery(
         message:

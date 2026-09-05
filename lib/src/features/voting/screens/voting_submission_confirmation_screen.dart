@@ -15,6 +15,7 @@ import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../../../services/voting/voting_rust_exception.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -83,6 +84,7 @@ class _VotingSubmissionConfirmationViewState
   BigInt? _refreshedVotingPowerZatoshi;
   bool _refreshedVotingEligibilityConfirmed = false;
   String? _votingPowerRefreshErrorMessage;
+  bool _votingPowerRefreshErrorIsEligibility = false;
   VotingSessionState? _lastSubmissionState;
   String? _pollRefreshKey;
   Future<void>? _pollRefreshFuture;
@@ -166,7 +168,7 @@ class _VotingSubmissionConfirmationViewState
         : 'Token holder voting';
     final hasCompletedSubmission =
         hasCompletedVoteForDisplay(state.roundPlan) &&
-        hasConfirmedImmediateShare(state.roundPlan, state.resumePlan);
+        hasConfirmedImmediateShare(state.roundPlan);
     if (hasCompletedSubmission) {
       _lastSubmissionState = state;
     }
@@ -213,7 +215,7 @@ class _VotingSubmissionConfirmationViewState
       final canRetry =
           latestRefreshMessage != null &&
           !_refreshingVotingPower &&
-          !isVotingEligibilityErrorText(latestRefreshMessage);
+          !_votingPowerRefreshErrorIsEligibility;
       return _wrapFallback(
         _ConfirmationScaffold(
           showDesktopToolbar: widget.showDesktopToolbar,
@@ -418,6 +420,9 @@ class _VotingSubmissionConfirmationViewState
             refreshedEligibilityConfirmed || refreshedError == null
             ? null
             : friendlyVotingErrorText(refreshedError.message);
+        _votingPowerRefreshErrorIsEligibility =
+            !refreshedEligibilityConfirmed &&
+            (refreshedError?.isEligibilityFailure ?? false);
       });
     } catch (error) {
       debugPrint(
@@ -428,7 +433,9 @@ class _VotingSubmissionConfirmationViewState
         setState(() {
           _refreshedVotingEligibilityConfirmed = false;
           _refreshedVotingPowerZatoshi = null;
-          _votingPowerRefreshErrorMessage = friendlyVotingErrorText('$error');
+          _votingPowerRefreshErrorMessage = friendlyVotingErrorMessage(error);
+          _votingPowerRefreshErrorIsEligibility =
+              votingRustExceptionOf(error)?.isEligibilityFailure ?? false;
         });
       }
     } finally {

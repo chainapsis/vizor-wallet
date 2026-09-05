@@ -11,7 +11,12 @@ VOTE_HOME="$STATE_DIR/vote-home"
 SHIM_DIR="$STATE_DIR/shims"
 
 VOTE_SDK_URL="https://github.com/valargroup/vote-sdk.git"
-VOTE_SDK_REV="6a10c073baae3c2003ada402d7c5c513ee6b90ce"
+# Must build the same circuit the wallet proves against. The wallet proves
+# with voting-circuits 0.12.0-rc.1 / vote-commitment-tree 0.6.0; a vote-sdk
+# whose verifier is older rejects every delegation with
+# "verify_proof failed: ConstraintSystemFailure". 6a10c073 (v1.4.0) pinned
+# voting-circuits 0.10.0, and even v1.4.2-rc.2 on staging is only 0.10.3.
+VOTE_SDK_REV="ec173b3b8efe382523cce895ad7f0fd125558610"
 PIR_URL="https://github.com/valargroup/vote-nullifier-pir.git"
 PIR_REV="20356d14f61a825ef28726f38270c37d604cc268"
 VOTE_SDK_DIR="$DEPS_DIR/vote-sdk-$VOTE_SDK_REV"

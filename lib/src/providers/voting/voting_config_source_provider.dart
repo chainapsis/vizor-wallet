@@ -165,6 +165,11 @@ class VotingConfigSourceNotifier
     final savedSources = _decodeSavedSources(
       await store.readSavedSourcesJson(),
     );
+    if (kStageVotingHarnessConfigEnabled) {
+      return VotingConfigSourceState.defaultSource().copyWith(
+        savedSources: savedSources,
+      );
+    }
     final trimmed = stored?.trim();
     if (trimmed == null || trimmed.isEmpty) {
       return VotingConfigSourceState.defaultSource().copyWith(

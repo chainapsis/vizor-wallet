@@ -1,19 +1,4 @@
-import 'dart:collection';
-
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
-
-/// Phase strings emitted by Rust voting recovery.
-///
-/// Keep these in sync with `WorkflowPhase::as_str` in
-/// `zcash_voting::phases::WorkflowPhase`.
-abstract final class VotingWorkflowPhase {
-  static const prepared = 'prepared';
-  static const signed = 'signed';
-  static const submittedDelegation = 'submitted_delegation';
-  static const submittedVote = 'submitted_vote';
-  static const submittedShare = 'submitted_share';
-  static const confirmed = 'confirmed';
-}
 
 bool hasBlockingRoundRecoveryWork(rust_wire.RoundPlanView? roundPlan) {
   return roundPlan?.blockingRecovery ?? false;
@@ -28,10 +13,7 @@ bool hasCompletedVoteForDisplay(rust_wire.RoundPlanView? roundPlan) {
 /// Delayed shares intentionally remain background work, but the submission
 /// confirmation screen must not advance until this one round-level share has
 /// been durably confirmed by the crate's configured-helper quorum.
-bool hasConfirmedImmediateShare(
-  rust_wire.RoundPlanView? roundPlan,
-  VotingResumePlan? _,
-) {
+bool hasConfirmedImmediateShare(rust_wire.RoundPlanView? roundPlan) {
   if (roundPlan?.immediateShareKey == null) return true;
   return roundPlan!.immediateShareConfirmed;
 }
@@ -66,86 +48,87 @@ class VotingVoteKey {
       'VotingVoteKey(bundleIndex: $bundleIndex, proposalId: $proposalId)';
 }
 
-/// Immutable keyed view of persisted recovery records for a voting round.
+/// Eligible bundles the round persisted. The SDK reports one delegation
+/// status per bundle, so its length is the round's bundle count.
+int roundPlanBundleCount(rust_wire.RoundPlanView? roundPlan) =>
+    roundPlan?.delegationStatuses.length ?? 0;
+
+/// Bundles whose delegation still has work to drive.
 ///
-/// The crate `RoundPlanView` decides high-level recovery and display state. This
-/// object preserves raw records in stable order so Dart can retry the exact
-/// bundle/proposal/share work selected by that plan.
-class VotingResumePlan {
-  final rust_wire.RoundRecoveryStateView recoveryState;
-  final UnmodifiableListView<int> pendingDelegationBundleIndexes;
-  final UnmodifiableMapView<int, String> delegationPhasesByIndex;
-  final UnmodifiableListView<int> submittedDelegationBundleIndexes;
-  final UnmodifiableMapView<VotingVoteKey, rust_wire.VoteRecoveryView>
-  votesByKey;
-  final UnmodifiableMapView<VotingVoteKey, String> votePhasesByKey;
-  final UnmodifiableMapView<VotingVoteKey, String> voteTxHashesByKey;
-  final UnmodifiableMapView<
-    VotingVoteKey,
-    rust_wire.RecoverableCommitmentBundle
-  >
-  commitmentBundlesByKey;
-  final UnmodifiableListView<VotingVoteKey> pendingVoteSubmissionKeys;
-  final UnmodifiableListView<VotingVoteKey> submittedVoteConfirmationKeys;
-  final UnmodifiableListView<VotingVoteKey> incompleteVoteRecoveryKeys;
-  final UnmodifiableListView<rust_wire.ShareDelegationRecordView>
-  shareDelegations;
-  final UnmodifiableListView<rust_wire.ShareDelegationRecordView>
-  unconfirmedShareDelegations;
+/// Covers both bundles needing signature work and bundles already submitted
+/// and awaiting confirmation, because both still need a delegation step.
+/// Excludes bundles the SDK marks terminal: it plans no step for them, and a
+/// hashless dispatch must never be retried.
+List<int> delegationBundleIndexesNeedingWork(
+  rust_wire.RoundPlanView? roundPlan,
+) {
+  final terminal = _terminalBundleIndexes(roundPlan);
+  final indexes = <int>{
+    for (final status
+        in roundPlan?.delegationStatuses ??
+            const <rust_wire.DelegationStatusView>[])
+      if (!status.terminal &&
+          status.phase != rust_wire.WorkflowPhaseView.confirmed)
+        status.bundleIndex,
+    for (final work
+        in roundPlan?.recoveredDelegationWork ??
+            const <rust_wire.DelegationRecoveryWorkView>[])
+      if (!terminal.contains(work.bundleIndex)) work.bundleIndex,
+  };
+  return indexes.toList()..sort();
+}
 
-  VotingResumePlan({
-    required this.recoveryState,
-    required List<int> pendingDelegationBundleIndexes,
-    required Map<int, String> delegationPhasesByIndex,
-    required List<int> submittedDelegationBundleIndexes,
-    required Map<VotingVoteKey, rust_wire.VoteRecoveryView> votesByKey,
-    required Map<VotingVoteKey, String> votePhasesByKey,
-    required Map<VotingVoteKey, String> voteTxHashesByKey,
-    required Map<VotingVoteKey, rust_wire.RecoverableCommitmentBundle>
-    commitmentBundlesByKey,
-    required List<VotingVoteKey> pendingVoteSubmissionKeys,
-    required List<VotingVoteKey> submittedVoteConfirmationKeys,
-    required List<VotingVoteKey> incompleteVoteRecoveryKeys,
-    required List<rust_wire.ShareDelegationRecordView> shareDelegations,
-    required List<rust_wire.ShareDelegationRecordView>
-    unconfirmedShareDelegations,
-  }) : pendingDelegationBundleIndexes = UnmodifiableListView(
-         pendingDelegationBundleIndexes,
-       ),
-       delegationPhasesByIndex = UnmodifiableMapView(delegationPhasesByIndex),
-       submittedDelegationBundleIndexes = UnmodifiableListView(
-         submittedDelegationBundleIndexes,
-       ),
-       votesByKey = UnmodifiableMapView(votesByKey),
-       votePhasesByKey = UnmodifiableMapView(votePhasesByKey),
-       voteTxHashesByKey = UnmodifiableMapView(voteTxHashesByKey),
-       commitmentBundlesByKey = UnmodifiableMapView(commitmentBundlesByKey),
-       pendingVoteSubmissionKeys = UnmodifiableListView(
-         pendingVoteSubmissionKeys,
-       ),
-       submittedVoteConfirmationKeys = UnmodifiableListView(
-         submittedVoteConfirmationKeys,
-       ),
-       incompleteVoteRecoveryKeys = UnmodifiableListView(
-         incompleteVoteRecoveryKeys,
-       ),
-       shareDelegations = UnmodifiableListView(shareDelegations),
-       unconfirmedShareDelegations = UnmodifiableListView(
-         unconfirmedShareDelegations,
-       );
+/// Bundles that still need delegation signing material.
+///
+/// Excludes bundles already submitted (their signature exists and only the
+/// chain outcome is outstanding) and bundles the SDK marks terminal.
+List<int> delegationBundleIndexesNeedingSigning(
+  rust_wire.RoundPlanView? roundPlan,
+) {
+  final indexes = <int>[
+    for (final status
+        in roundPlan?.delegationStatuses ??
+            const <rust_wire.DelegationStatusView>[])
+      if (!status.terminal &&
+          status.phase != rust_wire.WorkflowPhaseView.confirmed &&
+          status.phase != rust_wire.WorkflowPhaseView.submittedDelegation)
+        status.bundleIndex,
+  ];
+  return indexes..sort();
+}
 
-  String get roundId => recoveryState.roundId;
+Set<int> _terminalBundleIndexes(rust_wire.RoundPlanView? roundPlan) => {
+  for (final status
+      in roundPlan?.delegationStatuses ??
+          const <rust_wire.DelegationStatusView>[])
+    if (status.terminal) status.bundleIndex,
+};
 
-  int get bundleCount => recoveryState.bundleCount;
-
-  /// Shares with no accepted helper server still need foreground retry work.
-  ///
-  /// High-level recovery and completed-vote display decisions come from
-  /// [rust_wire.RoundPlanView]. This value is only the local share retry shape.
-  bool get hasBlockingShareWork =>
-      unconfirmedShareDelegations.any((record) => record.sentToUrls.isEmpty);
-
-  rust_wire.RecoverableCommitmentBundle? commitmentBundleFor(
-    VotingVoteKey key,
-  ) => commitmentBundlesByKey[key];
+/// Why each bundle whose delegation ended without confirming did, if any did.
+///
+/// A terminal delegation schedules no further work, so this is the only thing
+/// the wallet can tell the user about it. A hashless dispatch may already be
+/// on the chain, so the message must not read as an invitation to retry.
+///
+/// Every terminal bundle is named: a round can end one bundle and still have
+/// live work in another, and the live work finishing is not a reason to leave
+/// the dead one unreported.
+String? terminalDelegationMessage(rust_wire.RoundPlanView? roundPlan) {
+  final reasons = <String>[];
+  for (final status
+      in roundPlan?.delegationStatuses ??
+          const <rust_wire.DelegationStatusView>[]) {
+    if (!status.terminal) continue;
+    final diagnostic = status.submissionDiagnostic;
+    final reason = diagnostic == null
+        ? 'it ended without confirming'
+        : diagnostic.message;
+    reasons.add('bundle ${status.bundleIndex + 1} ($reason)');
+  }
+  if (reasons.isEmpty) return null;
+  final subject = reasons.length == 1
+      ? 'Delegation ${reasons.single}'
+      : 'Delegation for ${reasons.join(', ')}';
+  return '$subject cannot continue. Do not retry it; the transaction may '
+      'already be on the chain.';
 }

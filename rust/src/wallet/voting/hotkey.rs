@@ -11,10 +11,12 @@ use zeroize::Zeroizing;
 pub fn voting_hotkey_from_stored_secret(
     stored_hotkey_secret: Vec<u8>,
     network: zcash_voting::Network,
-) -> Result<zcash_voting::VotingHotkey, String> {
+) -> Result<zcash_voting::VotingHotkey, zcash_voting::VotingError> {
     let stored_hotkey_secret = Zeroizing::new(stored_hotkey_secret);
     zcash_voting::VotingHotkey::from_stored_secret(stored_hotkey_secret.as_slice(), network)
-        .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))
+        .map_err(|error| zcash_voting::VotingError::InvalidInput {
+            message: format!("Voting hotkey reconstruction failed: {error}"),
+        })
 }
 
 #[cfg(test)]
@@ -41,6 +43,8 @@ mod tests {
                 Ok(_) => panic!("short hotkey secret unexpectedly validated"),
                 Err(err) => err,
             };
-        assert!(err.contains("stored hotkey secret must be exactly 64 bytes"));
+        assert!(err
+            .to_string()
+            .contains("stored hotkey secret must be exactly 64 bytes"));
     }
 }

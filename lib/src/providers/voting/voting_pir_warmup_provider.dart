@@ -148,9 +148,7 @@ class VotingPirWarmupCoordinator {
     final authenticatedRoundIds = config.authenticatedRounds
         .map((round) => round.roundId)
         .toSet();
-    final showTestRounds = await _ref.read(
-      showTestVotingRoundsProvider.future,
-    );
+    final showTestRounds = await _ref.read(showTestVotingRoundsProvider.future);
 
     final rounds = await api.listRounds();
     final activeRounds = <VotingRoundDetails>[];

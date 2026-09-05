@@ -122,9 +122,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     final visibleRounds = showTestRounds
         ? authenticatedRounds
         : authenticatedRounds
-              .where(
-                (round) => !isHiddenTestVotingRoundTitle(round.title),
-              )
+              .where((round) => !isHiddenTestVotingRoundTitle(round.title))
               .toList(growable: false);
     if (visibleRounds.length != authenticatedRounds.length) {
       debugPrint(
