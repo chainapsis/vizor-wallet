@@ -175,6 +175,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiPirSnapshotResolution dco_decode_api_pir_snapshot_resolution(dynamic raw);
+
+  @protected
   ApiProposalRosterEntry dco_decode_api_proposal_roster_entry(dynamic raw);
 
   @protected
@@ -1327,6 +1330,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiPirSnapshotEndpointStatus sse_decode_api_pir_snapshot_endpoint_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiPirSnapshotResolution sse_decode_api_pir_snapshot_resolution(
     SseDeserializer deserializer,
   );
 
@@ -2799,6 +2807,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_pir_snapshot_endpoint_status(
     ApiPirSnapshotEndpointStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_pir_snapshot_resolution(
+    ApiPirSnapshotResolution self,
     SseSerializer serializer,
   );
 

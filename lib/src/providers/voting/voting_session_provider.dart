@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -2705,79 +2704,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       '[zcash] Voting: PIR endpoint mismatch '
       'round=${context.round.roundId} '
       'expected=${error.expectedSnapshotHeight} '
-      'diagnostics=${_pirDiagnosticsLog(error.diagnostics)}',
+      'diagnostics=${pirSnapshotDiagnosticsLog(error.diagnostics)}',
     );
   }
 
-  static String _pirSnapshotMismatchMessage(
-    PirSnapshotNoMatchingEndpoint error,
-  ) {
-    final diagnostics = error.diagnostics;
-    final expected = formatBlockHeight(error.expectedSnapshotHeight);
-    final reportedHeights = diagnostics
-        .map((diagnostic) => diagnostic.reportedHeight)
-        .nonNulls
-        .toSet();
 
-    if (diagnostics.isNotEmpty &&
-        diagnostics.every(
-          (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.behind,
-        ) &&
-        reportedHeights.isNotEmpty) {
-      final highest = formatBlockHeight(
-        reportedHeights.reduce((left, right) => left > right ? left : right),
-      );
-      return 'Voting PIR data is not ready for this voting round yet. Expected '
-          'snapshot block $expected; PIR endpoints report $highest. Retry '
-          'once the PIR service catches up.';
-    }
-
-    if (diagnostics.isNotEmpty &&
-        diagnostics.every(
-          (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.ahead,
-        ) &&
-        reportedHeights.isNotEmpty) {
-      final lowest = formatBlockHeight(
-        reportedHeights.reduce((left, right) => left < right ? left : right),
-      );
-      return 'Configured PIR endpoints are ahead of this voting round snapshot. '
-          'Expected snapshot block $expected; endpoints report $lowest.';
-    }
-
-    if (diagnostics.isNotEmpty &&
-        diagnostics.every(
-          (diagnostic) =>
-              diagnostic.status ==
-              PirSnapshotEndpointStatus.timeoutOrNetworkError,
-        )) {
-      return "Couldn't reach any configured PIR endpoint. Check your network "
-          'connection and retry.';
-    }
-
-    return 'No PIR endpoint matched this voting round snapshot. Expected snapshot '
-        'block $expected. Diagnostics: ${_pirDiagnosticsLog(diagnostics)}.';
-  }
-
-  static String _pirDiagnosticsLog(
-    List<PirSnapshotEndpointDiagnostic> diagnostics,
-  ) {
-    if (diagnostics.isEmpty) return 'none';
-    return diagnostics.map(_pirDiagnosticLog).join('; ');
-  }
-
-  static String _pirDiagnosticLog(PirSnapshotEndpointDiagnostic diagnostic) {
-    final height = diagnostic.reportedHeight == null
-        ? ''
-        : ' height=${diagnostic.reportedHeight}';
-    final statusCode = diagnostic.httpStatusCode == null
-        ? ''
-        : ' http=${diagnostic.httpStatusCode}';
-    final message = diagnostic.message == null || diagnostic.message!.isEmpty
-        ? ''
-        : ' message=${diagnostic.message}';
-    return '${diagnostic.endpoint} status=${diagnostic.status.name}'
-        '$height$statusCode$message';
-  }
 
   Future<void> _enqueue(
     Future<void> Function() action, {
@@ -3039,7 +2970,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } on PirSnapshotNoMatchingEndpoint catch (e) {
       _logPirSnapshotMismatch(context: context, error: e);
       _setError(
-        _pirSnapshotMismatchMessage(e),
+        pirSnapshotMismatchMessage(
+          expectedSnapshotHeight: e.expectedSnapshotHeight,
+          diagnostics: e.diagnostics,
+          includeDiagnostics: true,
+        ),
         cause: e,
         pirDiagnostics: e.diagnostics,
         context: context,

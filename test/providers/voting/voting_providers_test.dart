@@ -1955,34 +1955,27 @@ void main() {
   });
 
   test(
-    'PIR endpoint without identity is accepted when root height matches',
+    'a resolved PIR endpoint and its diagnostics reach the session state',
     () async {
+      // Probing and height classification are covered in Rust; what matters
+      // here is that the resolution reaches the state the delegation failover
+      // list and the status screen read.
       final rust = FakeVotingRustApi();
       final pir = PirSnapshotResolver(
-        httpClient: FakeVotingHttpClient(
-          responses: {
-            'https://pir.example/root': {'height': 123},
-          },
-        ),
-        selectEndpoint:
+        resolveEndpoint:
             ({
-              required diagnostics,
-              required expectedSnapshotHeight,
-              required matchIndex,
-            }) {
-              final matches = diagnostics
-                  .where(
-                    (diagnostic) =>
-                        diagnostic.status ==
-                            PirSnapshotEndpointStatus.matched &&
-                        diagnostic.reportedHeight == expectedSnapshotHeight,
-                  )
-                  .map((diagnostic) => diagnostic.endpoint)
-                  .toList(growable: false);
-              return matches.isEmpty
-                  ? null
-                  : matches[matchIndex % matches.length];
-            },
+              required List<String> endpoints,
+              required BigInt expectedSnapshotHeight,
+            }) async => rust_api.ApiPirSnapshotResolution(
+              endpoint: 'https://pir.example',
+              diagnostics: [
+                rust_api.ApiPirSnapshotEndpointDiagnostic(
+                  endpoint: 'https://pir.example',
+                  status: rust_api.ApiPirSnapshotEndpointStatus.matched,
+                  reportedHeight: expectedSnapshotHeight,
+                ),
+              ],
+            ),
       );
       final container = _sessionContainer(rust: rust, pirResolver: pir);
       addTearDown(container.dispose);
