@@ -511,13 +511,48 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
+  /// Delegates this round's pending bundles with the account mnemonic.
+  ///
+  /// Software accounts only; Keystone accounts sign on the device and go
+  /// through [delegatePendingBundlesWithKeystoneSignatures].
   Future<void> delegatePendingBundles({String? mnemonic}) {
+    return _delegatePendingBundles(hardware: false, mnemonic: mnemonic);
+  }
+
+  /// Delegates this round's pending bundles with the signatures the Keystone
+  /// device already returned.
+  ///
+  /// The signatures are durable in the sidecar; the SDK loads the record for
+  /// each bundle and verifies it against the stored PCZT sighash.
+  Future<void> delegatePendingBundlesWithKeystoneSignatures() {
+    return _delegatePendingBundles(hardware: true);
+  }
+
+  /// Runs the delegation round for whichever signer this account uses.
+  ///
+  /// The two entry points differ only in how a bundle is signed and in what
+  /// has to be true before signing can start: software needs the account
+  /// mnemonic, hardware needs a device signature for every pending bundle and
+  /// must never mint a fresh hotkey once those signatures exist. Everything
+  /// around that — preparation, the terminal check, PIR resolution, the round
+  /// itself, and the state it publishes — is one path.
+  ///
+  /// `hardware` is the entry point the caller used, not the account's kind.
+  /// The two are checked against each other so calling the wrong one for the
+  /// active account reports that mismatch rather than quietly signing the
+  /// other way.
+  Future<void> _delegatePendingBundles({
+    required bool hardware,
+    String? mnemonic,
+  }) {
     return _enqueue(() async {
       var current = await future;
       var context = await _loadContext(_roundId);
-      if (context.isHardwareAccount) {
+      if (hardware != context.isHardwareAccount) {
         _setError(
-          'Sign delegation bundles with Keystone before submitting.',
+          hardware
+              ? 'Keystone voting is only available for hardware accounts.'
+              : 'Sign delegation bundles with Keystone before submitting.',
           context: context,
         );
         return;
@@ -547,6 +582,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
       }
       final needsPir = _needsFreshDelegationPreparation(roundPlan);
+
+      // Hardware signing binds each signature to the hotkey that was current
+      // when the device signed, so the signatures have to be known before the
+      // hotkey is ensured.
+      final Map<int, rust_wire.KeystoneSignatureRecord> signatures = hardware
+          ? (hasPendingBundles
+                ? await _loadKeystoneSignatures(context)
+                : current.keystoneSignatures)
+          : const {};
+
       var pirEndpoint = current.pirEndpoint;
       if (needsPir && pirEndpoint == null) {
         pirEndpoint = await _resolvePirEndpoint(context);
@@ -556,15 +601,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           _setStateForContext(context, current);
         }
       }
+
       if (hasPendingBundles) {
+        // PIR only matters because a bundle needs a proof built against it, so
+        // this is checked where there is a bundle to prove.
         if (needsPir && pirEndpoint == null) {
           _setError('PIR endpoint has not been resolved.', context: context);
           return;
         }
-        // Software delegation signs with the account seed at the wallet
-        // boundary; the SDK receives only the SpendAuth signature. Keystone
-        // signing uses `delegatePendingBundlesWithKeystoneSignatures`.
-        if (mnemonic == null || mnemonic.isEmpty) {
+        if (hardware) {
+          for (final bundleIndex in delegationBundleIndexes) {
+            if (!signatures.containsKey(bundleIndex)) {
+              _setError(
+                'Sign delegation bundle ${bundleIndex + 1} with Keystone before submitting.',
+                context: context,
+              );
+              return;
+            }
+          }
+        } else if (mnemonic == null || mnemonic.isEmpty) {
+          // Software delegation signs with the account seed at the wallet
+          // boundary; the SDK receives only the SpendAuth signature.
           _setError(
             'Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.',
             context: context,
@@ -574,13 +631,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final nextState = (state.value ?? current).copyWith(
           phase: VotingSessionPhase.delegating,
           clearCurrentBundleIndex: true,
-          clearError: true,
+          // Hardware keeps any standing error until the round reports its own
+          // outcome; software clears it as the run starts.
+          clearError: !hardware,
+          keystoneSignatures: hardware ? signatures : null,
+          clearKeystoneSigningRequest: hardware,
+          clearKeystoneScanError: hardware,
         );
         _setStateForContext(context, nextState);
         current = nextState;
       }
       final storedHotkeySecret = hasPendingBundles
-          ? await _ensureHotkey(context)
+          ? await _ensureHotkey(
+              context,
+              // A device signature is bound to the hotkey it was made with, so
+              // once signatures exist a missing hotkey is a failure rather than
+              // a reason to generate one.
+              alreadyBound: hardware && signatures.isNotEmpty,
+            )
           : null;
 
       final progress = Map<int, VotingSessionProgress>.from(
@@ -603,14 +671,21 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               session: session,
               context: context,
               fallbackState: current,
-              signer: rust_session.ApiDelegationSignerInput(
-                kind: rust_session.ApiDelegationSignerKind.mnemonic,
-                mnemonic: mnemonic,
-                keystoneSig: null,
-                keystoneSighash: null,
-              ),
+              signer: hardware
+                  ? const rust_session.ApiDelegationSignerInput(
+                      kind: rust_session.ApiDelegationSignerKind.keystoneStored,
+                      mnemonic: null,
+                      keystoneSig: null,
+                      keystoneSighash: null,
+                    )
+                  : rust_session.ApiDelegationSignerInput(
+                      kind: rust_session.ApiDelegationSignerKind.mnemonic,
+                      mnemonic: mnemonic,
+                      keystoneSig: null,
+                      keystoneSighash: null,
+                    ),
               progress: progress,
-              logLabel: 'software',
+              logLabel: hardware ? 'Keystone' : 'software',
             ),
           );
         } on _StaleVotingSessionAction {
@@ -655,6 +730,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           roundPlan: refreshedRoundPlan,
           delegationProgress: progress,
           clearCurrentBundleIndex: true,
+          keystoneSignatures: hardware ? signatures : null,
+          clearKeystoneSigningRequest: hardware,
+          clearKeystoneScanError: hardware,
         ),
       );
       _noteTerminalDelegation(
@@ -912,158 +990,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
     });
-  }
-
-  Future<void> delegatePendingBundlesWithKeystoneSignatures() {
-    return _enqueue(() async {
-      var current = await future;
-      var context = await _loadContext(_roundId);
-      if (!context.isHardwareAccount) {
-        _setError(
-          'Keystone voting is only available for hardware accounts.',
-          context: context,
-        );
-        return;
-      }
-      var roundPlan = context.roundPlan;
-      if (_needsFreshDelegationPreparation(roundPlan) &&
-          _needsDelegationPreparation(current)) {
-        await _prepareDelegationUnlocked();
-        current = await future;
-        if (current.phase == VotingSessionPhase.error ||
-            current.phase == VotingSessionPhase.waitingForWalletSync) {
-          return;
-        }
-        context = await _loadContext(_roundId);
-        roundPlan = context.roundPlan;
-      }
-      final progress = Map<int, VotingSessionProgress>.from(
-        current.delegationProgress,
-      );
-      final completedBundleIndexes = <int>{};
-      final delegationBundleIndexes = delegationBundleIndexesNeedingWork(
-        roundPlan,
-      );
-      final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
-      if (!hasPendingBundles) {
-        final terminal = terminalDelegationMessage(roundPlan);
-        if (terminal != null) {
-          _setError(terminal, context: context);
-          return;
-        }
-      }
-      final needsPir = _needsFreshDelegationPreparation(roundPlan);
-      final signatures = hasPendingBundles
-          ? await _loadKeystoneSignatures(context)
-          : current.keystoneSignatures;
-      final List<int>? storedHotkeySecret;
-      if (hasPendingBundles) {
-        storedHotkeySecret = await _ensureHotkey(
-          context,
-          alreadyBound: signatures.isNotEmpty,
-        );
-      } else {
-        storedHotkeySecret = null;
-      }
-      var pirEndpoint = current.pirEndpoint;
-      if (needsPir && pirEndpoint == null) {
-        pirEndpoint = await _resolvePirEndpoint(context);
-        _throwIfContextStale(context, 'keystone-delegation-pir-resolution');
-        if (pirEndpoint != null) {
-          current = (state.value ?? current).copyWith(pirEndpoint: pirEndpoint);
-          _setStateForContext(context, current);
-        }
-      }
-      if (needsPir && pirEndpoint == null) {
-        _setError('PIR endpoint has not been resolved.', context: context);
-        return;
-      }
-
-      final rust = ref.read(votingRustApiProvider);
-      for (final bundleIndex in delegationBundleIndexes) {
-        if (!signatures.containsKey(bundleIndex)) {
-          _setError(
-            'Sign delegation bundle ${bundleIndex + 1} with Keystone before submitting.',
-            context: context,
-          );
-          return;
-        }
-      }
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: VotingSessionPhase.delegating,
-          keystoneSignatures: signatures,
-          clearKeystoneSigningRequest: true,
-          clearKeystoneScanError: true,
-          clearCurrentBundleIndex: true,
-        ),
-      );
-      if (hasPendingBundles) {
-        final session = _openRoundSession(
-          rust,
-          context,
-          storedHotkeySecret: storedHotkeySecret,
-          pirServerUrls: _delegationPirTransportUrls(state.value ?? current),
-        );
-        try {
-          completedBundleIndexes.addAll(
-            await _runDelegationRound(
-              session: session,
-              context: context,
-              fallbackState: current,
-              // The device signatures are durable in the sidecar; the SDK
-              // loads the record for each bundle and verifies it against the
-              // stored PCZT sighash.
-              signer: const rust_session.ApiDelegationSignerInput(
-                kind: rust_session.ApiDelegationSignerKind.keystoneStored,
-                mnemonic: null,
-                keystoneSig: null,
-                keystoneSighash: null,
-              ),
-              progress: progress,
-              logLabel: 'Keystone',
-            ),
-          );
-        } on _StaleVotingSessionAction {
-          rethrow;
-        } catch (error, stackTrace) {
-          await _refreshDelegationPlansAfterBatchFailure(
-            context: context,
-            fallbackState: current,
-            progress: progress,
-          );
-          Error.throwWithStackTrace(error, stackTrace);
-        } finally {
-          _closeRoundSession(session);
-        }
-      }
-
-      final refreshedRoundPlan = await _loadRoundPlan(context);
-      final nextPhase =
-          delegationBundleIndexesNeedingSigning(
-            refreshedRoundPlan,
-          ).where((index) => !completedBundleIndexes.contains(index)).isEmpty
-          ? VotingSessionPhase.delegated
-          : VotingSessionPhase.readyToDelegate;
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: nextPhase,
-          roundPlan: refreshedRoundPlan,
-          delegationProgress: progress,
-          keystoneSignatures: signatures,
-          clearKeystoneSigningRequest: true,
-          clearKeystoneScanError: true,
-          clearCurrentBundleIndex: true,
-        ),
-      );
-      _noteTerminalDelegation(
-        context,
-        state.value ?? current,
-        refreshedRoundPlan,
-      );
-    }, cleanupProcessStateOnError: false);
   }
 
   /// The ballot intents for `draftVotes`, skipping every other listed proposal.
