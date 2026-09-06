@@ -44,31 +44,6 @@ pub struct ApiPirSnapshotEndpointDiagnostic {
     pub message: Option<String>,
 }
 
-impl From<ApiPirSnapshotEndpointDiagnostic>
-    for zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic
-{
-    fn from(diagnostic: ApiPirSnapshotEndpointDiagnostic) -> Self {
-        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as CoreStatus;
-        let status = match diagnostic.status {
-            ApiPirSnapshotEndpointStatus::Matched => CoreStatus::Matched,
-            ApiPirSnapshotEndpointStatus::Behind => CoreStatus::Behind,
-            ApiPirSnapshotEndpointStatus::Ahead => CoreStatus::Ahead,
-            ApiPirSnapshotEndpointStatus::MissingHeight => CoreStatus::MissingHeight,
-            ApiPirSnapshotEndpointStatus::MalformedJson => CoreStatus::MalformedJson,
-            ApiPirSnapshotEndpointStatus::NonSuccessStatus => CoreStatus::NonSuccessStatus,
-            ApiPirSnapshotEndpointStatus::TimeoutOrNetworkError => {
-                CoreStatus::TimeoutOrNetworkError
-            }
-        };
-        Self {
-            endpoint: diagnostic.endpoint,
-            status,
-            reported_height: diagnostic.reported_height,
-            http_status_code: diagnostic.http_status_code,
-            message: diagnostic.message,
-        }
-    }
-}
 
 impl From<zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic>
     for ApiPirSnapshotEndpointDiagnostic
@@ -349,33 +324,6 @@ fn pir_snapshot_failure(
     }
 }
 
-/// Select an exact-height PIR endpoint using the SDK's snapshot policy.
-///
-/// Dart owns probing and diagnostics because it owns the routed HTTP client.
-/// The protocol decision about which diagnostics are eligible remains here.
-#[flutter_rust_bridge::frb(sync)]
-pub fn select_pir_snapshot_endpoint(
-    diagnostics: Vec<ApiPirSnapshotEndpointDiagnostic>,
-    expected_snapshot_height: u64,
-    match_index: u64,
-) -> Result<Option<String>, VotingErrorView> {
-    let diagnostics = diagnostics.into_iter().map(Into::into).collect::<Vec<_>>();
-    if zcash_voting::pir_snapshot::matching_pir_snapshot_endpoints(
-        &diagnostics,
-        expected_snapshot_height,
-    )
-    .is_empty()
-    {
-        return Ok(None);
-    }
-    zcash_voting::pir_snapshot::select_pir_snapshot_endpoint(
-        &diagnostics,
-        expected_snapshot_height,
-        match_index,
-    )
-    .map(|resolution| Some(resolution.endpoint))
-    .map_err(view)
-}
 
 /// Prefix for coarse cast-vote stage timings (`log show` subsystem `frb_user`).
 const VOTING_VOTE_LOG: &str = "[VOTING_VOTE]";
@@ -1684,19 +1632,18 @@ mod tests {
     #[test]
     fn classified_diagnostics_survive_the_bridge_conversion() {
         // The delegation failover list and the status screen both read these
-        // back on the Dart side, so the round trip has to be lossless.
+        // back on the Dart side, so the crossing must not lose the status or
+        // the height the endpoint reported.
         let core = zcash_voting::pir_snapshot::classify_pir_snapshot_height(
             "https://pir.example",
             123,
             Some(120),
         );
         let api = ApiPirSnapshotEndpointDiagnostic::from(core.clone());
+        assert_eq!(api.endpoint, core.endpoint);
         assert!(matches!(api.status, ApiPirSnapshotEndpointStatus::Behind));
         assert_eq!(api.reported_height, Some(120));
-        assert_eq!(
-            zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic::from(api),
-            core
-        );
+        assert_eq!(api.http_status_code, None);
     }
     use crate::wallet::voting::test_support::{
         test_api_round_params, test_note_info, ROUND_ID, TEST_ACCOUNT_UUID,

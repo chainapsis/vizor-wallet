@@ -410,13 +410,6 @@ abstract interface class VotingRustApi {
     required BigInt operationEpoch,
   });
 
-  /// Selects an exact-height PIR endpoint using the SDK's protocol policy.
-  String? selectPirSnapshotEndpoint({
-    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
-    required BigInt expectedSnapshotHeight,
-    required BigInt matchIndex,
-  });
-
   Future<rust_voting.VotingRoundParams> trustedVotingRoundParamsFromConfig({
     required rust_config.ResolvedVotingConfig config,
     required String roundId,
@@ -797,21 +790,6 @@ class FrbVotingRustApi implements VotingRustApi {
               : Uint8List.fromList(storedHotkeySecret),
           operationEpoch: operationEpoch,
         ),
-      ),
-    );
-  }
-
-  @override
-  String? selectPirSnapshotEndpoint({
-    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
-    required BigInt expectedSnapshotHeight,
-    required BigInt matchIndex,
-  }) {
-    return _typedSync(
-      () => rust_api.selectPirSnapshotEndpoint(
-        diagnostics: diagnostics,
-        expectedSnapshotHeight: expectedSnapshotHeight,
-        matchIndex: matchIndex,
       ),
     );
   }

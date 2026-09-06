@@ -4722,25 +4722,7 @@ class _BlockingVotingRoundsNotifier extends VotingRoundsNotifier {
 }
 
 class _NoopVotingRustApi implements VotingRustApi {
-  @override
-  String? selectPirSnapshotEndpoint({
-    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
-    required BigInt expectedSnapshotHeight,
-    required BigInt matchIndex,
-  }) {
-    final matches = diagnostics
-        .where(
-          (diagnostic) =>
-              diagnostic.status ==
-                  rust_api.ApiPirSnapshotEndpointStatus.matched &&
-              diagnostic.reportedHeight == expectedSnapshotHeight,
-        )
-        .map((diagnostic) => diagnostic.endpoint)
-        .toList(growable: false);
-    return matches.isEmpty
-        ? null
-        : matches[matchIndex.toInt() % matches.length];
-  }
+
 
   @override
   Future<rust_wire.VotingRoundParams> trustedVotingRoundParamsFromConfig({
