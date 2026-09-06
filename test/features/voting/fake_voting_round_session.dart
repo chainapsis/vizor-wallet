@@ -153,6 +153,11 @@ abstract interface class FakeRoundSessionDriver {
   /// Bundle count the planner sees, from recovery state when present.
   int get planBundleCount;
 
+  /// Bundles whose delegation is already durable, so a synthesised plan does
+  /// not ask for one again. Mirrors the SDK, whose planner reads the bundle's
+  /// delegation phase rather than guessing from the steps it lists.
+  Set<int> get confirmedDelegationBundles;
+
   Map<int, rust_wire.KeystoneSignatureRecord> get storedKeystoneSignatures;
 
   /// Proposal ids proven together per bundle, recorded by the fake's
@@ -193,12 +198,60 @@ abstract interface class FakeRoundSessionDriver {
   /// failure — including one raised before the step runs — as an event.
   Map<String, VotingRustException> get roundStepBridgeErrors;
 
+  /// Event sequences to emit from `runRound`, one per call, instead of
+  /// driving the scripted plan.
+  ///
+  /// The SDK owns the loop now, and its conformance tests own whether a given
+  /// sequence is realistic. A provider test that cares how Dart maps events
+  /// onto session state scripts the sequence here and asserts the state,
+  /// rather than making this fake re-derive a plan the real planner owns.
+  List<List<rust_session.ApiRoundRunEvent>> get scriptedRoundRuns;
+
   List<String> get roundSessionSteps;
 
   List<String> get sessionBallotIntents;
 
   /// Proposal ids the session was asked to clear as unrostered intents.
   List<int> get sessionClearedBallotIntents;
+}
+
+/// One event from the fake's scripted step machinery.
+///
+/// The bridge no longer exposes a per-step stream: production drives a round
+/// with `runRound`. This keeps the same shape internally so the scripted
+/// scenarios below still read as "what one step did", without holding a
+/// retired API alive.
+class _ScriptedStepEvent {
+  const _ScriptedStepEvent({
+    required this.kind,
+    this.progress,
+    this.outcome,
+    this.failure,
+    this.error,
+  });
+
+  final rust_session.ApiRoundStepEventKind kind;
+  final rust_wire.RoundStepProgressView? progress;
+  final _ScriptedStepOutcome? outcome;
+  final rust_wire.RoundStepFailureView? failure;
+  final rust_session.ApiRoundStepError? error;
+}
+
+/// What one scripted step accomplished.
+class _ScriptedStepOutcome {
+  const _ScriptedStepOutcome({
+    required this.disposition,
+    required this.plan,
+    this.chainOutcome,
+    this.shareDeliveries = const [],
+    this.delegation,
+  });
+
+  final rust_wire.RoundStepDispositionView disposition;
+  final rust_wire.RoundPlanView plan;
+  final rust_wire.ChainSubmissionOutcomeView? chainOutcome;
+  final List<rust_wire.ShareBatchDeliveryReportView> shareDeliveries;
+  final rust_wire.SignedDelegationPayloadView? delegation;
 }
 
 /// Test double for the SDK round session.
@@ -316,15 +369,78 @@ class FakeVotingRoundSession implements VotingRoundSession {
     _ => false,
   };
 
-  Future<rust_wire.RoundPlanView> _plan() async {
+  Future<rust_wire.RoundPlanView> _plan({
+    bool synthesizeDelegation = false,
+  }) async {
     final base = await driver.peekRoundPlan(
       roundId: roundId,
       proposalIds: _rosterIds,
     );
     final steps = <rust_wire.NextStepView>[];
     final seen = <String>{};
+    if (base != null && synthesizeDelegation) {
+      // The scripted plan may list no delegation step while its own statuses
+      // still say a bundle owes one. The SDK planner keeps those in agreement,
+      // and the driver runs only what the plan lists, so honour the statuses.
+      final covered = {
+        for (final step in base.nextSteps)
+          if (_isDelegationStep(step)) step.bundleIndex,
+      };
+      for (final status in base.delegationStatuses) {
+        if (covered.contains(status.bundleIndex) ||
+            _delegatedBundles.contains(status.bundleIndex) ||
+            status.terminal ||
+            status.phase == rust_wire.WorkflowPhaseView.confirmed) {
+          continue;
+        }
+        steps.add(
+          rust_wire.NextStepView(
+            kind: rust_wire.NextStepKind.delegate,
+            bundleIndex: status.bundleIndex,
+            proposalId: 0,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        );
+      }
+    }
+    if (base == null && synthesizeDelegation) {
+      // No scripted recovery state, and this run holds signing material, so
+      // it is a delegation run against a fresh round: every bundle still owes
+      // a delegation. The SDK's plan always knows its own bundles, and the
+      // driver runs only what the plan lists, so a fake that listed nothing
+      // would make delegation unrunnable rather than pending. A cast run
+      // carries no signer and assumes delegation is already durable, which is
+      // what these fixtures script.
+      for (
+        var bundleIndex = 0;
+        bundleIndex < driver.planBundleCount;
+        bundleIndex++
+      ) {
+        if (_delegatedBundles.contains(bundleIndex) ||
+            driver.confirmedDelegationBundles.contains(bundleIndex)) {
+          continue;
+        }
+        steps.add(
+          rust_wire.NextStepView(
+            kind: rust_wire.NextStepKind.delegate,
+            bundleIndex: bundleIndex,
+            proposalId: 0,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        );
+      }
+    }
     for (final step in base?.nextSteps ?? const <rust_wire.NextStepView>[]) {
       if (!_isVoteStep(step)) {
+        // A delegation this session already advanced leaves the plan, the way
+        // the SDK re-plans with completed work removed. Keeping it would make
+        // the plan never shrink, and the driver re-plans until it does.
+        if (_isDelegationStep(step) &&
+            _delegatedBundles.contains(step.bundleIndex)) {
+          continue;
+        }
         steps.add(step);
         continue;
       }
@@ -396,8 +512,9 @@ class FakeVotingRoundSession implements VotingRoundSession {
     );
   }
 
-  @override
-  Stream<rust_session.ApiRoundStepEvent> advanceStep({
+  /// Runs one scripted step. Private: production drives rounds through
+  /// `runRound`, and the bridge no longer exposes a per-step entry point.
+  Stream<_ScriptedStepEvent> _advanceScriptedStep({
     required rust_wire.NextStepView step,
     required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
@@ -433,7 +550,11 @@ class FakeVotingRoundSession implements VotingRoundSession {
     }
   }
 
-  Stream<rust_session.ApiRoundStepEvent> _advanceDelegation(
+  /// Bundles whose delegation this session already ran, so a synthesised
+  /// plan stops listing them once they are done.
+  final _delegatedBundles = <int>{};
+
+  Stream<_ScriptedStepEvent> _advanceDelegation(
     rust_wire.NextStepView step,
     rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
@@ -540,15 +661,19 @@ class FakeVotingRoundSession implements VotingRoundSession {
         chainOutcome: _chainOutcomeView(outcome),
       ),
     );
+    final disposition = _dispositionFor(outcome);
+    if (disposition == rust_wire.RoundStepDispositionView.advanced) {
+      _delegatedBundles.add(bundleIndex);
+    }
     yield await _result(
       step,
-      _dispositionFor(outcome),
+      disposition,
       chainOutcome: outcome,
       delegation: submission,
     );
   }
 
-  Stream<rust_session.ApiRoundStepEvent> _advanceVote(
+  Stream<_ScriptedStepEvent> _advanceVote(
     rust_wire.NextStepView step,
     rust_session.ApiRoundHostContext host,
   ) async* {
@@ -896,10 +1021,10 @@ class FakeVotingRoundSession implements VotingRoundSession {
       rust_wire.RoundStepDispositionView.chainTerminal,
   };
 
-  rust_session.ApiRoundStepEvent _progress(
+  _ScriptedStepEvent _progress(
     rust_wire.RoundStepProgressView progress,
   ) {
-    return rust_session.ApiRoundStepEvent(
+    return _ScriptedStepEvent(
       kind: rust_session.ApiRoundStepEventKind.progress,
       progress: progress,
       outcome: null,
@@ -907,18 +1032,393 @@ class FakeVotingRoundSession implements VotingRoundSession {
     );
   }
 
-  Future<rust_session.ApiRoundStepEvent> _result(
+  /// Drives the scripted plan the way the SDK driver does.
+  ///
+  /// The real loop lives in Rust (`zcash_voting::round_drive`) and its
+  /// conformance tests are the source of truth for it. This mirrors only what
+  /// provider tests observe — plan-ordered selection, per-bundle failure
+  /// isolation, and the quiescence the run stops on — over the same per-step
+  /// script the steps use. Keep the two in step; do not add behaviour
+  /// here that the Rust driver does not have.
+  @override
+  Stream<rust_session.ApiRoundRunEvent> runRound({
+    required rust_session.ApiRoundHostContext host,
+    rust_session.ApiDelegationSignerInput? signer,
+    rust_session.ApiRoundDrivePolicy? policy,
+  }) async* {
+    if (driver.scriptedRoundRuns.isNotEmpty) {
+      for (final event in driver.scriptedRoundRuns.removeAt(0)) {
+        yield event;
+      }
+      return;
+    }
+    final skipped = <int>[];
+    final failures = <rust_wire.RoundStepFailureRecordView>[];
+    final chainOutcomes = <rust_wire.RoundChainOutcomeView>[];
+    final shareDeliveries = <rust_wire.ShareBatchDeliveryReportView>[];
+    var plan = await _plan(synthesizeDelegation: signer != null);
+    // The SDK driver bounds itself with `max_dispatches`; without the same
+    // guard a scripted plan that never shrinks would spin here forever and
+    // hang the test rather than failing it.
+    var dispatches = 0;
+    const maxDispatches = 64;
+
+    while (true) {
+      if (dispatches >= maxDispatches) {
+        throw StateError(
+          'Fake round run exceeded $maxDispatches dispatches; the scripted '
+          'plan is not shrinking.',
+        );
+      }
+      plan = await _plan(synthesizeDelegation: signer != null);
+      yield _runEvent(
+        rust_wire.RoundDriveEventView(
+          kind: rust_wire.RoundDriveEventKind.planRefreshed,
+          plan: plan,
+          tally: _tally(plan),
+        ),
+      );
+
+      final quiescence = _quiescenceBeforeDispatch(plan, failures);
+      if (quiescence != null) {
+        yield _runReport(
+          quiescence,
+          plan,
+          failures,
+          skipped,
+          chainOutcomes,
+          shareDeliveries,
+        );
+        return;
+      }
+
+      final step = plan.nextSteps
+          .where((step) => !skipped.contains(step.bundleIndex))
+          .firstOrNull;
+      if (step == null) {
+        yield _runReport(
+          _quiescence(rust_wire.RoundQuiescenceKind.failures),
+          plan,
+          failures,
+          skipped,
+          chainOutcomes,
+          shareDeliveries,
+        );
+        return;
+      }
+      if (_needsDelegationSigner(step) &&
+          signer?.kind ==
+              rust_session.ApiDelegationSignerKind.keystoneStored) {
+        // The SDK checks every bundle the round still owes a delegation for
+        // against the durable signature rows, and stops before dispatching
+        // anything when one is missing, so the voter signs once.
+        final stored = await _api.getKeystoneSignatures(
+          dbPath: ctx.dbPath,
+          accountUuid: ctx.accountUuid,
+          roundId: roundId,
+        );
+        final signed = {for (final record in stored) record.bundleIndex};
+        final unsigned = Uint32List.fromList([
+          for (final planned in plan.nextSteps)
+            if (_needsDelegationSigner(planned) &&
+                !skipped.contains(planned.bundleIndex) &&
+                !signed.contains(planned.bundleIndex))
+              planned.bundleIndex,
+        ]);
+        if (unsigned.isNotEmpty) {
+          yield _runReport(
+            _quiescence(
+              rust_wire.RoundQuiescenceKind.needsDelegationSignatures,
+              bundles: unsigned,
+            ),
+            plan,
+            failures,
+            skipped,
+            chainOutcomes,
+            shareDeliveries,
+          );
+          return;
+        }
+      }
+      if (_needsDelegationSigner(step) && signer == null) {
+        yield _runReport(
+          _quiescence(
+            rust_wire.RoundQuiescenceKind.needsDelegationSignatures,
+            bundles: _delegationBundles(plan, skipped),
+          ),
+          plan,
+          failures,
+          skipped,
+          chainOutcomes,
+          shareDeliveries,
+        );
+        return;
+      }
+
+      yield _runEvent(
+        rust_wire.RoundDriveEventView(
+          kind: rust_wire.RoundDriveEventKind.stepSelected,
+          step: step,
+        ),
+      );
+      dispatches += 1;
+
+      _ScriptedStepEvent? terminal;
+      await for (final event in _advanceScriptedStep(
+        step: step,
+        host: host,
+        signer: signer,
+      )) {
+        final progress = event.progress;
+        if (progress != null) {
+          yield _runEvent(
+            rust_wire.RoundDriveEventView(
+              kind: rust_wire.RoundDriveEventKind.stepProgress,
+              step: step,
+              progress: progress,
+            ),
+          );
+        }
+        if (event.kind == rust_session.ApiRoundStepEventKind.result) {
+          terminal = event;
+        }
+      }
+      if (terminal == null) {
+        throw StateError('Round step completed without a result.');
+      }
+
+      final error = terminal.error;
+      if (error != null) {
+        yield rust_session.ApiRoundRunEvent(
+          kind: rust_session.ApiRoundStepEventKind.result,
+          error: error,
+        );
+        return;
+      }
+
+      final failure = terminal.failure;
+      if (failure != null) {
+        yield _runEvent(
+          rust_wire.RoundDriveEventView(
+            kind: rust_wire.RoundDriveEventKind.stepFailed,
+            step: step,
+            failureKind: failure.kind,
+            message: failure.message,
+          ),
+        );
+        failures.add(
+          rust_wire.RoundStepFailureRecordView(
+            step: step,
+            bundleIndex: step.bundleIndex,
+            failure: failure,
+          ),
+        );
+        skipped.add(step.bundleIndex);
+        yield _runEvent(
+          rust_wire.RoundDriveEventView(
+            kind: rust_wire.RoundDriveEventKind.bundleSkipped,
+            step: step,
+            bundleIndex: step.bundleIndex,
+          ),
+        );
+        continue;
+      }
+
+      final outcome = terminal.outcome!;
+      yield _runEvent(
+        rust_wire.RoundDriveEventView(
+          kind: rust_wire.RoundDriveEventKind.stepFinished,
+          step: step,
+          disposition: outcome.disposition,
+        ),
+      );
+      shareDeliveries.addAll(outcome.shareDeliveries);
+      final chainOutcome = outcome.chainOutcome;
+      if (chainOutcome != null) {
+        chainOutcomes.add(
+          rust_wire.RoundChainOutcomeView(step: step, outcome: chainOutcome),
+        );
+      }
+      switch (outcome.disposition) {
+        case rust_wire.RoundStepDispositionView.advanced:
+        case rust_wire.RoundStepDispositionView.noWork:
+          continue;
+        case rust_wire.RoundStepDispositionView.pending:
+          // The scripted fake never leaves a submission tracking, so a pending
+          // result here means the script has nothing further for it.
+          yield _runReport(
+            _quiescence(
+              rust_wire.RoundQuiescenceKind.chainRecoveryStalled,
+              step: step,
+              chainOutcome: chainOutcome,
+            ),
+            await _plan(),
+            failures,
+            skipped,
+            chainOutcomes,
+            shareDeliveries,
+          );
+          return;
+        case rust_wire.RoundStepDispositionView.cancelled:
+          yield _runReport(
+            _quiescence(rust_wire.RoundQuiescenceKind.cancelled),
+            await _plan(),
+            failures,
+            skipped,
+            chainOutcomes,
+            shareDeliveries,
+          );
+          return;
+        case rust_wire.RoundStepDispositionView.chainTerminal:
+          yield _runReport(
+            _quiescence(
+              rust_wire.RoundQuiescenceKind.chainTerminal,
+              step: step,
+              chainOutcome: chainOutcome,
+            ),
+            await _plan(),
+            failures,
+            skipped,
+            chainOutcomes,
+            shareDeliveries,
+          );
+          return;
+      }
+    }
+  }
+
+  bool _isDelegationStep(rust_wire.NextStepView step) =>
+      step.kind == rust_wire.NextStepKind.delegate ||
+      step.kind == rust_wire.NextStepKind.advanceDelegation ||
+      step.kind == rust_wire.NextStepKind.advanceImportedDelegation;
+
+  bool _needsDelegationSigner(rust_wire.NextStepView step) =>
+      step.kind == rust_wire.NextStepKind.delegate ||
+      step.kind == rust_wire.NextStepKind.advanceDelegation;
+
+  Uint32List _delegationBundles(
+    rust_wire.RoundPlanView plan,
+    List<int> skipped,
+  ) => Uint32List.fromList([
+    for (final step in plan.nextSteps)
+      if (_needsDelegationSigner(step) && !skipped.contains(step.bundleIndex))
+        step.bundleIndex,
+  ]);
+
+  rust_wire.RoundQuiescenceView? _quiescenceBeforeDispatch(
+    rust_wire.RoundPlanView plan,
+    List<rust_wire.RoundStepFailureRecordView> failures,
+  ) {
+    if (plan.nextSteps.isEmpty) {
+      if (failures.isNotEmpty) {
+        return _quiescence(rust_wire.RoundQuiescenceKind.failures);
+      }
+      if (plan.blockingRecovery) {
+        return _quiescence(rust_wire.RoundQuiescenceKind.persistedChainTerminal);
+      }
+      if (plan.needsBundleSetup) {
+        return _quiescence(rust_wire.RoundQuiescenceKind.needsBundleSetup);
+      }
+      if (plan.openProposals.isNotEmpty || plan.unrosteredIntents.isNotEmpty) {
+        return _quiescence(
+          rust_wire.RoundQuiescenceKind.needsBallot,
+          openProposals: plan.openProposals,
+          unrosteredIntents: plan.unrosteredIntents,
+        );
+      }
+      return _quiescence(rust_wire.RoundQuiescenceKind.noWorkLeft);
+    }
+    if (!plan.blockingRecovery) {
+      if (failures.isNotEmpty) {
+        return _quiescence(rust_wire.RoundQuiescenceKind.failures);
+      }
+      return _quiescence(
+        rust_wire.RoundQuiescenceKind.backgroundShareWorkOnly,
+        shares: [
+          for (final step in plan.nextSteps)
+            if (step.kind == rust_wire.NextStepKind.confirmShare)
+              rust_wire.ShareKeyView(
+                bundleIndex: step.bundleIndex,
+                proposalId: step.proposalId,
+                shareIndex: step.shareIndex,
+              ),
+        ],
+      );
+    }
+    return null;
+  }
+
+  rust_wire.RoundQuiescenceView _quiescence(
+    rust_wire.RoundQuiescenceKind kind, {
+    Uint32List? openProposals,
+    Uint32List? unrosteredIntents,
+    Uint32List? bundles,
+    List<rust_wire.ShareKeyView> shares = const [],
+    rust_wire.NextStepView? step,
+    rust_wire.ChainSubmissionOutcomeView? chainOutcome,
+  }) => rust_wire.RoundQuiescenceView(
+    kind: kind,
+    openProposals: openProposals ?? Uint32List(0),
+    unrosteredIntents: unrosteredIntents ?? Uint32List(0),
+    bundles: bundles ?? Uint32List(0),
+    shares: shares,
+    step: step,
+    chainOutcome: chainOutcome,
+    remaining: const [],
+  );
+
+  rust_wire.RoundWorkTallyView _tally(rust_wire.RoundPlanView plan) {
+    final proposals = <int>{
+      for (final step in plan.nextSteps)
+        if (step.kind != rust_wire.NextStepKind.delegate &&
+            step.kind != rust_wire.NextStepKind.advanceDelegation)
+          step.proposalId,
+    };
+    return rust_wire.RoundWorkTallyView(
+      completedProposals: 0,
+      totalProposals: proposals.length,
+      remainingObligations: plan.nextSteps.length,
+    );
+  }
+
+  rust_session.ApiRoundRunEvent _runEvent(rust_wire.RoundDriveEventView event) =>
+      rust_session.ApiRoundRunEvent(
+        kind: rust_session.ApiRoundStepEventKind.progress,
+        event: event,
+      );
+
+  rust_session.ApiRoundRunEvent _runReport(
+    rust_wire.RoundQuiescenceView quiescence,
+    rust_wire.RoundPlanView plan,
+    List<rust_wire.RoundStepFailureRecordView> failures,
+    List<int> skipped,
+    List<rust_wire.RoundChainOutcomeView> chainOutcomes,
+    List<rust_wire.ShareBatchDeliveryReportView> shareDeliveries,
+  ) => rust_session.ApiRoundRunEvent(
+    kind: rust_session.ApiRoundStepEventKind.result,
+    report: rust_wire.RoundRunReportView(
+      quiescence: quiescence,
+      plan: plan,
+      tally: _tally(plan),
+      failures: List.of(failures),
+      skippedBundles: Uint32List.fromList(skipped),
+      chainOutcomes: List.of(chainOutcomes),
+      shareDeliveries: List.of(shareDeliveries),
+      delegations: const [],
+    ),
+  );
+
+  Future<_ScriptedStepEvent> _result(
     rust_wire.NextStepView step,
     rust_wire.RoundStepDispositionView disposition, {
     rust_api.ApiChainSubmissionOutcome? chainOutcome,
     List<rust_wire.ShareBatchDeliveryReportView> shareDeliveries = const [],
     rust_wire.SignedDelegationPayloadView? delegation,
   }) async {
-    return rust_session.ApiRoundStepEvent(
+    return _ScriptedStepEvent(
       kind: rust_session.ApiRoundStepEventKind.result,
       progress: null,
-      outcome: rust_wire.RoundStepOutcomeView(
-        step: step,
+      outcome: _ScriptedStepOutcome(
         disposition: disposition,
         chainOutcome: chainOutcome == null
             ? null
@@ -931,13 +1431,13 @@ class FakeVotingRoundSession implements VotingRoundSession {
     );
   }
 
-  Future<rust_session.ApiRoundStepEvent> _failure(
+  Future<_ScriptedStepEvent> _failure(
     rust_wire.NextStepView step, {
     required rust_wire.RoundStepFailureKindView kind,
     required String message,
     rust_wire.ChainSubmissionFailureStateView? strongestChainState,
   }) async {
-    return rust_session.ApiRoundStepEvent(
+    return _ScriptedStepEvent(
       kind: rust_session.ApiRoundStepEventKind.result,
       progress: null,
       outcome: null,
@@ -953,9 +1453,10 @@ class FakeVotingRoundSession implements VotingRoundSession {
     );
   }
 
-  /// One result event carrying a typed bridge failure, as `advance_*` sends it.
-  rust_session.ApiRoundStepEvent _bridgeError(VotingRustException error) {
-    return rust_session.ApiRoundStepEvent(
+  /// One result event carrying a typed bridge failure, the way `run_round`
+  /// reports a failure raised before the SDK saw the step.
+  _ScriptedStepEvent _bridgeError(VotingRustException error) {
+    return _ScriptedStepEvent(
       kind: rust_session.ApiRoundStepEventKind.result,
       progress: null,
       outcome: null,

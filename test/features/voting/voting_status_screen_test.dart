@@ -5142,6 +5142,9 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
   final _preparedHelperUrls = <String, List<String>>{};
   @override
   final roundSessionSteps = <String>[];
+
+  @override
+  final scriptedRoundRuns = <List<rust_session.ApiRoundRunEvent>>[];
   @override
   final sessionBallotIntents = <String>[];
 

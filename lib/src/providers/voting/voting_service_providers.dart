@@ -433,11 +433,16 @@ abstract interface class VotingRoundSession {
   /// non-empty, so these must be cleared before a cast can be planned.
   Future<rust_voting.RoundPlanView> clearBallotIntents(List<int> proposalIds);
 
-  /// Runs one planned step, streaming progress and then exactly one result.
-  Stream<rust_session.ApiRoundStepEvent> advanceStep({
-    required rust_voting.NextStepView step,
+  /// Drives the round to quiescence, streaming events then exactly one report.
+  ///
+  /// The SDK owns the loop: it plans, dispatches, overlaps independent
+  /// bundles, isolates failures per bundle, and stops at the first state only
+  /// this app can resolve. `host` is a template whose clock the bridge
+  /// restamps per dispatch.
+  Stream<rust_session.ApiRoundRunEvent> runRound({
     required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
+    rust_session.ApiRoundDrivePolicy? policy,
   });
 
   Future<List<rust_delegate.KeystoneSigningRequest>> keystoneSigningRequests(
@@ -773,11 +778,13 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
   ) => _typed(() => inner.clearBallotIntents(proposalIds: proposalIds));
 
   @override
-  Stream<rust_session.ApiRoundStepEvent> advanceStep({
-    required rust_voting.NextStepView step,
+  Stream<rust_session.ApiRoundRunEvent> runRound({
     required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
-  }) => _typedStream(inner.advanceStep(step: step, host: host, signer: signer));
+    rust_session.ApiRoundDrivePolicy? policy,
+  }) => _typedStream(
+    inner.runRound(host: host, signer: signer, policy: policy),
+  );
 
   @override
   Future<List<rust_delegate.KeystoneSigningRequest>> keystoneSigningRequests(

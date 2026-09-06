@@ -175,7 +175,35 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
   if (!completedVoteArtifact) {
     for (var bundleIndex = 0; bundleIndex < state.bundleCount; bundleIndex++) {
       final delegation = delegationByBundle[bundleIndex];
+      // A bundle whose delegation is recorded but not yet on the wire owes a
+      // `Delegate`. The SDK planner lists it whenever the bundle has a cast
+      // due, and the driver runs only what the plan lists, so omitting it
+      // would make the round look like it had no delegation work at all. A
+      // bundle with no record at all is left alone: the fixture has said
+      // nothing about it, and the session synthesises that case only for a
+      // run that carries signing material.
       if (delegation != null &&
+          !delegation.terminal &&
+          delegation.phase != rust_wire.WorkflowPhaseView.confirmed &&
+          delegation.phase != rust_wire.WorkflowPhaseView.submittedDelegation) {
+        nextSteps.add(
+          rust_wire.NextStepView(
+            kind: rust_wire.NextStepKind.delegate,
+            bundleIndex: bundleIndex,
+            proposalId: 0,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        );
+        recoveredDelegationWork.add(
+          rust_wire.DelegationRecoveryWorkView(
+            kind: rust_wire.DelegationRecoveryWorkKindView.delegate,
+            bundleIndex: bundleIndex,
+            phase: delegation.phase,
+            txHash: null,
+          ),
+        );
+      } else if (delegation != null &&
           !delegation.terminal &&
           delegation.phase == rust_wire.WorkflowPhaseView.submittedDelegation) {
         nextSteps.add(
@@ -631,5 +659,74 @@ rust_wire.RoundPlanView withDelegationStatusesFrom(
     immediateShareKey: plan.immediateShareKey,
     immediateShareConfirmed: plan.immediateShareConfirmed,
     allDecided: plan.allDecided,
+  );
+}
+
+/// One `runRound` progress event, as the bridge streams it.
+///
+/// Scripting events directly is how a provider test says what the SDK did
+/// without this fake re-deriving a plan the real planner owns.
+rust_session.ApiRoundRunEvent roundRunProgress({
+  required rust_wire.RoundDriveEventKind kind,
+  rust_wire.NextStepView? step,
+  rust_wire.RoundPlanView? plan,
+  rust_wire.RoundWorkTallyView? tally,
+  rust_wire.RoundStepProgressView? progress,
+  rust_wire.RoundStepDispositionView? disposition,
+  rust_wire.RoundStepFailureKindView? failureKind,
+  String? message,
+  int? bundleIndex,
+}) {
+  return rust_session.ApiRoundRunEvent(
+    kind: rust_session.ApiRoundStepEventKind.progress,
+    event: rust_wire.RoundDriveEventView(
+      kind: kind,
+      step: step,
+      plan: plan,
+      tally: tally,
+      progress: progress,
+      disposition: disposition,
+      failureKind: failureKind,
+      message: message,
+      bundleIndex: bundleIndex,
+    ),
+  );
+}
+
+/// The single terminal event that ends every run.
+rust_session.ApiRoundRunEvent roundRunReport({
+  required rust_wire.RoundPlanView plan,
+  rust_wire.RoundQuiescenceKind quiescence = rust_wire.RoundQuiescenceKind.noWorkLeft,
+  Uint32List? openProposals,
+  Uint32List? bundles,
+  List<rust_wire.RoundStepFailureRecordView> failures = const [],
+  List<int> skippedBundles = const [],
+  rust_wire.RoundWorkTallyView? tally,
+}) {
+  return rust_session.ApiRoundRunEvent(
+    kind: rust_session.ApiRoundStepEventKind.result,
+    report: rust_wire.RoundRunReportView(
+      quiescence: rust_wire.RoundQuiescenceView(
+        kind: quiescence,
+        openProposals: openProposals ?? Uint32List(0),
+        unrosteredIntents: Uint32List(0),
+        bundles: bundles ?? Uint32List(0),
+        shares: const [],
+        remaining: const [],
+      ),
+      plan: plan,
+      tally:
+          tally ??
+          const rust_wire.RoundWorkTallyView(
+            completedProposals: 0,
+            totalProposals: 0,
+            remainingObligations: 0,
+          ),
+      failures: failures,
+      skippedBundles: Uint32List.fromList(skippedBundles),
+      chainOutcomes: const [],
+      shareDeliveries: const [],
+      delegations: const [],
+    ),
   );
 }

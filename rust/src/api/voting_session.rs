@@ -12,13 +12,13 @@ use std::sync::{Arc, Mutex};
 use flutter_rust_bridge::frb;
 use zcash_voting::delegation_pipeline::{DelegationSigner, KeystoneSignatureSource};
 use zcash_voting::wire::{
-    KeystoneSigningRequest, NextStepView, RoundPlanView, RoundStepFailureView,
-    RoundStepOutcomeView, RoundStepProgressView,
+    KeystoneSigningRequest, RoundDriveEventView, RoundPlanView, RoundRunReportView,
 };
 use zcash_voting::{
     BallotIntent, ChainAdvancePolicy, ChainSubmissionClientConfig, ChainSubmissionControl,
-    DelegationStepInputs, HelperHealth, ProposalRosterEntry, RoundBinding, RoundExecutor,
-    RoundHostContext, RoundStepProgressBridge, VotingErrorView,
+    DelegationStepInputs, FailureIsolation, HelperHealth, ProposalRosterEntry, RoundBinding,
+    RoundDrivePolicy, RoundDriveReporterBridge, RoundDriver, RoundExecutor, RoundHostContext,
+    RoundHostSourceBridge, VotingErrorView,
 };
 use zeroize::Zeroizing;
 
@@ -151,20 +151,25 @@ impl From<VotingErrorView> for ApiRoundStepError {
     }
 }
 
-/// One event of a streamed step: progress while it runs, then one result.
+/// One observation from a round run, or its single terminal report.
 ///
-/// The result event carries exactly one of `outcome`, `failure`, or `error`.
-/// `failure` is a step the SDK ran and rejected; `error` is everything that
-/// stopped the step from producing either, including the work this boundary
-/// does before handing over (signer material, delegation pipeline, PIR fleet)
-/// and a view conversion that fails after the step already ran.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ApiRoundStepEvent {
+/// Exactly one `Result`-kind event is emitted however the run ends, carrying
+/// either the report or a bridge error.
+pub struct ApiRoundRunEvent {
     pub kind: ApiRoundStepEventKind,
-    pub progress: Option<RoundStepProgressView>,
-    pub outcome: Option<RoundStepOutcomeView>,
-    pub failure: Option<RoundStepFailureView>,
+    pub event: Option<RoundDriveEventView>,
+    pub report: Option<RoundRunReportView>,
     pub error: Option<ApiRoundStepError>,
+}
+
+/// How a run paces itself. Omitted fields keep the SDK defaults, which are the
+/// cadence the Dart driver used before the SDK owned the loop.
+pub struct ApiRoundDrivePolicy {
+    pub pending_repoll_seconds: Option<f64>,
+    pub max_bundle_concurrency: Option<u32>,
+    pub max_dispatches: Option<u32>,
+    /// `true` keeps every other bundle running after one fails.
+    pub skip_failed_bundle: Option<bool>,
 }
 
 /// SDK-owned execution of one round for one account.
@@ -322,31 +327,85 @@ impl VotingRoundSession {
         RoundPlanView::try_from(plan).map_err(VotingErrorView::from)
     }
 
-    /// Runs the first planned step, streaming progress then one result.
+    /// Drives the bound round to quiescence, streaming events then one report.
     ///
-    /// See [`VotingRoundSession::advance`] for why this reports failures on
-    /// the sink instead of returning them.
-    pub async fn advance_next(
+    /// Emits exactly one `Result` event for the reason [`Self::advance`]
+    /// documents: a streaming function's `Err` return never reaches Dart.
+    ///
+    /// `host` is a template. The driver reads the host context once per
+    /// dispatch and this bridge restamps `now_seconds` each time, because a
+    /// run can take minutes and a long proof can cross the last-moment or
+    /// vote-end boundary. Every other field is fixed for the run, so a helper
+    /// fleet that changes mid-run needs a new call.
+    pub async fn run_round(
         &self,
         host: ApiRoundHostContext,
         signer: Option<ApiDelegationSignerInput>,
-        sink: StreamSink<ApiRoundStepEvent>,
+        policy: Option<ApiRoundDrivePolicy>,
+        sink: StreamSink<ApiRoundRunEvent>,
     ) {
-        self.advance(None, host, signer, sink).await
+        let sink = Arc::new(sink);
+        let event = match self.drive(host, signer, policy, Arc::clone(&sink)).await {
+            Ok(event) => event,
+            Err(error) => ApiRoundRunEvent {
+                kind: ApiRoundStepEventKind::Result,
+                event: None,
+                report: None,
+                error: Some(ApiRoundStepError::from(error)),
+            },
+        };
+        let _ = sink.add(event);
     }
 
-    /// Runs one planned step, streaming progress then one result.
-    ///
-    /// See [`VotingRoundSession::advance`] for why this reports failures on
-    /// the sink instead of returning them.
-    pub async fn advance_step(
+    /// Runs the round, streaming events, and returns its report event.
+    async fn drive(
         &self,
-        step: NextStepView,
         host: ApiRoundHostContext,
         signer: Option<ApiDelegationSignerInput>,
-        sink: StreamSink<ApiRoundStepEvent>,
-    ) {
-        self.advance(Some(step), host, signer, sink).await
+        policy: Option<ApiRoundDrivePolicy>,
+        sink: Arc<StreamSink<ApiRoundRunEvent>>,
+    ) -> Result<ApiRoundRunEvent, VotingErrorView> {
+        // Built once for the whole run: opening it fetches the lightwalletd
+        // anchor, and the driver overlaps bundles that would each pay for it.
+        let delegation = self.delegation_inputs(signer).await?;
+        let template = RoundHostContext {
+            configured_helper_urls: host.configured_helper_urls,
+            now_seconds: host.now_seconds,
+            ceremony_start_seconds: host.ceremony_start_seconds,
+            vote_end_time_seconds: host.vote_end_time_seconds,
+            vote_tree_node_urls: host.vote_tree_node_urls,
+            delegation,
+            chain_policy: ChainAdvancePolicy::default(),
+            max_proof_concurrency: host.max_proof_concurrency.max(1) as usize,
+        };
+        let host_source = RoundHostSourceBridge::new(move || RoundHostContext {
+            now_seconds: unix_now_seconds(template.now_seconds),
+            ..template.clone()
+        });
+
+        let event_sink = sink;
+        let reporter = RoundDriveReporterBridge::new(move |event| {
+            let Ok(view) = RoundDriveEventView::try_from(event) else {
+                return;
+            };
+            let _ = event_sink.add(ApiRoundRunEvent {
+                kind: ApiRoundStepEventKind::Progress,
+                event: Some(view),
+                report: None,
+                error: None,
+            });
+        });
+
+        let report = RoundDriver::new(&self.executor)
+            .with_policy(round_drive_policy(policy))
+            .run(&host_source, &self.control, &reporter)
+            .await;
+        Ok(ApiRoundRunEvent {
+            kind: ApiRoundStepEventKind::Result,
+            event: None,
+            report: Some(RoundRunReportView::try_from(report).map_err(VotingErrorView::from)?),
+            error: None,
+        })
     }
 
     /// Builds redacted Keystone signing requests for the given bundles.
@@ -447,102 +506,44 @@ impl VotingRoundSession {
             pir,
         }))
     }
+}
 
-    /// Runs a step and emits exactly one result event, whatever happened.
-    ///
-    /// A streaming function's `Result` never reaches Dart: the bridge sends it
-    /// on the task port, and the generated Dart drops that future
-    /// (`unawaited`) while handing the caller only the sink's stream. An `Err`
-    /// return would therefore close the stream with no event at all, turning
-    /// every typed failure raised before the step — a lightwalletd anchor
-    /// fetch for the delegation pipeline, signer material, the PIR fleet —
-    /// into a bare "stream ended" on the Dart side. Returning `()` keeps that
-    /// unreachable: every path has to produce an event.
-    async fn advance(
-        &self,
-        step: Option<NextStepView>,
-        host: ApiRoundHostContext,
-        signer: Option<ApiDelegationSignerInput>,
-        sink: StreamSink<ApiRoundStepEvent>,
-    ) {
-        let sink = Arc::new(sink);
-        let event = match self.run_step(step, host, signer, Arc::clone(&sink)).await {
-            Ok(event) => event,
-            Err(error) => ApiRoundStepEvent {
-                kind: ApiRoundStepEventKind::Result,
-                progress: None,
-                outcome: None,
-                failure: None,
-                error: Some(ApiRoundStepError::from(error)),
-            },
-        };
-        let _ = sink.add(event);
-    }
+/// The current wall clock, falling back to the host's own stamp.
+///
+/// The driver reads the context once per dispatch so a long run does not plan
+/// against a frozen clock; a system clock before the epoch is not a reason to
+/// fail a round, so the host's value stands in.
+fn unix_now_seconds(fallback: u64) -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(fallback)
+}
 
-    /// Runs one step, streaming progress, and returns its result event.
-    async fn run_step(
-        &self,
-        step: Option<NextStepView>,
-        host: ApiRoundHostContext,
-        signer: Option<ApiDelegationSignerInput>,
-        sink: Arc<StreamSink<ApiRoundStepEvent>>,
-    ) -> Result<ApiRoundStepEvent, VotingErrorView> {
-        let delegation = self.delegation_inputs(signer).await?;
-        let host = RoundHostContext {
-            configured_helper_urls: host.configured_helper_urls,
-            now_seconds: host.now_seconds,
-            ceremony_start_seconds: host.ceremony_start_seconds,
-            vote_end_time_seconds: host.vote_end_time_seconds,
-            vote_tree_node_urls: host.vote_tree_node_urls,
-            delegation,
-            chain_policy: ChainAdvancePolicy::default(),
-            max_proof_concurrency: host.max_proof_concurrency.max(1) as usize,
-        };
-        let progress_sink = sink;
-        let reporter = RoundStepProgressBridge::new(move |progress| {
-            let Ok(view) = RoundStepProgressView::try_from(progress) else {
-                return;
-            };
-            let _ = progress_sink.add(ApiRoundStepEvent {
-                kind: ApiRoundStepEventKind::Progress,
-                progress: Some(view),
-                outcome: None,
-                failure: None,
-                error: None,
-            });
-        });
-        let result = match step {
-            Some(step) => {
-                self.executor
-                    .advance_step(step.into(), &host, &self.control, &reporter)
-                    .await
-            }
-            None => {
-                self.executor
-                    .advance_next(&host, &self.control, &reporter)
-                    .await
-            }
-        };
-        Ok(match result {
-            Ok(outcome) => ApiRoundStepEvent {
-                kind: ApiRoundStepEventKind::Result,
-                progress: None,
-                outcome: Some(
-                    RoundStepOutcomeView::try_from(outcome).map_err(VotingErrorView::from)?,
-                ),
-                failure: None,
-                error: None,
-            },
-            Err(failure) => ApiRoundStepEvent {
-                kind: ApiRoundStepEventKind::Result,
-                progress: None,
-                outcome: None,
-                failure: Some(
-                    RoundStepFailureView::try_from(failure).map_err(VotingErrorView::from)?,
-                ),
-                error: None,
-            },
-        })
+fn round_drive_policy(policy: Option<ApiRoundDrivePolicy>) -> RoundDrivePolicy {
+    let defaults = RoundDrivePolicy::default();
+    let Some(policy) = policy else {
+        return defaults;
+    };
+    RoundDrivePolicy {
+        pending_repoll: policy
+            .pending_repoll_seconds
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+            .map(std::time::Duration::from_secs_f64)
+            .unwrap_or(defaults.pending_repoll),
+        max_bundle_concurrency: policy
+            .max_bundle_concurrency
+            .and_then(|limit| std::num::NonZeroUsize::new(limit as usize))
+            .unwrap_or(defaults.max_bundle_concurrency),
+        failure_isolation: match policy.skip_failed_bundle {
+            Some(false) => FailureIsolation::StopRound,
+            _ => FailureIsolation::SkipBundle,
+        },
+        max_dispatches: policy
+            .max_dispatches
+            .map(|budget| budget as usize)
+            .filter(|budget| *budget > 0)
+            .unwrap_or(defaults.max_dispatches),
     }
 }
 
@@ -552,4 +553,116 @@ fn invalid_input(message: String) -> VotingErrorView {
 
 fn internal(message: String) -> VotingErrorView {
     VotingErrorView::from(zcash_voting::VotingError::Internal { message })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn policy(input: ApiRoundDrivePolicy) -> RoundDrivePolicy {
+        round_drive_policy(Some(input))
+    }
+
+    fn unset() -> ApiRoundDrivePolicy {
+        ApiRoundDrivePolicy {
+            pending_repoll_seconds: None,
+            max_bundle_concurrency: None,
+            max_dispatches: None,
+            skip_failed_bundle: None,
+        }
+    }
+
+    #[test]
+    fn an_absent_policy_keeps_the_sdk_cadence() {
+        let defaults = RoundDrivePolicy::default();
+        let mapped = round_drive_policy(None);
+        assert_eq!(mapped.pending_repoll, defaults.pending_repoll);
+        assert_eq!(
+            mapped.max_bundle_concurrency,
+            defaults.max_bundle_concurrency
+        );
+        assert_eq!(mapped.max_dispatches, defaults.max_dispatches);
+    }
+
+    #[test]
+    fn each_unset_field_falls_back_on_its_own() {
+        let defaults = RoundDrivePolicy::default();
+        let mapped = policy(ApiRoundDrivePolicy {
+            max_bundle_concurrency: Some(1),
+            ..unset()
+        });
+        assert_eq!(mapped.max_bundle_concurrency.get(), 1);
+        assert_eq!(
+            mapped.pending_repoll, defaults.pending_repoll,
+            "an unset field is not zeroed by a set sibling"
+        );
+        assert_eq!(mapped.max_dispatches, defaults.max_dispatches);
+    }
+
+    #[test]
+    fn a_nonsense_repoll_cannot_panic_the_run() {
+        // `Duration::from_secs_f64` panics on a negative or non-finite value,
+        // and this value crosses a language boundary, so it is filtered rather
+        // than trusted.
+        for seconds in [-1.0, f64::NAN, f64::INFINITY] {
+            let mapped = policy(ApiRoundDrivePolicy {
+                pending_repoll_seconds: Some(seconds),
+                ..unset()
+            });
+            assert_eq!(
+                mapped.pending_repoll,
+                RoundDrivePolicy::default().pending_repoll
+            );
+        }
+        let mapped = policy(ApiRoundDrivePolicy {
+            pending_repoll_seconds: Some(0.5),
+            ..unset()
+        });
+        assert_eq!(mapped.pending_repoll, std::time::Duration::from_millis(500));
+    }
+
+    #[test]
+    fn a_zero_budget_or_concurrency_falls_back_instead_of_stalling() {
+        // Zero dispatches would end every run at once, and zero concurrency is
+        // not representable; both mean "unset" from a host that sent 0.
+        let mapped = policy(ApiRoundDrivePolicy {
+            max_bundle_concurrency: Some(0),
+            max_dispatches: Some(0),
+            ..unset()
+        });
+        let defaults = RoundDrivePolicy::default();
+        assert_eq!(
+            mapped.max_bundle_concurrency,
+            defaults.max_bundle_concurrency
+        );
+        assert_eq!(mapped.max_dispatches, defaults.max_dispatches);
+    }
+
+    #[test]
+    fn failure_isolation_follows_the_hosts_choice() {
+        assert_eq!(
+            policy(ApiRoundDrivePolicy {
+                skip_failed_bundle: Some(false),
+                ..unset()
+            })
+            .failure_isolation,
+            FailureIsolation::StopRound
+        );
+        for choice in [Some(true), None] {
+            assert_eq!(
+                policy(ApiRoundDrivePolicy {
+                    skip_failed_bundle: choice,
+                    ..unset()
+                })
+                .failure_isolation,
+                FailureIsolation::SkipBundle,
+                "a host that says nothing keeps every other bundle running"
+            );
+        }
+    }
+
+    #[test]
+    fn the_clock_falls_back_to_the_hosts_own_stamp() {
+        assert!(unix_now_seconds(0) > 1_700_000_000, "a real clock is used");
+    }
 }

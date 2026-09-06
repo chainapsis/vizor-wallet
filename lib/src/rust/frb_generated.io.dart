@@ -105,8 +105,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_StreamSink_api_mempool_tx_event_Sse(dynamic raw);
 
   @protected
-  RustStreamSink<ApiRoundStepEvent>
-  dco_decode_StreamSink_api_round_step_event_Sse(dynamic raw);
+  RustStreamSink<ApiRoundRunEvent>
+  dco_decode_StreamSink_api_round_run_event_Sse(dynamic raw);
 
   @protected
   RustStreamSink<ApiSyncProgressEvent>
@@ -181,13 +181,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiResubmittedShare dco_decode_api_resubmitted_share(dynamic raw);
 
   @protected
+  ApiRoundDrivePolicy dco_decode_api_round_drive_policy(dynamic raw);
+
+  @protected
   ApiRoundHostContext dco_decode_api_round_host_context(dynamic raw);
 
   @protected
-  ApiRoundStepError dco_decode_api_round_step_error(dynamic raw);
+  ApiRoundRunEvent dco_decode_api_round_run_event(dynamic raw);
 
   @protected
-  ApiRoundStepEvent dco_decode_api_round_step_event(dynamic raw);
+  ApiRoundStepError dco_decode_api_round_step_error(dynamic raw);
 
   @protected
   ApiRoundStepEventKind dco_decode_api_round_step_event_kind(dynamic raw);
@@ -227,6 +230,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiDelegationSignerInput dco_decode_box_autoadd_api_delegation_signer_input(
+    dynamic raw,
+  );
+
+  @protected
+  ApiRoundDrivePolicy dco_decode_box_autoadd_api_round_drive_policy(
     dynamic raw,
   );
 
@@ -310,15 +318,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  RoundPlanView dco_decode_box_autoadd_round_plan_view(dynamic raw);
-
-  @protected
-  RoundStepFailureView dco_decode_box_autoadd_round_step_failure_view(
+  RoundDriveEventView dco_decode_box_autoadd_round_drive_event_view(
     dynamic raw,
   );
 
   @protected
-  RoundStepOutcomeView dco_decode_box_autoadd_round_step_outcome_view(
+  RoundPlanView dco_decode_box_autoadd_round_plan_view(dynamic raw);
+
+  @protected
+  RoundRunReportView dco_decode_box_autoadd_round_run_report_view(dynamic raw);
+
+  @protected
+  RoundStepDispositionView dco_decode_box_autoadd_round_step_disposition_view(
+    dynamic raw,
+  );
+
+  @protected
+  RoundStepFailureKindView dco_decode_box_autoadd_round_step_failure_kind_view(
     dynamic raw,
   );
 
@@ -328,15 +344,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundWorkTallyView dco_decode_box_autoadd_round_work_tally_view(dynamic raw);
+
+  @protected
   ShareBatchDeliveryReportView
   dco_decode_box_autoadd_share_batch_delivery_report_view(dynamic raw);
 
   @protected
   ShareKeyView dco_decode_box_autoadd_share_key_view(dynamic raw);
-
-  @protected
-  SignedDelegationPayloadView
-  dco_decode_box_autoadd_signed_delegation_payload_view(dynamic raw);
 
   @protected
   SubmissionDiagnosticView dco_decode_box_autoadd_submission_diagnostic_view(
@@ -654,6 +669,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<RoundChainOutcomeView> dco_decode_list_round_chain_outcome_view(
+    dynamic raw,
+  );
+
+  @protected
+  List<RoundStepFailureRecordView>
+  dco_decode_list_round_step_failure_record_view(dynamic raw);
+
+  @protected
   List<ScanRangeInfo> dco_decode_list_scan_range_info(dynamic raw);
 
   @protected
@@ -667,6 +691,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ShareDeliveryOutcomeView> dco_decode_list_share_delivery_outcome_view(
     dynamic raw,
   );
+
+  @protected
+  List<ShareKeyView> dco_decode_list_share_key_view(dynamic raw);
+
+  @protected
+  List<SignedDelegationPayloadView>
+  dco_decode_list_signed_delegation_payload_view(dynamic raw);
 
   @protected
   List<SoftwareWalletDiscoveredAccount>
@@ -781,6 +812,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_api_delegation_signer_input(dynamic raw);
 
   @protected
+  ApiRoundDrivePolicy? dco_decode_opt_box_autoadd_api_round_drive_policy(
+    dynamic raw,
+  );
+
+  @protected
   ApiRoundStepError? dco_decode_opt_box_autoadd_api_round_step_error(
     dynamic raw,
   );
@@ -851,20 +887,33 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundDriveEventView? dco_decode_opt_box_autoadd_round_drive_event_view(
+    dynamic raw,
+  );
+
+  @protected
   RoundPlanView? dco_decode_opt_box_autoadd_round_plan_view(dynamic raw);
 
   @protected
-  RoundStepFailureView? dco_decode_opt_box_autoadd_round_step_failure_view(
+  RoundRunReportView? dco_decode_opt_box_autoadd_round_run_report_view(
     dynamic raw,
   );
 
   @protected
-  RoundStepOutcomeView? dco_decode_opt_box_autoadd_round_step_outcome_view(
-    dynamic raw,
-  );
+  RoundStepDispositionView?
+  dco_decode_opt_box_autoadd_round_step_disposition_view(dynamic raw);
+
+  @protected
+  RoundStepFailureKindView?
+  dco_decode_opt_box_autoadd_round_step_failure_kind_view(dynamic raw);
 
   @protected
   RoundStepProgressView? dco_decode_opt_box_autoadd_round_step_progress_view(
+    dynamic raw,
+  );
+
+  @protected
+  RoundWorkTallyView? dco_decode_opt_box_autoadd_round_work_tally_view(
     dynamic raw,
   );
 
@@ -874,10 +923,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShareKeyView? dco_decode_opt_box_autoadd_share_key_view(dynamic raw);
-
-  @protected
-  SignedDelegationPayloadView?
-  dco_decode_opt_box_autoadd_signed_delegation_payload_view(dynamic raw);
 
   @protected
   SubmissionDiagnosticView?
@@ -927,10 +972,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ResolvedVotingConfig dco_decode_resolved_voting_config(dynamic raw);
 
   @protected
+  RoundChainOutcomeView dco_decode_round_chain_outcome_view(dynamic raw);
+
+  @protected
+  RoundDriveEventKind dco_decode_round_drive_event_kind(dynamic raw);
+
+  @protected
+  RoundDriveEventView dco_decode_round_drive_event_view(dynamic raw);
+
+  @protected
   RoundPlanActionKind dco_decode_round_plan_action_kind(dynamic raw);
 
   @protected
   RoundPlanView dco_decode_round_plan_view(dynamic raw);
+
+  @protected
+  RoundQuiescenceKind dco_decode_round_quiescence_kind(dynamic raw);
+
+  @protected
+  RoundQuiescenceView dco_decode_round_quiescence_view(dynamic raw);
+
+  @protected
+  RoundRunReportView dco_decode_round_run_report_view(dynamic raw);
 
   @protected
   RoundStepDispositionView dco_decode_round_step_disposition_view(dynamic raw);
@@ -939,16 +1002,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoundStepFailureKindView dco_decode_round_step_failure_kind_view(dynamic raw);
 
   @protected
-  RoundStepFailureView dco_decode_round_step_failure_view(dynamic raw);
+  RoundStepFailureRecordView dco_decode_round_step_failure_record_view(
+    dynamic raw,
+  );
 
   @protected
-  RoundStepOutcomeView dco_decode_round_step_outcome_view(dynamic raw);
+  RoundStepFailureView dco_decode_round_step_failure_view(dynamic raw);
 
   @protected
   RoundStepProgressKind dco_decode_round_step_progress_kind(dynamic raw);
 
   @protected
   RoundStepProgressView dco_decode_round_step_progress_view(dynamic raw);
+
+  @protected
+  RoundWorkTallyView dco_decode_round_work_tally_view(dynamic raw);
 
   @protected
   ScanRangeInfo dco_decode_scan_range_info(dynamic raw);
@@ -1173,8 +1241,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_StreamSink_api_mempool_tx_event_Sse(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<ApiRoundStepEvent>
-  sse_decode_StreamSink_api_round_step_event_Sse(SseDeserializer deserializer);
+  RustStreamSink<ApiRoundRunEvent>
+  sse_decode_StreamSink_api_round_run_event_Sse(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<ApiSyncProgressEvent>
@@ -1273,17 +1341,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiRoundDrivePolicy sse_decode_api_round_drive_policy(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiRoundHostContext sse_decode_api_round_host_context(
     SseDeserializer deserializer,
   );
 
   @protected
-  ApiRoundStepError sse_decode_api_round_step_error(
-    SseDeserializer deserializer,
-  );
+  ApiRoundRunEvent sse_decode_api_round_run_event(SseDeserializer deserializer);
 
   @protected
-  ApiRoundStepEvent sse_decode_api_round_step_event(
+  ApiRoundStepError sse_decode_api_round_step_error(
     SseDeserializer deserializer,
   );
 
@@ -1339,6 +1410,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiDelegationSignerInput sse_decode_box_autoadd_api_delegation_signer_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiRoundDrivePolicy sse_decode_box_autoadd_api_round_drive_policy(
     SseDeserializer deserializer,
   );
 
@@ -1442,22 +1518,37 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundDriveEventView sse_decode_box_autoadd_round_drive_event_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RoundPlanView sse_decode_box_autoadd_round_plan_view(
     SseDeserializer deserializer,
   );
 
   @protected
-  RoundStepFailureView sse_decode_box_autoadd_round_step_failure_view(
+  RoundRunReportView sse_decode_box_autoadd_round_run_report_view(
     SseDeserializer deserializer,
   );
 
   @protected
-  RoundStepOutcomeView sse_decode_box_autoadd_round_step_outcome_view(
+  RoundStepDispositionView sse_decode_box_autoadd_round_step_disposition_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundStepFailureKindView sse_decode_box_autoadd_round_step_failure_kind_view(
     SseDeserializer deserializer,
   );
 
   @protected
   RoundStepProgressView sse_decode_box_autoadd_round_step_progress_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundWorkTallyView sse_decode_box_autoadd_round_work_tally_view(
     SseDeserializer deserializer,
   );
 
@@ -1469,12 +1560,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShareKeyView sse_decode_box_autoadd_share_key_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  SignedDelegationPayloadView
-  sse_decode_box_autoadd_signed_delegation_payload_view(
     SseDeserializer deserializer,
   );
 
@@ -1876,6 +1961,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<RoundChainOutcomeView> sse_decode_list_round_chain_outcome_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<RoundStepFailureRecordView>
+  sse_decode_list_round_step_failure_record_view(SseDeserializer deserializer);
+
+  @protected
   List<ScanRangeInfo> sse_decode_list_scan_range_info(
     SseDeserializer deserializer,
   );
@@ -1895,6 +1989,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ShareDeliveryOutcomeView> sse_decode_list_share_delivery_outcome_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<ShareKeyView> sse_decode_list_share_key_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<SignedDelegationPayloadView>
+  sse_decode_list_signed_delegation_payload_view(SseDeserializer deserializer);
 
   @protected
   List<SoftwareWalletDiscoveredAccount>
@@ -2037,6 +2140,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiRoundDrivePolicy? sse_decode_opt_box_autoadd_api_round_drive_policy(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiRoundStepError? sse_decode_opt_box_autoadd_api_round_step_error(
     SseDeserializer deserializer,
   );
@@ -2125,22 +2233,39 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundDriveEventView? sse_decode_opt_box_autoadd_round_drive_event_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RoundPlanView? sse_decode_opt_box_autoadd_round_plan_view(
     SseDeserializer deserializer,
   );
 
   @protected
-  RoundStepFailureView? sse_decode_opt_box_autoadd_round_step_failure_view(
+  RoundRunReportView? sse_decode_opt_box_autoadd_round_run_report_view(
     SseDeserializer deserializer,
   );
 
   @protected
-  RoundStepOutcomeView? sse_decode_opt_box_autoadd_round_step_outcome_view(
+  RoundStepDispositionView?
+  sse_decode_opt_box_autoadd_round_step_disposition_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundStepFailureKindView?
+  sse_decode_opt_box_autoadd_round_step_failure_kind_view(
     SseDeserializer deserializer,
   );
 
   @protected
   RoundStepProgressView? sse_decode_opt_box_autoadd_round_step_progress_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundWorkTallyView? sse_decode_opt_box_autoadd_round_work_tally_view(
     SseDeserializer deserializer,
   );
 
@@ -2152,12 +2277,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShareKeyView? sse_decode_opt_box_autoadd_share_key_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  SignedDelegationPayloadView?
-  sse_decode_opt_box_autoadd_signed_delegation_payload_view(
     SseDeserializer deserializer,
   );
 
@@ -2217,12 +2336,42 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RoundChainOutcomeView sse_decode_round_chain_outcome_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundDriveEventKind sse_decode_round_drive_event_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundDriveEventView sse_decode_round_drive_event_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RoundPlanActionKind sse_decode_round_plan_action_kind(
     SseDeserializer deserializer,
   );
 
   @protected
   RoundPlanView sse_decode_round_plan_view(SseDeserializer deserializer);
+
+  @protected
+  RoundQuiescenceKind sse_decode_round_quiescence_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundQuiescenceView sse_decode_round_quiescence_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundRunReportView sse_decode_round_run_report_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   RoundStepDispositionView sse_decode_round_step_disposition_view(
@@ -2235,12 +2384,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  RoundStepFailureView sse_decode_round_step_failure_view(
+  RoundStepFailureRecordView sse_decode_round_step_failure_record_view(
     SseDeserializer deserializer,
   );
 
   @protected
-  RoundStepOutcomeView sse_decode_round_step_outcome_view(
+  RoundStepFailureView sse_decode_round_step_failure_view(
     SseDeserializer deserializer,
   );
 
@@ -2251,6 +2400,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RoundStepProgressView sse_decode_round_step_progress_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoundWorkTallyView sse_decode_round_work_tally_view(
     SseDeserializer deserializer,
   );
 
@@ -2535,8 +2689,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_StreamSink_api_round_step_event_Sse(
-    RustStreamSink<ApiRoundStepEvent> self,
+  void sse_encode_StreamSink_api_round_run_event_Sse(
+    RustStreamSink<ApiRoundRunEvent> self,
     SseSerializer serializer,
   );
 
@@ -2661,20 +2815,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_round_drive_policy(
+    ApiRoundDrivePolicy self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_round_host_context(
     ApiRoundHostContext self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_api_round_step_error(
-    ApiRoundStepError self,
+  void sse_encode_api_round_run_event(
+    ApiRoundRunEvent self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_api_round_step_event(
-    ApiRoundStepEvent self,
+  void sse_encode_api_round_step_error(
+    ApiRoundStepError self,
     SseSerializer serializer,
   );
 
@@ -2738,6 +2898,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_api_delegation_signer_input(
     ApiDelegationSignerInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_round_drive_policy(
+    ApiRoundDrivePolicy self,
     SseSerializer serializer,
   );
 
@@ -2856,26 +3022,44 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_round_drive_event_view(
+    RoundDriveEventView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_round_plan_view(
     RoundPlanView self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_box_autoadd_round_step_failure_view(
-    RoundStepFailureView self,
+  void sse_encode_box_autoadd_round_run_report_view(
+    RoundRunReportView self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_box_autoadd_round_step_outcome_view(
-    RoundStepOutcomeView self,
+  void sse_encode_box_autoadd_round_step_disposition_view(
+    RoundStepDispositionView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_round_step_failure_kind_view(
+    RoundStepFailureKindView self,
     SseSerializer serializer,
   );
 
   @protected
   void sse_encode_box_autoadd_round_step_progress_view(
     RoundStepProgressView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_round_work_tally_view(
+    RoundWorkTallyView self,
     SseSerializer serializer,
   );
 
@@ -2888,12 +3072,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_share_key_view(
     ShareKeyView self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_signed_delegation_payload_view(
-    SignedDelegationPayloadView self,
     SseSerializer serializer,
   );
 
@@ -3390,6 +3568,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_round_chain_outcome_view(
+    List<RoundChainOutcomeView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_round_step_failure_record_view(
+    List<RoundStepFailureRecordView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_scan_range_info(
     List<ScanRangeInfo> self,
     SseSerializer serializer,
@@ -3410,6 +3600,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_share_delivery_outcome_view(
     List<ShareDeliveryOutcomeView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_share_key_view(
+    List<ShareKeyView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_signed_delegation_payload_view(
+    List<SignedDelegationPayloadView> self,
     SseSerializer serializer,
   );
 
@@ -3585,6 +3787,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_api_round_drive_policy(
+    ApiRoundDrivePolicy? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_api_round_step_error(
     ApiRoundStepError? self,
     SseSerializer serializer,
@@ -3681,26 +3889,44 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_round_drive_event_view(
+    RoundDriveEventView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_round_plan_view(
     RoundPlanView? self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_opt_box_autoadd_round_step_failure_view(
-    RoundStepFailureView? self,
+  void sse_encode_opt_box_autoadd_round_run_report_view(
+    RoundRunReportView? self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_opt_box_autoadd_round_step_outcome_view(
-    RoundStepOutcomeView? self,
+  void sse_encode_opt_box_autoadd_round_step_disposition_view(
+    RoundStepDispositionView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_round_step_failure_kind_view(
+    RoundStepFailureKindView? self,
     SseSerializer serializer,
   );
 
   @protected
   void sse_encode_opt_box_autoadd_round_step_progress_view(
     RoundStepProgressView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_round_work_tally_view(
+    RoundWorkTallyView? self,
     SseSerializer serializer,
   );
 
@@ -3713,12 +3939,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_share_key_view(
     ShareKeyView? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_signed_delegation_payload_view(
-    SignedDelegationPayloadView? self,
     SseSerializer serializer,
   );
 
@@ -3789,6 +4009,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_round_chain_outcome_view(
+    RoundChainOutcomeView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_round_drive_event_kind(
+    RoundDriveEventKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_round_drive_event_view(
+    RoundDriveEventView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_round_plan_action_kind(
     RoundPlanActionKind self,
     SseSerializer serializer,
@@ -3796,6 +4034,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_round_plan_view(RoundPlanView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_round_quiescence_kind(
+    RoundQuiescenceKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_round_quiescence_view(
+    RoundQuiescenceView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_round_run_report_view(
+    RoundRunReportView self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_round_step_disposition_view(
@@ -3810,14 +4066,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_round_step_failure_view(
-    RoundStepFailureView self,
+  void sse_encode_round_step_failure_record_view(
+    RoundStepFailureRecordView self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_round_step_outcome_view(
-    RoundStepOutcomeView self,
+  void sse_encode_round_step_failure_view(
+    RoundStepFailureView self,
     SseSerializer serializer,
   );
 
@@ -3830,6 +4086,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_round_step_progress_view(
     RoundStepProgressView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_round_work_tally_view(
+    RoundWorkTallyView self,
     SseSerializer serializer,
   );
 
