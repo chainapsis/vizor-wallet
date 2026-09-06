@@ -121,7 +121,9 @@ final votingApiClientProvider =
 /// Probing and selection both run in Rust, so this provider only exists as
 /// the seam tests replace.
 final votingPirResolverProvider = Provider<PirSnapshotResolver>((ref) {
-  return const PirSnapshotResolver();
+  return PirSnapshotResolver(
+    mapper: ref.watch(votingEndpointMapperProvider),
+  );
 });
 
 

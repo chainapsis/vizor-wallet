@@ -1,5 +1,6 @@
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
+import 'voting_endpoint_mapper.dart';
 import 'voting_rust_exception.dart';
 
 /// Probe outcome for one configured PIR endpoint.
@@ -77,12 +78,24 @@ class PirSnapshotNoMatchingEndpoint implements Exception {
 /// type is the Dart-side seam so callers and tests keep one place to stub.
 /// The endpoint the wallet probes with is the same routed transport that
 /// carries the rest of foreground voting traffic.
+///
+/// Callers pass logical endpoints and get logical endpoints back. The regtest
+/// gateway rewrite is applied to what is probed and undone on the way out, so
+/// the round's configured identity is what reaches the session state and the
+/// PIR failover list.
 class PirSnapshotResolver {
-  const PirSnapshotResolver({ResolvePirSnapshotEndpointFn? resolveEndpoint})
-    : _resolveEndpoint =
-          resolveEndpoint ?? rust_api.resolvePirSnapshotEndpoint;
+  const PirSnapshotResolver({
+    VotingEndpointMapper? mapper,
+    ResolvePirSnapshotEndpointFn? resolveEndpoint,
+  }) : _mapper = mapper,
+       _resolveEndpoint =
+           resolveEndpoint ?? rust_api.resolvePirSnapshotEndpoint;
 
+  final VotingEndpointMapper? _mapper;
   final ResolvePirSnapshotEndpointFn _resolveEndpoint;
+
+  Uri _transportUri(Uri logicalUrl) =>
+      _mapper == null ? logicalUrl : _mapper.map(logicalUrl);
 
   /// Probes all endpoints and selects one serving [expectedSnapshotHeight].
   ///
@@ -97,19 +110,30 @@ class PirSnapshotResolver {
       throw const PirSnapshotNoEndpoints();
     }
 
+    final logicalByTransport = <String, Uri>{};
+    final transportUrls = <String>[];
+    for (final endpoint in endpoints) {
+      final transportUrl = _transportUri(endpoint).toString();
+      logicalByTransport[transportUrl] = endpoint;
+      transportUrls.add(transportUrl);
+    }
+
     final rust_api.ApiPirSnapshotResolution resolution;
     try {
       resolution = await _resolveEndpoint(
-        endpoints: [for (final endpoint in endpoints) endpoint.toString()],
+        endpoints: transportUrls,
         expectedSnapshotHeight: BigInt.from(expectedSnapshotHeight),
       );
     } on rust_voting.VotingErrorView catch (error) {
       throw VotingRustException(error);
     }
 
+    Uri logical(String probed) =>
+        logicalByTransport[probed] ?? Uri.parse(probed);
+
     final diagnostics = [
       for (final diagnostic in resolution.diagnostics)
-        _diagnosticFrom(diagnostic),
+        _diagnosticFrom(diagnostic, logical(diagnostic.endpoint)),
     ];
     final endpoint = resolution.endpoint;
     if (endpoint == null) {
@@ -119,16 +143,17 @@ class PirSnapshotResolver {
       );
     }
     return PirSnapshotResolution(
-      endpoint: Uri.parse(endpoint),
+      endpoint: logical(endpoint),
       diagnostics: diagnostics,
     );
   }
 
   static PirSnapshotEndpointDiagnostic _diagnosticFrom(
     rust_api.ApiPirSnapshotEndpointDiagnostic diagnostic,
+    Uri endpoint,
   ) {
     return PirSnapshotEndpointDiagnostic(
-      endpoint: Uri.parse(diagnostic.endpoint),
+      endpoint: endpoint,
       status: _statusFrom(diagnostic.status),
       reportedHeight: diagnostic.reportedHeight?.toInt(),
       httpStatusCode: diagnostic.httpStatusCode,

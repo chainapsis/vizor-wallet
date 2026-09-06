@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
+import 'package:zcash_wallet/src/services/voting/voting_endpoint_mapper.dart';
 
 /// Probing, height classification, and selection now run in Rust and are
 /// covered by `rust/src/api/voting.rs` unit tests. What is left on this side
@@ -157,5 +158,49 @@ void main() {
       expect(resolution.diagnostics.single.status, entry.value);
       expect(resolution.diagnostics.single.httpStatusCode, 503);
     }
+  });
+
+  test('the regtest gateway rewrite is applied to probes only', () async {
+    // The probe has to reach the local gateway, but the round's configured
+    // identity is what the session state and the PIR failover list carry, so
+    // the rewrite must not leak into the result.
+    final mapper = VotingEndpointMapper(
+      isRegtest: true,
+      gatewayUrl: 'http://127.0.0.1:18232',
+    );
+    const logical = 'https://pir.vizor-vote.invalid';
+    final mapped = mapper.map(Uri.parse(logical)).toString();
+    expect(mapped, isNot(logical), reason: 'mapper must rewrite in regtest');
+
+    late List<String> probed;
+    final resolver = PirSnapshotResolver(
+      mapper: mapper,
+      resolveEndpoint:
+          ({
+            required List<String> endpoints,
+            required BigInt expectedSnapshotHeight,
+          }) async {
+            probed = endpoints;
+            return rust_api.ApiPirSnapshotResolution(
+              endpoint: endpoints.single,
+              diagnostics: [
+                rust_api.ApiPirSnapshotEndpointDiagnostic(
+                  endpoint: endpoints.single,
+                  status: rust_api.ApiPirSnapshotEndpointStatus.matched,
+                  reportedHeight: expectedSnapshotHeight,
+                ),
+              ],
+            );
+          },
+    );
+
+    final resolution = await resolver.resolve(
+      endpoints: [Uri.parse(logical)],
+      expectedSnapshotHeight: 100,
+    );
+
+    expect(probed, [mapped]);
+    expect(resolution.endpoint, Uri.parse(logical));
+    expect(resolution.diagnostics.single.endpoint, Uri.parse(logical));
   });
 }
