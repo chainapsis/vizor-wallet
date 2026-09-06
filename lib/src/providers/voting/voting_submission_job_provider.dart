@@ -55,7 +55,6 @@ class VotingSubmissionJobState {
     this.keystoneQrError,
     this.pendingDraftVotes,
     this.pendingProposalIds = const [],
-    this.pendingProposalOptionCounts = const {},
     this.pendingRecoveryWithoutDraft = false,
   });
 
@@ -71,7 +70,6 @@ class VotingSubmissionJobState {
   final String? keystoneQrError;
   final List<VotingDraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
-  final Map<int, int> pendingProposalOptionCounts;
   final bool pendingRecoveryWithoutDraft;
 
   bool get hasVisibleJob =>
@@ -97,7 +95,6 @@ class VotingSubmissionJobState {
     List<VotingDraftVote>? pendingDraftVotes,
     bool clearPendingDraftVotes = false,
     List<int>? pendingProposalIds,
-    Map<int, int>? pendingProposalOptionCounts,
     bool? pendingRecoveryWithoutDraft,
   }) {
     return VotingSubmissionJobState(
@@ -122,8 +119,6 @@ class VotingSubmissionJobState {
           ? null
           : pendingDraftVotes ?? this.pendingDraftVotes,
       pendingProposalIds: pendingProposalIds ?? this.pendingProposalIds,
-      pendingProposalOptionCounts:
-          pendingProposalOptionCounts ?? this.pendingProposalOptionCounts,
       pendingRecoveryWithoutDraft:
           pendingRecoveryWithoutDraft ?? this.pendingRecoveryWithoutDraft,
     );
@@ -479,9 +474,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       final proposals = proposalsFromRound(round);
-      final proposalOptionCounts = {
-        for (final proposal in proposals) proposal.id: proposal.options.length,
-      };
       final VotingDraftState draft;
       try {
         draft = await ref
@@ -615,7 +607,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           generation: generation,
           draftVotes: draftVotes,
           intentProposalIds: intentProposalIds,
-          proposalOptionCounts: proposalOptionCounts,
           pendingRecoveryWithoutDraft:
               canRecoverWithoutDraft || canPollDelegationWithoutDraft,
         );
@@ -635,8 +626,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             generation: generation,
             draftVotes: draftVotes,
             intentProposalIds: intentProposalIds,
-            proposalOptionCounts: proposalOptionCounts,
-            pendingRecoveryWithoutDraft:
+              pendingRecoveryWithoutDraft:
                 canRecoverWithoutDraft || canPollDelegationWithoutDraft,
           );
           await _submitAfterKeystoneSignatures(
@@ -651,8 +641,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             generation: generation,
             draftVotes: draftVotes,
             intentProposalIds: intentProposalIds,
-            proposalOptionCounts: proposalOptionCounts,
-            initialSession: activeSession,
+              initialSession: activeSession,
           );
         }
         return;
@@ -725,7 +714,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         generation: generation,
         draftVotes: draftVotes,
         intentProposalIds: intentProposalIds,
-        proposalOptionCounts: proposalOptionCounts,
         initialSession: afterDelegation ?? activeSession,
       );
     } catch (error) {
@@ -881,7 +869,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         generation: generation,
         draftVotes: draftVotes,
         intentProposalIds: state.pendingProposalIds,
-        proposalOptionCounts: state.pendingProposalOptionCounts,
         initialSession: afterDelegation ?? beforeDelegation,
       );
       return;
@@ -892,7 +879,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       generation: generation,
       draftVotes: draftVotes,
       intentProposalIds: state.pendingProposalIds,
-      proposalOptionCounts: state.pendingProposalOptionCounts,
       initialSession: beforeDelegation,
     );
   }
@@ -903,7 +889,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
     required List<VotingDraftVote> draftVotes,
     required List<int> intentProposalIds,
-    required Map<int, int> proposalOptionCounts,
     VotingSessionState? initialSession,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -945,7 +930,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       await sessionNotifier.castVotes(
         draftVotes: draftVotes,
         allProposalIds: intentProposalIds,
-        proposalOptionCounts: proposalOptionCounts,
       );
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -1010,14 +994,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
     required List<VotingDraftVote> draftVotes,
     required List<int> intentProposalIds,
-    required Map<int, int> proposalOptionCounts,
     required bool pendingRecoveryWithoutDraft,
   }) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     state = state.copyWith(
       pendingDraftVotes: draftVotes,
       pendingProposalIds: intentProposalIds,
-      pendingProposalOptionCounts: proposalOptionCounts,
       pendingRecoveryWithoutDraft: pendingRecoveryWithoutDraft,
     );
   }
@@ -1058,7 +1040,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       clearKeystoneQrError: true,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
-      pendingProposalOptionCounts: const {},
       pendingRecoveryWithoutDraft: false,
     );
   }
@@ -1097,7 +1078,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       clearKeystoneQrError: true,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
-      pendingProposalOptionCounts: const {},
       pendingRecoveryWithoutDraft: false,
     );
   }

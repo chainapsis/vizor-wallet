@@ -11,7 +11,6 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
-import '../../../services/voting/pir_snapshot_resolver.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../voting_error_messages.dart';
@@ -497,7 +496,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     if (error != null) return friendlyVotingErrorText(error.message);
     final round = state.round;
     if (round != null && state.pirDiagnostics.isNotEmpty) {
-      return _pirDiagnosticsErrorMessage(
+      return pirSnapshotMismatchMessage(
         expectedSnapshotHeight: round.snapshotHeight,
         diagnostics: state.pirDiagnostics,
       );
@@ -512,28 +511,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       'Voting could not continue for this account. Retry, or switch to an '
       'eligible account if this account cannot vote in this voting round.';
 
-  String _pirDiagnosticsErrorMessage({
-    required int expectedSnapshotHeight,
-    required List<PirSnapshotEndpointDiagnostic> diagnostics,
-  }) {
-    final expected = formatBlockHeight(expectedSnapshotHeight);
-    final reportedHeights = diagnostics
-        .map((diagnostic) => diagnostic.reportedHeight)
-        .nonNulls
-        .toSet();
-    if (diagnostics.every(
-          (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.behind,
-        ) &&
-        reportedHeights.isNotEmpty) {
-      final highest = formatBlockHeight(
-        reportedHeights.reduce((left, right) => left > right ? left : right),
-      );
-      return 'Voting PIR data is not ready for this voting round yet. Expected '
-          'snapshot block $expected; PIR endpoints report $highest.';
-    }
-    return 'No PIR endpoint matched this voting round snapshot. Expected snapshot '
-        'block $expected.';
-  }
+
 
   String? _shareSubmissionDetail(VotingSessionState state) {
     final key = state.currentVoteKey;

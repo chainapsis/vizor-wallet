@@ -11,8 +11,8 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'voting.dart';
 
-// These functions are ignored because they are not marked as `pub`: `advance`, `delegation_inputs`, `internal`, `invalid_input`, `pipeline`, `run_step`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
+// These functions are ignored because they are not marked as `pub`: `delegation_inputs`, `drive`, `internal`, `invalid_input`, `pipeline`, `round_drive_policy`, `unix_now_seconds`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 /// Opens a session bound to `ctx`'s account and round.
 ///
@@ -43,25 +43,6 @@ VotingRoundSession openVotingRoundSession({
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingRoundSession>>
 abstract class VotingRoundSession implements RustOpaqueInterface {
-  /// Runs the first planned step, streaming progress then one result.
-  ///
-  /// See [`VotingRoundSession::advance`] for why this reports failures on
-  /// the sink instead of returning them.
-  Stream<ApiRoundStepEvent> advanceNext({
-    required ApiRoundHostContext host,
-    ApiDelegationSignerInput? signer,
-  });
-
-  /// Runs one planned step, streaming progress then one result.
-  ///
-  /// See [`VotingRoundSession::advance`] for why this reports failures on
-  /// the sink instead of returning them.
-  Stream<ApiRoundStepEvent> advanceStep({
-    required NextStepView step,
-    required ApiRoundHostContext host,
-    ApiDelegationSignerInput? signer,
-  });
-
   /// Cancellation handle for one helper-share tracking pass on this round.
   ///
   /// Tracking passes are cancelled by the destructive drain independently
@@ -95,6 +76,22 @@ abstract class VotingRoundSession implements RustOpaqueInterface {
 
   /// Plans the round from durable state.
   Future<RoundPlanView> plan();
+
+  /// Drives the bound round to quiescence, streaming events then one report.
+  ///
+  /// Emits exactly one `Result` event for the reason [`Self::advance`]
+  /// documents: a streaming function's `Err` return never reaches Dart.
+  ///
+  /// `host` is a template. The driver reads the host context once per
+  /// dispatch and this bridge restamps `now_seconds` each time, because a
+  /// run can take minutes and a long proof can cross the last-moment or
+  /// vote-end boundary. Every other field is fixed for the run, so a helper
+  /// fleet that changes mid-run needs a new call.
+  Stream<ApiRoundRunEvent> runRound({
+    required ApiRoundHostContext host,
+    ApiDelegationSignerInput? signer,
+    ApiRoundDrivePolicy? policy,
+  });
 
   /// Records ballot decisions against the bound roster and re-plans.
   Future<RoundPlanView> setBallotIntents({
@@ -196,6 +193,41 @@ class ApiProposalRosterEntry {
           numOptions == other.numOptions;
 }
 
+/// How a run paces itself. Omitted fields keep the SDK defaults, which are the
+/// cadence the Dart driver used before the SDK owned the loop.
+class ApiRoundDrivePolicy {
+  final double? pendingRepollSeconds;
+  final int? maxBundleConcurrency;
+  final int? maxDispatches;
+
+  /// `true` keeps every other bundle running after one fails.
+  final bool? skipFailedBundle;
+
+  const ApiRoundDrivePolicy({
+    this.pendingRepollSeconds,
+    this.maxBundleConcurrency,
+    this.maxDispatches,
+    this.skipFailedBundle,
+  });
+
+  @override
+  int get hashCode =>
+      pendingRepollSeconds.hashCode ^
+      maxBundleConcurrency.hashCode ^
+      maxDispatches.hashCode ^
+      skipFailedBundle.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiRoundDrivePolicy &&
+          runtimeType == other.runtimeType &&
+          pendingRepollSeconds == other.pendingRepollSeconds &&
+          maxBundleConcurrency == other.maxBundleConcurrency &&
+          maxDispatches == other.maxDispatches &&
+          skipFailedBundle == other.skipFailedBundle;
+}
+
 /// Host inputs that change per step call.
 class ApiRoundHostContext {
   /// Complete current helper fleet, already mapped to transport URLs.
@@ -237,6 +269,38 @@ class ApiRoundHostContext {
           voteEndTimeSeconds == other.voteEndTimeSeconds &&
           voteTreeNodeUrls == other.voteTreeNodeUrls &&
           maxProofConcurrency == other.maxProofConcurrency;
+}
+
+/// One observation from a round run, or its single terminal report.
+///
+/// Exactly one `Result`-kind event is emitted however the run ends, carrying
+/// either the report or a bridge error.
+class ApiRoundRunEvent {
+  final ApiRoundStepEventKind kind;
+  final RoundDriveEventView? event;
+  final RoundRunReportView? report;
+  final ApiRoundStepError? error;
+
+  const ApiRoundRunEvent({
+    required this.kind,
+    this.event,
+    this.report,
+    this.error,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^ event.hashCode ^ report.hashCode ^ error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiRoundRunEvent &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          event == other.event &&
+          report == other.report &&
+          error == other.error;
 }
 
 /// A typed bridge failure carried by a result event.
@@ -312,48 +376,6 @@ class ApiRoundStepError {
           selectedNotes == other.selectedNotes &&
           httpStatus == other.httpStatus &&
           endpoint == other.endpoint;
-}
-
-/// One event of a streamed step: progress while it runs, then one result.
-///
-/// The result event carries exactly one of `outcome`, `failure`, or `error`.
-/// `failure` is a step the SDK ran and rejected; `error` is everything that
-/// stopped the step from producing either, including the work this boundary
-/// does before handing over (signer material, delegation pipeline, PIR fleet)
-/// and a view conversion that fails after the step already ran.
-class ApiRoundStepEvent {
-  final ApiRoundStepEventKind kind;
-  final RoundStepProgressView? progress;
-  final RoundStepOutcomeView? outcome;
-  final RoundStepFailureView? failure;
-  final ApiRoundStepError? error;
-
-  const ApiRoundStepEvent({
-    required this.kind,
-    this.progress,
-    this.outcome,
-    this.failure,
-    this.error,
-  });
-
-  @override
-  int get hashCode =>
-      kind.hashCode ^
-      progress.hashCode ^
-      outcome.hashCode ^
-      failure.hashCode ^
-      error.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiRoundStepEvent &&
-          runtimeType == other.runtimeType &&
-          kind == other.kind &&
-          progress == other.progress &&
-          outcome == other.outcome &&
-          failure == other.failure &&
-          error == other.error;
 }
 
 enum ApiRoundStepEventKind { progress, result }

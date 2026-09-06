@@ -31,25 +31,4 @@ class VotingRecoveryService {
       proposalIds: proposalIds,
     );
   }
-
-  /// Persists the voter's ballot intent for one proposal before casting.
-  Future<void> setBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  }) {
-    return _api.setBallotIntent(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-      proposalId: proposalId,
-      numOptions: numOptions,
-      skipped: skipped,
-      choice: choice,
-    );
-  }
 }

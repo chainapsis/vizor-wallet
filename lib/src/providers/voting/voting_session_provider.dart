@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,9 +33,6 @@ const _ironwoodPcztPool = 1;
 /// share submission, and recovery polling.
 const _votingWorkConcurrency = 3;
 const _votingBatchProofConcurrency = 3;
-
-/// Wait between passes while the SDK reports a chain step as pending.
-const _chainSubmissionRepollDelay = Duration(seconds: 2);
 
 /// How often a running share-tracking pass re-checks Dart-owned stop
 /// conditions.
@@ -515,13 +511,48 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
+  /// Delegates this round's pending bundles with the account mnemonic.
+  ///
+  /// Software accounts only; Keystone accounts sign on the device and go
+  /// through [delegatePendingBundlesWithKeystoneSignatures].
   Future<void> delegatePendingBundles({String? mnemonic}) {
+    return _delegatePendingBundles(hardware: false, mnemonic: mnemonic);
+  }
+
+  /// Delegates this round's pending bundles with the signatures the Keystone
+  /// device already returned.
+  ///
+  /// The signatures are durable in the sidecar; the SDK loads the record for
+  /// each bundle and verifies it against the stored PCZT sighash.
+  Future<void> delegatePendingBundlesWithKeystoneSignatures() {
+    return _delegatePendingBundles(hardware: true);
+  }
+
+  /// Runs the delegation round for whichever signer this account uses.
+  ///
+  /// The two entry points differ only in how a bundle is signed and in what
+  /// has to be true before signing can start: software needs the account
+  /// mnemonic, hardware needs a device signature for every pending bundle and
+  /// must never mint a fresh hotkey once those signatures exist. Everything
+  /// around that — preparation, the terminal check, PIR resolution, the round
+  /// itself, and the state it publishes — is one path.
+  ///
+  /// `hardware` is the entry point the caller used, not the account's kind.
+  /// The two are checked against each other so calling the wrong one for the
+  /// active account reports that mismatch rather than quietly signing the
+  /// other way.
+  Future<void> _delegatePendingBundles({
+    required bool hardware,
+    String? mnemonic,
+  }) {
     return _enqueue(() async {
       var current = await future;
       var context = await _loadContext(_roundId);
-      if (context.isHardwareAccount) {
+      if (hardware != context.isHardwareAccount) {
         _setError(
-          'Sign delegation bundles with Keystone before submitting.',
+          hardware
+              ? 'Keystone voting is only available for hardware accounts.'
+              : 'Sign delegation bundles with Keystone before submitting.',
           context: context,
         );
         return;
@@ -551,6 +582,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
       }
       final needsPir = _needsFreshDelegationPreparation(roundPlan);
+
+      // Hardware signing binds each signature to the hotkey that was current
+      // when the device signed, so the signatures have to be known before the
+      // hotkey is ensured.
+      final Map<int, rust_wire.KeystoneSignatureRecord> signatures = hardware
+          ? (hasPendingBundles
+                ? await _loadKeystoneSignatures(context)
+                : current.keystoneSignatures)
+          : const {};
+
       var pirEndpoint = current.pirEndpoint;
       if (needsPir && pirEndpoint == null) {
         pirEndpoint = await _resolvePirEndpoint(context);
@@ -560,15 +601,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           _setStateForContext(context, current);
         }
       }
+
       if (hasPendingBundles) {
+        // PIR only matters because a bundle needs a proof built against it, so
+        // this is checked where there is a bundle to prove.
         if (needsPir && pirEndpoint == null) {
           _setError('PIR endpoint has not been resolved.', context: context);
           return;
         }
-        // Software delegation signs with the account seed at the wallet
-        // boundary; the SDK receives only the SpendAuth signature. Keystone
-        // signing uses `delegatePendingBundlesWithKeystoneSignatures`.
-        if (mnemonic == null || mnemonic.isEmpty) {
+        if (hardware) {
+          for (final bundleIndex in delegationBundleIndexes) {
+            if (!signatures.containsKey(bundleIndex)) {
+              _setError(
+                'Sign delegation bundle ${bundleIndex + 1} with Keystone before submitting.',
+                context: context,
+              );
+              return;
+            }
+          }
+        } else if (mnemonic == null || mnemonic.isEmpty) {
+          // Software delegation signs with the account seed at the wallet
+          // boundary; the SDK receives only the SpendAuth signature.
           _setError(
             'Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.',
             context: context,
@@ -578,13 +631,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final nextState = (state.value ?? current).copyWith(
           phase: VotingSessionPhase.delegating,
           clearCurrentBundleIndex: true,
-          clearError: true,
+          // Hardware keeps any standing error until the round reports its own
+          // outcome; software clears it as the run starts.
+          clearError: !hardware,
+          keystoneSignatures: hardware ? signatures : null,
+          clearKeystoneSigningRequest: hardware,
+          clearKeystoneScanError: hardware,
         );
         _setStateForContext(context, nextState);
         current = nextState;
       }
       final storedHotkeySecret = hasPendingBundles
-          ? await _ensureHotkey(context)
+          ? await _ensureHotkey(
+              context,
+              // A device signature is bound to the hotkey it was made with, so
+              // once signatures exist a missing hotkey is a failure rather than
+              // a reason to generate one.
+              alreadyBound: hardware && signatures.isNotEmpty,
+            )
           : null;
 
       final progress = Map<int, VotingSessionProgress>.from(
@@ -603,19 +667,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         try {
           completedBundleIndexes.addAll(
-            await _runDelegationSteps(
+            await _runDelegationRound(
               session: session,
               context: context,
               fallbackState: current,
-              steps: _delegationStepsFor(roundPlan, delegationBundleIndexes),
-              signer: rust_session.ApiDelegationSignerInput(
-                kind: rust_session.ApiDelegationSignerKind.mnemonic,
-                mnemonic: mnemonic,
-                keystoneSig: null,
-                keystoneSighash: null,
-              ),
+              signer: hardware
+                  ? const rust_session.ApiDelegationSignerInput(
+                      kind: rust_session.ApiDelegationSignerKind.keystoneStored,
+                      mnemonic: null,
+                      keystoneSig: null,
+                      keystoneSighash: null,
+                    )
+                  : rust_session.ApiDelegationSignerInput(
+                      kind: rust_session.ApiDelegationSignerKind.mnemonic,
+                      mnemonic: mnemonic,
+                      keystoneSig: null,
+                      keystoneSighash: null,
+                    ),
               progress: progress,
-              logLabel: 'software',
+              logLabel: hardware ? 'Keystone' : 'software',
             ),
           );
         } on _StaleVotingSessionAction {
@@ -660,6 +730,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           roundPlan: refreshedRoundPlan,
           delegationProgress: progress,
           clearCurrentBundleIndex: true,
+          keystoneSignatures: hardware ? signatures : null,
+          clearKeystoneSigningRequest: hardware,
+          clearKeystoneScanError: hardware,
         ),
       );
       _noteTerminalDelegation(
@@ -919,159 +992,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
-  Future<void> delegatePendingBundlesWithKeystoneSignatures() {
-    return _enqueue(() async {
-      var current = await future;
-      var context = await _loadContext(_roundId);
-      if (!context.isHardwareAccount) {
-        _setError(
-          'Keystone voting is only available for hardware accounts.',
-          context: context,
-        );
-        return;
-      }
-      var roundPlan = context.roundPlan;
-      if (_needsFreshDelegationPreparation(roundPlan) &&
-          _needsDelegationPreparation(current)) {
-        await _prepareDelegationUnlocked();
-        current = await future;
-        if (current.phase == VotingSessionPhase.error ||
-            current.phase == VotingSessionPhase.waitingForWalletSync) {
-          return;
-        }
-        context = await _loadContext(_roundId);
-        roundPlan = context.roundPlan;
-      }
-      final progress = Map<int, VotingSessionProgress>.from(
-        current.delegationProgress,
-      );
-      final completedBundleIndexes = <int>{};
-      final delegationBundleIndexes = delegationBundleIndexesNeedingWork(
-        roundPlan,
-      );
-      final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
-      if (!hasPendingBundles) {
-        final terminal = terminalDelegationMessage(roundPlan);
-        if (terminal != null) {
-          _setError(terminal, context: context);
-          return;
-        }
-      }
-      final needsPir = _needsFreshDelegationPreparation(roundPlan);
-      final signatures = hasPendingBundles
-          ? await _loadKeystoneSignatures(context)
-          : current.keystoneSignatures;
-      final List<int>? storedHotkeySecret;
-      if (hasPendingBundles) {
-        storedHotkeySecret = await _ensureHotkey(
-          context,
-          alreadyBound: signatures.isNotEmpty,
-        );
-      } else {
-        storedHotkeySecret = null;
-      }
-      var pirEndpoint = current.pirEndpoint;
-      if (needsPir && pirEndpoint == null) {
-        pirEndpoint = await _resolvePirEndpoint(context);
-        _throwIfContextStale(context, 'keystone-delegation-pir-resolution');
-        if (pirEndpoint != null) {
-          current = (state.value ?? current).copyWith(pirEndpoint: pirEndpoint);
-          _setStateForContext(context, current);
-        }
-      }
-      if (needsPir && pirEndpoint == null) {
-        _setError('PIR endpoint has not been resolved.', context: context);
-        return;
-      }
-
-      final rust = ref.read(votingRustApiProvider);
-      for (final bundleIndex in delegationBundleIndexes) {
-        if (!signatures.containsKey(bundleIndex)) {
-          _setError(
-            'Sign delegation bundle ${bundleIndex + 1} with Keystone before submitting.',
-            context: context,
-          );
-          return;
-        }
-      }
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: VotingSessionPhase.delegating,
-          keystoneSignatures: signatures,
-          clearKeystoneSigningRequest: true,
-          clearKeystoneScanError: true,
-          clearCurrentBundleIndex: true,
-        ),
-      );
-      if (hasPendingBundles) {
-        final session = _openRoundSession(
-          rust,
-          context,
-          storedHotkeySecret: storedHotkeySecret,
-          pirServerUrls: _delegationPirTransportUrls(state.value ?? current),
-        );
-        try {
-          completedBundleIndexes.addAll(
-            await _runDelegationSteps(
-              session: session,
-              context: context,
-              fallbackState: current,
-              steps: _delegationStepsFor(roundPlan, delegationBundleIndexes),
-              // The device signatures are durable in the sidecar; the SDK
-              // loads the record for each bundle and verifies it against the
-              // stored PCZT sighash.
-              signer: const rust_session.ApiDelegationSignerInput(
-                kind: rust_session.ApiDelegationSignerKind.keystoneStored,
-                mnemonic: null,
-                keystoneSig: null,
-                keystoneSighash: null,
-              ),
-              progress: progress,
-              logLabel: 'Keystone',
-            ),
-          );
-        } on _StaleVotingSessionAction {
-          rethrow;
-        } catch (error, stackTrace) {
-          await _refreshDelegationPlansAfterBatchFailure(
-            context: context,
-            fallbackState: current,
-            progress: progress,
-          );
-          Error.throwWithStackTrace(error, stackTrace);
-        } finally {
-          _closeRoundSession(session);
-        }
-      }
-
-      final refreshedRoundPlan = await _loadRoundPlan(context);
-      final nextPhase =
-          delegationBundleIndexesNeedingSigning(
-            refreshedRoundPlan,
-          ).where((index) => !completedBundleIndexes.contains(index)).isEmpty
-          ? VotingSessionPhase.delegated
-          : VotingSessionPhase.readyToDelegate;
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: nextPhase,
-          roundPlan: refreshedRoundPlan,
-          delegationProgress: progress,
-          keystoneSignatures: signatures,
-          clearKeystoneSigningRequest: true,
-          clearKeystoneScanError: true,
-          clearCurrentBundleIndex: true,
-        ),
-      );
-      _noteTerminalDelegation(
-        context,
-        state.value ?? current,
-        refreshedRoundPlan,
-      );
-    }, cleanupProcessStateOnError: false);
-  }
-
   /// The ballot intents for `draftVotes`, skipping every other listed proposal.
   static List<rust_session.ApiBallotIntent> _ballotIntentsFor({
     required List<VotingDraftVote> draftVotes,
@@ -1111,6 +1031,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }) {
     return _enqueue(() async {
       final context = await _loadContext(_roundId);
+      // An empty ballot records nothing. `_ballotIntentsFor` marks every listed
+      // proposal without a draft vote as skipped, so recording here with no
+      // draft would overwrite stored choices rather than leave them alone.
+      if (draftVotes.isEmpty) return;
       final intents = _ballotIntentsFor(
         draftVotes: draftVotes,
         allProposalIds: allProposalIds,
@@ -1145,7 +1069,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> castVotes({
     required List<VotingDraftVote> draftVotes,
     List<int>? allProposalIds,
-    Map<int, int>? proposalOptionCounts,
   }) {
     final operation = _enqueue(() async {
       final current = await future;
@@ -1159,14 +1082,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final draftVotesByProposal = {
         for (final draftVote in draftVotes) draftVote.proposalId: draftVote,
       };
-      final rosterOptionCounts = {
-        for (final proposal in proposalsFromRound(context.round))
-          proposal.id: proposal.options.length,
-      };
-      final intents = _ballotIntentsFor(
-        draftVotes: draftVotes,
-        allProposalIds: allProposalIds,
-      );
+      // An empty ballot must not reach `set_ballot_intents`: `_ballotIntentsFor`
+      // marks every listed proposal without a draft vote as skipped, so a
+      // recovery-only run would overwrite the stored choices it exists to
+      // resume. Fall through to a plain plan instead.
+      final intents = draftVotes.isEmpty
+          ? const <rust_session.ApiBallotIntent>[]
+          : _ballotIntentsFor(
+              draftVotes: draftVotes,
+              allProposalIds: allProposalIds,
+            );
 
       List<int>? storedHotkeySecret;
       if (draftVotes.isNotEmpty) {
@@ -1178,39 +1103,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             context: context,
           );
           return;
-        }
-      }
-
-      // Write durable ballot intent before any cast work so recovery resumes
-      // from the correct choice if the user quits mid-vote. The session
-      // re-applies the same intents when it plans, so the two stay equal.
-      if (draftVotes.isNotEmpty) {
-        for (final intent in intents) {
-          final proposalId = intent.proposalId;
-          final numOptions =
-              draftVotesByProposal[proposalId]?.numOptions ??
-              proposalOptionCounts?[proposalId] ??
-              rosterOptionCounts[proposalId];
-          if (numOptions == null) {
-            _setError(
-              'Voting proposal details are missing. Retry after the round reloads.',
-              cause: StateError(
-                'missing numOptions for proposal_id $proposalId',
-              ),
-            );
-            return;
-          }
-          await ref
-              .read(votingRecoveryServiceProvider)
-              .setBallotIntent(
-                dbPath: context.dbPath,
-                accountUuid: context.accountUuid,
-                roundId: context.round.roundId,
-                proposalId: proposalId,
-                numOptions: numOptions,
-                skipped: intent.skipped,
-                choice: intent.choice,
-              );
         }
       }
 
@@ -1260,6 +1152,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         storedHotkeySecret: storedHotkeySecret,
       );
       try {
+        // This is the ballot's durable write: the SDK commits every intent in
+        // one transaction before it plans, so recovery resumes from the
+        // correct choice if the user quits mid-vote.
         roundPlan = intents.isEmpty
             ? await session.plan()
             : await session.setBallotIntents(intents);
@@ -1327,133 +1222,109 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             ),
           );
         }
-        // A failing bundle does not stop the others: its remaining steps are
-        // skipped, the rest of the plan runs, and every failure surfaces at
-        // the end so successful bundles keep their durable progress.
-        final failures = <_VoteBundleFailure>[];
-        final failedBundles = <int>{};
-        while (true) {
-          _throwIfContextStale(context, 'vote-plan');
-          final step = roundPlan.nextSteps
-              .where(
-                (step) =>
-                    _isVoteStep(step) &&
-                    !failedBundles.contains(step.bundleIndex),
-              )
-              .firstOrNull;
-          if (step == null) break;
-          final stepKeys = <VotingVoteKey>{_voteKeyForStep(step)};
-          final stepTimer = Stopwatch()..start();
-          publishState(
-            currentBundleIndex: step.bundleIndex,
-            currentVoteKey: _voteKeyForStep(step),
-            inFlightKeys: stepKeys.toList(),
-          );
-          final rust_wire.RoundStepOutcomeView outcome;
-          try {
-            outcome = await _advanceStep(
-              session,
-              context,
-              step,
-              label: 'vote',
-              onProgress: (update) {
-                _applyVoteProgress(update, step, stepKeys, progress);
+        // A failing bundle does not stop the others: the SDK skips its
+        // remaining obligations, runs the rest of the round, and reports every
+        // failure together so successful bundles keep their durable progress.
+        final report = await _runRound(
+          session,
+          context,
+          label: 'vote',
+          onEvent: (event) {
+            // A refreshed plan carries no step: it is the whole round's
+            // remaining work, and it is what the question counters read.
+            if (event.kind ==
+                rust_wire.RoundDriveEventKind.planRefreshed) {
+              final plan = event.plan;
+              if (plan == null) return;
+              // Count against the ballot the run started with, which is what
+              // "question N of M" shows. The SDK's own tally is run-relative
+              // and is reported separately; using it here would renumber the
+              // label mid-run on a resume.
+              final remaining = plan.nextSteps.where(_isVoteStep).toList();
+              completedBundleTasks = totalBundleTasks - remaining.length;
+              if (hasBatchStep) {
+                // Per-proposal completion does not exist inside a batch: its
+                // proposals land together, so track the ballot against the
+                // batch work and the count still ends at the full ballot.
+                completedQuestions = totalBundleTasks == 0
+                    ? 0
+                    : (totalQuestions * completedBundleTasks) ~/
+                          totalBundleTasks;
+              } else {
+                final remainingProposals = {
+                  for (final step in remaining) step.proposalId,
+                };
+                completedQuestions = totalQuestions - remainingProposals.length;
+              }
+              publishState();
+              return;
+            }
+            final step = event.step;
+            if (step == null || !_isVoteStep(step)) return;
+            final key = _voteKeyForStep(step);
+            switch (event.kind) {
+              case rust_wire.RoundDriveEventKind.stepSelected:
                 publishState(
                   currentBundleIndex: step.bundleIndex,
-                  currentVoteKey: _voteKeyForStep(step),
-                  inFlightKeys: stepKeys.toList(),
+                  currentVoteKey: key,
+                  inFlightKeys: [key],
                 );
-              },
-            );
-            if (outcome.disposition ==
-                    rust_wire.RoundStepDispositionView.noWork &&
-                outcome.plan.nextSteps.any((candidate) => candidate == step)) {
-              // A no-work answer is normally benign — a background tracking
-              // pass can confirm the share a `submitShares` step was for, and
-              // the SDK drops the step when it re-plans. Only a step the
-              // refreshed plan still lists is stuck, and re-selecting it would
-              // loop forever. This throws inside the per-bundle try so the
-              // bundle fails and the rest of the plan still runs, which is
-              // what this loop promises everywhere else.
-              throw StateError(
-                'The SDK reported no work for a step its plan still lists: '
-                '${step.kind} bundle=${step.bundleIndex} '
-                'proposal=${step.proposalId}.',
-              );
-            }
-          } on _StaleVotingSessionAction {
-            rethrow;
-          } on _ChainSubmissionCancelled {
-            rethrow;
-          } catch (error) {
-            failedBundles.add(step.bundleIndex);
-            failures.add(
-              _VoteBundleFailure(
-                bundleIndex: step.bundleIndex,
-                proposalId: step.proposalId,
-                error: error,
-              ),
-            );
-            for (final key in stepKeys) {
-              final item = progress[key];
-              progress[key] = VotingSessionProgress(
-                phase: VotingProgressPhase.failed,
-                bundleIndex: key.bundleIndex,
-                proposalId: key.proposalId,
-                proofProgress: item?.proofProgress,
-                message: error.toString(),
-              );
-            }
-            roundPlan =
-                (error is VotingRoundStepFailure ? error.failure.plan : null) ??
-                await session.plan();
-            _logVoteTiming(
-              'step ${step.kind.name} bundle=${step.bundleIndex} '
-              'proposal=${step.proposalId} failed '
-              'elapsed=${formatElapsedSeconds(stepTimer.elapsed)}: $error',
-            );
-            publishState(inFlightKeys: allVoteKeys.toList());
-            continue;
-          }
-          roundPlan = outcome.plan;
-          final remaining = roundPlan.nextSteps.where(_isVoteStep).toList();
-          completedBundleTasks = totalBundleTasks - remaining.length;
-          if (hasBatchStep) {
-            // Per-proposal completion does not exist inside a batch: its
-            // proposals land together. Track the ballot against the batch work
-            // instead, so the count still ends at the full ballot.
-            completedQuestions = totalBundleTasks == 0
-                ? 0
-                : (totalQuestions * completedBundleTasks) ~/ totalBundleTasks;
-          } else {
-            final remainingProposals = {
-              for (final remainingStep in remaining) remainingStep.proposalId,
-            };
-            completedQuestions = totalQuestions - remainingProposals.length;
-          }
-          if (outcome.disposition ==
-              rust_wire.RoundStepDispositionView.advanced) {
-            for (final key in stepKeys) {
-              if (progress[key]?.phase != VotingProgressPhase.completed) {
-                progress[key] = VotingSessionProgress(
-                  phase: VotingProgressPhase.completed,
-                  bundleIndex: key.bundleIndex,
-                  proposalId: key.proposalId,
-                  proofProgress: 1,
+              case rust_wire.RoundDriveEventKind.stepProgress:
+                final update = event.progress;
+                if (update == null) return;
+                _applyVoteProgress(update, step, {key}, progress);
+                publishState(
+                  currentBundleIndex: step.bundleIndex,
+                  currentVoteKey: key,
+                  inFlightKeys: [key],
                 );
-              }
+              case rust_wire.RoundDriveEventKind.stepFinished:
+                if (event.disposition ==
+                        rust_wire.RoundStepDispositionView.advanced &&
+                    progress[key]?.phase != VotingProgressPhase.completed) {
+                  progress[key] = VotingSessionProgress(
+                    phase: VotingProgressPhase.completed,
+                    bundleIndex: key.bundleIndex,
+                    proposalId: key.proposalId,
+                    proofProgress: 1,
+                  );
+                }
+                _logVoteTiming(
+                  'step ${step.kind.name} bundle=${step.bundleIndex} '
+                  'proposal=${step.proposalId} '
+                  'disposition=${event.disposition?.name}',
+                );
+                publishState();
+              default:
+                break;
             }
-          }
-          _logVoteTiming(
-            'step ${step.kind.name} bundle=${step.bundleIndex} '
-            'proposal=${step.proposalId} '
-            'disposition=${outcome.disposition.name} '
-            'elapsed=${formatElapsedSeconds(stepTimer.elapsed)}',
+          },
+        );
+
+        final failures = [
+          for (final record in report.failures)
+            _VoteBundleFailure(
+              bundleIndex: record.bundleIndex ?? 0,
+              proposalId: record.step?.proposalId ?? 0,
+              error: _failureFromRecord(record),
+            ),
+        ];
+        for (final failure in failures) {
+          final key = VotingVoteKey(
+            bundleIndex: failure.bundleIndex,
+            proposalId: failure.proposalId,
           );
-          // Completed steps are already counted in `completedBundleTasks`;
-          // listing them again as in-flight would double count.
-          publishState();
+          final item = progress[key];
+          progress[key] = VotingSessionProgress(
+            phase: VotingProgressPhase.failed,
+            bundleIndex: key.bundleIndex,
+            proposalId: key.proposalId,
+            proofProgress: item?.proofProgress,
+            message: failure.error.toString(),
+          );
         }
+        roundPlan = report.plan ?? roundPlan;
+        publishState();
         if (failures.isNotEmpty) throw _VoteBundleBatchException(failures);
       } on _StaleVotingSessionAction {
         rethrow;
@@ -1748,91 +1619,26 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  /// Runs one planned step through the SDK, re-invoking it while the chain
-  /// or helper work is pending. Returns the outcome that ended the step.
+  /// Drives the round's delegation work through the SDK, publishing
+  /// per-bundle progress.
   ///
-  /// A `pending` disposition waits the re-poll delay or until the session is
-  /// invalidated; `cancelled` and `chainTerminal` become exceptions so the
-  /// caller's failure path runs.
-  Future<rust_wire.RoundStepOutcomeView> _advanceStep(
-    VotingRoundSession session,
-    _VotingSessionContext context,
-    rust_wire.NextStepView step, {
-    required String label,
-    required void Function(rust_wire.RoundStepProgressView progress) onProgress,
-    rust_session.ApiDelegationSignerInput? signer,
-  }) async {
-    while (true) {
-      _throwIfContextStale(context, '$label-advance');
-      rust_session.ApiRoundStepEvent? terminal;
-      await for (final event in session.advanceStep(
-        step: step,
-        host: _hostContext(context),
-        signer: signer,
-      )) {
-        _throwIfContextStale(context, '$label-progress');
-        final progress = event.progress;
-        if (progress != null) onProgress(progress);
-        if (event.kind == rust_session.ApiRoundStepEventKind.result) {
-          terminal = event;
-        }
-      }
-      if (terminal == null) {
-        throw StateError('Round step completed without a result.');
-      }
-      // Work the bridge does before the SDK sees the step — the delegation
-      // pipeline's lightwalletd anchor fetch, signer material, the PIR fleet —
-      // reports here rather than as a step failure, so its kind and
-      // retryability survive.
-      final error = terminal.error;
-      if (error != null) throw votingRustExceptionFromStepError(error);
-      final failure = terminal.failure;
-      if (failure != null) throw VotingRoundStepFailure(step, failure);
-      final outcome = terminal.outcome;
-      if (outcome == null) {
-        throw StateError('Round step returned neither outcome nor failure.');
-      }
-      switch (outcome.disposition) {
-        case rust_wire.RoundStepDispositionView.pending:
-          // The SDK already re-polled a tracking submission and escalated to
-          // exact-tree recovery once. Keep waiting only while the chain is
-          // still tracking; a submission stuck in recovery surfaces so the
-          // user can retry later.
-          if (outcome.chainOutcome?.kind !=
-              rust_wire.ChainSubmissionOutcomeKind.tracking) {
-            throw VotingChainPendingOutcome(step, outcome);
-          }
-          await Future.any<void>([
-            Future<void>.delayed(_chainSubmissionRepollDelay),
-            _sessionInvalidated.future,
-          ]);
-          continue;
-        case rust_wire.RoundStepDispositionView.cancelled:
-          _throwIfContextStale(context, '$label-cancelled');
-          throw const _ChainSubmissionCancelled();
-        case rust_wire.RoundStepDispositionView.chainTerminal:
-          throw VotingChainTerminalOutcome(step, outcome);
-        case rust_wire.RoundStepDispositionView.advanced ||
-            rust_wire.RoundStepDispositionView.noWork:
-          return outcome;
-      }
-    }
-  }
-
-  /// Advances every delegation step in `steps` through the SDK, bundles
-  /// concurrently, publishing per-bundle progress.
-  Future<Set<int>> _runDelegationSteps({
+  /// The SDK owns the loop: it plans, overlaps bundles, isolates a failure to
+  /// its bundle, and stops when only this app can make progress. Dart reads
+  /// the event stream and keeps the UI state.
+  ///
+  /// Returns the bundles that completed. Failures the run isolated are raised
+  /// together, as the per-bundle batch the caller already handles, so a
+  /// healthy bundle keeps its durable progress.
+  Future<Set<int>> _runDelegationRound({
     required VotingRoundSession session,
     required _VotingSessionContext context,
     required VotingSessionState fallbackState,
-    required List<rust_wire.NextStepView> steps,
     required rust_session.ApiDelegationSignerInput signer,
     required Map<int, VotingSessionProgress> progress,
     required String logLabel,
   }) async {
     final batchTimer = Stopwatch()..start();
-    final stepsByBundle = {for (final step in steps) step.bundleIndex: step};
-    final bundleIndexes = stepsByBundle.keys.toList()..sort();
+    final completed = <int>{};
 
     void publishProgress(VotingSessionProgress update) {
       final bundleIndex = update.bundleIndex;
@@ -1848,23 +1654,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
     }
 
-    final outcomes = await _runBoundedBundleWork(
-      bundleIndexes,
-      concurrency: _votingWorkConcurrency,
-      work: (bundleIndex) async {
-        final step = stepsByBundle[bundleIndex]!;
-        final pipelineTimer = Stopwatch()..start();
-        debugPrint(
-          '[zcash] Voting: $logLabel delegation bundle start '
-          'round=${context.round.roundId} bundle=$bundleIndex',
-        );
-        final outcome = await _advanceStep(
-          session,
-          context,
-          step,
-          label: '$logLabel-delegation',
-          signer: signer,
-          onProgress: (update) {
+    final report = await _runRound(
+      session,
+      context,
+      signer: signer,
+      label: '$logLabel-delegation',
+      onEvent: (event) {
+        final step = event.step;
+        final bundleIndex = step?.bundleIndex;
+        if (bundleIndex == null) return;
+        switch (event.kind) {
+          case rust_wire.RoundDriveEventKind.stepProgress:
+            final update = event.progress;
+            if (update == null) return;
             switch (update.kind) {
               case rust_wire.RoundStepProgressKind.delegation:
                 final kind = update.delegationProgress;
@@ -1894,111 +1696,113 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               default:
                 break;
             }
-          },
-        );
-        if (outcome.disposition == rust_wire.RoundStepDispositionView.noWork) {
-          throw StateError(
-            'Delegation bundle $bundleIndex is no longer in the round plan.',
-          );
+          case rust_wire.RoundDriveEventKind.stepFinished:
+            if (_isDelegationStep(step!) &&
+                event.disposition ==
+                    rust_wire.RoundStepDispositionView.advanced) {
+              completed.add(bundleIndex);
+            }
+          default:
+            break;
         }
-        debugPrint(
-          '[zcash] Voting: $logLabel delegation bundle completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'txHash=${outcome.chainOutcome?.transactionHash} '
-          'leafIndex=${outcome.chainOutcome?.finalVanPosition} '
-          'total=${formatElapsedSeconds(pipelineTimer.elapsed)}',
-        );
-        return bundleIndex;
       },
     );
 
-    final failures = <_DelegationBundleFailure>[];
-    final completed = <int>{};
-    for (final bundleIndex in bundleIndexes) {
-      final outcome = outcomes[bundleIndex]!;
-      final error = outcome.error;
-      if (error != null) {
-        publishProgress(
-          VotingSessionProgress(
-            phase: VotingProgressPhase.failed,
-            bundleIndex: bundleIndex,
-            message: error.toString(),
-          ),
-        );
-        failures.add(
+    final failures = [
+      for (final record in report.failures)
+        if (record.bundleIndex != null)
           _DelegationBundleFailure(
-            bundleIndex: bundleIndex,
+            bundleIndex: record.bundleIndex!,
             stage: 'step',
-            error: error,
+            error: _failureFromRecord(record),
           ),
-        );
-      } else {
-        completed.add(outcome.value!);
-      }
-    }
+    ];
     for (final failure in failures) {
-      if (failure.error is _StaleVotingSessionAction) throw failure.error;
+      completed.remove(failure.bundleIndex);
+      publishProgress(
+        VotingSessionProgress(
+          phase: VotingProgressPhase.failed,
+          bundleIndex: failure.bundleIndex,
+          message: failure.error.toString(),
+        ),
+      );
     }
-    if (failures.isNotEmpty) throw _DelegationBundleBatchException(failures);
     debugPrint(
-      '[zcash] Voting: $logLabel delegation batch completed '
-      'round=${context.round.roundId} bundles=${bundleIndexes.length} '
+      '[zcash] Voting: $logLabel delegation run finished '
+      'round=${context.round.roundId} completed=${completed.length} '
+      'failed=${failures.length} '
+      'quiescence=${report.quiescence.kind.name} '
       'elapsed=${formatElapsedSeconds(batchTimer.elapsed)}',
     );
+    if (failures.isNotEmpty) throw _DelegationBundleBatchException(failures);
     return completed;
   }
 
-  /// Delegation steps the plan lists for the given bundles. A plan that
-  /// predates the SDK planner yields synthetic `Delegate` steps, which the
-  /// SDK validates against its own fresh plan.
-  /// The delegation steps to dispatch for `bundleIndexes`.
+  /// The typed error a host raises for one isolated step failure.
   ///
-  /// The two inputs come from different places: the wanted set is derived from
-  /// `delegation_statuses`, while dispatch is driven by `next_steps`. When
-  /// they disagree a `Delegate` step is still dispatched for the uncovered
-  /// bundle, and the disagreement is logged.
-  ///
-  /// That disagreement should no longer happen for the case that caused it:
-  /// the SDK plans a `Delegate` obligation only for a bundle that still has a
-  /// vote to cast, so delegating before the ballot was durable found no work
-  /// at all. The ballot is now recorded first, which is what makes the two
-  /// agree. The synthesised step is kept for the cases that remain, but it is
-  /// not a fix: the SDK resolves each step to an obligation under the round
-  /// lock, so a step matching no obligation comes back `NoWork` and surfaces
-  /// as "the round has no delegation work for it". The log line is what says
-  /// the plan and the statuses disagreed in the first place.
-  static List<rust_wire.NextStepView> _delegationStepsFor(
-    rust_wire.RoundPlanView? roundPlan,
-    List<int> bundleIndexes,
+  /// A record always names a step in practice; the SDK leaves it absent only
+  /// for a failure that belonged to no step, such as a plan it could not read.
+  static Object _failureFromRecord(
+    rust_wire.RoundStepFailureRecordView record,
   ) {
-    final wanted = bundleIndexes.toSet();
-    final planned = [
-      for (final step
-          in roundPlan?.nextSteps ?? const <rust_wire.NextStepView>[])
-        if (_isDelegationStep(step) && wanted.contains(step.bundleIndex)) step,
-    ];
-    final covered = {for (final step in planned) step.bundleIndex};
-    final uncovered = [
-      for (final bundleIndex in bundleIndexes)
-        if (!covered.contains(bundleIndex)) bundleIndex,
-    ];
-    if (uncovered.isNotEmpty) {
-      debugPrint(
-        '[zcash] Voting: no planned delegation step for '
-        'bundles ${uncovered.join(',')}; dispatching one anyway',
-      );
+    final step = record.step;
+    return step == null
+        ? StateError(record.failure.message)
+        : VotingRoundStepFailure(step, record.failure);
+  }
+
+  /// Streams one SDK round run, forwarding every event and returning its
+  /// report.
+  ///
+  /// The run's own failures ride on the report; only a bridge error or a
+  /// stale session throws, so a caller decides what an isolated bundle means
+  /// for its flow.
+  Future<rust_wire.RoundRunReportView> _runRound(
+    VotingRoundSession session,
+    _VotingSessionContext context, {
+    required String label,
+    required void Function(rust_wire.RoundDriveEventView event) onEvent,
+    rust_session.ApiDelegationSignerInput? signer,
+  }) async {
+    _throwIfContextStale(context, '$label-run');
+    rust_wire.RoundRunReportView? report;
+    await for (final event in session.runRound(
+      host: _hostContext(context),
+      signer: signer,
+    )) {
+      _throwIfContextStale(context, '$label-run-event');
+      final observed = event.event;
+      if (observed != null) onEvent(observed);
+      final error = event.error;
+      if (error != null) throw votingRustExceptionFromStepError(error);
+      final finished = event.report;
+      if (finished != null) report = finished;
     }
-    return [
-      ...planned,
-      for (final bundleIndex in uncovered)
-        rust_wire.NextStepView(
-          kind: rust_wire.NextStepKind.delegate,
-          bundleIndex: bundleIndex,
-          proposalId: 0,
-          choice: 0,
-          shareIndex: 0,
-        ),
-    ];
+    if (report == null) {
+      throw StateError('Round run completed without a report.');
+    }
+    final quiescence = report.quiescence;
+    switch (quiescence.kind) {
+      case rust_wire.RoundQuiescenceKind.cancelled:
+        _throwIfContextStale(context, '$label-run-cancelled');
+        throw const _ChainSubmissionCancelled();
+      case rust_wire.RoundQuiescenceKind.chainTerminal:
+      case rust_wire.RoundQuiescenceKind.persistedChainTerminal:
+        // The SDK plans no retry for a rejected or hashless submission, so
+        // this has to surface rather than read as a finished round.
+        throw VotingChainTerminalOutcome(
+          quiescence.step,
+          quiescence.chainOutcome,
+        );
+      case rust_wire.RoundQuiescenceKind.chainRecoveryStalled:
+        throw VotingChainPendingOutcome(
+          quiescence.step,
+          quiescence.chainOutcome,
+        );
+      default:
+        break;
+    }
+    return report;
   }
 
   /// TEMPORARY diagnostic: the network the voting layer binds.
@@ -2826,79 +2630,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       '[zcash] Voting: PIR endpoint mismatch '
       'round=${context.round.roundId} '
       'expected=${error.expectedSnapshotHeight} '
-      'diagnostics=${_pirDiagnosticsLog(error.diagnostics)}',
+      'diagnostics=${pirSnapshotDiagnosticsLog(error.diagnostics)}',
     );
   }
 
-  static String _pirSnapshotMismatchMessage(
-    PirSnapshotNoMatchingEndpoint error,
-  ) {
-    final diagnostics = error.diagnostics;
-    final expected = formatBlockHeight(error.expectedSnapshotHeight);
-    final reportedHeights = diagnostics
-        .map((diagnostic) => diagnostic.reportedHeight)
-        .nonNulls
-        .toSet();
 
-    if (diagnostics.isNotEmpty &&
-        diagnostics.every(
-          (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.behind,
-        ) &&
-        reportedHeights.isNotEmpty) {
-      final highest = formatBlockHeight(
-        reportedHeights.reduce((left, right) => left > right ? left : right),
-      );
-      return 'Voting PIR data is not ready for this voting round yet. Expected '
-          'snapshot block $expected; PIR endpoints report $highest. Retry '
-          'once the PIR service catches up.';
-    }
-
-    if (diagnostics.isNotEmpty &&
-        diagnostics.every(
-          (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.ahead,
-        ) &&
-        reportedHeights.isNotEmpty) {
-      final lowest = formatBlockHeight(
-        reportedHeights.reduce((left, right) => left < right ? left : right),
-      );
-      return 'Configured PIR endpoints are ahead of this voting round snapshot. '
-          'Expected snapshot block $expected; endpoints report $lowest.';
-    }
-
-    if (diagnostics.isNotEmpty &&
-        diagnostics.every(
-          (diagnostic) =>
-              diagnostic.status ==
-              PirSnapshotEndpointStatus.timeoutOrNetworkError,
-        )) {
-      return "Couldn't reach any configured PIR endpoint. Check your network "
-          'connection and retry.';
-    }
-
-    return 'No PIR endpoint matched this voting round snapshot. Expected snapshot '
-        'block $expected. Diagnostics: ${_pirDiagnosticsLog(diagnostics)}.';
-  }
-
-  static String _pirDiagnosticsLog(
-    List<PirSnapshotEndpointDiagnostic> diagnostics,
-  ) {
-    if (diagnostics.isEmpty) return 'none';
-    return diagnostics.map(_pirDiagnosticLog).join('; ');
-  }
-
-  static String _pirDiagnosticLog(PirSnapshotEndpointDiagnostic diagnostic) {
-    final height = diagnostic.reportedHeight == null
-        ? ''
-        : ' height=${diagnostic.reportedHeight}';
-    final statusCode = diagnostic.httpStatusCode == null
-        ? ''
-        : ' http=${diagnostic.httpStatusCode}';
-    final message = diagnostic.message == null || diagnostic.message!.isEmpty
-        ? ''
-        : ' message=${diagnostic.message}';
-    return '${diagnostic.endpoint} status=${diagnostic.status.name}'
-        '$height$statusCode$message';
-  }
 
   Future<void> _enqueue(
     Future<void> Function() action, {
@@ -3160,7 +2896,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } on PirSnapshotNoMatchingEndpoint catch (e) {
       _logPirSnapshotMismatch(context: context, error: e);
       _setError(
-        _pirSnapshotMismatchMessage(e),
+        pirSnapshotMismatchMessage(
+          expectedSnapshotHeight: e.expectedSnapshotHeight,
+          diagnostics: e.diagnostics,
+          includeDiagnostics: true,
+        ),
         cause: e,
         pirDiagnostics: e.diagnostics,
         context: context,
@@ -3971,15 +3711,18 @@ class VotingRoundStepFailure implements Exception, VotingRustExceptionSource {
 }
 
 /// The chain reported a terminal outcome for a step.
+///
+/// Terminal means the submission ended without a confirmation and the SDK
+/// plans no retry for it, so the diagnostic it carries is the only account of
+/// what happened.
 class VotingChainTerminalOutcome implements Exception {
-  const VotingChainTerminalOutcome(this.step, this.outcome);
+  const VotingChainTerminalOutcome(this.step, this.chainOutcome);
 
-  final rust_wire.NextStepView step;
-  final rust_wire.RoundStepOutcomeView outcome;
+  final rust_wire.NextStepView? step;
+  final rust_wire.ChainSubmissionOutcomeView? chainOutcome;
 
   @override
   String toString() {
-    final chainOutcome = outcome.chainOutcome;
     final diagnostic = chainOutcome?.diagnostic?.message;
     if (diagnostic != null) return diagnostic;
     return switch (chainOutcome?.kind) {
@@ -3993,15 +3736,18 @@ class VotingChainTerminalOutcome implements Exception {
 }
 
 /// The chain step is still reconciling after the SDK's recovery pass.
+///
+/// Not terminal: running the round again later may still resolve it, which is
+/// why it is reported separately from a rejection.
 class VotingChainPendingOutcome implements Exception {
-  const VotingChainPendingOutcome(this.step, this.outcome);
+  const VotingChainPendingOutcome(this.step, this.chainOutcome);
 
-  final rust_wire.NextStepView step;
-  final rust_wire.RoundStepOutcomeView outcome;
+  final rust_wire.NextStepView? step;
+  final rust_wire.ChainSubmissionOutcomeView? chainOutcome;
 
   @override
   String toString() =>
-      outcome.chainOutcome?.diagnostic?.message ??
+      chainOutcome?.diagnostic?.message ??
       'Chain submission recovery is still pending.';
 }
 

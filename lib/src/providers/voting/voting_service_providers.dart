@@ -81,23 +81,11 @@ final votingShareTrackingRoundRefreshIntervalProvider = Provider<Duration>((
 });
 
 /// Timeout for PIR `/root` probe requests.
-final votingPirProbeTimeoutProvider = Provider<Duration>((ref) {
-  return const Duration(seconds: 10);
-});
-
 /// Baseline policy for transient voting transport errors.
 final votingTransportRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
   return VotingRetryPolicy.transientHttp(
     name: 'voting-transport',
     delays: const [Duration(milliseconds: 300), Duration(seconds: 1)],
-  );
-});
-
-/// Retry policy for PIR endpoint probes.
-final votingPirProbeRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
-  return VotingRetryPolicy.transientHttp(
-    name: 'voting-pir-probe',
-    delays: const [Duration.zero],
   );
 });
 
@@ -129,59 +117,15 @@ final votingApiClientProvider =
     });
 
 /// Resolves PIR endpoints before proof generation.
+///
+/// Probing and selection both run in Rust, so this provider only exists as
+/// the seam tests replace.
 final votingPirResolverProvider = Provider<PirSnapshotResolver>((ref) {
-  final rust = ref.watch(votingRustApiProvider);
   return PirSnapshotResolver(
-    httpClient: ref.watch(votingHttpClientProvider),
-    selectEndpoint:
-        ({
-          required diagnostics,
-          required expectedSnapshotHeight,
-          required matchIndex,
-        }) {
-          final endpoint = rust.selectPirSnapshotEndpoint(
-            diagnostics: [
-              for (final diagnostic in diagnostics)
-                rust_api.ApiPirSnapshotEndpointDiagnostic(
-                  endpoint: diagnostic.endpoint.toString(),
-                  status: _apiPirSnapshotStatus(diagnostic.status),
-                  reportedHeight: diagnostic.reportedHeight == null
-                      ? null
-                      : BigInt.from(diagnostic.reportedHeight!),
-                  httpStatusCode: diagnostic.httpStatusCode,
-                  message: diagnostic.message,
-                ),
-            ],
-            expectedSnapshotHeight: BigInt.from(expectedSnapshotHeight),
-            matchIndex: BigInt.from(matchIndex),
-          );
-          return endpoint == null ? null : Uri.parse(endpoint);
-        },
-    timeout: ref.watch(votingPirProbeTimeoutProvider),
-    retryPolicy: ref.watch(votingPirProbeRetryPolicyProvider),
+    mapper: ref.watch(votingEndpointMapperProvider),
   );
 });
 
-rust_api.ApiPirSnapshotEndpointStatus _apiPirSnapshotStatus(
-  PirSnapshotEndpointStatus status,
-) {
-  return switch (status) {
-    PirSnapshotEndpointStatus.matched =>
-      rust_api.ApiPirSnapshotEndpointStatus.matched,
-    PirSnapshotEndpointStatus.behind =>
-      rust_api.ApiPirSnapshotEndpointStatus.behind,
-    PirSnapshotEndpointStatus.ahead =>
-      rust_api.ApiPirSnapshotEndpointStatus.ahead,
-    PirSnapshotEndpointStatus.missingHeight =>
-      rust_api.ApiPirSnapshotEndpointStatus.missingHeight,
-    PirSnapshotEndpointStatus.malformedJson =>
-      rust_api.ApiPirSnapshotEndpointStatus.malformedJson,
-    PirSnapshotEndpointStatus.nonSuccessStatus =>
-      rust_api.ApiPirSnapshotEndpointStatus.nonSuccessStatus,
-    PirSnapshotEndpointStatus.timeoutOrNetworkError =>
-      rust_api.ApiPirSnapshotEndpointStatus.timeoutOrNetworkError,
-  };
-}
 
 /// Adapter over durable Rust recovery/share-tracking state.
 final votingRecoveryServiceProvider = Provider<VotingRecoveryService>((ref) {
@@ -433,11 +377,16 @@ abstract interface class VotingRoundSession {
   /// non-empty, so these must be cleared before a cast can be planned.
   Future<rust_voting.RoundPlanView> clearBallotIntents(List<int> proposalIds);
 
-  /// Runs one planned step, streaming progress and then exactly one result.
-  Stream<rust_session.ApiRoundStepEvent> advanceStep({
-    required rust_voting.NextStepView step,
+  /// Drives the round to quiescence, streaming events then exactly one report.
+  ///
+  /// The SDK owns the loop: it plans, dispatches, overlaps independent
+  /// bundles, isolates failures per bundle, and stops at the first state only
+  /// this app can resolve. `host` is a template whose clock the bridge
+  /// restamps per dispatch.
+  Stream<rust_session.ApiRoundRunEvent> runRound({
     required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
+    rust_session.ApiRoundDrivePolicy? policy,
   });
 
   Future<List<rust_delegate.KeystoneSigningRequest>> keystoneSigningRequests(
@@ -461,13 +410,6 @@ abstract interface class VotingRustApi {
     required List<rust_session.ApiProposalRosterEntry> proposals,
     List<int>? storedHotkeySecret,
     required BigInt operationEpoch,
-  });
-
-  /// Selects an exact-height PIR endpoint using the SDK's protocol policy.
-  String? selectPirSnapshotEndpoint({
-    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
-    required BigInt expectedSnapshotHeight,
-    required BigInt matchIndex,
   });
 
   Future<rust_voting.VotingRoundParams> trustedVotingRoundParamsFromConfig({
@@ -773,11 +715,13 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
   ) => _typed(() => inner.clearBallotIntents(proposalIds: proposalIds));
 
   @override
-  Stream<rust_session.ApiRoundStepEvent> advanceStep({
-    required rust_voting.NextStepView step,
+  Stream<rust_session.ApiRoundRunEvent> runRound({
     required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
-  }) => _typedStream(inner.advanceStep(step: step, host: host, signer: signer));
+    rust_session.ApiRoundDrivePolicy? policy,
+  }) => _typedStream(
+    inner.runRound(host: host, signer: signer, policy: policy),
+  );
 
   @override
   Future<List<rust_delegate.KeystoneSigningRequest>> keystoneSigningRequests(
@@ -848,21 +792,6 @@ class FrbVotingRustApi implements VotingRustApi {
               : Uint8List.fromList(storedHotkeySecret),
           operationEpoch: operationEpoch,
         ),
-      ),
-    );
-  }
-
-  @override
-  String? selectPirSnapshotEndpoint({
-    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
-    required BigInt expectedSnapshotHeight,
-    required BigInt matchIndex,
-  }) {
-    return _typedSync(
-      () => rust_api.selectPirSnapshotEndpoint(
-        diagnostics: diagnostics,
-        expectedSnapshotHeight: expectedSnapshotHeight,
-        matchIndex: matchIndex,
       ),
     );
   }

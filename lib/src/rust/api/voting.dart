@@ -10,21 +10,27 @@ import '../third_party/zcash_voting/share_policy.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `internal`, `invalid_input`, `is_cancelled`, `round_inputs`, `routed_transport`, `share_tracking_pass_for`, `view`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `internal`, `invalid_input`, `is_cancelled`, `pir_snapshot_failure`, `pir_snapshot_height_field`, `pir_snapshot_probe_attempt`, `pir_snapshot_root_url`, `probe_pir_snapshot_endpoint`, `round_inputs`, `routed_transport`, `share_tracking_pass_for`, `view`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PirSnapshotProbeAttempt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
 
-/// Select an exact-height PIR endpoint using the SDK's snapshot policy.
+/// Probe every configured PIR endpoint and select one at the round's height.
 ///
-/// Dart owns probing and diagnostics because it owns the routed HTTP client.
-/// The protocol decision about which diagnostics are eligible remains here.
-String? selectPirSnapshotEndpoint({
-  required List<ApiPirSnapshotEndpointDiagnostic> diagnostics,
+/// Probing runs here rather than in Dart so the wallet has one PIR resolution
+/// path instead of a probe on one side of the bridge and the selection policy
+/// on the other. Traffic uses the routed transport, so the probe follows the
+/// same network route as the rest of the wallet's foreground voting traffic.
+///
+/// Returns `endpoint: None` when endpoints were probed but none served the
+/// round's snapshot height; that is a normal, recoverable outcome the caller
+/// reports from the diagnostics. An empty `endpoints` list is an error,
+/// because it means the round is misconfigured rather than the fleet behind.
+Future<ApiPirSnapshotResolution> resolvePirSnapshotEndpoint({
+  required List<String> endpoints,
   required BigInt expectedSnapshotHeight,
-  required BigInt matchIndex,
-}) => RustLib.instance.api.crateApiVotingSelectPirSnapshotEndpoint(
-  diagnostics: diagnostics,
+}) => RustLib.instance.api.crateApiVotingResolvePirSnapshotEndpoint(
+  endpoints: endpoints,
   expectedSnapshotHeight: expectedSnapshotHeight,
-  matchIndex: matchIndex,
 );
 
 /// Return the shared last-moment helper-share buffer, in Unix seconds.
@@ -794,6 +800,31 @@ enum ApiPirSnapshotEndpointStatus {
   malformedJson,
   nonSuccessStatus,
   timeoutOrNetworkError,
+}
+
+/// Selected PIR endpoint plus a diagnostic for every endpoint probed.
+///
+/// The full diagnostic set is part of the result, not debug output: the
+/// delegation path builds its PIR failover list from the endpoints that
+/// matched, and the status screen explains a failed resolution from the
+/// heights the endpoints reported.
+class ApiPirSnapshotResolution {
+  /// `None` when every endpoint was probed and none matched the round.
+  final String? endpoint;
+  final List<ApiPirSnapshotEndpointDiagnostic> diagnostics;
+
+  const ApiPirSnapshotResolution({this.endpoint, required this.diagnostics});
+
+  @override
+  int get hashCode => endpoint.hashCode ^ diagnostics.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiPirSnapshotResolution &&
+          runtimeType == other.runtimeType &&
+          endpoint == other.endpoint &&
+          diagnostics == other.diagnostics;
 }
 
 /// One share that reached a new helper during a tracking pass.

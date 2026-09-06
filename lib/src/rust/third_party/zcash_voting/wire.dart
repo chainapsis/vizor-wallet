@@ -7,8 +7,8 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `RoundStepOutcomeView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
 
 /// How a confirmation was established.
 enum ChainConfirmationSourceView { hash, tree }
@@ -390,6 +390,110 @@ class NextStepView {
           shareIndex == other.shareIndex;
 }
 
+/// A terminal chain outcome bound to the step that produced it.
+class RoundChainOutcomeView {
+  final NextStepView step;
+  final ChainSubmissionOutcomeView outcome;
+
+  const RoundChainOutcomeView({required this.step, required this.outcome});
+
+  @override
+  int get hashCode => step.hashCode ^ outcome.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundChainOutcomeView &&
+          runtimeType == other.runtimeType &&
+          step == other.step &&
+          outcome == other.outcome;
+}
+
+/// Discriminator of a [`RoundDriveEventView`].
+enum RoundDriveEventKind {
+  planRefreshed,
+  stepSelected,
+  stepProgress,
+  stepFinished,
+  stepFailed,
+  awaitingRepoll,
+  bundleSkipped,
+}
+
+/// One observation from a run, flattened for host bindings.
+///
+/// Every variant that describes work names its step: a run overlaps bundles,
+/// and a bare progress record carries no subject of its own, so a host reading
+/// one stream would otherwise misattribute it.
+class RoundDriveEventView {
+  final RoundDriveEventKind kind;
+
+  /// The step every work-describing variant belongs to.
+  final NextStepView? step;
+
+  /// `PlanRefreshed`: the plan the driver selects from, and its tally.
+  final RoundPlanView? plan;
+  final RoundWorkTallyView? tally;
+
+  /// `StepProgress`: progress from inside the running step.
+  final RoundStepProgressView? progress;
+
+  /// `StepFinished`: the executor's own answer for the step.
+  final RoundStepDispositionView? disposition;
+
+  /// `StepFailed`: why it failed.
+  final RoundStepFailureKindView? failureKind;
+  final String? message;
+
+  /// `AwaitingRepoll`: how long the driver waits before polling again.
+  final double? delaySeconds;
+
+  /// `BundleSkipped`: the bundle isolated for the rest of the run.
+  final int? bundleIndex;
+
+  const RoundDriveEventView({
+    required this.kind,
+    this.step,
+    this.plan,
+    this.tally,
+    this.progress,
+    this.disposition,
+    this.failureKind,
+    this.message,
+    this.delaySeconds,
+    this.bundleIndex,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      step.hashCode ^
+      plan.hashCode ^
+      tally.hashCode ^
+      progress.hashCode ^
+      disposition.hashCode ^
+      failureKind.hashCode ^
+      message.hashCode ^
+      delaySeconds.hashCode ^
+      bundleIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundDriveEventView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          step == other.step &&
+          plan == other.plan &&
+          tally == other.tally &&
+          progress == other.progress &&
+          disposition == other.disposition &&
+          failureKind == other.failureKind &&
+          message == other.message &&
+          delaySeconds == other.delaySeconds &&
+          bundleIndex == other.bundleIndex;
+}
+
 /// High-level work area a wallet should show or resume for a round.
 enum RoundPlanActionKind { idle, delegate, vote, submitShares, done }
 
@@ -541,6 +645,139 @@ class RoundPlanView {
           allDecided == other.allDecided;
 }
 
+/// Discriminator of a [`RoundQuiescenceView`].
+enum RoundQuiescenceKind {
+  noWorkLeft,
+  needsBundleSetup,
+  persistedChainTerminal,
+  needsBallot,
+  needsDelegationSignatures,
+  backgroundShareWorkOnly,
+  cancelled,
+  chainTerminal,
+  chainRecoveryStalled,
+  failures,
+  passBudgetExhausted,
+}
+
+/// Why one round run stopped, flattened for host bindings.
+///
+/// Each field is populated only for the kinds that carry it; a host switches
+/// on `kind` and reads what that variant names.
+class RoundQuiescenceView {
+  final RoundQuiescenceKind kind;
+
+  /// `NeedsBallot`: proposals with no terminal decision yet.
+  final Uint32List openProposals;
+
+  /// `NeedsBallot`: durable intents outside the roster the host must clear.
+  final Uint32List unrosteredIntents;
+
+  /// `NeedsDelegationSignatures`: every bundle still awaiting a signature.
+  final Uint32List bundles;
+
+  /// `BackgroundShareWorkOnly`: the shares the host's timer finishes.
+  final List<ShareKeyView> shares;
+
+  /// `ChainTerminal` and `ChainRecoveryStalled`: the step and its outcome.
+  final NextStepView? step;
+  final ChainSubmissionOutcomeView? chainOutcome;
+
+  /// `PassBudgetExhausted`: the work the run left behind.
+  final List<NextStepView> remaining;
+
+  const RoundQuiescenceView({
+    required this.kind,
+    required this.openProposals,
+    required this.unrosteredIntents,
+    required this.bundles,
+    required this.shares,
+    this.step,
+    this.chainOutcome,
+    required this.remaining,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      openProposals.hashCode ^
+      unrosteredIntents.hashCode ^
+      bundles.hashCode ^
+      shares.hashCode ^
+      step.hashCode ^
+      chainOutcome.hashCode ^
+      remaining.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundQuiescenceView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          openProposals == other.openProposals &&
+          unrosteredIntents == other.unrosteredIntents &&
+          bundles == other.bundles &&
+          shares == other.shares &&
+          step == other.step &&
+          chainOutcome == other.chainOutcome &&
+          remaining == other.remaining;
+}
+
+/// Everything one round run did.
+class RoundRunReportView {
+  final RoundQuiescenceView quiescence;
+
+  /// The last plan the run read, absent only when it stopped before one.
+  final RoundPlanView? plan;
+  final RoundWorkTallyView tally;
+
+  /// Failures in dispatch order. A non-empty list does not imply a
+  /// `Failures` quiescence: a run can isolate one bundle and finish the rest.
+  final List<RoundStepFailureRecordView> failures;
+  final Uint32List skippedBundles;
+  final List<RoundChainOutcomeView> chainOutcomes;
+  final List<ShareBatchDeliveryReportView> shareDeliveries;
+
+  /// Delegations the run signed, in the order their steps completed.
+  final List<SignedDelegationPayloadView> delegations;
+
+  const RoundRunReportView({
+    required this.quiescence,
+    this.plan,
+    required this.tally,
+    required this.failures,
+    required this.skippedBundles,
+    required this.chainOutcomes,
+    required this.shareDeliveries,
+    required this.delegations,
+  });
+
+  @override
+  int get hashCode =>
+      quiescence.hashCode ^
+      plan.hashCode ^
+      tally.hashCode ^
+      failures.hashCode ^
+      skippedBundles.hashCode ^
+      chainOutcomes.hashCode ^
+      shareDeliveries.hashCode ^
+      delegations.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundRunReportView &&
+          runtimeType == other.runtimeType &&
+          quiescence == other.quiescence &&
+          plan == other.plan &&
+          tally == other.tally &&
+          failures == other.failures &&
+          skippedBundles == other.skippedBundles &&
+          chainOutcomes == other.chainOutcomes &&
+          shareDeliveries == other.shareDeliveries &&
+          delegations == other.delegations;
+}
+
 /// What one round step call accomplished.
 enum RoundStepDispositionView {
   noWork,
@@ -565,6 +802,33 @@ enum RoundStepFailureKindView {
   helperDeliveryIncomplete,
   voteEnded,
   delegationTargetMismatch,
+}
+
+/// One failure a run isolated, with the bundle it skipped.
+class RoundStepFailureRecordView {
+  final NextStepView? step;
+
+  /// The bundle skipped for the rest of the run, when the failure named one.
+  final int? bundleIndex;
+  final RoundStepFailureView failure;
+
+  const RoundStepFailureRecordView({
+    this.step,
+    this.bundleIndex,
+    required this.failure,
+  });
+
+  @override
+  int get hashCode => step.hashCode ^ bundleIndex.hashCode ^ failure.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundStepFailureRecordView &&
+          runtimeType == other.runtimeType &&
+          step == other.step &&
+          bundleIndex == other.bundleIndex &&
+          failure == other.failure;
 }
 
 /// Failure of one round step with the refreshed plan when it could be read.
@@ -612,46 +876,6 @@ class RoundStepFailureView {
           message == other.message &&
           plan == other.plan &&
           shareDeliveries == other.shareDeliveries;
-}
-
-/// Outcome of one round step.
-class RoundStepOutcomeView {
-  final NextStepView? step;
-  final RoundStepDispositionView disposition;
-  final ChainSubmissionOutcomeView? chainOutcome;
-  final List<ShareBatchDeliveryReportView> shareDeliveries;
-  final SignedDelegationPayloadView? delegation;
-  final RoundPlanView plan;
-
-  const RoundStepOutcomeView({
-    this.step,
-    required this.disposition,
-    this.chainOutcome,
-    required this.shareDeliveries,
-    this.delegation,
-    required this.plan,
-  });
-
-  @override
-  int get hashCode =>
-      step.hashCode ^
-      disposition.hashCode ^
-      chainOutcome.hashCode ^
-      shareDeliveries.hashCode ^
-      delegation.hashCode ^
-      plan.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is RoundStepOutcomeView &&
-          runtimeType == other.runtimeType &&
-          step == other.step &&
-          disposition == other.disposition &&
-          chainOutcome == other.chainOutcome &&
-          shareDeliveries == other.shareDeliveries &&
-          delegation == other.delegation &&
-          plan == other.plan;
 }
 
 /// Discriminator of a [`RoundStepProgressView`].
@@ -740,6 +964,37 @@ class RoundStepProgressView {
           shareDelivery == other.shareDelivery &&
           share == other.share &&
           shareConfirmed == other.shareConfirmed;
+}
+
+/// Ballot progress of one run, measured against what it started owing.
+class RoundWorkTallyView {
+  final int completedProposals;
+  final int totalProposals;
+  final int remainingObligations;
+
+  const RoundWorkTallyView({
+    required this.completedProposals,
+    required this.totalProposals,
+    required this.remainingObligations,
+  });
+
+  static Future<RoundWorkTallyView> default_() =>
+      RustLib.instance.api.zcashVotingWireRoundWorkTallyViewDefault();
+
+  @override
+  int get hashCode =>
+      completedProposals.hashCode ^
+      totalProposals.hashCode ^
+      remainingObligations.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundWorkTallyView &&
+          runtimeType == other.runtimeType &&
+          completedProposals == other.completedProposals &&
+          totalProposals == other.totalProposals &&
+          remainingObligations == other.remainingObligations;
 }
 
 /// Result of one initial helper delivery for a confirmed vote.

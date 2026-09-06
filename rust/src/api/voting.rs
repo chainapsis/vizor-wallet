@@ -44,20 +44,21 @@ pub struct ApiPirSnapshotEndpointDiagnostic {
     pub message: Option<String>,
 }
 
-impl From<ApiPirSnapshotEndpointDiagnostic>
-    for zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic
+
+impl From<zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic>
+    for ApiPirSnapshotEndpointDiagnostic
 {
-    fn from(diagnostic: ApiPirSnapshotEndpointDiagnostic) -> Self {
+    fn from(diagnostic: zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic) -> Self {
         use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as CoreStatus;
         let status = match diagnostic.status {
-            ApiPirSnapshotEndpointStatus::Matched => CoreStatus::Matched,
-            ApiPirSnapshotEndpointStatus::Behind => CoreStatus::Behind,
-            ApiPirSnapshotEndpointStatus::Ahead => CoreStatus::Ahead,
-            ApiPirSnapshotEndpointStatus::MissingHeight => CoreStatus::MissingHeight,
-            ApiPirSnapshotEndpointStatus::MalformedJson => CoreStatus::MalformedJson,
-            ApiPirSnapshotEndpointStatus::NonSuccessStatus => CoreStatus::NonSuccessStatus,
-            ApiPirSnapshotEndpointStatus::TimeoutOrNetworkError => {
-                CoreStatus::TimeoutOrNetworkError
+            CoreStatus::Matched => ApiPirSnapshotEndpointStatus::Matched,
+            CoreStatus::Behind => ApiPirSnapshotEndpointStatus::Behind,
+            CoreStatus::Ahead => ApiPirSnapshotEndpointStatus::Ahead,
+            CoreStatus::MissingHeight => ApiPirSnapshotEndpointStatus::MissingHeight,
+            CoreStatus::MalformedJson => ApiPirSnapshotEndpointStatus::MalformedJson,
+            CoreStatus::NonSuccessStatus => ApiPirSnapshotEndpointStatus::NonSuccessStatus,
+            CoreStatus::TimeoutOrNetworkError => {
+                ApiPirSnapshotEndpointStatus::TimeoutOrNetworkError
             }
         };
         Self {
@@ -70,33 +71,278 @@ impl From<ApiPirSnapshotEndpointDiagnostic>
     }
 }
 
-/// Select an exact-height PIR endpoint using the SDK's snapshot policy.
+/// Selected PIR endpoint plus a diagnostic for every endpoint probed.
 ///
-/// Dart owns probing and diagnostics because it owns the routed HTTP client.
-/// The protocol decision about which diagnostics are eligible remains here.
-#[flutter_rust_bridge::frb(sync)]
-pub fn select_pir_snapshot_endpoint(
-    diagnostics: Vec<ApiPirSnapshotEndpointDiagnostic>,
+/// The full diagnostic set is part of the result, not debug output: the
+/// delegation path builds its PIR failover list from the endpoints that
+/// matched, and the status screen explains a failed resolution from the
+/// heights the endpoints reported.
+#[derive(Debug)]
+pub struct ApiPirSnapshotResolution {
+    /// `None` when every endpoint was probed and none matched the round.
+    pub endpoint: Option<String>,
+    pub diagnostics: Vec<ApiPirSnapshotEndpointDiagnostic>,
+}
+
+/// Probe every configured PIR endpoint and select one at the round's height.
+///
+/// Probing runs here rather than in Dart so the wallet has one PIR resolution
+/// path instead of a probe on one side of the bridge and the selection policy
+/// on the other. Traffic uses the routed transport, so the probe follows the
+/// same network route as the rest of the wallet's foreground voting traffic.
+///
+/// Returns `endpoint: None` when endpoints were probed but none served the
+/// round's snapshot height; that is a normal, recoverable outcome the caller
+/// reports from the diagnostics. An empty `endpoints` list is an error,
+/// because it means the round is misconfigured rather than the fleet behind.
+pub async fn resolve_pir_snapshot_endpoint(
+    endpoints: Vec<String>,
     expected_snapshot_height: u64,
-    match_index: u64,
-) -> Result<Option<String>, VotingErrorView> {
-    let diagnostics = diagnostics.into_iter().map(Into::into).collect::<Vec<_>>();
+) -> Result<ApiPirSnapshotResolution, VotingErrorView> {
+    if endpoints.is_empty() {
+        return Err(view(VotingError::InvalidInput {
+            message: "no PIR endpoints configured".to_string(),
+        }));
+    }
+
+    let transport = routed_transport();
+    let diagnostics = futures::future::join_all(
+        endpoints
+            .iter()
+            .map(|endpoint| {
+                probe_pir_snapshot_endpoint(
+                    transport.as_ref(),
+                    endpoint,
+                    expected_snapshot_height,
+                )
+            }),
+    )
+    .await;
+
     if zcash_voting::pir_snapshot::matching_pir_snapshot_endpoints(
         &diagnostics,
         expected_snapshot_height,
     )
     .is_empty()
     {
-        return Ok(None);
+        return Ok(ApiPirSnapshotResolution {
+            endpoint: None,
+            diagnostics: diagnostics.into_iter().map(Into::into).collect(),
+        });
     }
-    zcash_voting::pir_snapshot::select_pir_snapshot_endpoint(
+
+    // The SDK keeps selection deterministic and leaves the randomness to its
+    // caller, so the spread across equally-valid endpoints is chosen here.
+    let match_index = u64::from_le_bytes(rand::random::<[u8; 8]>());
+    let resolution = zcash_voting::pir_snapshot::select_pir_snapshot_endpoint(
         &diagnostics,
         expected_snapshot_height,
         match_index,
     )
-    .map(|resolution| Some(resolution.endpoint))
-    .map_err(view)
+    .map_err(view)?;
+    Ok(ApiPirSnapshotResolution {
+        endpoint: Some(resolution.endpoint),
+        diagnostics: resolution.diagnostics.into_iter().map(Into::into).collect(),
+    })
 }
+
+/// Probe one endpoint's `/root` and normalize the outcome into a diagnostic.
+///
+/// Retries once immediately on a failure another attempt could clear, matching
+/// the probe policy this replaced. Every failure becomes a diagnostic rather
+/// than an error: one unreachable endpoint must not fail a resolution another
+/// endpoint can satisfy.
+async fn probe_pir_snapshot_endpoint<T: zcash_voting::pir::Transport + ?Sized>(
+    transport: &T,
+    endpoint: &str,
+    expected_snapshot_height: u64,
+) -> zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic {
+    let url = pir_snapshot_root_url(endpoint);
+    let mut attempt = pir_snapshot_probe_attempt(transport, &url, endpoint, expected_snapshot_height).await;
+    if attempt.retryable {
+        attempt = pir_snapshot_probe_attempt(transport, &url, endpoint, expected_snapshot_height).await;
+    }
+    attempt.diagnostic
+}
+
+struct PirSnapshotProbeAttempt {
+    diagnostic: zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic,
+    retryable: bool,
+}
+
+async fn pir_snapshot_probe_attempt<T: zcash_voting::pir::Transport + ?Sized>(
+    transport: &T,
+    url: &str,
+    endpoint: &str,
+    expected_snapshot_height: u64,
+) -> PirSnapshotProbeAttempt {
+    use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+    // The transport's own deadline covers a PIR query, which is a much larger
+    // request than this probe; hold the probe to the wallet's own budget so a
+    // single dead endpoint cannot stall resolution behind it.
+    let response = match tokio::time::timeout(PIR_SNAPSHOT_PROBE_TIMEOUT, transport.get(url)).await
+    {
+        Err(_) => {
+            return PirSnapshotProbeAttempt {
+                diagnostic: pir_snapshot_failure(
+                    endpoint,
+                    Status::TimeoutOrNetworkError,
+                    None,
+                    Some(format!(
+                        "no response within {}s",
+                        PIR_SNAPSHOT_PROBE_TIMEOUT.as_secs()
+                    )),
+                ),
+                retryable: true,
+            };
+        }
+        Ok(Err(error)) => {
+            let failure = zcash_voting::PirHttpFailure::from_error_chain(&error);
+            let http_status = failure.and_then(|failure| failure.http_status);
+            let status = match failure.map(|failure| failure.phase) {
+                Some(zcash_voting::PirHttpFailurePhase::Status) => Status::NonSuccessStatus,
+                _ => Status::TimeoutOrNetworkError,
+            };
+            return PirSnapshotProbeAttempt {
+                diagnostic: pir_snapshot_failure(
+                    endpoint,
+                    status,
+                    http_status,
+                    Some(format!("{error:#}")),
+                ),
+                retryable: failure.map(|failure| failure.retryable()).unwrap_or(true),
+            };
+        }
+        Ok(Ok(response)) => response,
+    };
+
+    if response.status != 200 {
+        return PirSnapshotProbeAttempt {
+            diagnostic: pir_snapshot_failure(
+                endpoint,
+                Status::NonSuccessStatus,
+                Some(response.status),
+                Some(String::from_utf8_lossy(&response.body).into_owned()),
+            ),
+            retryable: matches!(response.status, 408 | 429 | 500..=599),
+        };
+    }
+
+    let root = match serde_json::from_slice::<serde_json::Value>(&response.body) {
+        Ok(serde_json::Value::Object(root)) => root,
+        Ok(_) => {
+            return PirSnapshotProbeAttempt {
+                diagnostic: pir_snapshot_failure(
+                    endpoint,
+                    Status::MalformedJson,
+                    None,
+                    Some("root response is not a JSON object".to_string()),
+                ),
+                retryable: false,
+            };
+        }
+        Err(error) => {
+            return PirSnapshotProbeAttempt {
+                diagnostic: pir_snapshot_failure(
+                    endpoint,
+                    Status::MalformedJson,
+                    None,
+                    Some(error.to_string()),
+                ),
+                retryable: false,
+            };
+        }
+    };
+
+    // An absent height is a different signal from a corrupt one: the endpoint
+    // answered, it just does not publish a snapshot the round can use.
+    let Some(height) = root.get("height") else {
+        return PirSnapshotProbeAttempt {
+            diagnostic: pir_snapshot_failure(
+                endpoint,
+                Status::MissingHeight,
+                None,
+                Some("root response did not include height".to_string()),
+            ),
+            retryable: false,
+        };
+    };
+
+    match pir_snapshot_height_field(height) {
+        Some(height) => PirSnapshotProbeAttempt {
+            diagnostic: zcash_voting::pir_snapshot::classify_pir_snapshot_height(
+                endpoint,
+                expected_snapshot_height,
+                Some(height),
+            ),
+            retryable: false,
+        },
+        None => PirSnapshotProbeAttempt {
+            diagnostic: pir_snapshot_failure(
+                endpoint,
+                Status::MalformedJson,
+                None,
+                Some("root field \"height\" is not a valid u64 height".to_string()),
+            ),
+            retryable: false,
+        },
+    }
+}
+
+/// Deadline for one `/root` probe.
+const PIR_SNAPSHOT_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Reads `/root.height`, which endpoints publish as a number or as a decimal
+/// string. Returns `None` for anything else, including a value out of u64
+/// range.
+fn pir_snapshot_height_field(value: &serde_json::Value) -> Option<u64> {
+    match value {
+        serde_json::Value::Number(number) => number.as_u64(),
+        serde_json::Value::String(text) => {
+            if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+                return None;
+            }
+            text.parse::<u64>().ok()
+        }
+        _ => None,
+    }
+}
+
+/// Appends `root` to an endpoint URL, keeping any base path it already has.
+///
+/// Built structurally rather than by concatenation so an endpoint carrying a
+/// query string still probes `<path>/root?<query>` instead of a URL with the
+/// segment buried in the query.
+fn pir_snapshot_root_url(endpoint: &str) -> String {
+    let Ok(mut url) = url::Url::parse(endpoint) else {
+        return format!("{}/root", endpoint.trim_end_matches('/'));
+    };
+    match url.path_segments_mut() {
+        Ok(mut segments) => {
+            segments.pop_if_empty().push("root");
+        }
+        // Not a hierarchical URL, so it has no path to extend.
+        Err(_) => return format!("{}/root", endpoint.trim_end_matches('/')),
+    }
+    url.to_string()
+}
+
+fn pir_snapshot_failure(
+    endpoint: &str,
+    status: zcash_voting::pir_snapshot::PirSnapshotEndpointStatus,
+    http_status_code: Option<u16>,
+    message: Option<String>,
+) -> zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic {
+    zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic {
+        endpoint: endpoint.to_string(),
+        status,
+        reported_height: None,
+        http_status_code,
+        message,
+    }
+}
+
 
 /// Prefix for coarse cast-vote stage timings (`log show` subsystem `frb_user`).
 const VOTING_VOTE_LOG: &str = "[VOTING_VOTE]";
@@ -1338,6 +1584,307 @@ pub fn resolve_voting_config_from_attempts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Transport that answers `/root` from a script, so the probe path can be
+    /// exercised end to end without a network.
+    struct ScriptedPirTransport {
+        responses: std::collections::HashMap<String, Vec<PirProbeAnswer>>,
+        calls: Arc<Mutex<Vec<String>>>,
+    }
+
+    #[derive(Clone)]
+    enum PirProbeAnswer {
+        Body(u16, String),
+        Failure(zcash_voting::PirHttpFailurePhase, Option<u16>),
+        Hang,
+    }
+
+    impl ScriptedPirTransport {
+        fn new(responses: &[(&str, Vec<PirProbeAnswer>)]) -> Self {
+            Self {
+                responses: responses
+                    .iter()
+                    .map(|(url, answers)| ((*url).to_string(), answers.clone()))
+                    .collect(),
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+
+        fn call_count(&self, url: &str) -> usize {
+            self.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|called| called.as_str() == url)
+                .count()
+        }
+    }
+
+    impl zcash_voting::pir::Transport for ScriptedPirTransport {
+        fn get<'a>(&'a self, url: &'a str) -> zcash_voting::pir::TransportFuture<'a> {
+            let attempt = self.call_count(url);
+            self.calls.lock().unwrap().push(url.to_string());
+            let answer = self
+                .responses
+                .get(url)
+                .map(|answers| answers[attempt.min(answers.len() - 1)].clone());
+            Box::pin(async move {
+                match answer {
+                    Some(PirProbeAnswer::Body(status, body)) => {
+                        Ok(zcash_voting::pir::TransportResponse {
+                            status,
+                            headers: Vec::new(),
+                            body: body.into_bytes(),
+                        })
+                    }
+                    Some(PirProbeAnswer::Failure(phase, http_status)) => {
+                        Err(anyhow::Error::new(zcash_voting::PirHttpFailure {
+                            phase,
+                            http_status,
+                        }))
+                    }
+                    Some(PirProbeAnswer::Hang) => {
+                        // Outlives the probe deadline without resolving.
+                        std::future::pending::<()>().await;
+                        unreachable!()
+                    }
+                    None => panic!("unscripted PIR probe for {url}"),
+                }
+            })
+        }
+
+        fn post<'a>(&'a self, _url: &'a str, _body: Vec<u8>) -> zcash_voting::pir::TransportFuture<'a> {
+            unimplemented!("PIR snapshot probing only issues GETs")
+        }
+    }
+
+    fn root_body(height: &str) -> PirProbeAnswer {
+        PirProbeAnswer::Body(200, format!("{{\"height\": {height}}}"))
+    }
+
+    async fn probe(answer: PirProbeAnswer, expected_snapshot_height: u64) -> (
+        zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic,
+        ScriptedPirTransport,
+    ) {
+        let transport = ScriptedPirTransport::new(&[("https://pir.example/root", vec![answer])]);
+        let diagnostic = probe_pir_snapshot_endpoint(
+            &transport,
+            "https://pir.example",
+            expected_snapshot_height,
+        )
+        .await;
+        (diagnostic, transport)
+    }
+
+    #[tokio::test]
+    async fn probing_classifies_a_served_height_against_the_round() {
+        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+        for (served, expected, status) in [
+            ("123", 123, Status::Matched),
+            ("120", 123, Status::Behind),
+            ("125", 123, Status::Ahead),
+        ] {
+            let (diagnostic, _) = probe(root_body(served), expected).await;
+            assert_eq!(diagnostic.status, status, "served {served}");
+            assert_eq!(diagnostic.reported_height, Some(served.parse().unwrap()));
+            assert_eq!(diagnostic.endpoint, "https://pir.example");
+        }
+    }
+
+    #[tokio::test]
+    async fn probing_accepts_a_decimal_string_height_and_ignores_other_fields() {
+        // Endpoints publish the height both ways and carry identity fields the
+        // wallet does not read; neither may turn a healthy root into a miss.
+        let (diagnostic, _) = probe(
+            PirProbeAnswer::Body(
+                200,
+                r#"{"zcash_network": "main", "height": "123", "pir_depth": 4}"#.to_string(),
+            ),
+            123,
+        )
+        .await;
+        assert!(diagnostic.matched_at_height(123));
+    }
+
+    #[tokio::test]
+    async fn probing_separates_an_absent_height_from_a_corrupt_one() {
+        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+        let (missing, _) = probe(
+            PirProbeAnswer::Body(200, r#"{"zcash_network": "main"}"#.to_string()),
+            123,
+        )
+        .await;
+        assert_eq!(missing.status, Status::MissingHeight);
+
+        for body in [r#"{"height": "twelve"}"#, r#"{"height": -1}"#, "not json", "[]"] {
+            let (diagnostic, _) = probe(PirProbeAnswer::Body(200, body.to_string()), 123).await;
+            assert_eq!(diagnostic.status, Status::MalformedJson, "{body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn probing_reports_a_non_success_status_with_its_code() {
+        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+        let (diagnostic, _) = probe(PirProbeAnswer::Body(404, "gone".to_string()), 123).await;
+        assert_eq!(diagnostic.status, Status::NonSuccessStatus);
+        assert_eq!(diagnostic.http_status_code, Some(404));
+    }
+
+    #[tokio::test]
+    async fn probing_retries_once_when_another_attempt_could_clear_it() {
+        // A connect failure may be transient; a 404 is the endpoint's answer.
+        let transport = ScriptedPirTransport::new(&[(
+            "https://pir.example/root",
+            vec![
+                PirProbeAnswer::Failure(zcash_voting::PirHttpFailurePhase::Connect, None),
+                root_body("123"),
+            ],
+        )]);
+        let diagnostic =
+            probe_pir_snapshot_endpoint(&transport, "https://pir.example", 123).await;
+        assert!(diagnostic.matched_at_height(123));
+        assert_eq!(transport.call_count("https://pir.example/root"), 2);
+
+        let (_, settled) = probe(PirProbeAnswer::Body(404, String::new()), 123).await;
+        assert_eq!(settled.call_count("https://pir.example/root"), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probing_gives_up_on_an_endpoint_that_never_answers() {
+        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+        // Without its own deadline the probe would inherit the transport's much
+        // larger PIR budget and stall resolution behind one dead endpoint.
+        let (diagnostic, transport) = probe(PirProbeAnswer::Hang, 123).await;
+        assert_eq!(diagnostic.status, Status::TimeoutOrNetworkError);
+        // Timed out twice: the first pass is retryable.
+        assert_eq!(transport.call_count("https://pir.example/root"), 2);
+    }
+
+    #[tokio::test]
+    async fn resolving_selects_only_an_endpoint_serving_the_round_height() {
+        let transport = ScriptedPirTransport::new(&[
+            ("https://behind.example/root", vec![root_body("120")]),
+            ("https://match.example/root", vec![root_body("123")]),
+            (
+                "https://down.example/root",
+                vec![PirProbeAnswer::Failure(
+                    zcash_voting::PirHttpFailurePhase::Connect,
+                    None,
+                )],
+            ),
+        ]);
+        let diagnostics = futures::future::join_all(
+            [
+                "https://behind.example",
+                "https://match.example",
+                "https://down.example",
+            ]
+            .iter()
+            .map(|endpoint| probe_pir_snapshot_endpoint(&transport, endpoint, 123)),
+        )
+        .await;
+
+        let resolution =
+            zcash_voting::pir_snapshot::select_pir_snapshot_endpoint(&diagnostics, 123, 0)
+                .expect("one endpoint serves the round");
+        assert_eq!(resolution.endpoint, "https://match.example");
+        // Every probe is reported, because the caller builds its PIR failover
+        // list and its error message from the full set.
+        assert_eq!(resolution.diagnostics.len(), 3);
+    }
+
+    #[test]
+    fn reads_root_height_as_number_or_decimal_string() {
+        // Endpoints publish the height both ways, so both must resolve to the
+        // same round rather than one of them reading as a corrupt root.
+        assert_eq!(
+            pir_snapshot_height_field(&serde_json::json!(123)),
+            Some(123)
+        );
+        assert_eq!(
+            pir_snapshot_height_field(&serde_json::json!("123")),
+            Some(123)
+        );
+        assert_eq!(
+            pir_snapshot_height_field(&serde_json::json!(u64::MAX.to_string())),
+            Some(u64::MAX)
+        );
+    }
+
+    #[test]
+    fn rejects_root_heights_outside_the_unsigned_range() {
+        for value in [
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+            serde_json::json!("12a"),
+            serde_json::json!(""),
+            serde_json::json!("18446744073709551616"),
+            serde_json::json!(null),
+            serde_json::json!({}),
+        ] {
+            assert_eq!(pir_snapshot_height_field(&value), None, "{value}");
+        }
+    }
+
+    #[test]
+    fn root_url_keeps_any_base_path_the_endpoint_carries() {
+        assert_eq!(
+            pir_snapshot_root_url("https://pir.example"),
+            "https://pir.example/root"
+        );
+        assert_eq!(
+            pir_snapshot_root_url("https://pir.example/"),
+            "https://pir.example/root"
+        );
+        assert_eq!(
+            pir_snapshot_root_url("https://example.test/pir/"),
+            "https://example.test/pir/root"
+        );
+        assert_eq!(
+            pir_snapshot_root_url("https://example.test/pir"),
+            "https://example.test/pir/root"
+        );
+        // A query belongs to the request, not to the path being extended.
+        assert_eq!(
+            pir_snapshot_root_url("https://example.test/pir?token=abc"),
+            "https://example.test/pir/root?token=abc"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolving_without_endpoints_is_an_error_not_an_empty_result() {
+        // A round with no configured endpoints is misconfigured; that must not
+        // read the same as a fleet that answered and is merely behind.
+        let error = resolve_pir_snapshot_endpoint(Vec::new(), 123)
+            .await
+            .expect_err("empty endpoint list must fail");
+        assert!(
+            error.message.contains("no PIR endpoints configured"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn classified_diagnostics_survive_the_bridge_conversion() {
+        // The delegation failover list and the status screen both read these
+        // back on the Dart side, so the crossing must not lose the status or
+        // the height the endpoint reported.
+        let core = zcash_voting::pir_snapshot::classify_pir_snapshot_height(
+            "https://pir.example",
+            123,
+            Some(120),
+        );
+        let api = ApiPirSnapshotEndpointDiagnostic::from(core.clone());
+        assert_eq!(api.endpoint, core.endpoint);
+        assert!(matches!(api.status, ApiPirSnapshotEndpointStatus::Behind));
+        assert_eq!(api.reported_height, Some(120));
+        assert_eq!(api.http_status_code, None);
+    }
     use crate::wallet::voting::test_support::{
         test_api_round_params, test_note_info, ROUND_ID, TEST_ACCOUNT_UUID,
     };

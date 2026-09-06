@@ -810,7 +810,7 @@ void main() {
       );
       expect(find.text('submission confirmed route'), findsNothing);
       expect(rust.chainDelegationAdvanceCalls, 1);
-      expect(recoveryApi.ballotIntents, isEmpty);
+      expect(rust.sessionBallotIntents, isEmpty);
     },
   );
 
@@ -927,10 +927,11 @@ void main() {
         openProposals: Uint32List.fromList(const [2]),
         allDecided: false,
       );
+    final rust = _VotingStatusRustApi(recoveryApi);
     final container = _statusContainer(
       accountOverride: _MnemonicAccountNotifier.new,
       recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(recoveryApi),
+      rust: rust,
     );
     addTearDown(container.dispose);
 
@@ -945,7 +946,7 @@ void main() {
 
     expect(find.text('Choose at least one vote before submitting.'), findsOne);
     expect(find.text('submission confirmed route'), findsNothing);
-    expect(recoveryApi.ballotIntents, isEmpty);
+    expect(rust.sessionBallotIntents, isEmpty);
   });
 
   testWidgets(
@@ -1019,11 +1020,12 @@ void main() {
           ..['https://voting-b.example/shielded-vote/v1/share-status/$_roundId/$shareId'] =
               {'status': 'confirmed'},
       );
+      final rust = _VotingStatusRustApi(recoveryApi);
       final container = _statusContainer(
         http: http,
         accountOverride: _MnemonicAccountNotifier.new,
         recoveryApi: recoveryApi,
-        rust: _VotingStatusRustApi(recoveryApi),
+        rust: rust,
       );
       addTearDown(container.dispose);
 
@@ -1041,7 +1043,7 @@ void main() {
         find.text('Choose at least one vote before submitting.'),
         findsNothing,
       );
-      expect(recoveryApi.ballotIntents, isEmpty);
+      expect(rust.sessionBallotIntents, isEmpty);
     },
   );
 
@@ -1143,7 +1145,7 @@ void main() {
       expect(rust.eligibilityCheckCalls, 1);
       expect(rust.setupDelegationBundleCalls, 0);
       expect(rust.keystoneDelegationRequestCalls, 0);
-      expect(recoveryApi.ballotIntents, isEmpty);
+      expect(rust.sessionBallotIntents, isEmpty);
     },
   );
 
@@ -3374,14 +3376,15 @@ void main() {
         }),
     );
     final recoveryApi = _MutableVotingRecoveryApi();
+    final rust = _VotingStatusRustApi(
+      recoveryApi,
+      shareTrackingDelaySeconds: BigInt.one,
+    );
     final container = _statusContainer(
       http: http,
       accountOverride: _MnemonicAccountNotifier.new,
       recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(
-        recoveryApi,
-        shareTrackingDelaySeconds: BigInt.one,
-      ),
+      rust: rust,
       hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
@@ -3422,7 +3425,7 @@ void main() {
       find.text('Choose at least one vote before submitting.'),
       findsNothing,
     );
-    expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
+    expect(rust.sessionBallotIntents.toSet(), {'1:false:0', '2:true:null'});
     expect(
       http.requests.any(
         (request) => request.uri.path.contains('/share-status/'),
@@ -3557,7 +3560,7 @@ void main() {
 
     expect(find.text('submission confirmed route'), findsOneWidget);
     expect(rust.chainDelegationAdvanceCalls, 1);
-    expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
+    expect(rust.sessionBallotIntents.toSet(), {'1:false:0', '2:true:null'});
   });
 
   testWidgets('hardware status screen can skip unsigned Keystone bundles', (
@@ -3689,7 +3692,7 @@ void main() {
         .value;
     expect(submissionState?.eligibleWeightZatoshi, BigInt.from(100));
     expect(rust.chainDelegationAdvanceCalls, 1);
-    expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
+    expect(rust.sessionBallotIntents.toSet(), {'1:false:0', '2:true:null'});
   });
 
   testWidgets('hardware status screen pages one memo for a large batch', (
@@ -4551,23 +4554,11 @@ class _FakeVotingRecoveryApi implements VotingRecoveryApi {
       proposalIds: proposalIds,
     );
   }
-
-  @override
-  Future<void> setBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  }) async {}
 }
 
 class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
   FakeRoundRecoveryState state = _recoveryState();
   rust_wire.RoundPlanView? roundPlan;
-  final ballotIntents = <String>[];
 
   @override
   Future<FakeRoundRecoveryState> getRoundRecoveryState({
@@ -4593,19 +4584,6 @@ class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
       roundId: roundId,
       proposalIds: proposalIds,
     );
-  }
-
-  @override
-  Future<void> setBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  }) async {
-    ballotIntents.add('$proposalId:$numOptions:$skipped:${choice ?? 'null'}');
   }
 }
 
@@ -4744,25 +4722,7 @@ class _BlockingVotingRoundsNotifier extends VotingRoundsNotifier {
 }
 
 class _NoopVotingRustApi implements VotingRustApi {
-  @override
-  String? selectPirSnapshotEndpoint({
-    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
-    required BigInt expectedSnapshotHeight,
-    required BigInt matchIndex,
-  }) {
-    final matches = diagnostics
-        .where(
-          (diagnostic) =>
-              diagnostic.status ==
-                  rust_api.ApiPirSnapshotEndpointStatus.matched &&
-              diagnostic.reportedHeight == expectedSnapshotHeight,
-        )
-        .map((diagnostic) => diagnostic.endpoint)
-        .toList(growable: false);
-    return matches.isEmpty
-        ? null
-        : matches[matchIndex.toInt() % matches.length];
-  }
+
 
   @override
   Future<rust_wire.VotingRoundParams> trustedVotingRoundParamsFromConfig({
@@ -5142,8 +5102,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
   final _preparedHelperUrls = <String, List<String>>{};
   @override
   final roundSessionSteps = <String>[];
+
+  @override
+  final scriptedRoundRuns = <List<rust_session.ApiRoundRunEvent>>[];
   @override
   final sessionBallotIntents = <String>[];
+
+  @override
+  Object? get sessionBallotIntentsError => null;
 
   @override
   final sessionClearedBallotIntents = <int>[];

@@ -14,16 +14,6 @@ abstract interface class VotingRecoveryApi {
     required String roundId,
     required List<int> proposalIds,
   });
-
-  Future<void> setBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  });
 }
 
 /// Production recovery API implementation backed by generated FRB bindings.
@@ -43,29 +33,6 @@ class RustVotingRecoveryApi implements VotingRecoveryApi {
         accountUuid: accountUuid,
         roundId: roundId,
         proposalIds: proposalIds,
-      ),
-    );
-  }
-
-  @override
-  Future<void> setBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  }) {
-    return _typed(
-      () => rust_voting.setBallotIntent(
-        dbPath: dbPath,
-        accountUuid: accountUuid,
-        roundId: roundId,
-        proposalId: proposalId,
-        numOptions: numOptions,
-        skipped: skipped,
-        choice: choice,
       ),
     );
   }
