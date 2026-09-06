@@ -1106,6 +1106,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }) {
     return _enqueue(() async {
       final context = await _loadContext(_roundId);
+      // An empty ballot records nothing. `_ballotIntentsFor` marks every listed
+      // proposal without a draft vote as skipped, so recording here with no
+      // draft would overwrite stored choices rather than leave them alone.
+      if (draftVotes.isEmpty) return;
       final intents = _ballotIntentsFor(
         draftVotes: draftVotes,
         allProposalIds: allProposalIds,
@@ -1140,7 +1144,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> castVotes({
     required List<VotingDraftVote> draftVotes,
     List<int>? allProposalIds,
-    Map<int, int>? proposalOptionCounts,
   }) {
     final operation = _enqueue(() async {
       final current = await future;
@@ -1154,14 +1157,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final draftVotesByProposal = {
         for (final draftVote in draftVotes) draftVote.proposalId: draftVote,
       };
-      final rosterOptionCounts = {
-        for (final proposal in proposalsFromRound(context.round))
-          proposal.id: proposal.options.length,
-      };
-      final intents = _ballotIntentsFor(
-        draftVotes: draftVotes,
-        allProposalIds: allProposalIds,
-      );
+      // An empty ballot must not reach `set_ballot_intents`: `_ballotIntentsFor`
+      // marks every listed proposal without a draft vote as skipped, so a
+      // recovery-only run would overwrite the stored choices it exists to
+      // resume. Fall through to a plain plan instead.
+      final intents = draftVotes.isEmpty
+          ? const <rust_session.ApiBallotIntent>[]
+          : _ballotIntentsFor(
+              draftVotes: draftVotes,
+              allProposalIds: allProposalIds,
+            );
 
       List<int>? storedHotkeySecret;
       if (draftVotes.isNotEmpty) {
@@ -1173,39 +1178,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             context: context,
           );
           return;
-        }
-      }
-
-      // Write durable ballot intent before any cast work so recovery resumes
-      // from the correct choice if the user quits mid-vote. The session
-      // re-applies the same intents when it plans, so the two stay equal.
-      if (draftVotes.isNotEmpty) {
-        for (final intent in intents) {
-          final proposalId = intent.proposalId;
-          final numOptions =
-              draftVotesByProposal[proposalId]?.numOptions ??
-              proposalOptionCounts?[proposalId] ??
-              rosterOptionCounts[proposalId];
-          if (numOptions == null) {
-            _setError(
-              'Voting proposal details are missing. Retry after the round reloads.',
-              cause: StateError(
-                'missing numOptions for proposal_id $proposalId',
-              ),
-            );
-            return;
-          }
-          await ref
-              .read(votingRecoveryServiceProvider)
-              .setBallotIntent(
-                dbPath: context.dbPath,
-                accountUuid: context.accountUuid,
-                roundId: context.round.roundId,
-                proposalId: proposalId,
-                numOptions: numOptions,
-                skipped: intent.skipped,
-                choice: intent.choice,
-              );
         }
       }
 
@@ -1255,6 +1227,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         storedHotkeySecret: storedHotkeySecret,
       );
       try {
+        // This is the ballot's durable write: the SDK commits every intent in
+        // one transaction before it plans, so recovery resumes from the
+        // correct choice if the user quits mid-vote.
         roundPlan = intents.isEmpty
             ? await session.plan()
             : await session.setBallotIntents(intents);

@@ -211,6 +211,12 @@ abstract interface class FakeRoundSessionDriver {
 
   List<String> get sessionBallotIntents;
 
+  /// Failure the session raises from `setBallotIntents`, if any.
+  ///
+  /// The SDK write is the ballot's durable write, so this is the seam for
+  /// proving a failed intent write aborts before any vote work runs.
+  Object? get sessionBallotIntentsError => null;
+
   /// Proposal ids the session was asked to clear as unrostered intents.
   List<int> get sessionClearedBallotIntents;
 }
@@ -342,6 +348,8 @@ class FakeVotingRoundSession implements VotingRoundSession {
   Future<rust_wire.RoundPlanView> setBallotIntents(
     List<rust_session.ApiBallotIntent> intents,
   ) async {
+    final error = driver.sessionBallotIntentsError;
+    if (error != null) throw error;
     for (final intent in intents) {
       _intents[intent.proposalId] = intent;
     }

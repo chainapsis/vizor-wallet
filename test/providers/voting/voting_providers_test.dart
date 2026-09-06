@@ -3926,7 +3926,10 @@ void main() {
       expect(startedKey, key);
       await rust.setupStarted.future;
 
-      expect(recoveryApi.ballotIntents, isEmpty);
+      // The ballot is recorded through the SDK session before delegation, and
+      // `recordBallotIntents` runs bundle setup itself when the round has no
+      // bundles yet (covered by 'bundle setup runs before intent'). What this
+      // gate proves is that no vote work starts until draft setup completes.
       expect(rust.voteCommitmentKeys, isEmpty);
 
       setupGate.complete();
@@ -3946,7 +3949,8 @@ void main() {
         ).encodeForStorage(),
       ]);
       expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
-      expect(recoveryApi.ballotIntents, ['7:2:false:1']);
+      // Recorded before delegation and again by the cast, so assert the set.
+      expect(rust.sessionBallotIntents.toSet(), {'7:false:1'});
       expect(rust.voteCommitmentKeys, ['0:7']);
     },
   );
@@ -6493,7 +6497,10 @@ void main() {
           .read(votingSessionProvider(kRoundId).notifier)
           .castVotes(draftVotes: const [], allProposalIds: const [7, 8]);
 
-      expect(recoveryApi.ballotIntents, isEmpty);
+      // The SDK write is the durable one now. Without the empty-ballot guard
+      // this run would record 7 and 8 as skipped and destroy the stored
+      // choices it exists to resume.
+      expect(rust.sessionBallotIntents, isEmpty);
       expect(rust.voteCommitBundleCalls, isEmpty);
       expect(rust.storedCommitmentBundles, ['0:7:2']);
     },
@@ -6617,10 +6624,9 @@ void main() {
             VotingDraftVote(proposalId: 7, choice: 1, numOptions: 2),
           ],
           allProposalIds: const [7, 8],
-          proposalOptionCounts: const {8: 4},
         );
 
-    expect(recoveryApi.ballotIntents, ['7:2:false:1', '8:4:true:null']);
+    expect(rust.sessionBallotIntents, ['7:false:1', '8:true:null']);
     expect(rust.recordedShares, hasLength(1));
     expect(rust.recordedShares.single.bundleIndex, 0);
     expect(rust.recordedShares.single.proposalId, 7);
@@ -7080,7 +7086,12 @@ void main() {
   );
 
   test('ballot intent write failure aborts before vote submission', () async {
-    final rust = FakeVotingRustApi(emitCommitments: true);
+    // The SDK write is the ballot's durable write, so the failure is injected
+    // there rather than at the retired per-proposal recovery write.
+    final rust = FakeVotingRustApi(
+      emitCommitments: true,
+      sessionBallotIntentsError: StateError('intent write failed'),
+    );
     final recoveryApi = FakeVotingRecoveryApi(
       state: recoveryState(
         bundleCount: 1,
@@ -7094,7 +7105,6 @@ void main() {
         ],
         votes: [vote(bundleIndex: 0, proposalId: 7)],
       ),
-      setBallotIntentError: StateError('intent write failed'),
     );
     final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
     addTearDown(container.dispose);
@@ -7107,13 +7117,12 @@ void main() {
             VotingDraftVote(proposalId: 7, choice: 1, numOptions: 2),
           ],
           allProposalIds: const [7, 8],
-          proposalOptionCounts: const {8: 4},
         );
 
     final state = container.read(votingSessionProvider(kRoundId)).value!;
     expect(state.phase, VotingSessionPhase.error);
     expect(state.error?.message, contains('intent write failed'));
-    expect(recoveryApi.ballotIntents, isEmpty);
+    expect(rust.sessionBallotIntents, isEmpty);
     expect(rust.voteCommitBundleCalls, isEmpty);
     expect(rust.storedVoteTxHashes, isEmpty);
     expect(rust.recordedShares, isEmpty);
@@ -8893,7 +8902,7 @@ void main() {
 
     expect(state.phase, VotingSessionPhase.error);
     expect(state.error?.cause, isA<VotingHotkeyUnavailable>());
-    expect(recoveryApi.ballotIntents, isEmpty);
+    expect(rust.sessionBallotIntents, isEmpty);
     expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
@@ -10416,9 +10425,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   FakeVotingRustApi? delegationConfirmationSource;
   final walletIds = <String>[];
   final addedSentServers = <_AddedSentServers>[];
-  final ballotIntents = <String>[];
   final roundPlanProposalIds = <List<int>>[];
-  final Object? setBallotIntentError;
   final Object? roundPlanError;
   var _roundPlanCallCount = 0;
 
@@ -10426,7 +10433,6 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required this.state,
     this.roundPlan,
     this.roundPlanSequence,
-    this.setBallotIntentError,
     this.roundPlanError,
     this.advanceOnDelegationConfirmation = false,
   });
@@ -10532,23 +10538,6 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
       roundId: roundId,
       proposalIds: proposalIds,
     );
-  }
-
-  @override
-  Future<void> setBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  }) async {
-    final error = setBallotIntentError;
-    if (error != null) {
-      throw error;
-    }
-    ballotIntents.add('$proposalId:$numOptions:$skipped:${choice ?? 'null'}');
   }
 }
 
@@ -11251,6 +11240,7 @@ class FakeVotingRustApi
     this.helperPostTimeoutMilliseconds = 30000,
     this.initialDeliveryTimeoutMilliseconds = 60000,
     this.maxConcurrentHelperPosts = 16,
+    this.sessionBallotIntentsError,
   });
 
   final Duration setupDelay;
@@ -11415,6 +11405,9 @@ class FakeVotingRustApi
   final scriptedRoundRuns = <List<rust_session.ApiRoundRunEvent>>[];
   @override
   final sessionBallotIntents = <String>[];
+
+  @override
+  final Object? sessionBallotIntentsError;
 
   @override
   final sessionClearedBallotIntents = <int>[];
