@@ -30,6 +30,7 @@ class FigmaCompareScenario {
     required this.builder,
     this.desktop = true,
     this.mobile = false,
+    this.scrollToEnd = false,
   });
 
   final String id;
@@ -37,6 +38,7 @@ class FigmaCompareScenario {
   final FigmaCompareScenarioBuilder builder;
   final bool desktop;
   final bool mobile;
+  final bool scrollToEnd;
 }
 
 /// Deterministic previews for the screens changed on the current branch.
@@ -56,6 +58,26 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'activity-gift-card-redeemed-detail-mobile',
     description: 'Mobile redeemed card with saved fiat',
     builder: buildGiftCardRedeemedDetailPreview,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'voting-share-status',
+    description: 'Desktop completed vote with shares still submitting',
+    builder: buildDesktopVotingVotedUseCase,
+    scrollToEnd: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-share-in-progress',
+    description: 'Mobile encrypted vote shares while submission is in progress',
+    builder: buildVotingShareStatusUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-share-complete',
+    description: 'Mobile encrypted vote shares after submission completes',
+    builder: buildVotingShareStatusCompleteUseCase,
     desktop: false,
     mobile: true,
   ),
@@ -687,10 +709,19 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-voting-voted',
-    description: 'Mobile completed coinholder vote detail',
+    description: 'Mobile completed vote detail with shares still submitting',
     builder: buildMobileVotingVotedUseCase,
     desktop: false,
     mobile: true,
+    scrollToEnd: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-voted-complete',
+    description: 'Mobile completed vote detail with every share submitted',
+    builder: buildMobileVotingVotedCompleteUseCase,
+    desktop: false,
+    mobile: true,
+    scrollToEnd: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-voting-proposal-default',

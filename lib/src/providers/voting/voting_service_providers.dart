@@ -64,6 +64,21 @@ final votingShareTrackingFailureRetryDelayProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 15);
 });
 
+/// Coalesces user-visible and lifecycle restore triggers that arrive just
+/// after the same session completed a successful full tracking pass.
+/// Scheduled boundary and retry passes bypass this freshness window.
+final votingShareTrackingTriggerFreshnessProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 5);
+});
+
+/// Lightweight round-status heartbeat while the next share boundary is far
+/// away. This does not open the voting database or contact helper servers.
+final votingShareTrackingRoundRefreshIntervalProvider = Provider<Duration>((
+  ref,
+) {
+  return const Duration(minutes: 5);
+});
+
 /// Timeout for PIR `/root` probe requests.
 final votingPirProbeTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 10);

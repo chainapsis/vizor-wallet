@@ -87,6 +87,14 @@ void runFigmaCompareCaptureTest({
     // intentionally looping home-screen illustration motion.
     await tester.pump(const Duration(milliseconds: 400));
 
+    if (scenario.scrollToEnd) {
+      final scrollable = find.byType(Scrollable);
+      expect(scrollable, findsOneWidget);
+      final state = tester.state<ScrollableState>(scrollable);
+      state.position.jumpTo(state.position.maxScrollExtent);
+      await tester.pump();
+    }
+
     if (configuration.outputPath.isEmpty) {
       expect(find.byKey(captureBoundaryKey), findsOneWidget);
       expect(tester.takeException(), isNull);

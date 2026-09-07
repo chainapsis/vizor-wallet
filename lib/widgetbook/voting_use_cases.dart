@@ -1,11 +1,16 @@
 // ignore_for_file: depend_on_referenced_packages
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/app_back_link.dart';
+import '../src/core/widgets/app_icon.dart';
 import '../src/features/voting/screens/mobile/mobile_keystone_voting_signing_screen.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_submitted_screen.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
@@ -16,6 +21,7 @@ import '../src/features/voting/screens/voting_status_screen.dart';
 import '../src/features/voting/voting_flow_models.dart';
 import '../src/features/voting/widgets/voting_metadata_widgets.dart';
 import '../src/features/voting/widgets/mobile/mobile_voting_config_settings_sheet.dart';
+import '../src/features/voting/widgets/voting_share_status_card.dart';
 import '../src/providers/voting/voting_config_provider.dart';
 import '../src/providers/voting/voting_config_source_provider.dart';
 import '../src/providers/voting/voting_poll_eligibility_provider.dart';
@@ -24,8 +30,83 @@ import '../src/providers/voting/voting_rounds_provider.dart';
 import '../src/providers/voting/voting_state.dart';
 import '../src/providers/voting/voting_submission_job_provider.dart';
 import '../src/rust/third_party/zcash_voting/config.dart';
+import '../src/rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../src/services/qr_scanner.dart';
 import '../src/services/voting/voting_config_loader.dart';
+
+Widget buildVotingShareStatusUseCase(BuildContext context) {
+  return _buildVotingShareStatusUseCase(
+    context,
+    records: _previewVotingShareRecords,
+  );
+}
+
+Widget buildVotingShareStatusCompleteUseCase(BuildContext context) {
+  return _buildVotingShareStatusUseCase(
+    context,
+    records: _previewVotingShareCompleteRecords,
+  );
+}
+
+Widget buildDesktopVotingVotedUseCase(BuildContext context) {
+  return AppDesktopShell(
+    sidebar: const _VotingPreviewSidebar(),
+    pane: AppDesktopPane(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          const AppPaneToolbar(
+            leading: AppBackLink(
+              label: 'Vote',
+              minWidth: 60,
+              onTap: _previewNoop,
+            ),
+          ),
+          Expanded(
+            child: VotingVotedPollContent(
+              showDesktopToolbar: false,
+              roundTitle: '[TEST] Very Serious Snack Governance 3',
+              snapshotHeight: 3543600,
+              description:
+                  'A silly sample round for testing the shielded vote builder '
+                  'without using real governance content.',
+              forumUri: null,
+              votingPowerZatoshi: BigInt.from(37500000),
+              votingPowerPreparing: false,
+              votedAt: DateTime(2026, 8, 24),
+              proposals: const [_previewSnackProposal],
+              choicesByProposalId: const {1: 1},
+              shareDelegations: _previewVotingShareRecords,
+              shareStatusNow: _previewVotingShareNow,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildVotingShareStatusUseCase(
+  BuildContext context, {
+  required List<rust_wire.ShareDelegationRecordView> records,
+}) {
+  return ColoredBox(
+    color: context.colors.background.ground,
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: VotingShareStatusCard(
+            records: records,
+            now: _previewVotingShareNow,
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
 Widget buildMobileVotingPollsUseCase(BuildContext context) {
   return ProviderScope(
@@ -118,6 +199,16 @@ Widget _buildMobileVotingConfigPreview(
 }
 
 Widget buildMobileVotingVotedUseCase(BuildContext context) {
+  return _buildMobileVotingVotedUseCase(_previewVotingShareRecords);
+}
+
+Widget buildMobileVotingVotedCompleteUseCase(BuildContext context) {
+  return _buildMobileVotingVotedUseCase(_previewVotingShareCompleteRecords);
+}
+
+Widget _buildMobileVotingVotedUseCase(
+  List<rust_wire.ShareDelegationRecordView> records,
+) {
   return MobileVotingScaffold(
     title: 'Voted',
     child: VotingVotedPollContent(
@@ -133,6 +224,8 @@ Widget buildMobileVotingVotedUseCase(BuildContext context) {
       votedAt: DateTime(2026, 8, 24),
       proposals: const [_previewSnackProposal],
       choicesByProposalId: const {1: 1},
+      shareDelegations: records,
+      shareStatusNow: _previewVotingShareNow,
     ),
   );
 }
@@ -465,6 +558,116 @@ void _previewNoop() {}
 
 const _previewVotingKeystoneUr =
     'ur:zcash-sign-batch/1-1/lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcx';
+
+final _previewVotingShareNow = DateTime.utc(2026, 8, 23, 12);
+
+final _previewVotingShareRecords = [
+  for (var index = 0; index < 16; index++)
+    _previewVotingShare(index, confirmed: index < 5),
+];
+
+final _previewVotingShareCompleteRecords = [
+  for (var index = 0; index < 16; index++)
+    _previewVotingShare(index, confirmed: true),
+];
+
+rust_wire.ShareDelegationRecordView _previewVotingShare(
+  int shareIndex, {
+  bool confirmed = false,
+}) {
+  final delayMinutes = shareIndex == 0 ? 0 : (3102 * shareIndex) ~/ 15;
+  final scheduled = _previewVotingShareNow.add(Duration(minutes: delayMinutes));
+  final createdAt = BigInt.from(
+    _previewVotingShareNow.millisecondsSinceEpoch ~/
+        Duration.millisecondsPerSecond,
+  );
+  final epoch = BigInt.from(
+    scheduled.millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond,
+  );
+  return rust_wire.ShareDelegationRecordView(
+    roundId: 'preview-round',
+    bundleIndex: 0,
+    proposalId: 1,
+    shareIndex: shareIndex,
+    sentToUrls: confirmed
+        ? const ['https://helper-a.example', 'https://helper-b.example']
+        : const [],
+    ambiguousUrls: const [],
+    targetCount: 2,
+    nullifier: Uint8List.fromList(List.filled(32, shareIndex)),
+    phase: confirmed ? 'confirmed' : 'submitted_share',
+    confirmed: confirmed,
+    submitAt: shareIndex == 0 ? BigInt.zero : epoch,
+    createdAt: createdAt,
+  );
+}
+
+class _VotingPreviewSidebar extends StatelessWidget {
+  const _VotingPreviewSidebar();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppDesktopSidebarSurface(
+      glass: true,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xs),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 40),
+            const AppSidebarItem(
+              label: 'Demo wallet',
+              iconName: AppIcons.user,
+              leadingGap: AppSpacing.xs,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppSidebarItem(
+              label: 'Home',
+              iconName: AppIcons.home,
+              onTap: _previewNoop,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            AppSidebarItem(
+              label: 'Swap',
+              iconName: AppIcons.swapArrows,
+              onTap: _previewNoop,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            AppSidebarItem(
+              label: 'Pay',
+              iconName: AppIcons.paid,
+              onTap: _previewNoop,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            const AppSidebarItem(
+              label: 'Vote',
+              iconName: AppIcons.vote,
+              active: true,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            AppSidebarItem(
+              label: 'Activity',
+              iconName: AppIcons.history,
+              onTap: _previewNoop,
+            ),
+            const Spacer(),
+            AppSidebarItem(
+              label: 'Settings',
+              iconName: AppIcons.cog,
+              onTap: _previewNoop,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            AppSidebarItem(
+              label: 'Sign out',
+              iconName: AppIcons.logOut,
+              onTap: _previewNoop,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _PreviewVotingConfigNotifier extends VotingConfigNotifier {
   @override

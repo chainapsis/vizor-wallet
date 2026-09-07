@@ -10,6 +10,7 @@ import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
+import '../../features/voting/voting_share_status.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
@@ -59,17 +60,11 @@ const _shareTrackingCancellationPollInterval = Duration(milliseconds: 250);
 
 /// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
-  final status = round.status.trim().toLowerCase();
-  if (!const {
-    'active',
-    'open',
-    '1',
-    'session_status_active',
-  }.contains(status)) {
-    return false;
-  }
-  final voteEnd = round.voteEndTime;
-  return voteEnd != null && (now ?? DateTime.now()).isBefore(voteEnd);
+  return isVotingShareTrackingOpen(
+    roundStatus: round.status,
+    voteEndTime: round.voteEndTime,
+    now: now ?? DateTime.now(),
+  );
 }
 
 /// Orchestrates one round's voting lifecycle for the UI.
@@ -86,6 +81,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   bool _retainAutomaticShareTracking() => true;
 
   void _releaseAutomaticShareTracking() {
+    _cancelShareTrackingSchedule();
     _disposeHelperDeliveryContext();
   }
 
@@ -103,11 +99,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Set<String> _completedSnapshotBundlePrecomputes = {};
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
+  int _shareTrackingScheduleEpoch = 0;
   Future<void>? _activeAutomaticShareTrackingPass;
   final Set<Future<void>> _activeShareTrackingPasses = {};
   VotingHelperDeliveryContext? _helperDeliveryContext;
   final Set<VotingShareTrackingPassHandle> _activeShareTrackingPassHandles = {};
+  final Set<String> _unrecoverableShareGenerations = {};
   bool _automaticShareTrackingStopped = false;
+  bool _shareTrackingRoundClosed = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
   _VotingSessionContext? _currentContext;
@@ -2888,7 +2887,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> runShareTrackingPass() {
-    if (_automaticShareTrackingStopped) return Future.value();
+    if (_automaticShareTrackingStopped || _shareTrackingRoundClosed) {
+      return Future.value();
+    }
     final inFlight = _activeAutomaticShareTrackingPass;
     if (inFlight != null) return inFlight;
     if (_ownsAutomaticShareTracking && !_retainAutomaticShareTracking()) {
@@ -2905,6 +2906,36 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _activeAutomaticShareTrackingPass = pass;
     _activeShareTrackingPasses.add(pass);
     return pass;
+  }
+
+  /// Runs an externally triggered pass unless this session just completed one.
+  ///
+  /// App-resume restoration and a visible proposal screen can independently
+  /// request the same refresh. In-flight work is already shared by
+  /// [runShareTrackingPass]; this also coalesces callers that arrive just after
+  /// that work settles. Timers and submission recovery continue to call
+  /// [runShareTrackingPass] directly so protocol deadlines are never delayed.
+  Future<void> runShareTrackingPassIfStale() {
+    if (_automaticShareTrackingStopped || _shareTrackingRoundClosed) {
+      return Future.value();
+    }
+    final inFlight = _activeAutomaticShareTrackingPass;
+    if (inFlight != null) return inFlight;
+
+    final context = _currentContext;
+    if (context != null) {
+      final key = VotingSessionKey(
+        accountUuid: context.accountUuid,
+        roundId: context.round.roundId,
+      );
+      final freshness = ref.read(votingShareTrackingTriggerFreshnessProvider);
+      if (ref
+          .read(votingShareTrackingRegistryProvider)
+          .hasFreshSuccessfulPass(key, freshness: freshness)) {
+        return Future.value();
+      }
+    }
+    return runShareTrackingPass();
   }
 
   /// Reconciles the designated immediate share without reopening recovery.
@@ -3024,19 +3055,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _runShareTrackingPass() {
     return _enqueueShareTracking(() async {
-      _shareTrackingTimer?.cancel();
-      _shareTrackingTimer = null;
+      _cancelShareTrackingSchedule();
       if (_automaticShareTrackingStopped) return;
       final current = await future;
       if (_isDisposed || !ref.mounted) return;
       final context = await _loadContext(_roundId);
       if (_shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundExpired(context);
+        _releaseAutomaticShareTrackingIfRoundClosed(context);
         return;
       }
       _currentContext = context;
-      var plan = await _loadResumePlan(context);
-      var roundPlan = await _loadRoundPlan(context);
+      var plan = context.resumePlan;
+      var roundPlan = context.roundPlan;
       if (ref.read(appSecurityProvider).requiresUnlock ||
           !shouldTrackPendingVotingShares(context.round)) {
         _setStateForContext(
@@ -3082,35 +3112,95 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           context,
           passHandle,
         );
-        report = await rust.trackPendingShares(
-          passHandle: passHandle,
-          configuredHelperUrls: configuredHelperUrls,
-          nowSeconds: BigInt.from(nowSeconds),
-          voteEndTimeSeconds: voteEndSeconds == null
-              ? null
-              : BigInt.from(voteEndSeconds),
-        );
+        final unconfirmedShares = plan.unconfirmedShareDelegations;
+        final confirmationOnly =
+            unconfirmedShares.isNotEmpty &&
+            unconfirmedShares.every(
+              (share) => _unrecoverableShareGenerations.contains(
+                _shareGenerationKey(share),
+              ),
+            );
+        if (confirmationOnly) {
+          final confirmed = <rust_api.ApiShareKey>[];
+          var cancelled = false;
+          for (final share in unconfirmedShares) {
+            if (_shareTrackingCancelled(context)) {
+              cancelled = true;
+              break;
+            }
+            final didConfirm = await rust.confirmShareWithHelpers(
+              passHandle: passHandle,
+              configuredHelperUrls: configuredHelperUrls,
+              bundleIndex: share.bundleIndex,
+              proposalId: share.proposalId,
+              shareIndex: share.shareIndex,
+              nowSeconds: BigInt.from(nowSeconds),
+            );
+            if (didConfirm) {
+              confirmed.add(
+                rust_api.ApiShareKey(
+                  bundleIndex: share.bundleIndex,
+                  proposalId: share.proposalId,
+                  shareIndex: share.shareIndex,
+                ),
+              );
+            }
+          }
+          report = rust_api.ApiShareTrackingReport(
+            confirmed: confirmed,
+            resubmitted: const [],
+            ambiguous: const [],
+            unrecoverable: const [],
+            cancelled: cancelled,
+            nextDelaySeconds: null,
+          );
+        } else {
+          report = await rust.trackPendingShares(
+            passHandle: passHandle,
+            configuredHelperUrls: configuredHelperUrls,
+            nowSeconds: BigInt.from(nowSeconds),
+            voteEndTimeSeconds: voteEndSeconds == null
+                ? null
+                : BigInt.from(voteEndSeconds),
+          );
+        }
       } finally {
         cancellationWatchdog?.cancel();
         _activeShareTrackingPassHandles.remove(passHandle);
         passHandle.dispose();
       }
 
-      if (report.unrecoverable.isNotEmpty) {
-        // These cannot be repaired by retrying; log once per pass rather than
-        // spinning on them silently.
+      final newlyUnrecoverable = report.unrecoverable.where((key) {
+        for (final share in plan.unconfirmedShareDelegations) {
+          if (share.bundleIndex == key.bundleIndex &&
+              share.proposalId == key.proposalId &&
+              share.shareIndex == key.shareIndex) {
+            return _unrecoverableShareGenerations.add(
+              _shareGenerationKey(share),
+            );
+          }
+        }
+        return false;
+      }).length;
+      if (newlyUnrecoverable > 0) {
+        // These cannot be repaired by retrying. Log each durable share
+        // generation once, then use confirmation-only checks on later passes.
         debugPrint(
-          '[zcash] Voting: ${report.unrecoverable.length} share(s) missing '
+          '[zcash] Voting: $newlyUnrecoverable share(s) missing '
           'recovery material round=${context.round.roundId}',
         );
       }
 
       if (report.cancelled || _shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundExpired(context);
+        _releaseAutomaticShareTrackingIfRoundClosed(context);
         return;
       }
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
+      final liveShareGenerations = refreshedPlan.unconfirmedShareDelegations
+          .map(_shareGenerationKey)
+          .toSet();
+      _unrecoverableShareGenerations.retainAll(liveShareGenerations);
       final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
       if (!hasBlockingWork) {
         await _clearPersistedDraftChoices(context);
@@ -3124,7 +3214,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
       await _scheduleShareTracking(context, refreshedPlan);
+      ref
+          .read(votingShareTrackingRegistryProvider)
+          .recordSuccessfulPass(
+            VotingSessionKey(
+              accountUuid: context.accountUuid,
+              roundId: context.round.roundId,
+            ),
+          );
     });
+  }
+
+  static String _shareGenerationKey(rust_wire.ShareDelegationRecordView share) {
+    final nullifier = share.nullifier
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '${share.bundleIndex}:${share.proposalId}:${share.shareIndex}:'
+        '$nullifier';
   }
 
   Future<void> stopAndDrainShareTracking() async {
@@ -3159,8 +3265,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _scheduleShareTracking(
     _VotingSessionContext context,
-    VotingResumePlan plan,
-  ) async {
+    VotingResumePlan plan, {
+    DateTime? preservedFullPassAt,
+  }) async {
     if (!_ownsAutomaticShareTracking) {
       _shareTrackingTimer?.cancel();
       _shareTrackingTimer = null;
@@ -3168,6 +3275,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return;
     }
     if (_automaticShareTrackingStopped ||
+        _shareTrackingRoundClosed ||
         plan.unconfirmedShareDelegations.isEmpty ||
         !shouldTrackPendingVotingShares(context.round) ||
         ref.read(appSecurityProvider).requiresUnlock) {
@@ -3178,30 +3286,88 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
     if (!_isCurrentContext(context)) return;
     if (!_retainAutomaticShareTracking()) return;
-    _shareTrackingTimer?.cancel();
-    _shareTrackingTimer = null;
+    final scheduleEpoch = _cancelShareTrackingSchedule();
+    // The timer may outlive the action that loaded [context]. Capture the
+    // exact plan used for this schedule so a later round-deadline refresh does
+    // not fall back to an older snapshot and conclude that there are no shares
+    // left to track.
+    final scheduledContext = context.withResumePlan(plan);
 
-    final delaySeconds = await ref
-        .read(votingRustApiProvider)
-        .nextShareTrackingDelaySeconds(
-          shares: plan.unconfirmedShareDelegations,
-          nowSeconds: BigInt.from(
-            DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
-          ),
-        );
-    if (delaySeconds == null) {
-      _releaseAutomaticShareTracking();
+    // A status heartbeat is only an earlier observation point. Keep the
+    // protocol wake as an absolute instant so a slow/failed status request
+    // cannot restart its countdown and postpone helper/DB work.
+    final DateTime fullPassAt;
+    if (preservedFullPassAt != null) {
+      fullPassAt = preservedFullPassAt;
+    } else {
+      final delayCalculatedAt = DateTime.now();
+      final delaySeconds = await ref
+          .read(votingRustApiProvider)
+          .nextShareTrackingDelaySeconds(
+            shares: plan.unconfirmedShareDelegations,
+            nowSeconds: BigInt.from(
+              delayCalculatedAt.toUtc().millisecondsSinceEpoch ~/ 1000,
+            ),
+          );
+      if (!_isCurrentContext(context) ||
+          scheduleEpoch != _shareTrackingScheduleEpoch) {
+        return;
+      }
+      if (delaySeconds == null) {
+        _releaseAutomaticShareTracking();
+        return;
+      }
+      fullPassAt = delayCalculatedAt.add(
+        Duration(seconds: delaySeconds.toInt()),
+      );
+    }
+    // The status-only wake reads [_currentContext]. Publish the exact plan
+    // used for this schedule so its next rearm cannot fall back to the plan
+    // that existed before the preceding full pass completed.
+    _currentContext = scheduledContext;
+    final now = DateTime.now();
+    final remaining = scheduledContext.round.voteEndTime!.difference(now);
+    if (remaining <= Duration.zero) {
+      _armShareTrackingTimer(
+        scheduledContext,
+        Duration.zero,
+        scheduleEpoch,
+        _ShareTrackingWake.roundStatus,
+        fullPassAt,
+      );
       return;
     }
-    if (!_isCurrentContext(context)) return;
-    final delay = Duration(seconds: delaySeconds.toInt());
-    _armShareTrackingTimer(context, _delayCappedAtVoteEnd(context, delay));
+    final untilFullPass = fullPassAt.difference(now);
+    final protocolDelay = untilFullPass.isNegative
+        ? Duration.zero
+        : untilFullPass;
+    var delay = protocolDelay;
+    var wake = _ShareTrackingWake.fullPass;
+    if (remaining <= delay) {
+      delay = remaining;
+      wake = _ShareTrackingWake.roundStatus;
+    }
+    final roundRefreshInterval = ref.read(
+      votingShareTrackingRoundRefreshIntervalProvider,
+    );
+    if (roundRefreshInterval > Duration.zero && roundRefreshInterval < delay) {
+      delay = roundRefreshInterval;
+      wake = _ShareTrackingWake.roundStatus;
+    }
+    _armShareTrackingTimer(
+      scheduledContext,
+      delay,
+      scheduleEpoch,
+      wake,
+      fullPassAt,
+    );
   }
 
   void _scheduleShareTrackingFailureRetry() {
     if (_isDisposed ||
         !_ownsAutomaticShareTracking ||
         _automaticShareTrackingStopped ||
+        _shareTrackingRoundClosed ||
         ref.read(appSecurityProvider).requiresUnlock) {
       _releaseAutomaticShareTracking();
       return;
@@ -3214,7 +3380,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final context = _currentContext;
     if (context == null ||
         !_isCurrentContext(context) ||
-        !shouldTrackPendingVotingShares(context.round) ||
         !_retainAutomaticShareTracking()) {
       _releaseAutomaticShareTracking();
       return;
@@ -3223,28 +3388,146 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       votingShareTrackingFailureRetryDelayProvider,
     );
     final delay = configuredDelay.isNegative ? Duration.zero : configuredDelay;
-    _armShareTrackingTimer(context, _delayCappedAtVoteEnd(context, delay));
+    final scheduleEpoch = _cancelShareTrackingSchedule();
+    final now = DateTime.now();
+    final fullPassAt = now.add(delay);
+    final remaining = context.round.voteEndTime!.difference(now);
+    final crossesCachedDeadline =
+        remaining > Duration.zero && remaining <= delay;
+    final wake = remaining <= Duration.zero || crossesCachedDeadline
+        ? _ShareTrackingWake.roundStatus
+        : _ShareTrackingWake.fullPass;
+    _armShareTrackingTimer(
+      context,
+      crossesCachedDeadline ? remaining : delay,
+      scheduleEpoch,
+      wake,
+      fullPassAt,
+    );
   }
 
-  Duration _delayCappedAtVoteEnd(
+  int _cancelShareTrackingSchedule() {
+    final scheduleEpoch = ++_shareTrackingScheduleEpoch;
+    _shareTrackingTimer?.cancel();
+    _shareTrackingTimer = null;
+    return scheduleEpoch;
+  }
+
+  void _armShareTrackingTimer(
     _VotingSessionContext context,
     Duration delay,
+    int scheduleEpoch,
+    _ShareTrackingWake wake,
+    DateTime fullPassAt,
   ) {
-    final remaining = context.round.voteEndTime!.difference(DateTime.now());
-    if (remaining.isNegative) return Duration.zero;
-    return delay < remaining ? delay : remaining;
-  }
-
-  void _armShareTrackingTimer(_VotingSessionContext context, Duration delay) {
-    _shareTrackingTimer?.cancel();
+    if (scheduleEpoch != _shareTrackingScheduleEpoch) return;
     _shareTrackingTimer = Timer(delay, () {
       _shareTrackingTimer = null;
-      if (!_isCurrentContext(context)) return;
-      if (!shouldTrackPendingVotingShares(context.round)) {
-        _releaseAutomaticShareTracking();
+      if (scheduleEpoch != _shareTrackingScheduleEpoch ||
+          !_isCurrentContext(context)) {
         return;
       }
-      unawaited(_runShareTrackingPassInBackground());
+      if (wake == _ShareTrackingWake.fullPass) {
+        unawaited(_runShareTrackingPassInBackground());
+      } else {
+        unawaited(_runShareTrackingRoundStatusRefreshInBackground(fullPassAt));
+      }
+    });
+  }
+
+  void _scheduleShareTrackingRoundStatusRetry(
+    _VotingSessionContext context,
+    DateTime fullPassAt,
+  ) {
+    if (_automaticShareTrackingStopped ||
+        _shareTrackingRoundClosed ||
+        _isDisposed ||
+        !ref.mounted ||
+        !_isCurrentContext(context) ||
+        ref.read(appSecurityProvider).requiresUnlock ||
+        !_retainAutomaticShareTracking()) {
+      _releaseAutomaticShareTracking();
+      return;
+    }
+    final configuredDelay = ref.read(
+      votingShareTrackingFailureRetryDelayProvider,
+    );
+    final retryDelay = configuredDelay.isNegative
+        ? Duration.zero
+        : configuredDelay;
+    final now = DateTime.now();
+    final untilVoteEnd = context.round.voteEndTime!.difference(now);
+    final rawUntilFullPass = fullPassAt.difference(now);
+    final untilFullPass = rawUntilFullPass.isNegative
+        ? Duration.zero
+        : rawUntilFullPass;
+    var delay = retryDelay;
+    var wake = _ShareTrackingWake.roundStatus;
+    // Preserve the cached deadline as the hard round-status boundary, while
+    // allowing the already-planned full pass to win before that boundary.
+    if (untilVoteEnd > Duration.zero && untilVoteEnd < delay) {
+      delay = untilVoteEnd;
+    }
+    if (untilVoteEnd > Duration.zero &&
+        untilFullPass < untilVoteEnd &&
+        untilFullPass <= delay) {
+      delay = untilFullPass;
+      wake = _ShareTrackingWake.fullPass;
+    }
+    final retryEpoch = _cancelShareTrackingSchedule();
+    _armShareTrackingTimer(context, delay, retryEpoch, wake, fullPassAt);
+  }
+
+  Future<void> _runShareTrackingRoundStatusRefreshInBackground(
+    DateTime fullPassAt,
+  ) async {
+    await _enqueueShareTracking(() async {
+      _cancelShareTrackingSchedule();
+      final context = _currentContext;
+      if (context == null ||
+          _automaticShareTrackingStopped ||
+          _shareTrackingRoundClosed ||
+          _isDisposed ||
+          !ref.mounted ||
+          !_isCurrentContext(context) ||
+          ref.read(appSecurityProvider).requiresUnlock) {
+        return;
+      }
+      try {
+        final api = ref.read(
+          votingApiClientProvider(context.config.apiServers),
+        );
+        final round = VotingRoundDetails.fromStatus(
+          await api.getRoundStatus(context.round.roundId),
+        );
+        if (_automaticShareTrackingStopped ||
+            _isDisposed ||
+            !ref.mounted ||
+            !_isCurrentContext(context) ||
+            ref.read(appSecurityProvider).requiresUnlock) {
+          return;
+        }
+        final refreshedContext = context.withRound(round);
+        _currentContext = refreshedContext;
+        final current = state.value ?? VotingSessionState(roundId: _roundId);
+        _setStateForContext(refreshedContext, current.copyWith(round: round));
+        if (!shouldTrackPendingVotingShares(round)) {
+          _shareTrackingRoundClosed = true;
+          _releaseAutomaticShareTrackingIfRoundClosed(refreshedContext);
+          return;
+        }
+        await _scheduleShareTracking(
+          refreshedContext,
+          refreshedContext.resumePlan,
+          preservedFullPassAt: fullPassAt,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          '[zcash] Voting: share tracking round refresh failed '
+          'round=${context.round.roundId} error=$error\n$stackTrace',
+        );
+        _scheduleShareTrackingRoundStatusRetry(context, fullPassAt);
+      }
     });
   }
 
@@ -3285,7 +3568,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   bool _shareTrackingCancelled(_VotingSessionContext context) {
-    if (_automaticShareTrackingStopped || _isDisposed || !ref.mounted) {
+    if (_automaticShareTrackingStopped ||
+        _shareTrackingRoundClosed ||
+        _isDisposed ||
+        !ref.mounted) {
       return true;
     }
     return !_isCurrentContext(context) ||
@@ -3293,10 +3579,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         !shouldTrackPendingVotingShares(context.round);
   }
 
-  void _releaseAutomaticShareTrackingIfRoundExpired(
+  void _releaseAutomaticShareTrackingIfRoundClosed(
     _VotingSessionContext context,
   ) {
     if (!shouldTrackPendingVotingShares(context.round)) {
+      if (_ownsAutomaticShareTracking && !_isDisposed && ref.mounted) {
+        ref.invalidate(votingSessionProvider(_roundId));
+      }
       _releaseAutomaticShareTracking();
     }
   }
@@ -4943,7 +5232,41 @@ class _VotingSessionContext {
     required this.resumePlan,
     this.roundPlan,
   });
+
+  _VotingSessionContext withResumePlan(VotingResumePlan resumePlan) {
+    return _VotingSessionContext(
+      sessionGeneration: sessionGeneration,
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      isHardwareAccount: isHardwareAccount,
+      network: network,
+      lightwalletdUrl: lightwalletdUrl,
+      config: config,
+      round: round,
+      roundParams: roundParams,
+      resumePlan: resumePlan,
+      roundPlan: roundPlan,
+    );
+  }
+
+  _VotingSessionContext withRound(VotingRoundDetails round) {
+    return _VotingSessionContext(
+      sessionGeneration: sessionGeneration,
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      isHardwareAccount: isHardwareAccount,
+      network: network,
+      lightwalletdUrl: lightwalletdUrl,
+      config: config,
+      round: round,
+      roundParams: roundParams,
+      resumePlan: resumePlan,
+      roundPlan: roundPlan,
+    );
+  }
 }
+
+enum _ShareTrackingWake { fullPass, roundStatus }
 
 class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();

@@ -8,10 +8,9 @@ Usage: scripts/build-android-fdroid.sh \
   --expected-abi arm64-v8a|armeabi-v7a|x86_64 \
   --expected-version-code CODE [--dry-run]
 
-Builds the three unsigned Android APKs using the same inputs as Vizor's Direct
-Release. F-Droid invokes one build block per ABI; every block intentionally
-runs the same three-ABI command so its selected output can be compared with the
-corresponding upstream-signed APK.
+Builds one unsigned Android APK using the same inputs as Vizor's Direct
+Release. F-Droid invokes one build block per ABI, and each block builds only
+the APK it will compare with the corresponding upstream-signed APK.
 
 Set FLUTTER_BIN to an absolute Flutter executable in F-Droid. It defaults to
 the repository's required `fvm flutter` command for local builds.
@@ -67,9 +66,18 @@ minor="${BASH_REMATCH[2]}"
 patch="${BASH_REMATCH[3]}"
 
 case "${expected_abi}" in
-  armeabi-v7a) abi_offset=1000 ;;
-  arm64-v8a) abi_offset=2000 ;;
-  x86_64) abi_offset=4000 ;;
+  armeabi-v7a)
+    abi_offset=1000
+    selected_apk="build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk"
+    ;;
+  arm64-v8a)
+    abi_offset=2000
+    selected_apk="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+    ;;
+  x86_64)
+    abi_offset=4000
+    selected_apk="build/app/outputs/flutter-apk/app-x86_64-release.apk"
+    ;;
   *)
     echo "Unsupported --expected-abi: ${expected_abi:-<missing>}" >&2
     exit 2
@@ -107,6 +115,7 @@ if [[ "${dry_run}" == "true" ]]; then
     --build-number "${version_code_base}" \
     --release-version "${version}" \
     --signing unsigned \
+    --target-abi "${expected_abi}" \
     --offline \
     --dry-run
 fi
@@ -116,15 +125,9 @@ fi
   --build-number "${version_code_base}" \
   --release-version "${version}" \
   --signing unsigned \
+  --target-abi "${expected_abi}" \
   --offline
 
-abis=(arm64-v8a armeabi-v7a x86_64)
-version_code_offsets=(2000 1000 4000)
-apk_paths=(
-  "build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
-  "build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk"
-  "build/app/outputs/flutter-apk/app-x86_64-release.apk"
-)
 android_sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 if [[ -z "${android_sdk}" ]]; then
   echo "ANDROID_SDK_ROOT or ANDROID_HOME is required to verify the APKs." >&2
@@ -140,38 +143,29 @@ for tool in "${aapt}" "${apksigner}"; do
   fi
 done
 
-selected_apk=""
-for index in "${!abis[@]}"; do
-  abi="${abis[$index]}"
-  apk_path="${apk_paths[$index]}"
-  if [[ ! -s "${apk_path}" ]]; then
-    echo "Expected ${abi} APK is missing or empty: ${apk_path}" >&2
-    exit 1
-  fi
-  apk_version_code=$((version_code_base + version_code_offsets[index]))
-  badging="$("${aapt}" dump badging "${apk_path}")"
-  expected_badging="package: name='com.keplr.vizor' versionCode='${apk_version_code}' versionName='${version}'"
-  if [[ "${badging}" != "${expected_badging}"* ]]; then
-    echo "Unexpected package/version metadata in ${apk_path}." >&2
-    printf '%s\n' "${badging}" | sed -n '1p' >&2
-    exit 1
-  fi
-  packaged_abis="$(
-    unzip -Z1 "${apk_path}" |
-      sed -n 's#^lib/\([^/]*\)/.*#\1#p' |
-      sort -u
-  )"
-  if [[ "${packaged_abis}" != "${abi}" ]]; then
-    echo "Expected only ${abi} native libraries in ${apk_path}; found: ${packaged_abis:-<none>}" >&2
-    exit 1
-  fi
-  if "${apksigner}" verify "${apk_path}" >/dev/null 2>&1; then
-    echo "F-Droid output must be unsigned, but a valid APK signature was found: ${apk_path}" >&2
-    exit 1
-  fi
-  if [[ "${abi}" == "${expected_abi}" ]]; then
-    selected_apk="${apk_path}"
-  fi
-done
+if [[ ! -s "${selected_apk}" ]]; then
+  echo "Expected ${expected_abi} APK is missing or empty: ${selected_apk}" >&2
+  exit 1
+fi
+badging="$("${aapt}" dump badging "${selected_apk}")"
+expected_badging="package: name='com.keplr.vizor' versionCode='${calculated_version_code}' versionName='${version}'"
+if [[ "${badging}" != "${expected_badging}"* ]]; then
+  echo "Unexpected package/version metadata in ${selected_apk}." >&2
+  printf '%s\n' "${badging}" | sed -n '1p' >&2
+  exit 1
+fi
+packaged_abis="$(
+  unzip -Z1 "${selected_apk}" |
+    sed -n 's#^lib/\([^/]*\)/.*#\1#p' |
+    sort -u
+)"
+if [[ "${packaged_abis}" != "${expected_abi}" ]]; then
+  echo "Expected only ${expected_abi} native libraries in ${selected_apk}; found: ${packaged_abis:-<none>}" >&2
+  exit 1
+fi
+if "${apksigner}" verify "${selected_apk}" >/dev/null 2>&1; then
+  echo "F-Droid output must be unsigned, but a valid APK signature was found: ${selected_apk}" >&2
+  exit 1
+fi
 
 printf 'Selected F-Droid output: %s\n' "${selected_apk}"

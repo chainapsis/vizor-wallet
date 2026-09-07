@@ -247,6 +247,12 @@ Future<ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
 );
 
 /// Return the next share-tracking delay in seconds using crate policy.
+///
+/// Vizor wakes the tracker when the next share reaches its status-check grace
+/// boundary. The SDK's default policy caps future waits for wallets that also
+/// use the tracking pass as a general heartbeat; Vizor refreshes round state
+/// separately with a lightweight heartbeat and whenever the voting UI becomes
+/// visible, so that cap would only cause redundant SQLite and helper passes.
 Future<BigInt?> nextShareTrackingDelaySeconds({
   required List<ShareDelegationRecordView> shares,
   required BigInt nowSeconds,

@@ -10,6 +10,7 @@ typedef VotingShareTrackingDrain = Future<void> Function();
 class VotingShareTrackingRegistry {
   final Map<VotingSessionKey, _VotingShareTrackingRegistration> _registrations =
       {};
+  final Map<VotingSessionKey, Stopwatch> _successfulPassAges = {};
   final Map<Completer<void>, String?> _backgroundWork = {};
   final Set<VoidCallback> _restoreRequestListeners = {};
   final Map<String, int> _accountQuiescenceDepths = {};
@@ -76,6 +77,24 @@ class VotingShareTrackingRegistry {
   bool isQuiesced(String accountUuid) {
     return _globalQuiescenceDepth > 0 ||
         (_accountQuiescenceDepths[accountUuid] ?? 0) > 0;
+  }
+
+  /// Remembers a completed pass across auto-disposed notifier instances.
+  void recordSuccessfulPass(VotingSessionKey key) {
+    _successfulPassAges[key] = Stopwatch()..start();
+  }
+
+  /// Whether [key] completed a pass inside the caller's freshness window.
+  bool hasFreshSuccessfulPass(
+    VotingSessionKey key, {
+    required Duration freshness,
+  }) {
+    if (freshness <= Duration.zero) return false;
+    final age = _successfulPassAges[key];
+    if (age == null) return false;
+    if (age.elapsed < freshness) return true;
+    _successfulPassAges.remove(key);
+    return false;
   }
 
   /// Blocks matching background work until paired with [resume].
