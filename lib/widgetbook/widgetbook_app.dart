@@ -1039,8 +1039,24 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobilePaymentLinkReadyUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Share Gift Card',
+                      builder: buildMobilePaymentLinkShareQrUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Redeem - Paste link',
                       builder: buildMobilePaymentLinkRedeemPasteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Scan QR',
+                      builder: buildMobilePaymentLinkScanUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Wrong QR',
+                      builder: buildMobilePaymentLinkScanInvalidUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Camera denied',
+                      builder: buildMobilePaymentLinkScanDeniedUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Redeem - Long sync warning',
@@ -1058,6 +1074,14 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Received gift',
                       builder: buildMobilePaymentLinkReceivedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Claim - Choose account',
+                      builder: buildMobilePaymentLinkClaimAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Claim - Many accounts',
+                      builder: buildMobilePaymentLinkClaimManyAccountsUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Received - Waiting for confirmations',

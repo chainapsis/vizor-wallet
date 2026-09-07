@@ -38,10 +38,11 @@ void main() {
     );
   });
 
-  testWidgets('a funded unshared card exposes its copy-link action', (
+  testWidgets('a funded unshared card exposes copy and QR actions', (
     tester,
   ) async {
     var copies = 0;
+    var qrOpens = 0;
     await _pumpCards(
       tester,
       sections: [
@@ -52,8 +53,9 @@ void main() {
               thumbnail: const SizedBox(),
               amountText: '4.45 ZEC',
               dateText: 'August 7',
-              showCopyAction: true,
+              showLinkActions: true,
               onCopyLink: () => copies += 1,
+              onShowQr: () => qrOpens += 1,
             ),
           ],
         ),
@@ -73,6 +75,9 @@ void main() {
     await tester.pump();
 
     expect(copies, 1);
+    await tester.tap(find.bySemanticsLabel('Show Gift Card QR code'));
+    await tester.pump();
+    expect(qrOpens, 1);
   });
 
   testWidgets('an incomplete card shows its status instead of a copy action', (

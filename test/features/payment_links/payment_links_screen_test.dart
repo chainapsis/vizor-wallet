@@ -679,7 +679,10 @@ void main() {
     await tester.tap(find.text('Paste card link'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Waiting for 6 confirmations.'), findsOneWidget);
+    expect(
+      find.text('Your gift will be ready to claim shortly.'),
+      findsOneWidget,
+    );
     expect(find.text('Wait 5:00 to claim'), findsOneWidget);
     expect(find.text('Claim the Gift Card'), findsNothing);
 
@@ -691,50 +694,53 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Claim the Gift Card'), findsOneWidget);
-    expect(find.text('Waiting for 6 confirmations.'), findsNothing);
-  });
-
-  testWidgets('keeps the Card when the confirmation wait is left', (
-    tester,
-  ) async {
-    final operations = FakePaymentLinkOperations(
-      claimable: false,
-      waitingForFundingConfirmations: true,
-      fundingConfirmationCount: 2,
-    );
-    final clipboard = FakePaymentLinkClipboard(
-      text: incomingLink.toUri().toString(),
-    );
-    await pumpPaymentLinksScreen(
-      tester,
-      operations: operations,
-      clipboard: clipboard,
-    );
-
-    await tester.tap(find.text('Redeem a card'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Paste card link'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Waiting for 6 confirmations.'), findsOneWidget);
-
-    await tester.tap(find.widgetWithText(AppBackLink, 'Home'));
-    await tester.pumpAndSettle();
-
-    // The Card is persisted as still-to-claim and keeps its claim database,
-    // so it stays in the Received list instead of needing the bearer link.
-    expect(operations.retainedClaimAddresses, [incomingLink.address]);
-    expect(operations.discardedClaimAddresses, isEmpty);
-    expect(operations.receivedRecords, hasLength(1));
-    expect(operations.receivedRecords.single.address, incomingLink.address);
     expect(
-      operations.receivedRecords.single.status,
-      PaymentLinkReceivedStatus.readyToClaim,
+      find.text('Your gift will be ready to claim shortly.'),
+      findsNothing,
     );
-    expect(find.text('Waiting for 6 confirmations.'), findsNothing);
-    expect(find.text('No Gift Cards yet'), findsNothing);
-    expect(find.text('Claim'), findsOneWidget);
   });
+
+  testWidgets(
+    'leaving a new confirmation-wait preview does not save the Card',
+    (tester) async {
+      final operations = FakePaymentLinkOperations(
+        claimable: false,
+        waitingForFundingConfirmations: true,
+        fundingConfirmationCount: 2,
+      );
+      final clipboard = FakePaymentLinkClipboard(
+        text: incomingLink.toUri().toString(),
+      );
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: clipboard,
+      );
+
+      await tester.tap(find.text('Redeem a card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Your gift will be ready to claim shortly.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.widgetWithText(AppBackLink, 'Home'));
+      await tester.pumpAndSettle();
+
+      expect(operations.retainedClaimAddresses, isEmpty);
+      expect(operations.discardedClaimAddresses, [incomingLink.address]);
+      expect(operations.receivedRecords, isEmpty);
+      expect(
+        find.text('Your gift will be ready to claim shortly.'),
+        findsNothing,
+      );
+      expect(find.text('No Gift Cards yet'), findsOneWidget);
+      expect(find.text('Claim'), findsNothing);
+    },
+  );
 
   testWidgets('leaving a preview stops a later account switch from reopening '
       'redeem', (tester) async {
@@ -1123,7 +1129,7 @@ void main() {
   );
 
   testWidgets(
-    'account switch during a waiting claim preparation keeps the Card',
+    'account switch during a waiting claim preparation discards a new Card preview',
     (tester) async {
       final accountNotifier = SwitchablePaymentLinkAccountNotifier();
       final prepareClaimGate = Completer<void>();
@@ -1155,52 +1161,57 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(operations.retainedClaimAddresses, [incomingLink.address]);
-      expect(operations.discardedClaimAddresses, isEmpty);
+      expect(operations.retainedClaimAddresses, isEmpty);
+      expect(operations.discardedClaimAddresses, [incomingLink.address]);
       expect(find.textContaining('Active account changed.'), findsOneWidget);
     },
   );
 
-  testWidgets('account switch while waiting for confirmations keeps the Card', (
-    tester,
-  ) async {
-    final accountNotifier = SwitchablePaymentLinkAccountNotifier();
-    final operations = FakePaymentLinkOperations(
-      waitingForFundingConfirmations: true,
-      fundingConfirmationCount: 0,
-    );
-    final clipboard = FakePaymentLinkClipboard(
-      text: incomingLink.toUri().toString(),
-    );
-    await pumpPaymentLinksScreen(
-      tester,
-      operations: operations,
-      clipboard: clipboard,
-      accountNotifier: accountNotifier,
-      bootstrap: twoAccountBootstrap,
-    );
+  testWidgets(
+    'account switch while waiting for confirmations discards a new Card preview',
+    (tester) async {
+      final accountNotifier = SwitchablePaymentLinkAccountNotifier();
+      final operations = FakePaymentLinkOperations(
+        waitingForFundingConfirmations: true,
+        fundingConfirmationCount: 0,
+      );
+      final clipboard = FakePaymentLinkClipboard(
+        text: incomingLink.toUri().toString(),
+      );
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: clipboard,
+        accountNotifier: accountNotifier,
+        bootstrap: twoAccountBootstrap,
+      );
 
-    await tester.tap(find.text('Redeem a card'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Paste card link'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Redeem a card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Waiting for 6 confirmations.'), findsOneWidget);
+      expect(
+        find.text('Your gift will be ready to claim shortly.'),
+        findsOneWidget,
+      );
 
-    accountNotifier.setActiveAccount('account-2');
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
+      accountNotifier.setActiveAccount('account-2');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
-    expect(operations.retainedClaimAddresses, [incomingLink.address]);
-    expect(operations.discardedClaimAddresses, isEmpty);
-    expect(find.textContaining('Active account changed.'), findsOneWidget);
-  });
+      expect(operations.retainedClaimAddresses, isEmpty);
+      expect(operations.discardedClaimAddresses, [incomingLink.address]);
+      expect(find.textContaining('Active account changed.'), findsOneWidget);
+    },
+  );
 
   testWidgets('a confirmation refresh does not delete a retained claim', (
     tester,
   ) async {
     final refreshGate = Completer<void>();
     final operations = FakePaymentLinkOperations(
+      receivedRecords: [PaymentLinkReceivedRecord.fromLink(incomingLink)],
       prepareClaimGates: {2: refreshGate},
       waitingForFundingConfirmations: true,
       fundingConfirmationCount: 0,
@@ -1233,7 +1244,7 @@ void main() {
     expect(operations.discardedClaimAddresses, isEmpty);
   });
 
-  testWidgets('route dispose keeps a Card that is waiting to be claimable', (
+  testWidgets('route dispose discards a new confirmation-wait preview', (
     tester,
   ) async {
     final operations = FakePaymentLinkOperations(
@@ -1261,8 +1272,8 @@ void main() {
     ).go('/home');
     await tester.pumpAndSettle();
 
-    expect(operations.retainedClaimAddresses, [incomingLink.address]);
-    expect(operations.discardedClaimAddresses, isEmpty);
+    expect(operations.retainedClaimAddresses, isEmpty);
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
   });
 
   testWidgets('route dispose keeps a preview of a listed Received Card', (
@@ -1600,7 +1611,9 @@ void main() {
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
   });
 
-  testWidgets('declining the long scan warning keeps the Card', (tester) async {
+  testWidgets('declining the long scan warning does not save a new Card', (
+    tester,
+  ) async {
     final operations = FakePaymentLinkOperations(
       longSyncConfirmationRequired: true,
     );
@@ -1620,11 +1633,13 @@ void main() {
     await tester.tap(find.text('Go back'));
     await tester.pumpAndSettle();
 
-    expect(operations.keptLinkAddresses, [incomingLink.address]);
-    expect(operations.receivedRecords.single.address, incomingLink.address);
+    expect(operations.keptLinkAddresses, isEmpty);
+    expect(operations.receivedRecords, isEmpty);
   });
 
-  testWidgets('a check that fails to run keeps the Card', (tester) async {
+  testWidgets('a failed preview can be retried without saving a new Card', (
+    tester,
+  ) async {
     final operations = FakePaymentLinkOperations(prepareClaimFailures: 1);
     final clipboard = FakePaymentLinkClipboard(
       text: incomingLink.toUri().toString(),
@@ -1641,8 +1656,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Try again'), findsOneWidget);
-    expect(operations.keptLinkAddresses, [incomingLink.address]);
-    expect(operations.receivedRecords.single.address, incomingLink.address);
+    expect(operations.keptLinkAddresses, isEmpty);
+    expect(operations.receivedRecords, isEmpty);
   });
 
   testWidgets('routes an accepted incoming payment link and claims it', (

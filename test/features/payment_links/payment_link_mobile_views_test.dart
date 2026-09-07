@@ -155,7 +155,7 @@ void main() {
               cardTop: kPaymentLinkMobileReceivedCardTop,
               onHome: _noop,
               waitingHeading: 'Your Gift Card\nis almost ready!',
-              waitingDescription: 'Waiting for 6 confirmations.',
+              waitingDescription: 'Your gift will be ready to claim shortly.',
               waitingStatusLabel: 'Wait 5:00 to claim',
             ),
           ),
@@ -163,7 +163,10 @@ void main() {
       ),
     );
 
-    expect(find.text('Waiting for 6 confirmations.'), findsOneWidget);
+    expect(
+      find.text('Your gift will be ready to claim shortly.'),
+      findsOneWidget,
+    );
     expect(find.text('Wait 5:00 to claim'), findsOneWidget);
     expect(find.text('Copy link'), findsNothing);
     expect(
@@ -175,6 +178,33 @@ void main() {
       kPaymentLinkMobileReceivedCardTop,
     );
   });
+
+  for (final state in [
+    PaymentLinkRedeemMobileState.invalid,
+    PaymentLinkRedeemMobileState.unavailable,
+  ]) {
+    testWidgets('QR $state keeps both input actions visible on a small phone', (
+      tester,
+    ) async {
+      await _pumpRedeem(
+        tester,
+        state,
+        fromQrCode: true,
+        size: const Size(320, 568),
+      );
+      expect(find.text('Paste card link'), findsOneWidget);
+      expect(find.text('Scan again'), findsOneWidget);
+      expect(find.text('Clear clipboard'), findsNothing);
+      expect(tester.takeException(), isNull);
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('payment_link_mobile_redeem_drop_zone')),
+      );
+      final scan = tester.getRect(
+        find.byKey(const ValueKey('payment_link_mobile_scan_button')),
+      );
+      expect(surface.contains(scan.bottomRight), isTrue);
+    });
+  }
 
   testWidgets('received card exposes Figma claim copy and action', (
     tester,
@@ -261,9 +291,11 @@ Future<void> _pumpAmount(WidgetTester tester) async {
 
 Future<void> _pumpRedeem(
   WidgetTester tester,
-  PaymentLinkRedeemMobileState state,
-) async {
-  await tester.binding.setSurfaceSize(const Size(393, 773));
+  PaymentLinkRedeemMobileState state, {
+  bool fromQrCode = false,
+  Size size = const Size(393, 773),
+}) async {
+  await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
   await tester.pumpWidget(
@@ -279,6 +311,8 @@ Future<void> _pumpRedeem(
             state: state,
             onBack: _noop,
             onPaste: _noop,
+            onScan: _noop,
+            fromQrCode: fromQrCode,
             onClearClipboard: _noop,
           ),
         ),

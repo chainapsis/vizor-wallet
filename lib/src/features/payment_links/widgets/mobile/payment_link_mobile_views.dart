@@ -395,7 +395,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   PaymentLinkTabAction(
                     key: const ValueKey('payment_links_mobile_received_tab'),
-                    icon: AppIcons.arrowDownward,
+                    icon: AppIcons.importWallet,
                     label: kPaymentLinkReceivedTabLabel,
                     selected: activeTab == PaymentLinkCardsTab.received,
                     onTap: onTabSelected == null
@@ -475,9 +475,8 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
 /// One Gift Card row on the mobile list.
 ///
 /// Same information as the desktop `PaymentLinkCardListRow` — artwork,
-/// amount, date, and either a status or the copy-link action — on the mobile
-/// 64px row pitch with a touch-sized copy target. The mobile list has no QR
-/// page, so the link actions collapse to copy alone.
+/// amount, date, and either a status or link/QR actions — on the mobile
+/// 64px row pitch with 44px touch targets.
 class PaymentLinkCardListMobileRow extends StatelessWidget {
   const PaymentLinkCardListMobileRow({
     required this.thumbnail,
@@ -486,12 +485,13 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
     this.statusText,
     this.onAction,
     this.showLoader = false,
-    this.showCopyAction = false,
+    this.showLinkActions = false,
     this.onCopyLink,
+    this.onShowQr,
     super.key,
   }) : assert(
-         statusText != null || showCopyAction,
-         'A status or the Gift Card copy action must be provided.',
+         statusText != null || showLinkActions,
+         'A status or Gift Card link actions must be provided.',
        );
 
   final Widget thumbnail;
@@ -500,8 +500,9 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
   final String? statusText;
   final VoidCallback? onAction;
   final bool showLoader;
-  final bool showCopyAction;
+  final bool showLinkActions;
   final VoidCallback? onCopyLink;
+  final VoidCallback? onShowQr;
 
   @override
   Widget build(BuildContext context) {
@@ -540,40 +541,69 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.xs),
-          if (showCopyAction)
-            PaymentLinkAction(
+          if (showLinkActions) ...[
+            _MobileCardLinkAction(
               key: const ValueKey('payment_link_mobile_card_copy_action'),
               semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
+              icon: AppIcons.copy,
               onPressed: onCopyLink,
-              builder: (context, _, focused) => DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                  border: focused
-                      ? Border.all(color: colors.state.focusRing, width: 2)
-                      : null,
-                ),
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.copy,
-                      size: AppIconSize.medium,
-                      color: onCopyLink == null
-                          ? colors.icon.disabled
-                          : colors.icon.regular,
-                    ),
-                  ),
-                ),
-              ),
-            )
-          else if (statusText case final label?)
+            ),
+            _MobileCardLinkAction(
+              key: const ValueKey('payment_link_mobile_card_qr_action'),
+              semanticLabel: 'Show Gift Card QR code',
+              icon: AppIcons.qr,
+              onPressed: onShowQr,
+            ),
+          ] else if (statusText case final label?)
             _MobileCardStatus(
               label: label,
               onTap: onAction,
               showLoader: showLoader,
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _MobileCardLinkAction extends StatelessWidget {
+  const _MobileCardLinkAction({
+    required this.semanticLabel,
+    required this.icon,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String semanticLabel;
+  final String icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return PaymentLinkAction(
+      semanticLabel: semanticLabel,
+      onPressed: onPressed,
+      builder: (context, _, focused) => DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          border: focused
+              ? Border.all(color: colors.state.focusRing, width: 2)
+              : null,
+        ),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: AppIcon(
+              icon,
+              size: AppIconSize.medium,
+              color: onPressed == null
+                  ? colors.icon.disabled
+                  : colors.icon.regular,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -865,8 +895,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
     this.waitingStatusLabel = kPaymentLinkWaitingStatusLabel,
     this.waitingHeading = kPaymentLinkAlmostReadyHeading,
     this.waitingDescription =
-        'The link becomes shareable when funding reaches the network.\n'
-        'If Vizor cannot confirm that yet, one confirmation is enough.',
+        '$kPaymentLinkShareWaitingDescription\n$kPaymentLinkWaitingDescription',
     this.waitingIcon,
     this.cardTop = 190,
     this.copyLabel = 'Copy link',
@@ -1026,9 +1055,11 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
     required this.state,
     required this.onBack,
     this.onPaste,
+    this.onScan,
+    this.fromQrCode = false,
     this.onClearClipboard,
     this.title = kPaymentLinkRedeemTheCardTitle,
-    this.subtitle = kPaymentLinkRedeemSubtitle,
+    this.subtitle = 'Paste a card link or scan its QR code.',
     this.pasteLabel = kPaymentLinkPasteLabel,
     this.invalidTitle = kPaymentLinkInvalidTitle,
     this.invalidSubtitle = kPaymentLinkInvalidSubtitle,
@@ -1041,6 +1072,8 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
   final PaymentLinkRedeemMobileState state;
   final VoidCallback onBack;
   final VoidCallback? onPaste;
+  final VoidCallback? onScan;
+  final bool fromQrCode;
   final VoidCallback? onClearClipboard;
   final String title;
   final String subtitle;
@@ -1060,13 +1093,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
 
     final cardContent = switch (state) {
       PaymentLinkRedeemMobileState.paste => _MobileRedeemDropZone(
-        child: AppButton(
-          key: const ValueKey('payment_link_mobile_paste_button'),
-          onPressed: onPaste,
-          size: AppButtonSize.mediumLarge,
-          leading: const AppIcon(AppIcons.paste, size: 20),
-          child: Text(pasteLabel),
-        ),
+        child: _actions(),
       ),
       PaymentLinkRedeemMobileState.invalid ||
       PaymentLinkRedeemMobileState.unavailable => _MobileRedeemDropZone(
@@ -1074,7 +1101,9 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              invalid ? invalidTitle : unavailableTitle,
+              invalid
+                  ? (fromQrCode ? 'This card could not be read.' : invalidTitle)
+                  : unavailableTitle,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: context.colors.text.destructive,
@@ -1082,20 +1111,18 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              invalid ? invalidSubtitle : unavailableSubtitle,
+              invalid
+                  ? (fromQrCode
+                        ? 'Scan again or paste another card link.'
+                        : invalidSubtitle)
+                  : unavailableSubtitle,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.secondary,
               ),
             ),
             const SizedBox(height: AppSpacing.base),
-            AppButton(
-              key: const ValueKey('payment_link_mobile_paste_button'),
-              onPressed: onPaste,
-              size: AppButtonSize.mediumLarge,
-              leading: const AppIcon(AppIcons.paste, size: 20),
-              child: Text(pasteLabel),
-            ),
+            _actions(scanAgain: fromQrCode),
           ],
         ),
       ),
@@ -1143,7 +1170,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
                 ),
               ),
             ),
-          if (showError)
+          if (showError && !fromQrCode)
             Positioned(
               top: _redeemSurfaceTop + _cardHeight + AppSpacing.md,
               left: 0,
@@ -1161,6 +1188,39 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _actions({bool scanAgain = false}) {
+    return SizedBox(
+      width: 240,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppButton(
+            key: const ValueKey('payment_link_mobile_paste_button'),
+            onPressed: onPaste,
+            size: AppButtonSize.mediumLarge,
+            expand: true,
+            leading: AppIcon(
+              pasteLabel == 'Try again' ? AppIcons.renew : AppIcons.paste,
+              size: 20,
+            ),
+            child: Text(pasteLabel),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          AppButton(
+            key: const ValueKey('payment_link_mobile_scan_button'),
+            onPressed: onScan,
+            variant: AppButtonVariant.secondary,
+            size: AppButtonSize.mediumLarge,
+            expand: true,
+            leading: const AppIcon(AppIcons.qr, size: 20),
+            child: Text(scanAgain ? 'Scan again' : 'Scan QR code'),
+          ),
         ],
       ),
     );

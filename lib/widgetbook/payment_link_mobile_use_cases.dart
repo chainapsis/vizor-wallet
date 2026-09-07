@@ -10,14 +10,19 @@ import 'package:flutter/services.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
+import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
+import '../src/features/payment_links/widgets/mobile/payment_link_claim_account_sheet.dart';
+import '../src/features/payment_links/widgets/mobile/payment_link_share_sheet.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
 import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
 import '../src/features/payment_links/widgets/payment_link_copy.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
+import '../src/providers/account_provider.dart';
 
 const _mobilePreviewSize = Size(393, 773);
 const _mobileDeviceSize = Size(393, 852);
@@ -37,6 +42,42 @@ Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
 
 Widget buildMobilePaymentLinkHomeCardsUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(child: _PaymentLinkCardsFixture());
+}
+
+Widget buildMobilePaymentLinkShareQrUseCase(BuildContext context) {
+  return _MobilePaymentLinkFrame(
+    child: MobileModalOverlay(
+      background: const _PaymentLinkCardsFixture(),
+      child: _shareSheet(PaymentLinkCardArtwork.ruby, onClose: _noop),
+    ),
+  );
+}
+
+Widget _shareSheet(
+  PaymentLinkCardArtwork artwork, {
+  required VoidCallback onClose,
+}) {
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: 'u1previewgiftcardaddress',
+    amountZatoshi: BigInt.from(445000000),
+    mnemonic: List.filled(24, 'abandon').join(' '),
+    birthdayHeight: 3000000,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 8, 6),
+    presentation: PaymentLinkPresentation(
+      artworkId: artwork.protocolId,
+      message: 'A Gift Card for you!',
+    ),
+  );
+  return PaymentLinkShareSheet(
+    artwork: artwork,
+    link: link.toUri().toString(),
+    onShare: (_, _) async {},
+    onShareError: _noop,
+    onCopyLink: () async {},
+    onClose: onClose,
+  );
 }
 
 Widget buildMobilePaymentLinkAmountEmptyUseCase(BuildContext context) {
@@ -159,14 +200,61 @@ Widget buildMobilePaymentLinkReadyUseCase(BuildContext context) {
 }
 
 Widget buildMobilePaymentLinkRedeemPasteUseCase(BuildContext context) {
-  return const _MobilePaymentLinkFrame(
-    child: PaymentLinkRedeemMobileView(
-      state: PaymentLinkRedeemMobileState.paste,
-      onBack: _noop,
-      onPaste: _noop,
+  return _MobilePaymentLinkFrame(
+    child: Builder(
+      builder: (context) => PaymentLinkRedeemMobileView(
+        state: PaymentLinkRedeemMobileState.paste,
+        onBack: _noop,
+        onPaste: _noop,
+        onScan: () => showAppMobileSheet<void>(
+          context: context,
+          builder: (context) => _mobileGiftScanPreview(
+            onClose: () => Navigator.of(context).pop(),
+          ),
+        ),
+      ),
     ),
   );
 }
+
+Widget buildMobilePaymentLinkScanUseCase(BuildContext context) =>
+    _mobileGiftScanOverlay();
+
+Widget buildMobilePaymentLinkScanInvalidUseCase(BuildContext context) =>
+    _mobileGiftScanOverlay(error: "This isn't a gift card QR code.");
+
+Widget buildMobilePaymentLinkScanDeniedUseCase(BuildContext context) =>
+    _mobileGiftScanOverlay(status: AddressQrCameraStatus.denied);
+
+Widget _mobileGiftScanOverlay({
+  AddressQrCameraStatus status = AddressQrCameraStatus.active,
+  String? error,
+}) => _MobilePaymentLinkFrame(
+  child: MobileModalOverlay(
+    background: const PaymentLinkRedeemMobileView(
+      state: PaymentLinkRedeemMobileState.paste,
+      onBack: _noop,
+      onPaste: _noop,
+      onScan: _noop,
+    ),
+    child: _mobileGiftScanPreview(status: status, error: error),
+  ),
+);
+
+Widget _mobileGiftScanPreview({
+  AddressQrCameraStatus status = AddressQrCameraStatus.active,
+  String? error,
+  VoidCallback onClose = _noop,
+}) => MobileAddressScanCardContent(
+  status: status,
+  cameraView: const ColoredBox(color: Color(0xFF343A3D)),
+  caption: 'Scan the gift card QR code',
+  permissionTitle: 'Scan gift card QR',
+  error: error,
+  onClose: onClose,
+  onTorch: _noop,
+  onRetry: _noop,
+);
 
 Widget buildMobilePaymentLinkRedeemLongSyncWarningUseCase(
   BuildContext context,
@@ -199,12 +287,48 @@ Widget buildMobilePaymentLinkRedeemInvalidUseCase(BuildContext context) {
       onBack: _noop,
       onPaste: _noop,
       onClearClipboard: _noop,
+      onScan: _noop,
     ),
   );
 }
 
 Widget buildMobilePaymentLinkReceivedUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(child: _MobileReceivedFixture());
+}
+
+Widget buildMobilePaymentLinkClaimAccountUseCase(BuildContext context) =>
+    _buildClaimAccountPreview(3);
+
+Widget buildMobilePaymentLinkClaimManyAccountsUseCase(BuildContext context) =>
+    _buildClaimAccountPreview(12);
+
+Widget _buildClaimAccountPreview(int accountCount) {
+  return _MobilePaymentLinkFrame(
+    child: MobileModalOverlay(
+      background: const _MobileReceivedFixture(),
+      child: PaymentLinkClaimAccountSheet(
+        amountZatoshi: BigInt.from(445000000),
+        accounts: [
+          for (var i = 0; i < accountCount; i++)
+            AccountInfo(
+              uuid: 'claim-preview-$i',
+              name: switch (i) {
+                0 => 'Primary Vault',
+                1 => 'Savings',
+                2 => 'Keystone',
+                _ => 'Account ${i + 1}',
+              },
+              order: i,
+              isHardware: i == 2,
+            ),
+        ],
+        activeAccountUuid: 'claim-preview-0',
+        onConfirm: (_) async {},
+        onConfirmed: _noop,
+        onClose: _noop,
+      ),
+    ),
+  );
 }
 
 Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
@@ -223,8 +347,7 @@ Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
       onHome: _noop,
       waitingHeading: 'Your Gift Card\nis almost ready!',
       waitingDescription:
-          'Waiting for 6 confirmations. Vizor will keep checking, and you '
-          'can claim the card as soon as the funds are ready.',
+          '$kPaymentLinkClaimWaitingDescription\n$kPaymentLinkWaitingDescription',
       waitingIcon: AppIcons.time,
       waitingStatusLabel: 'Wait 5:00 to claim',
     ),
@@ -293,13 +416,21 @@ class _PaymentLinkCardsFixture extends StatefulWidget {
 class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
   var _activeTab = PaymentLinkCardsTab.created;
 
+  void _showQr(PaymentLinkCardArtwork artwork) {
+    showAppMobileSheet<void>(
+      context: context,
+      builder: (sheetContext) =>
+          _shareSheet(artwork, onClose: () => Navigator.of(sheetContext).pop()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PaymentLinkCardsMobileView(
       activeTab: _activeTab,
       onTabSelected: (tab) => setState(() => _activeTab = tab),
       sections: _activeTab == PaymentLinkCardsTab.created
-          ? const [
+          ? [
               PaymentLinkCardsSection(
                 label: kPaymentLinkCreatingSectionLabel,
                 cards: [
@@ -331,8 +462,9 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
                     ),
                     amountText: '4.45 ZEC',
                     dateText: 'August 7',
-                    showCopyAction: true,
+                    showLinkActions: true,
                     onCopyLink: _noop,
+                    onShowQr: () => _showQr(PaymentLinkCardArtwork.ruby),
                   ),
                   PaymentLinkCardListMobileRow(
                     thumbnail: _PaymentLinkThumbnail(
@@ -340,8 +472,9 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
                     ),
                     amountText: '2.50 ZEC',
                     dateText: 'August 2',
-                    showCopyAction: true,
+                    showLinkActions: true,
                     onCopyLink: _noop,
+                    onShowQr: () => _showQr(PaymentLinkCardArtwork.diamond),
                   ),
                 ],
               ),
