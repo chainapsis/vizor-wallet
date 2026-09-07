@@ -271,8 +271,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Redeemed a Gift Card'), findsOneWidget);
-    expect(find.text('Created a Gift Card'), findsOneWidget);
+    expect(find.text('Redeemed a gift card'), findsOneWidget);
+    expect(find.text('Created a gift card'), findsOneWidget);
     // The card amount, not the funding total the transaction carries.
     expect(find.text('-0.5 ZEC'), findsOneWidget);
     expect(find.text('+0.3 ZEC'), findsOneWidget);

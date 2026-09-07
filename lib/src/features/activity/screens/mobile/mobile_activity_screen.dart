@@ -165,12 +165,18 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     required bool privacyModeEnabled,
   }) {
     return ActivityEntry(
-      timestamp: transactionActivityTimestamp(transaction),
+      timestamp:
+          giftCard?.activityTimestamp ??
+          transactionActivityTimestamp(transaction),
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
+        giftCardStableId: giftCard?.stableId,
+        giftCardActivityTimestamp: giftCard?.activityTimestamp,
+        giftCardDisplayPool: giftCard?.displayPool,
         privacyModeEnabled: privacyModeEnabled,
         onTap: () => unawaited(
           _openTransactionStatus(context, transaction, giftCard: giftCard),
@@ -252,15 +258,14 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
     final entries = <ActivityEntry>[
-      if (loadedTransactions != null)
-        for (final tx in transactions)
-          if (!absorption.absorbs(tx))
-            _transactionEntry(
-              context,
-              tx,
-              giftCardActivityIndex.metadataFor(tx),
-              privacyModeEnabled: privacyModeEnabled,
-            ),
+      for (final tx in giftCardActivityIndex.withPendingClaims(transactions))
+        if (!absorption.absorbs(tx))
+          _transactionEntry(
+            context,
+            tx,
+            giftCardActivityIndex.metadataFor(tx),
+            privacyModeEnabled: privacyModeEnabled,
+          ),
       for (final item in swapItems)
         ActivityEntry(
           timestamp: item.activityTimestamp,

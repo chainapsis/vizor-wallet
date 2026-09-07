@@ -344,8 +344,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
     final entries = <_ActivityEntry>[];
     var sourceOrder = 0;
-    if (canRenderTransactions) {
-      for (final tx in transactions) {
+    if (accountUuid != null) {
+      for (final tx in giftCardActivityIndex.withPendingClaims(transactions)) {
         if (absorption.absorbs(tx)) continue;
         final giftCard = giftCardActivityIndex.metadataFor(tx);
         entries.add(
@@ -353,12 +353,17 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             sortKey: activitySortKeyForTransaction(
               tx,
               sourceOrder: sourceOrder++,
+              giftCard: giftCard,
             ),
             row: buildTransactionActivityRow(
               context: context,
               transaction: tx,
               giftCardKind: giftCard?.kind,
               giftCardAmountZatoshi: giftCard?.amountZatoshi,
+              giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
+              giftCardStableId: giftCard?.stableId,
+              giftCardActivityTimestamp: giftCard?.activityTimestamp,
+              giftCardDisplayPool: giftCard?.displayPool,
               privacyModeEnabled: privacyModeEnabled,
               onTap: () => _openTransactionStatus(tx, giftCard: giftCard),
             ),
@@ -441,9 +446,10 @@ class ActivityEntrySortKey {
 ActivityEntrySortKey activitySortKeyForTransaction(
   rust_sync.TransactionInfo tx, {
   required int sourceOrder,
+  GiftCardActivityMetadata? giftCard,
 }) {
   return ActivityEntrySortKey(
-    timestamp: _transactionActivityTimestamp(tx),
+    timestamp: giftCard?.activityTimestamp ?? _transactionActivityTimestamp(tx),
     isPendingTransaction: isPendingActivityTransaction(tx),
     sourceOrder: sourceOrder,
   );

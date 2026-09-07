@@ -8,6 +8,8 @@ import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/config/swap_feature_config.dart';
+import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_layout.dart';
@@ -32,6 +34,7 @@ import '../../send/widgets/send_recipient_resolver.dart';
 import '../../send/widgets/send_status_content_view.dart';
 import '../../send/widgets/send_verify_address_overlay.dart';
 import '../../payment_links/widgets/payment_link_gift_card.dart';
+import '../../payment_links/services/payment_link_transaction_matching.dart';
 import '../gift_card_activity_index.dart';
 import '../widgets/gift_card_activity_detail_view.dart';
 import '../widgets/received_receipt_view.dart';
@@ -178,10 +181,9 @@ class _ActivityTransactionStatusScreenState
     String txidHex, {
     String? txKind,
   }) {
-    final normalized = txidHex.toLowerCase();
     if (txKind != null) {
       for (final tx in transactions) {
-        if (tx.txidHex.toLowerCase() == normalized &&
+        if (_txidsMatch(txidHex, tx.txidHex) &&
             _txKindMatches(txKind, tx.txKind)) {
           return tx;
         }
@@ -189,20 +191,19 @@ class _ActivityTransactionStatusScreenState
       return null;
     }
     for (final tx in transactions) {
-      if (tx.txidHex.toLowerCase() == normalized) return tx;
+      if (_txidsMatch(txidHex, tx.txidHex)) return tx;
     }
     return null;
   }
 
   String _recentTxSignature(SyncState? sync) {
-    final txid = widget.args.txidHex.toLowerCase();
     final txKind =
         _transaction?.txKind ??
         widget.args.initialTransaction?.txKind ??
         widget.args.txKind;
     if (txKind != null) {
       for (final tx in sync?.recentTransactions ?? const []) {
-        if (tx.txidHex.toLowerCase() == txid &&
+        if (_txidsMatch(widget.args.txidHex, tx.txidHex) &&
             _txKindMatches(txKind, tx.txKind)) {
           return [
             tx.txidHex,
@@ -210,23 +211,32 @@ class _ActivityTransactionStatusScreenState
             tx.expiredUnmined,
             tx.txKind,
             tx.displayAmount,
+            tx.fee,
           ].join(':');
         }
       }
       return '';
     }
     for (final tx in sync?.recentTransactions ?? const []) {
-      if (tx.txidHex.toLowerCase() == txid) {
+      if (_txidsMatch(widget.args.txidHex, tx.txidHex)) {
         return [
           tx.txidHex,
           tx.minedHeight,
           tx.expiredUnmined,
           tx.txKind,
           tx.displayAmount,
+          tx.fee,
         ].join(':');
       }
     }
     return '';
+  }
+
+  bool _txidsMatch(String first, String second) {
+    if (widget.args.giftCard != null) {
+      return paymentLinkTxidsMatch(first, second);
+    }
+    return first.toLowerCase() == second.toLowerCase();
   }
 
   bool _txKindMatches(String expected, String actual) {
@@ -290,16 +300,20 @@ class _ActivityTransactionStatusScreenState
   String _feeText(
     rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
+    GiftCardActivityMetadata? giftCard,
   }) {
     if (tx == null || tx.fee <= BigInt.zero) return '--';
+    final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
+    if (fee == null) return '--';
     return hideAmountIfPrivacyMode(
-      ZecAmount.fromZatoshi(tx.fee).fee.toString(),
+      ZecAmount.fromZatoshi(fee).fee.toString(),
       privacyModeEnabled: privacyModeEnabled,
     );
   }
 
   /// Figma receipt timestamp ("25 May, 13:30") for the redesigned views.
-  String _timestampText(rust_sync.TransactionInfo tx) {
+  String _timestampText(rust_sync.TransactionInfo tx, {DateTime? override}) {
+    if (override != null) return formatDayMonthTime(override);
     final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
     if (seconds <= BigInt.zero) return '--';
     return formatDayMonthTime(
@@ -312,7 +326,7 @@ class _ActivityTransactionStatusScreenState
   ) {
     final detail = _detail;
     if (tx == null || detail == null) return null;
-    if (detail.txidHex.toLowerCase() != tx.txidHex.toLowerCase()) {
+    if (!_txidsMatch(detail.txidHex, tx.txidHex)) {
       return null;
     }
     if (!_txKindMatches(detail.txKind, tx.txKind)) return null;
@@ -494,7 +508,7 @@ class _ActivityTransactionStatusScreenState
     final colors = context.colors;
     final (statusText, statusIconName, statusColor) = tx.expiredUnmined
         ? ('Failed', AppIcons.cancel, colors.text.destructive)
-        : tx.minedHeight == BigInt.zero
+        : tx.minedHeight == BigInt.zero || giftCard.isClaimInFlight
         ? ('In progress', AppIcons.loader, colors.text.secondary)
         : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
     final amountText = hideAmountIfPrivacyMode(
@@ -503,8 +517,18 @@ class _ActivityTransactionStatusScreenState
     );
     return GiftCardActivityDetailView(
       kind: giftCard.kind,
+      isInFlight:
+          !tx.expiredUnmined &&
+          (tx.minedHeight == BigInt.zero || giftCard.isClaimInFlight),
+      isFailed: tx.expiredUnmined,
       artwork: PaymentLinkCardArtwork.fromProtocolId(giftCard.artworkId),
       amountText: amountText,
+      supportingText:
+          ref.watch(swapFeatureEnabledProvider) &&
+              !privacyModeEnabled &&
+              giftCard.fiatSnapshot != null
+          ? swapFormatCompactFiatValue(giftCard.fiatSnapshot!.amount)
+          : null,
       statusText: statusText,
       statusIconName: statusIconName,
       statusColor: statusColor,
@@ -513,9 +537,13 @@ class _ActivityTransactionStatusScreenState
       onToggleMessage: giftCard.message?.trim().isNotEmpty == true
           ? _toggleMessageExpanded
           : null,
-      timestampText: _timestampText(tx),
+      timestampText: _timestampText(tx, override: giftCard.activityTimestamp),
       txIdText: truncatedTxid(tx.txidHex),
-      feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
+      feeText: _feeText(
+        tx,
+        privacyModeEnabled: privacyModeEnabled,
+        giftCard: giftCard,
+      ),
       onTxIdPressed: () => unawaited(_openTransactionExplorer()),
     );
   }
@@ -692,7 +720,7 @@ class _ActivityTransactionStatusScreenState
         ? widget.args.giftCard
         : null;
     final giftCard =
-        suppliedGiftCard ?? _resolvedGiftCard(tx, activeAccountUuid);
+        _resolvedGiftCard(tx, activeAccountUuid) ?? suppliedGiftCard;
 
     final sentRecipientAddress = detail?.primaryAddress?.trim();
     Widget? redesignedContent;

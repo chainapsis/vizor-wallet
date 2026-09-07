@@ -2,6 +2,9 @@ import 'package:flutter/material.dart' show MaterialApp, ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -38,6 +41,31 @@ const _transparentSenderAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 final _blockTime = BigInt.from(1764150000);
 
 void main() {
+  for (final settings in [(false, false), (true, true)]) {
+    testWidgets('hides saved fiat for disabled pricing or privacy $settings', (
+      tester,
+    ) async {
+      await _pumpScreen(
+        tester,
+        pricingEnabled: settings.$1,
+        privacyEnabled: settings.$2,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'received',
+          initialTransaction: _transaction(txKind: 'received'),
+          giftCard: GiftCardActivityMetadata(
+            kind: GiftCardActivityKind.redeemed,
+            amountZatoshi: BigInt.from(445000000),
+            artworkId: 'ruby',
+            message: null,
+            fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 142.23),
+          ),
+        ),
+      );
+      expect(find.text(r'$142.23'), findsNothing);
+    });
+  }
+
   testWidgets('renders created Gift Card activity metadata', (tester) async {
     await _pumpScreen(
       tester,
@@ -53,18 +81,21 @@ void main() {
           amountZatoshi: BigInt.from(100000),
           artworkId: 'ruby',
           message: 'Happy birthday!',
+          fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 142.23),
+          claimFeeReserveZatoshi: BigInt.from(20000),
         ),
       ),
     );
 
     expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
-    expect(find.text('Created Gift Card'), findsOneWidget);
+    expect(find.text('Created a gift card'), findsOneWidget);
     expect(find.text('Happy birthday!'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('0.001'), findsOneWidget);
     expect(find.text('120'), findsNothing);
-    expect(find.text('Tx fee'), findsOneWidget);
-    expect(find.text('0.0001 ZEC'), findsOneWidget);
+    expect(find.text('Card fee'), findsOneWidget);
+    expect(find.text('0.0003 ZEC'), findsOneWidget);
+    expect(find.text(r'$142.23'), findsOneWidget);
   });
 
   testWidgets('renders redeemed Gift Card activity metadata', (tester) async {
@@ -84,7 +115,7 @@ void main() {
     );
 
     expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
-    expect(find.text('Redeemed Gift Card'), findsOneWidget);
+    expect(find.text('Redeemed a gift card'), findsOneWidget);
     expect(find.text('Message'), findsNothing);
   });
 
@@ -116,7 +147,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
-    expect(find.text('Created Gift Card'), findsOneWidget);
+    expect(find.text('Created a gift card'), findsOneWidget);
     expect(find.text('Happy birthday!'), findsOneWidget);
   });
 
@@ -150,7 +181,7 @@ void main() {
     await tester.pump();
 
     expect(find.byType(GiftCardActivityDetailView), findsNothing);
-    expect(find.text('Created Gift Card'), findsNothing);
+    expect(find.text('Created a gift card'), findsNothing);
     expect(find.text('Happy birthday!'), findsNothing);
   });
 
@@ -815,6 +846,8 @@ Future<void> _pumpScreen(
   Map<String, AccountInfo> ownAccounts = const {},
   GiftCardActivityIndex? giftCardActivityIndex,
   AccountNotifier? accountNotifier,
+  bool pricingEnabled = true,
+  bool privacyEnabled = false,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1512, 982));
   addTearDown(() async {
@@ -838,6 +871,8 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
+        privacyModeProvider.overrideWith(() => _FixedPrivacy(privacyEnabled)),
         appBootstrapProvider.overrideWithValue(_bootstrap),
         if (accountNotifier != null)
           accountProvider.overrideWith(() => accountNotifier),
@@ -913,4 +948,11 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 
   @override
   Future<void> saveContacts(List<AddressBookContact> contacts) async {}
+}
+
+class _FixedPrivacy extends PrivacyModeNotifier {
+  _FixedPrivacy(this.enabled);
+  final bool enabled;
+  @override
+  bool build() => enabled;
 }

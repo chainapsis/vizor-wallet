@@ -710,14 +710,15 @@ class _HomePaneState extends ConsumerState<_HomePane> {
             transactions: widget.sync.recentTransactions,
           );
     final entries = <_HomeActivityEntry>[
-      if (widget.hasActivitySyncData)
-        for (final tx in widget.sync.recentTransactions)
-          if (!absorption.absorbs(tx))
-            _homeTransactionActivityEntry(
-              context,
-              tx,
-              giftCardActivityIndex.metadataFor(tx),
-            ),
+      for (final tx in giftCardActivityIndex.withPendingClaims(
+        widget.hasActivitySyncData ? widget.sync.recentTransactions : const [],
+      ))
+        if (!absorption.absorbs(tx))
+          _homeTransactionActivityEntry(
+            context,
+            tx,
+            giftCardActivityIndex.metadataFor(tx),
+          ),
       for (final item in swapItems)
         _HomeActivityEntry(
           timestamp: item.activityTimestamp,
@@ -741,12 +742,18 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     GiftCardActivityMetadata? giftCard,
   ) {
     return _HomeActivityEntry(
-      timestamp: transactionActivityTimestamp(transaction),
+      timestamp:
+          giftCard?.activityTimestamp ??
+          transactionActivityTimestamp(transaction),
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
+        giftCardStableId: giftCard?.stableId,
+        giftCardActivityTimestamp: giftCard?.activityTimestamp,
+        giftCardDisplayPool: giftCard?.displayPool,
         privacyModeEnabled: widget.privacyModeEnabled,
         onTap: () => _openTransactionStatus(transaction, giftCard: giftCard),
       ),

@@ -5,8 +5,10 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../payment_links/widgets/payment_link_gift_card.dart';
+import '../../payment_links/widgets/payment_link_copy.dart';
 import '../../send/widgets/send_review_layout.dart';
 import '../gift_card_activity_index.dart';
+import '../activity_row_mapper.dart' show giftCardActivityTitle;
 
 class GiftCardActivityDetailView extends StatelessWidget {
   const GiftCardActivityDetailView({
@@ -20,6 +22,8 @@ class GiftCardActivityDetailView extends StatelessWidget {
     required this.txIdText,
     required this.feeText,
     required this.onTxIdPressed,
+    this.isInFlight = false,
+    this.isFailed = false,
     this.supportingText,
     this.message,
     this.messageExpanded = false,
@@ -28,6 +32,8 @@ class GiftCardActivityDetailView extends StatelessWidget {
   });
 
   final GiftCardActivityKind kind;
+  final bool isInFlight;
+  final bool isFailed;
   final PaymentLinkCardArtwork artwork;
   final String amountText;
   final String? supportingText;
@@ -60,9 +66,11 @@ class GiftCardActivityDetailView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                kind == GiftCardActivityKind.created
-                    ? 'Created Gift Card'
-                    : 'Redeemed Gift Card',
+                giftCardActivityTitle(
+                  kind,
+                  isInFlight: isInFlight,
+                  isFailed: isFailed,
+                ),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyLarge.copyWith(
                   color: context.colors.text.accent,
@@ -108,11 +116,15 @@ class GiftCardActivityDetailView extends StatelessWidget {
                   ),
                   const ReviewWrapDivider(),
                   ReviewListRow(
-                    label: 'Tx fee',
+                    label: kind == GiftCardActivityKind.created
+                        ? 'Card fee'
+                        : 'Tx fee',
                     value: feeText,
                     trailingIconName: AppIcons.help,
                     trailingIconColor: context.colors.text.secondary,
-                    trailingIconTooltip: kTxFeeHelpTooltip,
+                    trailingIconTooltip: kind == GiftCardActivityKind.created
+                        ? kPaymentLinkCardFeeHelpText
+                        : kTxFeeHelpTooltip,
                   ),
                 ],
               ),

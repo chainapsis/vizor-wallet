@@ -14,6 +14,7 @@ void main() {
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityKind? giftCardKind,
     BigInt? giftCardAmountZatoshi,
+    bool giftCardClaimInFlight = false,
   }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
@@ -26,6 +27,7 @@ void main() {
               transaction: transaction,
               giftCardKind: giftCardKind,
               giftCardAmountZatoshi: giftCardAmountZatoshi,
+              giftCardClaimInFlight: giftCardClaimInFlight,
             );
             return const SizedBox.shrink();
           },
@@ -34,6 +36,32 @@ void main() {
     );
     return row;
   }
+
+  testWidgets(
+    'a mined gift claim stays in progress until card reconciliation completes',
+    (tester) async {
+      final tx = _transaction(txKind: 'received');
+      final pending = await mapRow(
+        tester,
+        tx,
+        giftCardKind: GiftCardActivityKind.redeemed,
+        giftCardClaimInFlight: true,
+      );
+      expect(pending.title, 'Redeeming a card ...');
+      expect(pending.statusText, 'In progress');
+      expect(pending.leadingIconName, AppIcons.loader);
+      final completed = await mapRow(
+        tester,
+        tx,
+        giftCardKind: GiftCardActivityKind.redeemed,
+      );
+      expect(completed.title, 'Redeemed a gift card');
+      expect(completed.statusText, 'Completed');
+      expect(completed.stableId, pending.stableId);
+      final regular = await mapRow(tester, tx);
+      expect(regular.title, 'Received');
+    },
+  );
 
   testWidgets('unconfirmed send renders as an in-flight loader row', (
     tester,
@@ -105,11 +133,11 @@ void main() {
       giftCardAmountZatoshi: BigInt.from(100000),
     );
 
-    expect(created.title, 'Created a Gift Card');
+    expect(created.title, 'Created a gift card');
     expect(created.leadingIconName, AppIcons.giftCard);
     expect(created.subtitle, 'Shielded');
     expect(created.amountText, '-0.001 ZEC');
-    expect(redeemed.title, 'Redeemed a Gift Card');
+    expect(redeemed.title, 'Redeemed a gift card');
     expect(redeemed.leadingIconName, AppIcons.giftCard);
     expect(redeemed.amountText, '+0.001 ZEC');
   });

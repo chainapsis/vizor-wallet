@@ -26,13 +26,18 @@ ActivityRowData buildTransactionActivityRow({
   required rust_sync.TransactionInfo transaction,
   GiftCardActivityKind? giftCardKind,
   BigInt? giftCardAmountZatoshi,
+  bool giftCardClaimInFlight = false,
+  String? giftCardStableId,
+  DateTime? giftCardActivityTimestamp,
+  String? giftCardDisplayPool,
   bool privacyModeEnabled = false,
   bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
 }) {
   final colors = context.colors;
   final isPending =
-      transaction.minedHeight == BigInt.zero && !transaction.expiredUnmined;
+      !transaction.expiredUnmined &&
+      (transaction.minedHeight == BigInt.zero || giftCardClaimInFlight);
   final isFailed = transaction.expiredUnmined;
   final kind = transaction.txKind;
   final amount = giftCardAmountZatoshi ?? transaction.displayAmount;
@@ -42,11 +47,12 @@ ActivityRowData buildTransactionActivityRow({
   final isShielded = kind == 'shielded';
   final isMigration = kind == 'migration';
   final isInbound = isReceived || isReceiving;
+  final displayPool = giftCardDisplayPool ?? transaction.displayPool;
   final signedAmount = isSent ? -amount : amount;
   final subtitle = isMigration
       ? 'Orchard → Ironwood'
       : isInbound || isSent
-      ? _poolLabel(transaction.displayPool)
+      ? _poolLabel(displayPool)
       : null;
 
   // Unconfirmed sends/receives render as in-flight rows: a pulsing loader
@@ -55,7 +61,9 @@ ActivityRowData buildTransactionActivityRow({
   final isInFlight = isPending && (isInbound || isSent || isMigration);
 
   return ActivityRowData(
-    stableId: 'tx:${transaction.txidHex}:${_stableTransactionRole(kind)}',
+    stableId:
+        giftCardStableId ??
+        'tx:${transaction.txidHex}:${_stableTransactionRole(kind)}',
     title: giftCardKind != null
         ? giftCardActivityTitle(
             giftCardKind,
@@ -81,7 +89,7 @@ ActivityRowData buildTransactionActivityRow({
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
-    subtitleIconName: _poolIcon(transaction.displayPool),
+    subtitleIconName: _poolIcon(displayPool),
     amountText: activityAmountTextForFormFactor(
       _transactionAmountText(
         amount: amount,
@@ -114,7 +122,7 @@ ActivityRowData buildTransactionActivityRow({
         : null,
     statusColor: isFailed ? colors.text.destructive : colors.text.secondary,
     timestampText: formatActivityTimestamp(
-      _txTimestamp(transaction),
+      giftCardActivityTimestamp ?? _txTimestamp(transaction),
       dateOnly: dateOnlyTimestamp,
     ),
     onTap: onTap,
@@ -136,13 +144,13 @@ String giftCardActivityTitle(
   }
   if (isInFlight) {
     return _pendingTxTitle(switch (kind) {
-      GiftCardActivityKind.created => 'Creating a Gift Card',
-      GiftCardActivityKind.redeemed => 'Redeeming a Gift Card',
+      GiftCardActivityKind.created => 'Creating a card',
+      GiftCardActivityKind.redeemed => 'Redeeming a card',
     });
   }
   return switch (kind) {
-    GiftCardActivityKind.created => 'Created a Gift Card',
-    GiftCardActivityKind.redeemed => 'Redeemed a Gift Card',
+    GiftCardActivityKind.created => 'Created a gift card',
+    GiftCardActivityKind.redeemed => 'Redeemed a gift card',
   };
 }
 

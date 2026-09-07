@@ -990,10 +990,10 @@ void main() {
         ),
       ),
     );
-    await _pumpUntilPresent(tester, find.text('Redeemed a Gift Card'));
+    await _pumpUntilPresent(tester, find.text('Redeemed a gift card'));
 
-    expect(find.text('Created a Gift Card'), findsOneWidget);
-    expect(find.text('Redeemed a Gift Card'), findsOneWidget);
+    expect(find.text('Created a gift card'), findsOneWidget);
+    expect(find.text('Redeemed a gift card'), findsOneWidget);
     expect(find.text('Sent'), findsNothing);
     expect(find.text('Received'), findsNothing);
   });

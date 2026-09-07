@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../rust/api/sync.dart' as rust_sync;
 import '../payment_links/services/payment_link_received_store.dart';
+import '../payment_links/models/vizor_payment_link.dart';
 import '../payment_links/services/payment_link_recovery_store.dart';
 import '../payment_links/services/payment_link_lifecycle_revision.dart';
 import '../payment_links/services/payment_link_service.dart';
@@ -16,12 +17,30 @@ class GiftCardActivityMetadata {
     required this.amountZatoshi,
     required this.artworkId,
     required this.message,
+    this.isClaimInFlight = false,
+    this.stableId,
+    this.activityTimestamp,
+    this.displayPool,
+    this.fiatSnapshot,
+    this.claimFeeReserveZatoshi,
   });
 
   final GiftCardActivityKind kind;
   final BigInt amountZatoshi;
   final String? artworkId;
   final String? message;
+  final bool isClaimInFlight;
+  final String? stableId;
+  final DateTime? activityTimestamp;
+  final String? displayPool;
+  final PaymentLinkFiatSnapshot? fiatSnapshot;
+  final BigInt? claimFeeReserveZatoshi;
+
+  BigInt? detailFeeZatoshi(BigInt transactionFee) {
+    if (kind == GiftCardActivityKind.redeemed) return transactionFee;
+    final reserve = claimFeeReserveZatoshi;
+    return reserve == null ? null : transactionFee + reserve;
+  }
 }
 
 /// Matches persisted Gift Card lifecycle records to the account's normal
@@ -32,6 +51,7 @@ class GiftCardActivityIndex {
     this.redeemedTxids = const <String>{},
     this.createdMetadataByTxid = const <String, GiftCardActivityMetadata>{},
     this.redeemedMetadataByTxid = const <String, GiftCardActivityMetadata>{},
+    this.pendingClaims = const <PaymentLinkReceivedRecord>[],
   });
 
   factory GiftCardActivityIndex.forAccount({
@@ -49,6 +69,8 @@ class GiftCardActivityIndex {
           amountZatoshi: record.link.amountZatoshi,
           artworkId: record.link.presentation?.artworkId,
           message: record.link.presentation?.message,
+          fiatSnapshot: record.link.presentation?.fiatSnapshot,
+          claimFeeReserveZatoshi: record.claimFeeReserveZatoshi,
         );
       }
     }
@@ -60,6 +82,11 @@ class GiftCardActivityIndex {
           amountZatoshi: record.amountZatoshi,
           artworkId: record.artworkId,
           message: record.message,
+          fiatSnapshot: record.fiatSnapshot,
+          isClaimInFlight: record.isClaimInFlight,
+          stableId: 'gift-card:${record.address}',
+          activityTimestamp: record.claimSubmittedAt,
+          displayPool: record.claimDestinationPool,
         );
       }
     }
@@ -68,6 +95,14 @@ class GiftCardActivityIndex {
       redeemedTxids: redeemedMetadata.keys.toSet(),
       createdMetadataByTxid: createdMetadata,
       redeemedMetadataByTxid: redeemedMetadata,
+      pendingClaims: receivedRecords
+          .where(
+            (record) =>
+                record.destinationAccountUuid == accountUuid &&
+                record.status == PaymentLinkReceivedStatus.receiving &&
+                _splitTxids(record.claimTxids).isNotEmpty,
+          )
+          .toList(),
     );
   }
 
@@ -77,6 +112,76 @@ class GiftCardActivityIndex {
   final Set<String> redeemedTxids;
   final Map<String, GiftCardActivityMetadata> createdMetadataByTxid;
   final Map<String, GiftCardActivityMetadata> redeemedMetadataByTxid;
+  final List<PaymentLinkReceivedRecord> pendingClaims;
+
+  /// A submitted claim is visible before the receiver's wallet detects it.
+  /// Once a matching receive arrives, its transaction details enrich the same
+  /// activity item instead of replacing the business record.
+  List<rust_sync.TransactionInfo> withPendingClaims(
+    Iterable<rust_sync.TransactionInfo> transactions,
+  ) {
+    final source = transactions.toList();
+    final duplicateInboundIndexes = <int>{};
+    for (final record in pendingClaims) {
+      final txids = _splitTxids(record.claimTxids).toSet();
+      final matchingIndexes = <int>[];
+      for (var index = 0; index < source.length; index++) {
+        final tx = source[index];
+        if ((tx.txKind == 'received' || tx.txKind == 'receiving') &&
+            _matchesAny(txids, tx.txidHex)) {
+          matchingIndexes.add(index);
+        }
+      }
+      if (matchingIndexes.isNotEmpty) {
+        // A partial/multi-tx claim is one Gift Card activity item. Keep the
+        // first actual inbound transaction authoritative for its detail and
+        // suppress the other matching receive legs as duplicate rows.
+        duplicateInboundIndexes.addAll(matchingIndexes.skip(1));
+        continue;
+      }
+      source.add(
+        rust_sync.TransactionInfo(
+          txidHex: txids.first,
+          minedHeight: BigInt.zero,
+          expiredUnmined: false,
+          accountBalanceDelta: record.amountZatoshi.toInt(),
+          fee: BigInt.zero,
+          blockTime: BigInt.zero,
+          isTransparent: false,
+          txKind: 'receiving',
+          displayAmount: record.amountZatoshi,
+          // Keep the locally observed output pool stable while the receiver's
+          // history catches up. A missing value may be enriched later.
+          displayPool: record.claimDestinationPool ?? 'unknown',
+          createdTime: BigInt.from(
+            (record.claimSubmittedAt ?? record.updatedAt)
+                    .millisecondsSinceEpoch ~/
+                1000,
+          ),
+        ),
+      );
+    }
+    // The persisted record remains the business identity after confirmation.
+    // A claim that was broadcast in multiple legs must therefore still
+    // produce one row once it reaches `received` and leaves pendingClaims.
+    final seenGiftCardIds = <String>{};
+    for (var index = 0; index < source.length; index++) {
+      if (duplicateInboundIndexes.contains(index)) continue;
+      final transaction = source[index];
+      if (transaction.txKind != 'received' &&
+          transaction.txKind != 'receiving') {
+        continue;
+      }
+      final stableId = metadataFor(transaction)?.stableId;
+      if (stableId != null && !seenGiftCardIds.add(stableId)) {
+        duplicateInboundIndexes.add(index);
+      }
+    }
+    return [
+      for (var index = 0; index < source.length; index++)
+        if (!duplicateInboundIndexes.contains(index)) source[index],
+    ];
+  }
 
   GiftCardActivityKind? kindFor(rust_sync.TransactionInfo transaction) {
     final kind = transaction.txKind;

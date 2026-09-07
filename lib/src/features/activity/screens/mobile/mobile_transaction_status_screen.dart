@@ -7,6 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/config/zcash_explorer.dart';
+import '../../../../core/config/swap_feature_config.dart';
+import '../../../swap/models/swap_fiat_value_formatting.dart';
+import '../../../payment_links/widgets/payment_link_copy.dart';
 import '../../../../core/formatting/address_display.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -30,6 +33,7 @@ import '../../../address_book/providers/address_book_provider.dart';
 import '../../../payment_links/widgets/mobile/payment_link_mobile_views.dart'
     show kPaymentLinkMobileCardHeight, kPaymentLinkMobileCardWidth;
 import '../../../payment_links/widgets/payment_link_gift_card.dart';
+import '../../../payment_links/services/payment_link_transaction_matching.dart';
 import '../../../send/widgets/send_recipient_resolver.dart';
 import '../../../send/widgets/send_review_layout.dart'
     show SendReviewContactRecipient;
@@ -200,13 +204,12 @@ class _MobileTransactionStatusScreenState
   rust_sync.TransactionInfo? _findTransaction(
     Iterable<rust_sync.TransactionInfo> transactions,
   ) {
-    final normalized = widget.args.txidHex.toLowerCase();
     final txKind =
         _transaction?.txKind ??
         widget.args.initialTransaction?.txKind ??
         widget.args.txKind;
     for (final tx in transactions) {
-      if (tx.txidHex.toLowerCase() != normalized) continue;
+      if (!_txidsMatch(widget.args.txidHex, tx.txidHex)) continue;
       if (txKind == null || _txKindMatches(txKind, tx.txKind)) return tx;
     }
     return null;
@@ -219,14 +222,20 @@ class _MobileTransactionStatusScreenState
   }
 
   String _recentTxSignature(SyncState? sync) {
-    final txid = widget.args.txidHex.toLowerCase();
     for (final tx in sync?.recentTransactions ?? const []) {
-      if (tx.txidHex.toLowerCase() == txid) {
+      if (_txidsMatch(widget.args.txidHex, tx.txidHex)) {
         return '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:'
-            '${tx.txKind}:${tx.displayAmount}';
+            '${tx.txKind}:${tx.displayAmount}:${tx.fee}';
       }
     }
     return '';
+  }
+
+  bool _txidsMatch(String first, String second) {
+    if (widget.args.giftCard != null) {
+      return paymentLinkTxidsMatch(first, second);
+    }
+    return first.toLowerCase() == second.toLowerCase();
   }
 
   _TxPhase get _phase {
@@ -248,15 +257,22 @@ class _MobileTransactionStatusScreenState
   bool get _isMigration =>
       (_transaction?.txKind ?? widget.args.txKind) == 'migration';
 
+  _TxPhase _phaseFor(GiftCardActivityMetadata? giftCard) {
+    if (_phase == _TxPhase.succeeded && giftCard?.isClaimInFlight == true) {
+      return _TxPhase.pending;
+    }
+    return _phase;
+  }
+
   String _titleFor(GiftCardActivityMetadata? giftCard) {
     if (giftCard != null) {
-      // Same copy as the activity row that opened this receipt.
       return giftCardActivityTitle(
         giftCard.kind,
-        isInFlight: _phase == _TxPhase.pending,
-        isFailed: _phase == _TxPhase.failed,
+        isInFlight: _phaseFor(giftCard) == _TxPhase.pending,
+        isFailed: _phaseFor(giftCard) == _TxPhase.failed,
       );
     }
+
     if (_isShielding) return 'Shielded';
     if (_isMigration) {
       return switch (_phase) {
@@ -339,7 +355,7 @@ class _MobileTransactionStatusScreenState
         ? widget.args.giftCard
         : null;
     final giftCard =
-        suppliedGiftCard ?? _resolvedGiftCard(tx, activeAccountUuid);
+        _resolvedGiftCard(tx, activeAccountUuid) ?? suppliedGiftCard;
 
     final amountText = _amountText(
       tx,
@@ -360,7 +376,9 @@ class _MobileTransactionStatusScreenState
         : null;
     final receivingAddress = receivingOutput?.address?.trim();
     final address = _isIncoming ? sourceAddress : primaryAddress;
-    final poolLabel = _isIncoming
+    final poolLabel = giftCard != null
+        ? _addressPoolLabel(giftCard.displayPool, null)
+        : _isIncoming
         ? _addressPoolLabel(sourcePool, sourceAddress)
         : _addressPoolLabel(tx?.displayPool, primaryAddress);
     final receivingPoolLabel = _addressPoolLabel(
@@ -503,7 +521,7 @@ class _MobileTransactionStatusScreenState
     // this state yet; mobile is aligned to the (more informative) desktop
     // shape pending one.
     final reviewChildren = giftCard != null
-        ? <Widget>[amountRow]
+        ? <Widget>[]
         : _isMigration
         ? <Widget>[
             amountRow,
@@ -572,6 +590,7 @@ class _MobileTransactionStatusScreenState
             children: [
               MobileTopNav.back(
                 title: _titleFor(giftCard),
+                titleMaxLines: giftCard == null ? 1 : 2,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
               Expanded(
@@ -602,39 +621,72 @@ class _MobileTransactionStatusScreenState
                                   formatZecAmount(giftCard.amountZatoshi),
                                   privacyModeEnabled: privacyModeEnabled,
                                 ),
+                                supportingText:
+                                    ref.watch(swapFeatureEnabledProvider) &&
+                                        !privacyModeEnabled &&
+                                        giftCard.fiatSnapshot != null
+                                    ? swapFormatCompactFiatValue(
+                                        giftCard.fiatSnapshot!.amount,
+                                      )
+                                    : null,
                                 showCaret: false,
                               ),
                             ),
                           ),
                         ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.md,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            for (var i = 0; i < reviewChildren.length; i++) ...[
-                              if (i > 0) const SizedBox(height: AppSpacing.xs),
-                              reviewChildren[i],
+                      if (reviewChildren.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppSpacing.md,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (
+                                var i = 0;
+                                i < reviewChildren.length;
+                                i++
+                              ) ...[
+                                if (i > 0)
+                                  const SizedBox(height: AppSpacing.xs),
+                                reviewChildren[i],
+                              ],
                             ],
-                          ],
+                          ),
                         ),
-                      ),
                       const SizedBox(height: AppSpacing.md),
                       _DetailCard(
-                        phase: _phase,
+                        phase: _phaseFor(giftCard),
+                        statusText: giftCard == null
+                            ? null
+                            : switch (_phaseFor(giftCard)) {
+                                _TxPhase.pending =>
+                                  giftCard.kind == GiftCardActivityKind.created
+                                      ? 'Creating...'
+                                      : 'Redeeming...',
+                                _TxPhase.succeeded =>
+                                  giftCard.kind == GiftCardActivityKind.created
+                                      ? 'Created'
+                                      : 'Redeemed',
+                                _TxPhase.failed => 'Failed',
+                              },
                         failed: failed,
                         memo: memo,
                         messageExpanded: _messageExpanded,
                         onToggleMessage: () => setState(
                           () => _messageExpanded = !_messageExpanded,
                         ),
-                        timestampText: _dateText(tx),
+                        timestampText: _dateText(
+                          tx,
+                          override: giftCard?.activityTimestamp,
+                        ),
                         txidText: truncatedTxid(widget.args.txidHex),
                         onOpenExplorer: () => unawaited(_openExplorer()),
+                        isCardCreation:
+                            giftCard?.kind == GiftCardActivityKind.created,
                         feeText: _feeText(
                           tx,
+                          giftCard: giftCard,
                           privacyModeEnabled: privacyModeEnabled,
                         ),
                       ),
@@ -673,8 +725,9 @@ class _MobileTransactionStatusScreenState
     return ZecAmount.fromZatoshi(amountZatoshi).activityDetail.toString();
   }
 
-  String _dateText(rust_sync.TransactionInfo? tx) {
+  String _dateText(rust_sync.TransactionInfo? tx, {DateTime? override}) {
     if (tx == null) return '--';
+    if (override != null) return formatActivityTimestamp(override);
     final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
     if (seconds <= BigInt.zero) return '--';
     return formatActivityTimestamp(
@@ -685,12 +738,17 @@ class _MobileTransactionStatusScreenState
   String? _feeText(
     rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
+    GiftCardActivityMetadata? giftCard,
   }) {
-    if (tx == null || tx.fee <= BigInt.zero) return null;
+    if (tx == null || tx.fee <= BigInt.zero) {
+      return giftCard?.kind == GiftCardActivityKind.redeemed ? '--' : null;
+    }
+    final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
+    if (fee == null) return '--';
     if (privacyModeEnabled) {
       return hideAmountIfPrivacyMode('', privacyModeEnabled: true);
     }
-    return ZecAmount.fromZatoshi(tx.fee).fee.toString();
+    return ZecAmount.fromZatoshi(fee).fee.toString();
   }
 
   String? _poolLabel(String? pool) {
@@ -921,6 +979,7 @@ class _GhostIconLabelButton extends StatelessWidget {
 class _DetailCard extends StatelessWidget {
   const _DetailCard({
     required this.phase,
+    this.statusText,
     required this.failed,
     required this.memo,
     required this.messageExpanded,
@@ -929,9 +988,11 @@ class _DetailCard extends StatelessWidget {
     required this.txidText,
     required this.onOpenExplorer,
     required this.feeText,
+    this.isCardCreation = false,
   });
 
   final _TxPhase phase;
+  final String? statusText;
   final bool failed;
   final String? memo;
   final bool messageExpanded;
@@ -940,6 +1001,7 @@ class _DetailCard extends StatelessWidget {
   final String txidText;
   final VoidCallback onOpenExplorer;
   final String? feeText;
+  final bool isCardCreation;
 
   @override
   Widget build(BuildContext context) {
@@ -960,7 +1022,7 @@ class _DetailCard extends StatelessWidget {
           _ListRow(
             label: 'Status',
             labelColor: failed ? colors.text.destructive : null,
-            value: _StatusChip(phase: phase),
+            value: _StatusChip(phase: phase, statusText: statusText),
           ),
           const SizedBox(height: AppSpacing.sm),
           if (memoText != null && memoText.isNotEmpty) ...[
@@ -1009,13 +1071,21 @@ class _DetailCard extends StatelessWidget {
             Container(height: 1, color: colors.border.regular),
             const SizedBox(height: AppSpacing.sm),
             _ListRow(
-              label: 'Tx fee',
+              label: isCardCreation ? 'Card fee' : 'Tx fee',
               labelStyle: AppTypography.labelLarge,
               value: _ValueWithIcon(
                 text: feeText,
                 iconName: AppIcons.help,
                 iconColor: context.colors.icon.regular.withValues(alpha: 0.72),
-                onTap: () => unawaited(showMobileTxFeeInfoSheet(context)),
+                onTap: () => unawaited(
+                  isCardCreation
+                      ? showMobileTxFeeInfoSheet(
+                          context,
+                          title: 'Card fee',
+                          description: kPaymentLinkCardFeeHelpText,
+                        )
+                      : showMobileTxFeeInfoSheet(context),
+                ),
               ),
             ),
           ],
@@ -1140,9 +1210,10 @@ class _ValueWithIcon extends StatelessWidget {
 /// Status chip: spinner + "In progress", green check + "Completed", or
 /// destructive cross + "Failed, funds returned".
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.phase});
+  const _StatusChip({required this.phase, this.statusText});
 
   final _TxPhase phase;
+  final String? statusText;
 
   @override
   Widget build(BuildContext context) {
@@ -1184,7 +1255,7 @@ class _StatusChip extends StatelessWidget {
           const SizedBox(width: AppSpacing.xxs),
           Flexible(
             child: Text(
-              text,
+              statusText ?? text,
               maxLines: 1,
               softWrap: false,
               overflow: TextOverflow.ellipsis,

@@ -867,12 +867,18 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     required bool privacyModeEnabled,
   }) {
     return ActivityEntry(
-      timestamp: transactionActivityTimestamp(transaction),
+      timestamp:
+          giftCard?.activityTimestamp ??
+          transactionActivityTimestamp(transaction),
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
+        giftCardStableId: giftCard?.stableId,
+        giftCardActivityTimestamp: giftCard?.activityTimestamp,
+        giftCardDisplayPool: giftCard?.displayPool,
         privacyModeEnabled: privacyModeEnabled,
         dateOnlyTimestamp: true,
         onTap: () => unawaited(
@@ -1054,7 +1060,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           );
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
     final entries = <ActivityEntry>[
-      for (final tx in sync.recentTransactions)
+      for (final tx in giftCardActivityIndex.withPendingClaims(
+        sync.recentTransactions,
+      ))
         if (!absorption.absorbs(tx))
           _transactionEntry(
             context,
