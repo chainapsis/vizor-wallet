@@ -30,6 +30,23 @@ FLUTTER_VERSION = json.loads(
 )["flutter"]
 if re.fullmatch(r"\d+\.\d+\.\d+", FLUTTER_VERSION) is None:
     raise RuntimeError(".fvmrc must pin Flutter to an exact X.Y.Z version.")
+
+
+def load_flutter_revision(path: pathlib.Path, expected_version: str) -> str:
+    """Keep F-Droid's immutable checkout aligned with the FVM release SDK."""
+    pin = json.loads(path.read_text(encoding="utf-8"))
+    if pin.get("version") != expected_version:
+        raise ValueError("Flutter release pin must match the version in .fvmrc.")
+    revision = pin.get("revision", "")
+    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise ValueError("Flutter release pin must contain a full Git commit SHA.")
+    return revision
+
+
+FLUTTER_REVISION = load_flutter_revision(
+    REPOSITORY_ROOT / "scripts" / "release-config" / "flutter-sdk.json",
+    FLUTTER_VERSION,
+)
 RELEASE_RUST_TOOLCHAIN = (
     REPOSITORY_ROOT
     / "scripts"
@@ -161,7 +178,7 @@ def render(metadata: dict[str, Any]) -> str:
             "      - macos",
             "      - windows",
             "    prebuild:",
-            "      - git -C $$flutter$$ checkout -f db50e20168db8fee486b9abf32fc912de3bc5b6a",
+            f"      - git -C $$flutter$$ checkout -f {FLUTTER_REVISION}",
             "      - export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64",
             "      - export PUB_CACHE=/tmp/vizor-android-reproducible/pub-cache",
             "      - export CARGO_HOME=/tmp/vizor-android-reproducible/cargo-home",
