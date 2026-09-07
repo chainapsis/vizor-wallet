@@ -11,6 +11,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../ledger_capability.dart';
 import '../services/ledger_app_readiness_service.dart';
+import '../services/ledger_connection_recovery.dart';
 import 'ledger_device_app_prompt.dart';
 
 enum LedgerSigningModalPhase {
@@ -35,6 +36,7 @@ class LedgerSigningFailurePresentation {
     required this.showDeviceAppPrompt,
     this.actionLabel,
     this.isError = true,
+    this.requiresReconnect = false,
   });
 
   final String title;
@@ -43,15 +45,19 @@ class LedgerSigningFailurePresentation {
   final bool showDeviceAppPrompt;
   final String? actionLabel;
   final bool isError;
+  final bool requiresReconnect;
 }
 
-class LedgerSigningModal extends ConsumerWidget {
+class LedgerSigningModal extends ConsumerStatefulWidget {
   const LedgerSigningModal({
     required this.phase,
     required this.failure,
     required this.onCancel,
     required this.onFailureAction,
     this.cancelLabel = 'Cancel',
+    this.recoveryActionLabel = 'Try again',
+    this.recoveryReadyMessage =
+        'Choose Try again when you’re ready to review the transaction on your Ledger.',
     this.accountUuid,
     this.roundNumber = 1,
     this.roundCount = 1,
@@ -73,13 +79,80 @@ class LedgerSigningModal extends ConsumerWidget {
   final VoidCallback? onCancel;
   final VoidCallback? onFailureAction;
   final String cancelLabel;
+  final String recoveryActionLabel;
+  final String recoveryReadyMessage;
   final String? accountUuid;
   final int roundNumber;
   final int roundCount;
   final bool showWaitingHint;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LedgerSigningModal> createState() => _LedgerSigningModalState();
+}
+
+class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
+  final _recovery = LedgerConnectionRecoveryController();
+  LedgerSigningModalPhase? get _recoveryPhase => switch (_recovery.phase) {
+    LedgerConnectionRecoveryPhase.reconnecting =>
+      LedgerSigningModalPhase.reconnecting,
+    LedgerConnectionRecoveryPhase.ready => LedgerSigningModalPhase.readyToRetry,
+    _ => null,
+  };
+  String? get _recoveryError => _recovery.message;
+
+  @override
+  void initState() {
+    super.initState();
+    _recovery.addListener(_onRecoveryChanged);
+  }
+
+  void _onRecoveryChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Object _context(LedgerSigningModal modal) => (
+    modal.accountUuid,
+    modal.phase,
+    modal.roundNumber,
+    modal.failure?.message,
+    modal.failure?.actionLabel,
+    modal.failure?.requiresReconnect,
+  );
+
+  @override
+  void didUpdateWidget(LedgerSigningModal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_context(oldWidget) != _context(widget)) {
+      _recovery.reset();
+    }
+  }
+
+  Future<void> _reconnect() => _recovery.reconnect(
+    widget.accountUuid!,
+    ref.read(ledgerReconnectProvider),
+  );
+
+  @override
+  void dispose() {
+    _recovery.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final phase = _recoveryPhase ?? widget.phase;
+    final accountUuid = widget.accountUuid;
+    final onCancel = widget.onCancel;
+    final cancelLabel = widget.cancelLabel;
+    final roundNumber = widget.roundNumber;
+    final roundCount = widget.roundCount;
+    final showWaitingHint = widget.showWaitingHint;
+    final needsReconnect =
+        widget.failure?.requiresReconnect == true && accountUuid != null;
+    final onFailureAction =
+        needsReconnect && _recoveryPhase != LedgerSigningModalPhase.readyToRetry
+        ? () => unawaited(_reconnect())
+        : widget.onFailureAction;
     final colors = context.colors;
     final networkName = ref.watch(
       rpcEndpointProvider.select((endpoint) => endpoint.networkName),
@@ -88,8 +161,8 @@ class LedgerSigningModal extends ConsumerWidget {
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final account = _ledgerAccount(ref, accountUuid);
     final failed = phase == LedgerSigningModalPhase.failed;
-    final failure = this.failure;
-    final destructive = failed && failure!.isError;
+    final failure = widget.failure;
+    final destructive = failed && failure!.isError && !needsReconnect;
     final settling =
         phase == LedgerSigningModalPhase.cancelling ||
         phase == LedgerSigningModalPhase.reconnecting;
@@ -119,8 +192,7 @@ class LedgerSigningModal extends ConsumerWidget {
         'Keep your Ledger connected and unlocked. Reconnecting will not send a new signing request.',
       LedgerSigningModalPhase.cancelled =>
         'You can go back or try again when you’re ready.',
-      LedgerSigningModalPhase.readyToRetry =>
-        'Choose Try again when you’re ready to review the transaction on your Ledger.',
+      LedgerSigningModalPhase.readyToRetry => widget.recoveryReadyMessage,
       LedgerSigningModalPhase.awaitingDevice =>
         'Review every transaction detail on the device, then approve or reject it.',
       LedgerSigningModalPhase.saving =>
@@ -143,6 +215,13 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.broadcasting => 'Broadcasting to the network',
       LedgerSigningModalPhase.failed => failure!.statusLabel,
     };
+    if (failed && needsReconnect) {
+      title = 'Let’s reconnect your Ledger';
+      message =
+          _recoveryError ??
+          'Your signing request was interrupted. Reconnect first, then choose when to try signing again.';
+      statusLabel = 'Connection needed';
+    }
     if (roundCount > 1) {
       final progress = 'Transaction $roundNumber of $roundCount';
       if (phase == LedgerSigningModalPhase.preparing) {
@@ -157,7 +236,8 @@ class LedgerSigningModal extends ConsumerWidget {
         statusLabel = 'Securing both signed transactions';
       }
     }
-    if (phase == LedgerSigningModalPhase.failed &&
+    if (!needsReconnect &&
+        phase == LedgerSigningModalPhase.failed &&
         readiness.phase == LedgerAppReadinessPhase.failed) {
       title = 'Ledger needs attention';
       statusLabel = 'Action needed';
@@ -181,7 +261,9 @@ class LedgerSigningModal extends ConsumerWidget {
       }
     }
     final actionLabel = failed
-        ? failure!.actionLabel
+        ? needsReconnect
+              ? 'Reconnect'
+              : failure!.actionLabel
         : phase == LedgerSigningModalPhase.saving
         ? 'Saving'
         : 'Waiting';
@@ -192,7 +274,8 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.cancelling ||
       LedgerSigningModalPhase.readyToRetry ||
       LedgerSigningModalPhase.cancelled => false,
-      LedgerSigningModalPhase.failed => failure!.showDeviceAppPrompt,
+      LedgerSigningModalPhase.failed =>
+        !needsReconnect && failure!.showDeviceAppPrompt,
       LedgerSigningModalPhase.preparing ||
       LedgerSigningModalPhase.connecting ||
       LedgerSigningModalPhase.reconnecting ||
@@ -349,8 +432,14 @@ class LedgerSigningModal extends ConsumerWidget {
                   ],
                 ),
               )
-            else if (phase == LedgerSigningModalPhase.cancelled ||
-                phase == LedgerSigningModalPhase.readyToRetry)
+            else if (phase == LedgerSigningModalPhase.readyToRetry)
+              AppModalActions(
+                onCancel: onCancel,
+                cancelLabel: 'Back',
+                actionLabel: widget.recoveryActionLabel,
+                onAction: onFailureAction,
+              )
+            else if (phase == LedgerSigningModalPhase.cancelled)
               AppModalActions(
                 onCancel: onFailureAction,
                 cancelLabel: 'Try again',

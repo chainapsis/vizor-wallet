@@ -15,7 +15,72 @@ import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
   test(
+    'explicit reconnect cleans up, rediscovers the same peer and never signs',
+    () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.bluetooth,
+          deviceModel: 'Nano X',
+        ),
+      );
+      final ble = _FakeBleService();
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        platform: TargetPlatform.android,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container
+          .read(ledgerConnectionServiceProvider)
+          .reconnect('ledger-1');
+      expect(ble.recoveryEvents, [
+        'cancel',
+        'disconnect',
+        'discover',
+        'connect',
+        'stop',
+      ]);
+      expect(ble.connectedDeviceIds, ['device-1']);
+      expect(ble.apduCalls, 0);
+    },
+  );
+  test(
     'Automatic falls back from unavailable USB to verified Bluetooth',
+    () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.automatic,
+          deviceModel: 'Nano X',
+        ),
+      );
+      final ble = _FakeBleService();
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        usbReady: false,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      final result = await container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () => throw StateError('USB operation must not start'),
+            bluetooth: (_) async => 'signed-over-ble',
+          );
+
+      expect(result, 'signed-over-ble');
+      expect(ble.connectCalls, 1);
+      expect(notifier.recordedTransports, [
+        LedgerConnectionTransport.bluetooth,
+      ]);
+    },
+  );
+
+  test(
+    'Automatic never replays a started USB operation over Bluetooth',
     () async {
       final notifier = _FakeAccountNotifier(
         _ledgerAccount(
@@ -27,20 +92,65 @@ void main() {
       final container = _container(notifier: notifier, ble: ble);
       addTearDown(container.dispose);
       await container.read(accountProvider.future);
+      var calls = 0;
+      final failure = StateError('Ledger disconnected during signing');
+      await expectLater(
+        container
+            .read(ledgerConnectionServiceProvider)
+            .run(
+              accountUuid: 'ledger-1',
+              usb: () async {
+                calls++;
+                throw failure;
+              },
+              bluetooth: (_) async {
+                calls++;
+                return 'unexpected';
+              },
+            ),
+        throwsA(same(failure)),
+      );
+      expect(calls, 1);
+      expect(ble.connectCalls, 0);
+      expect(notifier.recordedTransports, isEmpty);
+    },
+  );
 
-      final result = await container
-          .read(ledgerConnectionServiceProvider)
-          .run(
-            accountUuid: 'ledger-1',
-            usb: () => throw StateError('No Ledger HID device'),
-            bluetooth: (_) async => 'signed-over-ble',
-          );
-
-      expect(result, 'signed-over-ble');
+  test(
+    'Automatic never replays a started Bluetooth operation over USB',
+    () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.automatic,
+          deviceModel: 'Nano X',
+          lastTransport: LedgerConnectionTransport.bluetooth,
+        ),
+      );
+      final ble = _FakeBleService();
+      final container = _container(notifier: notifier, ble: ble);
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      var usbCalls = 0;
+      const failure = LedgerMobileException(
+        LedgerMobileFailure.disconnected,
+        'Interrupted',
+      );
+      await expectLater(
+        container
+            .read(ledgerConnectionServiceProvider)
+            .run(
+              accountUuid: 'ledger-1',
+              usb: () async {
+                usbCalls++;
+                return 'unexpected';
+              },
+              bluetooth: (_) async => throw failure,
+            ),
+        throwsA(same(failure)),
+      );
+      expect(usbCalls, 0);
       expect(ble.connectCalls, 1);
-      expect(notifier.recordedTransports, [
-        LedgerConnectionTransport.bluetooth,
-      ]);
+      expect(notifier.recordedTransports, isEmpty);
     },
   );
 
@@ -139,6 +249,7 @@ ProviderContainer _container({
   required _FakeAccountNotifier notifier,
   required _FakeBleService ble,
   TargetPlatform platform = TargetPlatform.macOS,
+  bool usbReady = true,
 }) {
   return ProviderContainer(
     overrides: [
@@ -148,7 +259,7 @@ ProviderContainer _container({
       ledgerMobileBleServiceProvider.overrideWithValue(ble),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.usb,
-      ).overrideWithValue(const _ReadyDevice()),
+      ).overrideWithValue(_ReadyDevice(available: usbReady)),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.bluetooth,
       ).overrideWithValue(const _ReadyDevice()),
@@ -159,6 +270,7 @@ ProviderContainer _container({
 AccountInfo _ledgerAccount({
   required LedgerConnectionPreference preference,
   required String deviceModel,
+  LedgerConnectionTransport? lastTransport,
 }) {
   return AccountInfo(
     uuid: 'ledger-1',
@@ -167,6 +279,7 @@ AccountInfo _ledgerAccount({
     isHardware: true,
     hardwareSignerKind: HardwareSignerKind.ledger,
     ledgerConnectionPreference: preference,
+    ledgerLastTransport: lastTransport,
     ledgerDeviceId: 'device-1',
     ledgerDeviceName: 'Rowan Ledger',
     ledgerDeviceModel: deviceModel,
@@ -190,14 +303,17 @@ AppBootstrapState _bootstrap(AccountInfo account) => AppBootstrapState(
 );
 
 class _ReadyDevice implements LedgerAppReadinessDevice {
-  const _ReadyDevice();
+  const _ReadyDevice({this.available = true});
+  final bool available;
 
   @override
-  Future<LedgerDeviceAppSnapshot> queryZcashApp() async =>
-      const LedgerDeviceAppSnapshot(
-        status: LedgerDeviceAppStatus.open,
-        version: '3.9.2',
-      );
+  Future<LedgerDeviceAppSnapshot> queryZcashApp() async {
+    if (!available) throw StateError('No Ledger HID device');
+    return const LedgerDeviceAppSnapshot(
+      status: LedgerDeviceAppStatus.open,
+      version: '3.9.2',
+    );
+  }
 
   @override
   Future<LedgerDeviceAppSnapshot> requestOpenZcashApp() => queryZcashApp();
@@ -239,6 +355,8 @@ class _FakeAccountNotifier extends AccountNotifier {
 }
 
 class _FakeBleService implements LedgerMobileBleService {
+  final recoveryEvents = <String>[];
+  var apduCalls = 0;
   var connectCalls = 0;
   var disconnectCalls = 0;
   final connectedDeviceIds = <String>[];
@@ -249,6 +367,7 @@ class _FakeBleService implements LedgerMobileBleService {
 
   @override
   Future<void> connect(LedgerBleDevice device) async {
+    recoveryEvents.add('connect');
     connectCalls++;
     connectedDeviceIds.add(device.id);
     _connectedDeviceId = device.id;
@@ -256,6 +375,7 @@ class _FakeBleService implements LedgerMobileBleService {
 
   @override
   Future<void> disconnect() async {
+    recoveryEvents.add('disconnect');
     disconnectCalls++;
     _connectedDeviceId = null;
   }
@@ -271,10 +391,20 @@ class _FakeBleService implements LedgerMobileBleService {
   Future<bool> requestPermissions() async => true;
 
   @override
-  Stream<LedgerDiscoveryUpdate> discoverDevices() => const Stream.empty();
+  Stream<LedgerDiscoveryUpdate> discoverDevices() {
+    recoveryEvents.add('discover');
+    return Stream.value(
+      const LedgerDevicesDiscovered([
+        LedgerBleDevice(id: 'other', name: 'Other', model: 'Nano X'),
+        LedgerBleDevice(id: 'device-1', name: 'Ledger', model: 'Nano X'),
+      ]),
+    );
+  }
 
   @override
-  Future<void> stopDiscovery() async {}
+  Future<void> stopDiscovery() async {
+    recoveryEvents.add('stop');
+  }
 
   @override
   Future<List<Uint8List>> exchangeUfvk(LedgerUfvkApduPlan plan) async =>
@@ -283,8 +413,13 @@ class _FakeBleService implements LedgerMobileBleService {
   @override
   Future<List<Uint8List>> exchangeApdus(
     List<LedgerApduCommand> commands,
-  ) async => const [];
+  ) async {
+    apduCalls++;
+    return const [];
+  }
 
   @override
-  Future<void> cancelSigning() async {}
+  Future<void> cancelSigning() async {
+    recoveryEvents.add('cancel');
+  }
 }

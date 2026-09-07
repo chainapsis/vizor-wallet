@@ -24,27 +24,44 @@ class LedgerConnectionService {
 
   final Ref _ref;
 
+  Future<void> reconnect(String accountUuid) => run<void>(
+    accountUuid: accountUuid,
+    refreshBluetooth: true,
+    usb: () async {},
+    bluetooth: (_) async {},
+  );
+
   Future<T> run<T>({
     required String accountUuid,
     required Future<T> Function() usb,
     required Future<T> Function(LedgerMobileBleService mobile) bluetooth,
+    bool refreshBluetooth = false,
   }) async {
     final account = _account(accountUuid);
     final candidates = _candidates(account);
     Object? lastConnectionError;
 
     for (final transport in candidates) {
+      var operationStarted = false;
       try {
         final result = switch (transport) {
-          LedgerConnectionTransport.usb => await _runUsb(usb),
-          LedgerConnectionTransport.bluetooth => await _runBluetooth(
-            account,
-            bluetooth,
-          ),
+          LedgerConnectionTransport.usb => await _runUsb(() {
+            operationStarted = true;
+            return usb();
+          }),
+          LedgerConnectionTransport.bluetooth => await _runBluetooth(account, (
+            mobile,
+          ) {
+            operationStarted = true;
+            return bluetooth(mobile);
+          }, refresh: refreshBluetooth),
         };
         await _recordSuccess(account, transport);
         return result;
       } catch (error) {
+        // Once the caller's operation has begun, another transport must not
+        // replay it. Recovery and a new signing attempt require user action.
+        if (operationStarted) rethrow;
         if (!_isConnectionFailure(error)) rethrow;
         lastConnectionError = error;
       }
@@ -97,8 +114,9 @@ class LedgerConnectionService {
 
   Future<T> _runBluetooth<T>(
     AccountInfo account,
-    Future<T> Function(LedgerMobileBleService mobile) operation,
-  ) async {
+    Future<T> Function(LedgerMobileBleService mobile) operation, {
+    bool refresh = false,
+  }) async {
     final deviceId = account.ledgerDeviceId;
     if (deviceId == null) {
       throw const LedgerConnectionRequiredException(
@@ -122,7 +140,38 @@ class LedgerConnectionService {
       name: account.ledgerDeviceName ?? 'Ledger',
       model: account.ledgerDeviceModel ?? 'Ledger',
     );
-    if (platform == TargetPlatform.macOS) {
+    if (refresh) {
+      await mobile.cancelSigning();
+      await mobile.disconnect();
+      try {
+        final found = await mobile
+            .discoverDevices()
+            .asyncExpand<LedgerBleDevice>((update) {
+              if (update is LedgerDiscoveryFailed) throw update.error;
+              return Stream.fromIterable(
+                update is LedgerDevicesDiscovered
+                    ? update.devices
+                    : <LedgerBleDevice>[],
+              );
+            })
+            .where((candidate) => candidate.id == deviceId)
+            .timeout(
+              const Duration(seconds: 15),
+              onTimeout: (sink) {
+                sink.addError(
+                  const LedgerConnectionRequiredException(
+                    'We could not find your Ledger. Keep it nearby, unlocked, and Bluetooth enabled, then try again.',
+                  ),
+                );
+                sink.close();
+              },
+            )
+            .first;
+        await mobile.connect(found);
+      } finally {
+        await mobile.stopDiscovery();
+      }
+    } else if (platform == TargetPlatform.macOS) {
       await mobile.disconnect();
       await mobile.connect(device);
     } else if (mobile.connectedDeviceId != device.id) {
@@ -160,6 +209,10 @@ class LedgerConnectionService {
 
   static bool _isConnectionFailure(Object error) {
     if (error is LedgerConnectionRequiredException) return true;
+    if (error is LedgerAppReadinessException) {
+      return error.failure == LedgerAppReadinessFailure.disconnected ||
+          error.failure == LedgerAppReadinessFailure.unavailable;
+    }
     if (error is LedgerMobileException) {
       return switch (error.failure) {
         LedgerMobileFailure.disconnected ||

@@ -1,6 +1,7 @@
 // ignore_for_file: depend_on_referenced_packages
 
 import 'dart:async';
+import '../src/features/ledger/services/ledger_connection_recovery.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show Material, MaterialApp, ThemeMode;
@@ -265,7 +266,10 @@ Widget buildLedgerSigningPreview({
   final modal = LedgerSigningModal(
     phase: phase,
     failure: phase == LedgerSigningModalPhase.failed
-        ? _failurePresentation(failureMode)
+        ? _failurePresentation(
+            failureMode,
+            internalReconnect: onFailureAction == null,
+          )
         : null,
     onCancel: locked ? null : onCancel ?? () {},
     onFailureAction: onFailureAction ?? () {},
@@ -276,6 +280,9 @@ Widget buildLedgerSigningPreview({
   );
   return ProviderScope(
     overrides: [
+      ledgerReconnectProvider.overrideWithValue(
+        (_) => Future<void>.delayed(const Duration(milliseconds: 700)),
+      ),
       appBootstrapProvider.overrideWithValue(_ledgerBootstrap),
       accountProvider.overrideWith(_LedgerPreviewAccountNotifier.new),
       ledgerTargetPlatformProvider.overrideWithValue(
@@ -669,8 +676,9 @@ Widget _buildDevicePicker(LedgerMobileBleService service, {required Key key}) {
 }
 
 LedgerSigningFailurePresentation _failurePresentation(
-  LedgerSigningPlaygroundFailure mode,
-) {
+  LedgerSigningPlaygroundFailure mode, {
+  bool internalReconnect = true,
+}) {
   return switch (mode) {
     LedgerSigningPlaygroundFailure.retry =>
       const LedgerSigningFailurePresentation(
@@ -688,16 +696,16 @@ LedgerSigningFailurePresentation _failurePresentation(
         showDeviceAppPrompt: true,
         actionLabel: 'Try again',
       ),
-    LedgerSigningPlaygroundFailure.reconnect =>
-      const LedgerSigningFailurePresentation(
-        title: 'Let’s reconnect your Ledger',
-        statusLabel: 'Ready to reconnect',
-        message:
-            'Keep your Ledger unlocked. Reconnect first, then choose when to try signing again.',
-        isError: false,
-        showDeviceAppPrompt: true,
-        actionLabel: 'Reconnect',
-      ),
+    LedgerSigningPlaygroundFailure.reconnect => LedgerSigningFailurePresentation(
+      requiresReconnect: internalReconnect,
+      title: 'Let’s reconnect your Ledger',
+      statusLabel: 'Ready to reconnect',
+      message:
+          'Keep your Ledger unlocked. Reconnect first, then choose when to try signing again.',
+      isError: false,
+      showDeviceAppPrompt: true,
+      actionLabel: 'Reconnect',
+    ),
     LedgerSigningPlaygroundFailure.accountMismatch =>
       const LedgerSigningFailurePresentation(
         title: 'Check the signing account',

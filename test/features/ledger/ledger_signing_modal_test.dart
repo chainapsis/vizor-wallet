@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_recovery.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +12,130 @@ import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.da
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
+  testWidgets('equivalent parent rebuild preserves pending recovery', (
+    tester,
+  ) async {
+    final completed = Completer<void>();
+    var reconnects = 0;
+    Future<void> reconnect(String _) {
+      reconnects++;
+      return completed.future;
+    }
+
+    Widget build() => _harness(
+      phase: LedgerSigningModalPhase.failed,
+      account: const AccountInfo(
+        uuid: 'ledger-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+      // Intentionally allocate a new presentation on each parent rebuild.
+      failure: LedgerSigningFailurePresentation(
+        title: 'Failed',
+        statusLabel: 'Interrupted',
+        message: 'Disconnected',
+        showDeviceAppPrompt: true,
+        actionLabel: 'Try again',
+        requiresReconnect: true,
+      ),
+      reconnect: reconnect,
+    );
+
+    await tester.pumpWidget(build());
+    await tester.tap(find.text('Reconnect'));
+    await tester.pump();
+    await tester.pumpWidget(build());
+    expect(find.text('Reconnecting your Ledger'), findsOneWidget);
+    expect(find.text('Reconnect'), findsNothing);
+    completed.complete();
+    await tester.pump();
+    expect(find.text('Your Ledger is connected'), findsOneWidget);
+    expect(reconnects, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'reconnect stays in modal and never triggers signing automatically',
+    (tester) async {
+      final completed = Completer<void>();
+      var reconnects = 0;
+      var signs = 0;
+      await tester.pumpWidget(
+        _harness(
+          phase: LedgerSigningModalPhase.failed,
+          account: const AccountInfo(
+            uuid: 'ledger-1',
+            name: 'Ledger',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          failure: const LedgerSigningFailurePresentation(
+            title: 'Failed',
+            statusLabel: 'Interrupted',
+            message: 'Disconnected',
+            showDeviceAppPrompt: true,
+            actionLabel: 'Try again',
+            requiresReconnect: true,
+          ),
+          reconnect: (_) {
+            reconnects++;
+            return completed.future;
+          },
+          onFailureAction: () => signs++,
+        ),
+      );
+      await tester.tap(find.text('Reconnect'));
+      await tester.pump();
+      expect(find.text('Reconnecting your Ledger'), findsOneWidget);
+      expect(find.text('Try again'), findsNothing);
+      expect(signs, 0);
+      completed.complete();
+      await tester.pump();
+      expect(find.text('Your Ledger is connected'), findsOneWidget);
+      expect(signs, 0);
+      await tester.tap(find.text('Try again'));
+      expect(signs, 1);
+      expect(reconnects, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('failed reconnect keeps retry separate from signing', (
+    tester,
+  ) async {
+    var signs = 0;
+    await tester.pumpWidget(
+      _harness(
+        phase: LedgerSigningModalPhase.failed,
+        account: const AccountInfo(
+          uuid: 'ledger-1',
+          name: 'Ledger',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        failure: const LedgerSigningFailurePresentation(
+          title: 'Failed',
+          statusLabel: 'Interrupted',
+          message: 'Disconnected',
+          showDeviceAppPrompt: true,
+          actionLabel: 'Try again',
+          requiresReconnect: true,
+        ),
+        reconnect: (_) async => throw StateError('Connection is still closing'),
+        onFailureAction: () => signs++,
+      ),
+    );
+    await tester.tap(find.text('Reconnect'));
+    await tester.pump();
+    expect(find.textContaining('Connection is still closing'), findsOneWidget);
+    expect(find.text('Reconnect'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
+    expect(signs, 0);
+  });
   testWidgets('separates the Ledger signer from the Zcash device app', (
     tester,
   ) async {
@@ -228,10 +354,13 @@ Widget _harness({
   VoidCallback? onFailureAction,
   VoidCallback? onCancel = _noop,
   AccountInfo? account,
+  Future<void> Function(String)? reconnect,
 }) {
   return ProviderScope(
     key: ValueKey(readiness.phase),
     overrides: [
+      if (reconnect != null)
+        ledgerReconnectProvider.overrideWithValue(reconnect),
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       ledgerAppReadinessStateProvider.overrideWith(
         () => _FakeReadinessController(readiness),

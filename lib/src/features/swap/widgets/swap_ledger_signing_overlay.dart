@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../ledger/services/ledger_connection_recovery.dart';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,6 +50,7 @@ class _SwapLedgerSigningOverlayState
   bool _cancelled = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  bool _needsReconnect = false;
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
   List<int>? _pcztWithProofs;
@@ -187,6 +189,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
         _error = _friendlyError(e);
+        _needsReconnect = !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
       });
     }
   }
@@ -258,6 +261,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
         _error = _friendlyError(e);
+        _needsReconnect = !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
       });
     }
   }
@@ -462,6 +466,7 @@ class _SwapLedgerSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              requiresReconnect: !_operationCheckpointed && _needsReconnect,
               title: legacyOrchardRecoveryUnavailable
                   ? 'Ledger app update required'
                   : 'Ledger signing failed',

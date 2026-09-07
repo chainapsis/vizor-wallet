@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../ledger/services/ledger_connection_recovery.dart';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,6 +50,7 @@ class _LedgerShieldSigningOverlayState
   bool _needsSaplingParams = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  bool _needsReconnect = false;
   List<int>? _pcztBytes;
   List<int>? _pcztWithProofs;
   SaplingParamsStatus? _saplingParams;
@@ -183,6 +185,7 @@ class _LedgerShieldSigningOverlayState
         _phase = LedgerSigningModalPhase.failed;
         _canRetry = true;
         _error = _friendlyError(e);
+        _needsReconnect = !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
       });
     }
   }
@@ -255,6 +258,7 @@ class _LedgerShieldSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
         _error = _friendlyError(e);
+        _needsReconnect = !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
       });
     }
   }
@@ -451,6 +455,7 @@ class _LedgerShieldSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              requiresReconnect: _canRetry && !_operationCheckpointed && _needsReconnect,
               title: 'Ledger signing failed',
               statusLabel: 'Action needed',
               message: _error ?? 'Ledger shielding could not be completed.',

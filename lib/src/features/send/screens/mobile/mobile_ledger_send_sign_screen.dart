@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../ledger/services/ledger_connection_recovery.dart';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -358,6 +359,7 @@ class _MobileLedgerSendSignScreenState
         message: message,
         showDeviceAppPrompt: true,
         actionLabel: 'Try again',
+        requiresReconnect: ledgerFailureNeedsReconnect(error),
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     }
