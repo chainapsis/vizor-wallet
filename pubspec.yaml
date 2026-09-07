@@ -99,6 +99,10 @@ dependency_overrides:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # Cargokit builds and links the Rust static library through CocoaPods.
+  # Migrate that integration separately from the Flutter SDK upgrade.
+  config:
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
