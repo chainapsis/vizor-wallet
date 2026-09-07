@@ -1697,7 +1697,7 @@ class IronwoodMigrationService {
           throw Exception('Mnemonic not found for the migration account.');
         }
         try {
-          return startSoftwareMigration(
+          return await startSoftwareMigration(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             network: endpoint.networkName,

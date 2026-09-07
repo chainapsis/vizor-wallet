@@ -1980,7 +1980,8 @@ class SwapNotifier extends Notifier<SwapState> {
         if (loadSucceeded) {
           _restoredPayAssetAccountUuid = accountUuid;
         }
-        return ref.read(paySelectedAssetProvider);
+        final SwapAsset retryAsset = ref.read(paySelectedAssetProvider);
+        return retryAsset;
       }
       // No saved value must reset the memory: keeping the previous account's
       // selection would leak it into this account's Pay flow.

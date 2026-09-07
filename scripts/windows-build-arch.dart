@@ -1,3 +1,6 @@
+// Keep the script path stable for release tooling.
+// ignore_for_file: file_names
+
 import 'dart:ffi';
 import 'dart:io';
 
