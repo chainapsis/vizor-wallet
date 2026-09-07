@@ -61,18 +61,11 @@ def normalize_windows_release_arch(arch)
   end
 end
 
-def windows_host_is_arm64?
-  return true if ENV["PROCESSOR_ARCHITECTURE"].to_s.casecmp("ARM64").zero?
-
-  os_arch = `powershell.exe -NoProfile -Command "[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture"`.to_s.strip
-  os_arch.casecmp("Arm64").zero?
-end
-
 def windows_release_arch
   raw = ENV["VIZOR_WINDOWS_ARCH"].to_s.strip
   return normalize_windows_release_arch(raw) unless raw.empty?
 
-  @windows_release_arch ||= windows_host_is_arm64? ? "arm64" : DEFAULT_WINDOWS_RELEASE_ARCH
+  DEFAULT_WINDOWS_RELEASE_ARCH
 end
 
 def windows_cmd_quote(value)

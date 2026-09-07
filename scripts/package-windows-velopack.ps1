@@ -17,7 +17,7 @@ param(
   [string]$CodeSignParallel = $env:VIZOR_WINDOWS_CODE_SIGN_PARALLEL,
   [string]$CodeSignExclude = $env:VIZOR_WINDOWS_CODE_SIGN_EXCLUDE,
   [ValidateSet("x64", "arm64")]
-  [string]$Arch,
+  [string]$Arch = "x64",
   [switch]$Msi,
   [switch]$Clean
 )
@@ -81,20 +81,28 @@ function Get-FvmVersion {
   return $config.flutter
 }
 
-function Get-HostWindowsPackArch {
-  $osArch = $null
+function Assert-WindowsBuildArch($fvmCommand, $requestedArch) {
+  # Flutter selects the Windows target from its Dart process ABI, not the OS.
+  # Use FVM for both this probe and the build, including custom FVM cache paths.
+  $probePath = Join-Path $scriptDir "windows-build-arch.dart"
   try {
-    $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+    $probeOutput = @(& $fvmCommand dart $probePath 2>&1)
+    $probeExitCode = $LASTEXITCODE
   } catch {
-    $osArch = $null
+    throw "Could not determine the FVM Dart SDK architecture. Run 'fvm dart scripts/windows-build-arch.dart' and ensure the pinned Windows SDK is installed."
   }
-  if ($osArch -eq [System.Runtime.InteropServices.Architecture]::Arm64) {
-    return "arm64"
+  if ($probeExitCode -ne 0) {
+    throw "FVM Dart architecture probe failed with exit code $probeExitCode. Run 'fvm dart scripts/windows-build-arch.dart' and ensure the pinned Windows SDK is installed."
   }
-  if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
-    return "arm64"
+  $archLines = @($probeOutput | ForEach-Object { "$($_)".Trim() } |
+    Where-Object { $_ -cmatch '^VIZOR_WINDOWS_BUILD_ARCH=(x64|arm64)$' })
+  if ($archLines.Count -ne 1) {
+    throw "Could not determine a unique Windows architecture from the FVM Dart SDK. Run 'fvm dart scripts/windows-build-arch.dart' to check the pinned SDK."
   }
-  return "x64"
+  $sdkArch = ($archLines[0] -split '=')[1]
+  if ($requestedArch -ne $sdkArch) {
+    throw "Requested Windows $requestedArch, but the FVM Dart SDK builds $sdkArch. Install the pinned Flutter SDK with Windows $requestedArch Dart, or explicitly select -Arch $sdkArch (VIZOR_WINDOWS_ARCH=$sdkArch for Fastlane)."
+  }
 }
 
 function Get-PubspecVersion {
@@ -280,6 +288,10 @@ $fvmExe = Resolve-Command `
   "fvm" `
   @((Join-Path $env:LOCALAPPDATA "Pub\Cache\bin\fvm.bat")) `
   "Install FVM, then run this script again."
+# Validate before resolving packaging tools, changing build settings, or cleaning
+# output. Normalize accepted case variants so artifact names remain canonical.
+$Arch = $Arch.ToLowerInvariant()
+Assert-WindowsBuildArch $fvmExe $Arch
 $vpkExe = Resolve-Command `
   "vpk" `
   @((Join-Path $env:USERPROFILE ".dotnet\tools\vpk.exe")) `
@@ -289,12 +301,6 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
   $Version = Get-PubspecVersion
 }
 
-$hostArch = Get-HostWindowsPackArch
-if ([string]::IsNullOrWhiteSpace($Arch)) {
-  $Arch = $hostArch
-} elseif ($Arch -ne $hostArch) {
-  throw "Flutter builds Windows for the host architecture only. This host is $hostArch; cannot package $Arch."
-}
 Write-Host "Packaging Windows $Arch $Network release."
 
 if ($Network -eq "mainnet") {

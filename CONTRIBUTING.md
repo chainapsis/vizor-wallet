@@ -81,6 +81,44 @@ fvm flutter pub get
 The Flutter version is declared in `.fvmrc`. Always use `fvm flutter` and
 `fvm dart`; do not use an unpinned `flutter` or `dart` executable.
 
+### Windows release architecture
+
+Windows packaging defaults to **x64**, including on ARM64 machines. Existing
+x64 installer names, update channels, package IDs, and signing policies stay
+unchanged. To package ARM64, explicitly select it on a Windows machine with
+the pinned Flutter SDK's ARM64 Dart runtime and the ARM64 MSVC tools:
+
+```powershell
+# Direct packaging (x64 is the default):
+powershell.exe -NoProfile -File scripts/package-windows-velopack.ps1 -Network mainnet
+
+# ARM64 packaging:
+powershell.exe -NoProfile -File scripts/package-windows-velopack.ps1 -Network mainnet -Arch arm64
+
+# For the Fastlane release lane, with the usual release/signing environment:
+$env:VIZOR_WINDOWS_ARCH = "arm64"
+bundle exec fastlane windows release
+Remove-Item Env:VIZOR_WINDOWS_ARCH
+```
+
+Packaging checks `fvm dart scripts/windows-build-arch.dart` before building.
+The requested architecture must match that Dart SDK's ABI: an ARM64 OS running
+an x64 Dart SDK still builds x64. Select the matching SDK or packaging option
+if the check fails; this option does not enable cross-compilation. ARM64 uses
+separate `win-arm64-mainnet` / `win-arm64-testnet` update channels. Existing x64
+installations continue to use their x64 channels.
+
+Packaging regression checks (no actual Windows build or signing required):
+
+```powershell
+ruby scripts/test_windows_release.rb
+powershell.exe -NoProfile -File scripts/test-windows-packaging.ps1
+```
+
+The PowerShell checks also run with `pwsh` on macOS/Linux using mocked tools.
+
+### Running the app
+
 Start the desktop app with:
 
 ```bash
