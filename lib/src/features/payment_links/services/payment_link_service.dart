@@ -794,14 +794,32 @@ class PaymentLinkService implements PaymentLinkOperations {
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
-    final receiverState = _ref.read(accountProvider).value;
-    final receiverAccountUuid = receiverState?.activeAccountUuid;
-    final receiverAddress = receiverState?.activeAddress;
-    if (receiverAccountUuid == null ||
-        receiverAddress == null ||
-        receiverAddress.isEmpty) {
+    final receiverAccountUuid = _ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid;
+    if (receiverAccountUuid == null) {
       throw StateError('No active receive account.');
     }
+    // An account switch can publish its UUID even when its address lookup
+    // fails. Resolve the destination by UUID on every preparation/retry so a
+    // cached address from another account cannot become a claim destination.
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final receiverAddress = await rust_wallet.getUnifiedAddress(
+      dbPath: await getWalletDbPath(),
+      network: endpoint.networkName,
+      accountUuid: receiverAccountUuid,
+    );
+    if (_ref.read(accountProvider).value?.activeAccountUuid !=
+        receiverAccountUuid) {
+      throw const PaymentLinkClaimDestinationChangedException();
+    }
+    if (receiverAddress.isEmpty) {
+      throw StateError('No active receive address.');
+    }
+    _ref
+        .read(accountProvider.notifier)
+        .updateActiveAddressForAccount(receiverAccountUuid, receiverAddress);
     return _prepareSpend(
       link: link,
       destinationAddress: receiverAddress,

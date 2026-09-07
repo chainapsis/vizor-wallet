@@ -1,8 +1,15 @@
+import 'dart:async';
 import 'dart:io';
+
+import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
@@ -16,6 +23,123 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('claim destination hydration', () {
+    final api = _ClaimDestinationRustApi();
+    late _ClaimDestinationAccountNotifier accounts;
+    late ProviderContainer container;
+    late PaymentLinkService service;
+    late Directory supportDirectory;
+    const pathChannel = MethodChannel('plugins.flutter.io/path_provider');
+    setUpAll(() => RustLib.initMock(api: api));
+    tearDownAll(RustLib.dispose);
+
+    setUp(() async {
+      FlutterSecureStorage.setMockInitialValues({});
+      supportDirectory = await Directory.systemTemp.createTemp(
+        'vizor-claim-destination-',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            pathChannel,
+            (_) async => supportDirectory.path,
+          );
+      api.reset();
+      accounts = _ClaimDestinationAccountNotifier();
+      container = ProviderContainer(
+        overrides: [
+          accountProvider.overrideWith(() => accounts),
+          rpcEndpointProvider.overrideWith(_ClaimDestinationRpcNotifier.new),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(
+            PaymentLinkRecoveryStore(_FakePaymentLinkRecoveryStorage()),
+          ),
+          paymentLinkReceivedStoreProvider.overrideWithValue(
+            PaymentLinkReceivedStore(_PaymentLinkServiceReceivedStorage()),
+          ),
+        ],
+      );
+      await container.read(accountProvider.future);
+      service = container.read(paymentLinkServiceProvider);
+    });
+
+    tearDown(() async {
+      container.dispose();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathChannel, null);
+      await supportDirectory.delete(recursive: true);
+    });
+
+    for (final cachedAddress in ['u1previous-account', null]) {
+      test(
+        'preparation resolves the selected account instead of cache $cachedAddress',
+        () async {
+          accounts.select('account-2', cachedAddress);
+          await expectLater(
+            service.prepareClaim(_link()),
+            throwsA(isA<_DestinationValidated>()),
+          );
+          expect(api.requestedAccounts, ['account-2']);
+          expect(api.validatedAddresses, ['u1account-2address']);
+          expect(
+            container.read(accountProvider).value?.activeAddress,
+            'u1account-2address',
+          );
+        },
+      );
+    }
+
+    test(
+      'failed address lookups stop preparation and retry without another switch',
+      () async {
+        accounts.select('account-2', 'u1previous-account');
+        api.failures = 2;
+        for (var attempt = 0; attempt < 2; attempt++) {
+          await expectLater(service.prepareClaim(_link()), throwsStateError);
+          expect(api.validatedAddresses, isEmpty);
+          expect(
+            container.read(accountProvider).value?.activeAccountUuid,
+            'account-2',
+          );
+        }
+        await expectLater(
+          service.prepareClaim(_link()),
+          throwsA(isA<_DestinationValidated>()),
+        );
+        expect(api.requestedAccounts, ['account-2', 'account-2', 'account-2']);
+        expect(api.validatedAddresses, ['u1account-2address']);
+        expect(
+          container.read(accountProvider).value?.activeAddress,
+          'u1account-2address',
+        );
+      },
+    );
+
+    test(
+      'an account switch during lookup rejects the obsolete destination',
+      () async {
+        accounts.select('account-2', 'u1previous-account');
+        api.lookupGate = Completer<String>();
+        final preparing = service.prepareClaim(_link());
+        final expectation = expectLater(
+          preparing,
+          throwsA(isA<PaymentLinkClaimDestinationChangedException>()),
+        );
+        await api.lookupStarted.future;
+        accounts.select('account-1', 'u1account-1address');
+        api.lookupGate!.complete('u1account-2address');
+        await expectation;
+        expect(api.validatedAddresses, isEmpty);
+        expect(
+          container.read(accountProvider).value?.activeAccountUuid,
+          'account-1',
+        );
+        expect(
+          container.read(accountProvider).value?.activeAddress,
+          'u1account-1address',
+        );
+      },
+    );
+  });
 
   test('classifies failures before funding submission starts', () async {
     final failure = StateError('insufficient balance');
@@ -923,5 +1047,71 @@ rust_sync.TransactionInfo _transaction({
     displayAmount: BigInt.one,
     displayPool: 'shielded',
     createdTime: BigInt.zero,
+  );
+}
+
+// Stop at the first spend-preparation boundary: these tests exercise the real
+// prepareClaim destination lookup without creating a claim wallet or syncing.
+class _DestinationValidated implements Exception {}
+
+class _ClaimDestinationRustApi implements RustLibApi {
+  final requestedAccounts = <String>[];
+  final validatedAddresses = <String>[];
+  var lookupStarted = Completer<void>();
+  Completer<String>? lookupGate;
+  int failures = 0;
+
+  void reset() {
+    requestedAccounts.clear();
+    validatedAddresses.clear();
+    lookupStarted = Completer<void>();
+    lookupGate = null;
+    failures = 0;
+  }
+
+  @override
+  Future<String> crateApiWalletGetUnifiedAddress({
+    required String dbPath,
+    required String network,
+    String? accountUuid,
+  }) async {
+    requestedAccounts.add(accountUuid!);
+    if (!lookupStarted.isCompleted) lookupStarted.complete();
+    if (failures > 0) {
+      failures--;
+      throw StateError('transient address lookup failure');
+    }
+    return lookupGate?.future ?? Future.value('u1${accountUuid}address');
+  }
+
+  @override
+  Future<rust_sync.AddressValidationResult> crateApiSyncValidateAddress({
+    required String address,
+    required String network,
+  }) async {
+    validatedAddresses.add(address);
+    throw _DestinationValidated();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ClaimDestinationAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState();
+
+  void select(String uuid, String? address) {
+    state = AsyncData(
+      AccountState(activeAccountUuid: uuid, activeAddress: address),
+    );
+  }
+}
+
+class _ClaimDestinationRpcNotifier extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() => const RpcEndpointConfig(
+    networkName: 'main',
+    lightwalletdUrl: 'https://example.invalid:9067',
   );
 }
