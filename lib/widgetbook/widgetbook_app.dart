@@ -995,6 +995,54 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Mobile',
                   useCases: [
                     WidgetbookUseCase(
+                      name: 'Activity - Creating',
+                      builder: buildGiftCardCreatingActivityPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Created',
+                      builder: buildGiftCardCreatedActivityPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim transitions',
+                      builder: buildGiftCardClaimTransitionPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim broadcast',
+                      builder: buildGiftCardClaimBroadcastPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim 1 confirmation',
+                      builder: buildGiftCardClaimOneConfirmationPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim 5 confirmations',
+                      builder: buildGiftCardClaimFiveConfirmationsPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim complete',
+                      builder: buildGiftCardClaimCompletePreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Claim transitions',
+                      builder: buildGiftCardClaimDetailTransitionPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Creating',
+                      builder: buildGiftCardCreatingDetailPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Created',
+                      builder: buildGiftCardCreatedDetailPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Redeeming',
+                      builder: buildGiftCardRedeemingDetailPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Redeemed',
+                      builder: buildGiftCardRedeemedDetailPreview,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Home - Empty',
                       builder: buildMobilePaymentLinkHomeEmptyUseCase,
                     ),

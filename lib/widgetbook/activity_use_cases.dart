@@ -118,7 +118,7 @@ Widget _buildGiftCardActivityDetailUseCase(
           child: GiftCardActivityDetailView(
             kind: kind,
             artwork: artwork,
-            amountText: '31.10',
+            amountText: '4.45',
             supportingText: r'$142.23',
             statusText: 'Completed',
             statusIconName: AppIcons.checkCircle,
@@ -126,7 +126,9 @@ Widget _buildGiftCardActivityDetailUseCase(
             message: 'Hope this makes your day a little brighter!',
             timestampText: '25 May, 13:30',
             txIdText: 'f154...8143',
-            feeText: '0.0001 ZEC',
+            feeText: kind == GiftCardActivityKind.created
+                ? '0.0002 ZEC'
+                : '0.0001 ZEC',
             onTxIdPressed: _noop,
             onToggleMessage: _noop,
           ),
@@ -145,7 +147,7 @@ List<ActivityFeedSectionData> _activitySections(BuildContext context) {
       rows: [
         _activityRow(
           context,
-          title: 'Redeemed a Gift Card',
+          title: 'Redeemed a gift card',
           iconName: AppIcons.giftCard,
           subtitle: 'Shielded',
           subtitleIconName: AppIcons.shieldKeyholeOutline,
@@ -155,7 +157,7 @@ List<ActivityFeedSectionData> _activitySections(BuildContext context) {
         ),
         _activityRow(
           context,
-          title: 'Created a Gift Card',
+          title: 'Created a gift card',
           iconName: AppIcons.giftCard,
           subtitle: 'Shielded',
           subtitleIconName: AppIcons.shieldKeyholeOutline,

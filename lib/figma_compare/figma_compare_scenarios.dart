@@ -46,6 +46,20 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'activity-gift-card-created-detail-mobile',
+    description: 'Mobile created card with saved fiat and combined card fee',
+    builder: buildGiftCardCreatedDetailPreview,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-gift-card-redeemed-detail-mobile',
+    description: 'Mobile redeemed card with saved fiat',
+    builder: buildGiftCardRedeemedDetailPreview,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'donation-zec-empty',
     description: 'Desktop donation composer with an empty ZEC amount',
     builder: buildDonationZecEmptyUseCase,
