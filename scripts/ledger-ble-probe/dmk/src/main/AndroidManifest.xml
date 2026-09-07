@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+  <application android:label="Ledger DMK probe" android:directBootAware="true">
+    <activity android:name=".DmkProbe" android:exported="true" android:directBootAware="true" />
+    <activity android:name=".HandlerProbe" android:exported="true" android:directBootAware="true" />
+    <activity android:name=".BridgeProbe" android:exported="true" android:directBootAware="true" />
+  </application>
+</manifest>
