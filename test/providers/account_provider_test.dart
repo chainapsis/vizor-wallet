@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
@@ -29,6 +30,108 @@ void main() {
   setUpAll(() => RustLib.initMock(api: _rustApi));
   tearDownAll(RustLib.dispose);
   setUp(_rustApi.reset);
+
+  group('account switch locking', () {
+    late ProviderContainer container;
+    late AccountNotifier accounts;
+    late Directory supportDirectory;
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+
+    setUp(() async {
+      FlutterSecureStorage.setMockInitialValues({});
+      supportDirectory = await Directory.systemTemp.createTemp(
+        'vizor-switch-lock-',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            pathProvider,
+            (_) async => supportDirectory.path,
+          );
+      container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          appSecurityProvider.overrideWith(_SwitchTestSecurityNotifier.new),
+        ],
+      );
+      await container.read(accountProvider.future);
+      accounts = container.read(accountProvider.notifier);
+    });
+
+    tearDown(() async {
+      container.dispose();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+      await supportDirectory.delete(recursive: true);
+    });
+
+    test('an already locked wallet does not start an account switch', () async {
+      container.read(appSecurityProvider.notifier).lock();
+      await accounts.switchAccount('account-2');
+      expect(_rustApi.requestedAccounts, isEmpty);
+      expect(
+        container.read(accountProvider).value!.activeAccountUuid,
+        'account-1',
+      );
+      expect(
+        await const FlutterSecureStorage().read(key: 'zcash_active_account'),
+        isNull,
+      );
+    });
+
+    test('an unlocked switch resolves the selected account address', () async {
+      await accounts.switchAccount('account-2');
+      expect(
+        container.read(accountProvider).value!.activeAccountUuid,
+        'account-2',
+      );
+      expect(
+        container.read(accountProvider).value!.activeAddress,
+        'u1account-2-address',
+      );
+    });
+
+    for (final lookupFails in [false, true]) {
+      test(
+        'locking during lookup keeps the selected account without an address (failure: $lookupFails)',
+        () async {
+          _rustApi.lookupGate = Completer<String>();
+          final switching = accounts.switchAccount('account-2');
+          await _rustApi.lookupStarted.future;
+          container.read(appSecurityProvider.notifier).lock();
+          accounts.clearSensitiveStateForLock();
+          if (lookupFails) {
+            _rustApi.lookupGate!.completeError(
+              StateError('address lookup failed'),
+            );
+          } else {
+            _rustApi.lookupGate!.complete('u1account-2-address');
+          }
+          await switching;
+          final state = container.read(accountProvider).value!;
+          expect(container.read(appSecurityProvider).requiresUnlock, isTrue);
+          expect(state.activeAddress, isNull);
+          expect(state.activeAccountUuid, 'account-2');
+          expect(state.accounts, hasLength(2));
+          expect(
+            await const FlutterSecureStorage().read(
+              key: 'zcash_active_account',
+            ),
+            'account-2',
+          );
+          _rustApi.lookupGate = null;
+          (container.read(appSecurityProvider.notifier)
+                  as _SwitchTestSecurityNotifier)
+              .unlockForTest();
+          await accounts.restoreAfterUnlock();
+          expect(_rustApi.requestedAccounts, ['account-2', 'account-2']);
+          expect(
+            container.read(accountProvider).value!.activeAddress,
+            'u1account-2-address',
+          );
+        },
+      );
+    }
+  });
 
   test('wallet db cleanup paths include main db and voting sidecar files', () {
     const dbPath = '/tmp/zcash_wallet.db';
@@ -970,10 +1073,37 @@ class _FakeAnyhowException implements Exception {
   String toString() => 'AnyhowException($message)';
 }
 
+class _SwitchTestSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+
+  void unlockForTest() => state = state.copyWith(isUnlocked: true);
+}
+
 class _AccountMutationRustApiFake implements RustLibApi {
   final deletedAccountUuids = <String>[];
+  final requestedAccounts = <String>[];
+  var lookupStarted = Completer<void>();
+  Completer<String>? lookupGate;
 
-  void reset() => deletedAccountUuids.clear();
+  void reset() {
+    deletedAccountUuids.clear();
+    requestedAccounts.clear();
+    lookupStarted = Completer<void>();
+    lookupGate = null;
+  }
+
+  @override
+  Future<String> crateApiWalletGetUnifiedAddress({
+    required String dbPath,
+    required String network,
+    String? accountUuid,
+  }) async {
+    requestedAccounts.add(accountUuid!);
+    if (!lookupStarted.isCompleted) lookupStarted.complete();
+    return lookupGate?.future ?? Future.value('u1$accountUuid-address');
+  }
 
   @override
   Future<void> crateApiWalletDeleteAccount({

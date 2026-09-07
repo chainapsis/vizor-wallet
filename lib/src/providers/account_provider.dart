@@ -487,6 +487,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Switch active account.
   Future<void> switchAccount(String uuid) async {
+    if (ref.read(appSecurityProvider).requiresUnlock) return;
     final previousActiveUuid = state.value?.activeAccountUuid;
     if (previousActiveUuid != null && previousActiveUuid != uuid) {
       final guardedSubmission = ref
@@ -513,7 +514,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
     final prev = state.value ?? const AccountState();
     state = AsyncData(
-      prev.copyWith(activeAccountUuid: uuid, activeAddress: address),
+      // The selection is already persisted. Keep it consistent for unlock,
+      // but discard the address if the wallet locked during the switch.
+      ref.read(appSecurityProvider).requiresUnlock
+          ? AccountState(accounts: prev.accounts, activeAccountUuid: uuid)
+          : prev.copyWith(activeAccountUuid: uuid, activeAddress: address),
     );
 
     log('switchAccount: switched to $uuid');
