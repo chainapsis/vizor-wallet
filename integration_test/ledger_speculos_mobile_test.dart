@@ -1543,12 +1543,6 @@ class _SpeculosSwapHardwareSigningService
   Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {}
 
   @override
-  Future<List<int>> decodeSigningResponse({
-    required SwapHardwarePcztDraft draft,
-    required List<int> responseCbor,
-  }) => throw StateError('Ledger signing must not decode Keystone responses.');
-
-  @override
   Future<List<String>> encodeSigningUrParts({
     required SwapHardwarePcztDraft draft,
   }) {
