@@ -14,6 +14,8 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_recovery.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
@@ -4204,6 +4206,137 @@ void main() {
     );
     expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
   });
+
+  for (final failure in ['disconnect', 'rejection', 'submission']) {
+    final disconnected = failure == 'disconnect';
+    final submissionFailure = failure == 'submission';
+    testWidgets('Ledger voting recovery distinguishes $failure', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final recoveryApi = _MutableVotingRecoveryApi()
+        ..state = _recoveryState(bundleCount: 2);
+      final rust = _VotingStatusRustApi(
+        recoveryApi,
+        bundleCount: 2,
+        eligibilityWeightZatoshi: BigInt.from(200),
+        setupWeightPerBundle: BigInt.from(100),
+      );
+      final signedPczts = <List<int>>[];
+      var reconnects = 0;
+      final ready = Completer<void>();
+      final container = _statusContainer(
+        http: submissionFailure
+            ? FakeVotingHttpClient(
+                responses: _votingHttpResponses()
+                  ..['/shielded-vote/v1/delegate-vote'] = {
+                    'code': 1,
+                    'log': 'Submission rejected',
+                    'tx_hash': '',
+                  },
+              )
+            : null,
+        accountOverride: _LedgerAccountNotifier.new,
+        activeAccountUuid: () async => 'ledger-1',
+        accountIsHardware: true,
+        hardwareAccountUuids: const {'ledger-1'},
+        recoveryApi: recoveryApi,
+        rust: rust,
+        hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+        overrides: [
+          ledgerReconnectProvider.overrideWithValue((accountUuid) {
+            expect(accountUuid, 'ledger-1');
+            reconnects++;
+            return ready.future;
+          }),
+          ledgerVotingPcztSignerProvider.overrideWithValue((_, pczt) async {
+            signedPczts.add(List<int>.from(pczt));
+            if (signedPczts.length == 2 && !submissionFailure) {
+              if (disconnected) {
+                throw const LedgerConnectionRequiredException('Disconnected');
+              }
+              throw StateError('User rejected approval');
+            }
+            return [
+              LedgerVotingSignature(
+                pool: 1,
+                actionIndex: 0,
+                signature: List<int>.filled(64, 1),
+              ),
+            ];
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'ledger-1');
+      container.read(votingDraftProvider(key).notifier).setChoice(1, 0);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(withPlatformProgressBuilder: true),
+        ),
+      );
+      await _pumpUntilFound(
+        tester,
+        find.text(disconnected ? 'Reconnect' : 'Retry'),
+        attempts: 100,
+      );
+      expect(
+        rust.storedKeystoneSignatures.keys,
+        submissionFailure ? {0, 1} : {0},
+      );
+      expect(
+        container
+            .read(votingSubmissionJobProvider(key))
+            .ledgerReconnectRequired,
+        disconnected,
+      );
+      if (submissionFailure) {
+        expect(find.text('Reconnect'), findsNothing);
+        expect(reconnects, 0);
+        expect(signedPczts, [
+          [2, 0],
+          [2, 1],
+        ]);
+        expect(tester.takeException(), isNull);
+        return;
+      }
+      if (disconnected) {
+        await tester.tap(find.text('Reconnect'));
+        await tester.pump();
+        expect(find.text('Reconnecting your Ledger'), findsOneWidget);
+        expect(signedPczts.length, 2);
+        ready.complete();
+        await tester.pump();
+        expect(find.text('Your Ledger is connected'), findsOneWidget);
+        expect(signedPczts.length, 2);
+        expect(rust.storedKeystoneSignatures.keys, {0});
+        await tester.tap(find.text('Continue voting'));
+      } else {
+        expect(find.text('Reconnect'), findsNothing);
+        await tester.tap(find.text('Retry'));
+      }
+      await _pumpUntilCondition(
+        tester,
+        () => rust.storedKeystoneSignatures.length == 2,
+        attempts: 100,
+      );
+      expect(signedPczts, [
+        [2, 0],
+        [2, 1],
+        [2, 1],
+      ]);
+      expect(reconnects, disconnected ? 1 : 0);
+      expect(
+        container
+            .read(votingSubmissionJobProvider(key))
+            .ledgerReconnectRequired,
+        isFalse,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets(
     'Ledger voting persists sequential bundles and ignores a late cancelled result',

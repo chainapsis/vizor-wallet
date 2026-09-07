@@ -15,6 +15,7 @@ import '../../../services/voting/pir_snapshot_resolver.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
+import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -428,6 +429,28 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
                 VotingSubmissionProgressStep.finalizing => null,
               },
             ),
+          );
+        }
+        if (phase == VotingSessionPhase.error &&
+            state.isLedgerAccount &&
+            job?.ledgerReconnectRequired == true) {
+          return LedgerSigningModal(
+            key: ValueKey((job!.key, job.generation)),
+            phase: LedgerSigningModalPhase.failed,
+            accountUuid: job.key!.accountUuid,
+            failure: const LedgerSigningFailurePresentation(
+              title: 'Voting approval interrupted',
+              statusLabel: 'Connection needed',
+              message: 'Reconnect your Ledger to continue voting.',
+              showDeviceAppPrompt: false,
+              actionLabel: 'Continue voting',
+              requiresReconnect: true,
+            ),
+            recoveryActionLabel: 'Continue voting',
+            recoveryReadyMessage:
+                'Choose Continue voting when you’re ready. Vizor will check your voting progress before requesting any remaining approvals.',
+            onFailureAction: _retry,
+            onCancel: _clearError,
           );
         }
         return VotingStatusContent(

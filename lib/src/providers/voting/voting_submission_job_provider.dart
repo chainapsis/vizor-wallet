@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/keystone/services/keystone_batch_signing.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/ledger/services/ledger_signing_service.dart';
+import '../../features/ledger/services/ledger_connection_recovery.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
@@ -49,6 +50,7 @@ class VotingSubmissionJobState {
     this.status = VotingSubmissionJobStatus.idle,
     this.generation = 0,
     this.errorMessage,
+    this.ledgerReconnectRequired = false,
     this.softwareAccountRequired = false,
     this.keystoneUrParts = const [],
     this.keystoneBatchMemos = const [],
@@ -68,6 +70,7 @@ class VotingSubmissionJobState {
   final VotingSubmissionJobStatus status;
   final int generation;
   final String? errorMessage;
+  final bool ledgerReconnectRequired;
   final bool softwareAccountRequired;
   final List<String> keystoneUrParts;
   final List<VotingKeystoneBatchMemo> keystoneBatchMemos;
@@ -96,6 +99,7 @@ class VotingSubmissionJobState {
     int? generation,
     String? errorMessage,
     bool clearErrorMessage = false,
+    bool? ledgerReconnectRequired,
     bool? softwareAccountRequired,
     List<String>? keystoneUrParts,
     List<VotingKeystoneBatchMemo>? keystoneBatchMemos,
@@ -121,6 +125,9 @@ class VotingSubmissionJobState {
       errorMessage: clearErrorMessage
           ? null
           : errorMessage ?? this.errorMessage,
+      ledgerReconnectRequired: clearErrorMessage
+          ? false
+          : ledgerReconnectRequired ?? this.ledgerReconnectRequired,
       softwareAccountRequired:
           softwareAccountRequired ?? this.softwareAccountRequired,
       keystoneUrParts: keystoneUrParts ?? this.keystoneUrParts,
@@ -841,10 +848,21 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         clearErrorMessage: true,
       );
 
-      final signatures = await ref.read(ledgerVotingPcztSignerProvider)(
-        key.accountUuid,
-        request.redactedPcztBytes,
-      );
+      final List<LedgerVotingSignature> signatures;
+      try {
+        signatures = await ref.read(ledgerVotingPcztSignerProvider)(
+          key.accountUuid,
+          request.redactedPcztBytes,
+        );
+      } catch (error) {
+        _failJob(
+          key: key,
+          generation: generation,
+          message: _messageFromError(error),
+          ledgerReconnectRequired: ledgerFailureNeedsReconnect(error),
+        );
+        return;
+      }
       if (!_isCurrentJob(key: key, generation: generation)) return;
       await sessionNotifier.handleLedgerSignatures(signatures);
       if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -1185,6 +1203,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
     required String message,
     bool softwareAccountRequired = false,
+    bool ledgerReconnectRequired = false,
   }) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     _cancelCompletionPoll();
@@ -1194,6 +1213,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     state = state.copyWith(
       status: VotingSubmissionJobStatus.error,
       errorMessage: message,
+      ledgerReconnectRequired: ledgerReconnectRequired,
       softwareAccountRequired: softwareAccountRequired,
       keystoneUrParts: const [],
       keystoneBatchMemos: const [],
