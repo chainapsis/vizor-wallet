@@ -109,6 +109,10 @@ WidgetbookFolder buildLedgerWidgetbookFolder() {
                 name: 'Playground',
                 builder: buildLedgerSigningPlaygroundUseCase,
               ),
+              WidgetbookUseCase(
+                name: 'Recovery flow',
+                builder: (_) => const LedgerSigningRecoveryPreview(),
+              ),
             ],
           ),
         ],
@@ -186,7 +190,13 @@ enum LedgerSigningPlaygroundReadiness {
   failed,
 }
 
-enum LedgerSigningPlaygroundFailure { retry, openApp, reconnect }
+enum LedgerSigningPlaygroundFailure {
+  retry,
+  openApp,
+  reconnect,
+  accountMismatch,
+  saving,
+}
 
 Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
   final phase = context.knobs.object.dropdown<LedgerSigningModalPhase>(
@@ -221,6 +231,7 @@ Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
     max: roundCount,
   );
   final mobile = context.knobs.boolean(label: 'Mobile', initialValue: false);
+  final showWaitingHint = context.knobs.boolean(label: 'Show delayed hint');
 
   return buildLedgerSigningPreview(
     phase: phase,
@@ -229,6 +240,7 @@ Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
     roundNumber: roundNumber > roundCount ? roundCount : roundNumber,
     roundCount: roundCount,
     mobile: mobile,
+    showWaitingHint: showWaitingHint,
   );
 }
 
@@ -241,14 +253,23 @@ Widget buildLedgerSigningPreview({
   int roundNumber = 1,
   int roundCount = 1,
   bool mobile = false,
+  bool showWaitingHint = false,
+  VoidCallback? onCancel,
+  VoidCallback? onFailureAction,
 }) {
+  final locked =
+      phase == LedgerSigningModalPhase.cancelling ||
+      phase == LedgerSigningModalPhase.reconnecting ||
+      phase == LedgerSigningModalPhase.saving ||
+      phase == LedgerSigningModalPhase.broadcasting;
   final modal = LedgerSigningModal(
     phase: phase,
     failure: phase == LedgerSigningModalPhase.failed
         ? _failurePresentation(failureMode)
         : null,
-    onCancel: () {},
-    onFailureAction: () {},
+    onCancel: locked ? null : onCancel ?? () {},
+    onFailureAction: onFailureAction ?? () {},
+    showWaitingHint: showWaitingHint,
     accountUuid: _ledgerAccount.uuid,
     roundNumber: roundNumber,
     roundCount: roundCount,
@@ -270,12 +291,126 @@ Widget buildLedgerSigningPreview({
             height: 852,
             child: MobileLedgerSigningSurface(
               onBack: () {},
-              canLeave: phase != LedgerSigningModalPhase.broadcasting,
+              canLeave: !locked,
               child: modal,
             ),
           )
         : Center(child: modal),
   );
+}
+
+/// UI-only lifecycle controls. No Ledger, wallet storage, or broadcast calls.
+class LedgerSigningRecoveryPreview extends StatefulWidget {
+  const LedgerSigningRecoveryPreview({super.key});
+
+  @override
+  State<LedgerSigningRecoveryPreview> createState() =>
+      _LedgerSigningRecoveryPreviewState();
+}
+
+class _LedgerSigningRecoveryPreviewState
+    extends State<LedgerSigningRecoveryPreview> {
+  LedgerSigningModalPhase _phase = LedgerSigningModalPhase.coolingDown;
+  bool _hint = false;
+  bool _mobile = false;
+  bool _reconnect = false;
+
+  void _setPhase(LedgerSigningModalPhase phase) => setState(() {
+    _phase = phase;
+    _hint = false;
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final readyToAdvance = switch (_phase) {
+      LedgerSigningModalPhase.coolingDown => 'Simulate 3-second guard complete',
+      LedgerSigningModalPhase.connecting => 'Simulate request sent',
+      LedgerSigningModalPhase.cancelling => 'Simulate previous request cleared',
+      LedgerSigningModalPhase.reconnecting => 'Simulate connected',
+      _ => null,
+    };
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const Text('UI preview only · No device requests are sent'),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              AppButton(
+                onPressed: () => setState(() => _mobile = !_mobile),
+                child: Text(_mobile ? 'Show desktop' : 'Show mobile'),
+              ),
+              AppButton(
+                onPressed: () {
+                  _reconnect = false;
+                  _setPhase(LedgerSigningModalPhase.coolingDown);
+                },
+                child: const Text('Restart preview'),
+              ),
+              if (readyToAdvance != null)
+                AppButton(
+                  onPressed: () => _setPhase(switch (_phase) {
+                    LedgerSigningModalPhase.coolingDown =>
+                      LedgerSigningModalPhase.connecting,
+                    LedgerSigningModalPhase.connecting =>
+                      LedgerSigningModalPhase.awaitingDevice,
+                    LedgerSigningModalPhase.cancelling =>
+                      _reconnect
+                          ? LedgerSigningModalPhase.failed
+                          : LedgerSigningModalPhase.cancelled,
+                    LedgerSigningModalPhase.reconnecting =>
+                      LedgerSigningModalPhase.readyToRetry,
+                    _ => _phase,
+                  }),
+                  child: Text(readyToAdvance),
+                ),
+              if (_phase == LedgerSigningModalPhase.awaitingDevice) ...[
+                AppButton(
+                  onPressed: () => setState(() => _hint = true),
+                  child: const Text('Simulate slow response'),
+                ),
+                AppButton(
+                  onPressed: () {
+                    _reconnect = true;
+                    _setPhase(LedgerSigningModalPhase.cancelling);
+                  },
+                  child: const Text('Simulate timeout'),
+                ),
+                AppButton(
+                  onPressed: () => _setPhase(LedgerSigningModalPhase.cancelled),
+                  child: const Text('Simulate device rejection'),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 24),
+          buildLedgerSigningPreview(
+            phase: _phase,
+            mobile: _mobile,
+            showWaitingHint: _hint,
+            failureMode: LedgerSigningPlaygroundFailure.reconnect,
+            onCancel: () {
+              _reconnect = false;
+              _setPhase(
+                _phase == LedgerSigningModalPhase.cancelled ||
+                        _phase == LedgerSigningModalPhase.readyToRetry ||
+                        _phase == LedgerSigningModalPhase.failed
+                    ? LedgerSigningModalPhase.preparing
+                    : LedgerSigningModalPhase.cancelling,
+              );
+            },
+            onFailureAction: () => _setPhase(
+              _phase == LedgerSigningModalPhase.failed
+                  ? LedgerSigningModalPhase.reconnecting
+                  : LedgerSigningModalPhase.coolingDown,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 Widget buildLedgerVotingPlaygroundUseCase(BuildContext context) {
@@ -555,11 +690,32 @@ LedgerSigningFailurePresentation _failurePresentation(
       ),
     LedgerSigningPlaygroundFailure.reconnect =>
       const LedgerSigningFailurePresentation(
-        title: 'Ledger disconnected',
-        statusLabel: 'Connection lost',
-        message: 'Reconnect your Ledger to continue.',
+        title: 'Let’s reconnect your Ledger',
+        statusLabel: 'Ready to reconnect',
+        message:
+            'Keep your Ledger unlocked. Reconnect first, then choose when to try signing again.',
+        isError: false,
         showDeviceAppPrompt: true,
         actionLabel: 'Reconnect',
+      ),
+    LedgerSigningPlaygroundFailure.accountMismatch =>
+      const LedgerSigningFailurePresentation(
+        title: 'Check the signing account',
+        statusLabel: 'Transaction could not be verified',
+        message:
+            'Ledger could not match this transaction to the selected account. Go back and check the account before continuing.',
+        showDeviceAppPrompt: false,
+        actionLabel: 'Back to review',
+      ),
+    LedgerSigningPlaygroundFailure.saving =>
+      const LedgerSigningFailurePresentation(
+        title: 'Your signature is ready',
+        statusLabel: 'Save to continue',
+        message:
+            'Vizor could not save the signed transaction. Try saving again. You won’t need to approve it on your Ledger again.',
+        isError: false,
+        showDeviceAppPrompt: false,
+        actionLabel: 'Retry saving',
       ),
   };
 }

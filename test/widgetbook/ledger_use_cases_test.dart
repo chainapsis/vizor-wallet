@@ -7,6 +7,73 @@ import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.da
 import 'package:zcash_wallet/widgetbook/ledger_use_cases.dart';
 
 void main() {
+  testWidgets(
+    'new signing states fit the mobile preview and lock cleanup actions',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      for (final phase in [
+        LedgerSigningModalPhase.connecting,
+        LedgerSigningModalPhase.coolingDown,
+        LedgerSigningModalPhase.cancelling,
+        LedgerSigningModalPhase.reconnecting,
+        LedgerSigningModalPhase.cancelled,
+        LedgerSigningModalPhase.readyToRetry,
+      ]) {
+        await _pumpUseCase(
+          tester,
+          (_) => buildLedgerSigningPreview(phase: phase, mobile: true),
+        );
+        expect(tester.takeException(), isNull, reason: phase.name);
+        if (phase == LedgerSigningModalPhase.cancelling ||
+            phase == LedgerSigningModalPhase.reconnecting) {
+          expect(find.text('Try again'), findsNothing);
+          expect(find.text('Cancel'), findsNothing);
+          final button = tester.widget<AppButton>(
+            find.descendant(
+              of: find.byType(LedgerSigningModal),
+              matching: find.byType(AppButton),
+            ),
+          );
+          expect(button.onPressed, isNull);
+        }
+      }
+    },
+  );
+
+  testWidgets('recovery waits for cleanup and never signs on reconnect', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpUseCase(tester, (_) => const LedgerSigningRecoveryPreview());
+    expect(find.text('Getting your Ledger ready'), findsOneWidget);
+    await tester.tap(find.text('Simulate 3-second guard complete'));
+    await tester.pump();
+    expect(find.text('Connecting to your Ledger'), findsOneWidget);
+    await tester.tap(find.text('Simulate request sent'));
+    await tester.pump();
+    await tester.tap(find.text('Simulate slow response'));
+    await tester.pump();
+    expect(find.textContaining('No request on your Ledger?'), findsOneWidget);
+    await tester.tap(find.text('Simulate timeout'));
+    await tester.pump();
+    expect(find.text('Finishing your request'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
+    expect(find.text('Reconnect'), findsNothing);
+    await tester.tap(find.text('Simulate previous request cleared'));
+    await tester.pump();
+    await tester.tap(find.text('Reconnect'));
+    await tester.pump();
+    expect(find.text('Reconnecting your Ledger'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
+    await tester.tap(find.text('Simulate connected'));
+    await tester.pump();
+    expect(find.text('Review on your Ledger'), findsNothing);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   test('Ledger folder keeps its playgrounds separate from generic screens', () {
     final folder = buildLedgerWidgetbookFolder();
 
@@ -83,12 +150,35 @@ void main() {
     );
 
     final usb = find.byKey(const ValueKey('ledger_connection_usb'));
+    final automatic = find.byKey(const ValueKey('ledger_connection_automatic'));
+    final bluetooth = find.byKey(const ValueKey('ledger_connection_bluetooth'));
+    expect(tester.getTopLeft(usb).dx, tester.getTopLeft(automatic).dx);
+    expect(
+      tester.getTopLeft(usb).dy,
+      greaterThan(tester.getBottomLeft(automatic).dy),
+    );
+    expect(
+      tester.getTopLeft(bluetooth).dy,
+      greaterThan(tester.getBottomLeft(usb).dy),
+    );
     expect(tester.widget<AppButton>(usb).variant, AppButtonVariant.secondary);
 
     await tester.tap(usb);
     await tester.pump();
 
     expect(tester.widget<AppButton>(usb).variant, AppButtonVariant.primary);
+    expect(
+      find.byKey(const ValueKey('ledger_connection_selected_usb')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ledger_connection_selected_automatic')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('ledger_connection_selected_bluetooth')),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 

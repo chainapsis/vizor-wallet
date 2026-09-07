@@ -15,6 +15,12 @@ import 'ledger_device_app_prompt.dart';
 
 enum LedgerSigningModalPhase {
   preparing,
+  connecting,
+  coolingDown,
+  cancelling,
+  reconnecting,
+  cancelled,
+  readyToRetry,
   awaitingDevice,
   saving,
   broadcasting,
@@ -28,6 +34,7 @@ class LedgerSigningFailurePresentation {
     required this.message,
     required this.showDeviceAppPrompt,
     this.actionLabel,
+    this.isError = true,
   });
 
   final String title;
@@ -35,6 +42,7 @@ class LedgerSigningFailurePresentation {
   final String message;
   final bool showDeviceAppPrompt;
   final String? actionLabel;
+  final bool isError;
 }
 
 class LedgerSigningModal extends ConsumerWidget {
@@ -47,6 +55,7 @@ class LedgerSigningModal extends ConsumerWidget {
     this.accountUuid,
     this.roundNumber = 1,
     this.roundCount = 1,
+    this.showWaitingHint = false,
     super.key,
   }) : assert(roundNumber > 0 && roundNumber <= roundCount),
        assert(roundCount > 0),
@@ -67,6 +76,7 @@ class LedgerSigningModal extends ConsumerWidget {
   final String? accountUuid;
   final int roundNumber;
   final int roundCount;
+  final bool showWaitingHint;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -79,8 +89,18 @@ class LedgerSigningModal extends ConsumerWidget {
     final account = _ledgerAccount(ref, accountUuid);
     final failed = phase == LedgerSigningModalPhase.failed;
     final failure = this.failure;
+    final destructive = failed && failure!.isError;
+    final settling =
+        phase == LedgerSigningModalPhase.cancelling ||
+        phase == LedgerSigningModalPhase.reconnecting;
     var title = switch (phase) {
       LedgerSigningModalPhase.preparing => 'Preparing for Ledger',
+      LedgerSigningModalPhase.connecting => 'Connecting to your Ledger',
+      LedgerSigningModalPhase.coolingDown => 'Getting your Ledger ready',
+      LedgerSigningModalPhase.cancelling => 'Finishing your request',
+      LedgerSigningModalPhase.reconnecting => 'Reconnecting your Ledger',
+      LedgerSigningModalPhase.cancelled => 'Request canceled',
+      LedgerSigningModalPhase.readyToRetry => 'Your Ledger is connected',
       LedgerSigningModalPhase.awaitingDevice => 'Review on your Ledger',
       LedgerSigningModalPhase.saving => 'Saving signed transaction',
       LedgerSigningModalPhase.broadcasting => 'Sending transaction',
@@ -89,6 +109,18 @@ class LedgerSigningModal extends ConsumerWidget {
     var message = switch (phase) {
       LedgerSigningModalPhase.preparing =>
         'Vizor is preparing the transaction for secure device review.',
+      LedgerSigningModalPhase.connecting =>
+        'Keep your Ledger connected and unlocked.',
+      LedgerSigningModalPhase.coolingDown =>
+        'This will only take a moment. Keep your Ledger connected.',
+      LedgerSigningModalPhase.cancelling =>
+        'Vizor is waiting for the previous device request to finish before you can try again.',
+      LedgerSigningModalPhase.reconnecting =>
+        'Keep your Ledger connected and unlocked. Reconnecting will not send a new signing request.',
+      LedgerSigningModalPhase.cancelled =>
+        'You can go back or try again when you’re ready.',
+      LedgerSigningModalPhase.readyToRetry =>
+        'Choose Try again when you’re ready to review the transaction on your Ledger.',
       LedgerSigningModalPhase.awaitingDevice =>
         'Review every transaction detail on the device, then approve or reject it.',
       LedgerSigningModalPhase.saving =>
@@ -100,6 +132,12 @@ class LedgerSigningModal extends ConsumerWidget {
 
     var statusLabel = switch (phase) {
       LedgerSigningModalPhase.preparing => 'Preparing transaction',
+      LedgerSigningModalPhase.connecting => 'Connecting',
+      LedgerSigningModalPhase.coolingDown => 'Getting ready',
+      LedgerSigningModalPhase.cancelling => 'Finishing up',
+      LedgerSigningModalPhase.reconnecting => 'Connecting',
+      LedgerSigningModalPhase.cancelled => 'Ready when you are',
+      LedgerSigningModalPhase.readyToRetry => 'Ready when you are',
       LedgerSigningModalPhase.awaitingDevice => 'Waiting for approval',
       LedgerSigningModalPhase.saving => 'Securing transaction',
       LedgerSigningModalPhase.broadcasting => 'Broadcasting to the network',
@@ -149,111 +187,61 @@ class LedgerSigningModal extends ConsumerWidget {
         : 'Waiting';
     final showDeviceAppPrompt = switch (phase) {
       LedgerSigningModalPhase.saving ||
-      LedgerSigningModalPhase.broadcasting => false,
+      LedgerSigningModalPhase.broadcasting ||
+      LedgerSigningModalPhase.coolingDown ||
+      LedgerSigningModalPhase.cancelling ||
+      LedgerSigningModalPhase.readyToRetry ||
+      LedgerSigningModalPhase.cancelled => false,
       LedgerSigningModalPhase.failed => failure!.showDeviceAppPrompt,
       LedgerSigningModalPhase.preparing ||
+      LedgerSigningModalPhase.connecting ||
+      LedgerSigningModalPhase.reconnecting ||
       LedgerSigningModalPhase.awaitingDevice => true,
     };
 
     return AppModalCard(
       width: 328,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: colors.background.neutralSubtleOpacity,
-                  borderRadius: BorderRadius.circular(AppRadii.medium),
-                  border: Border.all(color: colors.border.subtle),
-                ),
-                child: Center(
-                  child: AppIcon(
-                    AppIcons.ledger,
-                    size: 22,
-                    color: colors.icon.regular,
-                    semanticLabel: 'Ledger',
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: AppTypography.bodyLarge.copyWith(
-                        color: colors.text.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      '$appName · Ledger',
-                      style: AppTypography.bodySmall.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (showDeviceAppPrompt) ...[
-            const SizedBox(height: AppSpacing.md),
-            LedgerDeviceAppPrompt(networkName: networkName),
-          ],
-          const SizedBox(height: AppSpacing.md),
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.s),
-            decoration: BoxDecoration(
-              color: colors.background.neutralSubtleOpacity,
-              borderRadius: BorderRadius.circular(AppRadii.medium),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                SizedBox(
-                  width: 32,
-                  height: 32,
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: colors.background.neutralSubtleOpacity,
+                    borderRadius: BorderRadius.circular(AppRadii.medium),
+                    border: Border.all(color: colors.border.subtle),
+                  ),
                   child: Center(
                     child: AppIcon(
-                      failed ? AppIcons.warningCircle : AppIcons.loader,
-                      size: failed ? 24 : 20,
-                      color: failed
-                          ? colors.icon.destructive
-                          : colors.icon.regular,
-                      animated: !failed,
-                      semanticLabel: statusLabel,
+                      AppIcons.ledger,
+                      size: 22,
+                      color: colors.icon.regular,
+                      semanticLabel: 'Ledger',
                     ),
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xs),
+                const SizedBox(width: AppSpacing.s),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        statusLabel,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: failed
-                              ? colors.text.destructive
-                              : colors.text.accent,
+                        title,
+                        style: AppTypography.bodyLarge.copyWith(
+                          color: colors.text.accent,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        message,
+                        '$appName · Ledger',
                         style: AppTypography.bodySmall.copyWith(
-                          color: failed
-                              ? colors.text.destructive
-                              : colors.text.secondary,
+                          color: colors.text.secondary,
                         ),
                       ),
                     ],
@@ -261,41 +249,141 @@ class LedgerSigningModal extends ConsumerWidget {
                 ),
               ],
             ),
-          ),
-          if (failed &&
-              account != null &&
-              ref.watch(ledgerTargetPlatformProvider) ==
-                  TargetPlatform.macOS) ...[
-            const SizedBox(height: AppSpacing.sm),
-            _LedgerFailureConnectionPicker(account: account),
-          ],
-          const SizedBox(height: AppSpacing.md),
-          if (actionLabel == null && onCancel == null)
-            const SizedBox.shrink()
-          else if (actionLabel == null)
-            AppButton(
-              onPressed: onCancel,
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.mediumLarge,
-              minWidth: 280,
-              child: Text(cancelLabel),
-            )
-          else if (onCancel == null)
-            AppButton(
-              onPressed: failed ? onFailureAction : null,
-              variant: AppButtonVariant.primary,
-              size: AppButtonSize.mediumLarge,
-              minWidth: 280,
-              child: Text(actionLabel),
-            )
-          else
-            AppModalActions(
-              onCancel: onCancel,
-              cancelLabel: cancelLabel,
-              actionLabel: actionLabel,
-              onAction: failed ? onFailureAction : null,
+            if (showDeviceAppPrompt) ...[
+              const SizedBox(height: AppSpacing.md),
+              LedgerDeviceAppPrompt(networkName: networkName),
+            ],
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.s),
+              decoration: BoxDecoration(
+                color: colors.background.neutralSubtleOpacity,
+                borderRadius: BorderRadius.circular(AppRadii.medium),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Center(
+                      child: AppIcon(
+                        failed
+                            ? AppIcons.warningCircle
+                            : phase == LedgerSigningModalPhase.cancelled ||
+                                  phase == LedgerSigningModalPhase.readyToRetry
+                            ? AppIcons.checkCircle
+                            : AppIcons.loader,
+                        size: failed ? 24 : 20,
+                        color: destructive
+                            ? colors.icon.destructive
+                            : colors.icon.regular,
+                        animated: !failed,
+                        semanticLabel: statusLabel,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          statusLabel,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: destructive
+                                ? colors.text.destructive
+                                : colors.text.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          message,
+                          style: AppTypography.bodySmall.copyWith(
+                            color: destructive
+                                ? colors.text.destructive
+                                : colors.text.secondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-        ],
+            if (failed &&
+                account != null &&
+                ref.watch(ledgerTargetPlatformProvider) ==
+                    TargetPlatform.macOS) ...[
+              const SizedBox(height: AppSpacing.sm),
+              _LedgerFailureConnectionPicker(account: account),
+            ],
+            if (showWaitingHint &&
+                phase == LedgerSigningModalPhase.awaitingDevice &&
+                readiness.phase == LedgerAppReadinessPhase.ready) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'No request on your Ledger? Make sure it’s unlocked and the $appName app is open.',
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.md),
+            if (settling)
+              AppButton(
+                onPressed: null,
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.mediumLarge,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      phase == LedgerSigningModalPhase.cancelling
+                          ? 'Finishing up'
+                          : 'Reconnecting',
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    const AppIcon(AppIcons.loader, size: 16),
+                  ],
+                ),
+              )
+            else if (phase == LedgerSigningModalPhase.cancelled ||
+                phase == LedgerSigningModalPhase.readyToRetry)
+              AppModalActions(
+                onCancel: onFailureAction,
+                cancelLabel: 'Try again',
+                actionLabel: 'Back',
+                onAction: onCancel,
+              )
+            else if (actionLabel == null && onCancel == null)
+              const SizedBox.shrink()
+            else if (actionLabel == null)
+              AppButton(
+                onPressed: onCancel,
+                variant: AppButtonVariant.ghost,
+                size: AppButtonSize.mediumLarge,
+                minWidth: 280,
+                child: Text(cancelLabel),
+              )
+            else if (onCancel == null)
+              AppButton(
+                onPressed: failed ? onFailureAction : null,
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.mediumLarge,
+                minWidth: 280,
+                child: Text(actionLabel),
+              )
+            else
+              AppModalActions(
+                onCancel: onCancel,
+                cancelLabel: cancelLabel,
+                actionLabel: actionLabel,
+                onAction: failed ? onFailureAction : null,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -341,12 +429,14 @@ class _LedgerFailureConnectionPicker extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               for (final option in LedgerConnectionPreference.values) ...[
                 if (option != LedgerConnectionPreference.automatic)
-                  const SizedBox(width: AppSpacing.xxs),
-                Expanded(
+                  const SizedBox(height: AppSpacing.xxs),
+                Semantics(
+                  selected: account.ledgerConnectionPreference == option,
                   child: AppButton(
                     key: ValueKey('ledger_connection_${option.name}'),
                     onPressed:
@@ -364,13 +454,29 @@ class _LedgerFailureConnectionPicker extends ConsumerWidget {
                     variant: account.ledgerConnectionPreference == option
                         ? AppButtonVariant.primary
                         : AppButtonVariant.secondary,
-                    size: AppButtonSize.small,
+                    size: AppButtonSize.medium,
                     constrainContent: true,
-                    child: Text(switch (option) {
-                      LedgerConnectionPreference.automatic => 'Auto',
-                      LedgerConnectionPreference.usb => 'USB',
-                      LedgerConnectionPreference.bluetooth => 'Bluetooth',
-                    }),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(switch (option) {
+                            LedgerConnectionPreference.automatic => 'Auto',
+                            LedgerConnectionPreference.usb => 'USB',
+                            LedgerConnectionPreference.bluetooth => 'Bluetooth',
+                          }),
+                        ),
+                        if (account.ledgerConnectionPreference == option)
+                          AppIcon(
+                            AppIcons.check,
+                            key: ValueKey(
+                              'ledger_connection_selected_${option.name}',
+                            ),
+                            size: 16,
+                          )
+                        else
+                          const SizedBox(width: 16),
+                      ],
+                    ),
                   ),
                 ),
               ],
