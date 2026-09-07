@@ -794,6 +794,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
+    _requireWalletUnlocked();
     final receiverAccountUuid = _ref
         .read(accountProvider)
         .value
@@ -810,6 +811,9 @@ class PaymentLinkService implements PaymentLinkOperations {
       network: endpoint.networkName,
       accountUuid: receiverAccountUuid,
     );
+    // Locking preserves the active UUID but clears its address. Do not restore
+    // that sensitive state from a lookup that completed after the wallet locked.
+    _requireWalletUnlocked();
     if (_ref.read(accountProvider).value?.activeAccountUuid !=
         receiverAccountUuid) {
       throw const PaymentLinkClaimDestinationChangedException();

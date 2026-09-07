@@ -49,6 +49,7 @@ void main() {
       container = ProviderContainer(
         overrides: [
           accountProvider.overrideWith(() => accounts),
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
           rpcEndpointProvider.overrideWith(_ClaimDestinationRpcNotifier.new),
           paymentLinkRecoveryStoreProvider.overrideWithValue(
             PaymentLinkRecoveryStore(_FakePaymentLinkRecoveryStorage()),
@@ -68,6 +69,63 @@ void main() {
           .setMockMethodCallHandler(pathChannel, null);
       await supportDirectory.delete(recursive: true);
     });
+
+    test(
+      'a locked wallet stops before looking up a claim destination',
+      () async {
+        accounts.select('account-2', null);
+        container.read(appSecurityProvider.notifier).lock();
+
+        await expectLater(
+          service.prepareClaim(_link()),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              'Wallet is locked.',
+            ),
+          ),
+        );
+
+        expect(api.requestedAccounts, isEmpty);
+        expect(api.validatedAddresses, isEmpty);
+        expect(container.read(accountProvider).value?.activeAddress, isNull);
+      },
+    );
+
+    test(
+      'locking during lookup keeps the address cleared and stops preparation',
+      () async {
+        accounts.select('account-2', 'u1previous-account');
+        api.lookupGate = Completer<String>();
+        final preparing = service.prepareClaim(_link());
+        final expectation = expectLater(
+          preparing,
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              'Wallet is locked.',
+            ),
+          ),
+        );
+        await api.lookupStarted.future;
+
+        container.read(appSecurityProvider.notifier).lock();
+        accounts.clearSensitiveStateForLock();
+        expect(container.read(accountProvider).value?.activeAddress, isNull);
+        api.lookupGate!.complete('u1account-2address');
+        await expectation;
+
+        expect(container.read(appSecurityProvider).requiresUnlock, isTrue);
+        expect(
+          container.read(accountProvider).value?.activeAccountUuid,
+          'account-2',
+        );
+        expect(container.read(accountProvider).value?.activeAddress, isNull);
+        expect(api.validatedAddresses, isEmpty);
+      },
+    );
 
     for (final cachedAddress in ['u1previous-account', null]) {
       test(
@@ -1060,6 +1118,13 @@ class _ClaimDestinationRustApi implements RustLibApi {
   var lookupStarted = Completer<void>();
   Completer<String>? lookupGate;
   int failures = 0;
+
+  @override
+  Future<void> crateApiVotingResetVotingSessionState({
+    required String dbPath,
+    required String accountUuid,
+    String? roundId,
+  }) async {}
 
   void reset() {
     requestedAccounts.clear();
