@@ -59,7 +59,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   desktop_window_bootstrap: 4dcde2e9c6df76755b31c7b494b047bfb90ed74d
   flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
-  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
   mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
   rust_lib_zcash_wallet: 28f5e3e0d2b108aa61a1c74ed513f730bb347cf7
   screen_retriever_macos: 452e51764a9e1cdb74b3c541238795849f21557f
@@ -68,6 +68,6 @@ SPEC CHECKSUMS:
   url_launcher_macos: f87a979182d112f911de6820aefddaf56ee9fbfd
   window_manager: b729e31d38fb04905235df9ea896128991cad99e
 
-PODFILE CHECKSUM: 346bfb2deb41d4a6ebd6f6799f92188bde2d246f
+PODFILE CHECKSUM: 1e95c36afbfd1cb6423ceca4de7a8e1b256fb6ac
 
 COCOAPODS: 1.16.2
