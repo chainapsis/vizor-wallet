@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -51,6 +52,7 @@ Future<void> pumpPaymentLinksScreen(
   BigInt? spendableBalance,
   FakeSyncNotifier? syncNotifier,
   ZecMarketDataSource? marketDataSource,
+  bool? pricingEnabled,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1080, 720));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -64,6 +66,8 @@ Future<void> pumpPaymentLinksScreen(
     ProviderScope(
       overrides: [
         appBootstrapProvider.overrideWithValue(appBootstrap),
+        if (pricingEnabled != null)
+          swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
         if (accountNotifier != null)
           accountProvider.overrideWith(() => accountNotifier),
         paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),

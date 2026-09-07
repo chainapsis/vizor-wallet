@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
@@ -1787,14 +1788,16 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     if (pendingLink != null) _schedulePendingPaymentLink();
 
     if (kAppFormFactor == AppFormFactor.mobile) {
+      final pricingEnabled = ref.watch(swapFeatureEnabledProvider);
       final amount = parseZecAmount(_amountController.text);
       final marketData =
-          _page == PaymentLinksLocalPage.amount &&
+          pricingEnabled &&
+              _page == PaymentLinksLocalPage.amount &&
               amount != null &&
               amount > BigInt.zero
           ? ref.watch(zecHomeMarketDataStateProvider)
           : null;
-      final amountFiatText = amount == null
+      final amountFiatText = !pricingEnabled || amount == null
           ? null
           : amount == BigInt.zero
           ? r'$0.00'
@@ -1836,7 +1839,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         amountInputFormatters: [_amountFormatter],
         amountFiatText:
             amountFiatText ??
-            (amount != null && !amountFiatLoading ? 'Fiat unavailable' : null),
+            (pricingEnabled && amount != null && !amountFiatLoading
+                ? 'Fiat unavailable'
+                : null),
         amountFiatLoading: amountFiatLoading,
         maxAmountText: _maxAmountText,
         canContinueAmount: _canContinueAmount,

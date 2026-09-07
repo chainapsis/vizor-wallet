@@ -24,6 +24,58 @@ void main() {
   setUpAll(loadPaymentLinksTestFonts);
 
   testWidgets(
+    'disabled pricing hides all fiat status while amount entry and Max work',
+    (tester) async {
+      final source = _PendingCardPrice();
+      await pumpPaymentLinksScreen(
+        tester,
+        pricingEnabled: false,
+        marketDataSource: source,
+      );
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_links_mobile_create_button')),
+      );
+      await tester.pumpAndSettle();
+      final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
+      final max = find.byKey(const ValueKey('payment_link_max_button'));
+      expect(find.textContaining('Use max:'), findsOneWidget);
+
+      for (final amount in ['0', '2']) {
+        await tester.enterText(editor, amount);
+        await tester.pumpAndSettle();
+        expect(find.text('Fiat unavailable'), findsNothing);
+        expect(find.textContaining(r'$'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
+          findsNothing,
+        );
+        expect(max, findsOneWidget);
+      }
+      await tester.tap(max);
+      await tester.pumpAndSettle();
+      expect(
+        parseZecAmount(tester.widget<EditableText>(editor).controller.text),
+        greaterThan(BigInt.from(200000000)),
+      );
+      expect(find.text('Fiat unavailable'), findsNothing);
+      expect(find.textContaining(r'$'), findsNothing);
+      expect(source.fetchCount, 0);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(
+                const ValueKey('payment_link_mobile_amount_continue_button'),
+              ),
+            )
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
+
+  testWidgets(
     'actual amount screen replaces Use max with fiat loading and the latest value',
     (tester) async {
       final source = _PendingCardPrice();
@@ -852,9 +904,13 @@ void main() {
 
 class _PendingCardPrice implements ZecMarketDataSource {
   final result = Completer<ZecMarketData?>();
+  int fetchCount = 0;
 
   @override
-  Future<ZecMarketData?> fetchMarketData() => result.future;
+  Future<ZecMarketData?> fetchMarketData() {
+    fetchCount++;
+    return result.future;
+  }
 }
 
 Future<void> _openRedeemScanner(WidgetTester tester) async {
