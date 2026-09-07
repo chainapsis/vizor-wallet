@@ -74,6 +74,9 @@ class PaymentLinkReceivedRecord {
     required this.claimTxids,
     required this.updatedAt,
     this.message,
+    this.fiatSnapshot,
+    this.claimSubmittedAt,
+    this.claimDestinationPool,
   });
 
   factory PaymentLinkReceivedRecord.fromLink(
@@ -87,6 +90,7 @@ class PaymentLinkReceivedRecord {
       createdAt: link.createdAt.toUtc(),
       artworkId: link.presentation?.artworkId,
       message: link.presentation?.message,
+      fiatSnapshot: link.presentation?.fiatSnapshot,
       status: PaymentLinkReceivedStatus.readyToClaim,
       claimLink: link,
       destinationAccountUuid: null,
@@ -101,6 +105,7 @@ class PaymentLinkReceivedRecord {
   final DateTime createdAt;
   final String? artworkId;
   final String? message;
+  final PaymentLinkFiatSnapshot? fiatSnapshot;
   final PaymentLinkReceivedStatus status;
 
   /// The bearer secret is retained only while the Card can still require a
@@ -110,6 +115,12 @@ class PaymentLinkReceivedRecord {
   final String? destinationAccountUuid;
   final String? claimTxids;
   final DateTime updatedAt;
+
+  /// Stable user-visible claim time; reconciliation only updates [updatedAt].
+  final DateTime? claimSubmittedAt;
+
+  /// Pool of the claim output addressed to the destination account.
+  final String? claimDestinationPool;
 
   bool get isClaimInFlight =>
       status == PaymentLinkReceivedStatus.submitting ||
@@ -124,6 +135,8 @@ class PaymentLinkReceivedRecord {
     Object? destinationAccountUuid = _fieldNotProvided,
     Object? claimTxids = _fieldNotProvided,
     DateTime? updatedAt,
+    DateTime? claimSubmittedAt,
+    String? claimDestinationPool,
   }) {
     return PaymentLinkReceivedRecord(
       network: network,
@@ -132,6 +145,7 @@ class PaymentLinkReceivedRecord {
       createdAt: createdAt,
       artworkId: artworkId,
       message: message,
+      fiatSnapshot: fiatSnapshot,
       status: status ?? this.status,
       claimLink: identical(claimLink, _fieldNotProvided)
           ? this.claimLink
@@ -144,6 +158,8 @@ class PaymentLinkReceivedRecord {
           ? this.claimTxids
           : claimTxids as String?,
       updatedAt: (updatedAt ?? this.updatedAt).toUtc(),
+      claimSubmittedAt: claimSubmittedAt ?? this.claimSubmittedAt,
+      claimDestinationPool: claimDestinationPool ?? this.claimDestinationPool,
     );
   }
 }
@@ -282,11 +298,14 @@ class PaymentLinkReceivedStore {
         createdAt: link.createdAt.toUtc(),
         artworkId: link.presentation?.artworkId,
         message: link.presentation?.message,
+        fiatSnapshot: link.presentation?.fiatSnapshot,
         status: existing?.status ?? PaymentLinkReceivedStatus.readyToClaim,
         claimLink: link,
         destinationAccountUuid: existing?.destinationAccountUuid,
         claimTxids: existing?.claimTxids,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        claimSubmittedAt: existing?.claimSubmittedAt,
+        claimDestinationPool: existing?.claimDestinationPool,
       );
       await _writeRecords(_replaceByAddress(records, record));
       return record;
@@ -298,6 +317,8 @@ class PaymentLinkReceivedStore {
     required String destinationAccountUuid,
     required String claimTxids,
     DateTime? updatedAt,
+    DateTime? claimSubmittedAt,
+    String? claimDestinationPool,
   }) {
     return _runExclusive(() async {
       if (destinationAccountUuid.trim().isEmpty) {
@@ -326,11 +347,16 @@ class PaymentLinkReceivedStore {
         createdAt: existing.createdAt,
         artworkId: existing.artworkId,
         message: existing.message,
+        fiatSnapshot: existing.fiatSnapshot,
         status: PaymentLinkReceivedStatus.receiving,
         claimLink: existing.claimLink,
         destinationAccountUuid: destinationAccountUuid.trim(),
         claimTxids: claimTxids.trim(),
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        claimSubmittedAt: (claimSubmittedAt ?? existing.claimSubmittedAt)
+            ?.toUtc(),
+        claimDestinationPool:
+            claimDestinationPool ?? existing.claimDestinationPool,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -360,11 +386,14 @@ class PaymentLinkReceivedStore {
           existing.claimLink == null) {
         throw StateError('Only a ready Gift Card claim can be started.');
       }
+      final submissionTime = (updatedAt ?? DateTime.now()).toUtc();
       final updated = existing.copyWith(
         status: PaymentLinkReceivedStatus.submitting,
         destinationAccountUuid: normalizedAccountUuid,
         claimTxids: null,
-        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        updatedAt: submissionTime,
+        claimSubmittedAt: submissionTime,
+        claimDestinationPool: null,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -385,11 +414,14 @@ class PaymentLinkReceivedStore {
         createdAt: existing.createdAt,
         artworkId: existing.artworkId,
         message: existing.message,
+        fiatSnapshot: existing.fiatSnapshot,
         status: PaymentLinkReceivedStatus.received,
         claimLink: null,
         destinationAccountUuid: existing.destinationAccountUuid,
         claimTxids: existing.claimTxids,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        claimSubmittedAt: existing.claimSubmittedAt,
+        claimDestinationPool: existing.claimDestinationPool,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -415,11 +447,14 @@ class PaymentLinkReceivedStore {
         createdAt: existing.createdAt,
         artworkId: existing.artworkId,
         message: existing.message,
+        fiatSnapshot: existing.fiatSnapshot,
         status: PaymentLinkReceivedStatus.readyToClaim,
         claimLink: existing.claimLink,
         destinationAccountUuid: null,
         claimTxids: null,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        claimSubmittedAt: null,
+        claimDestinationPool: null,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -544,11 +579,14 @@ Map<String, Object?> _recordToJson(PaymentLinkReceivedRecord record) {
     'createdAt': record.createdAt.toUtc().toIso8601String(),
     'artworkId': record.artworkId,
     'message': record.message,
+    'fiat': record.fiatSnapshot?.toPayload(),
     'status': record.status.name,
     'claimLink': record.claimLink?.toUri().toString(),
     'destinationAccountUuid': record.destinationAccountUuid,
     'claimTxids': record.claimTxids,
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
+    'claimSubmittedAt': record.claimSubmittedAt?.toUtc().toIso8601String(),
+    'claimDestinationPool': record.claimDestinationPool,
   };
 }
 
@@ -569,6 +607,8 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
   final destinationAccountUuid = value['destinationAccountUuid'];
   final claimTxids = value['claimTxids'];
   final updatedAtRaw = value['updatedAt'];
+  final claimSubmittedAtRaw = value['claimSubmittedAt'];
+  final claimDestinationPool = value['claimDestinationPool'];
   if (network is! String ||
       network.isEmpty ||
       address is! String ||
@@ -581,7 +621,9 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       (claimLinkRaw != null && claimLinkRaw is! String) ||
       (destinationAccountUuid != null && destinationAccountUuid is! String) ||
       (claimTxids != null && claimTxids is! String) ||
-      updatedAtRaw is! String) {
+      updatedAtRaw is! String ||
+      (claimSubmittedAtRaw != null && claimSubmittedAtRaw is! String) ||
+      (claimDestinationPool != null && claimDestinationPool is! String)) {
     throw const PaymentLinkReceivedStoreFormatException(
       'Received-card record fields are invalid.',
     );
@@ -589,12 +631,20 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
   final amountZatoshi = BigInt.tryParse(amountRaw);
   final createdAt = DateTime.tryParse(createdAtRaw);
   final updatedAt = DateTime.tryParse(updatedAtRaw);
+  final claimSubmittedAt = claimSubmittedAtRaw == null
+      ? null
+      : DateTime.tryParse(claimSubmittedAtRaw);
   if (amountZatoshi == null ||
       amountZatoshi <= BigInt.zero ||
       createdAt == null ||
       updatedAt == null) {
     throw const PaymentLinkReceivedStoreFormatException(
       'Received-card amount or timestamp is invalid.',
+    );
+  }
+  if (claimSubmittedAtRaw != null && claimSubmittedAt == null) {
+    throw const PaymentLinkReceivedStoreFormatException(
+      'Received-card claim submission timestamp is invalid.',
     );
   }
   late final PaymentLinkReceivedStatus status;
@@ -663,10 +713,13 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
     createdAt: createdAt.toUtc(),
     artworkId: artworkId as String?,
     message: message as String?,
+    fiatSnapshot: PaymentLinkFiatSnapshot.fromPayload(value['fiat']),
     status: status,
     claimLink: claimLink,
     destinationAccountUuid: destinationAccountUuid as String?,
     claimTxids: claimTxids as String?,
     updatedAt: updatedAt.toUtc(),
+    claimSubmittedAt: claimSubmittedAt?.toUtc(),
+    claimDestinationPool: claimDestinationPool as String?,
   );
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:characters/characters.dart';
 
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/navigation/vizor_deep_link.dart';
 
 const kPaymentLinkRegtestEnabledEnvKey = 'VIZOR_PAYMENT_LINK_REGTEST_ENABLED';
@@ -10,8 +11,62 @@ const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
   defaultValue: false,
 );
 
+/// Display-only value captured when the sender creates the card.
+/// It never participates in funding or claim calculations.
+class PaymentLinkFiatSnapshot {
+  const PaymentLinkFiatSnapshot({required this.amount, this.currency = 'USD'});
+
+  static PaymentLinkFiatSnapshot? capture({
+    required BigInt amountZatoshi,
+    required double? zecUsdUnitPrice,
+  }) {
+    if (amountZatoshi <= BigInt.zero ||
+        zecUsdUnitPrice == null ||
+        !zecUsdUnitPrice.isFinite ||
+        zecUsdUnitPrice <= 0) {
+      return null;
+    }
+    final amount =
+        amountZatoshi.toDouble() / zatoshiPerZec.toDouble() * zecUsdUnitPrice;
+    return amount.isFinite ? PaymentLinkFiatSnapshot(amount: amount) : null;
+  }
+
+  final double amount;
+  final String currency;
+
+  Map<String, Object?> toPayload() {
+    _validate();
+    return {'amount': amount, 'currency': currency};
+  }
+
+  static PaymentLinkFiatSnapshot? fromPayload(Object? value) {
+    if (value == null) return null;
+    if (value is! Map<String, dynamic> ||
+        value['amount'] is! num ||
+        value['currency'] is! String) {
+      throw const FormatException('Gift Card fiat value is invalid.');
+    }
+    final snapshot = PaymentLinkFiatSnapshot(
+      amount: (value['amount'] as num).toDouble(),
+      currency: value['currency'] as String,
+    );
+    snapshot._validate();
+    return snapshot;
+  }
+
+  void _validate() {
+    if (!amount.isFinite || amount < 0 || currency != 'USD') {
+      throw const FormatException('Gift Card fiat value is invalid.');
+    }
+  }
+}
+
 class PaymentLinkPresentation {
-  const PaymentLinkPresentation({this.artworkId, this.message});
+  const PaymentLinkPresentation({
+    this.artworkId,
+    this.message,
+    this.fiatSnapshot,
+  });
 
   static const maxArtworkIdLength = 64;
   static const maxMessageCharacters = 128;
@@ -19,6 +74,7 @@ class PaymentLinkPresentation {
 
   final String? artworkId;
   final String? message;
+  final PaymentLinkFiatSnapshot? fiatSnapshot;
 
   static bool isMessageWithinUtf8ByteLimit(String? message) {
     final normalizedMessage = _normalizeOptionalString(message);
@@ -30,12 +86,15 @@ class PaymentLinkPresentation {
     final normalizedArtworkId = _normalizeOptionalString(artworkId);
     final normalizedMessage = _normalizeOptionalString(message);
     _validate(artworkId: normalizedArtworkId, message: normalizedMessage);
-    if (normalizedArtworkId == null && normalizedMessage == null) {
+    if (normalizedArtworkId == null &&
+        normalizedMessage == null &&
+        fiatSnapshot == null) {
       return null;
     }
     return <String, Object?>{
       'artworkId': ?normalizedArtworkId,
       'message': ?normalizedMessage,
+      'fiat': ?fiatSnapshot?.toPayload(),
     };
   }
 
@@ -46,9 +105,16 @@ class PaymentLinkPresentation {
     }
     final artworkId = _readOptionalString(value, 'artworkId');
     final message = _readOptionalString(value, 'message');
+    final fiatSnapshot = PaymentLinkFiatSnapshot.fromPayload(value['fiat']);
     _validate(artworkId: artworkId, message: message);
-    if (artworkId == null && message == null) return null;
-    return PaymentLinkPresentation(artworkId: artworkId, message: message);
+    if (artworkId == null && message == null && fiatSnapshot == null) {
+      return null;
+    }
+    return PaymentLinkPresentation(
+      artworkId: artworkId,
+      message: message,
+      fiatSnapshot: fiatSnapshot,
+    );
   }
 
   static void _validate({String? artworkId, String? message}) {

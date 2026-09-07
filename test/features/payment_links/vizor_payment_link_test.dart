@@ -5,6 +5,47 @@ import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 
 void main() {
+  test(
+    'captures optional fiat and preserves it through link serialization',
+    () {
+      final snapshot = PaymentLinkFiatSnapshot.capture(
+        amountZatoshi: BigInt.from(445000000),
+        zecUsdUnitPrice: 32,
+      );
+      final link = _link(
+        presentation: PaymentLinkPresentation(fiatSnapshot: snapshot),
+      );
+      final decoded = VizorPaymentLink.parse(link.toUri().toString());
+      expect(
+        decoded.presentation!.fiatSnapshot!.amount,
+        closeTo(142.4, 0.00001),
+      );
+      expect(decoded.presentation!.fiatSnapshot!.currency, 'USD');
+      expect(decoded.hasSameCanonicalPayload(link), isTrue);
+      expect(link.hasSameCanonicalPayload(_link()), isFalse);
+      for (final price in [null, 0.0, -1.0, double.nan, double.infinity]) {
+        expect(
+          PaymentLinkFiatSnapshot.capture(
+            amountZatoshi: BigInt.from(445000000),
+            zecUsdUnitPrice: price,
+          ),
+          isNull,
+        );
+      }
+      for (final value in [
+        {'amount': -1, 'currency': 'USD'},
+        {'amount': double.infinity, 'currency': 'USD'},
+        {'amount': 1, 'currency': 'EUR'},
+        {'amount': '1', 'currency': 'USD'},
+      ]) {
+        expect(
+          () => PaymentLinkFiatSnapshot.fromPayload(value),
+          throwsFormatException,
+        );
+      }
+    },
+  );
+
   group('VizorPaymentLink', () {
     test('round trips a payment link payload', () {
       final link = _link(

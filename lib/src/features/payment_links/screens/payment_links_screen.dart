@@ -965,6 +965,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     final presentation = PaymentLinkPresentation(
       artworkId: _selectedArtwork.protocolId,
       message: _messageController.text,
+      fiatSnapshot: ref.read(swapFeatureEnabledProvider)
+          ? PaymentLinkFiatSnapshot.capture(
+              amountZatoshi: amount,
+              zecUsdUnitPrice: ref
+                  .read(zecHomeMarketDataStateProvider)
+                  .displayData
+                  ?.usdPrice,
+            )
+          : null,
     );
     if (ref
         .read(accountProvider.notifier)
@@ -1787,16 +1796,20 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     );
     if (pendingLink != null) _schedulePendingPaymentLink();
 
+    final pricingEnabled = ref.watch(swapFeatureEnabledProvider);
+    final amount = parseZecAmount(_amountController.text);
+    // Retain the quote through Review so submission can capture it once.
+    final marketData =
+        pricingEnabled &&
+            amount != null &&
+            amount > BigInt.zero &&
+            (_page == PaymentLinksLocalPage.amount ||
+                _page == PaymentLinksLocalPage.message ||
+                _page == PaymentLinksLocalPage.review)
+        ? ref.watch(zecHomeMarketDataStateProvider)
+        : null;
+
     if (kAppFormFactor == AppFormFactor.mobile) {
-      final pricingEnabled = ref.watch(swapFeatureEnabledProvider);
-      final amount = parseZecAmount(_amountController.text);
-      final marketData =
-          pricingEnabled &&
-              _page == PaymentLinksLocalPage.amount &&
-              amount != null &&
-              amount > BigInt.zero
-          ? ref.watch(zecHomeMarketDataStateProvider)
-          : null;
       final amountFiatText = !pricingEnabled || amount == null
           ? null
           : amount == BigInt.zero
@@ -2226,10 +2239,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     final share = ref.read(paymentLinkQrShareHandlerProvider);
     setState(() => _operationInProgress = true);
     try {
-      final shared = await share(
-        png: png,
-        sharePositionOrigin: origin,
-      );
+      final shared = await share(png: png, sharePositionOrigin: origin);
       if (!shared) return;
       try {
         await _paymentLinkOperations.markCreatedLinkShared(link);

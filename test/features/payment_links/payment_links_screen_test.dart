@@ -367,8 +367,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(operations.createdAmounts, [BigInt.from(125000000)]);
+    expect(operations.createdFiatSnapshots.single!.amount, 125);
     expect(operations.createdFromAccounts, ['account-1']);
-    expect(find.textContaining('is ready!'), findsOneWidget);
+    expect(find.text('Ready to share'), findsOneWidget);
 
     await tester.tap(find.text('Copy link'));
     await tester.pumpAndSettle();
@@ -410,14 +411,14 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.textContaining('is ready!'), findsNothing);
+      expect(find.text('Ready to share'), findsNothing);
 
       await tester.tap(find.text('Try saving again'));
       await tester.pumpAndSettle();
 
       expect(operations.createdAmounts, [BigInt.from(10000000)]);
       expect(operations.fundingMetadataRetries, 1);
-      expect(find.textContaining('is ready!'), findsOneWidget);
+      expect(find.text('Ready to share'), findsOneWidget);
       expect(operations.records.single.state, PaymentLinkRecoveryState.funded);
       expect(operations.records.single.fundingTxids, 'funding-txid');
     },
@@ -594,7 +595,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Copy link'), findsOneWidget);
-    expect(find.textContaining('is ready!'), findsOneWidget);
+    expect(find.text('Ready to share'), findsOneWidget);
     expect(find.byType(PaymentLinkConfetti), findsOneWidget);
   });
 

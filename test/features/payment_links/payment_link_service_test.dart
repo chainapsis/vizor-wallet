@@ -24,6 +24,62 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('claim detail lookup resolves display ids to local history ids', () {
+    const displayTxid =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final storageTxid = _reverseHexBytes(displayTxid);
+    expect(
+      paymentLinkClaimDetailTxids(
+        claimTxids: displayTxid,
+        historyTxids: [storageTxid],
+      ),
+      [storageTxid],
+    );
+    expect(
+      paymentLinkClaimDestinationPoolFromDetails(
+        details: [
+          rust_sync.TransactionDetail(
+            txidHex: storageTxid,
+            txKind: 'sent',
+            sourcePool: 'shielded',
+            outputs: [
+              rust_sync.TransactionDetailOutput(
+                address: 'unrelated-output',
+                amountZatoshi: BigInt.from(1),
+                pool: 'shielded',
+              ),
+              rust_sync.TransactionDetailOutput(
+                address: 'destination-ua',
+                amountZatoshi: BigInt.from(445000000),
+                pool: 'ironwood',
+              ),
+            ],
+          ),
+        ],
+        destinationAddress: 'destination-ua',
+        expectedAmountZatoshi: BigInt.from(445000000),
+      ),
+      'ironwood',
+    );
+    // A just-broadcast claim may not be visible in the retained wallet yet;
+    // metadata hydration then stays optional instead of blocking the claim.
+    expect(
+      paymentLinkClaimDetailTxids(
+        claimTxids: displayTxid,
+        historyTxids: const [],
+      ),
+      isEmpty,
+    );
+    expect(
+      paymentLinkClaimDestinationPoolFromDetails(
+        details: const [],
+        destinationAddress: 'destination-ua',
+        expectedAmountZatoshi: BigInt.from(445000000),
+      ),
+      isNull,
+    );
+  });
+
   group('claim destination hydration', () {
     final api = _ClaimDestinationRustApi();
     late _ClaimDestinationAccountNotifier accounts;
@@ -992,6 +1048,14 @@ void main() {
 
     expect(storage.value, isNull);
   });
+}
+
+String _reverseHexBytes(String hex) {
+  final bytes = [
+    for (var index = 0; index < hex.length; index += 2)
+      hex.substring(index, index + 2),
+  ];
+  return bytes.reversed.join();
 }
 
 class _UnlockedSecurityNotifier extends AppSecurityNotifier {

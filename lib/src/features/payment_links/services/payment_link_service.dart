@@ -206,6 +206,59 @@ enum PaymentLinkClaimBroadcastStatus {
   partialBroadcast,
 }
 
+/// Resolves broadcast/display transaction ids to the ids exposed by the
+/// wallet's local history. Broadcast responses use protocol byte order while
+/// the transaction-detail query uses the SQLite/storage representation.
+@visibleForTesting
+List<String> paymentLinkClaimDetailTxids({
+  required String claimTxids,
+  required Iterable<String> historyTxids,
+}) {
+  final history = historyTxids
+      .map((txid) => txid.trim())
+      .where((txid) => txid.isNotEmpty)
+      .toList();
+  return <String>{
+    for (final claimTxid
+        in claimTxids
+            .split(',')
+            .map((txid) => txid.trim())
+            .where((txid) => txid.isNotEmpty))
+      for (final historyTxid in history)
+        if (paymentLinkTxidsMatch(claimTxid, historyTxid)) historyTxid,
+  }.toList();
+}
+
+/// Chooses a destination output pool only when all matching claim legs agree.
+/// This keeps a partial/multi-leg claim from displaying a pool inferred from
+/// an unrelated input or an arbitrary output.
+@visibleForTesting
+String? paymentLinkClaimDestinationPoolFromDetails({
+  required Iterable<rust_sync.TransactionDetail> details,
+  required String destinationAddress,
+  required BigInt expectedAmountZatoshi,
+}) {
+  String? observedPool;
+  for (final detail in details) {
+    final matchingOutputs = detail.outputs
+        .where((output) => output.address == destinationAddress)
+        .toList();
+    if (matchingOutputs.isEmpty) continue;
+    var selectedOutput = matchingOutputs.first;
+    for (final output in matchingOutputs) {
+      if (output.amountZatoshi == expectedAmountZatoshi) {
+        selectedOutput = output;
+        break;
+      }
+    }
+    final pool = selectedOutput.pool.trim();
+    if (pool.isEmpty) continue;
+    if (observedPool != null && observedPool != pool) return null;
+    observedPool = pool;
+  }
+  return observedPool;
+}
+
 @visibleForTesting
 PaymentLinkClaimBroadcastStatus paymentLinkClaimBroadcastStatusFromWire(
   String status,
@@ -405,6 +458,9 @@ class PaymentLinkService implements PaymentLinkOperations {
     );
     final funding = await PaymentLinkFundingRecovery(_recoveryStore)
         .fund<rust_sync.ExecuteProposalResult>(
+          claimFeeReserveZatoshi: BigInt.from(
+            kPaymentLinkClaimFeeReserveZatoshi,
+          ),
           link: link,
           sourceAccountUuid: sourceAccountUuid,
           createTransaction: (markSubmissionStarted) =>
@@ -482,6 +538,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       presentation: presentation,
     );
     await _recoveryStore.saveDraft(
+      claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
       link: link,
       sourceAccountUuid: sourceAccountUuid,
     );
@@ -690,6 +747,36 @@ class PaymentLinkService implements PaymentLinkOperations {
         .where((record) => !retryableAddresses.contains(record.address))
         .toList();
     if (awaitingReceipt.isEmpty) return _receivedStore.load();
+
+    // Detail can legitimately be unavailable immediately after broadcast
+    // while the retained wallet is still catching up. Retry only the
+    // display enrichment on later foreground reconciliations; a missing pool
+    // must never alter the claim's lifecycle status.
+    await Future.wait(
+      awaitingReceipt
+          .where((record) => record.claimDestinationPool == null)
+          .map((record) async {
+            try {
+              final pool = await _loadRetainedClaimDestinationPool(
+                record: record,
+                network: endpoint.networkName,
+              );
+              if (pool == null) return;
+              await _receivedStore.markReceiving(
+                address: record.address,
+                destinationAccountUuid: record.destinationAccountUuid!,
+                claimTxids: record.claimTxids!,
+                claimSubmittedAt: record.claimSubmittedAt,
+                claimDestinationPool: pool,
+              );
+            } catch (error, stackTrace) {
+              log(
+                'PaymentLinkService: claim pool metadata write failed for '
+                '${record.address}: $error\n$stackTrace',
+              );
+            }
+          }),
+    );
 
     final dbPath = await getWalletDbPath();
     final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
@@ -1017,7 +1104,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     // interrupted submission remains recoverable without making previews look
     // received.
     await _receivedStore.saveReady(session.link);
-    await _receivedStore.markClaimStarted(
+    final startedRecord = await _receivedStore.markClaimStarted(
       address: session.link.address,
       destinationAccountUuid: session.destinationAccountUuid,
     );
@@ -1027,9 +1114,25 @@ class PaymentLinkService implements PaymentLinkOperations {
         session,
         onSubmissionStarted: () => submissionStarted = true,
       );
+      // The local claim wallet is authoritative for the destination output
+      // pool. Enrichment is deliberately best-effort: a successful broadcast
+      // must remain recoverable even when detail lookup is temporarily
+      // unavailable.
+      final claimSubmittedAt =
+          startedRecord.claimSubmittedAt ?? DateTime.now().toUtc();
+      final claimDestinationPool = await _loadClaimDestinationPool(
+        dbPath: session.dbPath,
+        network: session.link.network,
+        accountUuid: session.accountUuid,
+        destinationAddress: session.destinationAddress,
+        claimTxids: result.txids,
+        expectedAmountZatoshi: session.link.amountZatoshi,
+      );
       final metadataSaved = await _saveClaimMetadata(
         session: session,
         claimTxids: result.txids,
+        claimSubmittedAt: claimSubmittedAt,
+        claimDestinationPool: claimDestinationPool,
       );
       if (!metadataSaved) {
         log(
@@ -1099,6 +1202,8 @@ class PaymentLinkService implements PaymentLinkOperations {
   Future<bool> _saveClaimMetadata({
     required PaymentLinkClaimSession session,
     required String claimTxids,
+    required DateTime claimSubmittedAt,
+    required String? claimDestinationPool,
   }) async {
     for (
       var attempt = 0;
@@ -1110,6 +1215,8 @@ class PaymentLinkService implements PaymentLinkOperations {
           address: session.link.address,
           destinationAccountUuid: session.destinationAccountUuid,
           claimTxids: claimTxids,
+          claimSubmittedAt: claimSubmittedAt,
+          claimDestinationPool: claimDestinationPool,
         );
         return true;
       } catch (_) {
@@ -1358,11 +1465,134 @@ class PaymentLinkService implements PaymentLinkOperations {
       await _receivedStore.markReadyToClaim(address: record.address);
       return;
     }
+    String? destinationAddress;
+    try {
+      destinationAddress = await rust_wallet.getUnifiedAddress(
+        dbPath: await getWalletDbPath(),
+        network: network,
+        accountUuid: destinationAccountUuid,
+      );
+    } catch (error, stackTrace) {
+      log(
+        'PaymentLinkService: claim destination address lookup failed during '
+        'metadata recovery: $error\n$stackTrace',
+      );
+    }
     await _receivedStore.markReceiving(
       address: record.address,
       destinationAccountUuid: destinationAccountUuid,
       claimTxids: activeTxids.join(','),
+      claimSubmittedAt: record.claimSubmittedAt ?? record.updatedAt,
+      claimDestinationPool: await _loadClaimDestinationPool(
+        dbPath: tempWallet.dbPath,
+        network: network,
+        accountUuid: accounts.single.uuid,
+        destinationAddress: destinationAddress,
+        claimTxids: activeTxids.join(','),
+        expectedAmountZatoshi: link.amountZatoshi,
+      ),
     );
+  }
+
+  Future<String?> _loadClaimDestinationPool({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String? destinationAddress,
+    required String claimTxids,
+    required BigInt expectedAmountZatoshi,
+  }) async {
+    if (destinationAddress == null || destinationAddress.isEmpty) return null;
+    final details = <rust_sync.TransactionDetail>[];
+    try {
+      final history = await rust_sync.getTransactionHistory(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+        limit: null,
+      );
+      final detailTxids = paymentLinkClaimDetailTxids(
+        claimTxids: claimTxids,
+        historyTxids: history.map((transaction) => transaction.txidHex),
+      );
+      for (final txid in detailTxids) {
+        try {
+          final detail = await rust_sync.getTransactionDetail(
+            dbPath: dbPath,
+            network: network,
+            accountUuid: accountUuid,
+            txidHex: txid,
+            txKind: 'sent',
+          );
+          details.add(detail);
+        } catch (error, stackTrace) {
+          log(
+            'PaymentLinkService: claim destination pool lookup failed for '
+            '$txid: $error\n$stackTrace',
+          );
+        }
+      }
+    } catch (error, stackTrace) {
+      log(
+        'PaymentLinkService: claim destination pool enrichment failed: '
+        '$error\n$stackTrace',
+      );
+    }
+    final pool = paymentLinkClaimDestinationPoolFromDetails(
+      details: details,
+      destinationAddress: destinationAddress,
+      expectedAmountZatoshi: expectedAmountZatoshi,
+    );
+    if (pool == null && details.length > 1) {
+      log('PaymentLinkService: claim destination outputs disagree on pool');
+    }
+    return pool;
+  }
+
+  Future<String?> _loadRetainedClaimDestinationPool({
+    required PaymentLinkReceivedRecord record,
+    required String network,
+  }) async {
+    final link = record.claimLink;
+    final destinationAccountUuid = record.destinationAccountUuid;
+    final claimTxids = record.claimTxids;
+    if (link == null ||
+        destinationAccountUuid == null ||
+        claimTxids == null ||
+        claimTxids.trim().isEmpty) {
+      return null;
+    }
+    try {
+      final tempWallet = await _claimWallet.locate(link);
+      if (!await File(tempWallet.dbPath).exists()) return null;
+      final accounts = await rust_wallet.listAccounts(
+        dbPath: tempWallet.dbPath,
+        network: network,
+      );
+      final claimAccount = accounts.where(
+        (account) => account.unifiedAddress == link.address,
+      );
+      if (claimAccount.length != 1) return null;
+      final destinationAddress = await rust_wallet.getUnifiedAddress(
+        dbPath: await getWalletDbPath(),
+        network: network,
+        accountUuid: destinationAccountUuid,
+      );
+      return _loadClaimDestinationPool(
+        dbPath: tempWallet.dbPath,
+        network: network,
+        accountUuid: claimAccount.single.uuid,
+        destinationAddress: destinationAddress,
+        claimTxids: claimTxids,
+        expectedAmountZatoshi: record.amountZatoshi,
+      );
+    } catch (error, stackTrace) {
+      log(
+        'PaymentLinkService: retained claim pool enrichment failed for '
+        '${record.address}: $error\n$stackTrace',
+      );
+      return null;
+    }
   }
 
   Future<void> _requireShieldedAddress(String address) async {

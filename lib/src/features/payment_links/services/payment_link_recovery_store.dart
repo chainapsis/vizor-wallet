@@ -48,6 +48,7 @@ class PaymentLinkRecoveryRecord {
     this.fundingTxids,
     this.preparedExpiryHeight,
     this.submittedAtHeight,
+    this.claimFeeReserveZatoshi,
   });
 
   final VizorPaymentLink link;
@@ -65,6 +66,8 @@ class PaymentLinkRecoveryRecord {
   /// transaction reached the network — still leaves a durable trace to
   /// reconcile. `0` means the height was unknown at submission time.
   final int? submittedAtHeight;
+  /// Amount actually reserved for claiming when this card was funded.
+  final BigInt? claimFeeReserveZatoshi;
 
   /// True while the wallet knows a funding broadcast started but never learned
   /// its transaction id.
@@ -95,6 +98,7 @@ class PaymentLinkRecoveryRecord {
   }) {
     return PaymentLinkRecoveryRecord(
       link: link,
+      claimFeeReserveZatoshi: claimFeeReserveZatoshi,
       sourceAccountUuid: sourceAccountUuid,
       state: state,
       updatedAt: updatedAt,
@@ -176,6 +180,7 @@ class PaymentLinkRecoveryStore {
   Future<PaymentLinkRecoveryRecord> saveDraft({
     required VizorPaymentLink link,
     required String sourceAccountUuid,
+    BigInt? claimFeeReserveZatoshi,
     DateTime? updatedAt,
   }) {
     return _runExclusive(() async {
@@ -197,6 +202,7 @@ class PaymentLinkRecoveryStore {
       final record = PaymentLinkRecoveryRecord(
         link: link,
         sourceAccountUuid: sourceAccountUuid,
+        claimFeeReserveZatoshi: claimFeeReserveZatoshi,
         state: PaymentLinkRecoveryState.draft,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
       );
@@ -563,12 +569,17 @@ class PaymentLinkFundingRecovery {
   Future<PaymentLinkFundingRecoveryResult<T>> fund<T>({
     required VizorPaymentLink link,
     required String sourceAccountUuid,
+    BigInt? claimFeeReserveZatoshi,
     required Future<T> Function(Future<void> Function() markSubmissionStarted)
     createTransaction,
     required Future<int> Function() currentChainHeight,
     required String Function(T result) fundingTxids,
   }) async {
-    await _store.saveDraft(link: link, sourceAccountUuid: sourceAccountUuid);
+    await _store.saveDraft(
+      link: link,
+      sourceAccountUuid: sourceAccountUuid,
+      claimFeeReserveZatoshi: claimFeeReserveZatoshi,
+    );
     late final T result;
     try {
       result = await createTransaction(() async {
@@ -677,6 +688,7 @@ Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
     'fundingTxids': record.fundingTxids,
     'preparedExpiryHeight': record.preparedExpiryHeight,
     'submittedAtHeight': record.submittedAtHeight,
+    'claimFeeReserveZatoshi': record.claimFeeReserveZatoshi?.toString(),
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
   };
 }
@@ -685,6 +697,13 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   if (value is! Map<String, dynamic>) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Recovery record must be a JSON object.',
+    );
+  }
+  final reserveRaw = value['claimFeeReserveZatoshi'];
+  final reserve = reserveRaw is String ? BigInt.tryParse(reserveRaw) : null;
+  if (reserveRaw != null && (reserve == null || reserve < BigInt.zero)) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Invalid claim fee reserve.',
     );
   }
   final linkRaw = value['link'];
@@ -739,6 +758,7 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
 
   return PaymentLinkRecoveryRecord(
     link: VizorPaymentLink.parse(linkRaw),
+    claimFeeReserveZatoshi: reserve,
     sourceAccountUuid: sourceAccountUuid,
     state: state,
     fundingTxids: fundingTxids,

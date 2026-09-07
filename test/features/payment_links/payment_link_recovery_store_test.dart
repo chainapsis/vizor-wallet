@@ -16,6 +16,7 @@ void main() {
         final funding = await PaymentLinkFundingRecovery(store).fund(
           link: link,
           sourceAccountUuid: 'source-account',
+          claimFeeReserveZatoshi: BigInt.from(20000),
           currentChainHeight: () async => _submissionHeight,
           createTransaction: (_) async {
             final restartedRecords = await PaymentLinkRecoveryStore(
@@ -37,6 +38,10 @@ void main() {
         final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
         expect(restartedRecords.single.state, PaymentLinkRecoveryState.funded);
         expect(restartedRecords.single.fundingTxids, 'funding-txid');
+        expect(
+          restartedRecords.single.claimFeeReserveZatoshi,
+          BigInt.from(20000),
+        );
       },
     );
 

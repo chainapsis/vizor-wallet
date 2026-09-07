@@ -22,6 +22,42 @@ import '../../support/payment_links_screen_support.dart';
 
 void main() {
   setUpAll(loadPaymentLinksTestFonts);
+  for (final pricingEnabled in [true, false]) {
+    testWidgets(
+      'creation snapshots fiat only with pricing enabled: $pricingEnabled',
+      (tester) async {
+        final operations = FakePaymentLinkOperations();
+        await pumpPaymentLinksScreen(
+          tester,
+          operations: operations,
+          pricingEnabled: pricingEnabled,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('payment_links_mobile_create_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('payment_link_amount_editor')),
+          '1.25',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+        for (final key in [
+          'payment_link_mobile_amount_continue_button',
+          'payment_link_mobile_message_continue_button',
+          'payment_link_mobile_review_continue_button',
+        ]) {
+          await tester.tap(find.byKey(ValueKey(key)));
+          await tester.pumpAndSettle();
+        }
+        expect(operations.createdFiatSnapshots, hasLength(1));
+        expect(
+          operations.createdFiatSnapshots.single?.amount,
+          pricingEnabled ? 125 : null,
+        );
+      },
+    );
+  }
 
   testWidgets(
     'disabled pricing hides all fiat status while amount entry and Max work',
@@ -436,7 +472,7 @@ void main() {
         '/payment-links',
       );
       claim.complete(broadcastedClaimResult);
-      await tester.pumpAndSettle();
+      await _pumpClaimFrames(tester);
       expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
       expect(accounts.current.activeAccountUuid, 'account-2');
     },
@@ -656,7 +692,7 @@ void main() {
       expect(operations.discardedClaimAddresses, isEmpty);
 
       claim.complete(broadcastedClaimResult);
-      await tester.pumpAndSettle();
+      await _pumpClaimFrames(tester);
       expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
       expect(
         find.byKey(const ValueKey('payment_links_mobile_screen')),
@@ -710,7 +746,6 @@ void main() {
         expect(find.text('Claim the gift'), findsOneWidget);
 
         await _claimGift(tester);
-        await tester.pumpAndSettle();
         expect(operations.claimedLinks, hasLength(2));
         expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
       },
@@ -760,7 +795,7 @@ void main() {
       router.go('/settings');
       await tester.pumpAndSettle();
       claim.complete(broadcastedClaimResult);
-      await tester.pumpAndSettle();
+      await _pumpClaimFrames(tester);
 
       expect(operations.discardedClaimAddresses, isEmpty);
       expect(router.routerDelegate.currentConfiguration.uri.path, '/settings');
@@ -958,7 +993,7 @@ Future<void> _claimGift(
   await tester.tap(
     find.byKey(const ValueKey('payment_link_mobile_claim_button')),
   );
-  await tester.pumpAndSettle();
+  await _pumpClaimFrames(tester);
   expect(
     find.byKey(const ValueKey('payment_link_claim_account_sheet')),
     chooseAccount ? findsOneWidget : findsNothing,
@@ -969,4 +1004,13 @@ Future<void> _claimGift(
     );
     await tester.pump();
   }
+}
+
+// Claim/Home keep an in-progress animation until confirmation; settling all
+// animations is not a completion condition for a successful broadcast.
+Future<void> _pumpClaimFrames(WidgetTester tester) async {
+  for (var i = 0; i < 10; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  expect(tester.takeException(), isNull);
 }

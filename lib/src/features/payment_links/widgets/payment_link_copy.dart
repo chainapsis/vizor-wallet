@@ -22,7 +22,7 @@ const kPaymentLinkNoReceivedCardsText = 'No received cards yet.';
 const kPaymentLinkFundingIncompleteStatus = 'Funding incomplete';
 const kPaymentLinkPreparingStatus = 'Preparing...';
 const kPaymentLinkCopyLinkSemanticLabel = 'Copy Gift Card link';
-const kPaymentLinkReadyHeading = 'Your Gift Card\nis ready!';
+const kPaymentLinkReadyHeading = 'Ready to share';
 const kPaymentLinkAlmostReadyHeading = 'Gift Card is\nalmost ready!';
 const kPaymentLinkCardFeeLabel = 'Card fee (deposit + redeem)';
 const kPaymentLinkTotalDeductedLabel = 'Total amount deducted';
@@ -44,3 +44,6 @@ const kPaymentLinkGiftMessageLabel = 'Gift message';
 const kPaymentLinkMessageAttachedTitle = 'Message attached.';
 const kPaymentLinkFlipCardSemanticLabel = 'Flip gift card';
 const kPaymentLinkRevealMessageSemanticLabel = 'Reveal gift card message';
+
+const kPaymentLinkCardFeeHelpText =
+    'Includes the creation fee and the fee reserved for claiming.';

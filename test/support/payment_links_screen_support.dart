@@ -417,6 +417,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<String> createdFromAccounts = [];
   final List<String?> createdArtworkIds = [];
   final List<String?> createdMessages = [];
+  final List<PaymentLinkFiatSnapshot?> createdFiatSnapshots = [];
   final List<String> quotedAccounts = [];
   final List<String> maxQuotedAccounts = [];
   final List<VizorPaymentLink> sharedLinks = [];
@@ -469,6 +470,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     createdFromAccounts.add(sourceAccountUuid);
     createdArtworkIds.add(presentation?.artworkId);
     createdMessages.add(presentation?.message);
+    createdFiatSnapshots.add(presentation?.fiatSnapshot);
     await createFundedLinkGate?.future;
     final link = VizorPaymentLink(
       network: 'main',

@@ -1342,7 +1342,7 @@ void main() {
       const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.ready),
     );
     expect(
-      tester.getTopLeft(find.text('Your Gift Card\nis ready!')).dy,
+      tester.getTopLeft(find.text('Ready to share')).dy,
       closeTo(114.5, 1),
     );
     expect(
