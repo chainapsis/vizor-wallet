@@ -76,6 +76,57 @@ void main() {
     expect(_hasFocusRing(tester), isTrue);
   });
 
+  for (final kind in HardwareSignerKind.values) {
+    testWidgets('${kind.name} account disables secret passphrase', (
+      tester,
+    ) async {
+      final hardwareAccount = AccountState(
+        accounts: [
+          AccountInfo(
+            uuid: 'ledger-account',
+            name: 'Ledger account',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: kind,
+          ),
+        ],
+        activeAccountUuid: 'ledger-account',
+        activeAddress: 'u1ledgeraddress',
+      );
+
+      await tester.pumpWidget(_settingsHarness(accountState: hardwareAccount));
+      await tester.pump();
+
+      expect(find.text('Secret passphrase'), findsOneWidget);
+      expect(find.text('Account details'), findsNothing);
+      expect(
+        find.ancestor(
+          of: find.text('Secret passphrase'),
+          matching: find.byType(FocusableActionDetector),
+        ),
+        findsNothing,
+      );
+      await tester.tap(find.text('Secret passphrase'));
+      await tester.pumpAndSettle();
+      expect(find.text('secret passphrase route'), findsNothing);
+    });
+  }
+
+  testWidgets('software account preserves secret passphrase navigation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_settingsHarness());
+    await tester.pump();
+
+    expect(find.text('Secret passphrase'), findsOneWidget);
+    expect(find.text('Account details'), findsNothing);
+
+    await tester.tap(find.text('Secret passphrase'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('secret passphrase route'), findsOneWidget);
+  });
+
   testWidgets('Gift Cards waits for its data before opening', (tester) async {
     final cards = Completer<PaymentLinkCardsSnapshot>();
     await tester.pumpWidget(
@@ -686,10 +737,6 @@ Widget _settingsHarness({
       GoRoute(
         path: '/settings/secret-passphrase',
         builder: (_, _) => const Text('secret passphrase route'),
-      ),
-      GoRoute(
-        path: '/settings/hardware-account',
-        builder: (_, state) => Text('hardware account route ${state.extra}'),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),

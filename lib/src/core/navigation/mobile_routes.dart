@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
-import '../../features/accounts/screens/hardware_account_details_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/home/screens/mobile/mobile_keystone_shield_screen.dart';
@@ -107,15 +106,6 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     // the bottom tab bar is hidden while they're open. Absolute paths
     // match the desktop routes for the shared redirect guard and deep
     // links.
-    GoRoute(
-      path: '/settings/hardware-account',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: MobileHardwareAccountDetailsScreen(
-          accountUuid: state.extra is String ? state.extra as String : null,
-        ),
-      ),
-    ),
     GoRoute(
       path: '/settings/seed-phrase',
       pageBuilder: (context, state) => CupertinoPage(

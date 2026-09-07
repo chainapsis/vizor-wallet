@@ -184,10 +184,7 @@ Widget _app({
                 )
               : const MobileSettingsScreen(),
         )
-      : MaterialApp.router(
-          routerConfig: router,
-          builder: themedBuilder,
-        );
+      : MaterialApp.router(routerConfig: router, builder: themedBuilder);
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
@@ -1205,36 +1202,23 @@ void main() {
     ('Keystone', _keystoneAccountState),
     ('Ledger', _ledgerAccountState),
   ]) {
-    testWidgets('$signerName account opens enabled Account Details', (
+    testWidgets('$signerName account disables secret passphrase', (
       tester,
     ) async {
-      final router = GoRouter(
-        routes: [
-          GoRoute(path: '/', builder: (_, _) => const MobileSettingsScreen()),
-          GoRoute(
-            path: '/settings/hardware-account',
-            builder: (_, state) =>
-                Text('hardware details ${state.extra as String?}'),
-          ),
-        ],
-      );
-      addTearDown(router.dispose);
-      await tester.pumpWidget(_app(accountState: accountState, router: router));
+      await tester.pumpWidget(_app(accountState: accountState));
       await tester.pump();
 
       final row = tester.widget<MobileListRow>(
-        find.byKey(const ValueKey('mobile_settings_hardware_account_row')),
+        find.byKey(const ValueKey('mobile_settings_seed_row')),
       );
-      expect(find.text('Account Details'), findsOneWidget);
-      expect(find.text('Secret Passphrase'), findsNothing);
-      expect(row.enabled, isTrue);
-      expect(row.onTap, isNotNull);
-
-      await tester.tap(
-        find.byKey(const ValueKey('mobile_settings_hardware_account_row')),
+      expect(find.text('Account Details'), findsNothing);
+      expect(find.text('Secret Passphrase'), findsOneWidget);
+      expect(row.enabled, isFalse);
+      expect(row.onTap, isNull);
+      expect(
+        tester.widget<Text>(find.text('Secret Passphrase')).style?.color,
+        AppThemeData.dark.colors.text.disabled,
       );
-      await tester.pumpAndSettle();
-      expect(find.text('hardware details account-1'), findsOneWidget);
     });
   }
 

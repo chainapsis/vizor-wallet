@@ -3,16 +3,14 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart' show MaterialApp, ThemeMode;
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:widgetbook/widgetbook.dart';
 
 import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/widgets/app_button.dart';
-import '../src/features/accounts/screens/hardware_account_details_screen.dart';
 import '../src/features/ledger/ledger_capability.dart';
 import '../src/features/ledger/services/ledger_app_readiness_service.dart';
 import '../src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -22,7 +20,6 @@ import '../src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../src/features/onboarding/mobile/mobile_ledger_device_sheet.dart';
 import '../src/features/voting/screens/voting_status_screen.dart';
 import '../src/providers/account_provider.dart';
-import '../src/providers/sync_provider.dart';
 import '../src/providers/voting/voting_state.dart';
 import '../src/rust/api/ledger.dart' as rust_ledger;
 
@@ -39,24 +36,6 @@ WidgetbookFolder buildLedgerWidgetbookFolder() {
               WidgetbookUseCase(
                 name: 'Mainnet',
                 builder: buildLedgerDeviceAppPromptUseCase,
-              ),
-            ],
-          ),
-        ],
-      ),
-      WidgetbookFolder(
-        name: 'Accounts',
-        children: [
-          WidgetbookComponent(
-            name: 'Account details',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Desktop',
-                builder: buildLedgerAccountDetailsUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Mobile',
-                builder: buildMobileLedgerAccountDetailsUseCase,
               ),
             ],
           ),
@@ -118,14 +97,6 @@ WidgetbookFolder buildLedgerWidgetbookFolder() {
 
 Widget buildLedgerDeviceAppPromptUseCase(BuildContext context) {
   return const Center(child: LedgerDeviceAppPrompt(networkName: 'main'));
-}
-
-Widget buildLedgerAccountDetailsUseCase(BuildContext context) {
-  return const _LedgerAccountDetailsPreview(mobile: false);
-}
-
-Widget buildMobileLedgerAccountDetailsUseCase(BuildContext context) {
-  return const _LedgerAccountDetailsPreview(mobile: true);
 }
 
 enum LedgerSigningPlaygroundReadiness {
@@ -538,66 +509,6 @@ LedgerAppReadinessState _readinessState(
   };
 }
 
-class _LedgerAccountDetailsPreview extends StatefulWidget {
-  const _LedgerAccountDetailsPreview({required this.mobile});
-
-  final bool mobile;
-
-  @override
-  State<_LedgerAccountDetailsPreview> createState() =>
-      _LedgerAccountDetailsPreviewState();
-}
-
-class _LedgerAccountDetailsPreviewState
-    extends State<_LedgerAccountDetailsPreview> {
-  late final GoRouter _router;
-
-  @override
-  void initState() {
-    super.initState();
-    _router = GoRouter(
-      initialLocation: '/ledger-details',
-      routes: [
-        GoRoute(
-          path: '/ledger-details',
-          builder: (_, _) => widget.mobile
-              ? const MobileHardwareAccountDetailsScreen(
-                  accountUuid: _ledgerAccountUuid,
-                )
-              : const HardwareAccountDetailsScreen(
-                  accountUuid: _ledgerAccountUuid,
-                ),
-        ),
-      ],
-    );
-  }
-
-  @override
-  void dispose() {
-    _router.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ProviderScope(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(_ledgerBootstrap),
-        accountProvider.overrideWith(_LedgerPreviewAccountNotifier.new),
-        syncProvider.overrideWith(_LedgerPreviewSyncNotifier.new),
-        ledgerTargetPlatformProvider.overrideWithValue(
-          widget.mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
-        ),
-      ],
-      child: SizedBox(
-        width: widget.mobile ? 393 : 1160,
-        height: widget.mobile ? 852 : 760,
-        child: MaterialApp.router(routerConfig: _router),
-      ),
-    );
-  }
-}
-
 class _LedgerPreviewAccountNotifier extends AccountNotifier {
   @override
   FutureOr<AccountState> build() => _ledgerAccountState;
@@ -656,17 +567,6 @@ class _LedgerPreviewReadinessController extends LedgerAppReadinessController {
 
   @override
   LedgerAppReadinessState build() => initialState;
-}
-
-class _LedgerPreviewSyncNotifier extends SyncNotifier {
-  @override
-  Future<SyncState> build() async => SyncState(
-    accountUuid: _ledgerAccountUuid,
-    hasAccountScopedData: true,
-    isSyncing: false,
-    isSyncComplete: true,
-    percentage: 1,
-  );
 }
 
 class _ScriptedLedgerMobileBleService implements LedgerMobileBleService {
@@ -747,7 +647,7 @@ const _ledgerAccountState = AccountState(
 );
 
 final _ledgerBootstrap = AppBootstrapState(
-  initialLocation: '/ledger-details',
+  initialLocation: '/home',
   initialAccountState: _ledgerAccountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',

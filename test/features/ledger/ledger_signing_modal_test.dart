@@ -217,7 +217,10 @@ void main() {
           .onPressed,
       isNull,
     );
-    expect(find.textContaining('Set up Bluetooth'), findsOneWidget);
+    expect(
+      find.text('Bluetooth unavailable. Connect your Ledger over USB.'),
+      findsOneWidget,
+    );
   });
 }
 

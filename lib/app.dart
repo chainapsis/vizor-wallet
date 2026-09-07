@@ -35,7 +35,6 @@ import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
-import 'src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/donation/donation_config.dart';
@@ -1297,12 +1296,6 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   ),
   GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
   GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
-  GoRoute(
-    path: '/settings/hardware-account',
-    builder: (_, state) => HardwareAccountDetailsScreen(
-      accountUuid: state.extra is String ? state.extra as String : null,
-    ),
-  ),
   GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
   GoRoute(
     path: '/settings/secret-passphrase',
@@ -2079,7 +2072,6 @@ class _WindowsUpdatePromptHostState
         path.startsWith('/import') ||
         path.startsWith('/import-keystone') ||
         path.startsWith('/send') ||
-        path.startsWith('/settings/hardware-account') ||
         path.startsWith('/settings/secret-passphrase') ||
         path.startsWith('/settings/viewing-key') ||
         path.startsWith('/settings/change-password')) {

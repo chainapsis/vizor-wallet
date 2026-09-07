@@ -15,7 +15,6 @@ void main() {
       folder.children!.map((child) => child.name),
       containsAll([
         'Onboarding & import',
-        'Accounts',
         'Signing',
         'Mobile device picker',
         'Voting',
@@ -24,8 +23,6 @@ void main() {
     expect(
       folder.leaves.map((leaf) => leaf.name),
       containsAll([
-        'Desktop',
-        'Mobile',
         'Mainnet',
         'Playground',
         'Devices found',
@@ -180,32 +177,6 @@ void main() {
     await tester.pump();
     expect(find.text('Ledger voting approval was cancelled.'), findsOne);
     expect(find.text('Retry'), findsOne);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets(
-    'individual account details preview uses the production surface',
-    (tester) async {
-      await _pumpUseCase(tester, buildLedgerAccountDetailsUseCase);
-      await tester.pump(const Duration(milliseconds: 10));
-      expect(find.text('Account details'), findsOne);
-      expect(find.text('Ledger account 1'), findsWidgets);
-      expect(find.text('ZIP-32 account index'), findsOne);
-      expect(find.text('2870000'), findsOne);
-
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets('mobile account details preview uses the mobile surface', (
-    tester,
-  ) async {
-    await _pumpUseCase(tester, buildMobileLedgerAccountDetailsUseCase);
-    await tester.pump(const Duration(milliseconds: 10));
-
-    expect(find.text('Account Details'), findsOne);
-    expect(find.text('Ledger account 1'), findsOne);
-    expect(find.text('Wallet birthday height'), findsOne);
     expect(tester.takeException(), isNull);
   });
 }

@@ -139,10 +139,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       (false, true) => 173.0,
       (false, false) => 126.0,
     };
-    // Hardware account details replace the software-only secret-passphrase
-    // row, while the viewing-key row remains available to both account types.
-    // Each row costs the same fixed 34 (26 item + 8 gap).
-    final menuHeight = baseMenuHeight + 68;
+    // The viewing-key row is always shown (unlike the secret-passphrase
+    // row, a UFVK never grants spend authority, so hardware accounts get
+    // it too); each extra row costs the same fixed 34 (26 item + 8 gap).
+    final menuHeight = baseMenuHeight + 34 + (account.isHardware ? 0 : 34);
     const bottomNavClearance = kMobileTabBarHeight + AppSpacing.lg;
     final colors = context.colors;
     final appTheme = AppTheme.of(context);
@@ -166,8 +166,6 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         switch (action) {
-          case _AccountAction.viewAccountDetails:
-            context.push('/settings/hardware-account', extra: account.uuid);
           case _AccountAction.viewSecretPassphrase:
             context.push('/settings/seed-phrase', extra: account.uuid);
           case _AccountAction.viewViewingKey:
@@ -236,14 +234,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
 
     final menuItems = [
-      if (account.isHardware)
-        item(
-          key: const ValueKey('mobile_account_menu_account_details'),
-          iconName: AppIcons.wallet,
-          label: 'Account details',
-          action: _AccountAction.viewAccountDetails,
-        )
-      else
+      if (!account.isHardware)
         item(
           key: const ValueKey('mobile_account_menu_secret_passphrase'),
           iconName: AppIcons.key,
@@ -657,7 +648,6 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
 }
 
 enum _AccountAction {
-  viewAccountDetails,
   viewSecretPassphrase,
   viewViewingKey,
   copy,

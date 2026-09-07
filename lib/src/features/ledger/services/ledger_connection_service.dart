@@ -102,7 +102,7 @@ class LedgerConnectionService {
     final deviceId = account.ledgerDeviceId;
     if (deviceId == null) {
       throw const LedgerConnectionRequiredException(
-        'Set up Bluetooth for this Ledger account in Account details first.',
+        'No Bluetooth device is paired with this Ledger account.',
       );
     }
     final platform = _ref.read(ledgerTargetPlatformProvider);
@@ -190,7 +190,7 @@ class LedgerConnectionService {
       LedgerConnectionPreference.bluetooth =>
         'Turn on and unlock your Ledger, then reconnect with Bluetooth.$suffix',
       LedgerConnectionPreference.automatic =>
-        'Vizor could not find this Ledger over USB or Bluetooth. Choose a connection in Account details, then try again.$suffix',
+        'Vizor could not find this Ledger over USB or Bluetooth. Reconnect your Ledger, then try again.$suffix',
     };
   }
 }

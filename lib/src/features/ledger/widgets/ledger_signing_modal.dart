@@ -379,7 +379,7 @@ class _LedgerFailureConnectionPicker extends ConsumerWidget {
           if (!bluetoothAvailable) ...[
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              'Set up Bluetooth from Account details before using it for signing.',
+              'Bluetooth unavailable. Connect your Ledger over USB.',
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.secondary,
               ),
