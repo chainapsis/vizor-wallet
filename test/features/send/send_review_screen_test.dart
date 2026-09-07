@@ -1106,47 +1106,54 @@ void main() {
     expect(rustApi.encodeFullPcztCalls, 2);
   });
 
-  testWidgets('Ledger handoff signs directly and carries the PCZT pair', (
-    tester,
-  ) async {
-    final statusExtras = <Object?>[];
-    List<int>? signingRequest;
-    final operationService = _FakeLedgerSignedOperationService();
+  for (final flowKind in [SendFlowKind.send, SendFlowKind.donation]) {
+    testWidgets(
+      'Ledger ${flowKind.name} handoff signs directly and carries the PCZT pair',
+      (tester) async {
+        final statusExtras = <Object?>[];
+        List<int>? signingRequest;
+        final operationService = _FakeLedgerSignedOperationService();
 
-    await _setDesktopViewport(tester);
-    await tester.pumpWidget(
-      _harness(
-        _reviewArgs(addressType: 'unified'),
-        bootstrap: _bootstrap(
-          isHardware: true,
-          hardwareSignerKind: HardwareSignerKind.ledger,
-        ),
-        statusExtras: statusExtras,
-        ledgerOperationService: operationService,
-        ledgerSigner: (pcztBytes) async {
-          signingRequest = [...pcztBytes];
-          return _fakeSignatureBytes;
-        },
-      ),
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _harness(
+            _reviewArgs(addressType: 'unified', flowKind: flowKind),
+            bootstrap: _bootstrap(
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+            statusExtras: statusExtras,
+            ledgerOperationService: operationService,
+            ledgerSigner: (pcztBytes) async {
+              signingRequest = [...pcztBytes];
+              return _fakeSignatureBytes;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Confirm with Ledger'), findsOneWidget);
+        await tester.tap(find.text('Confirm with Ledger'));
+        await _flushRealAsync(tester);
+
+        expect(find.byType(LedgerSigningModal), findsNothing);
+        expect(find.text('status-route'), findsOneWidget);
+        expect(signingRequest, const [4, 5, 6]);
+        final extra = statusExtras.single as LedgerBroadcastArgs;
+        expect(extra.reviewArgs.flowKind, flowKind);
+        expect(
+          extra.operationId,
+          'send:test-account:${extra.reviewArgs.sendFlowId}',
+        );
+        expect(operationService.checkpoints, hasLength(1));
+        expect(operationService.checkpoints.single.proofs, _fakeProofsBytes);
+        expect(
+          operationService.checkpoints.single.signatures,
+          _fakeSignatureBytes,
+        );
+      },
     );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Confirm with Ledger'), findsOneWidget);
-    await tester.tap(find.text('Confirm with Ledger'));
-    await _flushRealAsync(tester);
-
-    expect(find.byType(LedgerSigningModal), findsNothing);
-    expect(find.text('status-route'), findsOneWidget);
-    expect(signingRequest, const [4, 5, 6]);
-    final extra = statusExtras.single as LedgerBroadcastArgs;
-    expect(
-      extra.operationId,
-      'send:test-account:${extra.reviewArgs.sendFlowId}',
-    );
-    expect(operationService.checkpoints, hasLength(1));
-    expect(operationService.checkpoints.single.proofs, _fakeProofsBytes);
-    expect(operationService.checkpoints.single.signatures, _fakeSignatureBytes);
-  });
+  }
 
   testWidgets(
     'Ledger retry reuses the consumed proposal PCZT and retries only signing',

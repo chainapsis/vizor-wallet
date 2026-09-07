@@ -763,7 +763,7 @@ Future<void> _runMobileSwapScenario(
         paySelectedAssetStoreProvider.overrideWithValue(persistenceStore),
         swapZecStagingAddressServiceProvider.overrideWithValue(
           SwapZecStagingAddressService(
-            loadCurrentShieldedAddress: ({required accountUuid}) async =>
+            reserveFreshOrchardAddress: ({required accountUuid}) async =>
                 'u1ledgerrefundaddress',
           ),
         ),
@@ -1407,6 +1407,12 @@ class _SpeculosSwapHardwareSigningService
 
   @override
   Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {}
+
+  @override
+  Future<List<int>> decodeSigningResponse({
+    required SwapHardwarePcztDraft draft,
+    required List<int> responseCbor,
+  }) => throw StateError('Ledger signing must not decode Keystone responses.');
 
   @override
   Future<List<String>> encodeSigningUrParts({

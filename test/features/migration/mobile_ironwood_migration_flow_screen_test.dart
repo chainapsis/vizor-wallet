@@ -2107,12 +2107,15 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Review Migration Plan'), findsOneWidget);
-    expect(find.widgetWithText(AppButton, 'Back'), findsOneWidget);
+    expect(
+      find.widgetWithText(AppButton, 'Consider another option'),
+      findsOneWidget,
+    );
     expect(
       find.textContaining(
         'Private migration is not available for Ledger accounts.',
       ),
-      findsOneWidget,
+      findsNothing,
     );
 
     await tester.tap(
@@ -8718,6 +8721,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Back'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Private migration is not available for Ledger accounts.',
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_ironwood_immediate_broadcast_button')),
