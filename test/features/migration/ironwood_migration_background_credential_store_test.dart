@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -10,6 +11,39 @@ void main() {
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
+  });
+
+  test('failed resume does not displace the next mutation lease', () async {
+    const channel = MethodChannel('test/background_migration/failed_release');
+    final active = <String>{};
+    var failResume = true;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          final id = (call.arguments as Map)['leaseId'] as String;
+          if (call.method == 'quiesce') active.add(id);
+          if (call.method == 'resume') {
+            if (failResume) throw PlatformException(code: 'unavailable');
+            active.remove(id);
+          }
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      channel: channel,
+      isIOS: true,
+      isAndroid: false,
+      resumeRetryDelays: const [Duration.zero, Duration.zero],
+    );
+    await lifecycle.quiesce();
+    await expectLater(lifecycle.resumeAfterMutation(), throwsStateError);
+    await lifecycle.quiesce();
+    expect(active, hasLength(2));
+    failResume = false;
+    await lifecycle.resumeAfterMutation();
+    expect(active, isEmpty);
   });
 
   test('manifest round-trips through scoped secure storage', () async {
@@ -305,6 +339,137 @@ void main() {
         'network': 'test',
         'accountUuid': 'account-1',
       });
+    },
+  );
+
+  test(
+    'iOS scoped leases resume the matching account when completion order reverses',
+    () async {
+      const channel = MethodChannel('test/background_migration/scoped_leases');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final lifecycle = IronwoodMigrationBackgroundLifecycle(
+        channel: channel,
+        isIOS: true,
+      );
+      final aPaused = Completer<void>();
+      final releaseA = Completer<void>();
+      final a = IronwoodMigrationBackgroundLifecycle.runWithQuiescenceLease(
+        'stop:test:a:run-a',
+        () async {
+          await lifecycle.quiesce();
+          aPaused.complete();
+          await releaseA.future;
+          await lifecycle.resumeAfterMutation();
+        },
+      );
+      await aPaused.future;
+      await IronwoodMigrationBackgroundLifecycle.runWithQuiescenceLease(
+        'stop:test:b:run-b',
+        () async {
+          await lifecycle.quiesce();
+          await lifecycle.resumeAfterMutation();
+        },
+      );
+      releaseA.complete();
+      await a;
+      expect(calls.map((call) => (call.arguments as Map)['leaseId']), [
+        'stop:test:a:run-a',
+        'stop:test:b:run-b',
+        'stop:test:b:run-b',
+        'stop:test:a:run-a',
+      ]);
+    },
+  );
+
+  test(
+    'iOS cleanup retry reuses its retained lease without consuming another mutation',
+    () async {
+      const channel = MethodChannel('test/background_migration/retained_lease');
+      final active = <String>{};
+      var loseResumeReply = true;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            final lease = (call.arguments as Map)['leaseId'] as String;
+            if (call.method == 'quiesce') active.add(lease);
+            if (call.method == 'resume') {
+              active.remove(lease);
+              if (loseResumeReply) {
+                loseResumeReply = false;
+                throw PlatformException(code: 'lost_reply');
+              }
+            }
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final lifecycle = IronwoodMigrationBackgroundLifecycle(
+        channel: channel,
+        isIOS: true,
+        resumeRetryDelays: const [Duration.zero, Duration.zero],
+      );
+      await IronwoodMigrationBackgroundLifecycle.runWithQuiescenceLease(
+        'stop:test:a:run-a',
+        lifecycle.quiesce,
+      );
+      await IronwoodMigrationBackgroundLifecycle.runWithQuiescenceLease(
+        'other-mutation',
+        lifecycle.quiesce,
+      );
+      await IronwoodMigrationBackgroundLifecycle.runWithQuiescenceLease(
+        'stop:test:a:run-a',
+        () async {
+          await lifecycle.quiesce();
+          expect(active, {'stop:test:a:run-a', 'other-mutation'});
+          await lifecycle.resumeAfterMutation();
+        },
+      );
+      expect(active, {'other-mutation'});
+    },
+  );
+
+  test(
+    'overlapping unscoped iOS resumes reserve different leases before awaiting',
+    () async {
+      const channel = MethodChannel(
+        'test/background_migration/concurrent_resume',
+      );
+      final resumed = <String>[];
+      final release = Completer<void>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'resume') {
+              resumed.add((call.arguments as Map)['leaseId'] as String);
+              if (resumed.length == 2) release.complete();
+              await release.future;
+            }
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final lifecycle = IronwoodMigrationBackgroundLifecycle(
+        channel: channel,
+        isIOS: true,
+      );
+      await lifecycle.quiesce();
+      await lifecycle.quiesce();
+      await Future.wait([
+        lifecycle.resumeAfterMutation(),
+        lifecycle.resumeAfterMutation(),
+      ]);
+      expect(resumed.toSet(), hasLength(2));
     },
   );
 

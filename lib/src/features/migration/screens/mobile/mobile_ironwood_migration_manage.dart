@@ -157,6 +157,16 @@ class _MobileMigrationManageDialogState
                       child: Text(_submitting ? 'Stopping...' : 'Confirm'),
                     ),
                   ],
+                  if (_submitting) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Waiting for any active broadcast to finish before '
+                      'stopping the remaining migration.',
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
                   if (_error != null || (!canStop && !_submitting)) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
