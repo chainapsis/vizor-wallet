@@ -28,7 +28,7 @@ use zeroize::Zeroizing;
 use crate::frb_generated::StreamSink;
 use crate::wallet::voting::delegation::{self, RoundInputs, VizorDelegationPipeline};
 use crate::wallet::voting::signer::SeedSpendAuthSigner;
-use crate::wallet::voting::{db, hotkey};
+use crate::wallet::voting::{db, hotkey, observability};
 
 use super::voting::{
     delegation_static_inputs_for, helper_client, routed_transport, ApiVotingRoundContext,
@@ -470,10 +470,18 @@ impl VotingRoundSession {
             });
         });
 
-        let report = RoundDriver::new(&self.executor)
-            .with_policy(round_drive_policy(policy))
-            .run(&host_source, &self.control, &reporter)
-            .await;
+        let report = observability::report(
+            "round_driver.run",
+            RoundDriver::new(&self.executor)
+                .with_policy(round_drive_policy(policy))
+                .run_with_report(
+                    &host_source,
+                    &self.control,
+                    &reporter,
+                    observability::options(),
+                )
+                .await,
+        );
         Ok(ApiRoundRunEvent {
             kind: ApiRoundStepEventKind::Result,
             event: None,
@@ -557,11 +565,18 @@ impl VotingRoundSession {
         });
 
         let client = helper_client(&self.health);
-        let report =
+        let report = observability::report(
+            "share_tracking_driver.run",
             ShareTrackingDriver::new(&database, &client, &self.inputs.round_params.vote_round_id)
                 .with_policy(share_tracking_drive_policy(policy))
-                .run(&host_source, &self.control, &reporter)
-                .await;
+                .run_with_report(
+                    &host_source,
+                    &self.control,
+                    &reporter,
+                    observability::options(),
+                )
+                .await,
+        );
         Ok(ApiShareTrackingRunEvent {
             kind: ApiRoundStepEventKind::Result,
             event: None,
@@ -589,22 +604,26 @@ impl VotingRoundSession {
         let entry_epoch = self.control.operation_epoch();
         let cancel =
             || self.control.is_cancelled() || self.control.operation_epoch() != entry_epoch;
-        let report = zcash_voting::share_tracking::confirm_pending_share(
-            &database,
-            &zcash_voting::share_tracking::ShareConfirmationParams {
-                round_id: &self.inputs.round_params.vote_round_id,
-                share: zcash_voting::share_tracking::ShareKey {
-                    bundle_index,
-                    proposal_id,
-                    share_index,
+        let report = observability::report(
+            "confirm_pending_share",
+            zcash_voting::share_tracking::confirm_pending_share_with_report(
+                &database,
+                &zcash_voting::share_tracking::ShareConfirmationParams {
+                    round_id: &self.inputs.round_params.vote_round_id,
+                    share: zcash_voting::share_tracking::ShareKey {
+                        bundle_index,
+                        proposal_id,
+                        share_index,
+                    },
+                    configured_server_urls: &self.binding.configured_helper_urls,
+                    now_seconds: unix_now_seconds(0),
                 },
-                configured_server_urls: &self.binding.configured_helper_urls,
-                now_seconds: unix_now_seconds(0),
-            },
-            &client,
-            &cancel,
+                &client,
+                &cancel,
+                observability::options(),
+            )
+            .await,
         )
-        .await
         .map_err(VotingErrorView::from)?;
         Ok(report.confirmed)
     }

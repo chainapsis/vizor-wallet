@@ -212,11 +212,11 @@ Future<List<KeystoneSigningRequest>> buildKeystoneDelegationRequests({
 
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
-/// Existing tuples for the same sighash and randomized key are accepted as
-/// idempotent retries, even when randomized signing produced different valid
-/// signature bytes. A tuple for a different signing context is a
-/// `KeystoneSignatureConflict` error, and any validation or database error
-/// rolls back the complete batch.
+/// The SDK checks each tuple against the bundle's current sighash and
+/// randomized key in the storage transaction, including idempotent retries.
+/// Missing or replaced setup returns `KeystoneSignatureConflict`. Existing
+/// matching tuples remain idempotent even when signature bytes differ, and any
+/// validation or database error rolls back the complete batch.
 Future<ApiKeystoneSignatureBatchResult> storeKeystoneSignaturesBatch({
   required String dbPath,
   required String accountUuid,
@@ -430,6 +430,23 @@ Future<VotingConfigResolution> resolveVotingConfigFromAttempts({
   attempts: attempts,
   previous: previous,
 );
+
+/// Streams voting observability snapshots to Dart until the sink is closed.
+///
+/// Rust `log` records reach os_log, never the Flutter console, so a debugging
+/// aid that lives only in `log stream` is invisible where developers actually
+/// look. This is the second sink, not a replacement: os_log still receives
+/// every line whether or not Dart ever registers.
+///
+/// Registering twice replaces the previous sink and closes it. Collection
+/// itself stays governed by `VOTING_OBSERVABILITY_ENABLED`, so on a build with
+/// observability off this stream is simply silent.
+Stream<ApiVotingObservability> setVotingObservabilitySink() =>
+    RustLib.instance.api.crateApiVotingSetVotingObservabilitySink();
+
+/// Stops streaming snapshots to Dart, closing any registered sink.
+Future<void> clearVotingObservabilitySink() =>
+    RustLib.instance.api.crateApiVotingClearVotingObservabilitySink();
 
 /// FRB-facing bundle layout for [`setup_delegation_bundles`].
 ///
@@ -778,6 +795,66 @@ class ApiVotingEligibility {
           eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
           privacyTrimDroppedValueZatoshi ==
               other.privacyTrimDroppedValueZatoshi;
+}
+
+/// One SDK observability snapshot, flattened for codegen.
+///
+/// Mirrors [`crate::wallet::voting::observability::VotingObservabilitySnapshot`]
+/// rather than re-exporting the SDK's types: those are `#[non_exhaustive]` and
+/// nest `Vec`s of further structs, neither of which suits this surface.
+/// `rendered` is the SDK's own `Display`, so a Dart line and its os_log
+/// counterpart always say the same thing.
+class ApiVotingObservability {
+  /// The Vizor call site that asked, not the SDK operation.
+  final String context;
+  final String operation;
+  final String? roundId;
+  final String outcome;
+  final BigInt elapsedUs;
+  final BigInt startedAtUnixUs;
+  final String rendered;
+
+  /// One entry per record that failed, was rejected, or may have been
+  /// dispatched, each carrying the SDK's stable `error_kind`. Empty on a
+  /// clean run. `rendered` cannot show these: it prints summaries, and a
+  /// summary has an outcome but no error category.
+  final List<String> failures;
+
+  const ApiVotingObservability({
+    required this.context,
+    required this.operation,
+    this.roundId,
+    required this.outcome,
+    required this.elapsedUs,
+    required this.startedAtUnixUs,
+    required this.rendered,
+    required this.failures,
+  });
+
+  @override
+  int get hashCode =>
+      context.hashCode ^
+      operation.hashCode ^
+      roundId.hashCode ^
+      outcome.hashCode ^
+      elapsedUs.hashCode ^
+      startedAtUnixUs.hashCode ^
+      rendered.hashCode ^
+      failures.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVotingObservability &&
+          runtimeType == other.runtimeType &&
+          context == other.context &&
+          operation == other.operation &&
+          roundId == other.roundId &&
+          outcome == other.outcome &&
+          elapsedUs == other.elapsedUs &&
+          startedAtUnixUs == other.startedAtUnixUs &&
+          rendered == other.rendered &&
+          failures == other.failures;
 }
 
 /// Shared delegation/voting round context passed across the FRB boundary.

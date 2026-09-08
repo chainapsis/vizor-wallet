@@ -559,17 +559,18 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     final bundleIndexes = _delegationProgressBundleIndexes(state);
     if (bundleIndexes.isEmpty) return null;
 
-    var completedProgress = 0.0;
-    for (final bundleIndex in bundleIndexes) {
-      final progress = state.delegationProgress[bundleIndex];
-      if (_isDelegationBundleComplete(progress)) {
-        completedProgress += 1;
-      } else {
-        completedProgress +=
-            progress?.proofProgress?.clamp(0.0, 1.0).toDouble() ?? 0;
-      }
-    }
-    return (completedProgress / bundleIndexes.length).clamp(0.0, 1.0);
+    final completed = bundleIndexes
+        .where(
+          (index) =>
+              _isDelegationBundleComplete(state.delegationProgress[index]),
+        )
+        .length;
+    // Use the same unit as the bundle counter. A finished proof still owes
+    // signing, submission, and confirmation. Once every bundle confirms, keep
+    // animating while the round driver finishes and its plan is refreshed.
+    return completed == bundleIndexes.length
+        ? null
+        : completed / bundleIndexes.length;
   }
 
   String? _delegationDetail(VotingSessionState state) {
@@ -588,12 +589,28 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           progress.phase == VotingProgressPhase.waitingForExistingProof,
     );
     final count = '$completed of ${bundleIndexes.length} bundles complete';
-    return waiting ? 'Reusing an in-progress proof — $count' : count;
+    if (completed == bundleIndexes.length) {
+      return 'Finalizing delegation — $count';
+    }
+    if (waiting) return 'Reusing an in-progress proof — $count';
+    final awaitingChain = bundleIndexes
+        .where(
+          (index) =>
+              !_isDelegationBundleComplete(state.delegationProgress[index]),
+        )
+        .every((index) {
+          final phase = state.delegationProgress[index]?.phase;
+          return phase == VotingProgressPhase.payloadReady ||
+              phase == VotingProgressPhase.submitted;
+        });
+    return awaitingChain
+        ? 'Waiting for submission and confirmation — $count'
+        : count;
   }
 
   List<int> _delegationProgressBundleIndexes(VotingSessionState state) {
     final indexes = <int>{
-      ...delegationBundleIndexesNeedingSigning(state.roundPlan),
+      ...delegationBundleIndexesNeedingWork(state.roundPlan),
       ...state.delegationProgress.keys,
       ?state.currentBundleIndex,
     }.toList()..sort();
@@ -601,8 +618,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   bool _isDelegationBundleComplete(VotingSessionProgress? progress) {
-    return progress?.phase == VotingProgressPhase.submitted ||
-        progress?.phase == VotingProgressPhase.confirmed;
+    return progress?.phase == VotingProgressPhase.confirmed;
   }
 
   void _retry() {

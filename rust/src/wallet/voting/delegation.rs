@@ -29,6 +29,7 @@ use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
 
 use super::db::open_voting_db;
+use super::observability;
 use super::transport::fetch_snapshot_tree_state;
 
 fn invalid_input(message: impl Into<String>) -> VotingError {
@@ -156,7 +157,13 @@ pub fn start_proving_cache_warmup() {
 /// Select notes and create/reuse delegation bundle rows for a round.
 pub async fn setup_delegation_bundles(inputs: RoundInputs) -> Result<BundleLayout, VotingError> {
     let pipeline = open_pipeline(&inputs, None).await?;
-    blocking("bundle setup", move || pipeline.setup_bundles()).await
+    blocking("bundle setup", move || {
+        observability::report(
+            "setup_delegation_bundles",
+            pipeline.setup_bundles_with_report(observability::options()),
+        )
+    })
+    .await
 }
 
 /// Select notes and check whether a wallet can vote without persisting bundles.
@@ -192,13 +199,17 @@ pub async fn precompute_snapshot_bundles(
         let notes = pipeline.select_notes()?;
         let round_id = pipeline.round_id().to_string();
         fleet.with_failover(|session| {
-            zcash_voting::precompute::precompute_snapshot_bundles(
-                &pipeline.voting_db(),
-                &round_id,
-                &notes,
-                bundle_policy,
-                session,
-                network,
+            observability::report(
+                "precompute_snapshot_bundles",
+                zcash_voting::precompute::precompute_snapshot_bundles_with_report(
+                    &pipeline.voting_db(),
+                    &round_id,
+                    &notes,
+                    bundle_policy,
+                    session,
+                    network,
+                    observability::options(),
+                ),
             )
         })
     })
@@ -219,7 +230,15 @@ pub async fn precompute_delegation_proof(
     let fleet = pir_fleet(pir_server_urls, pir_layout)?;
     let pipeline = open_pipeline(&inputs, Some(hotkey)).await?;
     let status = proving("delegation-proof", move || {
-        pipeline.ensure_proof(bundle_index, &fleet, &NoopProgressReporter)
+        observability::report(
+            "precompute_delegation_proof",
+            pipeline.ensure_proof_with_report(
+                bundle_index,
+                &fleet,
+                &NoopProgressReporter,
+                observability::options(),
+            ),
+        )
     })
     .await?;
     Ok(matches!(status, DelegationProofStatus::Generated))
