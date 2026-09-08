@@ -55,54 +55,21 @@ int roundPlanBundleCount(rust_wire.RoundPlanView? roundPlan) =>
 
 /// Bundles whose delegation still has work to drive.
 ///
-/// Covers both bundles needing signature work and bundles already submitted
-/// and awaiting confirmation, because both still need a delegation step.
-/// Excludes bundles the SDK marks terminal: it plans no step for them, and a
-/// hashless dispatch must never be retried.
+/// The planner decides this: it plans a delegation step only for a bundle
+/// that still owes one, and none for a bundle it marks terminal. Rebuilding
+/// the answer here from `delegationStatuses` meant restating the planner's
+/// rules and drifting from them whenever they changed.
 List<int> delegationBundleIndexesNeedingWork(
   rust_wire.RoundPlanView? roundPlan,
-) {
-  final terminal = _terminalBundleIndexes(roundPlan);
-  final indexes = <int>{
-    for (final status
-        in roundPlan?.delegationStatuses ??
-            const <rust_wire.DelegationStatusView>[])
-      if (!status.terminal &&
-          status.phase != rust_wire.WorkflowPhaseView.confirmed)
-        status.bundleIndex,
-    for (final work
-        in roundPlan?.recoveredDelegationWork ??
-            const <rust_wire.DelegationRecoveryWorkView>[])
-      if (!terminal.contains(work.bundleIndex)) work.bundleIndex,
-  };
-  return indexes.toList()..sort();
-}
+) => roundPlan?.delegationBundlesNeedingWork ?? const [];
 
 /// Bundles that still need delegation signing material.
 ///
-/// Excludes bundles already submitted (their signature exists and only the
-/// chain outcome is outstanding) and bundles the SDK marks terminal.
+/// A subset of [delegationBundleIndexesNeedingWork]: a bundle already
+/// submitted and awaiting its chain outcome owes work but no signature.
 List<int> delegationBundleIndexesNeedingSigning(
   rust_wire.RoundPlanView? roundPlan,
-) {
-  final indexes = <int>[
-    for (final status
-        in roundPlan?.delegationStatuses ??
-            const <rust_wire.DelegationStatusView>[])
-      if (!status.terminal &&
-          status.phase != rust_wire.WorkflowPhaseView.confirmed &&
-          status.phase != rust_wire.WorkflowPhaseView.submittedDelegation)
-        status.bundleIndex,
-  ];
-  return indexes..sort();
-}
-
-Set<int> _terminalBundleIndexes(rust_wire.RoundPlanView? roundPlan) => {
-  for (final status
-      in roundPlan?.delegationStatuses ??
-          const <rust_wire.DelegationStatusView>[])
-    if (status.terminal) status.bundleIndex,
-};
+) => roundPlan?.delegationBundlesNeedingSigning ?? const [];
 
 /// Why each bundle whose delegation ended without confirming did, if any did.
 ///

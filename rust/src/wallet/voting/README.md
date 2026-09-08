@@ -115,17 +115,24 @@ crate's plan:
 | --- | --- |
 | `plan` | `RoundExecutor::plan` (`session::resume_plan`) |
 | `set_ballot_intents` | `RoundExecutor::set_ballot_intents` — writes intent and re-plans under the round lock |
-| `advance_step` / `advance_next` | `RoundExecutor::{advance_step, advance_next}` — proves and signs delegations through `DelegationPipeline`, casts every planned draft of a bundle (tree sync with node failover, VAN witness, proofs, atomic persistence, helper plans, `ChainSubmissionClient::advance_until_terminal`, share delivery once confirmed), resumes persisted vote work, and confirms shares |
+| `run_round` | `RoundDriver::run` — re-plans from durable state, dispatches the steps the plan lists, overlaps independent bundles, isolates a failure to its bundle, and stops with a `RoundQuiescence`. Each step proves and signs delegations through `DelegationPipeline`, casts every planned draft of a bundle (tree sync with node failover, VAN witness, proofs, atomic persistence, helper plans, chain advance to a terminal outcome, share delivery once confirmed), resumes persisted vote work, and confirms shares |
 | `keystone_signing_requests` | `DelegationPipeline::keystone_request` |
-| `begin_share_tracking_pass` | share tracking handle bound to the session's helper client |
+| `run_share_tracking` | `ShareTrackingDriver::run` — repeats a tracking pass on the delay each pass computes, stops at vote end, and reports why through `ShareTrackingQuiescence` |
+| `confirm_immediate_share` | `share_tracking::confirm_pending_share` |
 
-Every step streams `RoundStepProgressView` events and ends with exactly one
-`RoundStepOutcomeView` (carrying the re-planned `RoundPlanView`) or one
-`RoundStepFailureView`. Delegation steps lock per bundle; chain and share steps
-lock per round. Dart keeps scheduling, cancellation, progress projection, the
+A run streams `RoundDriveEventView` observations and ends with exactly one
+`RoundRunReportView`; a tracking run streams `ShareTrackingEventView` and ends
+with one `ShareTrackingRunReportView`. Delegation steps lock per bundle; chain
+and share steps lock per round. Dart keeps only what the SDK cannot see — app
+lock, account and round identity, cancellation, progress projection, the
 network route, and secret custody. Failures reach Dart as typed
 `VotingErrorView` values and step failure kinds; no phase, kind, or error text
 is matched as a string.
+
+Running a single step is not available: the driver carries the operation epoch
+it dispatched under into each step, so a session or account switch interrupts
+work already in flight instead of being adopted by it. `RoundExecutor::plan`
+and `set_ballot_intents` remain the only direct executor calls.
 
 Preparation and recovery reads stay stage-level:
 
@@ -135,7 +142,7 @@ Preparation and recovery reads stay stage-level:
 | Bundle setup / eligibility | `setup_delegation_bundles`, `check_voting_eligibility`, `precompute_snapshot_bundles` | `DelegationPipeline::{setup_bundles, eligibility, precompute_pir}` |
 | Background software delegation proof | `precompute_delegation_proof` | `DelegationPipeline::ensure_proof` — persists ZKP1 after snapshot PIR warm-up without receiving the mnemonic or signing |
 | Keystone signatures | `build_keystone_delegation_requests`, `store_keystone_signatures_batch`, `get_keystone_signatures`, `delete_skipped_bundles` | `DelegationPipeline::keystone_request`, `VotingDb` Keystone signature rows (`SetupAlreadyPersisted` on conflicting re-signs) |
-| Share tracking | `begin_share_tracking_pass`, `track_pending_shares`, `confirm_share_with_helpers`, `list_pending_share_rounds` | `share_tracking::{track_pending_shares, confirm_pending_share}`, `share::pending_rounds_for_accounts` |
+| Share tracking | `list_pending_share_rounds` (session-scoped runs use `run_share_tracking` above) | `share::pending_rounds_for_accounts` |
 | Ballot intent / restart | `set_ballot_intent`, `get_round_plan` | `VotingDb::set_ballot_intent`, `session::resume_plan` |
 
 Restart recovery is driven by `session::resume_plan`, which returns the ordered
@@ -210,8 +217,8 @@ cannot finalize a share by itself. The crate requires matching `confirmed`
 responses from two distinct helpers in the current configuration and binds the
 confirmation write to the exact stored nullifier generation. Vizor uses the
 crate's focused `confirm_pending_share` API for the designated immediate share
-and the full `track_pending_shares` pass for background recovery. It does not
-expose helper observations or implement a second polling path.
+and `ShareTrackingDriver` for background recovery. It does not expose helper
+observations, schedule passes, or implement a second polling path.
 
 Fresh commitments use a strict, SDK-persisted complete plan. The SDK reuses
 that exact plan after restart and submits only definite-delivery deficits, so

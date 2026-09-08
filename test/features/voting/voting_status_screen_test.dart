@@ -5105,6 +5105,20 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
 
   @override
   final scriptedRoundRuns = <List<rust_session.ApiRoundRunEvent>>[];
+
+  @override
+  final scriptedShareTrackingRuns =
+      <List<rust_session.ApiShareTrackingRunEvent>>[];
+
+  @override
+  final shareTrackingSessions = <FakeVotingRoundSession>[];
+
+  @override
+  final shareTrackingPolicies =
+      <rust_session.ApiShareTrackingDrivePolicy?>[];
+
+  @override
+  final focusedConfirmationSessions = <FakeVotingRoundSession>[];
   @override
   final sessionBallotIntents = <String>[];
 
@@ -5160,18 +5174,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
   @override
   VotingRoundSession openRoundSession({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> chainEndpoints,
-    required List<String> pirServerUrls,
-    required List<rust_session.ApiProposalRosterEntry> proposals,
+    required rust_session.ApiRoundSessionBinding binding,
     List<int>? storedHotkeySecret,
     required BigInt operationEpoch,
   }) {
     return FakeVotingRoundSession(
       driver: this,
       ctx: ctx,
-      chainEndpoints: chainEndpoints,
-      pirServerUrls: pirServerUrls,
-      proposals: proposals,
+      binding: binding,
       storedHotkeySecret: storedHotkeySecret,
       operationEpoch: operationEpoch,
     );
@@ -5687,13 +5697,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
   /// these widget tests only need a pass that confirms ready shares so the
   /// screen can advance.
   @override
-  Future<bool> confirmShareWithHelpers({
-    required VotingShareTrackingPassHandle passHandle,
+  Future<bool> confirmOneShareWithHelpers({
+    required FakeHelperDeliveryScope scope,
     required List<String> configuredHelperUrls,
     required int bundleIndex,
     required int proposalId,
     required int shareIndex,
     required BigInt nowSeconds,
+    required bool Function() isCancelled,
   }) async {
     final share = recoveryApi.state.shareDelegations
         .where(
@@ -5727,7 +5738,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
     if (confirmations < quorum) return false;
     await _markShareConfirmed(
       dbPath: '',
-      accountUuid: passHandle.accountUuid,
+      accountUuid: scope.accountUuid,
       roundId: share.roundId,
       bundleIndex: bundleIndex,
       proposalId: proposalId,
@@ -5737,15 +5748,16 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
   }
 
   @override
-  Future<rust_api.ApiShareTrackingReport> trackPendingShares({
-    required VotingShareTrackingPassHandle passHandle,
+  Future<rust_wire.ShareTrackingPassReportView> trackPendingSharesPass({
+    required FakeHelperDeliveryScope scope,
     required List<String> configuredHelperUrls,
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
+    required bool Function() isCancelled,
   }) async {
     shareTrackingPassCalls++;
-    final accountUuid = passHandle.accountUuid;
-    final confirmed = <rust_api.ApiShareKey>[];
+    final accountUuid = scope.accountUuid;
+    final confirmed = <rust_wire.ShareKeyView>[];
     final pending = List.of(recoveryApi.state.unconfirmedShareDelegations);
     for (final share in pending) {
       final flags = await _trackingFlags(
@@ -5781,7 +5793,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
       }
       if (confirmingServerUrl == null) continue;
 
-      final key = rust_api.ApiShareKey(
+      final key = rust_wire.ShareKeyView(
         bundleIndex: share.bundleIndex,
         proposalId: share.proposalId,
         shareIndex: share.shareIndex,
@@ -5818,38 +5830,23 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
       );
       confirmed.add(key);
     }
-    return rust_api.ApiShareTrackingReport(
+    return rust_wire.ShareTrackingPassReportView(
       confirmed: confirmed,
       resubmitted: const [],
       ambiguous: const [],
       unrecoverable: const [],
       cancelled: false,
       nextDelaySeconds: null,
+      unconfirmedAtEntry: 0,
     );
   }
 
   @override
-  VotingHelperDeliveryContext createVotingHelperDeliveryContext({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  }) => _NoopVotingHelperDeliveryContext(
-    dbPath: dbPath,
-    accountUuid: accountUuid,
-    roundId: roundId,
-  );
-
-  @override
-  VotingShareTrackingPassHandle beginShareTrackingPass({
-    required VotingHelperDeliveryContext context,
-  }) => _NoopVotingShareTrackingPassHandle(
-    accountUuid: context.accountUuid,
-    roundId: context.roundId,
-  );
+  void onShareTrackingCancelled() {}
 
   @override
   Future<rust_api.ApiVotingHelperPreflight> preflightVotingHelpers({
-    required VotingHelperDeliveryContext context,
+    required FakeHelperDeliveryScope scope,
     required List<String> configuredHelperUrls,
   }) async => rust_api.ApiVotingHelperPreflight(
     configuredHelperUrls: configuredHelperUrls,
@@ -5858,7 +5855,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
 
   @override
   Future<void> prepareCommittedShareDelivery({
-    required VotingHelperDeliveryContext context,
+    required FakeHelperDeliveryScope scope,
     required int bundleIndex,
     required int proposalId,
     required rust_api.ApiVotingHelperPreflight preflight,
@@ -5874,7 +5871,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
 
   @override
   Future<rust_api.ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
-    required VotingHelperDeliveryContext context,
+    required FakeHelperDeliveryScope scope,
     required int bundleIndex,
     required int proposalId,
     required List<String> configuredHelperUrls,
@@ -5909,7 +5906,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
       targetCount: targetCount,
     );
     _persistShareDelivery(
-      roundId: context.roundId,
+      roundId: scope.roundId,
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       shareIndex: 0,
@@ -5953,14 +5950,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
     }
     return flags;
   }
-
-  @override
-  Future<BigInt?> nextShareTrackingDelaySeconds({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required BigInt nowSeconds,
-  }) async => shareTrackingDelaySeconds;
 
   Future<void> markVoteSubmitted({
     required String dbPath,
@@ -6110,100 +6099,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
   }
 }
 
-class _NoopVotingHelperDeliveryContext implements VotingHelperDeliveryContext {
-  _NoopVotingHelperDeliveryContext({
-    required this.dbPath,
-    required this.accountUuid,
-    required this.roundId,
-  });
-
-  @override
-  final String dbPath;
-
-  @override
-  final String accountUuid;
-
-  @override
-  final String roundId;
-
-  @override
-  bool isDisposed = false;
-
-  @override
-  void dispose() {
-    isDisposed = true;
-  }
-}
-
-class _NoopVotingShareTrackingPassHandle
-    implements VotingShareTrackingPassHandle {
-  _NoopVotingShareTrackingPassHandle({
-    required this.accountUuid,
-    required this.roundId,
-  });
-
-  @override
-  final String accountUuid;
-
-  @override
-  final String roundId;
-
-  @override
-  bool isCancelled = false;
-
-  @override
-  bool isDisposed = false;
-
-  @override
-  void cancel() {
-    if (isCancelled || isDisposed) return;
-    isCancelled = true;
-  }
-
-  @override
-  void dispose() {
-    if (isDisposed) return;
-    isDisposed = true;
-  }
-}
-
-List<int> _bytesFromHex(String hex) {
-  return [
-    for (var i = 0; i < hex.length; i += 2)
-      int.parse(hex.substring(i, i + 2), radix: 16),
-  ];
-}
-
-rust_api.ApiSignedVoteCommitments _commitments({
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required int choice,
-}) {
-  return rust_api.ApiSignedVoteCommitments(
-    bundleIndex: bundleIndex,
-    commitments: [
-      rust_wire.SignedVoteCommitmentView(
-        proposalId: proposalId,
-        wire: rust_wire.VoteCommitmentWire(
-          vanNullifier: base64Encode(Uint8List.fromList(List.filled(32, 1))),
-          voteAuthorityNoteNew: base64Encode(
-            Uint8List.fromList(List.filled(32, 2)),
-          ),
-          voteCommitment: base64Encode(Uint8List.fromList(List.filled(32, 3))),
-          proposalId: proposalId,
-          proof: base64Encode(Uint8List.fromList(const [4])),
-          voteRoundId: base64Encode(_bytesFromHex(roundId)),
-          anchorHeight: 10,
-          rVpk: base64Encode(Uint8List.fromList(List.filled(32, 13))),
-          voteAuthSig: base64Encode(Uint8List.fromList(List.filled(64, 12))),
-        ),
-      ),
-    ],
-    batchDigest: null,
-  );
-}
-
 class _GatedShareVotingHttpClient extends FakeVotingHttpClient {
   _GatedShareVotingHttpClient({required super.responses});
 
@@ -6336,4 +6231,41 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+List<int> _bytesFromHex(String hex) {
+  return [
+    for (var i = 0; i < hex.length; i += 2)
+      int.parse(hex.substring(i, i + 2), radix: 16),
+  ];
+}
+
+rust_api.ApiSignedVoteCommitments _commitments({
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required int choice,
+}) {
+  return rust_api.ApiSignedVoteCommitments(
+    bundleIndex: bundleIndex,
+    commitments: [
+      rust_wire.SignedVoteCommitmentView(
+        proposalId: proposalId,
+        wire: rust_wire.VoteCommitmentWire(
+          vanNullifier: base64Encode(Uint8List.fromList(List.filled(32, 1))),
+          voteAuthorityNoteNew: base64Encode(
+            Uint8List.fromList(List.filled(32, 2)),
+          ),
+          voteCommitment: base64Encode(Uint8List.fromList(List.filled(32, 3))),
+          proposalId: proposalId,
+          proof: base64Encode(Uint8List.fromList(const [4])),
+          voteRoundId: base64Encode(_bytesFromHex(roundId)),
+          anchorHeight: 10,
+          rVpk: base64Encode(Uint8List.fromList(List.filled(32, 13))),
+          voteAuthSig: base64Encode(Uint8List.fromList(List.filled(64, 12))),
+        ),
+      ),
+    ],
+    batchDigest: null,
+  );
 }

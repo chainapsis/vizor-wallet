@@ -1,12 +1,4 @@
-use std::{
-    panic,
-    path::Path,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
-    time::Instant,
-};
+use std::{panic, path::Path, sync::Arc, time::Instant};
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
@@ -24,53 +16,6 @@ use zcash_voting::VotingError;
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ApiPirSnapshotEndpointStatus {
-    Matched,
-    Behind,
-    Ahead,
-    MissingHeight,
-    MalformedJson,
-    NonSuccessStatus,
-    TimeoutOrNetworkError,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiPirSnapshotEndpointDiagnostic {
-    pub endpoint: String,
-    pub status: ApiPirSnapshotEndpointStatus,
-    pub reported_height: Option<u64>,
-    pub http_status_code: Option<u16>,
-    pub message: Option<String>,
-}
-
-
-impl From<zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic>
-    for ApiPirSnapshotEndpointDiagnostic
-{
-    fn from(diagnostic: zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic) -> Self {
-        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as CoreStatus;
-        let status = match diagnostic.status {
-            CoreStatus::Matched => ApiPirSnapshotEndpointStatus::Matched,
-            CoreStatus::Behind => ApiPirSnapshotEndpointStatus::Behind,
-            CoreStatus::Ahead => ApiPirSnapshotEndpointStatus::Ahead,
-            CoreStatus::MissingHeight => ApiPirSnapshotEndpointStatus::MissingHeight,
-            CoreStatus::MalformedJson => ApiPirSnapshotEndpointStatus::MalformedJson,
-            CoreStatus::NonSuccessStatus => ApiPirSnapshotEndpointStatus::NonSuccessStatus,
-            CoreStatus::TimeoutOrNetworkError => {
-                ApiPirSnapshotEndpointStatus::TimeoutOrNetworkError
-            }
-        };
-        Self {
-            endpoint: diagnostic.endpoint,
-            status,
-            reported_height: diagnostic.reported_height,
-            http_status_code: diagnostic.http_status_code,
-            message: diagnostic.message,
-        }
-    }
-}
-
 /// Selected PIR endpoint plus a diagnostic for every endpoint probed.
 ///
 /// The full diagnostic set is part of the result, not debug output: the
@@ -81,7 +26,7 @@ impl From<zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic>
 pub struct ApiPirSnapshotResolution {
     /// `None` when every endpoint was probed and none matched the round.
     pub endpoint: Option<String>,
-    pub diagnostics: Vec<ApiPirSnapshotEndpointDiagnostic>,
+    pub diagnostics: Vec<zcash_voting::wire::PirSnapshotEndpointDiagnosticView>,
 }
 
 /// Probe every configured PIR endpoint and select one at the round's height.
@@ -106,17 +51,9 @@ pub async fn resolve_pir_snapshot_endpoint(
     }
 
     let transport = routed_transport();
-    let diagnostics = futures::future::join_all(
-        endpoints
-            .iter()
-            .map(|endpoint| {
-                probe_pir_snapshot_endpoint(
-                    transport.as_ref(),
-                    endpoint,
-                    expected_snapshot_height,
-                )
-            }),
-    )
+    let diagnostics = futures::future::join_all(endpoints.iter().map(|endpoint| {
+        probe_pir_snapshot_endpoint(transport.as_ref(), endpoint, expected_snapshot_height)
+    }))
     .await;
 
     if zcash_voting::pir_snapshot::matching_pir_snapshot_endpoints(
@@ -158,9 +95,11 @@ async fn probe_pir_snapshot_endpoint<T: zcash_voting::pir::Transport + ?Sized>(
     expected_snapshot_height: u64,
 ) -> zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic {
     let url = pir_snapshot_root_url(endpoint);
-    let mut attempt = pir_snapshot_probe_attempt(transport, &url, endpoint, expected_snapshot_height).await;
+    let mut attempt =
+        pir_snapshot_probe_attempt(transport, &url, endpoint, expected_snapshot_height).await;
     if attempt.retryable {
-        attempt = pir_snapshot_probe_attempt(transport, &url, endpoint, expected_snapshot_height).await;
+        attempt =
+            pir_snapshot_probe_attempt(transport, &url, endpoint, expected_snapshot_height).await;
     }
     attempt.diagnostic
 }
@@ -342,7 +281,6 @@ fn pir_snapshot_failure(
         message,
     }
 }
-
 
 /// Prefix for coarse cast-vote stage timings (`log show` subsystem `frb_user`).
 const VOTING_VOTE_LOG: &str = "[VOTING_VOTE]";
@@ -546,93 +484,8 @@ pub fn trusted_voting_round_params_from_config(
     })
 }
 
-/// One helper share identified within its round.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ApiShareKey {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub share_index: u32,
-}
-
-/// One share that reached a new helper during a tracking pass.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiResubmittedShare {
-    pub share: ApiShareKey,
-    pub server_url: String,
-}
-
-/// What one helper share-tracking pass did.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiShareTrackingReport {
-    /// Shares durably confirmed by the crate's two-helper quorum.
-    pub confirmed: Vec<ApiShareKey>,
-    /// Shares that reached an additional helper during this pass.
-    pub resubmitted: Vec<ApiResubmittedShare>,
-    /// Outcome-unknown attempts retained durably during this pass.
-    pub ambiguous: Vec<ApiResubmittedShare>,
-    /// Shares whose recovery material is missing, so no retry can help.
-    pub unrecoverable: Vec<ApiShareKey>,
-    /// True when the pass stopped early because Dart cancelled it.
-    pub cancelled: bool,
-    /// Seconds until the next pass, or `None` when nothing is pending.
-    pub next_delay_seconds: Option<u64>,
-}
-
-impl From<zcash_voting::share_tracking::ShareKey> for ApiShareKey {
-    fn from(key: zcash_voting::share_tracking::ShareKey) -> Self {
-        Self {
-            bundle_index: key.bundle_index,
-            proposal_id: key.proposal_id,
-            share_index: key.share_index,
-        }
-    }
-}
-
-/// Account-and-round-bound helper state shared by submission and recovery.
-///
-/// Health scores are local ordering hints for this voting workflow. Keeping
-/// them here prevents failures in one account or round from influencing
-/// another while still letting initial fan-out and later recovery share the
-/// same recent view of helper availability.
-#[flutter_rust_bridge::frb(opaque)]
-pub struct VotingHelperDeliveryContext {
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    health: zcash_voting::HelperHealth,
-    database: Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
-}
-
-/// One account-and-round-bound cancellation handle for helper-share tracking.
-///
-/// Dart creates the opaque handle synchronously before dispatching the async
-/// pass. FRB retains the same handle while the call is queued or running, so an
-/// immediate destructive drain can cancel that exact pass without a
-/// process-wide operation registry.
-#[flutter_rust_bridge::frb(opaque)]
-pub struct VotingShareTrackingPassHandle {
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    health: zcash_voting::HelperHealth,
-    database: Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
-    cancelled: AtomicBool,
-}
-
-impl VotingShareTrackingPassHandle {
-    /// Stops this tracking pass at its next cancellation check.
-    #[flutter_rust_bridge::frb(sync)]
-    pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
-    }
-
-    fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Acquire)
-    }
-}
-
 /// Process-wide routed transport for helper and vote-chain traffic, so
-/// connections and TLS sessions are reused across passes.
+/// connections and TLS sessions are reused across sessions.
 pub(super) fn routed_transport(
 ) -> Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>> {
     static TRANSPORT: std::sync::OnceLock<
@@ -649,242 +502,6 @@ pub(super) fn routed_transport(
 
 pub(super) fn helper_client(health: &zcash_voting::HelperHealth) -> zcash_voting::HelperClient {
     zcash_voting::HelperClient::new(routed_transport(), health.clone())
-}
-
-/// Creates helper delivery state for one account-and-round voting workflow.
-#[flutter_rust_bridge::frb(sync)]
-pub fn create_voting_helper_delivery_context(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-) -> VotingHelperDeliveryContext {
-    VotingHelperDeliveryContext {
-        db_path,
-        account_uuid,
-        round_id,
-        health: zcash_voting::HelperHealth::default(),
-        database: Arc::new(Mutex::new(None)),
-    }
-}
-
-/// Creates one cancellable tracking-pass handle bound to its delivery context.
-#[flutter_rust_bridge::frb(sync)]
-pub fn begin_share_tracking_pass(
-    context: &VotingHelperDeliveryContext,
-) -> VotingShareTrackingPassHandle {
-    share_tracking_pass_for(
-        &context.db_path,
-        &context.account_uuid,
-        &context.round_id,
-        &context.health,
-        &context.database,
-    )
-}
-
-pub(super) fn share_tracking_pass_for(
-    db_path: &str,
-    account_uuid: &str,
-    round_id: &str,
-    health: &zcash_voting::HelperHealth,
-    database: &Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
-) -> VotingShareTrackingPassHandle {
-    VotingShareTrackingPassHandle {
-        db_path: db_path.to_string(),
-        account_uuid: account_uuid.to_string(),
-        round_id: round_id.to_string(),
-        health: health.clone(),
-        database: database.clone(),
-        cancelled: AtomicBool::new(false),
-    }
-}
-
-fn helper_delivery_db(
-    db_path: &str,
-    account_uuid: &str,
-    database: &Mutex<Option<Arc<zcash_voting::round::VotingDb>>>,
-) -> Result<Arc<zcash_voting::round::VotingDb>, VotingError> {
-    let mut database = database
-        .lock()
-        .map_err(|_| internal("voting helper database lock poisoned"))?;
-    if let Some(db) = database.as_ref() {
-        return Ok(db.clone());
-    }
-    let opened = db::open_voting_db(db_path, account_uuid)?;
-    *database = Some(opened.clone());
-    Ok(opened)
-}
-
-/// Runs one confirm-or-retry pass over a round's unconfirmed helper shares.
-///
-/// This is the whole helper-facing workflow: the crate polls helpers, requires
-/// matching confirmation responses from two distinct configured helpers,
-/// persists confirmed shares, retries overdue shares against helpers that
-/// missed them, and persists delivery outcomes. Dart owns only the timer and
-/// cancellation triggers.
-///
-/// The sidecar write lock is held for the open (which may migrate) and then
-/// released. Holding it across the pass would block user-initiated voting
-/// writes for as long as helper polling takes; the writes this pass makes are
-/// short and self-contained, and the sidecar runs in WAL mode with a busy
-/// timeout.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails or a share record cannot be
-/// read or updated. Helper failures are not errors: they are scored and
-/// reported through the returned pass result.
-pub async fn track_pending_shares(
-    pass_handle: &VotingShareTrackingPassHandle,
-    configured_helper_urls: Vec<String>,
-    now_seconds: u64,
-    vote_end_time_seconds: Option<u64>,
-) -> Result<ApiShareTrackingReport, VotingErrorView> {
-    let cancel = || pass_handle.is_cancelled();
-
-    // Open under the sidecar lock so a concurrent opener cannot race schema
-    // migration, then run the network pass without holding it.
-    let db = helper_delivery_db(
-        &pass_handle.db_path,
-        &pass_handle.account_uuid,
-        &pass_handle.database,
-    )
-    .map_err(view)?;
-
-    let client = helper_client(&pass_handle.health);
-    let params = zcash_voting::share_tracking::ShareTrackingParams {
-        round_id: &pass_handle.round_id,
-        configured_server_urls: &configured_helper_urls,
-        now_seconds,
-        vote_end_time_seconds,
-        policy: zcash_voting::share::ShareTimingPolicy::default(),
-    };
-
-    let report = zcash_voting::share_tracking::track_pending_shares(&db, &params, &client, &cancel)
-        .await
-        .map_err(view)?;
-
-    Ok(ApiShareTrackingReport {
-        confirmed: report
-            .confirmed
-            .into_iter()
-            .map(ApiShareKey::from)
-            .collect(),
-        resubmitted: report
-            .resubmitted
-            .into_iter()
-            .map(|entry| ApiResubmittedShare {
-                share: entry.share.into(),
-                server_url: entry.server_url,
-            })
-            .collect(),
-        ambiguous: report
-            .ambiguous
-            .into_iter()
-            .map(|entry| ApiResubmittedShare {
-                share: entry.share.into(),
-                server_url: entry.server_url,
-            })
-            .collect(),
-        unrecoverable: report
-            .unrecoverable
-            .into_iter()
-            .map(ApiShareKey::from)
-            .collect(),
-        cancelled: report.cancelled,
-        next_delay_seconds: report.next_delay_seconds,
-    })
-}
-
-/// Checks confirmation quorum for one known share without walking the round.
-///
-/// Foreground submission completion depends only on the designated immediate
-/// share. Using the full recovery pass for that gate makes completion latency
-/// scale with every proposal's delayed shares. This focused check polls at most
-/// four configured helpers concurrently, persists confirmation after two
-/// distinct helpers agree (or the sole helper in a one-helper fleet), and does
-/// not resubmit or otherwise mutate unrelated shares.
-pub async fn confirm_share_with_helpers(
-    pass_handle: &VotingShareTrackingPassHandle,
-    configured_helper_urls: Vec<String>,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-    now_seconds: u64,
-) -> Result<bool, VotingErrorView> {
-    let db = helper_delivery_db(
-        &pass_handle.db_path,
-        &pass_handle.account_uuid,
-        &pass_handle.database,
-    )
-    .map_err(view)?;
-    let client = helper_client(&pass_handle.health);
-    let cancel = || pass_handle.is_cancelled();
-    let report = zcash_voting::share_tracking::confirm_pending_share(
-        &db,
-        &zcash_voting::share_tracking::ShareConfirmationParams {
-            round_id: &pass_handle.round_id,
-            share: zcash_voting::share_tracking::ShareKey {
-                bundle_index,
-                proposal_id,
-                share_index,
-            },
-            configured_server_urls: &configured_helper_urls,
-            now_seconds,
-        },
-        &client,
-        &cancel,
-    )
-    .await
-    .map_err(view)?;
-
-    Ok(report.confirmed)
-}
-
-/// Seconds until this round's next helper-share tracking pass should run.
-///
-/// `None` means the round has no unconfirmed shares left, which is also the
-/// signal to stop background tracking. The SDK reads the durable share rows
-/// itself, so they never cross this boundary.
-///
-/// The SDK's own `next_tracking_delay_for_round` returns the soonest *future*
-/// check time, so a share that is already past its grace boundary waits behind
-/// an unrelated future one. Vizor polls the ready share instead, and lifts the
-/// future-check cap: that cap exists for wallets using the tracking pass as a
-/// general heartbeat, and Vizor refreshes round state separately, so it would
-/// only cause redundant SQLite and helper passes.
-pub fn next_share_tracking_delay_seconds(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    now_seconds: u64,
-) -> Result<Option<u64>, VotingErrorView> {
-    catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        let shares = db.get_unconfirmed_delegations(&round_id)?;
-        let mut policy = zcash_voting::share::ShareTimingPolicy::default();
-        let ready_delay = shares
-            .iter()
-            .any(|share| {
-                zcash_voting::share::policy::is_share_ready_for_status_check(
-                    share,
-                    now_seconds,
-                    policy,
-                )
-            })
-            .then_some(
-                policy
-                    .ready_poll_interval_seconds
-                    .max(policy.min_tracking_delay_seconds),
-            );
-        policy.future_check_max_delay_seconds = u64::MAX;
-        let next_delay =
-            zcash_voting::share::policy::next_tracking_delay_seconds(&shares, now_seconds, policy);
-        Ok(match (ready_delay, next_delay) {
-            (Some(ready), Some(next)) => Some(ready.min(next)),
-            (Some(ready), None) => Some(ready),
-            (None, next) => next,
-        })
-    })
 }
 
 /// Generate opaque voting hotkey bytes for a local voting account.
@@ -1583,6 +1200,8 @@ pub fn resolve_voting_config_from_attempts(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
 
     /// Transport that answers `/root` from a script, so the probe path can be
@@ -1653,7 +1272,11 @@ mod tests {
             })
         }
 
-        fn post<'a>(&'a self, _url: &'a str, _body: Vec<u8>) -> zcash_voting::pir::TransportFuture<'a> {
+        fn post<'a>(
+            &'a self,
+            _url: &'a str,
+            _body: Vec<u8>,
+        ) -> zcash_voting::pir::TransportFuture<'a> {
             unimplemented!("PIR snapshot probing only issues GETs")
         }
     }
@@ -1662,7 +1285,10 @@ mod tests {
         PirProbeAnswer::Body(200, format!("{{\"height\": {height}}}"))
     }
 
-    async fn probe(answer: PirProbeAnswer, expected_snapshot_height: u64) -> (
+    async fn probe(
+        answer: PirProbeAnswer,
+        expected_snapshot_height: u64,
+    ) -> (
         zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic,
         ScriptedPirTransport,
     ) {
@@ -1718,7 +1344,12 @@ mod tests {
         .await;
         assert_eq!(missing.status, Status::MissingHeight);
 
-        for body in [r#"{"height": "twelve"}"#, r#"{"height": -1}"#, "not json", "[]"] {
+        for body in [
+            r#"{"height": "twelve"}"#,
+            r#"{"height": -1}"#,
+            "not json",
+            "[]",
+        ] {
             let (diagnostic, _) = probe(PirProbeAnswer::Body(200, body.to_string()), 123).await;
             assert_eq!(diagnostic.status, Status::MalformedJson, "{body}");
         }
@@ -1743,8 +1374,7 @@ mod tests {
                 root_body("123"),
             ],
         )]);
-        let diagnostic =
-            probe_pir_snapshot_endpoint(&transport, "https://pir.example", 123).await;
+        let diagnostic = probe_pir_snapshot_endpoint(&transport, "https://pir.example", 123).await;
         assert!(diagnostic.matched_at_height(123));
         assert_eq!(transport.call_count("https://pir.example/root"), 2);
 
@@ -1879,11 +1509,14 @@ mod tests {
             123,
             Some(120),
         );
-        let api = ApiPirSnapshotEndpointDiagnostic::from(core.clone());
-        assert_eq!(api.endpoint, core.endpoint);
-        assert!(matches!(api.status, ApiPirSnapshotEndpointStatus::Behind));
-        assert_eq!(api.reported_height, Some(120));
-        assert_eq!(api.http_status_code, None);
+        let view = zcash_voting::wire::PirSnapshotEndpointDiagnosticView::from(core.clone());
+        assert_eq!(view.endpoint, core.endpoint);
+        assert!(matches!(
+            view.status,
+            zcash_voting::wire::PirSnapshotEndpointStatusView::Behind
+        ));
+        assert_eq!(view.reported_height, Some(120));
+        assert_eq!(view.http_status_code, None);
     }
     use crate::wallet::voting::test_support::{
         test_api_round_params, test_note_info, ROUND_ID, TEST_ACCOUNT_UUID,
@@ -2040,51 +1673,81 @@ mod tests {
         warm_voting_proving_caches();
     }
 
+    /// Opens a session over `db_path` the way Dart does for one activity.
+    fn test_session(
+        db_path: &std::path::Path,
+        account_uuid: &str,
+    ) -> super::super::voting_session::VotingRoundSession {
+        test_session_with_helpers(db_path, account_uuid, Vec::new())
+    }
+
+    fn test_session_with_helpers(
+        db_path: &std::path::Path,
+        account_uuid: &str,
+        helper_urls: Vec<String>,
+    ) -> super::super::voting_session::VotingRoundSession {
+        super::super::voting_session::open_voting_round_session(
+            test_round_context(db_path, "regtest", account_uuid),
+            super::super::voting_session::ApiRoundSessionBinding {
+                chain_endpoints: vec!["http://127.0.0.1:1".to_string()],
+                configured_helper_urls: helper_urls,
+                vote_tree_node_urls: Vec::new(),
+                pir_server_urls: Vec::new(),
+                proposals: vec![
+                    super::super::voting_session::ApiProposalRosterEntry {
+                        proposal_id: 7,
+                        num_options: 2,
+                    },
+                    super::super::voting_session::ApiProposalRosterEntry {
+                        proposal_id: 8,
+                        num_options: 2,
+                    },
+                ],
+                ceremony_start_seconds: None,
+                vote_end_time_seconds: None,
+                max_proof_concurrency: 3,
+            },
+            None,
+            1,
+        )
+        .unwrap()
+    }
+
     #[test]
-    fn share_tracking_cancellation_is_scoped_and_bound_before_async_start() {
-        let first_context = create_voting_helper_delivery_context(
-            "db-1".to_string(),
-            "account-1".to_string(),
-            "round-1".to_string(),
-        );
-        let second_context = create_voting_helper_delivery_context(
-            "db-2".to_string(),
-            "account-2".to_string(),
-            "round-2".to_string(),
-        );
-        let first = begin_share_tracking_pass(&first_context);
-        let second = begin_share_tracking_pass(&second_context);
+    fn cancelling_one_session_leaves_another_running() {
+        // Background tracking and a foreground cast run on separate sessions
+        // for the same round, so a destructive drain that stops tracking must
+        // not abort the cast. Session-per-activity is what gives that; there
+        // is no second cancellation handle any more.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first_path = temp_dir.path().join("first.sqlite");
+        let second_path = temp_dir.path().join("second.sqlite");
+        let first = test_session(&first_path, "account-1");
+        let second = test_session(&second_path, "account-2");
 
         first.cancel();
 
         assert!(first.is_cancelled());
         assert!(!second.is_cancelled());
-        assert_eq!(first.account_uuid, "account-1");
-        assert_eq!(first.round_id, "round-1");
-        assert_eq!(second.account_uuid, "account-2");
-        assert_eq!(second.round_id, "round-2");
     }
 
     #[test]
-    fn helper_health_is_shared_within_a_context_and_isolated_between_contexts() {
-        let first_context = create_voting_helper_delivery_context(
-            "db-1".to_string(),
-            "account-1".to_string(),
-            "round-1".to_string(),
-        );
-        let second_context = create_voting_helper_delivery_context(
-            "db-2".to_string(),
-            "account-2".to_string(),
-            "round-2".to_string(),
-        );
+    fn helper_health_is_shared_within_a_session_and_isolated_between_sessions() {
+        // Health scores are ordering hints for one account and round. Initial
+        // delivery and the tracking that follows now run on one session, so a
+        // helper that failed during delivery is still deprioritised during
+        // tracking instead of being relearned.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first_path = temp_dir.path().join("first.sqlite");
+        let second_path = temp_dir.path().join("second.sqlite");
+        let first = test_session(&first_path, "account-1");
+        let second = test_session(&second_path, "account-2");
         let helper_url = "https://helper.example";
 
-        first_context.health.record_failure(helper_url, 100);
-        let first_handle = begin_share_tracking_pass(&first_context);
-        let second_handle = begin_share_tracking_pass(&second_context);
+        first.record_helper_failure_for_test(helper_url, 100);
 
-        assert_eq!(first_handle.health.failure_count(helper_url), 1);
-        assert_eq!(second_handle.health.failure_count(helper_url), 0);
+        assert_eq!(first.helper_failure_count_for_test(helper_url), 1);
+        assert_eq!(second.helper_failure_count_for_test(helper_url), 0);
     }
 
     #[tokio::test]
@@ -2129,22 +1792,12 @@ mod tests {
         .unwrap();
         drop(db);
 
-        let context = create_voting_helper_delivery_context(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-        );
-        let handle = begin_share_tracking_pass(&context);
-        assert!(confirm_share_with_helpers(
-            &handle,
+        let session = test_session_with_helpers(
+            &db_path,
+            TEST_ACCOUNT_UUID,
             vec![first_helper, second_helper],
-            0,
-            7,
-            0,
-            100,
-        )
-        .await
-        .unwrap());
+        );
+        assert!(session.confirm_immediate_share(0, 7, 0).await.unwrap());
 
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
         assert!(zcash_voting::storage::queries::share_is_confirmed(
@@ -2156,15 +1809,18 @@ mod tests {
             0,
         )
         .unwrap());
-        assert!(!zcash_voting::storage::queries::share_is_confirmed(
-            &db.conn(),
-            ROUND_ID,
-            TEST_ACCOUNT_UUID,
-            0,
-            8,
-            0,
-        )
-        .unwrap());
+        assert!(
+            !zcash_voting::storage::queries::share_is_confirmed(
+                &db.conn(),
+                ROUND_ID,
+                TEST_ACCOUNT_UUID,
+                0,
+                8,
+                0,
+            )
+            .unwrap(),
+            "a focused confirmation must not walk the round's other shares",
+        );
     }
 
     #[test]
@@ -2375,33 +2031,6 @@ mod tests {
                 .decode(wire["vote_round_id"].as_str().unwrap())
                 .unwrap(),
             vec![0, 1, 2, 3]
-        );
-    }
-
-    #[test]
-    fn next_share_tracking_delay_reports_nothing_to_track_for_a_fresh_round() {
-        // Delay policy itself is the SDK's; this checks the wrapper opens the
-        // round's sidecar and reports "stop tracking" when no share is pending.
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(
-            zcash_voting::Network::Regtest,
-            &test_api_round_params(),
-            None,
-        )
-        .unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-
-        assert_eq!(
-            next_share_tracking_delay_seconds(
-                db_path.to_str().unwrap().to_string(),
-                TEST_ACCOUNT_UUID.to_string(),
-                ROUND_ID.to_string(),
-                130,
-            )
-            .unwrap(),
-            None
         );
     }
 

@@ -626,7 +626,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             generation: generation,
             draftVotes: draftVotes,
             intentProposalIds: intentProposalIds,
-              pendingRecoveryWithoutDraft:
+            pendingRecoveryWithoutDraft:
                 canRecoverWithoutDraft || canPollDelegationWithoutDraft,
           );
           await _submitAfterKeystoneSignatures(
@@ -641,7 +641,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             generation: generation,
             draftVotes: draftVotes,
             intentProposalIds: intentProposalIds,
-              initialSession: activeSession,
+            initialSession: activeSession,
           );
         }
         return;
@@ -843,7 +843,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
     _setRunning(key: key, generation: generation);
     final beforeDelegation = _sessionForJob(key);
-    if (_sessionNeedsDelegationSubmission(beforeDelegation)) {
+    if (_sessionNeedsDelegation(beforeDelegation)) {
       await sessionNotifier.delegatePendingBundlesWithKeystoneSignatures();
       if (!_isCurrentJob(key: key, generation: generation)) return;
       final afterDelegation = _sessionForJob(key);
@@ -954,11 +954,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       return;
     }
     if (done != null && _hasRemainingVoteOrShareWork(done)) {
-      // Shares with no definite placement are still foreground recovery work.
-      // Once all shares are placed, finalization depends only on the designated
-      // immediate share and must not wait for a round-wide tracking pass.
-      await sessionNotifier.runShareTrackingPass();
+      // Shares with no definite placement are still recovery work, but the SDK
+      // drives it now: starting the run returns immediately and this poll sees
+      // placement progress on its next tick. Awaiting instead would block the
+      // job for as long as the round has shares to track.
+      await sessionNotifier.startShareTracking();
     } else {
+      // Once all shares are placed, finalization depends only on the
+      // designated immediate share, which answers without waiting for the
+      // tracking cadence.
       await sessionNotifier.refreshImmediateShareConfirmation();
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -1138,7 +1142,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     // status screen on "Finalizing submission" for accepted-but-unrevealed
     // shares. The registry, not the job guard, is the drain barrier.
     unawaited(
-      sessionNotifier.runShareTrackingPass().catchError((
+      sessionNotifier.startShareTracking().catchError((
         Object error,
         StackTrace stack,
       ) {
@@ -1438,41 +1442,29 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (roundPlan == null || !roundPlan.hasInFlightDelegation) return false;
     // A submission the chain-submission lifecycle owns — submitting, tracking,
     // or recovering — already carries its signature, so it is not signing work
-    // standing between this round and a poll. Counting it as unsigned is what
-    // left a rejected delegation unable to be retried without re-picking every
-    // vote, because the job refuses a draftless submit unless polling is
-    // possible.
-    final awaitingSignature = delegationBundleIndexesNeedingSigning(roundPlan)
-        .where((bundleIndex) => !_bundleSubmissionIsManaged(roundPlan, bundleIndex));
-    return awaitingSignature.isEmpty;
+    // standing between this round and a poll. The planner says so itself: a
+    // bundle in that state is planned as an advance, never as a delegation to
+    // produce, so it is absent here. This used to be filtered out by phase in
+    // Dart, which is what left a rejected delegation unable to be retried
+    // without re-picking every vote when the filter and the planner disagreed.
+    return delegationBundleIndexesNeedingSigning(roundPlan).isEmpty;
   }
 
-  bool _bundleSubmissionIsManaged(
-    rust_wire.RoundPlanView roundPlan,
-    int bundleIndex,
-  ) {
-    for (final status in roundPlan.delegationStatuses) {
-      if (status.bundleIndex == bundleIndex) {
-        return status.phase == rust_wire.WorkflowPhaseView.submissionManaged;
-      }
-    }
-    return false;
-  }
-
+  /// Whether this session still owes delegation work.
+  ///
+  /// A bundle the plan lists any delegation step for — including one already
+  /// on the wire, which is advanced to its chain outcome regardless of the
+  /// draft — or a round whose bundles have not been set up yet.
+  ///
+  /// [_canPollDelegationWithoutDraft] is deliberately not consulted here: it
+  /// requires an in-flight delegation, which already makes
+  /// [_planNeedsDelegation] true, so it could only ever agree. It answers a
+  /// different question — whether work may proceed with no ballot choices —
+  /// and is asked where that is what the caller needs to know.
   bool _sessionNeedsDelegation(VotingSessionState? session) {
-    if (session == null) return false;
-    final roundPlan = session.roundPlan;
-    if (_planNeedsDelegation(roundPlan)) return true;
-    if (roundPlan != null && roundPlanNeedsDraftSetup(roundPlan)) return true;
-    return roundPlan != null && _canPollDelegationWithoutDraft(session);
-  }
-
-  bool _sessionNeedsDelegationSubmission(VotingSessionState? session) {
-    if (session == null) return false;
-    final roundPlan = session.roundPlan;
-    if (_planNeedsDelegation(roundPlan)) return true;
-    if (_canPollDelegationWithoutDraft(session)) return true;
-    return roundPlan != null && roundPlanNeedsDraftSetup(roundPlan);
+    final roundPlan = session?.roundPlan;
+    return _planNeedsDelegation(roundPlan) ||
+        roundPlanNeedsDraftSetup(roundPlan);
   }
 
   bool _sessionNeedsDelegationSigning(VotingSessionState session) {
@@ -1489,6 +1481,11 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _planNeedsDelegation(rust_wire.RoundPlanView? roundPlan) {
     if (roundPlan == null) return false;
+    // Both flags are the planner's own summary, so this is reading its answer
+    // rather than restating its rules. `delegationBundlesNeedingWork` covers
+    // the same three step kinds and is the per-bundle form, but a round-level
+    // question is better asked at the round level: the bundle list is for code
+    // that acts on a particular bundle.
     return roundPlan.needsDelegationSigning || roundPlan.hasInFlightDelegation;
   }
 

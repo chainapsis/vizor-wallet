@@ -5,20 +5,18 @@ import 'voting_rust_exception.dart';
 
 /// Probe outcome for one configured PIR endpoint.
 ///
-/// Anything other than [matched] excludes the endpoint from selection. The
-/// caller still receives diagnostics so the UI can explain whether endpoints
-/// were stale, ahead of the expected snapshot, malformed, or unreachable.
-enum PirSnapshotEndpointStatus {
-  matched,
-  behind,
-  ahead,
-  missingHeight,
-  malformedJson,
-  nonSuccessStatus,
-  timeoutOrNetworkError,
-}
+/// The SDK's own classification, not a copy of it. Anything other than
+/// [PirSnapshotEndpointStatus.matched] excludes the endpoint from selection;
+/// callers still receive every diagnostic so the UI can explain whether
+/// endpoints were stale, ahead of the expected snapshot, malformed, or
+/// unreachable.
+typedef PirSnapshotEndpointStatus = rust_voting.PirSnapshotEndpointStatusView;
 
-/// Normalized probe outcome for one endpoint.
+/// One endpoint's probe result, with its address as a [Uri].
+///
+/// The only thing this adds over the SDK's diagnostic is the endpoint's type:
+/// the wire carries a `String`, and every caller here maps it back through
+/// [VotingEndpointMapper], which works in `Uri`.
 class PirSnapshotEndpointDiagnostic {
   final Uri endpoint;
   final PirSnapshotEndpointStatus status;
@@ -149,37 +147,16 @@ class PirSnapshotResolver {
   }
 
   static PirSnapshotEndpointDiagnostic _diagnosticFrom(
-    rust_api.ApiPirSnapshotEndpointDiagnostic diagnostic,
+    rust_voting.PirSnapshotEndpointDiagnosticView diagnostic,
     Uri endpoint,
   ) {
     return PirSnapshotEndpointDiagnostic(
       endpoint: endpoint,
-      status: _statusFrom(diagnostic.status),
+      status: diagnostic.status,
       reportedHeight: diagnostic.reportedHeight?.toInt(),
       httpStatusCode: diagnostic.httpStatusCode,
       message: diagnostic.message,
     );
-  }
-
-  static PirSnapshotEndpointStatus _statusFrom(
-    rust_api.ApiPirSnapshotEndpointStatus status,
-  ) {
-    return switch (status) {
-      rust_api.ApiPirSnapshotEndpointStatus.matched =>
-        PirSnapshotEndpointStatus.matched,
-      rust_api.ApiPirSnapshotEndpointStatus.behind =>
-        PirSnapshotEndpointStatus.behind,
-      rust_api.ApiPirSnapshotEndpointStatus.ahead =>
-        PirSnapshotEndpointStatus.ahead,
-      rust_api.ApiPirSnapshotEndpointStatus.missingHeight =>
-        PirSnapshotEndpointStatus.missingHeight,
-      rust_api.ApiPirSnapshotEndpointStatus.malformedJson =>
-        PirSnapshotEndpointStatus.malformedJson,
-      rust_api.ApiPirSnapshotEndpointStatus.nonSuccessStatus =>
-        PirSnapshotEndpointStatus.nonSuccessStatus,
-      rust_api.ApiPirSnapshotEndpointStatus.timeoutOrNetworkError =>
-        PirSnapshotEndpointStatus.timeoutOrNetworkError,
-    };
   }
 }
 

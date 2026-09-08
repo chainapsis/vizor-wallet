@@ -118,7 +118,7 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "3e418431ba2eb33a0333d4fd6cc147fc0208951c"
+rev = "2aedde466b59bc7114d7fac60f30db4924604787"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -171,13 +171,13 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "
 
 [dev-dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "3e418431ba2eb33a0333d4fd6cc147fc0208951c"
+rev = "2aedde466b59bc7114d7fac60f30db4924604787"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
 version = "=0.6.0"
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "3e418431ba2eb33a0333d4fd6cc147fc0208951c"
+rev = "2aedde466b59bc7114d7fac60f30db4924604787"
 default-features = false
 features = ["zakura"]
 

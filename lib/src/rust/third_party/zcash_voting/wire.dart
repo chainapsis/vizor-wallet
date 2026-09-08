@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `RoundStepOutcomeView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
 
 /// How a confirmation was established.
 enum ChainConfirmationSourceView { hash, tree }
@@ -390,7 +390,92 @@ class NextStepView {
           shareIndex == other.shareIndex;
 }
 
-/// A terminal chain outcome bound to the step that produced it.
+/// One endpoint's probe result.
+///
+/// The full set is part of a resolution, not debug output: a caller builds its
+/// failover list from the endpoints that matched, and explains a failed
+/// resolution from the heights the others reported.
+class PirSnapshotEndpointDiagnosticView {
+  final String endpoint;
+  final PirSnapshotEndpointStatusView status;
+  final BigInt? reportedHeight;
+  final int? httpStatusCode;
+  final String? message;
+
+  const PirSnapshotEndpointDiagnosticView({
+    required this.endpoint,
+    required this.status,
+    this.reportedHeight,
+    this.httpStatusCode,
+    this.message,
+  });
+
+  @override
+  int get hashCode =>
+      endpoint.hashCode ^
+      status.hashCode ^
+      reportedHeight.hashCode ^
+      httpStatusCode.hashCode ^
+      message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PirSnapshotEndpointDiagnosticView &&
+          runtimeType == other.runtimeType &&
+          endpoint == other.endpoint &&
+          status == other.status &&
+          reportedHeight == other.reportedHeight &&
+          httpStatusCode == other.httpStatusCode &&
+          message == other.message;
+}
+
+/// How one PIR endpoint answered a snapshot-height probe.
+enum PirSnapshotEndpointStatusView {
+  /// Serving exactly the round's snapshot height.
+  matched,
+
+  /// Serving an older height; it has not caught up yet.
+  behind,
+
+  /// Serving a newer height; the round's snapshot is gone from it.
+  ahead,
+
+  /// Answered without a height field.
+  missingHeight,
+
+  /// Answered with a body that is not the expected JSON.
+  malformedJson,
+
+  /// Answered with a non-success HTTP status.
+  nonSuccessStatus,
+
+  /// Did not answer within the probe deadline.
+  timeoutOrNetworkError,
+}
+
+/// One share that reached a new helper during recovery.
+class ResubmittedShareView {
+  final ShareKeyView share;
+  final String serverUrl;
+
+  const ResubmittedShareView({required this.share, required this.serverUrl});
+
+  @override
+  int get hashCode => share.hashCode ^ serverUrl.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ResubmittedShareView &&
+          runtimeType == other.runtimeType &&
+          share == other.share &&
+          serverUrl == other.serverUrl;
+}
+
+/// One chain outcome the run observed, bound to the step that produced it.
+///
+/// Not only terminal ones: a submission still tracking appears here too.
 class RoundChainOutcomeView {
   final NextStepView step;
   final ChainSubmissionOutcomeView outcome;
@@ -445,7 +530,9 @@ class RoundDriveEventView {
   final RoundStepFailureKindView? failureKind;
   final String? message;
 
-  /// `AwaitingRepoll`: how long the driver waits before polling again.
+  /// `AwaitingRepoll`: how long the driver waits before trying the step
+  /// again. Paces chain tracking and unfinished helper work alike, so read
+  /// `step` rather than labelling the wait as chain work.
   final double? delaySeconds;
 
   /// `BundleSkipped`: the bundle isolated for the rest of the run.
@@ -527,6 +614,23 @@ class RoundPlanView {
   /// to learn whether the next pass also needs signing material.
   final bool hasInFlightDelegation;
 
+  /// Bundles this plan owes any delegation step for, ascending.
+  ///
+  /// The per-bundle form of the two flags above. A host that shows
+  /// delegation progress per bundle reads this instead of filtering
+  /// `delegation_statuses` against rules the planner already applied.
+  final Uint32List delegationBundlesNeedingWork;
+
+  /// Bundles whose delegation still needs the voter's signing material,
+  /// ascending.
+  ///
+  /// The per-bundle form of `needs_delegation_signing`, and a subset of
+  /// `delegation_bundles_needing_work`. A delegation in flight is not signed
+  /// and done — advancing one re-signs its locked generation — so it belongs
+  /// here too. The exclusion is an imported delegation, which is already
+  /// broadcast and never asks the voter for a signer.
+  final Uint32List delegationBundlesNeedingSigning;
+
   /// True when vote or helper-share submission work remains to drive.
   final bool needsVotePolling;
 
@@ -567,6 +671,8 @@ class RoundPlanView {
     required this.needsBundleSetup,
     required this.needsDelegationSigning,
     required this.hasInFlightDelegation,
+    required this.delegationBundlesNeedingWork,
+    required this.delegationBundlesNeedingSigning,
     required this.needsVotePolling,
     required this.hasRemainingVoteOrShareWork,
     required this.hasRecoverableVoteOrShareWork,
@@ -597,6 +703,8 @@ class RoundPlanView {
       needsBundleSetup.hashCode ^
       needsDelegationSigning.hashCode ^
       hasInFlightDelegation.hashCode ^
+      delegationBundlesNeedingWork.hashCode ^
+      delegationBundlesNeedingSigning.hashCode ^
       needsVotePolling.hashCode ^
       hasRemainingVoteOrShareWork.hashCode ^
       hasRecoverableVoteOrShareWork.hashCode ^
@@ -629,6 +737,9 @@ class RoundPlanView {
           needsBundleSetup == other.needsBundleSetup &&
           needsDelegationSigning == other.needsDelegationSigning &&
           hasInFlightDelegation == other.hasInFlightDelegation &&
+          delegationBundlesNeedingWork == other.delegationBundlesNeedingWork &&
+          delegationBundlesNeedingSigning ==
+              other.delegationBundlesNeedingSigning &&
           needsVotePolling == other.needsVotePolling &&
           hasRemainingVoteOrShareWork == other.hasRemainingVoteOrShareWork &&
           hasRecoverableVoteOrShareWork ==
@@ -676,7 +787,7 @@ class RoundQuiescenceView {
   /// `NeedsDelegationSignatures`: every bundle still awaiting a signature.
   final Uint32List bundles;
 
-  /// `BackgroundShareWorkOnly`: the shares the host's timer finishes.
+  /// `BackgroundShareWorkOnly`: shares requiring the host's tracking timer.
   final List<ShareKeyView> shares;
 
   /// `ChainTerminal` and `ChainRecoveryStalled`: the step and its outcome.
@@ -734,11 +845,27 @@ class RoundRunReportView {
   /// Failures in dispatch order. A non-empty list does not imply a
   /// `Failures` quiescence: a run can isolate one bundle and finish the rest.
   final List<RoundStepFailureRecordView> failures;
+
+  /// Bundles a failure isolated for the rest of the run. Empty under
+  /// `StopRound`, which stops instead of suppressing.
   final Uint32List skippedBundles;
+
+  /// Every chain outcome the run observed, terminal or not.
   final List<RoundChainOutcomeView> chainOutcomes;
   final List<ShareBatchDeliveryReportView> shareDeliveries;
 
-  /// Delegations the run signed, in the order their steps completed.
+  /// Delegation bundles the run signed, in the order it produced them.
+  ///
+  /// Signed, not necessarily submitted: a step cancelled between signing and
+  /// building its chain request returns the bundle it produced, and a step
+  /// that failed at dispatch carries one too. The payload's own `status` is
+  /// always `ready_for_submission` and is not a submission state, so a host
+  /// that reads it as one will resubmit a bundle already on the chain.
+  ///
+  /// What happened to bundle `n` is in `plan`: its `delegation_statuses`
+  /// entry carries the durable phase, the transaction hash, and whether the
+  /// submission is terminal. These are projected so a host reading only the
+  /// report sees the artifacts a host watching every step would.
   final List<SignedDelegationPayloadView> delegations;
 
   const RoundRunReportView({
@@ -808,7 +935,11 @@ enum RoundStepFailureKindView {
 class RoundStepFailureRecordView {
   final NextStepView? step;
 
-  /// The bundle skipped for the rest of the run, when the failure named one.
+  /// The bundle this failure is attributed to, when it belongs to one.
+  ///
+  /// Attribution, not isolation: `StopRound` ends the run without
+  /// suppressing anything, so `skipped_bundles` is the authoritative list of
+  /// what was skipped.
   final int? bundleIndex;
   final RoundStepFailureView failure;
 
@@ -844,6 +975,10 @@ class RoundStepFailureView {
   /// payloads from SDKs that predate the field.
   final List<ShareBatchDeliveryReportView> shareDeliveries;
 
+  /// The delegation signed before the failure, for the same reason as
+  /// `share_deliveries`: the bundle is durable and the step produced it.
+  final SignedDelegationPayloadView? delegation;
+
   const RoundStepFailureView({
     required this.kind,
     this.step,
@@ -852,6 +987,7 @@ class RoundStepFailureView {
     required this.message,
     this.plan,
     required this.shareDeliveries,
+    this.delegation,
   });
 
   @override
@@ -862,7 +998,8 @@ class RoundStepFailureView {
       chainOutcome.hashCode ^
       message.hashCode ^
       plan.hashCode ^
-      shareDeliveries.hashCode;
+      shareDeliveries.hashCode ^
+      delegation.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -875,7 +1012,8 @@ class RoundStepFailureView {
           chainOutcome == other.chainOutcome &&
           message == other.message &&
           plan == other.plan &&
-          shareDeliveries == other.shareDeliveries;
+          shareDeliveries == other.shareDeliveries &&
+          delegation == other.delegation;
 }
 
 /// Discriminator of a [`RoundStepProgressView`].
@@ -1091,6 +1229,210 @@ class ShareKeyView {
           bundleIndex == other.bundleIndex &&
           proposalId == other.proposalId &&
           shareIndex == other.shareIndex;
+}
+
+/// Discriminator of a [`ShareTrackingEventView`].
+enum ShareTrackingEventKind {
+  passStarted,
+  passFinished,
+  passFailed,
+  awaitingNextPass,
+}
+
+/// One observation from a tracking run, flattened for host bindings.
+///
+/// Not `Eq`, because a delay is fractional seconds.
+class ShareTrackingEventView {
+  final ShareTrackingEventKind kind;
+
+  /// The pass this belongs to, counting from 1. Absent on
+  /// `AwaitingNextPass`, which sits between two passes.
+  final int? pass;
+
+  /// `PassFinished`: what that pass did. `PassFailed`: what it had already
+  /// committed before it stopped, whose `unrecoverable` and
+  /// `next_delay_seconds` are meaningless because the walk did not finish.
+  final ShareTrackingPassReportView? report;
+
+  /// `PassFailed`: why.
+  final String? message;
+
+  /// `AwaitingNextPass`: how long the driver waits before the next one.
+  /// Fractional, because a policy may set a subsecond retry.
+  final double? delaySeconds;
+
+  const ShareTrackingEventView({
+    required this.kind,
+    this.pass,
+    this.report,
+    this.message,
+    this.delaySeconds,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      pass.hashCode ^
+      report.hashCode ^
+      message.hashCode ^
+      delaySeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareTrackingEventView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          pass == other.pass &&
+          report == other.report &&
+          message == other.message &&
+          delaySeconds == other.delaySeconds;
+}
+
+/// What one helper-share tracking pass did.
+class ShareTrackingPassReportView {
+  /// Unconfirmed shares the round held when the pass began. Zero means the
+  /// round owed nothing at that moment, which the effect lists alone cannot
+  /// establish. Absent when the pass failed before it could look, which is
+  /// not the same as zero.
+  final int? unconfirmedAtEntry;
+  final List<ShareKeyView> confirmed;
+  final List<ResubmittedShareView> resubmitted;
+  final List<ResubmittedShareView> ambiguous;
+
+  /// Shares skipped because their recovery material is missing. Retrying
+  /// cannot repair these, but a helper that already accepted one may still
+  /// confirm it, so a host keeps polling.
+  final List<ShareKeyView> unrecoverable;
+  final bool cancelled;
+
+  /// Seconds until the next pass, absent when nothing is pending.
+  final BigInt? nextDelaySeconds;
+
+  const ShareTrackingPassReportView({
+    this.unconfirmedAtEntry,
+    required this.confirmed,
+    required this.resubmitted,
+    required this.ambiguous,
+    required this.unrecoverable,
+    required this.cancelled,
+    this.nextDelaySeconds,
+  });
+
+  static Future<ShareTrackingPassReportView> default_() =>
+      RustLib.instance.api.zcashVotingWireShareTrackingPassReportViewDefault();
+
+  @override
+  int get hashCode =>
+      unconfirmedAtEntry.hashCode ^
+      confirmed.hashCode ^
+      resubmitted.hashCode ^
+      ambiguous.hashCode ^
+      unrecoverable.hashCode ^
+      cancelled.hashCode ^
+      nextDelaySeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareTrackingPassReportView &&
+          runtimeType == other.runtimeType &&
+          unconfirmedAtEntry == other.unconfirmedAtEntry &&
+          confirmed == other.confirmed &&
+          resubmitted == other.resubmitted &&
+          ambiguous == other.ambiguous &&
+          unrecoverable == other.unrecoverable &&
+          cancelled == other.cancelled &&
+          nextDelaySeconds == other.nextDelaySeconds;
+}
+
+/// Discriminator of a [`ShareTrackingQuiescenceView`].
+enum ShareTrackingQuiescenceKind {
+  nothingToTrack,
+  allConfirmed,
+  voteEndReached,
+  cancelled,
+  alreadyDriving,
+  failing,
+  passBudgetExhausted,
+}
+
+/// Why a tracking run stopped, flattened for host bindings.
+class ShareTrackingQuiescenceView {
+  final ShareTrackingQuiescenceKind kind;
+
+  /// `Failing`: the consecutive failures that ended the run.
+  final List<String> messages;
+
+  /// `PassBudgetExhausted`: shares the last pass could
+  /// not repair.
+  final List<ShareKeyView> unrecoverable;
+
+  const ShareTrackingQuiescenceView({
+    required this.kind,
+    required this.messages,
+    required this.unrecoverable,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^ messages.hashCode ^ unrecoverable.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareTrackingQuiescenceView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          messages == other.messages &&
+          unrecoverable == other.unrecoverable;
+}
+
+/// Everything one tracking run did.
+class ShareTrackingRunReportView {
+  final ShareTrackingQuiescenceView quiescence;
+  final int passes;
+  final List<ShareKeyView> confirmed;
+  final List<ResubmittedShareView> resubmitted;
+  final List<ResubmittedShareView> ambiguous;
+
+  /// From the most recent pass, not accumulated: a share can stop being
+  /// unrecoverable once its material is restored.
+  final List<ShareKeyView> unrecoverable;
+  final List<String> failures;
+
+  const ShareTrackingRunReportView({
+    required this.quiescence,
+    required this.passes,
+    required this.confirmed,
+    required this.resubmitted,
+    required this.ambiguous,
+    required this.unrecoverable,
+    required this.failures,
+  });
+
+  @override
+  int get hashCode =>
+      quiescence.hashCode ^
+      passes.hashCode ^
+      confirmed.hashCode ^
+      resubmitted.hashCode ^
+      ambiguous.hashCode ^
+      unrecoverable.hashCode ^
+      failures.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShareTrackingRunReportView &&
+          runtimeType == other.runtimeType &&
+          quiescence == other.quiescence &&
+          passes == other.passes &&
+          confirmed == other.confirmed &&
+          resubmitted == other.resubmitted &&
+          ambiguous == other.ambiguous &&
+          unrecoverable == other.unrecoverable &&
+          failures == other.failures;
 }
 
 class SignedDelegationPayloadView {

@@ -12,6 +12,8 @@ import 'fake_round_recovery_state.dart';
 /// derived predicates the app now reads instead of matching step kinds.
 class _PlanWork {
   const _PlanWork({
+    required this.delegationBundlesNeedingWork,
+    required this.delegationBundlesNeedingSigning,
     required this.needsDelegationSigning,
     required this.hasInFlightDelegation,
     required this.needsVotePolling,
@@ -19,6 +21,8 @@ class _PlanWork {
     required this.hasRecoverableVoteOrShareWork,
   });
 
+  final List<int> delegationBundlesNeedingWork;
+  final List<int> delegationBundlesNeedingSigning;
   final bool needsDelegationSigning;
   final bool hasInFlightDelegation;
   final bool needsVotePolling;
@@ -28,21 +32,30 @@ class _PlanWork {
 
 _PlanWork _planWork(
   List<rust_wire.NextStepView> nextSteps,
-  bool blockingShareWork,
-) {
+  bool blockingShareWork, {
+  List<rust_wire.DelegationStatusView> delegationStatuses = const [],
+}) {
   var needsDelegationSigning = false;
   var hasInFlightDelegation = false;
   var needsVotePolling = false;
   var hasRemaining = false;
   var hasRecoverable = false;
+  // Mirrors the planner: any delegation step means the bundle owes work, and
+  // only a bundle with nothing on the chain yet needs the voter's signature.
+  final needingWork = <int>{};
+  final needingSigning = <int>{};
   for (final step in nextSteps) {
     switch (step.kind) {
       case rust_wire.NextStepKind.delegate:
         needsDelegationSigning = true;
+        needingWork.add(step.bundleIndex);
+        needingSigning.add(step.bundleIndex);
       case rust_wire.NextStepKind.advanceDelegation:
         hasInFlightDelegation = true;
+        needingWork.add(step.bundleIndex);
       case rust_wire.NextStepKind.advanceImportedDelegation:
         hasInFlightDelegation = true;
+        needingWork.add(step.bundleIndex);
       case rust_wire.NextStepKind.castVote:
       case rust_wire.NextStepKind.advanceVote:
       case rust_wire.NextStepKind.advanceVoteBatch:
@@ -55,7 +68,43 @@ _PlanWork _planWork(
         if (blockingShareWork) hasRemaining = true;
     }
   }
+  // The planner works from durable rows, so it lists a delegation step for a
+  // bundle this fake leaves stepless — one whose row exists but whose step the
+  // caller did not script. Reading the statuses too keeps the two lists
+  // describing the same round the rest of the plan describes.
+  //
+  // Which list a phase lands in follows the planner's own arms in
+  // `round_planning/classify.rs`, because these two lists are the only thing
+  // the app now reads to decide what a bundle owes:
+  //
+  //  - confirmed, or terminal: no step, so neither list;
+  //  - submitted or submission-managed: an `AdvanceDelegation`, so work but no
+  //    signature — its signature already went to the chain;
+  //  - submission-rejected: no step at all, so *neither* list. Counting it as
+  //    unsigned is what left a rejected delegation unable to be retried
+  //    without re-picking every vote;
+  //  - anything earlier (prepared, signed): a `Delegate`, so both.
+  //
+  // The last arm is an over-approximation: the planner emits `Delegate` only
+  // when the bundle also has a cast due, which a scripted plan cannot always
+  // say. A fixture that needs the narrower answer passes `delegationStatuses`
+  // explicitly. This is why round-level code reads `needsDelegationSigning`
+  // and `hasInFlightDelegation` rather than these lists.
+  for (final status in delegationStatuses) {
+    if (status.terminal ||
+        status.phase == rust_wire.WorkflowPhaseView.confirmed ||
+        status.phase == rust_wire.WorkflowPhaseView.submissionRejected) {
+      continue;
+    }
+    needingWork.add(status.bundleIndex);
+    if (status.phase != rust_wire.WorkflowPhaseView.submittedDelegation &&
+        status.phase != rust_wire.WorkflowPhaseView.submissionManaged) {
+      needingSigning.add(status.bundleIndex);
+    }
+  }
   return _PlanWork(
+    delegationBundlesNeedingWork: (needingWork.toList()..sort()),
+    delegationBundlesNeedingSigning: (needingSigning.toList()..sort()),
     needsDelegationSigning: needsDelegationSigning,
     hasInFlightDelegation: hasInFlightDelegation,
     needsVotePolling: needsVotePolling,
@@ -108,7 +157,13 @@ rust_wire.RoundPlanView apiRoundPlan({
           nextSteps.isEmpty &&
           openProposals.isNotEmpty);
 
-  final work = _planWork(nextSteps, blockingShareWork);
+  final resolvedDelegationStatuses =
+      delegationStatuses ?? _delegationStatuses(bundleCount, nextSteps);
+  final work = _planWork(
+    nextSteps,
+    blockingShareWork,
+    delegationStatuses: resolvedDelegationStatuses,
+  );
 
   return rust_wire.RoundPlanView(
     roundId: roundId,
@@ -129,6 +184,12 @@ rust_wire.RoundPlanView apiRoundPlan({
     completedVoteDisplay: completedVoteDisplay,
     needsDraftSetup: resolvedNeedsDraftSetup,
     needsBundleSetup: needsBundleSetup,
+    delegationBundlesNeedingWork: Uint32List.fromList(
+      work.delegationBundlesNeedingWork,
+    ),
+    delegationBundlesNeedingSigning: Uint32List.fromList(
+      work.delegationBundlesNeedingSigning,
+    ),
     needsDelegationSigning: work.needsDelegationSigning,
     hasInFlightDelegation: work.hasInFlightDelegation,
     needsVotePolling: work.needsVotePolling,
@@ -143,8 +204,7 @@ rust_wire.RoundPlanView apiRoundPlan({
           completedForDisplay: resolvedCompletedForDisplay,
         ),
     nextSteps: nextSteps,
-    delegationStatuses:
-        delegationStatuses ?? _delegationStatuses(bundleCount, nextSteps),
+    delegationStatuses: resolvedDelegationStatuses,
     recoveredDelegationWork: resolvedDelegationWork,
     recoveredVoteWork: resolvedVoteWork,
     openProposals: openProposals,
@@ -696,7 +756,8 @@ rust_session.ApiRoundRunEvent roundRunProgress({
 /// The single terminal event that ends every run.
 rust_session.ApiRoundRunEvent roundRunReport({
   required rust_wire.RoundPlanView plan,
-  rust_wire.RoundQuiescenceKind quiescence = rust_wire.RoundQuiescenceKind.noWorkLeft,
+  rust_wire.RoundQuiescenceKind quiescence =
+      rust_wire.RoundQuiescenceKind.noWorkLeft,
   Uint32List? openProposals,
   Uint32List? bundles,
   List<rust_wire.RoundStepFailureRecordView> failures = const [],

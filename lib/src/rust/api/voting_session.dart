@@ -11,7 +11,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'voting.dart';
 
-// These functions are ignored because they are not marked as `pub`: `delegation_inputs`, `drive`, `internal`, `invalid_input`, `pipeline`, `round_drive_policy`, `unix_now_seconds`
+// These functions are ignored because they are not marked as `pub`: `database_handle`, `delegation_inputs`, `drive`, `internal`, `invalid_input`, `pipeline`, `round_drive_policy`, `share_tracking_drive_policy`, `track`, `unix_now_seconds`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 /// Opens a session bound to `ctx`'s account and round.
@@ -27,29 +27,18 @@ import 'voting.dart';
 /// harness work, not just this signature.
 VotingRoundSession openVotingRoundSession({
   required ApiVotingRoundContext ctx,
-  required List<String> chainEndpoints,
-  required List<String> pirServerUrls,
-  required List<ApiProposalRosterEntry> proposals,
+  required ApiRoundSessionBinding binding,
   Uint8List? storedHotkeySecret,
   required BigInt operationEpoch,
 }) => RustLib.instance.api.crateApiVotingSessionOpenVotingRoundSession(
   ctx: ctx,
-  chainEndpoints: chainEndpoints,
-  pirServerUrls: pirServerUrls,
-  proposals: proposals,
+  binding: binding,
   storedHotkeySecret: storedHotkeySecret,
   operationEpoch: operationEpoch,
 );
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingRoundSession>>
 abstract class VotingRoundSession implements RustOpaqueInterface {
-  /// Cancellation handle for one helper-share tracking pass on this round.
-  ///
-  /// Tracking passes are cancelled by the destructive drain independently
-  /// of the session's own control, so a background drain never aborts a
-  /// foreground cast.
-  VotingShareTrackingPassHandle beginShareTrackingPass();
-
   /// Cancels every step in flight or queued on this session.
   void cancel();
 
@@ -68,6 +57,27 @@ abstract class VotingRoundSession implements RustOpaqueInterface {
   /// exactly those from `unrostered_intents`, so a plan-sourced list is
   /// always clearable.
   Future<RoundPlanView> clearBallotIntents({required List<int> proposalIds});
+
+  /// Re-reads whether this round's designated immediate share is confirmed.
+  ///
+  /// The one confirmation-only exception to the vote-end boundary: a helper
+  /// may have confirmed the share before the deadline while the last
+  /// tracking pass missed the transition. This never resubmits a share or
+  /// selects a new helper, so it is safe after the round has ended, and it
+  /// answers now rather than on the tracking cadence — the submission flow
+  /// gates completion on it.
+  Future<bool> confirmImmediateShare({
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+  });
+
+  /// Whether this session has been cancelled.
+  ///
+  /// Background tracking and a foreground cast run on separate sessions for
+  /// one round, so this is per-activity: cancelling the tracking session
+  /// leaves the casting session running.
+  bool isCancelled();
 
   /// Builds redacted Keystone signing requests for the given bundles.
   Future<List<KeystoneSigningRequest>> keystoneSigningRequests({
@@ -88,9 +98,21 @@ abstract class VotingRoundSession implements RustOpaqueInterface {
   /// vote-end boundary. Every other field is fixed for the run, so a helper
   /// fleet that changes mid-run needs a new call.
   Stream<ApiRoundRunEvent> runRound({
-    required ApiRoundHostContext host,
     ApiDelegationSignerInput? signer,
     ApiRoundDrivePolicy? policy,
+  });
+
+  /// Tracks this round's helper shares to confirmation, streaming events
+  /// then exactly one report.
+  ///
+  /// Background tracking opens its own session, so `cancel` stops tracking
+  /// without touching a foreground cast running on another session for the
+  /// same round. That separation used to need a second cancellation handle
+  /// and a second helper-health scope; one session per activity gives it for
+  /// free, and each session's helper health now spans both the initial
+  /// delivery it performed and the tracking that follows.
+  Stream<ApiShareTrackingRunEvent> runShareTracking({
+    ApiShareTrackingDrivePolicy? policy,
   });
 
   /// Records ballot decisions against the bound roster and re-plans.
@@ -203,11 +225,22 @@ class ApiRoundDrivePolicy {
   /// `true` keeps every other bundle running after one fails.
   final bool? skipFailedBundle;
 
+  /// `true` counts run progress against the round's selected choices
+  /// instead of only the work this run picked up, so a resumed round keeps
+  /// the total the voter already saw.
+  ///
+  /// Not the whole ballot: the SDK's `SelectedChoices` baseline excludes
+  /// skips and clearable stale choices, because those owe no vote
+  /// submission and would inflate a total the voter can never reach.
+  /// Omitted keeps the SDK's run-relative default.
+  final bool? selectedChoiceProgress;
+
   const ApiRoundDrivePolicy({
     this.pendingRepollSeconds,
     this.maxBundleConcurrency,
     this.maxDispatches,
     this.skipFailedBundle,
+    this.selectedChoiceProgress,
   });
 
   @override
@@ -215,7 +248,8 @@ class ApiRoundDrivePolicy {
       pendingRepollSeconds.hashCode ^
       maxBundleConcurrency.hashCode ^
       maxDispatches.hashCode ^
-      skipFailedBundle.hashCode;
+      skipFailedBundle.hashCode ^
+      selectedChoiceProgress.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -225,50 +259,8 @@ class ApiRoundDrivePolicy {
           pendingRepollSeconds == other.pendingRepollSeconds &&
           maxBundleConcurrency == other.maxBundleConcurrency &&
           maxDispatches == other.maxDispatches &&
-          skipFailedBundle == other.skipFailedBundle;
-}
-
-/// Host inputs that change per step call.
-class ApiRoundHostContext {
-  /// Complete current helper fleet, already mapped to transport URLs.
-  final List<String> configuredHelperUrls;
-  final BigInt nowSeconds;
-  final BigInt? ceremonyStartSeconds;
-  final BigInt? voteEndTimeSeconds;
-
-  /// Vote-tree node URLs tried in order by cast-vote steps.
-  final List<String> voteTreeNodeUrls;
-  final int maxProofConcurrency;
-
-  const ApiRoundHostContext({
-    required this.configuredHelperUrls,
-    required this.nowSeconds,
-    this.ceremonyStartSeconds,
-    this.voteEndTimeSeconds,
-    required this.voteTreeNodeUrls,
-    required this.maxProofConcurrency,
-  });
-
-  @override
-  int get hashCode =>
-      configuredHelperUrls.hashCode ^
-      nowSeconds.hashCode ^
-      ceremonyStartSeconds.hashCode ^
-      voteEndTimeSeconds.hashCode ^
-      voteTreeNodeUrls.hashCode ^
-      maxProofConcurrency.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiRoundHostContext &&
-          runtimeType == other.runtimeType &&
-          configuredHelperUrls == other.configuredHelperUrls &&
-          nowSeconds == other.nowSeconds &&
-          ceremonyStartSeconds == other.ceremonyStartSeconds &&
-          voteEndTimeSeconds == other.voteEndTimeSeconds &&
-          voteTreeNodeUrls == other.voteTreeNodeUrls &&
-          maxProofConcurrency == other.maxProofConcurrency;
+          skipFailedBundle == other.skipFailedBundle &&
+          selectedChoiceProgress == other.selectedChoiceProgress;
 }
 
 /// One observation from a round run, or its single terminal report.
@@ -301,6 +293,73 @@ class ApiRoundRunEvent {
           event == other.event &&
           report == other.report &&
           error == other.error;
+}
+
+/// Everything one session binds for its whole life.
+///
+/// These used to be passed again on every call that ran work, which made
+/// mapping a URL at one call site and not another a silent error. A session is
+/// already bound to one account, round and roster; binding its endpoints and
+/// timing beside them means a caller cannot supply a different fleet to two
+/// steps of the same round.
+///
+/// The binding is fixed once taken. A configuration change replaces the
+/// round's servers or timing, and Vizor answers that by rebuilding the
+/// session rather than mutating a live one, so there is no update path here.
+class ApiRoundSessionBinding {
+  /// Vote-chain endpoints for submissions.
+  final List<String> chainEndpoints;
+
+  /// Complete configured helper fleet, already mapped to transport URLs.
+  final List<String> configuredHelperUrls;
+
+  /// Vote-tree node URLs tried in order by cast-vote steps.
+  final List<String> voteTreeNodeUrls;
+
+  /// PIR endpoints for delegation snapshot proofs, most preferred first.
+  final List<String> pirServerUrls;
+
+  /// The round's authenticated proposal roster.
+  final List<ApiProposalRosterEntry> proposals;
+  final BigInt? ceremonyStartSeconds;
+  final BigInt? voteEndTimeSeconds;
+  final int maxProofConcurrency;
+
+  const ApiRoundSessionBinding({
+    required this.chainEndpoints,
+    required this.configuredHelperUrls,
+    required this.voteTreeNodeUrls,
+    required this.pirServerUrls,
+    required this.proposals,
+    this.ceremonyStartSeconds,
+    this.voteEndTimeSeconds,
+    required this.maxProofConcurrency,
+  });
+
+  @override
+  int get hashCode =>
+      chainEndpoints.hashCode ^
+      configuredHelperUrls.hashCode ^
+      voteTreeNodeUrls.hashCode ^
+      pirServerUrls.hashCode ^
+      proposals.hashCode ^
+      ceremonyStartSeconds.hashCode ^
+      voteEndTimeSeconds.hashCode ^
+      maxProofConcurrency.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiRoundSessionBinding &&
+          runtimeType == other.runtimeType &&
+          chainEndpoints == other.chainEndpoints &&
+          configuredHelperUrls == other.configuredHelperUrls &&
+          voteTreeNodeUrls == other.voteTreeNodeUrls &&
+          pirServerUrls == other.pirServerUrls &&
+          proposals == other.proposals &&
+          ceremonyStartSeconds == other.ceremonyStartSeconds &&
+          voteEndTimeSeconds == other.voteEndTimeSeconds &&
+          maxProofConcurrency == other.maxProofConcurrency;
 }
 
 /// A typed bridge failure carried by a result event.
@@ -379,3 +438,76 @@ class ApiRoundStepError {
 }
 
 enum ApiRoundStepEventKind { progress, result }
+
+/// How a tracking run paces itself. Omitted fields keep the SDK defaults.
+class ApiShareTrackingDrivePolicy {
+  final double? failureRetrySeconds;
+  final int? maxConsecutiveFailures;
+
+  /// Passes before the run stops with `PassBudgetExhausted`. Omitted keeps
+  /// the SDK default of no bound at all: vote end, confirmation,
+  /// cancellation and the consecutive-failure guard are what end a healthy
+  /// run, and a pass count is not a duration.
+  final int? maxPasses;
+
+  /// Longest wait for a share whose status check is still ahead. Vizor
+  /// refreshes round state on its own schedule, so it lifts the SDK's
+  /// 30-second heartbeat cap rather than waking to find nothing ready.
+  final BigInt? futureCheckMaxDelaySeconds;
+
+  const ApiShareTrackingDrivePolicy({
+    this.failureRetrySeconds,
+    this.maxConsecutiveFailures,
+    this.maxPasses,
+    this.futureCheckMaxDelaySeconds,
+  });
+
+  @override
+  int get hashCode =>
+      failureRetrySeconds.hashCode ^
+      maxConsecutiveFailures.hashCode ^
+      maxPasses.hashCode ^
+      futureCheckMaxDelaySeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareTrackingDrivePolicy &&
+          runtimeType == other.runtimeType &&
+          failureRetrySeconds == other.failureRetrySeconds &&
+          maxConsecutiveFailures == other.maxConsecutiveFailures &&
+          maxPasses == other.maxPasses &&
+          futureCheckMaxDelaySeconds == other.futureCheckMaxDelaySeconds;
+}
+
+/// One observation from a tracking run, or its single terminal report.
+///
+/// Exactly one `Result`-kind event is emitted however the run ends, carrying
+/// either the report or a bridge error.
+class ApiShareTrackingRunEvent {
+  final ApiRoundStepEventKind kind;
+  final ShareTrackingEventView? event;
+  final ShareTrackingRunReportView? report;
+  final ApiRoundStepError? error;
+
+  const ApiShareTrackingRunEvent({
+    required this.kind,
+    this.event,
+    this.report,
+    this.error,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^ event.hashCode ^ report.hashCode ^ error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareTrackingRunEvent &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          event == other.event &&
+          report == other.report &&
+          error == other.error;
+}

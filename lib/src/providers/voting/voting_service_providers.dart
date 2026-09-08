@@ -60,27 +60,21 @@ final votingApiRequestTimeoutProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 10);
 });
 
-/// Delay before retrying a failed automatic helper-share tracking pass.
+/// First delay before re-arming share tracking after a run stopped on a
+/// condition a later run could clear.
+///
+/// The SDK already retries inside a run, so reaching this means the fleet has
+/// been unreachable for a while; consecutive re-arms back off from here.
 final votingShareTrackingFailureRetryDelayProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 15);
 });
 
-/// Coalesces user-visible and lifecycle restore triggers that arrive just
-/// after the same session completed a successful full tracking pass.
-/// Scheduled boundary and retry passes bypass this freshness window.
-final votingShareTrackingTriggerFreshnessProvider = Provider<Duration>((ref) {
-  return const Duration(seconds: 5);
+/// Ceiling for that backoff, so a long outage settles into a slow retry
+/// instead of either hammering the fleet or giving up on the round.
+final votingShareTrackingMaxRetryDelayProvider = Provider<Duration>((ref) {
+  return const Duration(minutes: 10);
 });
 
-/// Lightweight round-status heartbeat while the next share boundary is far
-/// away. This does not open the voting database or contact helper servers.
-final votingShareTrackingRoundRefreshIntervalProvider = Provider<Duration>((
-  ref,
-) {
-  return const Duration(minutes: 5);
-});
-
-/// Timeout for PIR `/root` probe requests.
 /// Baseline policy for transient voting transport errors.
 final votingTransportRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
   return VotingRetryPolicy.transientHttp(
@@ -121,11 +115,8 @@ final votingApiClientProvider =
 /// Probing and selection both run in Rust, so this provider only exists as
 /// the seam tests replace.
 final votingPirResolverProvider = Provider<PirSnapshotResolver>((ref) {
-  return PirSnapshotResolver(
-    mapper: ref.watch(votingEndpointMapperProvider),
-  );
+  return PirSnapshotResolver(mapper: ref.watch(votingEndpointMapperProvider));
 });
-
 
 /// Adapter over durable Rust recovery/share-tracking state.
 final votingRecoveryServiceProvider = Provider<VotingRecoveryService>((ref) {
@@ -314,37 +305,6 @@ class AppSecureStoreVotingHotkeyStore implements VotingHotkeyStore {
   }
 }
 
-/// Account-and-round helper state shared by initial delivery and tracking.
-abstract interface class VotingHelperDeliveryContext {
-  String get dbPath;
-
-  String get accountUuid;
-
-  String get roundId;
-
-  bool get isDisposed;
-
-  void dispose();
-}
-
-/// Cancellable handle for one account-and-round helper-share tracking pass.
-///
-/// Cancellation and disposal are synchronous so a destructive drain can stop
-/// an FRB call that has been dispatched but has not started executing yet.
-abstract interface class VotingShareTrackingPassHandle {
-  String get accountUuid;
-
-  String get roundId;
-
-  bool get isCancelled;
-
-  bool get isDisposed;
-
-  void cancel();
-
-  void dispose();
-}
-
 /// SDK-owned execution of one round for one account.
 ///
 /// The SDK interprets the plan and runs each step (proving, chain episodes,
@@ -384,7 +344,6 @@ abstract interface class VotingRoundSession {
   /// this app can resolve. `host` is a template whose clock the bridge
   /// restamps per dispatch.
   Stream<rust_session.ApiRoundRunEvent> runRound({
-    required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
     rust_session.ApiRoundDrivePolicy? policy,
   });
@@ -393,7 +352,26 @@ abstract interface class VotingRoundSession {
     List<int> bundleIndices,
   );
 
-  VotingShareTrackingPassHandle beginShareTrackingPass();
+  /// Tracks this round's helper shares to confirmation, streaming events then
+  /// exactly one report.
+  ///
+  /// The SDK owns the loop and its cadence: it repeats a tracking pass on the
+  /// delay each pass computes, stops at vote end, and reports why it stopped.
+  /// Dart keeps only the conditions the SDK cannot see — app lock, account and
+  /// round identity — and stops a run through [cancel].
+  Stream<rust_session.ApiShareTrackingRunEvent> runShareTracking({
+    rust_session.ApiShareTrackingDrivePolicy? policy,
+  });
+
+  /// Re-reads whether this round's designated immediate share is confirmed.
+  ///
+  /// Answers now rather than on the tracking cadence, and never resubmits a
+  /// share or picks a new helper, so it stays safe after the round has ended.
+  Future<bool> confirmImmediateShare({
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+  });
 }
 
 /// Narrow interface over Rust voting work used by the session state machine.
@@ -401,13 +379,15 @@ abstract interface class VotingRoundSession {
 /// Keeping this boundary explicit lets tests verify sequencing, recovery skips,
 /// and progress forwarding without invoking FRB or cryptographic proof work.
 abstract interface class VotingRustApi {
-  /// Opens an SDK round session bound to the given account, round, roster,
-  /// transports, and (when votes may be cast) hotkey.
+  /// Opens a session bound to `ctx`'s account and round.
+  ///
+  /// `binding` fixes the round's endpoints, roster and timing for the
+  /// session's life, so no later call can supply a different fleet for the
+  /// same round. A configuration change replaces those values, and the app
+  /// answers it by rebuilding the session.
   VotingRoundSession openRoundSession({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> chainEndpoints,
-    required List<String> pirServerUrls,
-    required List<rust_session.ApiProposalRosterEntry> proposals,
+    required rust_session.ApiRoundSessionBinding binding,
     List<int>? storedHotkeySecret,
     required BigInt operationEpoch,
   });
@@ -532,130 +512,6 @@ abstract interface class VotingRustApi {
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
   });
-
-  /// Runs one helper confirm-or-retry pass for a round inside the crate.
-  ///
-  /// Helper polling, the two-distinct-helper confirmation quorum, overdue
-  /// resubmission, and all durable writes happen in Rust. Dart supplies timing
-  /// and cancellation only.
-  Future<rust_api.ApiShareTrackingReport> trackPendingShares({
-    required VotingShareTrackingPassHandle passHandle,
-    required List<String> configuredHelperUrls,
-    required BigInt nowSeconds,
-    BigInt? voteEndTimeSeconds,
-  });
-
-  /// Checks and persists quorum confirmation for exactly one helper share.
-  Future<bool> confirmShareWithHelpers({
-    required VotingShareTrackingPassHandle passHandle,
-    required List<String> configuredHelperUrls,
-    required int bundleIndex,
-    required int proposalId,
-    required int shareIndex,
-    required BigInt nowSeconds,
-  });
-
-  /// Creates account-and-round helper state shared by delivery and tracking.
-  VotingHelperDeliveryContext createVotingHelperDeliveryContext({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  });
-
-  /// Creates a cancellable pass handle bound to a helper delivery context.
-  VotingShareTrackingPassHandle beginShareTrackingPass({
-    required VotingHelperDeliveryContext context,
-  });
-
-  /// Seconds until this round's next share-tracking pass, or null when no
-  /// share is left unconfirmed. The SDK reads the durable rows itself.
-  Future<BigInt?> nextShareTrackingDelaySeconds({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required BigInt nowSeconds,
-  });
-}
-
-final class _FrbVotingHelperDeliveryContext
-    implements VotingHelperDeliveryContext {
-  _FrbVotingHelperDeliveryContext({
-    required this.dbPath,
-    required this.accountUuid,
-    required this.roundId,
-    required rust_api.VotingHelperDeliveryContext inner,
-  }) : _inner = inner;
-
-  @override
-  final String dbPath;
-
-  @override
-  final String accountUuid;
-
-  @override
-  final String roundId;
-
-  final rust_api.VotingHelperDeliveryContext _inner;
-
-  @override
-  bool get isDisposed => _inner.isDisposed;
-
-  rust_api.VotingHelperDeliveryContext get inner {
-    if (isDisposed) {
-      throw StateError('Voting helper delivery context has been disposed.');
-    }
-    return _inner;
-  }
-
-  @override
-  void dispose() {
-    if (isDisposed) return;
-    _inner.dispose();
-  }
-}
-
-final class _FrbVotingShareTrackingPassHandle
-    implements VotingShareTrackingPassHandle {
-  _FrbVotingShareTrackingPassHandle({
-    required this.accountUuid,
-    required this.roundId,
-    required rust_api.VotingShareTrackingPassHandle inner,
-  }) : _inner = inner;
-
-  @override
-  final String accountUuid;
-
-  @override
-  final String roundId;
-
-  final rust_api.VotingShareTrackingPassHandle _inner;
-  bool _isCancelled = false;
-
-  @override
-  bool get isCancelled => _isCancelled;
-
-  @override
-  bool get isDisposed => _inner.isDisposed;
-
-  rust_api.VotingShareTrackingPassHandle get inner {
-    if (isDisposed) {
-      throw StateError('Share tracking pass handle has been disposed.');
-    }
-    return _inner;
-  }
-
-  @override
-  void cancel() {
-    if (_isCancelled || isDisposed) return;
-    _inner.cancel();
-    _isCancelled = true;
-  }
-
-  @override
-  void dispose() {
-    if (isDisposed) return;
-    _inner.dispose();
-  }
 }
 
 final class _FrbVotingRoundSession implements VotingRoundSession {
@@ -710,18 +566,14 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
   ) => _typed(() => inner.setBallotIntents(intents: intents));
 
   @override
-  Future<rust_voting.RoundPlanView> clearBallotIntents(
-    List<int> proposalIds,
-  ) => _typed(() => inner.clearBallotIntents(proposalIds: proposalIds));
+  Future<rust_voting.RoundPlanView> clearBallotIntents(List<int> proposalIds) =>
+      _typed(() => inner.clearBallotIntents(proposalIds: proposalIds));
 
   @override
   Stream<rust_session.ApiRoundRunEvent> runRound({
-    required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
     rust_session.ApiRoundDrivePolicy? policy,
-  }) => _typedStream(
-    inner.runRound(host: host, signer: signer, policy: policy),
-  );
+  }) => _typedStream(inner.runRound(signer: signer, policy: policy));
 
   @override
   Future<List<rust_delegate.KeystoneSigningRequest>> keystoneSigningRequests(
@@ -730,13 +582,22 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
       _typed(() => inner.keystoneSigningRequests(bundleIndices: bundleIndices));
 
   @override
-  VotingShareTrackingPassHandle beginShareTrackingPass() {
-    return _FrbVotingShareTrackingPassHandle(
-      accountUuid: accountUuid,
-      roundId: roundId,
-      inner: inner.beginShareTrackingPass(),
-    );
-  }
+  Stream<rust_session.ApiShareTrackingRunEvent> runShareTracking({
+    rust_session.ApiShareTrackingDrivePolicy? policy,
+  }) => _typedStream(inner.runShareTracking(policy: policy));
+
+  @override
+  Future<bool> confirmImmediateShare({
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+  }) => _typed(
+    () => inner.confirmImmediateShare(
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      shareIndex: shareIndex,
+    ),
+  );
 }
 
 /// Production implementation backed by generated FRB calls.
@@ -772,9 +633,7 @@ class FrbVotingRustApi implements VotingRustApi {
   @override
   VotingRoundSession openRoundSession({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<String> chainEndpoints,
-    required List<String> pirServerUrls,
-    required List<rust_session.ApiProposalRosterEntry> proposals,
+    required rust_session.ApiRoundSessionBinding binding,
     List<int>? storedHotkeySecret,
     required BigInt operationEpoch,
   }) {
@@ -784,9 +643,7 @@ class FrbVotingRustApi implements VotingRustApi {
       inner: _typedSync(
         () => rust_session.openVotingRoundSession(
           ctx: ctx,
-          chainEndpoints: chainEndpoints,
-          pirServerUrls: pirServerUrls,
-          proposals: proposals,
+          binding: binding,
           storedHotkeySecret: storedHotkeySecret == null
               ? null
               : Uint8List.fromList(storedHotkeySecret),
@@ -1031,109 +888,6 @@ class FrbVotingRustApi implements VotingRustApi {
         nowSeconds: nowSeconds,
         ceremonyStartSeconds: ceremonyStartSeconds,
         voteEndTimeSeconds: voteEndTimeSeconds,
-      ),
-    );
-  }
-
-  @override
-  Future<rust_api.ApiShareTrackingReport> trackPendingShares({
-    required VotingShareTrackingPassHandle passHandle,
-    required List<String> configuredHelperUrls,
-    required BigInt nowSeconds,
-    BigInt? voteEndTimeSeconds,
-  }) {
-    if (passHandle is! _FrbVotingShareTrackingPassHandle) {
-      throw ArgumentError.value(
-        passHandle,
-        'passHandle',
-        'Expected an FRB share tracking pass handle',
-      );
-    }
-    return _typed(
-      () => rust_api.trackPendingShares(
-        passHandle: passHandle.inner,
-        configuredHelperUrls: configuredHelperUrls,
-        nowSeconds: nowSeconds,
-        voteEndTimeSeconds: voteEndTimeSeconds,
-      ),
-    );
-  }
-
-  @override
-  Future<bool> confirmShareWithHelpers({
-    required VotingShareTrackingPassHandle passHandle,
-    required List<String> configuredHelperUrls,
-    required int bundleIndex,
-    required int proposalId,
-    required int shareIndex,
-    required BigInt nowSeconds,
-  }) {
-    if (passHandle is! _FrbVotingShareTrackingPassHandle) {
-      throw ArgumentError.value(
-        passHandle,
-        'passHandle',
-        'Expected an FRB voting share tracking pass handle',
-      );
-    }
-    return _typed(
-      () => rust_api.confirmShareWithHelpers(
-        passHandle: passHandle.inner,
-        configuredHelperUrls: configuredHelperUrls,
-        bundleIndex: bundleIndex,
-        proposalId: proposalId,
-        shareIndex: shareIndex,
-        nowSeconds: nowSeconds,
-      ),
-    );
-  }
-
-  @override
-  VotingHelperDeliveryContext createVotingHelperDeliveryContext({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  }) => _FrbVotingHelperDeliveryContext(
-    dbPath: dbPath,
-    accountUuid: accountUuid,
-    roundId: roundId,
-    inner: rust_api.createVotingHelperDeliveryContext(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: roundId,
-    ),
-  );
-
-  @override
-  VotingShareTrackingPassHandle beginShareTrackingPass({
-    required VotingHelperDeliveryContext context,
-  }) {
-    if (context is! _FrbVotingHelperDeliveryContext) {
-      throw ArgumentError.value(
-        context,
-        'context',
-        'Expected an FRB voting helper delivery context',
-      );
-    }
-    return _FrbVotingShareTrackingPassHandle(
-      accountUuid: context.accountUuid,
-      roundId: context.roundId,
-      inner: rust_api.beginShareTrackingPass(context: context.inner),
-    );
-  }
-
-  @override
-  Future<BigInt?> nextShareTrackingDelaySeconds({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required BigInt nowSeconds,
-  }) {
-    return _typed(
-      () => rust_api.nextShareTrackingDelaySeconds(
-        dbPath: dbPath,
-        accountUuid: accountUuid,
-        roundId: roundId,
-        nowSeconds: nowSeconds,
       ),
     );
   }
