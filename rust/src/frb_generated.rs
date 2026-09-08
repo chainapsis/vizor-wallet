@@ -8524,6 +8524,7 @@ impl SseDecode for zcash_voting::wire::DelegationSetupFieldView {
             1 => zcash_voting::wire::DelegationSetupFieldView::PaddedNoteSecrets,
             2 => zcash_voting::wire::DelegationSetupFieldView::PcztSighash,
             3 => zcash_voting::wire::DelegationSetupFieldView::Tx1Effects,
+            4 => zcash_voting::wire::DelegationSetupFieldView::Other,
             _ => unreachable!("Invalid variant for DelegationSetupFieldView: {}", inner),
         };
     }
@@ -13406,6 +13407,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::Delegation
             zcash_voting::wire::DelegationSetupFieldView::PaddedNoteSecrets => 1.into_dart(),
             zcash_voting::wire::DelegationSetupFieldView::PcztSighash => 2.into_dart(),
             zcash_voting::wire::DelegationSetupFieldView::Tx1Effects => 3.into_dart(),
+            zcash_voting::wire::DelegationSetupFieldView::Other => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -16867,6 +16869,7 @@ impl SseEncode for zcash_voting::wire::DelegationSetupFieldView {
                 zcash_voting::wire::DelegationSetupFieldView::PaddedNoteSecrets => 1,
                 zcash_voting::wire::DelegationSetupFieldView::PcztSighash => 2,
                 zcash_voting::wire::DelegationSetupFieldView::Tx1Effects => 3,
+                zcash_voting::wire::DelegationSetupFieldView::Other => 4,
                 _ => {
                     unimplemented!("");
                 }

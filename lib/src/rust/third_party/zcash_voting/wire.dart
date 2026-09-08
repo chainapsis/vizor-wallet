@@ -221,6 +221,10 @@ enum DelegationSetupFieldView {
   paddedNoteSecrets,
   pcztSighash,
   tx1Effects,
+
+  /// A setup field added after this host was built. It does not establish
+  /// that the persisted setup is reusable.
+  other,
 }
 
 class DelegationStatusView {
