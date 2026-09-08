@@ -53,6 +53,10 @@ bool isLastMoment({
   voteEndTimeSeconds: voteEndTimeSeconds,
 );
 
+/// Returns the proposal id range the pinned SDK enforces.
+Future<ApiProposalIdRange> votingProposalIdRange() =>
+    RustLib.instance.api.crateApiVotingVotingProposalIdRange();
+
 /// Build round params from server metadata while binding trusted `ea_pk`.
 ///
 /// Trust model for the per-round parameters:
@@ -692,6 +696,29 @@ class ApiPirSnapshotResolution {
           runtimeType == other.runtimeType &&
           endpoint == other.endpoint &&
           diagnostics == other.diagnostics;
+}
+
+/// Inclusive bounds the vote circuit enforces on an on-chain proposal id.
+///
+/// Exposed so hosts can check their own copy against the SDK rather than
+/// discover a mismatch as a parse failure in front of a voter. Read from
+/// `zcash_voting` directly, so bumping the pinned SDK moves this with it.
+class ApiProposalIdRange {
+  final int min;
+  final int max;
+
+  const ApiProposalIdRange({required this.min, required this.max});
+
+  @override
+  int get hashCode => min.hashCode ^ max.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiProposalIdRange &&
+          runtimeType == other.runtimeType &&
+          min == other.min &&
+          max == other.max;
 }
 
 /// PIR cache result for one snapshot-precomputed delegation bundle.

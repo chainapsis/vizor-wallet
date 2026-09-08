@@ -314,6 +314,25 @@ pub fn is_last_moment(
 }
 
 // Fixed-width Keystone payload fields used by adapter regression tests.
+/// Inclusive bounds the vote circuit enforces on an on-chain proposal id.
+///
+/// Exposed so hosts can check their own copy against the SDK rather than
+/// discover a mismatch as a parse failure in front of a voter. Read from
+/// `zcash_voting` directly, so bumping the pinned SDK moves this with it.
+pub struct ApiProposalIdRange {
+    pub min: u32,
+    pub max: u32,
+}
+
+/// Returns the proposal id range the pinned SDK enforces.
+pub fn voting_proposal_id_range() -> ApiProposalIdRange {
+    ApiProposalIdRange {
+        min: zcash_voting::MIN_PROPOSAL_ID,
+        max: zcash_voting::MAX_PROPOSAL_ID,
+    }
+}
+
+
 #[cfg(test)]
 const KEYSTONE_SIG_LEN: usize = 64;
 #[cfg(test)]
@@ -1257,6 +1276,26 @@ pub fn clear_voting_observability_sink() {
 
 #[cfg(test)]
 mod tests {
+    /// Pins the SDK half of the proposal-id mirror.
+    ///
+    /// `kMinProposalId` / `kMaxProposalId` in
+    /// `lib/src/features/voting/voting_flow_models.dart` carry the same two
+    /// numbers, because the Dart parser is synchronous and cannot ask the SDK
+    /// per proposal. Dart unit tests fake the Rust API rather than loading the
+    /// native library, so they cannot read these constants either — this test
+    /// is what makes an SDK bump fail the build instead of surfacing as a
+    /// `FormatException` in front of a voter. Update both together.
+    #[test]
+    fn voting_proposal_id_range_matches_the_dart_mirror() {
+        let range = super::voting_proposal_id_range();
+        assert_eq!(
+            (range.min, range.max),
+            (1, 50),
+            "proposal id range moved; update kMinProposalId/kMaxProposalId in \
+             lib/src/features/voting/voting_flow_models.dart to match"
+        );
+    }
+
     use std::sync::Mutex;
 
     use super::*;

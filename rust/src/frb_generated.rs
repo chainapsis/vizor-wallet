@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -610038420;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -889021001;
 
 // Section: executor
 
@@ -7024,6 +7024,39 @@ fn wire__crate__api__wallet__validate_mnemonic_impl(
         },
     )
 }
+fn wire__crate__api__voting__voting_proposal_id_range_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "voting_proposal_id_range",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok =
+                        Result::<_, ()>::Ok(crate::api::voting::voting_proposal_id_range())?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__wallet__wallet_exists_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -8000,6 +8033,18 @@ impl SseDecode for crate::api::voting::ApiPirSnapshotResolution {
         return crate::api::voting::ApiPirSnapshotResolution {
             endpoint: var_endpoint,
             diagnostics: var_diagnostics,
+        };
+    }
+}
+
+impl SseDecode for crate::api::voting::ApiProposalIdRange {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_min = <u32>::sse_decode(deserializer);
+        let mut var_max = <u32>::sse_decode(deserializer);
+        return crate::api::voting::ApiProposalIdRange {
+            min: var_min,
+            max: var_max,
         };
     }
 }
@@ -12201,9 +12246,10 @@ fn pde_ffi_dispatcher_primary_impl(
 171 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
 172 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
 173 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-177 => wire__crate__api__voting__warm_pir_proof_cache_impl(port, ptr, rust_vec_len, data_len),
-179 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
-180 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
+175 => wire__crate__api__voting__voting_proposal_id_range_impl(port, ptr, rust_vec_len, data_len),
+178 => wire__crate__api__voting__warm_pir_proof_cache_impl(port, ptr, rust_vec_len, data_len),
+180 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+181 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
 }
@@ -12287,11 +12333,11 @@ fn pde_ffi_dispatcher_sync_impl(
             data_len,
         ),
         174 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        175 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
-        176 => {
+        176 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
+        177 => {
             wire__crate__api__sync__warm_orchard_proving_key_cache_impl(ptr, rust_vec_len, data_len)
         }
-        178 => {
+        179 => {
             wire__crate__api__voting__warm_voting_proving_caches_impl(ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),
@@ -12675,6 +12721,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiPirSnapshotResolut
     for crate::api::voting::ApiPirSnapshotResolution
 {
     fn into_into_dart(self) -> crate::api::voting::ApiPirSnapshotResolution {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiProposalIdRange {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.min.into_into_dart().into_dart(),
+            self.max.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiProposalIdRange
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiProposalIdRange>
+    for crate::api::voting::ApiProposalIdRange
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiProposalIdRange {
         self
     }
 }
@@ -16542,6 +16609,14 @@ impl SseEncode for crate::api::voting::ApiPirSnapshotResolution {
             self.diagnostics,
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::api::voting::ApiProposalIdRange {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.min, serializer);
+        <u32>::sse_encode(self.max, serializer);
     }
 }
 

@@ -79,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -610038420;
+  int get rustContentHash => -889021001;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1146,6 +1146,8 @@ abstract class RustLibApi extends BaseApi {
   });
 
   bool crateApiWalletValidateMnemonic({required String mnemonic});
+
+  Future<ApiProposalIdRange> crateApiVotingVotingProposalIdRange();
 
   bool crateApiWalletWalletExists({required String dbPath});
 
@@ -8343,6 +8345,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<ApiProposalIdRange> crateApiVotingVotingProposalIdRange() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 175,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_api_proposal_id_range,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiVotingVotingProposalIdRangeConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVotingVotingProposalIdRangeConstMeta =>
+      const TaskConstMeta(debugName: "voting_proposal_id_range", argNames: []);
+
+  @override
   bool crateApiWalletWalletExists({required String dbPath}) {
     return handler.executeSync(
       SyncTask(
@@ -8352,7 +8381,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 175,
+            funcId: 176,
           )!;
         },
         codec: SseCodec(
@@ -8378,7 +8407,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 176,
+            funcId: 177,
           )!;
         },
         codec: SseCodec(
@@ -8424,7 +8453,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 177,
+            funcId: 178,
             port: port_,
           );
         },
@@ -8472,7 +8501,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 178,
+            funcId: 179,
           )!;
         },
         codec: SseCodec(
@@ -8506,7 +8535,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 179,
+            funcId: 180,
             port: port_,
           );
         },
@@ -8543,7 +8572,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 180,
+            funcId: 181,
             port: port_,
           );
         },
@@ -8856,6 +8885,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       diagnostics: dco_decode_list_pir_snapshot_endpoint_diagnostic_view(
         arr[1],
       ),
+    );
+  }
+
+  @protected
+  ApiProposalIdRange dco_decode_api_proposal_id_range(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ApiProposalIdRange(
+      min: dco_decode_u_32(arr[0]),
+      max: dco_decode_u_32(arr[1]),
     );
   }
 
@@ -12393,6 +12434,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       endpoint: var_endpoint,
       diagnostics: var_diagnostics,
     );
+  }
+
+  @protected
+  ApiProposalIdRange sse_decode_api_proposal_id_range(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_min = sse_decode_u_32(deserializer);
+    var var_max = sse_decode_u_32(deserializer);
+    return ApiProposalIdRange(min: var_min, max: var_max);
   }
 
   @protected
@@ -17030,6 +17081,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.diagnostics,
       serializer,
     );
+  }
+
+  @protected
+  void sse_encode_api_proposal_id_range(
+    ApiProposalIdRange self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.min, serializer);
+    sse_encode_u_32(self.max, serializer);
   }
 
   @protected
