@@ -18,6 +18,7 @@ import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
+import 'voting_hotkey_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
@@ -94,7 +95,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Map<String, Future<void>> _snapshotBundlePrecomputes = {};
   final Map<String, Future<void>> _backgroundDelegationProofPrecomputes = {};
   final Set<String> _completedSnapshotBundlePrecomputes = {};
-  final Map<String, Future<List<int>>> _hotkeyEnsures = {};
 
   /// The tracking run in flight, the session it runs on, and the context it
   /// was started for.
@@ -206,7 +206,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _snapshotBundlePrecomputes.clear();
       _backgroundDelegationProofPrecomputes.clear();
       _completedSnapshotBundlePrecomputes.clear();
-      _hotkeyEnsures.clear();
       _cancelShareTrackingRetry();
       for (final session in _activeRoundSessions.toList()) {
         session.cancel();
@@ -298,7 +297,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _snapshotBundlePrecomputes.clear();
     _backgroundDelegationProofPrecomputes.clear();
     _completedSnapshotBundlePrecomputes.clear();
-    _hotkeyEnsures.clear();
     if (!hadSessionAccount || _isDisposed) return;
 
     final generation = _sessionGeneration;
@@ -1883,49 +1881,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context, {
     bool alreadyBound = false,
   }) {
-    final key = _hotkeyEnsureKey(context);
-    final inFlight = _hotkeyEnsures[key];
-    if (inFlight != null) return inFlight;
-
-    late final Future<List<int>> ensureFuture;
-    ensureFuture = _ensureHotkeyUncached(context, alreadyBound: alreadyBound)
-        .whenComplete(() {
-          if (identical(_hotkeyEnsures[key], ensureFuture)) {
-            _hotkeyEnsures.remove(key);
-          }
-        });
-    _hotkeyEnsures[key] = ensureFuture;
-    return ensureFuture;
-  }
-
-  Future<List<int>> _ensureHotkeyUncached(
-    _VotingSessionContext context, {
-    required bool alreadyBound,
-  }) async {
-    final existing = await _readStoredHotkey(context);
-    if (existing != null && existing.isNotEmpty) return existing;
-    if (alreadyBound || _hotkeyAlreadyBound(context)) {
-      throw const VotingHotkeyUnavailable('missing stored voting hotkey');
-    }
-
-    final rust = ref.read(votingRustApiProvider);
-    final hotkey = await rust.generateVotingHotkey(network: context.network);
-    final storedAfterGeneration = await _readStoredHotkey(context);
-    if (storedAfterGeneration != null && storedAfterGeneration.isNotEmpty) {
-      return storedAfterGeneration;
-    }
-    await ref
-        .read(votingHotkeyStoreProvider)
-        .writeHotkey(
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-          hotkey: hotkey,
+    return ref
+        .read(votingHotkeyCoordinatorProvider)
+        .ensureHotkey(
+          key: VotingSessionKey(
+            accountUuid: context.accountUuid,
+            roundId: context.round.roundId,
+          ),
+          network: context.network,
+          alreadyBound: alreadyBound || _hotkeyAlreadyBound(context),
         );
-    return hotkey;
-  }
-
-  static String _hotkeyEnsureKey(_VotingSessionContext context) {
-    return '${context.accountUuid}:${context.round.roundId}';
   }
 
   Future<List<int>?> _readStoredHotkey(_VotingSessionContext context) async {

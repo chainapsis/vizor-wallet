@@ -9309,6 +9309,76 @@ void main() {
     },
   );
 
+  for (final closeReview in [false, true]) {
+    test(
+      'Keystone review warmup and submission share hotkey creation (close review: $closeReview)',
+      () async {
+        final rust = FakeVotingRustApi(
+          generatedHotkeys: const [
+            [42, 43, 44],
+            [51, 52, 53],
+          ],
+        );
+        final hotkeyStore = GatedVotingHotkeyStore();
+        final container = _sessionContainer(
+          rust: rust,
+          accountIsHardware: true,
+          hotkeyStore: hotkeyStore,
+        );
+        addTearDown(container.dispose);
+        addTearDown(() {
+          if (!hotkeyStore.writeGate.isCompleted) {
+            hotkeyStore.writeGate.complete();
+          }
+        });
+        final submissionProvider = votingSubmissionSessionProvider(
+          const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
+        );
+        final subscription = container.listen(submissionProvider, (_, _) {});
+        addTearDown(subscription.close);
+        await container.read(votingSessionProvider(kRoundId).future);
+        await container.read(submissionProvider.future);
+        final review = container.read(votingSessionProvider(kRoundId).notifier);
+        await review.refreshEligibleWeight();
+
+        final warmup = review.precomputeSnapshotBundles(
+          accountUuid: 'account-1',
+        );
+        await hotkeyStore.writeStarted.future;
+        if (closeReview) {
+          container.invalidate(votingSessionProvider(kRoundId));
+        }
+        final signing = container
+            .read(submissionProvider.notifier)
+            .prepareKeystoneSigning();
+        // Let submission reach hotkey creation while the review's first write
+        // remains blocked. Both notifiers have observed the same empty store.
+        await Future<void>.delayed(Duration.zero);
+        hotkeyStore.writeGate.complete();
+        await Future.wait([warmup, signing]);
+
+        expect(rust.generateVotingHotkeyCalls, 1);
+        expect(hotkeyStore.writeCalls, 1);
+        expect(hotkeyStore.hotkey, [42, 43, 44]);
+        expect(
+          rust.backgroundDelegationProofHotkeys,
+          closeReview
+              ? isEmpty
+              : [
+                  [42, 43, 44],
+                ],
+        );
+        expect(rust.keystoneDelegationRequestHotkeys, [
+          [42, 43, 44],
+        ]);
+        expect(
+          container.read(submissionProvider).value!.phase,
+          VotingSessionPhase.keystoneSigning,
+        );
+      },
+    );
+  }
+
   test(
     'Keystone signing retries busy setup without waiting for background proof',
     () async {
@@ -11627,6 +11697,30 @@ class FakeVotingHotkeyStore implements VotingHotkeyStore {
   }) async {}
 }
 
+class GatedVotingHotkeyStore extends FakeVotingHotkeyStore {
+  GatedVotingHotkeyStore() : super(null);
+
+  final writeStarted = Completer<void>();
+  final writeGate = Completer<void>();
+  int writeCalls = 0;
+
+  @override
+  Future<void> writeHotkey({
+    required String accountUuid,
+    required String roundId,
+    required List<int> hotkey,
+  }) async {
+    writeCalls++;
+    if (!writeStarted.isCompleted) writeStarted.complete();
+    await writeGate.future;
+    await super.writeHotkey(
+      accountUuid: accountUuid,
+      roundId: roundId,
+      hotkey: hotkey,
+    );
+  }
+}
+
 class FailingVotingHotkeyStore implements VotingHotkeyStore {
   const FailingVotingHotkeyStore();
 
@@ -12231,6 +12325,7 @@ class FakeVotingRustApi
   Object? warmPirProofCacheError;
   Uint8List? warmPirProofCacheServedRoot;
   final delegationStoredHotkeySecrets = <List<int>>[];
+  final keystoneDelegationRequestHotkeys = <List<int>>[];
   int warmVotingProvingCachesCalls = 0;
   final setupStarted = Completer<void>();
   final delegationProofStarted = Completer<void>();
@@ -12758,6 +12853,7 @@ class FakeVotingRustApi
     final callIndex = keystoneDelegationRequestCalls.length;
     accountUuids.add(ctx.accountUuid);
     keystoneDelegationRequestCalls.add(bundleIndex);
+    keystoneDelegationRequestHotkeys.add(List<int>.from(storedHotkeySecret));
     final forcedFailure = keystoneDelegationRequestFailuresByCall[callIndex];
     if (forcedFailure != null) {
       throw forcedFailure;
