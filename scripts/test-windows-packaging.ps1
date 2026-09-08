@@ -25,6 +25,7 @@ try {
   }
   Copy-Item (Join-Path $sourceScripts "package-windows-velopack.ps1") $fixtureScripts
   Copy-Item (Join-Path $sourceScripts "windows-build-arch.dart") $fixtureScripts
+  Copy-Item (Join-Path $sourceScripts "windows-native-command.ps1") $fixtureScripts
   $packageScript = Join-Path $fixtureScripts "package-windows-velopack.ps1"
   Set-Content (Join-Path $testRoot '.fvmrc') '{"flutter":"3.47.2"}'
   # Existing SDK directories must not take priority over the host Dart PATH.

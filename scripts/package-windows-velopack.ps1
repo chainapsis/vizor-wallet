@@ -462,9 +462,16 @@ if (-not [string]::IsNullOrWhiteSpace($effectiveCodeSignParams)) {
   }
 }
 
-& $vpkExe @packArgs
-if ($LASTEXITCODE -ne 0) {
-  throw "Velopack packaging failed with exit code $LASTEXITCODE."
+if ($packArgs -contains '--signTemplate' -and [System.IO.Path]::GetExtension($vpkExe) -eq '.exe') {
+  . (Join-Path $scriptDir 'windows-native-command.ps1')
+  $packExitCode = Invoke-WindowsNativeCommand -FilePath $vpkExe -ArgumentList $packArgs
+} else {
+  # Preserve the existing x64 invocation and PowerShell-based local fixtures.
+  & $vpkExe @packArgs
+  $packExitCode = $LASTEXITCODE
+}
+if ($packExitCode -ne 0) {
+  throw "Velopack packaging failed with exit code $packExitCode."
 }
 
 if (-not [string]::IsNullOrWhiteSpace($UpdateFeedSigningKey)) {
