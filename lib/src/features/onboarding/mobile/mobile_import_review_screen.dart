@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
+import '../../../core/privacy/route_coverage_aware.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -58,7 +59,8 @@ class MobileImportReviewScreen extends StatefulWidget {
       _MobileImportReviewScreenState();
 }
 
-class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
+class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
+    with RouteCoverageAware<MobileImportReviewScreen> {
   StreamSubscription<void>? _screenshotSub;
   late final bool _ownsPrivacyController;
   late final SensitivePrivacyOverlayController _privacyController;
@@ -127,7 +129,7 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
   Widget build(BuildContext context) {
     final words = _words;
     return SensitivePrivacyOverlay(
-      sensitiveContentVisible: words.isNotEmpty,
+      sensitiveContentVisible: words.isNotEmpty && !isCoveredByNextRoute,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
         progress: _kImportReviewProgress,
