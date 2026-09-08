@@ -180,6 +180,18 @@ stateDiagram-v2
     }
 ```
 
+### Keystone proof warmup
+
+Snapshot bundle preparation starts background ZKP1 work for both software and
+Keystone accounts. The SDK stores the exact signing transaction alongside the
+proof setup, so QR preparation and app restart reuse those bytes and the same
+stored voting hotkey. Signing can proceed while the proof runs.
+
+Vizor briefly retries the SDK's `Busy` error when initial setup overlaps QR
+preparation. Signing errors preserve warmed setup instead of resetting it. This
+path assumes the new voting package is installed before preparing the next
+round; it does not repair older setups that lack the original transaction.
+
 ### Helper Share Scheduling
 
 Helper-share `submit_at` (the Unix-second reveal time sent to the helper server)

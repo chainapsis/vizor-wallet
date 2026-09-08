@@ -216,7 +216,12 @@ class DelegationRecoveryWorkView {
 }
 
 /// Wire form of [`crate::types::DelegationSetupField`].
-enum DelegationSetupFieldView { paddedNoteSecrets, pcztSighash, tx1Effects }
+enum DelegationSetupFieldView {
+  delegationPczt,
+  paddedNoteSecrets,
+  pcztSighash,
+  tx1Effects,
+}
 
 class DelegationStatusView {
   final int bundleIndex;
@@ -1590,6 +1595,7 @@ enum VotingErrorKindView {
   insufficientEligibility,
   noSpendableNotes,
   setupAlreadyPersisted,
+  delegationPcztUnavailable,
   dbBusy,
   pirUnavailable,
   delegationTargetMismatch,
@@ -1605,7 +1611,8 @@ enum VotingErrorKindView {
 ///
 /// `kind`, `retryable`, and `message` are always populated. The remaining
 /// fields carry the structured payload of the kinds that have one:
-/// `bundle_index` for `KeystoneSignatureConflict` and `SetupAlreadyPersisted`;
+/// `bundle_index` for `KeystoneSignatureConflict`, `SetupAlreadyPersisted`,
+/// and `DelegationPcztUnavailable`;
 /// `snapshot_height`, the weight fields, the selected note count, and the
 /// bundle slot capacity for
 /// `InsufficientEligibility` and `NoSpendableNotes`; `http_status` and
