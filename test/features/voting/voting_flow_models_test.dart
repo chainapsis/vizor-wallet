@@ -236,7 +236,7 @@ void main() {
         isA<FormatException>().having(
           (error) => error.message,
           'message',
-          'id must be 1..15, got 0',
+          'id must be $kMinProposalId..$kMaxProposalId, got 0',
         ),
       ),
     );
