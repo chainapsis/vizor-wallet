@@ -16,9 +16,12 @@ class AppDesktopShell extends StatelessWidget {
     required this.pane,
     this.background,
     this.backgroundColor,
-    this.sidebarWidth = 256,
+    this.sidebarWidth = defaultSidebarWidth,
     super.key,
   });
+
+  /// Default trailing-pane sidebar width from the desktop window chrome.
+  static const double defaultSidebarWidth = 256;
 
   final Widget sidebar;
   final Widget pane;

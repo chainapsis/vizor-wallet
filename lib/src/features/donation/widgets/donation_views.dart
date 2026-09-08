@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -49,78 +50,72 @@ class DonationComposeView extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Align(
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            width: AppWindowSizing.contentAreaMaxWidth,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.s,
-              ).copyWith(top: AppSpacing.sm),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        AppDesktopContentColumn(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+          ).copyWith(top: AppSpacing.sm),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Support Vizor',
+                textAlign: TextAlign.center,
+                style: AppTypography.headlineLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: 56),
+              _DonationAmountCard(
+                controller: controller,
+                isUsd: isUsd,
+                conversionText: conversionText,
+                errorText: errorText,
+                onChanged: onAmountChanged,
+                onToggleMode: onToggleMode,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Support Vizor',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.headlineLarge.copyWith(
-                      color: colors.text.accent,
+                  for (final preset in presets)
+                    _DonationPreset(
+                      label: isUsd ? '\$$preset' : '$preset ZEC',
+                      selected: selectedPreset == preset,
+                      onTap: () => onPresetSelected(preset),
                     ),
-                  ),
-                  const SizedBox(height: 56),
-                  _DonationAmountCard(
-                    controller: controller,
-                    isUsd: isUsd,
-                    conversionText: conversionText,
-                    errorText: errorText,
-                    onChanged: onAmountChanged,
-                    onToggleMode: onToggleMode,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      for (final preset in presets)
-                        _DonationPreset(
-                          label: isUsd ? '\$$preset' : '$preset ZEC',
-                          selected: selectedPreset == preset,
-                          onTap: () => onPresetSelected(preset),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  SizedBox(
-                    height: 28,
-                    child: Wrap(
-                      alignment: WrapAlignment.center,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          'Sending from your',
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.primary,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        AppIcon(
-                          AppIcons.shieldKeyhole,
-                          size: 20,
-                          color: colors.icon.accent,
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Text(
-                          'Shielded balance',
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
-            ),
+              const SizedBox(height: AppSpacing.md),
+              SizedBox(
+                height: 28,
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'Sending from your',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.primary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    AppIcon(
+                      AppIcons.shieldKeyhole,
+                      size: 20,
+                      color: colors.icon.accent,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      'Shielded balance',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         Positioned(

@@ -18,6 +18,7 @@ import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/privacy/privacy_mask.dart';
@@ -1313,15 +1314,10 @@ class _HomeDesktopCenteredSliver extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: SizedBox(
-          key: contentKey,
-          width: 420,
-          child: Padding(padding: padding, child: child),
-        ),
-      ),
+    return AppDesktopContentSliver(
+      contentKey: contentKey,
+      padding: padding,
+      child: child,
     );
   }
 }
@@ -2326,24 +2322,16 @@ class _HomeDesktopEmptyActivitySliver extends StatelessWidget {
             constraints.precedingScrollExtent;
         final height = math.max(160.0, remainingHeight - AppSpacing.sm);
 
-        return SliverToBoxAdapter(
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: SizedBox(
-              width: 420,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.s,
-                  0,
-                  AppSpacing.s,
-                  AppSpacing.sm,
-                ),
-                child: SizedBox(
-                  height: height,
-                  child: _HomeDesktopEmptyActivity(isLoading: isLoading),
-                ),
-              ),
-            ),
+        return AppDesktopContentSliver(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.s,
+            0,
+            AppSpacing.s,
+            AppSpacing.sm,
+          ),
+          child: SizedBox(
+            height: height,
+            child: _HomeDesktopEmptyActivity(isLoading: isLoading),
           ),
         );
       },

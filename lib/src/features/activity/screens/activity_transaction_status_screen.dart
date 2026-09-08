@@ -8,10 +8,11 @@ import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/layout/app_desktop_shell.dart';
-import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -701,18 +702,12 @@ class _ReceiptContentColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SizedBox(
-        width: AppWindowSizing.contentAreaMaxWidth,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s,
-            vertical: AppSpacing.sm,
-          ),
-          child: child,
-        ),
+    return AppDesktopContentColumn(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s,
+        vertical: AppSpacing.sm,
       ),
+      child: child,
     );
   }
 }

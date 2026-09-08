@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/layout/app_desktop_content.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -33,8 +34,6 @@ import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
 
 const _accountRowHeight = 44.0;
-const _accountsContentWidth = 420.0;
-const _accountsSurfaceWidth = 396.0;
 const _accountsCurrentSurfaceHeight = 124.0;
 const _accountsSurfaceVerticalPadding = AppSpacing.md;
 const _accountsSurfaceHorizontalPadding = AppSpacing.sm;
@@ -537,40 +536,34 @@ class _AccountsPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: _accountsContentWidth),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: _accountsContentHorizontalPadding,
-            vertical: _accountsContentVerticalPadding,
+    return AppDesktopContentColumn(
+      padding: const EdgeInsets.symmetric(
+        horizontal: _accountsContentHorizontalPadding,
+        vertical: _accountsContentVerticalPadding,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Accounts',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineLarge.copyWith(
+              color: context.colors.text.accent,
+            ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Accounts',
-                textAlign: TextAlign.center,
-                style: AppTypography.headlineLarge.copyWith(
-                  color: context.colors.text.accent,
-                ),
-              ),
-              const SizedBox(height: _accountsTitleSurfaceGap),
-              _AccountsList(
-                activeAccount: activeAccount,
-                otherAccounts: otherAccounts,
-                onSelectAccount: onSelectAccount,
-                onCopyAddress: onCopyAddress,
-                onSendZec: onSendZec,
-                onEditAccount: onEditAccount,
-                onRemoveAccount: onRemoveAccount,
-                initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
-              ),
-            ],
+          const SizedBox(height: _accountsTitleSurfaceGap),
+          _AccountsList(
+            activeAccount: activeAccount,
+            otherAccounts: otherAccounts,
+            onSelectAccount: onSelectAccount,
+            onCopyAddress: onCopyAddress,
+            onSendZec: onSendZec,
+            onEditAccount: onEditAccount,
+            onRemoveAccount: onRemoveAccount,
+            initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
           ),
-        ),
+        ],
       ),
     );
   }
@@ -697,8 +690,6 @@ class _AccountsList extends StatelessWidget {
     required this.initialOpenMenuAccountUuid,
   });
 
-  static const _width = _accountsSurfaceWidth;
-
   final AccountInfo? activeAccount;
   final List<AccountInfo> otherAccounts;
   final Future<void> Function(String uuid) onSelectAccount;
@@ -711,68 +702,60 @@ class _AccountsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accountCount = otherAccounts.length + (activeAccount == null ? 0 : 1);
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SizedBox(
-        width: _width,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (activeAccount != null) ...[
-              _AccountsSurface(
-                key: const ValueKey('accounts_current_surface'),
-                height: _accountsCurrentSurfaceHeight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const _AccountsSectionLabel(label: 'Current'),
-                    const SizedBox(height: _accountsRowGap),
-                    _AccountRow(
-                      key: ValueKey(
-                        'accounts_active_row_${activeAccount!.uuid}',
-                      ),
-                      account: activeAccount!,
-                      onTap: null,
-                      showSendZec: false,
-                      onCopyAddress: onCopyAddress,
-                      onSendZec: onSendZec,
-                      onEditAccount: onEditAccount,
-                      onRemove: onRemoveAccount,
-                      showRemove: _AccountsList._canRemoveAccount(accountCount),
-                      initiallyOpenMenu:
-                          initialOpenMenuAccountUuid == activeAccount!.uuid,
-                    ),
-                  ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (activeAccount != null) ...[
+          _AccountsSurface(
+            key: const ValueKey('accounts_current_surface'),
+            height: _accountsCurrentSurfaceHeight,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _AccountsSectionLabel(label: 'Current'),
+                const SizedBox(height: _accountsRowGap),
+                _AccountRow(
+                  key: ValueKey('accounts_active_row_${activeAccount!.uuid}'),
+                  account: activeAccount!,
+                  onTap: null,
+                  showSendZec: false,
+                  onCopyAddress: onCopyAddress,
+                  onSendZec: onSendZec,
+                  onEditAccount: onEditAccount,
+                  onRemove: onRemoveAccount,
+                  showRemove: _AccountsList._canRemoveAccount(accountCount),
+                  initiallyOpenMenu:
+                      initialOpenMenuAccountUuid == activeAccount!.uuid,
                 ),
-              ),
-            ],
-            if (otherAccounts.isNotEmpty) ...[
-              if (activeAccount != null) const SizedBox(height: AppSpacing.sm),
-              _AccountsSurface(
-                key: const ValueKey('accounts_other_surface'),
-                height: _otherAccountsSurfaceHeight(otherAccounts.length),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const _AccountsSectionLabel(label: 'Other'),
-                    const SizedBox(height: _accountsRowGap),
-                    _OtherAccountsRows(
-                      accounts: otherAccounts,
-                      accountCount: accountCount,
-                      onSelectAccount: onSelectAccount,
-                      onCopyAddress: onCopyAddress,
-                      onSendZec: onSendZec,
-                      onEditAccount: onEditAccount,
-                      onRemoveAccount: onRemoveAccount,
-                      initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
-                    ),
-                  ],
+              ],
+            ),
+          ),
+        ],
+        if (otherAccounts.isNotEmpty) ...[
+          if (activeAccount != null) const SizedBox(height: AppSpacing.sm),
+          _AccountsSurface(
+            key: const ValueKey('accounts_other_surface'),
+            height: _otherAccountsSurfaceHeight(otherAccounts.length),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _AccountsSectionLabel(label: 'Other'),
+                const SizedBox(height: _accountsRowGap),
+                _OtherAccountsRows(
+                  accounts: otherAccounts,
+                  accountCount: accountCount,
+                  onSelectAccount: onSelectAccount,
+                  onCopyAddress: onCopyAddress,
+                  onSendZec: onSendZec,
+                  onEditAccount: onEditAccount,
+                  onRemoveAccount: onRemoveAccount,
+                  initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
                 ),
-              ),
-            ],
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 

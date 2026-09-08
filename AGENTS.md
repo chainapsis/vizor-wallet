@@ -801,7 +801,7 @@ Desktop window appearance is managed by the external [`desktop_window_bootstrap`
   - The app calls `DesktopWindowBootstrap.initialize()` in `lib/main.dart` after `initializeDesktopWindow()` has created the OS window but before `showDesktopWindow()` reveals it.
   - `DesktopWindowTitlebarSafeArea` in `lib/app.dart` pads Flutter content below the macOS traffic-light/titlebar area. Keep it wrapped around the app root.
 - `window_manager` owns sizing/lifecycle only.
-  - `lib/src/core/layout/app_layout.dart` should remain responsible for initial size, minimum size, aspect ratio, `show()`, `focus()`, and layout-mode reconciliation from window events.
+  - `lib/src/core/layout/app_layout.dart` should remain responsible for initial size, minimum size, `show()`, `focus()`, and layout-mode reconciliation from window events. Do not lock the window to a fixed aspect ratio; after launch the user resizes width and height independently.
   - Do not reintroduce `TitleBarStyle` ownership or other appearance writes through `window_manager`; that overlaps with `desktop_window_bootstrap`.
 
 Current startup order for desktop platforms:
