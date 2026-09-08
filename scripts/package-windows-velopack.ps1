@@ -13,6 +13,7 @@ param(
   [string]$UpdateReleaseBaseUrl = $env:VIZOR_UPDATE_RELEASE_BASE_URL,
   [string]$CoinGeckoPriceBaseUrl = $env:VIZOR_COINGECKO_PRICE_BASE_URL,
   [string]$WalletLinkBackendUrl = $env:VIZOR_WALLET_LINK_BACKEND_URL,
+  [string]$SignToolPath = $env:VIZOR_WINDOWS_SIGNTOOL_PATH,
   [string]$CodeSignParams = $env:VIZOR_WINDOWS_CODE_SIGN_PARAMS,
   [string]$CodeSignParallel = $env:VIZOR_WINDOWS_CODE_SIGN_PARALLEL,
   [string]$CodeSignExclude = $env:VIZOR_WINDOWS_CODE_SIGN_EXCLUDE,
@@ -437,7 +438,16 @@ if ($Msi) {
 }
 
 if (-not [string]::IsNullOrWhiteSpace($effectiveCodeSignParams)) {
-  $packArgs += @("--signParams", $effectiveCodeSignParams)
+  if (-not [string]::IsNullOrWhiteSpace($SignToolPath)) {
+    if (-not [System.IO.Path]::IsPathRooted($SignToolPath) -or -not (Test-Path -LiteralPath $SignToolPath -PathType Leaf) -or $SignToolPath.Contains('"')) {
+      throw "VIZOR_WINDOWS_SIGNTOOL_PATH must point to an existing absolute SignTool path."
+    }
+    # Velopack --signParams uses its embedded tool, which may be x64 on ARM64.
+    $signTemplate = '"' + $SignToolPath + '" sign ' + $effectiveCodeSignParams + ' {{file}}'
+    $packArgs += @("--signTemplate", $signTemplate)
+  } else {
+    $packArgs += @("--signParams", $effectiveCodeSignParams)
+  }
 
   if (-not [string]::IsNullOrWhiteSpace($CodeSignParallel)) {
     $parsedParallel = 0

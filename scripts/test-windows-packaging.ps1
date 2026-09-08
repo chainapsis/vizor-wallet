@@ -82,6 +82,8 @@ $global:LASTEXITCODE = 0
 '@
 
   $cases = @(
+    @{ Name = "ARM64 native signing template"; Sdk = "arm64"; Arch = "arm64"; Network = "mainnet"; NativeSigning = $true },
+    @{ Name = "testnet ignores signing override"; Sdk = "arm64"; Arch = "arm64"; Network = "testnet"; NativeSigning = $true },
     @{ Name = "default x64 on ARM OS"; Sdk = "x64"; Arch = $null; Network = "mainnet" },
     @{ Name = "explicit x64 testnet"; Sdk = "x64"; Arch = "x64"; Network = "testnet" },
     @{ Name = "explicit ARM64 mainnet"; Sdk = "arm64"; Arch = "ARM64"; Network = "mainnet" },
@@ -110,10 +112,16 @@ $global:LASTEXITCODE = 0
       Version = "1.2.3"; Clean = $true
       UpdateFeedSigningKey = ""; UpdateFeedPublicKey = ""
       UpdateRepositoryUrl = ""; UpdateReleaseBaseUrl = ""
-      CodeSignParams = ""; CodeSignParallel = ""; CodeSignExclude = ""
+      SignToolPath = ""; CodeSignParams = ""; CodeSignParallel = ""; CodeSignExclude = ""
     }
     if ($case.Arch) { $options.Arch = $case.Arch }
     if ($case.Network) { $options.Network = $case.Network }
+    if ($case.NativeSigning) {
+      $signTool = Join-Path $mockBin 'native signtool.exe'
+      Set-Content -LiteralPath $signTool -Value 'fixture'
+      $options.SignToolPath = $signTool
+      $options.CodeSignParams = '/sha1 FIXTURE /fd SHA256'
+    }
     $failure = $null
     try { & $packageScript @options } catch { $failure = $_.Exception.Message }
     if ($case.Error) {
@@ -124,6 +132,12 @@ $global:LASTEXITCODE = 0
     } else {
       if ($failure) { throw "$($case.Name): $failure" }
       $packArgs = @(Get-Content -Raw $env:VIZOR_TEST_VPK_LOG | ConvertFrom-Json)
+      if ($case.NativeSigning -and $case.Network -eq 'mainnet') {
+        Assert-Equal $packArgs.Contains('--signParams') $false
+        Assert-Equal $packArgs[$packArgs.IndexOf('--signTemplate') + 1] ('"' + $signTool + '" sign /sha1 FIXTURE /fd SHA256 {{file}}')
+      } else {
+        Assert-Equal $packArgs.Contains('--signTemplate') $false
+      }
       $channel = "win-$($case.Sdk)-$($case.Network)"
       Assert-Equal $packArgs[$packArgs.IndexOf("--channel") + 1] $channel
       Assert-Equal $packArgs[$packArgs.IndexOf("--packId") + 1] $(if ($case.Network -eq "mainnet") { "com.keplr.vizor" } else { "com.keplr.vizor.testnet" })
