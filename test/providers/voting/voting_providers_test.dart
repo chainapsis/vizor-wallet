@@ -3528,7 +3528,8 @@ void main() {
       recoveryApi.walletIds,
       containsAllInOrder(['account-1', 'account-2']),
     );
-    expect(rust.resetVotingSessionStateCalls, contains('account-1:$kRoundId'));
+    expect(rust.resetVoteTreeCalls, contains('account-1:$kRoundId'));
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
   test('submission job stays pinned after active account changes', () async {
@@ -9535,7 +9536,69 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
-  test('session dispose clears round-scoped process state', () async {
+  for (final cleanup in ['dispose', 'account switch', 'failed action']) {
+    test(
+      '$cleanup preserves setup while a Keystone proof is running',
+      () async {
+        final proofGate = Completer<void>();
+        final rust = FakeVotingRustApi(
+          backgroundDelegationProofGate: proofGate,
+          sessionBallotIntentsError: StateError('ballot persistence failed'),
+        );
+        final activeAccountProvider =
+            NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+              _ActiveVotingAccountNotifier.new,
+            );
+        final container = _sessionContainer(
+          rust: rust,
+          activeAccountUuidListenable: activeAccountProvider,
+          hardwareAccountUuids: {'account-1', 'account-2'},
+        );
+        var disposed = false;
+        addTearDown(() {
+          if (!proofGate.isCompleted) proofGate.complete();
+          if (!disposed) container.dispose();
+        });
+        final subscription = container.listen(
+          votingSessionProvider(kRoundId),
+          (_, _) {},
+        );
+        addTearDown(subscription.close);
+        await container.read(votingSessionProvider(kRoundId).future);
+        final notifier = container.read(
+          votingSessionProvider(kRoundId).notifier,
+        );
+        await notifier.refreshEligibleWeight();
+        await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+        await rust.backgroundDelegationProofStarted.future;
+
+        if (cleanup == 'dispose') {
+          container.dispose();
+          disposed = true;
+        } else if (cleanup == 'account switch') {
+          container.read(activeAccountProvider.notifier).set('account-2');
+        } else {
+          await notifier.recordBallotIntents(
+            draftVotes: [
+              VotingDraftVote(proposalId: 7, choice: 1, numOptions: 2),
+            ],
+          );
+          expect(
+            container.read(votingSessionProvider(kRoundId)).value!.phase,
+            VotingSessionPhase.error,
+          );
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect(proofGate.isCompleted, isFalse);
+        expect(rust.resetVoteTreeCalls, contains('account-1:$kRoundId'));
+        expect(rust.resetVotingSessionStateCalls, isEmpty);
+        proofGate.complete();
+        await Future<void>.delayed(Duration.zero);
+      },
+    );
+  }
+
+  test('session dispose clears only round-scoped caches', () async {
     final rust = FakeVotingRustApi();
     final container = _sessionContainer(rust: rust);
 
@@ -9543,7 +9606,8 @@ void main() {
     container.dispose();
     await Future<void>.delayed(Duration.zero);
 
-    expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVoteTreeCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
   test(
@@ -9567,6 +9631,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(rust.resetVotingSessionStateCalls, isEmpty);
+      expect(rust.resetVoteTreeCalls, isEmpty);
     },
   );
 
@@ -9597,6 +9662,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(rust.resetVotingSessionStateCalls, isEmpty);
+      expect(rust.resetVoteTreeCalls, isEmpty);
     },
   );
 

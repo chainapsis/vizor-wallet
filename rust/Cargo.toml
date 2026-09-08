@@ -179,9 +179,9 @@ features = ["zakura"]
 
 [patch.crates-io]
 # Keep the voting workspace on one revision until these changes are released.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "ebdfe2e9b25936b2a2d80f41704d03ed77f6f3b7" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "ebdfe2e9b25936b2a2d80f41704d03ed77f6f3b7" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "ebdfe2e9b25936b2a2d80f41704d03ed77f6f3b7" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "f238f9f045ea01a8f05bd59bc55be6c6f98174e0" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "f238f9f045ea01a8f05bd59bc55be6c6f98174e0" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "f238f9f045ea01a8f05bd59bc55be6c6f98174e0" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }

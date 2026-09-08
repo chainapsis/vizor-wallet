@@ -199,8 +199,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _disposeHandlerRegistered = false;
       _activeAccountListenerRegistered = false;
       _submissionGuardListenerRegistered = false;
-      // Provider disposal is round-scoped: clear abandoned prepared PCZTs but
-      // keep account-wide vote-tree sync state reusable across rounds.
+      // Preserve durable setup for background proofs and later signing.
+      // Only the round-scoped vote-tree cache is released on disposal.
       _isDisposed = true;
       _advanceSessionGeneration();
       _snapshotBundlePrecomputes.clear();
@@ -217,14 +217,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (context == null) return;
       if (ownsSubmission) {
         debugPrint(
-          '[zcash] Voting: process-local state reset skipped '
+          '[zcash] Voting: session cache reset skipped '
           'round=${context.round.roundId} account=${context.accountUuid} '
           'reason=provider-dispose activeSubmission=true',
         );
         return;
       }
       unawaited(
-        _resetVotingSessionState(
+        _resetVotingSessionCaches(
           rust: rust,
           context: context,
           reason: 'provider-dispose',
@@ -281,7 +281,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (previousContext != null) {
       if (!_activeSubmissionOwnsContext(previousContext)) {
         unawaited(
-          _resetVotingSessionState(
+          _resetVotingSessionCaches(
             rust: ref.read(votingRustApiProvider),
             context: previousContext,
             reason: 'active-account-switch',
@@ -2893,7 +2893,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       } catch (e, st) {
         debugPrint('[zcash] Voting: session action failed: $e\n$st');
         if (cleanupProcessStateOnError) {
-          await _cleanupCurrentSessionState(reason: 'action-failed');
+          await _cleanupCurrentSessionCaches(reason: 'action-failed');
         }
         if (publishError) {
           _setError(
@@ -3537,22 +3537,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  /// Clear process-local state for the current round after an action failure.
+  /// Clear cached vote-tree state for the current round after an action failure.
   ///
   /// The context is reloaded so cleanup follows the session account and DB path.
   /// If that lookup fails, cleanup is skipped because there is no safe key to
   /// clear.
-  Future<void> _cleanupCurrentSessionState({required String reason}) async {
+  Future<void> _cleanupCurrentSessionCaches({required String reason}) async {
     try {
       final context = await _loadContext(_roundId);
-      await _resetVotingSessionState(
+      await _resetVotingSessionCaches(
         rust: ref.read(votingRustApiProvider),
         context: context,
         reason: reason,
       );
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: process-local cleanup skipped '
+        '[zcash] Voting: session cache cleanup skipped '
         'round=$_roundId reason=$reason error=$e',
       );
     } finally {
@@ -3563,27 +3563,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// Clear round-scoped Rust voting caches for this session.
   ///
   /// Passing the round ID intentionally preserves the account-wide vote-tree
-  /// sync client while discarding prepared delegation PCZTs for abandoned work.
-  /// This cache reset does not abort in-flight proof or vote jobs.
-  static Future<void> _resetVotingSessionState({
+  /// sync client. Durable delegation setup remains available to in-flight proof
+  /// jobs and to the next signing request.
+  static Future<void> _resetVotingSessionCaches({
     required VotingRustApi rust,
     required _VotingSessionContext context,
     required String reason,
   }) async {
     try {
-      await rust.resetVotingSessionState(
+      await rust.resetVoteTree(
         dbPath: context.dbPath,
         accountUuid: context.accountUuid,
         roundId: context.round.roundId,
       );
       debugPrint(
-        '[zcash] Voting: process-local state reset '
+        '[zcash] Voting: session cache reset '
         'round=${context.round.roundId} account=${context.accountUuid} '
         'reason=$reason',
       );
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: process-local state reset failed '
+        '[zcash] Voting: session cache reset failed '
         'round=${context.round.roundId} account=${context.accountUuid} '
         'reason=$reason error=$e',
       );
