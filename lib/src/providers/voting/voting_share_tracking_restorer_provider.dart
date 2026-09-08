@@ -154,7 +154,9 @@ class VotingShareTrackingRestorer {
           if (registry.isQuiesced(round.accountUuid)) continue;
           final notifier = _ref.read(provider.notifier);
           notifier.resumeShareTracking();
-          await notifier.runShareTrackingPass();
+          // Returns once the run is under way, so one round's tracking does
+          // not hold up restoring the next.
+          await notifier.startShareTracking();
         } catch (error, stackTrace) {
           failed = true;
           debugPrint(

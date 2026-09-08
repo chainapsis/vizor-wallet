@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
+    as rust_voting;
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
 import 'package:zcash_wallet/src/services/voting/voting_endpoint_mapper.dart';
 
@@ -7,15 +9,15 @@ import 'package:zcash_wallet/src/services/voting/voting_endpoint_mapper.dart';
 /// covered by `rust/src/api/voting.rs` unit tests. What is left on this side
 /// is the mapping: bridge shapes to Dart types, and a missing endpoint to the
 /// typed failure the delegation and warmup paths catch.
-rust_api.ApiPirSnapshotEndpointDiagnostic diagnostic({
+rust_voting.PirSnapshotEndpointDiagnosticView diagnostic({
   String endpoint = 'https://pir.example',
-  rust_api.ApiPirSnapshotEndpointStatus status =
-      rust_api.ApiPirSnapshotEndpointStatus.matched,
+  rust_voting.PirSnapshotEndpointStatusView status =
+      rust_voting.PirSnapshotEndpointStatusView.matched,
   int? reportedHeight,
   int? httpStatusCode,
   String? message,
 }) {
-  return rust_api.ApiPirSnapshotEndpointDiagnostic(
+  return rust_voting.PirSnapshotEndpointDiagnosticView(
     endpoint: endpoint,
     status: status,
     reportedHeight: reportedHeight == null
@@ -68,7 +70,7 @@ void main() {
           diagnostic(endpoint: 'https://a.example', reportedHeight: 100),
           diagnostic(
             endpoint: 'https://b.example',
-            status: rust_api.ApiPirSnapshotEndpointStatus.behind,
+            status: rust_voting.PirSnapshotEndpointStatusView.behind,
             reportedHeight: 99,
           ),
         ],
@@ -99,7 +101,7 @@ void main() {
         diagnostics: [
           diagnostic(
             endpoint: 'https://a.example',
-            status: rust_api.ApiPirSnapshotEndpointStatus.behind,
+            status: rust_voting.PirSnapshotEndpointStatusView.behind,
             reportedHeight: 99,
           ),
         ],
@@ -122,21 +124,21 @@ void main() {
   test('every bridge status maps to its Dart status', () async {
     // The status screen branches on `behind` specifically, so a silent
     // mismapping here would change what the user is told to do.
-    const pairs = <rust_api.ApiPirSnapshotEndpointStatus,
+    const pairs = <rust_voting.PirSnapshotEndpointStatusView,
         PirSnapshotEndpointStatus>{
-      rust_api.ApiPirSnapshotEndpointStatus.matched:
+      rust_voting.PirSnapshotEndpointStatusView.matched:
           PirSnapshotEndpointStatus.matched,
-      rust_api.ApiPirSnapshotEndpointStatus.behind:
+      rust_voting.PirSnapshotEndpointStatusView.behind:
           PirSnapshotEndpointStatus.behind,
-      rust_api.ApiPirSnapshotEndpointStatus.ahead:
+      rust_voting.PirSnapshotEndpointStatusView.ahead:
           PirSnapshotEndpointStatus.ahead,
-      rust_api.ApiPirSnapshotEndpointStatus.missingHeight:
+      rust_voting.PirSnapshotEndpointStatusView.missingHeight:
           PirSnapshotEndpointStatus.missingHeight,
-      rust_api.ApiPirSnapshotEndpointStatus.malformedJson:
+      rust_voting.PirSnapshotEndpointStatusView.malformedJson:
           PirSnapshotEndpointStatus.malformedJson,
-      rust_api.ApiPirSnapshotEndpointStatus.nonSuccessStatus:
+      rust_voting.PirSnapshotEndpointStatusView.nonSuccessStatus:
           PirSnapshotEndpointStatus.nonSuccessStatus,
-      rust_api.ApiPirSnapshotEndpointStatus.timeoutOrNetworkError:
+      rust_voting.PirSnapshotEndpointStatusView.timeoutOrNetworkError:
           PirSnapshotEndpointStatus.timeoutOrNetworkError,
     };
 
@@ -184,9 +186,9 @@ void main() {
             return rust_api.ApiPirSnapshotResolution(
               endpoint: endpoints.single,
               diagnostics: [
-                rust_api.ApiPirSnapshotEndpointDiagnostic(
+                rust_voting.PirSnapshotEndpointDiagnosticView(
                   endpoint: endpoints.single,
-                  status: rust_api.ApiPirSnapshotEndpointStatus.matched,
+                  status: rust_voting.PirSnapshotEndpointStatusView.matched,
                   reportedHeight: expectedSnapshotHeight,
                 ),
               ],

@@ -34,14 +34,6 @@ const _ironwoodPcztPool = 1;
 const _votingWorkConcurrency = 3;
 const _votingBatchProofConcurrency = 3;
 
-/// How often a running share-tracking pass re-checks Dart-owned stop
-/// conditions.
-///
-/// The pass itself runs in Rust, so this is the granularity at which app lock,
-/// round expiry, or disposal reach it. Short enough that a lock screen stops
-/// helper traffic promptly, long enough not to spin.
-const _shareTrackingCancellationPollInterval = Duration(milliseconds: 250);
-
 /// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
   final status = round.status.trim().toLowerCase();
@@ -70,9 +62,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   bool _retainAutomaticShareTracking() => true;
 
-  void _releaseAutomaticShareTracking() {
-    _disposeHelperDeliveryContext();
-  }
+  void _releaseAutomaticShareTracking() {}
 
   /// Pins automatic helper-share tracking before a submission job can drop its
   /// destructive-operation guard.
@@ -91,11 +81,32 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Map<String, Future<void>> _backgroundDelegationProofPrecomputes = {};
   final Set<String> _completedSnapshotBundlePrecomputes = {};
   final Map<String, Future<List<int>>> _hotkeyEnsures = {};
-  Timer? _shareTrackingTimer;
-  Future<void>? _activeAutomaticShareTrackingPass;
-  final Set<Future<void>> _activeShareTrackingPasses = {};
-  VotingHelperDeliveryContext? _helperDeliveryContext;
-  final Set<VotingShareTrackingPassHandle> _activeShareTrackingPassHandles = {};
+
+  /// The tracking run in flight, the session it runs on, and the context it
+  /// was started for.
+  ///
+  /// One run per notifier: the SDK drives passes to quiescence itself, so a
+  /// second concurrent run would only contend for the same share locks. The
+  /// context is what distinguishes that from a superseded run still unwinding
+  /// after cancellation, which must not block the next one from starting.
+  Future<void>? _shareTrackingRun;
+  VotingRoundSession? _shareTrackingSession;
+  _VotingSessionContext? _shareTrackingContext;
+
+  /// Pending re-arm of a run that stopped on a condition a later run could
+  /// clear, and how many consecutive times that has happened.
+  ///
+  /// The streak drives the backoff and resets as soon as a run reaches a
+  /// quiescence that is not retryable.
+  Timer? _shareTrackingRetryTimer;
+  int _shareTrackingRetryStreak = 0;
+
+  /// The focused immediate-share check in flight, and its session.
+  ///
+  /// Drained alongside a tracking run: it touches the same sidecar, so a
+  /// destructive wallet operation must wait for it too.
+  Future<void>? _focusedConfirmation;
+  VotingRoundSession? _focusedConfirmationSession;
   final Set<VotingRoundSession> _activeRoundSessions = {};
   bool _automaticShareTrackingStopped = false;
   String? _sessionAccountUuid;
@@ -109,39 +120,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Completer<void> _sessionInvalidated = Completer<void>();
   int? _runningActionGeneration;
   bool _isDisposed = false;
-
-  VotingHelperDeliveryContext _helperDeliveryContextFor(
-    VotingRustApi rust,
-    _VotingSessionContext context,
-  ) {
-    final current = _helperDeliveryContext;
-    if (current != null &&
-        !current.isDisposed &&
-        current.dbPath == context.dbPath &&
-        current.accountUuid == context.accountUuid &&
-        current.roundId == context.round.roundId) {
-      return current;
-    }
-    if (_activeShareTrackingPassHandles.isNotEmpty) {
-      throw StateError(
-        'Cannot replace a helper delivery context while tracking is active.',
-      );
-    }
-    current?.dispose();
-    final created = rust.createVotingHelperDeliveryContext(
-      dbPath: context.dbPath,
-      accountUuid: context.accountUuid,
-      roundId: context.round.roundId,
-    );
-    _helperDeliveryContext = created;
-    return created;
-  }
-
-  void _disposeHelperDeliveryContext() {
-    final context = _helperDeliveryContext;
-    _helperDeliveryContext = null;
-    context?.dispose();
-  }
 
   rust_api.ApiVotingRoundContext _apiRoundContext(
     _VotingSessionContext context,
@@ -177,8 +155,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       roundPlan: context.roundPlan,
       phase: _phaseForPlans(context.roundPlan),
     );
-    _shareTrackingTimer?.cancel();
-    await _scheduleShareTracking(context, context.roundPlan);
+    // Only the notifier that owns automatic tracking starts a run by itself.
+    // A screen-scoped notifier still tracks when something asks it to, but it
+    // does not begin polling helpers merely by being watched.
+    if (_ownsAutomaticShareTracking) unawaited(_startShareTracking(context));
     return initialState;
   }
 
@@ -213,12 +193,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _backgroundDelegationProofPrecomputes.clear();
       _completedSnapshotBundlePrecomputes.clear();
       _hotkeyEnsures.clear();
-      _shareTrackingTimer?.cancel();
-      for (final passHandle in _activeShareTrackingPassHandles.toList()) {
-        passHandle.cancel();
-        passHandle.dispose();
-      }
-      _activeShareTrackingPassHandles.clear();
+      _cancelShareTrackingRetry();
       for (final session in _activeRoundSessions.toList()) {
         session.cancel();
         session.dispose();
@@ -310,7 +285,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _backgroundDelegationProofPrecomputes.clear();
     _completedSnapshotBundlePrecomputes.clear();
     _hotkeyEnsures.clear();
-    _shareTrackingTimer?.cancel();
     if (!hadSessionAccount || _isDisposed) return;
 
     final generation = _sessionGeneration;
@@ -334,7 +308,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           phase: _phaseForPlans(context.roundPlan),
         ),
       );
-      unawaited(_scheduleShareTracking(context, context.roundPlan));
+      if (_ownsAutomaticShareTracking) unawaited(_startShareTracking(context));
     } catch (error, stackTrace) {
       if (!_isCurrentGeneration(generation) ||
           _sessionAccountUuid != accountUuid) {
@@ -1000,9 +974,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final draftVotesByProposal = {
       for (final draftVote in draftVotes) draftVote.proposalId: draftVote,
     };
-    final proposalIds = {...?allProposalIds, ...draftVotesByProposal.keys}
-        .toList()
-      ..sort();
+    final proposalIds = {
+      ...?allProposalIds,
+      ...draftVotesByProposal.keys,
+    }.toList()..sort();
     return [
       for (final proposalId in proposalIds)
         rust_session.ApiBallotIntent(
@@ -1079,9 +1054,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         current.voteProgress,
       );
       final rust = ref.read(votingRustApiProvider);
-      final draftVotesByProposal = {
-        for (final draftVote in draftVotes) draftVote.proposalId: draftVote,
-      };
       // An empty ballot must not reach `set_ballot_intents`: `_ballotIntentsFor`
       // marks every listed proposal without a draft vote as skipped, so a
       // recovery-only run would overwrite the stored choices it exists to
@@ -1107,10 +1079,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       var roundPlan = context.roundPlan ?? await _loadRoundPlan(context);
+      // Bundle tasks drive the smooth progress bar, which moves within a step
+      // the tally cannot see inside. The question counters come from the SDK's
+      // tally instead.
       var totalBundleTasks = 0;
-      var totalQuestions = 0;
       var completedBundleTasks = 0;
-      var completedQuestions = 0;
+      rust_wire.RoundWorkTallyView? tally;
       final allVoteKeys = <VotingVoteKey>{};
 
       void publishState({
@@ -1130,8 +1104,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             currentVoteKey: currentVoteKey,
             clearCurrentBundleIndex: currentBundleIndex == null,
             clearCurrentVoteKey: currentVoteKey == null,
-            voteSubmissionCompletedCount: completedQuestions,
-            voteSubmissionTotalCount: totalQuestions,
+            voteSubmissionCompletedCount: tally?.completedProposals ?? 0,
+            voteSubmissionTotalCount: tally?.totalProposals ?? 0,
             voteSubmissionProgress: _aggregateVotePipelineProgress(
               progress: progress,
               voteKeys: inFlightKeys,
@@ -1184,28 +1158,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final initialSteps = roundPlan.nextSteps.where(_isVoteStep).toList();
         totalBundleTasks = initialSteps.length;
         allVoteKeys.addAll(initialSteps.map(_voteKeyForStep));
-        // A batch step stands for every proposal in its unit but carries only
-        // the first one's id, so counting distinct step ids reports a
-        // six-proposal ballot as one question. That is what a resume looks
-        // like: the casts are already recorded and the remaining work is one
-        // batch submission per bundle. Fall back to the ballot itself, which
-        // is what the label is counting.
-        final steppedProposalIds = {
-          for (final step in initialSteps) step.proposalId,
-        };
-        final hasBatchStep = initialSteps.any(
-          (step) => step.kind == rust_wire.NextStepKind.advanceVoteBatch,
-        );
-        totalQuestions = hasBatchStep
-            ? (draftVotesByProposal.isNotEmpty
-                  ? draftVotesByProposal.length
-                  : proposalsFromRound(context.round).length)
-            : steppedProposalIds.length;
         final startTiming = _roundShareTiming(context, _nowSeconds());
         _logVoteTiming(
           'cast votes start '
           'round=${context.round.roundId} bundleTasks=$totalBundleTasks '
-          'proposals=$totalQuestions '
           'lastMoment=${startTiming.isLastMoment}',
         );
         if (initialSteps.isNotEmpty) {
@@ -1216,7 +1172,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               roundPlan: roundPlan,
               voteProgress: progress,
               voteSubmissionCompletedCount: 0,
-              voteSubmissionTotalCount: totalQuestions,
+              // The run's first plan-refresh carries the tally that fills this
+              // in; until then the label has nothing to count.
+              voteSubmissionTotalCount: 0,
               clearCurrentBundleIndex: true,
               clearCurrentVoteKey: true,
             ),
@@ -1229,33 +1187,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           session,
           context,
           label: 'vote',
+          // "Question N of M" counts the choices the voter selected, so it
+          // must not renumber when a resume picks up less than all of them.
+          policy: const rust_session.ApiRoundDrivePolicy(
+            selectedChoiceProgress: true,
+          ),
           onEvent: (event) {
             // A refreshed plan carries no step: it is the whole round's
-            // remaining work, and it is what the question counters read.
-            if (event.kind ==
-                rust_wire.RoundDriveEventKind.planRefreshed) {
+            // remaining work, and it is what the counters read.
+            if (event.kind == rust_wire.RoundDriveEventKind.planRefreshed) {
               final plan = event.plan;
               if (plan == null) return;
-              // Count against the ballot the run started with, which is what
-              // "question N of M" shows. The SDK's own tally is run-relative
-              // and is reported separately; using it here would renumber the
-              // label mid-run on a resume.
+              // The tally is exact where counting steps is not: an atomic
+              // batch projects to one step carrying only its first proposal's
+              // id, so six proposals would read as one question here.
+              tally = event.tally ?? tally;
               final remaining = plan.nextSteps.where(_isVoteStep).toList();
               completedBundleTasks = totalBundleTasks - remaining.length;
-              if (hasBatchStep) {
-                // Per-proposal completion does not exist inside a batch: its
-                // proposals land together, so track the ballot against the
-                // batch work and the count still ends at the full ballot.
-                completedQuestions = totalBundleTasks == 0
-                    ? 0
-                    : (totalQuestions * completedBundleTasks) ~/
-                          totalBundleTasks;
-              } else {
-                final remainingProposals = {
-                  for (final step in remaining) step.proposalId,
-                };
-                completedQuestions = totalQuestions - remainingProposals.length;
-              }
               publishState();
               return;
             }
@@ -1324,6 +1272,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
         }
         roundPlan = report.plan ?? roundPlan;
+        // The driver refreshes plan and tally after its final dispatch, so the
+        // report's tally is the authoritative end state, not the last event's.
+        tally = report.tally;
         publishState();
         if (failures.isNotEmpty) throw _VoteBundleBatchException(failures);
       } on _StaleVotingSessionAction {
@@ -1349,7 +1300,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             voteProgress: progress,
           ),
         );
-        await _scheduleShareTracking(context, roundPlan);
+        if (_ownsAutomaticShareTracking) {
+          unawaited(_startShareTracking(context));
+        }
         rethrow;
       } finally {
         _closeRoundSession(session);
@@ -1379,8 +1332,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           phase: _phaseForPlans(refreshedRoundPlan),
           roundPlan: refreshedRoundPlan,
           voteProgress: progress,
-          voteSubmissionCompletedCount: completedQuestions,
-          voteSubmissionTotalCount: totalQuestions,
+          voteSubmissionCompletedCount: tally?.completedProposals ?? 0,
+          voteSubmissionTotalCount: tally?.totalProposals ?? 0,
           voteSubmissionProgress: _voteSubmissionProgress(
             completedBundleTasks: completedBundleTasks,
             totalBundleTasks: totalBundleTasks,
@@ -1389,7 +1342,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentVoteKey: true,
         ),
       );
-      await _scheduleShareTracking(context, refreshedRoundPlan);
+      if (_ownsAutomaticShareTracking) unawaited(_startShareTracking(context));
     }, cleanupProcessStateOnError: false);
     return operation;
   }
@@ -1577,19 +1530,35 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     List<String> pirServerUrls = const [],
   }) {
     final proposals = proposalsFromRound(context.round);
+    // One mapped fleet for the round. Chain, helper and vote-tree traffic all
+    // go to the configured API servers, but they stay separate fields because
+    // they are separate roles: sharing a value today is a deployment fact, not
+    // something the boundary should assert.
+    final servers = context.config.apiServers.all
+        .map(_transportUrl)
+        .toList(growable: false);
+    final start = context.round.ceremonyStart;
+    final end = context.round.voteEndTime;
     final session = rust.openRoundSession(
       ctx: _apiRoundContext(context),
-      chainEndpoints: context.config.apiServers.all
-          .map(_transportUrl)
-          .toList(growable: false),
-      pirServerUrls: pirServerUrls,
-      proposals: [
-        for (final proposal in proposals)
-          rust_session.ApiProposalRosterEntry(
-            proposalId: proposal.id,
-            numOptions: proposal.options.length,
-          ),
-      ],
+      binding: rust_session.ApiRoundSessionBinding(
+        chainEndpoints: servers,
+        configuredHelperUrls: servers,
+        voteTreeNodeUrls: servers,
+        pirServerUrls: pirServerUrls,
+        proposals: [
+          for (final proposal in proposals)
+            rust_session.ApiProposalRosterEntry(
+              proposalId: proposal.id,
+              numOptions: proposal.options.length,
+            ),
+        ],
+        ceremonyStartSeconds: start == null
+            ? null
+            : BigInt.from(_unixSeconds(start)),
+        voteEndTimeSeconds: end == null ? null : BigInt.from(_unixSeconds(end)),
+        maxProofConcurrency: _votingBatchProofConcurrency,
+      ),
       storedHotkeySecret: storedHotkeySecret,
       operationEpoch: BigInt.from(context.sessionGeneration),
     );
@@ -1600,23 +1569,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   void _closeRoundSession(VotingRoundSession session) {
     _activeRoundSessions.remove(session);
     session.dispose();
-  }
-
-  rust_session.ApiRoundHostContext _hostContext(_VotingSessionContext context) {
-    final start = context.round.ceremonyStart;
-    final end = context.round.voteEndTime;
-    return rust_session.ApiRoundHostContext(
-      configuredHelperUrls: _configuredHelperTransportUrls(context),
-      nowSeconds: BigInt.from(_nowSeconds()),
-      ceremonyStartSeconds: start == null
-          ? null
-          : BigInt.from(_unixSeconds(start)),
-      voteEndTimeSeconds: end == null ? null : BigInt.from(_unixSeconds(end)),
-      voteTreeNodeUrls: context.config.apiServers.all
-          .map(_transportUrl)
-          .toList(growable: false),
-      maxProofConcurrency: _votingBatchProofConcurrency,
-    );
   }
 
   /// Drives the round's delegation work through the SDK, publishing
@@ -1763,12 +1715,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required String label,
     required void Function(rust_wire.RoundDriveEventView event) onEvent,
     rust_session.ApiDelegationSignerInput? signer,
+    rust_session.ApiRoundDrivePolicy? policy,
   }) async {
     _throwIfContextStale(context, '$label-run');
     rust_wire.RoundRunReportView? report;
     await for (final event in session.runRound(
-      host: _hostContext(context),
       signer: signer,
+      policy: policy,
     )) {
       _throwIfContextStale(context, '$label-run-event');
       final observed = event.event;
@@ -1807,9 +1760,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   /// TEMPORARY diagnostic: the network the voting layer binds.
   static String _loggedVotingNetwork(String networkName) {
-    debugPrint(
-      '[zcash] Voting: context network=$networkName',
-    );
+    debugPrint('[zcash] Voting: context network=$networkName');
     return networkName;
   }
 
@@ -1978,35 +1929,406 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<void> runShareTrackingPass() {
-    if (_automaticShareTrackingStopped) return Future.value();
-    final inFlight = _activeAutomaticShareTrackingPass;
-    if (inFlight != null) return inFlight;
-    if (_ownsAutomaticShareTracking && !_retainAutomaticShareTracking()) {
-      return Future.value();
+  /// The tracking run in flight, if any.
+  ///
+  /// [startShareTracking] returns once a run is under way, because no product
+  /// caller waits for one — the round's shares are tracked for as long as the
+  /// round lives. This is how the code that genuinely needs the run's durable
+  /// effects waits for them: the destructive drain, and tests.
+  Future<void>? get shareTrackingRun => _shareTrackingRun;
+
+  /// Starts background helper-share tracking for this round, if it is not
+  /// already running.
+  ///
+  /// Returns as soon as the run is under way. The SDK drives passes to
+  /// quiescence on the cadence each pass computes, so callers observe progress
+  /// through session state rather than by awaiting a pass. Idempotent: a
+  /// second call while a run is in flight is a no-op.
+  Future<void> startShareTracking() => _startShareTracking();
+
+  /// Whether the run in flight is still the one this round wants.
+  ///
+  /// A run whose context has been superseded — the account switched, the
+  /// generation advanced — has already been cancelled and is only unwinding.
+  /// Treating that as "tracking is running" is what would drop the next
+  /// round's start on the floor, because cancellation is cooperative and the
+  /// run is usually still in flight when its replacement is requested.
+  bool get _shareTrackingRunIsLive {
+    if (_shareTrackingRun == null) return false;
+    final running = _shareTrackingContext;
+    return running != null && _isCurrentContext(running);
+  }
+
+  /// [startShareTracking], reusing a context the caller already loaded.
+  Future<void> _startShareTracking([
+    _VotingSessionContext? knownContext,
+  ]) async {
+    if (_shareTrackingRunIsLive) return;
+    if (_automaticShareTrackingStopped) return;
+    if (_isDisposed || !ref.mounted) return;
+    // A superseded run is settled by construction and has already been
+    // cancelled by whatever superseded it, so this waits out an unwind rather
+    // than an outage — and never has to handle a failure.
+    final unwinding = _shareTrackingRun;
+    if (unwinding != null) {
+      await unwinding;
+      if (_isDisposed || !ref.mounted) return;
+    }
+    // Only the notifier that owns automatic tracking may run it, and only
+    // after registering. Registration is what a destructive wallet operation
+    // drains through, so a run started anywhere else would be invisible to it
+    // — account deletion could clear the state a pass is still reading. This
+    // makes "every run is drainable" hold by construction rather than by every
+    // caller happening to pick the right provider.
+    if (!_ownsAutomaticShareTracking) return;
+    if (!_retainAutomaticShareTracking()) return;
+
+    final current = await future;
+    if (_isDisposed || !ref.mounted) return;
+    // Callers inside this notifier already hold a context. Reloading it would
+    // add an await this method is often fired across — from a finished cast,
+    // or a rebuild — and the provider can be gone by the time it lands.
+    final context = knownContext ?? await _loadContext(_roundId);
+    if (_isDisposed || !ref.mounted) return;
+    if (_shareTrackingCancelled(context)) {
+      _releaseAutomaticShareTrackingIfRoundExpired(context);
+      return;
+    }
+    // Nothing to track: opening a session and driving passes would only ask
+    // helpers about shares the round has already confirmed.
+    //
+    // Read from live state first. A caller that supplies its own context is
+    // supplying identity, not a fresh plan: `castVotes` hands over the context
+    // it opened with, whose plan predates the votes it just cast and so
+    // reports no shares at all. Deciding from that would silently skip
+    // tracking exactly when a round has just created shares to track.
+    final plan = state.value?.roundPlan ?? context.roundPlan;
+    if (plan != null && !plan.hasUnconfirmedShares) {
+      _releaseAutomaticShareTracking();
+      return;
+    }
+    // Re-checked after the awaits above: a concurrent caller may have started
+    // the run while this one was loading.
+    if (_shareTrackingRun != null) return;
+    _currentContext = context;
+    // A start supersedes any pending re-arm: the run it would have made is the
+    // one about to begin.
+    _cancelShareTrackingRetry();
+
+    final rust = ref.read(votingRustApiProvider);
+    final session = _openRoundSession(rust, context);
+    _shareTrackingSession = session;
+    _shareTrackingContext = context;
+    // The stored future is the settled one: a run's failure is handled here,
+    // so waiting for a run to finish — the drain, or a test — never has to
+    // handle it again, and a second listener can never turn it into an
+    // unhandled asynchronous error.
+    late final Future<void> run;
+    run = _runShareTracking(session, context, current)
+        .catchError((Object error, StackTrace stack) {
+          debugPrint(
+            '[zcash] Voting: share tracking run failed '
+            'round=${context.round.roundId} error=$error\n$stack',
+          );
+          // Surfaced only while a submission is waiting on it. A job that
+          // would otherwise poll forever has to learn that tracking gave up,
+          // but once the vote is cast and confirmed the shares deliver in the
+          // background: painting that round failed would report a successful
+          // vote as a failure over a helper outage the voter cannot act on.
+          if (!_activeSubmissionOwnsContext(context)) return;
+          _setError(_actionErrorMessage(error), cause: error, context: context);
+        })
+        .whenComplete(() {
+          // All three fields are cleared only by the run that set them, so a
+          // successor cannot be erased by its predecessor finishing late.
+          if (identical(_shareTrackingSession, session)) {
+            _shareTrackingSession = null;
+          }
+          if (identical(_shareTrackingContext, context)) {
+            _shareTrackingContext = null;
+          }
+          if (identical(_shareTrackingRun, run)) _shareTrackingRun = null;
+          _closeRoundSession(session);
+        });
+    _shareTrackingRun = run;
+  }
+
+  /// Consumes one tracking run, projecting its events into session state.
+  Future<void> _runShareTracking(
+    VotingRoundSession session,
+    _VotingSessionContext context,
+    VotingSessionState fallback,
+  ) async {
+    _setStateForContext(
+      context,
+      (state.value ?? fallback).copyWith(
+        phase: VotingSessionPhase.submittingShares,
+        // Same reason as the guard above: the live plan is the current one.
+        roundPlan: state.value?.roundPlan ?? context.roundPlan,
+      ),
+    );
+
+    rust_wire.ShareTrackingRunReportView? report;
+    await for (final event in session.runShareTracking(
+      policy: _shareTrackingPolicy,
+    )) {
+      // A backstop, not the stop mechanism. Every real stop path cancels the
+      // session directly and immediately — the registry drain on app lock,
+      // `_advanceSessionGeneration` on an account switch, provider dispose —
+      // and vote end is a boundary the SDK holds itself from the binding. This
+      // only catches a stop condition that became true with none of those
+      // firing, and it can do so no sooner than the next event.
+      if (_shareTrackingCancelled(context)) session.cancel();
+      final error = event.error;
+      if (error != null) throw votingRustExceptionFromStepError(error);
+      final observed = event.event;
+      if (observed != null) await _applyShareTrackingEvent(observed, context);
+      final finished = event.report;
+      if (finished != null) report = finished;
+    }
+    if (report == null) {
+      throw StateError('Share tracking run completed without a report.');
     }
 
-    late final Future<void> pass;
-    pass = _runShareTrackingPass().whenComplete(() {
-      _activeShareTrackingPasses.remove(pass);
-      if (identical(_activeAutomaticShareTrackingPass, pass)) {
-        _activeAutomaticShareTrackingPass = null;
+    final quiescence = report.quiescence;
+    if (quiescence.kind == rust_wire.ShareTrackingQuiescenceKind.failing) {
+      // The driver already retried under its policy and gave up, so the fleet
+      // has been unreachable for a while. That is still a condition a later
+      // run can clear, so re-arm rather than leaving the round pinned but
+      // untracked until an app lifecycle event happens to restart it.
+      final failure = StateError(
+        quiescence.messages.isEmpty
+            ? 'Helper share tracking kept failing.'
+            : quiescence.messages.last,
+      );
+      debugPrint(
+        '[zcash] Voting: share tracking run failing '
+        'round=${context.round.roundId} passes=${report.passes} '
+        'error=$failure',
+      );
+      _armShareTrackingRetry(context);
+      // Surfaced only while a submission is waiting on it, for the same reason
+      // the run's own failure channel is: a job that would otherwise poll
+      // forever has to learn tracking gave up, but once the vote is cast and
+      // confirmed the shares deliver in the background, and painting that
+      // round red would report a successful vote as a failure over a helper
+      // outage the voter cannot act on.
+      if (_activeSubmissionOwnsContext(context)) {
+        _setError(
+          _actionErrorMessage(failure),
+          cause: failure,
+          context: context,
+        );
       }
+      return;
+    }
+
+    if (quiescence.kind ==
+        rust_wire.ShareTrackingQuiescenceKind.alreadyDriving) {
+      // Another run holds this round and is still driving it. This one polled
+      // nothing, so its report is not evidence about the round: refreshing the
+      // plan off it, clearing drafts, or releasing the registration would all
+      // act on the holder's work as though this run had finished it. Leave the
+      // round to the holder.
+      debugPrint(
+        '[zcash] Voting: share tracking already driven elsewhere '
+        'round=${context.round.roundId}',
+      );
+      _shareTrackingRetryStreak = 0;
+      return;
+    }
+
+    if (report.unrecoverable.isNotEmpty) {
+      // These cannot be repaired by retrying; log once per run rather than
+      // spinning on them silently.
+      debugPrint(
+        '[zcash] Voting: ${report.unrecoverable.length} share(s) missing '
+        'recovery material round=${context.round.roundId}',
+      );
+    }
+    debugPrint(
+      '[zcash] Voting: share tracking run finished '
+      'round=${context.round.roundId} '
+      'quiescence=${report.quiescence.kind.name} passes=${report.passes} '
+      'confirmed=${report.confirmed.length}',
+    );
+
+    if (!_isCurrentContext(context)) {
+      _releaseAutomaticShareTrackingIfRoundExpired(context);
+      return;
+    }
+    final roundPlan = await _loadRoundPlan(context);
+    if (!hasBlockingRoundRecoveryWork(roundPlan)) {
+      await _clearPersistedDraftChoices(context);
+    }
+    _setStateForContext(
+      context,
+      (state.value ?? fallback).copyWith(
+        phase: _phaseForPlans(roundPlan),
+        roundPlan: roundPlan,
+      ),
+    );
+    if (!roundPlan.hasUnconfirmedShares ||
+        !shouldTrackPendingVotingShares(context.round)) {
+      // Nothing left to track, or a boundary no later run can cross — vote end
+      // above all. Release rather than pinning a notifier that will never
+      // track again.
+      _shareTrackingRetryStreak = 0;
+      _releaseAutomaticShareTracking();
+      return;
+    }
+    // Shares remain and the round is still live, so the run stopped short of
+    // its work. Only a budget a later run can be given again is re-armed here:
+    // a cancellation is deliberate and the restorer starts a fresh run on
+    // resume, and a clean quiescence means the run reached the end of what it
+    // was tracking.
+    //
+    // Known gap: `AllConfirmed` and `NothingToTrack` describe what the run
+    // saw, not what the round owes now, so a cast that writes shares behind a
+    // running pass leaves them untracked until the next lifecycle event
+    // restarts tracking. Re-arming on those too closes it, but arms a
+    // long-lived timer in every round that ends with shares pending — which a
+    // `testWidgets` body cannot hold, and which needs wider validation than
+    // the race deserves. The targeted fix is at the source: have `castVotes`
+    // ensure a follow-up run when it wrote shares behind a live one.
+    if (quiescence.kind ==
+        rust_wire.ShareTrackingQuiescenceKind.passBudgetExhausted) {
+      _armShareTrackingRetry(context);
+    } else {
+      _shareTrackingRetryStreak = 0;
+    }
+  }
+
+  /// Re-arms tracking after a run stopped on a condition a later run could
+  /// clear.
+  ///
+  /// The SDK retries within a run, so reaching here means the condition
+  /// outlasted that: consecutive re-arms back off exponentially to a ceiling,
+  /// and never past the round's vote end, after which no run has anything left
+  /// to do.
+  void _armShareTrackingRetry(_VotingSessionContext context) {
+    _cancelShareTrackingRetry();
+    if (_automaticShareTrackingStopped || _isDisposed || !ref.mounted) return;
+    if (!_ownsAutomaticShareTracking) return;
+    if (_shareTrackingCancelled(context)) {
+      _releaseAutomaticShareTrackingIfRoundExpired(context);
+      return;
+    }
+
+    final ceiling = ref.read(votingShareTrackingMaxRetryDelayProvider);
+    // The backoff is multiplicative, so a base of zero would double to zero
+    // forever and retry in a tight loop. Floor it: the point of the first
+    // delay is that the fleet has already been unreachable for longer than
+    // the SDK's own in-run retries, so there is nothing to gain from asking
+    // again immediately.
+    final configured = ref.read(votingShareTrackingFailureRetryDelayProvider);
+    final base = configured < _minShareTrackingRetryDelay
+        ? _minShareTrackingRetryDelay
+        : configured;
+    final streak = _shareTrackingRetryStreak;
+    _shareTrackingRetryStreak = streak + 1;
+    // The shift is clamped rather than the product checked: 2^16 times any
+    // plausible base stays far inside a 64-bit microsecond count, and the
+    // ceiling below caps the value long before the clamp is reached.
+    final backoff = Duration(
+      microseconds: base.inMicroseconds << (streak < 16 ? streak : 16),
+    );
+    var delay = backoff < ceiling ? backoff : ceiling;
+    final voteEnd = context.round.voteEndTime;
+    if (voteEnd != null) {
+      final remaining = voteEnd.difference(DateTime.now());
+      if (remaining.isNegative) {
+        _releaseAutomaticShareTracking();
+        return;
+      }
+      if (remaining < delay) delay = remaining;
+    }
+
+    debugPrint(
+      '[zcash] Voting: re-arming share tracking in ${delay.inSeconds}s '
+      'round=${context.round.roundId} attempt=${streak + 1}',
+    );
+    _shareTrackingRetryTimer = Timer(delay, () {
+      _shareTrackingRetryTimer = null;
+      if (!_isCurrentContext(context)) return;
+      if (!shouldTrackPendingVotingShares(context.round)) {
+        _releaseAutomaticShareTracking();
+        return;
+      }
+      unawaited(_startShareTracking());
     });
-    _activeAutomaticShareTrackingPass = pass;
-    _activeShareTrackingPasses.add(pass);
-    return pass;
+  }
+
+  void _cancelShareTrackingRetry() {
+    _shareTrackingRetryTimer?.cancel();
+    _shareTrackingRetryTimer = null;
+  }
+
+  /// Floor for the re-arm backoff, applied to the configured base delay.
+  ///
+  /// Guards the multiplicative backoff against a zero or negative base, which
+  /// would otherwise disable it entirely rather than shorten it.
+  static const _minShareTrackingRetryDelay = Duration(seconds: 1);
+
+  /// How this app paces a tracking run.
+  ///
+  /// The SDK caps a wait for a not-yet-due share at 30 seconds so a wallet
+  /// using tracking as a general heartbeat re-reads the world regularly. Vizor
+  /// has no use for that: a session's helper fleet and round timing are fixed
+  /// when it opens, and a configuration change rebuilds the session rather
+  /// than mutating it, so waking early can only re-read rows that have not
+  /// changed. A share's submit time can be up to 100 hours out, so the cap
+  /// would turn one wait into thousands of passes that each find nothing due.
+  ///
+  /// Waiting that long is safe because the wait is interruptible: the driver
+  /// wakes on cancellation or an epoch change rather than polling, so a long
+  /// wait costs nothing and ends as soon as Dart cancels the session.
+  ///
+  /// The pass still shortens any wait that would land past vote end, so this
+  /// is bounded by the round, not by this number.
+  static final _shareTrackingPolicy = rust_session.ApiShareTrackingDrivePolicy(
+    futureCheckMaxDelaySeconds: BigInt.from(
+      const Duration(hours: 120).inSeconds,
+    ),
+  );
+
+  /// Refreshes the plan after a pass so the UI reflects newly confirmed shares.
+  Future<void> _applyShareTrackingEvent(
+    rust_wire.ShareTrackingEventView event,
+    _VotingSessionContext context,
+  ) async {
+    if (event.kind != rust_wire.ShareTrackingEventKind.passFinished) return;
+    final pass = event.report;
+    // Only a durable confirmation changes what the UI shows mid-run. A
+    // resubmission leaves the share pending and looks identical, so it does
+    // not pay for a plan read.
+    if (pass == null || pass.confirmed.isEmpty) return;
+    if (!_isCurrentContext(context)) return;
+    // No state to update yet means a rebuild is in flight and will publish its
+    // own. Awaiting it here would stall the run's event stream — and with it
+    // the SDK side feeding that stream — on a provider rebuild.
+    final current = state.value;
+    if (current == null) return;
+    final roundPlan = await _loadRoundPlan(context);
+    if (!_isCurrentContext(context)) return;
+    _setStateForContext(
+      context,
+      (state.value ?? current).copyWith(
+        phase: VotingSessionPhase.submittingShares,
+        roundPlan: roundPlan,
+      ),
+    );
   }
 
   /// Reconciles the designated immediate share without reopening recovery.
   ///
   /// This is the one confirmation-only exception to the vote-end boundary:
   /// the helper may have confirmed the share before the deadline while the
-  /// last local tracking pass missed that transition. The crate polls the
-  /// configured helper quorum for the round and may persist other observed
-  /// confirmations along the way; success here depends only on the designated
-  /// immediate share. Because the round has ended, the pass never resubmits a
-  /// share or selects a new helper.
+  /// last tracking pass missed that transition. The SDK polls the configured
+  /// helper quorum for the round and may persist other observed confirmations
+  /// along the way; success here depends only on the designated immediate
+  /// share. Because the round has ended, it never resubmits a share or selects
+  /// a new helper.
   Future<bool> refreshImmediateShareConfirmation() async {
     var confirmed = false;
     await _enqueue(
@@ -2029,43 +2351,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         if (immediateShare == null) return;
         if (_finalConfirmationCheckCancelled(context)) return;
 
-        final configuredHelperUrls = _configuredHelperTransportUrls(context);
-
         final rust = ref.read(votingRustApiProvider);
-        final helperContext = _helperDeliveryContextFor(rust, context);
-        final passHandle = rust.beginShareTrackingPass(context: helperContext);
-        _activeShareTrackingPassHandles.add(passHandle);
-        final cancellationWatchdog = Timer.periodic(
-          _shareTrackingCancellationPollInterval,
-          (timer) {
-            if (!_finalConfirmationCheckCancelled(context)) return;
-            timer.cancel();
-            passHandle.cancel();
-          },
+        final session = _openRoundSession(rust, context);
+        _focusedConfirmationSession = session;
+        final check = session.confirmImmediateShare(
+          bundleIndex: immediateShare.bundleIndex,
+          proposalId: immediateShare.proposalId,
+          shareIndex: immediateShare.shareIndex,
         );
+        _focusedConfirmation = check.then<void>((_) {}, onError: (_, _) {});
         final bool helperConfirmed;
-        final focusedConfirmationDone = Completer<void>();
-        final focusedConfirmation = focusedConfirmationDone.future;
-        _activeShareTrackingPasses.add(focusedConfirmation);
         try {
-          final nowSeconds =
-              DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-          helperConfirmed = await rust.confirmShareWithHelpers(
-            passHandle: passHandle,
-            configuredHelperUrls: configuredHelperUrls,
-            bundleIndex: immediateShare.bundleIndex,
-            proposalId: immediateShare.proposalId,
-            shareIndex: immediateShare.shareIndex,
-            nowSeconds: BigInt.from(nowSeconds),
-          );
+          helperConfirmed = await check;
         } finally {
-          cancellationWatchdog.cancel();
-          _activeShareTrackingPassHandles.remove(passHandle);
-          passHandle.dispose();
-          if (!focusedConfirmationDone.isCompleted) {
-            focusedConfirmationDone.complete();
+          _focusedConfirmation = null;
+          if (identical(_focusedConfirmationSession, session)) {
+            _focusedConfirmationSession = null;
           }
-          _activeShareTrackingPasses.remove(focusedConfirmation);
+          _closeRoundSession(session);
         }
         if (!helperConfirmed || _finalConfirmationCheckCancelled(context)) {
           return;
@@ -2100,127 +2403,31 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return confirmed;
   }
 
-  Future<void> _runShareTrackingPass() {
-    return _enqueueShareTracking(() async {
-      _shareTrackingTimer?.cancel();
-      _shareTrackingTimer = null;
-      if (_automaticShareTrackingStopped) return;
-      final current = await future;
-      if (_isDisposed || !ref.mounted) return;
-      final context = await _loadContext(_roundId);
-      if (_shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundExpired(context);
-        return;
-      }
-      _currentContext = context;
-      var roundPlan = await _loadRoundPlan(context);
-      if (ref.read(appSecurityProvider).requiresUnlock ||
-          !shouldTrackPendingVotingShares(context.round)) {
-        _setStateForContext(
-          context,
-          current.copyWith(
-            phase: _phaseForPlans(roundPlan),
-            roundPlan: roundPlan,
-          ),
-        );
-        _releaseAutomaticShareTracking();
-        return;
-      }
-      _setStateForContext(
-        context,
-        current.copyWith(
-          phase: VotingSessionPhase.submittingShares,
-          roundPlan: roundPlan,
-        ),
-      );
-
-      final rust = ref.read(votingRustApiProvider);
-      final configuredHelperUrls = _configuredHelperTransportUrls(context);
-      final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-      final voteEnd = context.round.voteEndTime;
-      final voteEndSeconds = voteEnd == null
-          ? null
-          : voteEnd.millisecondsSinceEpoch ~/ 1000;
-
-      // One crate call performs the whole pass: helper status polling, the
-      // two-distinct-helper confirmation quorum, overdue resubmission, and all
-      // durable writes. Dart no longer sees individual helper requests, so its
-      // stop conditions are pushed in by the watchdog below instead of being
-      // polled between them.
-      final helperContext = _helperDeliveryContextFor(rust, context);
-      final passHandle = rust.beginShareTrackingPass(context: helperContext);
-      _activeShareTrackingPassHandles.add(passHandle);
-      Timer? cancellationWatchdog;
-      final rust_api.ApiShareTrackingReport report;
-      try {
-        cancellationWatchdog = _watchShareTrackingCancellation(
-          context,
-          passHandle,
-        );
-        report = await rust.trackPendingShares(
-          passHandle: passHandle,
-          configuredHelperUrls: configuredHelperUrls,
-          nowSeconds: BigInt.from(nowSeconds),
-          voteEndTimeSeconds: voteEndSeconds == null
-              ? null
-              : BigInt.from(voteEndSeconds),
-        );
-      } finally {
-        cancellationWatchdog?.cancel();
-        _activeShareTrackingPassHandles.remove(passHandle);
-        passHandle.dispose();
-      }
-
-      if (report.unrecoverable.isNotEmpty) {
-        // These cannot be repaired by retrying; log once per pass rather than
-        // spinning on them silently.
-        debugPrint(
-          '[zcash] Voting: ${report.unrecoverable.length} share(s) missing '
-          'recovery material round=${context.round.roundId}',
-        );
-      }
-
-      if (report.cancelled || _shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundExpired(context);
-        return;
-      }
-      final refreshedRoundPlan = await _loadRoundPlan(context);
-      final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
-      if (!hasBlockingWork) {
-        await _clearPersistedDraftChoices(context);
-      }
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: _phaseForPlans(refreshedRoundPlan),
-          roundPlan: refreshedRoundPlan,
-        ),
-      );
-      await _scheduleShareTracking(context, refreshedRoundPlan);
-    });
-  }
-
+  /// Stops tracking and waits for the run to finish.
+  ///
+  /// Destructive wallet operations block on this: the run must be off the
+  /// sidecar before the account's state is cleared. Cancelling the session is
+  /// observed inside a pass as well as between passes, so this does not wait
+  /// out a tracking delay.
   Future<void> stopAndDrainShareTracking() async {
     _automaticShareTrackingStopped = true;
-    _shareTrackingTimer?.cancel();
-    _shareTrackingTimer = null;
+    // Before the drain loop, not after: a pending re-arm that fired mid-drain
+    // would start a run the caller has already stopped waiting for.
+    _cancelShareTrackingRetry();
+    _shareTrackingRetryStreak = 0;
     _advanceSessionGeneration();
-    // Stop the in-flight Rust pass now rather than waiting for the watchdog's
-    // next tick: destructive wallet operations block on this draining.
-    for (final passHandle in _activeShareTrackingPassHandles.toList()) {
-      passHandle.cancel();
-    }
+    _shareTrackingSession?.cancel();
+    _focusedConfirmationSession?.cancel();
     try {
-      while (_activeShareTrackingPasses.isNotEmpty) {
-        await Future.wait(
-          _activeShareTrackingPasses.map(
-            (pass) => pass.then<void>((_) {}, onError: (_, _) {}),
-          ),
-        );
+      // Both futures are settled by construction: a run handles its own
+      // failure and the focused check swallows its own. A destructive wallet
+      // operation needs them finished, not successful, so waiting here can
+      // never fail — and must never be able to, or a drain could leave the
+      // account's state half cleared.
+      while (_shareTrackingRun != null || _focusedConfirmation != null) {
+        await _shareTrackingRun;
+        await _focusedConfirmation;
       }
-    } catch (_) {
-      // The tracking action already logged its business error. Destructive
-      // wallet operations require the pass to finish, not to succeed.
     } finally {
       _releaseAutomaticShareTracking();
     }
@@ -2228,127 +2435,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   void resumeShareTracking() {
     _automaticShareTrackingStopped = false;
-  }
-
-  Future<void> _scheduleShareTracking(
-    _VotingSessionContext context,
-    rust_wire.RoundPlanView? roundPlan,
-  ) async {
-    if (!_ownsAutomaticShareTracking) {
-      _shareTrackingTimer?.cancel();
-      _shareTrackingTimer = null;
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    if (_automaticShareTrackingStopped ||
-        !(roundPlan?.hasUnconfirmedShares ?? false) ||
-        !shouldTrackPendingVotingShares(context.round) ||
-        ref.read(appSecurityProvider).requiresUnlock) {
-      _shareTrackingTimer?.cancel();
-      _shareTrackingTimer = null;
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    if (!_isCurrentContext(context)) return;
-    if (!_retainAutomaticShareTracking()) return;
-    _shareTrackingTimer?.cancel();
-    _shareTrackingTimer = null;
-
-    final delaySeconds = await ref
-        .read(votingRustApiProvider)
-        .nextShareTrackingDelaySeconds(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-          nowSeconds: BigInt.from(
-            DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
-          ),
-        );
-    if (delaySeconds == null) {
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    if (!_isCurrentContext(context)) return;
-    final delay = Duration(seconds: delaySeconds.toInt());
-    _armShareTrackingTimer(context, _delayCappedAtVoteEnd(context, delay));
-  }
-
-  void _scheduleShareTrackingFailureRetry() {
-    if (_isDisposed ||
-        !_ownsAutomaticShareTracking ||
-        _automaticShareTrackingStopped ||
-        ref.read(appSecurityProvider).requiresUnlock) {
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    final config = ref.read(votingConfigProvider).value;
-    if (config != null && !config.isRoundAuthenticated(_roundId)) {
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    final context = _currentContext;
-    if (context == null ||
-        !_isCurrentContext(context) ||
-        !shouldTrackPendingVotingShares(context.round) ||
-        !_retainAutomaticShareTracking()) {
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    final configuredDelay = ref.read(
-      votingShareTrackingFailureRetryDelayProvider,
-    );
-    final delay = configuredDelay.isNegative ? Duration.zero : configuredDelay;
-    _armShareTrackingTimer(context, _delayCappedAtVoteEnd(context, delay));
-  }
-
-  Duration _delayCappedAtVoteEnd(
-    _VotingSessionContext context,
-    Duration delay,
-  ) {
-    final remaining = context.round.voteEndTime!.difference(DateTime.now());
-    if (remaining.isNegative) return Duration.zero;
-    return delay < remaining ? delay : remaining;
-  }
-
-  void _armShareTrackingTimer(_VotingSessionContext context, Duration delay) {
-    _shareTrackingTimer?.cancel();
-    _shareTrackingTimer = Timer(delay, () {
-      _shareTrackingTimer = null;
-      if (!_isCurrentContext(context)) return;
-      if (!shouldTrackPendingVotingShares(context.round)) {
-        _releaseAutomaticShareTracking();
-        return;
-      }
-      unawaited(_runShareTrackingPassInBackground());
-    });
-  }
-
-  Future<void> _runShareTrackingPassInBackground() async {
-    try {
-      await runShareTrackingPass();
-    } catch (_) {
-      // The pass already logged the failure and scheduled its next retry.
-    }
-  }
-
-  /// Pushes Dart-owned stop conditions into the in-flight Rust pass.
-  ///
-  /// The pass runs to completion inside the crate, so app lock, round expiry,
-  /// session disposal, and context change can no longer be checked between
-  /// helper requests the way the old Dart loop did. This polls them for the
-  /// duration of the pass and cancels once, which keeps the stop conditions
-  /// and their ownership exactly where they were.
-  ///
-  /// Callers must cancel the returned timer when the pass settles.
-  Timer _watchShareTrackingCancellation(
-    _VotingSessionContext context,
-    VotingShareTrackingPassHandle passHandle,
-  ) {
-    return Timer.periodic(_shareTrackingCancellationPollInterval, (timer) {
-      if (!_shareTrackingCancelled(context)) return;
-      timer.cancel();
-      passHandle.cancel();
-    });
+    // A resume is new information — the app unlocked, the account came back —
+    // so the next attempt starts from the base delay rather than inheriting
+    // the backoff of an outage that may already be over.
+    _shareTrackingRetryStreak = 0;
   }
 
   bool _finalConfirmationCheckCancelled(_VotingSessionContext context) {
@@ -2598,12 +2688,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return ref.read(votingEndpointMapperProvider).map(logicalUrl).toString();
   }
 
-  List<String> _configuredHelperTransportUrls(_VotingSessionContext context) {
-    return context.config.apiServers.all
-        .map(_transportUrl)
-        .toList(growable: false);
-  }
-
   List<String> _delegationPirTransportUrls(VotingSessionState session) {
     final selected = session.pirEndpoint;
     if (selected == null) return const [];
@@ -2633,8 +2717,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       'diagnostics=${pirSnapshotDiagnosticsLog(error.diagnostics)}',
     );
   }
-
-
 
   Future<void> _enqueue(
     Future<void> Function() action, {
@@ -2676,16 +2758,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
     _operation = next.catchError((_) {});
     return next;
-  }
-
-  Future<void> _enqueueShareTracking(Future<void> Function() action) {
-    return _enqueue(
-      action,
-      onError: _scheduleShareTrackingFailureRetry,
-      cleanupProcessStateOnError: false,
-      publishError: false,
-      propagateError: true,
-    );
   }
 
   static String _actionErrorMessage(Object error) {
@@ -3251,8 +3323,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   bool _canUpdateSessionUi([_VotingSessionContext? context]) {
     if (_isDisposed) return false;
     final actionGeneration = _runningActionGeneration;
-    if (actionGeneration != null && actionGeneration != _sessionGeneration) {
-      _logStaleSessionUpdate('ui-action', actionGeneration);
+    if (_isRunningActionSuperseded) {
+      _logStaleSessionUpdate('ui-action', actionGeneration!);
       return false;
     }
     if (context == null) return true;
@@ -3261,6 +3333,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return false;
     }
     return true;
+  }
+
+  /// Whether the queued action currently running belongs to a superseded
+  /// generation.
+  ///
+  /// This is the one staleness question a context cannot answer, because it
+  /// applies before an action has loaded one. Everything else layers on
+  /// [_isCurrentGeneration]: [_isCurrentContext] adds the account the context
+  /// was loaded for, and [_isCurrentPrecomputeContext] adds the account its
+  /// caller expected. They are the same comparison at different points in an
+  /// action's life, not independent mechanisms.
+  bool get _isRunningActionSuperseded {
+    final actionGeneration = _runningActionGeneration;
+    return actionGeneration != null && actionGeneration != _sessionGeneration;
   }
 
   bool _isCurrentContext(_VotingSessionContext context) {
@@ -3332,10 +3418,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   void _throwIfActionStale() {
-    final actionGeneration = _runningActionGeneration;
-    if (actionGeneration != null && actionGeneration != _sessionGeneration) {
-      throw const _StaleVotingSessionAction();
-    }
+    if (_isRunningActionSuperseded) throw const _StaleVotingSessionAction();
   }
 
   void _throwIfContextStale(_VotingSessionContext context, String reason) {
@@ -3377,9 +3460,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'round=$_roundId reason=$reason error=$e',
       );
     } finally {
-      if (_shareTrackingTimer == null && _activeShareTrackingPasses.isEmpty) {
-        _releaseAutomaticShareTracking();
-      }
+      if (_shareTrackingRun == null) _releaseAutomaticShareTracking();
     }
   }
 

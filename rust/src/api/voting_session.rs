@@ -13,12 +13,15 @@ use flutter_rust_bridge::frb;
 use zcash_voting::delegation_pipeline::{DelegationSigner, KeystoneSignatureSource};
 use zcash_voting::wire::{
     KeystoneSigningRequest, RoundDriveEventView, RoundPlanView, RoundRunReportView,
+    ShareTrackingEventView, ShareTrackingRunReportView,
 };
 use zcash_voting::{
     BallotIntent, ChainAdvancePolicy, ChainSubmissionClientConfig, ChainSubmissionControl,
-    DelegationStepInputs, FailureIsolation, HelperHealth, ProposalRosterEntry, RoundBinding,
-    RoundDrivePolicy, RoundDriveReporterBridge, RoundDriver, RoundExecutor, RoundHostContext,
-    RoundHostSourceBridge, VotingErrorView,
+    DelegationStepInputs, FailureIsolation, HelperHealth, ProgressBaseline, ProposalRosterEntry,
+    RoundBinding, RoundDrivePolicy, RoundDriveReporterBridge, RoundDriver, RoundExecutor,
+    RoundHostContext, RoundHostSourceBridge, ShareTrackingDrivePolicy, ShareTrackingDriver,
+    ShareTrackingHostContext, ShareTrackingHostSourceBridge, ShareTrackingReporterBridge,
+    VotingErrorView,
 };
 use zeroize::Zeroizing;
 
@@ -28,8 +31,7 @@ use crate::wallet::voting::signer::SeedSpendAuthSigner;
 use crate::wallet::voting::{db, hotkey};
 
 use super::voting::{
-    delegation_static_inputs_for, helper_client, routed_transport, share_tracking_pass_for,
-    ApiVotingRoundContext, VotingShareTrackingPassHandle,
+    delegation_static_inputs_for, helper_client, routed_transport, ApiVotingRoundContext,
 };
 use super::voting_helpers::seed_from_mnemonic;
 
@@ -52,16 +54,31 @@ pub struct ApiBallotIntent {
     pub choice: Option<u32>,
 }
 
-/// Host inputs that change per step call.
+/// Everything one session binds for its whole life.
+///
+/// These used to be passed again on every call that ran work, which made
+/// mapping a URL at one call site and not another a silent error. A session is
+/// already bound to one account, round and roster; binding its endpoints and
+/// timing beside them means a caller cannot supply a different fleet to two
+/// steps of the same round.
+///
+/// The binding is fixed once taken. A configuration change replaces the
+/// round's servers or timing, and Vizor answers that by rebuilding the
+/// session rather than mutating a live one, so there is no update path here.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiRoundHostContext {
-    /// Complete current helper fleet, already mapped to transport URLs.
+pub struct ApiRoundSessionBinding {
+    /// Vote-chain endpoints for submissions.
+    pub chain_endpoints: Vec<String>,
+    /// Complete configured helper fleet, already mapped to transport URLs.
     pub configured_helper_urls: Vec<String>,
-    pub now_seconds: u64,
-    pub ceremony_start_seconds: Option<u64>,
-    pub vote_end_time_seconds: Option<u64>,
     /// Vote-tree node URLs tried in order by cast-vote steps.
     pub vote_tree_node_urls: Vec<String>,
+    /// PIR endpoints for delegation snapshot proofs, most preferred first.
+    pub pir_server_urls: Vec<String>,
+    /// The round's authenticated proposal roster.
+    pub proposals: Vec<ApiProposalRosterEntry>,
+    pub ceremony_start_seconds: Option<u64>,
+    pub vote_end_time_seconds: Option<u64>,
     pub max_proof_concurrency: u32,
 }
 
@@ -170,6 +187,41 @@ pub struct ApiRoundDrivePolicy {
     pub max_dispatches: Option<u32>,
     /// `true` keeps every other bundle running after one fails.
     pub skip_failed_bundle: Option<bool>,
+    /// `true` counts run progress against the round's selected choices
+    /// instead of only the work this run picked up, so a resumed round keeps
+    /// the total the voter already saw.
+    ///
+    /// Not the whole ballot: the SDK's `SelectedChoices` baseline excludes
+    /// skips and clearable stale choices, because those owe no vote
+    /// submission and would inflate a total the voter can never reach.
+    /// Omitted keeps the SDK's run-relative default.
+    pub selected_choice_progress: Option<bool>,
+}
+
+/// How a tracking run paces itself. Omitted fields keep the SDK defaults.
+pub struct ApiShareTrackingDrivePolicy {
+    pub failure_retry_seconds: Option<f64>,
+    pub max_consecutive_failures: Option<u32>,
+    /// Passes before the run stops with `PassBudgetExhausted`. Omitted keeps
+    /// the SDK default of no bound at all: vote end, confirmation,
+    /// cancellation and the consecutive-failure guard are what end a healthy
+    /// run, and a pass count is not a duration.
+    pub max_passes: Option<u32>,
+    /// Longest wait for a share whose status check is still ahead. Vizor
+    /// refreshes round state on its own schedule, so it lifts the SDK's
+    /// 30-second heartbeat cap rather than waking to find nothing ready.
+    pub future_check_max_delay_seconds: Option<u64>,
+}
+
+/// One observation from a tracking run, or its single terminal report.
+///
+/// Exactly one `Result`-kind event is emitted however the run ends, carrying
+/// either the report or a bridge error.
+pub struct ApiShareTrackingRunEvent {
+    pub kind: ApiRoundStepEventKind,
+    pub event: Option<ShareTrackingEventView>,
+    pub report: Option<ShareTrackingRunReportView>,
+    pub error: Option<ApiRoundStepError>,
 }
 
 /// SDK-owned execution of one round for one account.
@@ -177,7 +229,7 @@ pub struct ApiRoundDrivePolicy {
 pub struct VotingRoundSession {
     executor: RoutedExecutor,
     inputs: RoundInputs,
-    pir_server_urls: Vec<String>,
+    binding: ApiRoundSessionBinding,
     pir_layout: zcash_voting::config::PirLayout,
     hotkey_secret: Option<Zeroizing<Vec<u8>>>,
     pipeline: tokio::sync::OnceCell<Arc<VizorDelegationPipeline>>,
@@ -200,9 +252,7 @@ pub struct VotingRoundSession {
 #[frb(sync)]
 pub fn open_voting_round_session(
     ctx: ApiVotingRoundContext,
-    chain_endpoints: Vec<String>,
-    pir_server_urls: Vec<String>,
-    proposals: Vec<ApiProposalRosterEntry>,
+    binding: ApiRoundSessionBinding,
     stored_hotkey_secret: Option<Vec<u8>>,
     operation_epoch: u64,
 ) -> Result<VotingRoundSession, VotingErrorView> {
@@ -218,7 +268,7 @@ pub fn open_voting_round_session(
     let executor = RoundExecutor::with_transport(
         Arc::clone(&database),
         routed_transport(),
-        ChainSubmissionClientConfig::for_network(inputs.network, chain_endpoints),
+        ChainSubmissionClientConfig::for_network(inputs.network, binding.chain_endpoints.clone()),
         helper_client(&health),
     )
     .map_err(|failure| {
@@ -229,8 +279,9 @@ pub fn open_voting_round_session(
     .with_binding(RoundBinding {
         round_id: ctx.round_params.vote_round_id.clone(),
         network: inputs.network,
-        proposals: proposals
-            .into_iter()
+        proposals: binding
+            .proposals
+            .iter()
             .map(|entry| ProposalRosterEntry {
                 proposal_id: entry.proposal_id,
                 num_options: entry.num_options,
@@ -242,7 +293,7 @@ pub fn open_voting_round_session(
     Ok(VotingRoundSession {
         executor,
         inputs,
-        pir_server_urls,
+        binding,
         pir_layout: ctx.pir_layout,
         hotkey_secret: stored_hotkey_secret.map(Zeroizing::new),
         pipeline: tokio::sync::OnceCell::new(),
@@ -257,6 +308,28 @@ impl VotingRoundSession {
     #[frb(sync)]
     pub fn cancel(&self) {
         self.control.cancel();
+    }
+
+    /// Whether this session has been cancelled.
+    ///
+    /// Background tracking and a foreground cast run on separate sessions for
+    /// one round, so this is per-activity: cancelling the tracking session
+    /// leaves the casting session running.
+    #[frb(sync)]
+    pub fn is_cancelled(&self) -> bool {
+        self.control.is_cancelled()
+    }
+
+    /// Recorded helper failures for `url` on this session's health scope.
+    #[cfg(test)]
+    pub(crate) fn helper_failure_count_for_test(&self, url: &str) -> u32 {
+        self.health.failure_count(url)
+    }
+
+    /// Records a helper failure on this session's health scope.
+    #[cfg(test)]
+    pub(crate) fn record_helper_failure_for_test(&self, url: &str, now_seconds: u64) {
+        self.health.record_failure(url, now_seconds);
     }
 
     #[frb(sync)]
@@ -339,13 +412,12 @@ impl VotingRoundSession {
     /// fleet that changes mid-run needs a new call.
     pub async fn run_round(
         &self,
-        host: ApiRoundHostContext,
         signer: Option<ApiDelegationSignerInput>,
         policy: Option<ApiRoundDrivePolicy>,
         sink: StreamSink<ApiRoundRunEvent>,
     ) {
         let sink = Arc::new(sink);
-        let event = match self.drive(host, signer, policy, Arc::clone(&sink)).await {
+        let event = match self.drive(signer, policy, Arc::clone(&sink)).await {
             Ok(event) => event,
             Err(error) => ApiRoundRunEvent {
                 kind: ApiRoundStepEventKind::Result,
@@ -360,7 +432,6 @@ impl VotingRoundSession {
     /// Runs the round, streaming events, and returns its report event.
     async fn drive(
         &self,
-        host: ApiRoundHostContext,
         signer: Option<ApiDelegationSignerInput>,
         policy: Option<ApiRoundDrivePolicy>,
         sink: Arc<StreamSink<ApiRoundRunEvent>>,
@@ -369,14 +440,17 @@ impl VotingRoundSession {
         // anchor, and the driver overlaps bundles that would each pay for it.
         let delegation = self.delegation_inputs(signer).await?;
         let template = RoundHostContext {
-            configured_helper_urls: host.configured_helper_urls,
-            now_seconds: host.now_seconds,
-            ceremony_start_seconds: host.ceremony_start_seconds,
-            vote_end_time_seconds: host.vote_end_time_seconds,
-            vote_tree_node_urls: host.vote_tree_node_urls,
+            configured_helper_urls: self.binding.configured_helper_urls.clone(),
+            // Restamped per dispatch below. The zero is unreachable in
+            // practice: it stands in only if the system clock reads before
+            // 1970, which `a_real_clock_is_used` pins against.
+            now_seconds: 0,
+            ceremony_start_seconds: self.binding.ceremony_start_seconds,
+            vote_end_time_seconds: self.binding.vote_end_time_seconds,
+            vote_tree_node_urls: self.binding.vote_tree_node_urls.clone(),
             delegation,
             chain_policy: ChainAdvancePolicy::default(),
-            max_proof_concurrency: host.max_proof_concurrency.max(1) as usize,
+            max_proof_concurrency: self.binding.max_proof_concurrency.max(1) as usize,
         };
         let host_source = RoundHostSourceBridge::new(move || RoundHostContext {
             now_seconds: unix_now_seconds(template.now_seconds),
@@ -425,20 +499,124 @@ impl VotingRoundSession {
         .map_err(VotingErrorView::from)
     }
 
-    /// Cancellation handle for one helper-share tracking pass on this round.
+    /// Tracks this round's helper shares to confirmation, streaming events
+    /// then exactly one report.
     ///
-    /// Tracking passes are cancelled by the destructive drain independently
-    /// of the session's own control, so a background drain never aborts a
-    /// foreground cast.
-    #[frb(sync)]
-    pub fn begin_share_tracking_pass(&self) -> VotingShareTrackingPassHandle {
-        share_tracking_pass_for(
-            &self.inputs.db_path,
-            &self.inputs.account_uuid,
-            &self.inputs.round_params.vote_round_id,
-            &self.health,
-            &self.database,
+    /// Background tracking opens its own session, so `cancel` stops tracking
+    /// without touching a foreground cast running on another session for the
+    /// same round. That separation used to need a second cancellation handle
+    /// and a second helper-health scope; one session per activity gives it for
+    /// free, and each session's helper health now spans both the initial
+    /// delivery it performed and the tracking that follows.
+    pub async fn run_share_tracking(
+        &self,
+        policy: Option<ApiShareTrackingDrivePolicy>,
+        sink: StreamSink<ApiShareTrackingRunEvent>,
+    ) {
+        let sink = Arc::new(sink);
+        let event = match self.track(policy, Arc::clone(&sink)).await {
+            Ok(event) => event,
+            Err(error) => ApiShareTrackingRunEvent {
+                kind: ApiRoundStepEventKind::Result,
+                event: None,
+                report: None,
+                error: Some(ApiRoundStepError::from(error)),
+            },
+        };
+        let _ = sink.add(event);
+    }
+
+    /// Runs the tracking driver, streaming events, and returns its report
+    /// event.
+    async fn track(
+        &self,
+        policy: Option<ApiShareTrackingDrivePolicy>,
+        sink: Arc<StreamSink<ApiShareTrackingRunEvent>>,
+    ) -> Result<ApiShareTrackingRunEvent, VotingErrorView> {
+        let database = self.database_handle()?;
+        let template = ShareTrackingHostContext {
+            configured_helper_urls: self.binding.configured_helper_urls.clone(),
+            now_seconds: 0,
+            vote_end_time_seconds: self.binding.vote_end_time_seconds,
+        };
+        // The clock is read per pass, not frozen at the call: a run can span
+        // hours, and the vote-end boundary is judged against it.
+        let host_source = ShareTrackingHostSourceBridge::new(move || ShareTrackingHostContext {
+            now_seconds: unix_now_seconds(template.now_seconds),
+            ..template.clone()
+        });
+
+        let event_sink = sink;
+        let reporter = ShareTrackingReporterBridge::new(move |event| {
+            let _ = event_sink.add(ApiShareTrackingRunEvent {
+                kind: ApiRoundStepEventKind::Progress,
+                event: Some(ShareTrackingEventView::from(event)),
+                report: None,
+                error: None,
+            });
+        });
+
+        let client = helper_client(&self.health);
+        let report =
+            ShareTrackingDriver::new(&database, &client, &self.inputs.round_params.vote_round_id)
+                .with_policy(share_tracking_drive_policy(policy))
+                .run(&host_source, &self.control, &reporter)
+                .await;
+        Ok(ApiShareTrackingRunEvent {
+            kind: ApiRoundStepEventKind::Result,
+            event: None,
+            report: Some(ShareTrackingRunReportView::from(report)),
+            error: None,
+        })
+    }
+
+    /// Re-reads whether this round's designated immediate share is confirmed.
+    ///
+    /// The one confirmation-only exception to the vote-end boundary: a helper
+    /// may have confirmed the share before the deadline while the last
+    /// tracking pass missed the transition. This never resubmits a share or
+    /// selects a new helper, so it is safe after the round has ended, and it
+    /// answers now rather than on the tracking cadence — the submission flow
+    /// gates completion on it.
+    pub async fn confirm_immediate_share(
+        &self,
+        bundle_index: u32,
+        proposal_id: u32,
+        share_index: u32,
+    ) -> Result<bool, VotingErrorView> {
+        let database = self.database_handle()?;
+        let client = helper_client(&self.health);
+        let entry_epoch = self.control.operation_epoch();
+        let cancel =
+            || self.control.is_cancelled() || self.control.operation_epoch() != entry_epoch;
+        let report = zcash_voting::share_tracking::confirm_pending_share(
+            &database,
+            &zcash_voting::share_tracking::ShareConfirmationParams {
+                round_id: &self.inputs.round_params.vote_round_id,
+                share: zcash_voting::share_tracking::ShareKey {
+                    bundle_index,
+                    proposal_id,
+                    share_index,
+                },
+                configured_server_urls: &self.binding.configured_helper_urls,
+                now_seconds: unix_now_seconds(0),
+            },
+            &client,
+            &cancel,
         )
+        .await
+        .map_err(VotingErrorView::from)?;
+        Ok(report.confirmed)
+    }
+
+    /// The sidecar this session opened, still open.
+    fn database_handle(&self) -> Result<Arc<zcash_voting::round::VotingDb>, VotingErrorView> {
+        self.database
+            .lock()
+            .map_err(|_| internal("voting session database lock poisoned".to_string()))?
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| internal("voting session database is closed".to_string()))
     }
 
     /// The session's delegation pipeline, built once.
@@ -497,7 +675,7 @@ impl VotingRoundSession {
                 DelegationSigner::Keystone(KeystoneSignatureSource::Provided { sig, sighash })
             }
         };
-        let pir = delegation::pir_fleet(&self.pir_server_urls, self.pir_layout)
+        let pir = delegation::pir_fleet(&self.binding.pir_server_urls, self.pir_layout)
             .map_err(VotingErrorView::from)?;
         let driver = self.pipeline().await?;
         Ok(Some(DelegationStepInputs {
@@ -544,6 +722,43 @@ fn round_drive_policy(policy: Option<ApiRoundDrivePolicy>) -> RoundDrivePolicy {
             .map(|budget| budget as usize)
             .filter(|budget| *budget > 0)
             .unwrap_or(defaults.max_dispatches),
+        progress_baseline: match policy.selected_choice_progress {
+            Some(true) => ProgressBaseline::SelectedChoices,
+            _ => defaults.progress_baseline,
+        },
+    }
+}
+
+fn share_tracking_drive_policy(
+    policy: Option<ApiShareTrackingDrivePolicy>,
+) -> ShareTrackingDrivePolicy {
+    let defaults = ShareTrackingDrivePolicy::default();
+    let Some(policy) = policy else {
+        return defaults;
+    };
+    let mut timing = defaults.timing;
+    if let Some(cap) = policy.future_check_max_delay_seconds {
+        timing.future_check_max_delay_seconds = cap;
+    }
+    ShareTrackingDrivePolicy {
+        timing,
+        failure_retry: policy
+            .failure_retry_seconds
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+            .map(std::time::Duration::from_secs_f64)
+            .unwrap_or(defaults.failure_retry),
+        max_consecutive_failures: policy
+            .max_consecutive_failures
+            .filter(|limit| *limit > 0)
+            .unwrap_or(defaults.max_consecutive_failures),
+        // `None` is the SDK default and means "no pass-count bound": vote end,
+        // confirmation, cancellation and the consecutive-failure guard are
+        // what end a healthy run. Fall back to it rather than to a number, so
+        // a caller passing no budget does not acquire one.
+        max_passes: policy
+            .max_passes
+            .filter(|budget| *budget > 0)
+            .or(defaults.max_passes),
     }
 }
 
@@ -569,6 +784,7 @@ mod tests {
             max_bundle_concurrency: None,
             max_dispatches: None,
             skip_failed_bundle: None,
+            selected_choice_progress: None,
         }
     }
 
@@ -582,6 +798,34 @@ mod tests {
             defaults.max_bundle_concurrency
         );
         assert_eq!(mapped.max_dispatches, defaults.max_dispatches);
+        assert_eq!(mapped.progress_baseline, defaults.progress_baseline);
+    }
+
+    #[test]
+    fn only_an_explicit_request_counts_progress_over_selected_choices() {
+        // The vote flow asks for the selected-choice baseline so
+        // "question N of M" keeps its total across a resume. Every other
+        // caller, and an older Dart build that does not set the field, keeps
+        // the run-relative default.
+        assert_eq!(
+            policy(ApiRoundDrivePolicy {
+                selected_choice_progress: Some(true),
+                ..unset()
+            })
+            .progress_baseline,
+            ProgressBaseline::SelectedChoices
+        );
+        for requested in [None, Some(false)] {
+            assert_eq!(
+                policy(ApiRoundDrivePolicy {
+                    selected_choice_progress: requested,
+                    ..unset()
+                })
+                .progress_baseline,
+                ProgressBaseline::Run,
+                "selected_choice_progress={requested:?}"
+            );
+        }
     }
 
     #[test]

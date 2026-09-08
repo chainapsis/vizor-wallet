@@ -10,9 +10,9 @@ import '../third_party/zcash_voting/share_policy.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `helper_delivery_db`, `internal`, `invalid_input`, `is_cancelled`, `pir_snapshot_failure`, `pir_snapshot_height_field`, `pir_snapshot_probe_attempt`, `pir_snapshot_root_url`, `probe_pir_snapshot_endpoint`, `round_inputs`, `routed_transport`, `share_tracking_pass_for`, `view`
+// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `internal`, `invalid_input`, `pir_snapshot_failure`, `pir_snapshot_height_field`, `pir_snapshot_probe_attempt`, `pir_snapshot_root_url`, `probe_pir_snapshot_endpoint`, `round_inputs`, `routed_transport`, `view`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PirSnapshotProbeAttempt`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 /// Probe every configured PIR endpoint and select one at the round's height.
 ///
@@ -90,102 +90,6 @@ Future<VotingRoundParams> trustedVotingRoundParamsFromConfig({
   snapshotHeight: snapshotHeight,
   ncRoot: ncRoot,
   nullifierImtRoot: nullifierImtRoot,
-);
-
-/// Creates helper delivery state for one account-and-round voting workflow.
-VotingHelperDeliveryContext createVotingHelperDeliveryContext({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-}) => RustLib.instance.api.crateApiVotingCreateVotingHelperDeliveryContext(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-);
-
-/// Creates one cancellable tracking-pass handle bound to its delivery context.
-VotingShareTrackingPassHandle beginShareTrackingPass({
-  required VotingHelperDeliveryContext context,
-}) =>
-    RustLib.instance.api.crateApiVotingBeginShareTrackingPass(context: context);
-
-/// Runs one confirm-or-retry pass over a round's unconfirmed helper shares.
-///
-/// This is the whole helper-facing workflow: the crate polls helpers, requires
-/// matching confirmation responses from two distinct configured helpers,
-/// persists confirmed shares, retries overdue shares against helpers that
-/// missed them, and persists delivery outcomes. Dart owns only the timer and
-/// cancellation triggers.
-///
-/// The sidecar write lock is held for the open (which may migrate) and then
-/// released. Holding it across the pass would block user-initiated voting
-/// writes for as long as helper polling takes; the writes this pass makes are
-/// short and self-contained, and the sidecar runs in WAL mode with a busy
-/// timeout.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails or a share record cannot be
-/// read or updated. Helper failures are not errors: they are scored and
-/// reported through the returned pass result.
-Future<ApiShareTrackingReport> trackPendingShares({
-  required VotingShareTrackingPassHandle passHandle,
-  required List<String> configuredHelperUrls,
-  required BigInt nowSeconds,
-  BigInt? voteEndTimeSeconds,
-}) => RustLib.instance.api.crateApiVotingTrackPendingShares(
-  passHandle: passHandle,
-  configuredHelperUrls: configuredHelperUrls,
-  nowSeconds: nowSeconds,
-  voteEndTimeSeconds: voteEndTimeSeconds,
-);
-
-/// Checks confirmation quorum for one known share without walking the round.
-///
-/// Foreground submission completion depends only on the designated immediate
-/// share. Using the full recovery pass for that gate makes completion latency
-/// scale with every proposal's delayed shares. This focused check polls at most
-/// four configured helpers concurrently, persists confirmation after two
-/// distinct helpers agree (or the sole helper in a one-helper fleet), and does
-/// not resubmit or otherwise mutate unrelated shares.
-Future<bool> confirmShareWithHelpers({
-  required VotingShareTrackingPassHandle passHandle,
-  required List<String> configuredHelperUrls,
-  required int bundleIndex,
-  required int proposalId,
-  required int shareIndex,
-  required BigInt nowSeconds,
-}) => RustLib.instance.api.crateApiVotingConfirmShareWithHelpers(
-  passHandle: passHandle,
-  configuredHelperUrls: configuredHelperUrls,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  shareIndex: shareIndex,
-  nowSeconds: nowSeconds,
-);
-
-/// Seconds until this round's next helper-share tracking pass should run.
-///
-/// `None` means the round has no unconfirmed shares left, which is also the
-/// signal to stop background tracking. The SDK reads the durable share rows
-/// itself, so they never cross this boundary.
-///
-/// The SDK's own `next_tracking_delay_for_round` returns the soonest *future*
-/// check time, so a share that is already past its grace boundary waits behind
-/// an unrelated future one. Vizor polls the ready share instead, and lifts the
-/// future-check cap: that cap exists for wallets using the tracking pass as a
-/// general heartbeat, and Vizor refreshes round state separately, so it would
-/// only cause redundant SQLite and helper passes.
-Future<BigInt?> nextShareTrackingDelaySeconds({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required BigInt nowSeconds,
-}) => RustLib.instance.api.crateApiVotingNextShareTrackingDelaySeconds(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  nowSeconds: nowSeconds,
 );
 
 /// Generate opaque voting hotkey bytes for a local voting account.
@@ -527,15 +431,6 @@ Future<VotingConfigResolution> resolveVotingConfigFromAttempts({
   previous: previous,
 );
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingHelperDeliveryContext>>
-abstract class VotingHelperDeliveryContext implements RustOpaqueInterface {}
-
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<VotingShareTrackingPassHandle>>
-abstract class VotingShareTrackingPassHandle implements RustOpaqueInterface {
-  /// Stops this tracking pass at its next cancellation check.
-  void cancel();
-}
-
 /// FRB-facing bundle layout for [`setup_delegation_bundles`].
 ///
 /// Keeps the SDK's flat privacy-trim totals on the existing layout boundary so
@@ -757,51 +652,6 @@ class ApiPirCacheWarmupResult {
           prunedCount == other.prunedCount;
 }
 
-class ApiPirSnapshotEndpointDiagnostic {
-  final String endpoint;
-  final ApiPirSnapshotEndpointStatus status;
-  final BigInt? reportedHeight;
-  final int? httpStatusCode;
-  final String? message;
-
-  const ApiPirSnapshotEndpointDiagnostic({
-    required this.endpoint,
-    required this.status,
-    this.reportedHeight,
-    this.httpStatusCode,
-    this.message,
-  });
-
-  @override
-  int get hashCode =>
-      endpoint.hashCode ^
-      status.hashCode ^
-      reportedHeight.hashCode ^
-      httpStatusCode.hashCode ^
-      message.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiPirSnapshotEndpointDiagnostic &&
-          runtimeType == other.runtimeType &&
-          endpoint == other.endpoint &&
-          status == other.status &&
-          reportedHeight == other.reportedHeight &&
-          httpStatusCode == other.httpStatusCode &&
-          message == other.message;
-}
-
-enum ApiPirSnapshotEndpointStatus {
-  matched,
-  behind,
-  ahead,
-  missingHeight,
-  malformedJson,
-  nonSuccessStatus,
-  timeoutOrNetworkError,
-}
-
 /// Selected PIR endpoint plus a diagnostic for every endpoint probed.
 ///
 /// The full diagnostic set is part of the result, not debug output: the
@@ -811,7 +661,7 @@ enum ApiPirSnapshotEndpointStatus {
 class ApiPirSnapshotResolution {
   /// `None` when every endpoint was probed and none matched the round.
   final String? endpoint;
-  final List<ApiPirSnapshotEndpointDiagnostic> diagnostics;
+  final List<PirSnapshotEndpointDiagnosticView> diagnostics;
 
   const ApiPirSnapshotResolution({this.endpoint, required this.diagnostics});
 
@@ -825,102 +675,6 @@ class ApiPirSnapshotResolution {
           runtimeType == other.runtimeType &&
           endpoint == other.endpoint &&
           diagnostics == other.diagnostics;
-}
-
-/// One share that reached a new helper during a tracking pass.
-class ApiResubmittedShare {
-  final ApiShareKey share;
-  final String serverUrl;
-
-  const ApiResubmittedShare({required this.share, required this.serverUrl});
-
-  @override
-  int get hashCode => share.hashCode ^ serverUrl.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiResubmittedShare &&
-          runtimeType == other.runtimeType &&
-          share == other.share &&
-          serverUrl == other.serverUrl;
-}
-
-/// One helper share identified within its round.
-class ApiShareKey {
-  final int bundleIndex;
-  final int proposalId;
-  final int shareIndex;
-
-  const ApiShareKey({
-    required this.bundleIndex,
-    required this.proposalId,
-    required this.shareIndex,
-  });
-
-  @override
-  int get hashCode =>
-      bundleIndex.hashCode ^ proposalId.hashCode ^ shareIndex.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiShareKey &&
-          runtimeType == other.runtimeType &&
-          bundleIndex == other.bundleIndex &&
-          proposalId == other.proposalId &&
-          shareIndex == other.shareIndex;
-}
-
-/// What one helper share-tracking pass did.
-class ApiShareTrackingReport {
-  /// Shares durably confirmed by the crate's two-helper quorum.
-  final List<ApiShareKey> confirmed;
-
-  /// Shares that reached an additional helper during this pass.
-  final List<ApiResubmittedShare> resubmitted;
-
-  /// Outcome-unknown attempts retained durably during this pass.
-  final List<ApiResubmittedShare> ambiguous;
-
-  /// Shares whose recovery material is missing, so no retry can help.
-  final List<ApiShareKey> unrecoverable;
-
-  /// True when the pass stopped early because Dart cancelled it.
-  final bool cancelled;
-
-  /// Seconds until the next pass, or `None` when nothing is pending.
-  final BigInt? nextDelaySeconds;
-
-  const ApiShareTrackingReport({
-    required this.confirmed,
-    required this.resubmitted,
-    required this.ambiguous,
-    required this.unrecoverable,
-    required this.cancelled,
-    this.nextDelaySeconds,
-  });
-
-  @override
-  int get hashCode =>
-      confirmed.hashCode ^
-      resubmitted.hashCode ^
-      ambiguous.hashCode ^
-      unrecoverable.hashCode ^
-      cancelled.hashCode ^
-      nextDelaySeconds.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiShareTrackingReport &&
-          runtimeType == other.runtimeType &&
-          confirmed == other.confirmed &&
-          resubmitted == other.resubmitted &&
-          ambiguous == other.ambiguous &&
-          unrecoverable == other.unrecoverable &&
-          cancelled == other.cancelled &&
-          nextDelaySeconds == other.nextDelaySeconds;
 }
 
 /// PIR cache result for one snapshot-precomputed delegation bundle.

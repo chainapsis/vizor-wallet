@@ -171,7 +171,7 @@ class _VotingProposalDetailViewState
       if (!mounted || _visibleShareRefreshKey != key) return;
       await ref
           .read(votingSubmissionSessionProvider(key).notifier)
-          .runShareTrackingPass();
+          .startShareTracking();
     } catch (error, stackTrace) {
       debugPrint(
         '[zcash] Voting: visible share status refresh failed '

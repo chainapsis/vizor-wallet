@@ -41,6 +41,24 @@ abstract interface class FakeChainSubmissionPassHandle {
 /// The per-step operations a scripted fake still exposes so
 /// [FakeVotingRoundSession] can mirror the SDK executor. Production Dart no
 /// longer sees these; the SDK runs them inside a round session step.
+/// The account-and-round scope a session keeps for helper work.
+///
+/// Production has no separate type for this any more — one session owns the
+/// scope, its helper health, and its sidecar handle. The fake keeps it as a
+/// value so its step decomposition can pass it around the way the SDK passes
+/// its own state internally.
+class FakeHelperDeliveryScope {
+  const FakeHelperDeliveryScope({
+    required this.dbPath,
+    required this.accountUuid,
+    required this.roundId,
+  });
+
+  final String dbPath;
+  final String accountUuid;
+  final String roundId;
+}
+
 abstract interface class FakeRoundStepApi {
   Stream<rust_api.ApiDelegationProofEvent>
   buildProveAndSignDelegationPayloadWithProgress({
@@ -121,12 +139,12 @@ abstract interface class FakeRoundStepApi {
   });
 
   Future<rust_api.ApiVotingHelperPreflight> preflightVotingHelpers({
-    required VotingHelperDeliveryContext context,
+    required FakeHelperDeliveryScope scope,
     required List<String> configuredHelperUrls,
   });
 
   Future<void> prepareCommittedShareDelivery({
-    required VotingHelperDeliveryContext context,
+    required FakeHelperDeliveryScope scope,
     required int bundleIndex,
     required int proposalId,
     required rust_api.ApiVotingHelperPreflight preflight,
@@ -137,11 +155,34 @@ abstract interface class FakeRoundStepApi {
   });
 
   Future<rust_api.ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
-    required VotingHelperDeliveryContext context,
+    required FakeHelperDeliveryScope scope,
     required int bundleIndex,
     required int proposalId,
     required List<String> configuredHelperUrls,
     required BigInt nowSeconds,
+  });
+
+  /// One confirm-or-retry pass over the round's unconfirmed shares.
+  ///
+  /// The SDK's tracking driver calls this repeatedly; the fake session drives
+  /// the same loop so tests exercise the pass behaviour they always did.
+  Future<rust_wire.ShareTrackingPassReportView> trackPendingSharesPass({
+    required FakeHelperDeliveryScope scope,
+    required List<String> configuredHelperUrls,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+    required bool Function() isCancelled,
+  });
+
+  /// Quorum confirmation for exactly one share, without walking the round.
+  Future<bool> confirmOneShareWithHelpers({
+    required FakeHelperDeliveryScope scope,
+    required List<String> configuredHelperUrls,
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+    required BigInt nowSeconds,
+    required bool Function() isCancelled,
   });
 }
 
@@ -206,6 +247,38 @@ abstract interface class FakeRoundSessionDriver {
   /// onto session state scripts the sequence here and asserts the state,
   /// rather than making this fake re-derive a plan the real planner owns.
   List<List<rust_session.ApiRoundRunEvent>> get scriptedRoundRuns;
+
+  /// Called when a session carrying helper work is cancelled.
+  ///
+  /// Mirrors the SDK observing cancellation inside its work, not only between
+  /// passes: gated fake helper work — a tracking pass or a focused
+  /// confirmation — must unblock rather than hold a drain open.
+  void onShareTrackingCancelled();
+
+  /// Sessions on which a focused immediate-share confirmation was run.
+  ///
+  /// The focused check runs on its own short-lived session, so this is how a
+  /// test sees the destructive drain cancel it.
+  List<FakeVotingRoundSession> get focusedConfirmationSessions;
+
+  /// The policy each tracking run was started with, in order.
+  ///
+  /// Pacing is the SDK's, but which pacing this app asks for is its own
+  /// decision and a silent one to get wrong: a wrong cap costs empty passes
+  /// rather than an error.
+  List<rust_session.ApiShareTrackingDrivePolicy?> get shareTrackingPolicies;
+
+  /// Sessions on which a tracking run was started, in order.
+  ///
+  /// Background tracking runs on its own session, so this is what a test
+  /// watches to see the run started, cancelled, and closed.
+  List<FakeVotingRoundSession> get shareTrackingSessions;
+
+  /// Verbatim event sequences for `runShareTracking`, one per run.
+  ///
+  /// Scripting a run says what the SDK's tracking driver did without this fake
+  /// re-deriving a cadence the driver owns.
+  List<List<rust_session.ApiShareTrackingRunEvent>> get scriptedShareTrackingRuns;
 
   List<String> get roundSessionSteps;
 
@@ -272,18 +345,16 @@ class FakeVotingRoundSession implements VotingRoundSession {
   FakeVotingRoundSession({
     required this.driver,
     required this.ctx,
-    required this.chainEndpoints,
-    required this.pirServerUrls,
-    required this.proposals,
+    required this.binding,
     required this.storedHotkeySecret,
     required this.operationEpoch,
   });
 
   final FakeRoundSessionDriver driver;
   final rust_api.ApiVotingRoundContext ctx;
-  final List<String> chainEndpoints;
-  final List<String> pirServerUrls;
-  final List<rust_session.ApiProposalRosterEntry> proposals;
+
+  /// The endpoints, roster and timing this session is bound to for its life.
+  final rust_session.ApiRoundSessionBinding binding;
   final List<int>? storedHotkeySecret;
   BigInt operationEpoch;
   final Map<int, rust_session.ApiBallotIntent> _intents = {};
@@ -297,6 +368,12 @@ class FakeVotingRoundSession implements VotingRoundSession {
 
   VotingRustApi get _api => driver.api;
 
+  /// The clock the bridge stamps per dispatch. Production reads it inside
+  /// Rust; the fake reads the same wall clock so timing-sensitive steps see a
+  /// consistent value.
+  BigInt get _fakeNowSeconds =>
+      BigInt.from(DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000);
+
   FakeRoundStepApi get _steps => driver.stepApi;
 
   @override
@@ -304,6 +381,12 @@ class FakeVotingRoundSession implements VotingRoundSession {
 
   @override
   String get roundId => ctx.roundParams.voteRoundId;
+
+  List<String> get chainEndpoints => binding.chainEndpoints;
+
+  List<String> get pirServerUrls => binding.pirServerUrls;
+
+  List<rust_session.ApiProposalRosterEntry> get proposals => binding.proposals;
 
   List<int> get _rosterIds => [
     for (final proposal in proposals) proposal.proposalId,
@@ -323,6 +406,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
     for (final handle in _passHandles) {
       handle.cancel();
     }
+    driver.onShareTrackingCancelled();
     if (!_cancelled.isCompleted) _cancelled.complete();
   }
 
@@ -524,7 +608,6 @@ class FakeVotingRoundSession implements VotingRoundSession {
   /// `runRound`, and the bridge no longer exposes a per-step entry point.
   Stream<_ScriptedStepEvent> _advanceScriptedStep({
     required rust_wire.NextStepView step,
-    required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
   }) async* {
     final stepKey = '${step.kind.name}:${step.bundleIndex}';
@@ -534,19 +617,30 @@ class FakeVotingRoundSession implements VotingRoundSession {
       yield _bridgeError(bridgeError);
       return;
     }
+    final Stream<_ScriptedStepEvent> work;
+    switch (step.kind) {
+      case rust_wire.NextStepKind.delegate:
+      case rust_wire.NextStepKind.advanceDelegation:
+        work = _advanceDelegation(step, signer);
+      case rust_wire.NextStepKind.castVote:
+      case rust_wire.NextStepKind.advanceVote:
+      case rust_wire.NextStepKind.advanceVoteBatch:
+      case rust_wire.NextStepKind.submitShares:
+        work = _advanceVote(step);
+      case rust_wire.NextStepKind.advanceImportedDelegation:
+      case rust_wire.NextStepKind.confirmShare:
+        work = Stream.fromFuture(
+          _result(step, rust_wire.RoundStepDispositionView.noWork),
+        );
+    }
     try {
-      switch (step.kind) {
-        case rust_wire.NextStepKind.delegate:
-        case rust_wire.NextStepKind.advanceDelegation:
-          yield* _advanceDelegation(step, host, signer);
-        case rust_wire.NextStepKind.castVote:
-        case rust_wire.NextStepKind.advanceVote:
-        case rust_wire.NextStepKind.advanceVoteBatch:
-        case rust_wire.NextStepKind.submitShares:
-          yield* _advanceVote(step, host);
-        case rust_wire.NextStepKind.advanceImportedDelegation:
-        case rust_wire.NextStepKind.confirmShare:
-          yield await _result(step, rust_wire.RoundStepDispositionView.noWork);
+      // Consumed with `await for` rather than `yield*` on purpose: `yield*`
+      // forwards a delegated stream's error straight to our own listener, so
+      // it would bypass these handlers and end the whole run. `await for`
+      // raises it here, which is what lets one step's failure be isolated the
+      // way `RoundExecutor::advance_step` isolates it.
+      await for (final event in work) {
+        yield event;
       }
     } on _FakeChainSubmissionFailure catch (failure) {
       yield await _failure(
@@ -554,6 +648,27 @@ class FakeVotingRoundSession implements VotingRoundSession {
         kind: rust_wire.RoundStepFailureKindView.protocol,
         message: failure.toString(),
         strongestChainState: _chainStateView(failure.failure.strongestState),
+      );
+    } on _FakeHarnessError {
+      // A misconfigured fake, not something the SDK could report. Let it
+      // abort the run loudly rather than reading as an isolated bundle
+      // failure a test might then assert around.
+      rethrow;
+    } on VotingRustException catch (error) {
+      // A typed failure ends the run, because the run's single `Result` event
+      // is the only channel that carries the kind and the snapshot height the
+      // UI keys its specific messages off: `RoundStepFailureView` has neither
+      // field, so isolating one here would silently downgrade, say, "this
+      // account is not eligible" into generic failure text.
+      yield _bridgeError(error);
+    } catch (error) {
+      // Anything else is work failing inside a step. `advance_step` returns
+      // `Result<_, RoundStepFailure>`, so the driver isolates it per its
+      // failure policy and the rest of the round still runs.
+      yield await _failure(
+        step,
+        kind: rust_wire.RoundStepFailureKindView.protocol,
+        message: error.toString(),
       );
     }
   }
@@ -564,16 +679,15 @@ class FakeVotingRoundSession implements VotingRoundSession {
 
   Stream<_ScriptedStepEvent> _advanceDelegation(
     rust_wire.NextStepView step,
-    rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
   ) async* {
     final bundleIndex = step.bundleIndex;
     final hotkey = storedHotkeySecret;
     if (signer == null) {
-      throw StateError('delegation step requires a signer');
+      throw _FakeHarnessError('delegation step requires a signer');
     }
     if (hotkey == null) {
-      throw StateError('delegation step requires a stored hotkey');
+      throw _FakeHarnessError('delegation step requires a stored hotkey');
     }
     final Stream<rust_api.ApiDelegationProofEvent> events;
     rust_wire.KeystoneSignatureRecord? expectedSignature;
@@ -589,9 +703,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
       case rust_session.ApiDelegationSignerKind.keystoneStored:
         final record = driver.storedKeystoneSignatures[bundleIndex];
         if (record == null) {
-          throw StateError(
-            'missing Keystone signature for bundle $bundleIndex',
-          );
+          throw _FakeHarnessError('missing Keystone signature for bundle $bundleIndex',);
         }
         expectedSignature = record;
         events = _steps
@@ -632,7 +744,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
       );
     }
     if (payload == null) {
-      throw StateError('delegation proof stream ended without a payload');
+      throw _FakeHarnessError('delegation proof stream ended without a payload');
     }
     if (expectedSignature != null) {
       // The SDK verifies a stored device signature against the bundle's
@@ -681,23 +793,20 @@ class FakeVotingRoundSession implements VotingRoundSession {
     );
   }
 
-  Stream<_ScriptedStepEvent> _advanceVote(
-    rust_wire.NextStepView step,
-    rust_session.ApiRoundHostContext host,
-  ) async* {
+  Stream<_ScriptedStepEvent> _advanceVote(rust_wire.NextStepView step) async* {
     final bundleIndex = step.bundleIndex;
-    final ceremonyStart = host.ceremonyStartSeconds;
-    final voteEnd = host.voteEndTimeSeconds;
+    final ceremonyStart = binding.ceremonyStartSeconds;
+    final voteEnd = binding.voteEndTimeSeconds;
     if (step.kind == rust_wire.NextStepKind.castVote) {
       final hotkey = storedHotkeySecret;
       if (hotkey == null) {
-        throw StateError('cast-vote step requires a stored hotkey');
+        throw _FakeHarnessError('cast-vote step requires a stored hotkey');
       }
       final singleShare =
           ceremonyStart != null &&
           voteEnd != null &&
           _api.isLastMoment(
-            nowSeconds: host.nowSeconds,
+            nowSeconds: _fakeNowSeconds,
             ceremonyStartSeconds: ceremonyStart,
             voteEndTimeSeconds: voteEnd,
           );
@@ -721,7 +830,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
             ),
       ];
       if (drafts.isNotEmpty) {
-        final anchorHeight = await _syncVoteTree(host.voteTreeNodeUrls);
+        final anchorHeight = await _syncVoteTree(binding.voteTreeNodeUrls);
         yield _progress(
           _progressView(
             rust_wire.RoundStepProgressKind.treeSynced,
@@ -746,7 +855,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
           vanWitness: witness,
           draftVotes: drafts,
           singleShare: singleShare,
-          maxProofConcurrency: host.maxProofConcurrency,
+          maxProofConcurrency: binding.maxProofConcurrency,
         )) {
           final proposalId = event.proposalId;
           if (proposalId == null) continue;
@@ -789,12 +898,12 @@ class FakeVotingRoundSession implements VotingRoundSession {
       _recoveredKeys.add(key);
     }
 
-    final context = _api.createVotingHelperDeliveryContext(
+    final scope = FakeHelperDeliveryScope(
       dbPath: ctx.dbPath,
       accountUuid: accountUuid,
       roundId: roundId,
     );
-    try {
+    {
       final lastMomentBuffer = ceremonyStart == null || voteEnd == null
           ? null
           : _api.lastMomentBufferSeconds(
@@ -802,16 +911,16 @@ class FakeVotingRoundSession implements VotingRoundSession {
               voteEndTimeSeconds: voteEnd,
             );
       final preflight = await _steps.preflightVotingHelpers(
-        context: context,
-        configuredHelperUrls: host.configuredHelperUrls,
+        scope: scope,
+        configuredHelperUrls: binding.configuredHelperUrls,
       );
       for (final proposalId in proposalIds) {
         await _steps.prepareCommittedShareDelivery(
-          context: context,
+          scope: scope,
           bundleIndex: bundleIndex,
           proposalId: proposalId,
           preflight: preflight,
-          nowSeconds: host.nowSeconds,
+          nowSeconds: _fakeNowSeconds,
           voteEndTimeSeconds: voteEnd ?? BigInt.zero,
           proposalIds: _rosterIds,
           lastMomentBufferSeconds: lastMomentBuffer,
@@ -867,11 +976,11 @@ class FakeVotingRoundSession implements VotingRoundSession {
       final deliveries = <rust_wire.ShareBatchDeliveryReportView>[];
       for (final proposalId in proposalIds) {
         final delivery = await _steps.submitPreparedSharesToHelpers(
-          context: context,
+          scope: scope,
           bundleIndex: bundleIndex,
           proposalId: proposalId,
-          configuredHelperUrls: host.configuredHelperUrls,
-          nowSeconds: host.nowSeconds,
+          configuredHelperUrls: binding.configuredHelperUrls,
+          nowSeconds: _fakeNowSeconds,
         );
         final report = _shareDeliveryView(
           bundleIndex: bundleIndex,
@@ -920,8 +1029,6 @@ class FakeVotingRoundSession implements VotingRoundSession {
         chainOutcome: chainOutcome,
         shareDeliveries: deliveries,
       );
-    } finally {
-      context.dispose();
     }
   }
 
@@ -951,7 +1058,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
       }
     }
     if (lastError == null) {
-      throw StateError('cast vote requires at least one vote-tree node URL');
+      throw _FakeHarnessError('cast vote requires at least one vote-tree node URL');
     }
     Error.throwWithStackTrace(lastError, lastStackTrace!);
   }
@@ -1050,7 +1157,6 @@ class FakeVotingRoundSession implements VotingRoundSession {
   /// here that the Rust driver does not have.
   @override
   Stream<rust_session.ApiRoundRunEvent> runRound({
-    required rust_session.ApiRoundHostContext host,
     rust_session.ApiDelegationSignerInput? signer,
     rust_session.ApiRoundDrivePolicy? policy,
   }) async* {
@@ -1060,6 +1166,10 @@ class FakeVotingRoundSession implements VotingRoundSession {
       }
       return;
     }
+    // Like the SDK driver, progress is measured against a baseline captured
+    // from the run's first plan, not against whatever the current plan still
+    // lists. Reset per run so a second run does not inherit the first's.
+    _progressBaseline = null;
     final skipped = <int>[];
     final failures = <rust_wire.RoundStepFailureRecordView>[];
     final chainOutcomes = <rust_wire.RoundChainOutcomeView>[];
@@ -1072,6 +1182,20 @@ class FakeVotingRoundSession implements VotingRoundSession {
     const maxDispatches = 64;
 
     while (true) {
+      // The driver re-checks cancellation before every plan read, so a host
+      // that cancels mid-run stops at the next boundary instead of running the
+      // round out.
+      if (isCancelled) {
+        yield _runReport(
+          _quiescence(rust_wire.RoundQuiescenceKind.cancelled),
+          plan,
+          failures,
+          skipped,
+          chainOutcomes,
+          shareDeliveries,
+        );
+        return;
+      }
       if (dispatches >= maxDispatches) {
         throw StateError(
           'Fake round run exceeded $maxDispatches dispatches; the scripted '
@@ -1174,7 +1298,6 @@ class FakeVotingRoundSession implements VotingRoundSession {
       _ScriptedStepEvent? terminal;
       await for (final event in _advanceScriptedStep(
         step: step,
-        host: host,
         signer: signer,
       )) {
         final progress = event.progress;
@@ -1375,19 +1498,34 @@ class FakeVotingRoundSession implements VotingRoundSession {
     remaining: const [],
   );
 
+  /// Proposals this run measures progress against, captured from its first
+  /// plan the way the SDK driver captures a `BallotBaseline`.
+  ///
+  /// The real driver reads batch membership from the obligation, so its total
+  /// is exact where counting steps is not; a scripted plan here names one
+  /// proposal per step, which is all these tests need. Batch exactness is
+  /// pinned by the SDK's own tally tests.
+  Set<int>? _progressBaseline;
+
   rust_wire.RoundWorkTallyView _tally(rust_wire.RoundPlanView plan) {
-    final proposals = <int>{
-      for (final step in plan.nextSteps)
-        if (step.kind != rust_wire.NextStepKind.delegate &&
-            step.kind != rust_wire.NextStepKind.advanceDelegation)
-          step.proposalId,
-    };
+    final covered = _voteProposals(plan);
+    final baseline = _progressBaseline ??= covered;
     return rust_wire.RoundWorkTallyView(
-      completedProposals: 0,
-      totalProposals: proposals.length,
+      completedProposals: baseline
+          .where((proposalId) => !covered.contains(proposalId))
+          .length,
+      totalProposals: baseline.length,
       remainingObligations: plan.nextSteps.length,
     );
   }
+
+  /// Proposals `plan` still owes vote work for.
+  Set<int> _voteProposals(rust_wire.RoundPlanView plan) => {
+    for (final step in plan.nextSteps)
+      if (step.kind != rust_wire.NextStepKind.delegate &&
+          step.kind != rust_wire.NextStepKind.advanceDelegation)
+        step.proposalId,
+  };
 
   rust_session.ApiRoundRunEvent _runEvent(rust_wire.RoundDriveEventView event) =>
       rust_session.ApiRoundRunEvent(
@@ -1484,16 +1622,243 @@ class FakeVotingRoundSession implements VotingRoundSession {
     );
   }
 
+  FakeHelperDeliveryScope get _helperScope => FakeHelperDeliveryScope(
+    dbPath: ctx.dbPath,
+    accountUuid: accountUuid,
+    roundId: roundId,
+  );
+
   @override
-  VotingShareTrackingPassHandle beginShareTrackingPass() {
-    return _api.beginShareTrackingPass(
-      context: _api.createVotingHelperDeliveryContext(
-        dbPath: ctx.dbPath,
-        accountUuid: accountUuid,
-        roundId: roundId,
-      ),
+  Stream<rust_session.ApiShareTrackingRunEvent> runShareTracking({
+    rust_session.ApiShareTrackingDrivePolicy? policy,
+  }) async* {
+    driver.shareTrackingSessions.add(this);
+    driver.shareTrackingPolicies.add(policy);
+    if (driver.scriptedShareTrackingRuns.isNotEmpty) {
+      for (final event in driver.scriptedShareTrackingRuns.removeAt(0)) {
+        yield event;
+      }
+      return;
+    }
+
+    final confirmed = <rust_wire.ShareKeyView>[];
+    final resubmitted = <rust_wire.ResubmittedShareView>[];
+    final ambiguous = <rust_wire.ResubmittedShareView>[];
+    var unrecoverable = const <rust_wire.ShareKeyView>[];
+    var passes = 0;
+    // The real driver bounds itself; without the same guard a pass that never
+    // settles would spin here forever and hang the test rather than fail it.
+    const maxPasses = 64;
+
+    while (true) {
+      final voteEnd = binding.voteEndTimeSeconds;
+      if (voteEnd != null && _fakeNowSeconds >= voteEnd) {
+        yield _trackingReport(
+          rust_wire.ShareTrackingQuiescenceKind.voteEndReached,
+          passes,
+          confirmed,
+          resubmitted,
+          ambiguous,
+          unrecoverable,
+        );
+        return;
+      }
+      if (isCancelled) {
+        yield _trackingReport(
+          rust_wire.ShareTrackingQuiescenceKind.cancelled,
+          passes,
+          confirmed,
+          resubmitted,
+          ambiguous,
+          unrecoverable,
+        );
+        return;
+      }
+      if (passes >= maxPasses) {
+        throw StateError(
+          'Fake share tracking exceeded $maxPasses passes; the scripted round '
+          'never settles.',
+        );
+      }
+
+      passes += 1;
+      yield _trackingEvent(
+        rust_wire.ShareTrackingEventView(
+          kind: rust_wire.ShareTrackingEventKind.passStarted,
+          pass: passes,
+        ),
+      );
+      final rust_wire.ShareTrackingPassReportView pass;
+      try {
+        pass = await _steps.trackPendingSharesPass(
+          scope: _helperScope,
+          configuredHelperUrls: binding.configuredHelperUrls,
+          nowSeconds: _fakeNowSeconds,
+          voteEndTimeSeconds: binding.voteEndTimeSeconds,
+          isCancelled: () => isCancelled,
+        );
+      } catch (error) {
+        // A failing pass is retried by the driver, not surfaced as a bridge
+        // error. The fake stops after one so a test asserting on failure does
+        // not wait out a retry schedule it cannot see.
+        yield _trackingEvent(
+          rust_wire.ShareTrackingEventView(
+            kind: rust_wire.ShareTrackingEventKind.passFailed,
+            pass: passes,
+            message: error.toString(),
+          ),
+        );
+        yield rust_session.ApiShareTrackingRunEvent(
+          kind: rust_session.ApiRoundStepEventKind.result,
+          report: rust_wire.ShareTrackingRunReportView(
+            quiescence: rust_wire.ShareTrackingQuiescenceView(
+              kind: rust_wire.ShareTrackingQuiescenceKind.failing,
+              messages: [error.toString()],
+              unrecoverable: const [],
+            ),
+            passes: passes,
+            confirmed: confirmed,
+            resubmitted: resubmitted,
+            ambiguous: ambiguous,
+            unrecoverable: unrecoverable,
+            failures: [error.toString()],
+          ),
+        );
+        return;
+      }
+
+      confirmed.addAll(pass.confirmed);
+      resubmitted.addAll(pass.resubmitted);
+      ambiguous.addAll(pass.ambiguous);
+      unrecoverable = pass.unrecoverable;
+      yield _trackingEvent(
+        rust_wire.ShareTrackingEventView(
+          kind: rust_wire.ShareTrackingEventKind.passFinished,
+          pass: passes,
+          report: pass,
+        ),
+      );
+
+      if (pass.cancelled || isCancelled) {
+        yield _trackingReport(
+          rust_wire.ShareTrackingQuiescenceKind.cancelled,
+          passes,
+          confirmed,
+          resubmitted,
+          ambiguous,
+          unrecoverable,
+        );
+        return;
+      }
+      if (pass.nextDelaySeconds == null) {
+        yield _trackingReport(
+          passes == 1 && confirmed.isEmpty && resubmitted.isEmpty
+              ? rust_wire.ShareTrackingQuiescenceKind.nothingToTrack
+              : rust_wire.ShareTrackingQuiescenceKind.allConfirmed,
+          passes,
+          confirmed,
+          resubmitted,
+          ambiguous,
+          unrecoverable,
+        );
+        return;
+      }
+      // Tests drive wall-clock-free, so the driver's wait cannot be simulated
+      // faithfully. A pass that advanced something is followed immediately by
+      // the next one, which is what a test asserting on multi-pass recovery
+      // needs. A pass that advanced nothing means the driver would now be
+      // waiting, and the run ends there rather than spinning: what the wait
+      // should have been is pinned by the SDK's own pacing tests.
+      yield _trackingEvent(
+        rust_wire.ShareTrackingEventView(
+          kind: rust_wire.ShareTrackingEventKind.awaitingNextPass,
+          // The wait is fractional seconds now; the pass reports whole ones.
+          delaySeconds: pass.nextDelaySeconds?.toDouble(),
+        ),
+      );
+      // Only a confirmation earns another immediate pass. A resubmission
+      // leaves the share pending, so the driver would wait for the helper to
+      // answer before looking again — running straight back would resubmit it
+      // forever.
+      if (pass.confirmed.isEmpty) {
+        yield _trackingReport(
+          rust_wire.ShareTrackingQuiescenceKind.passBudgetExhausted,
+          passes,
+          confirmed,
+          resubmitted,
+          ambiguous,
+          unrecoverable,
+        );
+        return;
+      }
+    }
+  }
+
+  @override
+  Future<bool> confirmImmediateShare({
+    required int bundleIndex,
+    required int proposalId,
+    required int shareIndex,
+  }) {
+    driver.focusedConfirmationSessions.add(this);
+    return _steps.confirmOneShareWithHelpers(
+      scope: _helperScope,
+      configuredHelperUrls: binding.configuredHelperUrls,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      shareIndex: shareIndex,
+      nowSeconds: _fakeNowSeconds,
+      isCancelled: () => isCancelled,
     );
   }
+
+  rust_session.ApiShareTrackingRunEvent _trackingEvent(
+    rust_wire.ShareTrackingEventView event,
+  ) => rust_session.ApiShareTrackingRunEvent(
+    kind: rust_session.ApiRoundStepEventKind.progress,
+    event: event,
+  );
+
+  rust_session.ApiShareTrackingRunEvent _trackingReport(
+    rust_wire.ShareTrackingQuiescenceKind quiescence,
+    int passes,
+    List<rust_wire.ShareKeyView> confirmed,
+    List<rust_wire.ResubmittedShareView> resubmitted,
+    List<rust_wire.ResubmittedShareView> ambiguous,
+    List<rust_wire.ShareKeyView> unrecoverable,
+  ) => rust_session.ApiShareTrackingRunEvent(
+    kind: rust_session.ApiRoundStepEventKind.result,
+    report: rust_wire.ShareTrackingRunReportView(
+      quiescence: rust_wire.ShareTrackingQuiescenceView(
+        kind: quiescence,
+        messages: const [],
+        unrecoverable: quiescence ==
+                rust_wire.ShareTrackingQuiescenceKind.passBudgetExhausted
+            ? unrecoverable
+            : const [],
+      ),
+      passes: passes,
+      confirmed: List.of(confirmed),
+      resubmitted: List.of(resubmitted),
+      ambiguous: List.of(ambiguous),
+      unrecoverable: List.of(unrecoverable),
+      failures: const [],
+    ),
+  );
+}
+
+/// A precondition the fake itself guarantees before it dispatches a step.
+///
+/// Reaching one means the test is wired wrong — a missing signer the run loop
+/// should already have quiesced on, say — so it must abort the run loudly
+/// instead of being isolated as a bundle failure a test could assert around.
+class _FakeHarnessError extends Error {
+  _FakeHarnessError(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'Fake round session misconfigured: $message';
 }
 
 class _FakeChainSubmissionFailure implements Exception {
