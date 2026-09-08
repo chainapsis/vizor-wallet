@@ -71,6 +71,159 @@ void main() {
 
   tearDownAll(RustLib.dispose);
 
+  testWidgets('delegation ring follows confirmations through finalization', (
+    tester,
+  ) async {
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    final updates = StreamController<VotingSessionState>();
+    addTearDown(updates.close);
+    final sessionProvider = StreamProvider((ref) => updates.stream);
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSubmissionJobsProvider.overrideWith(
+          () => _StaticVotingSubmissionJobsNotifier(
+            const VotingSubmissionJobsState(jobKeys: [key]),
+          ),
+        ),
+        votingSubmissionJobProvider(key).overrideWith(
+          () => _StaticVotingSubmissionJobNotifier(
+            key,
+            const VotingSubmissionJobState(
+              key: key,
+              status: VotingSubmissionJobStatus.running,
+              generation: 1,
+            ),
+          ),
+        ),
+        votingSubmissionJobSessionProvider(
+          key,
+        ).overrideWith((ref) => ref.watch(sessionProvider)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(
+          initialLocation: votingStatusRoute(
+            _roundId,
+            accountUuid: 'account-1',
+          ),
+        ),
+      ),
+    );
+    final plan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      nextSteps: [
+        for (var index = 0; index < 3; index++)
+          rust_wire.NextStepView(
+            // Bundle 2 already has a submission. It must be counted before
+            // its first progress event, even though it needs no signature.
+            kind: index == 2
+                ? rust_frb_types.NextStepKind.advanceDelegation
+                : rust_frb_types.NextStepKind.delegate,
+            bundleIndex: index,
+            proposalId: 0,
+            choice: 0,
+            shareIndex: 0,
+          ),
+      ],
+      openProposals: Uint32List.fromList([1]),
+      allDecided: false,
+    );
+    final progress = <int, VotingSessionProgress>{};
+    Future<void> check(String detail, double? value) async {
+      updates.add(
+        VotingSessionState(
+          roundId: _roundId,
+          accountUuid: 'account-1',
+          phase: VotingSessionPhase.delegating,
+          roundPlan: plan,
+          delegationProgress: progress,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text(detail), findsOneWidget);
+      expect(
+        tester
+            .widget<CircularProgressIndicator>(
+              find.byType(CircularProgressIndicator),
+            )
+            .value,
+        value == null ? isNull : closeTo(value, 0.0001),
+      );
+      expect(find.text('submission confirmed route'), findsNothing);
+    }
+
+    await check('0 of 3 bundles complete', 0);
+    progress[0] = const VotingSessionProgress(
+      phase: VotingProgressPhase.proofProgress,
+      proofProgress: 1,
+    );
+    progress[1] = const VotingSessionProgress(
+      phase: VotingProgressPhase.proofProgress,
+      proofProgress: 0.7,
+    );
+    await check('0 of 3 bundles complete', 0);
+    progress[1] = const VotingSessionProgress(
+      phase: VotingProgressPhase.waitingForExistingProof,
+    );
+    await check('Reusing an in-progress proof — 0 of 3 bundles complete', 0);
+    for (var index = 0; index < 3; index++) {
+      progress[index] = const VotingSessionProgress(
+        phase: VotingProgressPhase.payloadReady,
+        proofProgress: 1,
+      );
+    }
+    await check(
+      'Waiting for submission and confirmation — 0 of 3 bundles complete',
+      0,
+    );
+    progress[2] = const VotingSessionProgress(
+      phase: VotingProgressPhase.submitted,
+    );
+    await check(
+      'Waiting for submission and confirmation — 0 of 3 bundles complete',
+      0,
+    );
+    // Confirm out of order: proof completion must never pre-fill the ring.
+    progress[2] = const VotingSessionProgress(
+      phase: VotingProgressPhase.confirmed,
+    );
+    await check(
+      'Waiting for submission and confirmation — 1 of 3 bundles complete',
+      1 / 3,
+    );
+    progress[0] = const VotingSessionProgress(
+      phase: VotingProgressPhase.confirmed,
+    );
+    await check(
+      'Waiting for submission and confirmation — 2 of 3 bundles complete',
+      2 / 3,
+    );
+    progress[1] = const VotingSessionProgress(
+      phase: VotingProgressPhase.confirmed,
+    );
+    await check('Finalizing delegation — 3 of 3 bundles complete', null);
+    updates.add(
+      VotingSessionState(
+        roundId: _roundId,
+        accountUuid: 'account-1',
+        phase: VotingSessionPhase.castingVotes,
+        roundPlan: plan,
+        delegationProgress: progress,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('bundles complete'), findsNothing);
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+  });
+
   testWidgets('status screen requires software account without mnemonic', (
     tester,
   ) async {

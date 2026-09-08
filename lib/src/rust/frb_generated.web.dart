@@ -75,6 +75,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_StreamSink_api_sync_progress_event_Sse(dynamic raw);
 
   @protected
+  RustStreamSink<ApiVotingObservability>
+  dco_decode_StreamSink_api_voting_observability_Sse(dynamic raw);
+
+  @protected
   String dco_decode_String(dynamic raw);
 
   @protected
@@ -170,6 +174,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiVotingEligibility dco_decode_api_voting_eligibility(dynamic raw);
+
+  @protected
+  ApiVotingObservability dco_decode_api_voting_observability(dynamic raw);
 
   @protected
   ApiVotingRoundContext dco_decode_api_voting_round_context(dynamic raw);
@@ -1255,6 +1262,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RustStreamSink<ApiVotingObservability>
+  sse_decode_StreamSink_api_voting_observability_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
@@ -1386,6 +1399,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiVotingEligibility sse_decode_api_voting_eligibility(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVotingObservability sse_decode_api_voting_observability(
     SseDeserializer deserializer,
   );
 
@@ -2763,6 +2781,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_api_voting_observability_Sse(
+    RustStreamSink<ApiVotingObservability> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
@@ -2927,6 +2951,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_voting_eligibility(
     ApiVotingEligibility self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_voting_observability(
+    ApiVotingObservability self,
     SseSerializer serializer,
   );
 
