@@ -77,10 +77,7 @@ function Assert-WindowsBuildArch($fvmCommand, $requestedArch) {
   # Flutter selects the Windows target from its Dart process ABI, not the OS.
   # Use FVM for both this probe and the build, including custom FVM cache paths.
   $probePath = Join-Path $scriptDir "windows-build-arch.dart"
-  $dartCommand = Get-Command dart -ErrorAction SilentlyContinue
   Write-Host "SDK probe: PowerShell $($PSVersionTable.PSVersion); requested=$requestedArch"
-  Write-Host "FVM command: $fvmCommand"
-  Write-Host "Host Dart command: $($dartCommand.Source)"
   Write-Host "Pinned Flutter: $((Get-Content -Raw (Join-Path $repoRoot '.fvmrc') | ConvertFrom-Json).flutter)"
   $probeOutput = @()
   $probeExitCode = $null
@@ -97,15 +94,15 @@ function Assert-WindowsBuildArch($fvmCommand, $requestedArch) {
     throw "FVM Dart architecture probe could not run: $($_.Exception.Message)"
   } finally {
     $ErrorActionPreference = $savedErrorActionPreference
-    foreach ($line in $probeOutput) { Write-Host "FVM probe: $line" }
-    Write-Host "FVM probe exit code: $probeExitCode"
   }
   if ($null -eq $probeExitCode -or $probeExitCode -ne 0) {
+    foreach ($line in $probeOutput) { Write-Host "FVM probe: $line" }
     throw "FVM Dart architecture probe failed with exit code '$probeExitCode'. See FVM probe output above."
   }
   $archLines = @($probeOutput | ForEach-Object { "$($_)".Trim() } |
     Where-Object { $_ -cmatch '^VIZOR_WINDOWS_BUILD_ARCH=(x64|arm64)$' })
   if ($archLines.Count -ne 1) {
+    foreach ($line in $probeOutput) { Write-Host "FVM probe: $line" }
     throw "Could not determine a unique Windows architecture from the FVM Dart SDK. Run 'fvm dart scripts/windows-build-arch.dart' to check the pinned SDK."
   }
   $sdkArch = ($archLines[0] -split '=')[1]

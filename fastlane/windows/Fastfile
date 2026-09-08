@@ -173,18 +173,24 @@ def windows_validate_code_signing_environment!(metadata_items)
 end
 
 def with_windows_update_environment(update_enabled:)
+  # The PowerShell packager also reads signing settings from its environment.
+  # Clear them for prereleases even when no explicit signing arguments are passed.
+  code_signing_keys = %w[VIZOR_WINDOWS_CODE_SIGN_PARAMS VIZOR_WINDOWS_CODE_SIGN_PARALLEL VIZOR_WINDOWS_CODE_SIGN_EXCLUDE VIZOR_WINDOWS_SIGNTOOL_PATH]
+  previous_code_signing = code_signing_keys.to_h { |key| [key, ENV[key]] }
   previous_signing_key = ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"]
   previous_public_key = ENV["VIZOR_UPDATE_FEED_PUBLIC_KEY_B64"]
   previous_release_base_url = ENV["VIZOR_UPDATE_RELEASE_BASE_URL"]
 
   ENV["VIZOR_UPDATE_RELEASE_BASE_URL"] = ""
   unless update_enabled
+    code_signing_keys.each { |key| ENV[key] = "" }
     ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"] = ""
     ENV["VIZOR_UPDATE_FEED_PUBLIC_KEY_B64"] = ""
   end
 
   yield
 ensure
+  previous_code_signing.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
   previous_signing_key.nil? ? ENV.delete("VIZOR_UPDATE_FEED_SIGNING_KEY_B64") : ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"] = previous_signing_key
   previous_public_key.nil? ? ENV.delete("VIZOR_UPDATE_FEED_PUBLIC_KEY_B64") : ENV["VIZOR_UPDATE_FEED_PUBLIC_KEY_B64"] = previous_public_key
   previous_release_base_url.nil? ? ENV.delete("VIZOR_UPDATE_RELEASE_BASE_URL") : ENV["VIZOR_UPDATE_RELEASE_BASE_URL"] = previous_release_base_url

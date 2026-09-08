@@ -83,4 +83,24 @@ class WindowsReleaseTest < Minitest::Test
       end
     end
   end
+
+  def test_prerelease_clears_inherited_signing_and_restores_it_after_failure
+    keys = %w[VIZOR_WINDOWS_CODE_SIGN_PARAMS VIZOR_WINDOWS_CODE_SIGN_PARALLEL VIZOR_WINDOWS_CODE_SIGN_EXCLUDE VIZOR_WINDOWS_SIGNTOOL_PATH]
+    keys.each { |key| ENV[key] = "inherited-#{key}" }
+    original = ENV.to_h
+    assert_raises(RuntimeError) do
+      with_windows_update_environment(update_enabled: false) do
+        keys.each { |key| assert_equal "", ENV[key] }
+        assert_equal "", ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"]
+        raise "packaging failed"
+      end
+    end
+    assert_equal original, ENV.to_h
+    with_windows_update_environment(update_enabled: true) do
+      keys.each { |key| assert_equal original[key], ENV[key] }
+    end
+    keys.each { |key| ENV.delete(key) }
+    with_windows_update_environment(update_enabled: false) {}
+    keys.each { |key| refute ENV.key?(key) }
+  end
 end
