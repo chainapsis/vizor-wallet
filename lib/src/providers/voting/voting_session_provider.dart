@@ -18,7 +18,6 @@ import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
-import 'voting_hotkey_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
@@ -1881,15 +1880,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context, {
     bool alreadyBound = false,
   }) {
+    final rust = ref.read(votingRustApiProvider);
     return ref
-        .read(votingHotkeyCoordinatorProvider)
-        .ensureHotkey(
-          key: VotingSessionKey(
-            accountUuid: context.accountUuid,
-            roundId: context.round.roundId,
-          ),
-          network: context.network,
-          alreadyBound: alreadyBound || _hotkeyAlreadyBound(context),
+        .read(votingHotkeyStoreProvider)
+        .getOrCreate(
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          generate: () => rust.generateVotingHotkey(network: context.network),
+          allowCreation: !(alreadyBound || _hotkeyAlreadyBound(context)),
         );
   }
 

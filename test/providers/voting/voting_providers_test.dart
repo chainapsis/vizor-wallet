@@ -11673,6 +11673,25 @@ class FakeVotingHotkeyStore implements VotingHotkeyStore {
 
   FakeVotingHotkeyStore(this.hotkey);
 
+  late final _store = VotingHotkeyStore(
+    readHotkey: readHotkey,
+    writeHotkey: writeHotkey,
+    deleteHotkey: deleteHotkey,
+  );
+
+  @override
+  Future<List<int>> getOrCreate({
+    required String accountUuid,
+    required String roundId,
+    required Future<List<int>> Function() generate,
+    required bool allowCreation,
+  }) => _store.getOrCreate(
+    accountUuid: accountUuid,
+    roundId: roundId,
+    generate: generate,
+    allowCreation: allowCreation,
+  );
+
   @override
   Future<List<int>?> readHotkey({
     required String accountUuid,
@@ -11681,7 +11700,6 @@ class FakeVotingHotkeyStore implements VotingHotkeyStore {
     return hotkey;
   }
 
-  @override
   Future<void> writeHotkey({
     required String accountUuid,
     required String roundId,
@@ -11725,19 +11743,20 @@ class FailingVotingHotkeyStore implements VotingHotkeyStore {
   const FailingVotingHotkeyStore();
 
   @override
+  Future<List<int>> getOrCreate({
+    required String accountUuid,
+    required String roundId,
+    required Future<List<int>> Function() generate,
+    required bool allowCreation,
+  }) async => throw const VotingHotkeyUnavailable('missing test hotkey');
+
+  @override
   Future<List<int>?> readHotkey({
     required String accountUuid,
     required String roundId,
   }) {
     throw const VotingHotkeyUnavailable('missing test hotkey');
   }
-
-  @override
-  Future<void> writeHotkey({
-    required String accountUuid,
-    required String roundId,
-    required List<int> hotkey,
-  }) async {}
 
   @override
   Future<void> deleteHotkey({

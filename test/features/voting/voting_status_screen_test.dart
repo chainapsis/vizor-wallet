@@ -5160,11 +5160,12 @@ class _FakeVotingHotkeyStore implements VotingHotkeyStore {
   }
 
   @override
-  Future<void> writeHotkey({
+  Future<List<int>> getOrCreate({
     required String accountUuid,
     required String roundId,
-    required List<int> hotkey,
-  }) async {}
+    required Future<List<int>> Function() generate,
+    required bool allowCreation,
+  }) async => hotkey;
 
   @override
   Future<void> deleteHotkey({

@@ -18,6 +18,7 @@ import '../config/network_config.dart';
 import '../security/password_policy.dart';
 import '../security/software_wallet_secret.dart';
 import '../../rust/api/secret.dart' as rust_secret;
+import 'voting_hotkey_store.dart';
 
 const kWalletDbNameKey = 'zcash_wallet_db_name';
 const kThemeModeKey = 'zcash_theme_mode';
@@ -144,6 +145,13 @@ class AppSecureStore {
   final FlutterSecureStorage _storage;
   final FlutterSecureStorage _mnemonicStorage;
   final _secretMutationLock = _AsyncLock();
+
+  /// Shared across provider containers so creation outlives the initiating UI.
+  late final votingHotkeys = VotingHotkeyStore(
+    readHotkey: readVotingHotkey,
+    writeHotkey: _writeVotingHotkey,
+    deleteHotkey: deleteVotingHotkey,
+  );
   String? _sessionPassword;
 
   bool get hasSessionPassword => _sessionPassword != null;
@@ -328,7 +336,7 @@ class AppSecureStore {
   }
 
   /// Stores a voting hotkey as an encrypted secret for an account and round.
-  Future<void> writeVotingHotkey({
+  Future<void> _writeVotingHotkey({
     required String accountUuid,
     required String roundId,
     required List<int> hotkey,
