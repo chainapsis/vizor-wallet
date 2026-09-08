@@ -212,11 +212,11 @@ Future<List<KeystoneSigningRequest>> buildKeystoneDelegationRequests({
 
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
-/// Existing tuples for the same sighash and randomized key are accepted as
-/// idempotent retries, even when randomized signing produced different valid
-/// signature bytes. A tuple for a different signing context is a
-/// `KeystoneSignatureConflict` error, and any validation or database error
-/// rolls back the complete batch.
+/// The SDK checks each tuple against the bundle's current sighash and
+/// randomized key in the storage transaction, including idempotent retries.
+/// Missing or replaced setup returns `KeystoneSignatureConflict`. Existing
+/// matching tuples remain idempotent even when signature bytes differ, and any
+/// validation or database error rolls back the complete batch.
 Future<ApiKeystoneSignatureBatchResult> storeKeystoneSignaturesBatch({
   required String dbPath,
   required String accountUuid,

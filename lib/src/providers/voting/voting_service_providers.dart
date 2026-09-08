@@ -7,6 +7,7 @@ import '../../features/voting/voting_recovery_service.dart';
 import '../../core/config/rpc_endpoint_config.dart';
 import '../../core/storage/app_secure_store.dart';
 import '../../core/storage/wallet_paths.dart';
+import '../../core/storage/voting_hotkey_store.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../providers/sync_provider.dart';
@@ -25,6 +26,8 @@ import '../../services/voting/voting_endpoint_mapper.dart';
 import '../../services/voting/voting_http.dart';
 import '../../services/voting/voting_retry.dart';
 import 'voting_config_source_provider.dart';
+
+export '../../core/storage/voting_hotkey_store.dart';
 
 /// Transport shared by the voting service clients.
 final votingEndpointMapperProvider = Provider<VotingEndpointMapper>((ref) {
@@ -130,7 +133,7 @@ final votingRustApiProvider = Provider<VotingRustApi>((ref) {
 
 /// Secret hotkey access. Bytes are app-encrypted in platform secure storage.
 final votingHotkeyStoreProvider = Provider<VotingHotkeyStore>((ref) {
-  return AppSecureStoreVotingHotkeyStore(AppSecureStore.instance);
+  return AppSecureStore.instance.votingHotkeys;
 });
 
 /// Test seam for wallet DB path resolution.
@@ -236,71 +239,6 @@ class FrbVotingWalletSyncReadinessChecker
       scannedHeight: status.scannedHeight.toInt(),
       snapshotHeight: snapshotHeight,
       chainTipHeight: status.chainTipHeight.toInt(),
-    );
-  }
-}
-
-abstract interface class VotingHotkeyStore {
-  Future<List<int>?> readHotkey({
-    required String accountUuid,
-    required String roundId,
-  });
-
-  Future<void> writeHotkey({
-    required String accountUuid,
-    required String roundId,
-    required List<int> hotkey,
-  });
-
-  Future<void> deleteHotkey({
-    required String accountUuid,
-    required String roundId,
-  });
-}
-
-class VotingHotkeyUnavailable implements Exception {
-  const VotingHotkeyUnavailable(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'VotingHotkeyUnavailable: $message';
-}
-
-class AppSecureStoreVotingHotkeyStore implements VotingHotkeyStore {
-  const AppSecureStoreVotingHotkeyStore(this._store);
-
-  final AppSecureStore _store;
-
-  @override
-  Future<List<int>?> readHotkey({
-    required String accountUuid,
-    required String roundId,
-  }) {
-    return _store.readVotingHotkey(accountUuid: accountUuid, roundId: roundId);
-  }
-
-  @override
-  Future<void> writeHotkey({
-    required String accountUuid,
-    required String roundId,
-    required List<int> hotkey,
-  }) {
-    return _store.writeVotingHotkey(
-      accountUuid: accountUuid,
-      roundId: roundId,
-      hotkey: hotkey,
-    );
-  }
-
-  @override
-  Future<void> deleteHotkey({
-    required String accountUuid,
-    required String roundId,
-  }) {
-    return _store.deleteVotingHotkey(
-      accountUuid: accountUuid,
-      roundId: roundId,
     );
   }
 }

@@ -2588,37 +2588,40 @@ void main() {
     expect(rust.keystoneDelegationRequestCalls, [0, 0]);
   });
 
-  test('hardware voting retries stale Keystone setup overwrite once', () async {
-    final rust = FakeVotingRustApi(
-      keystoneDelegationRequestFailuresByCall: {
-        0: votingRustError(
-          rust_wire.VotingErrorKindView.setupAlreadyPersisted,
-          message:
-              'refusing to overwrite pczt_sighash for round=round-id, bundle=0',
-          bundleIndex: 0,
-        ),
-      },
-    );
-    final container = _sessionContainer(rust: rust, accountIsHardware: true);
-    addTearDown(container.dispose);
+  test(
+    'hardware voting surfaces setup errors without resetting durable state',
+    () async {
+      final rust = FakeVotingRustApi(
+        keystoneDelegationRequestFailuresByCall: {
+          0: votingRustError(
+            rust_wire.VotingErrorKindView.setupAlreadyPersisted,
+            message:
+                'refusing to overwrite pczt_sighash for round=round-id, bundle=0',
+            bundleIndex: 0,
+          ),
+        },
+      );
+      final container = _sessionContainer(rust: rust, accountIsHardware: true);
+      addTearDown(container.dispose);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    await container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .prepareKeystoneSigning();
-    final state = container.read(votingSessionProvider(kRoundId)).value!;
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareKeystoneSigning();
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
 
-    expect(state.phase, VotingSessionPhase.keystoneSigning);
-    expect(state.keystoneSigningRequest?.bundleIndex, 0);
-    expect(state.error, isNull);
-    expect(rust.deleteSkippedBundleKeepCounts, isEmpty);
-    expect(rust.resetVotingSessionStateCalls, contains('account-1:$kRoundId'));
-    expect(rust.keystoneDelegationRequestCalls, [0, 0]);
-    expect(rust.setupCalls, 2);
-  });
+      expect(state.phase, VotingSessionPhase.error);
+      expect(state.keystoneSigningRequest, isNull);
+      expect(state.error, isNotNull);
+      expect(rust.deleteSkippedBundleKeepCounts, isEmpty);
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+      expect(rust.keystoneDelegationRequestCalls, [0]);
+      expect(rust.setupCalls, 1);
+    },
+  );
 
   test(
-    'hardware voting stale-setup recovery preserves unsigned Keystone bundles',
+    'hardware voting setup errors preserve signed sibling bundles',
     () async {
       final rust = FakeVotingRustApi(
         bundleCount: 2,
@@ -2655,17 +2658,14 @@ void main() {
           .prepareKeystoneSigning();
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
-      expect(state.phase, VotingSessionPhase.keystoneSigning);
-      expect(state.keystoneSigningRequest?.bundleIndex, 1);
+      expect(state.phase, VotingSessionPhase.error);
+      expect(state.keystoneSigningRequest, isNull);
       expect(state.keystoneSignatures.keys, [0]);
       expect(roundPlanBundleCount(state.roundPlan), 2);
       expect(rust.deleteSkippedBundleKeepCounts, isEmpty);
-      expect(
-        rust.resetVotingSessionStateCalls,
-        contains('account-1:$kRoundId'),
-      );
-      expect(rust.keystoneDelegationRequestCalls, [1, 1]);
-      expect(rust.setupCalls, 2);
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+      expect(rust.keystoneDelegationRequestCalls, [1]);
+      expect(rust.setupCalls, 1);
     },
   );
 
@@ -3528,7 +3528,8 @@ void main() {
       recoveryApi.walletIds,
       containsAllInOrder(['account-1', 'account-2']),
     );
-    expect(rust.resetVotingSessionStateCalls, contains('account-1:$kRoundId'));
+    expect(rust.resetVoteTreeCalls, contains('account-1:$kRoundId'));
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
   test('submission job stays pinned after active account changes', () async {
@@ -9273,6 +9274,180 @@ void main() {
     },
   );
 
+  test(
+    'snapshot precompute warms Keystone proofs with the stored hotkey',
+    () async {
+      final rust = FakeVotingRustApi(bundleCount: 2);
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(bundleCount: 2),
+        ),
+        accountIsHardware: true,
+        hotkeyStore: hotkeyStore,
+      );
+      addTearDown(container.dispose);
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+      await rust.backgroundDelegationProofStarted.future;
+      await notifier.prepareKeystoneSigning();
+      expect(rust.backgroundDelegationProofCalls, [0, 1]);
+      expect(rust.backgroundDelegationProofHotkeys, [
+        [42, 43, 44],
+        [42, 43, 44],
+      ]);
+      expect(rust.generateVotingHotkeyCalls, 1);
+      expect(rust.keystoneDelegationRequestCalls, [0, 1]);
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+      expect(
+        container.read(votingSessionProvider(kRoundId)).value!.phase,
+        VotingSessionPhase.keystoneSigning,
+      );
+    },
+  );
+
+  for (final closeReview in [false, true]) {
+    test(
+      'Keystone review warmup and submission share hotkey creation (close review: $closeReview)',
+      () async {
+        final rust = FakeVotingRustApi(
+          generatedHotkeys: const [
+            [42, 43, 44],
+            [51, 52, 53],
+          ],
+        );
+        final hotkeyStore = GatedVotingHotkeyStore();
+        final container = _sessionContainer(
+          rust: rust,
+          accountIsHardware: true,
+          hotkeyStore: hotkeyStore,
+        );
+        addTearDown(container.dispose);
+        addTearDown(() {
+          if (!hotkeyStore.writeGate.isCompleted) {
+            hotkeyStore.writeGate.complete();
+          }
+        });
+        final submissionProvider = votingSubmissionSessionProvider(
+          const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
+        );
+        final subscription = container.listen(submissionProvider, (_, _) {});
+        addTearDown(subscription.close);
+        await container.read(votingSessionProvider(kRoundId).future);
+        await container.read(submissionProvider.future);
+        final review = container.read(votingSessionProvider(kRoundId).notifier);
+        await review.refreshEligibleWeight();
+
+        final warmup = review.precomputeSnapshotBundles(
+          accountUuid: 'account-1',
+        );
+        await hotkeyStore.writeStarted.future;
+        if (closeReview) {
+          container.invalidate(votingSessionProvider(kRoundId));
+        }
+        final signing = container
+            .read(submissionProvider.notifier)
+            .prepareKeystoneSigning();
+        // Let submission reach hotkey creation while the review's first write
+        // remains blocked. Both notifiers have observed the same empty store.
+        await Future<void>.delayed(Duration.zero);
+        hotkeyStore.writeGate.complete();
+        await Future.wait([warmup, signing]);
+
+        expect(rust.generateVotingHotkeyCalls, 1);
+        expect(hotkeyStore.writeCalls, 1);
+        expect(hotkeyStore.hotkey, [42, 43, 44]);
+        expect(
+          rust.backgroundDelegationProofHotkeys,
+          closeReview
+              ? isEmpty
+              : [
+                  [42, 43, 44],
+                ],
+        );
+        expect(rust.keystoneDelegationRequestHotkeys, [
+          [42, 43, 44],
+        ]);
+        expect(
+          container.read(submissionProvider).value!.phase,
+          VotingSessionPhase.keystoneSigning,
+        );
+      },
+    );
+  }
+
+  test(
+    'Keystone signing retries busy setup without waiting for background proof',
+    () async {
+      final proofGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        backgroundDelegationProofGate: proofGate,
+        keystoneDelegationRequestFailuresByCall: {
+          0: votingRustError(
+            rust_wire.VotingErrorKindView.busy,
+            message: 'bundle setup is busy',
+            retryable: true,
+          ),
+        },
+      );
+      final container = _sessionContainer(rust: rust, accountIsHardware: true);
+      addTearDown(container.dispose);
+      addTearDown(() {
+        if (!proofGate.isCompleted) proofGate.complete();
+      });
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+      await rust.backgroundDelegationProofStarted.future;
+      await notifier.prepareKeystoneSigning().timeout(
+        const Duration(seconds: 2),
+      );
+      expect(proofGate.isCompleted, isFalse);
+      expect(rust.keystoneDelegationRequestCalls, [0, 0]);
+      expect(rust.resetVotingSessionStateCalls, isEmpty);
+      proofGate.complete();
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
+
+  test('Keystone warmup retries busy setup and keeps its hotkey', () async {
+    final errors = <int, Object>{
+      0: votingRustError(
+        rust_wire.VotingErrorKindView.busy,
+        message: 'bundle setup is busy',
+        retryable: true,
+      ),
+    };
+    final rust = FakeVotingRustApi(
+      backgroundDelegationProofErrorsByBundle: errors,
+    );
+    final container = _sessionContainer(rust: rust, accountIsHardware: true);
+    addTearDown(container.dispose);
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.refreshEligibleWeight();
+    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+    await rust.backgroundDelegationProofStarted.future;
+    // Let the first call fail before releasing its setup contention.
+    await Future<void>.delayed(Duration.zero);
+    errors.clear();
+    await Future<void>(() async {
+      while (rust.backgroundDelegationProofCalls.length < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    }).timeout(const Duration(seconds: 2));
+    expect(rust.backgroundDelegationProofCalls, [0, 0]);
+    expect(
+      rust.backgroundDelegationProofHotkeys[0],
+      rust.backgroundDelegationProofHotkeys[1],
+    );
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
+  });
+
   test('snapshot bundle precompute pipelines every software ZKP1', () async {
     final rust = FakeVotingRustApi(bundleCount: 3);
     final hotkeyStore = FakeVotingHotkeyStore(null);
@@ -9431,7 +9606,69 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
-  test('session dispose clears round-scoped process state', () async {
+  for (final cleanup in ['dispose', 'account switch', 'failed action']) {
+    test(
+      '$cleanup preserves setup while a Keystone proof is running',
+      () async {
+        final proofGate = Completer<void>();
+        final rust = FakeVotingRustApi(
+          backgroundDelegationProofGate: proofGate,
+          sessionBallotIntentsError: StateError('ballot persistence failed'),
+        );
+        final activeAccountProvider =
+            NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+              _ActiveVotingAccountNotifier.new,
+            );
+        final container = _sessionContainer(
+          rust: rust,
+          activeAccountUuidListenable: activeAccountProvider,
+          hardwareAccountUuids: {'account-1', 'account-2'},
+        );
+        var disposed = false;
+        addTearDown(() {
+          if (!proofGate.isCompleted) proofGate.complete();
+          if (!disposed) container.dispose();
+        });
+        final subscription = container.listen(
+          votingSessionProvider(kRoundId),
+          (_, _) {},
+        );
+        addTearDown(subscription.close);
+        await container.read(votingSessionProvider(kRoundId).future);
+        final notifier = container.read(
+          votingSessionProvider(kRoundId).notifier,
+        );
+        await notifier.refreshEligibleWeight();
+        await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+        await rust.backgroundDelegationProofStarted.future;
+
+        if (cleanup == 'dispose') {
+          container.dispose();
+          disposed = true;
+        } else if (cleanup == 'account switch') {
+          container.read(activeAccountProvider.notifier).set('account-2');
+        } else {
+          await notifier.recordBallotIntents(
+            draftVotes: [
+              VotingDraftVote(proposalId: 7, choice: 1, numOptions: 2),
+            ],
+          );
+          expect(
+            container.read(votingSessionProvider(kRoundId)).value!.phase,
+            VotingSessionPhase.error,
+          );
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect(proofGate.isCompleted, isFalse);
+        expect(rust.resetVoteTreeCalls, contains('account-1:$kRoundId'));
+        expect(rust.resetVotingSessionStateCalls, isEmpty);
+        proofGate.complete();
+        await Future<void>.delayed(Duration.zero);
+      },
+    );
+  }
+
+  test('session dispose clears only round-scoped caches', () async {
     final rust = FakeVotingRustApi();
     final container = _sessionContainer(rust: rust);
 
@@ -9439,7 +9676,8 @@ void main() {
     container.dispose();
     await Future<void>.delayed(Duration.zero);
 
-    expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVoteTreeCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
   test(
@@ -9463,6 +9701,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(rust.resetVotingSessionStateCalls, isEmpty);
+      expect(rust.resetVoteTreeCalls, isEmpty);
     },
   );
 
@@ -9493,6 +9732,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(rust.resetVotingSessionStateCalls, isEmpty);
+      expect(rust.resetVoteTreeCalls, isEmpty);
     },
   );
 
@@ -11433,6 +11673,25 @@ class FakeVotingHotkeyStore implements VotingHotkeyStore {
 
   FakeVotingHotkeyStore(this.hotkey);
 
+  late final _store = VotingHotkeyStore(
+    readHotkey: readHotkey,
+    writeHotkey: writeHotkey,
+    deleteHotkey: deleteHotkey,
+  );
+
+  @override
+  Future<List<int>> getOrCreate({
+    required String accountUuid,
+    required String roundId,
+    required Future<List<int>> Function() generate,
+    required bool allowCreation,
+  }) => _store.getOrCreate(
+    accountUuid: accountUuid,
+    roundId: roundId,
+    generate: generate,
+    allowCreation: allowCreation,
+  );
+
   @override
   Future<List<int>?> readHotkey({
     required String accountUuid,
@@ -11441,7 +11700,6 @@ class FakeVotingHotkeyStore implements VotingHotkeyStore {
     return hotkey;
   }
 
-  @override
   Future<void> writeHotkey({
     required String accountUuid,
     required String roundId,
@@ -11457,8 +11715,40 @@ class FakeVotingHotkeyStore implements VotingHotkeyStore {
   }) async {}
 }
 
+class GatedVotingHotkeyStore extends FakeVotingHotkeyStore {
+  GatedVotingHotkeyStore() : super(null);
+
+  final writeStarted = Completer<void>();
+  final writeGate = Completer<void>();
+  int writeCalls = 0;
+
+  @override
+  Future<void> writeHotkey({
+    required String accountUuid,
+    required String roundId,
+    required List<int> hotkey,
+  }) async {
+    writeCalls++;
+    if (!writeStarted.isCompleted) writeStarted.complete();
+    await writeGate.future;
+    await super.writeHotkey(
+      accountUuid: accountUuid,
+      roundId: roundId,
+      hotkey: hotkey,
+    );
+  }
+}
+
 class FailingVotingHotkeyStore implements VotingHotkeyStore {
   const FailingVotingHotkeyStore();
+
+  @override
+  Future<List<int>> getOrCreate({
+    required String accountUuid,
+    required String roundId,
+    required Future<List<int>> Function() generate,
+    required bool allowCreation,
+  }) async => throw const VotingHotkeyUnavailable('missing test hotkey');
 
   @override
   Future<List<int>?> readHotkey({
@@ -11467,13 +11757,6 @@ class FailingVotingHotkeyStore implements VotingHotkeyStore {
   }) {
     throw const VotingHotkeyUnavailable('missing test hotkey');
   }
-
-  @override
-  Future<void> writeHotkey({
-    required String accountUuid,
-    required String roundId,
-    required List<int> hotkey,
-  }) async {}
 
   @override
   Future<void> deleteHotkey({
@@ -12061,6 +12344,7 @@ class FakeVotingRustApi
   Object? warmPirProofCacheError;
   Uint8List? warmPirProofCacheServedRoot;
   final delegationStoredHotkeySecrets = <List<int>>[];
+  final keystoneDelegationRequestHotkeys = <List<int>>[];
   int warmVotingProvingCachesCalls = 0;
   final setupStarted = Completer<void>();
   final delegationProofStarted = Completer<void>();
@@ -12588,6 +12872,7 @@ class FakeVotingRustApi
     final callIndex = keystoneDelegationRequestCalls.length;
     accountUuids.add(ctx.accountUuid);
     keystoneDelegationRequestCalls.add(bundleIndex);
+    keystoneDelegationRequestHotkeys.add(List<int>.from(storedHotkeySecret));
     final forcedFailure = keystoneDelegationRequestFailuresByCall[callIndex];
     if (forcedFailure != null) {
       throw forcedFailure;

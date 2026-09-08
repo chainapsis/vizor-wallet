@@ -6,13 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/formatting/duration_format.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../services/voting/voting_rust_exception.dart';
+import '../../services/voting/voting_retry.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/api/voting_session.dart' as rust_session;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
-import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
@@ -33,6 +33,20 @@ const _ironwoodPcztPool = 1;
 /// share submission, and recovery polling.
 const _votingWorkConcurrency = 3;
 const _votingBatchProofConcurrency = 3;
+
+// Background setup and QR preparation can briefly contend for the SDK's
+// bundle lease. Retrying reuses its persisted transaction and proof work.
+final _delegationSetupRetryPolicy = VotingRetryPolicy(
+  name: 'delegation setup',
+  delays: const [
+    Duration(milliseconds: 100),
+    Duration(milliseconds: 200),
+    Duration(milliseconds: 400),
+    Duration(milliseconds: 800),
+  ],
+  shouldRetry: (error) =>
+      votingRustExceptionOf(error)?.kind == rust_wire.VotingErrorKindView.busy,
+);
 
 /// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
@@ -80,7 +94,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Map<String, Future<void>> _snapshotBundlePrecomputes = {};
   final Map<String, Future<void>> _backgroundDelegationProofPrecomputes = {};
   final Set<String> _completedSnapshotBundlePrecomputes = {};
-  final Map<String, Future<List<int>>> _hotkeyEnsures = {};
 
   /// The tracking run in flight, the session it runs on, and the context it
   /// was started for.
@@ -185,14 +198,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _disposeHandlerRegistered = false;
       _activeAccountListenerRegistered = false;
       _submissionGuardListenerRegistered = false;
-      // Provider disposal is round-scoped: clear abandoned prepared PCZTs but
-      // keep account-wide vote-tree sync state reusable across rounds.
+      // Preserve durable setup for background proofs and later signing.
+      // Only the round-scoped vote-tree cache is released on disposal.
       _isDisposed = true;
       _advanceSessionGeneration();
       _snapshotBundlePrecomputes.clear();
       _backgroundDelegationProofPrecomputes.clear();
       _completedSnapshotBundlePrecomputes.clear();
-      _hotkeyEnsures.clear();
       _cancelShareTrackingRetry();
       for (final session in _activeRoundSessions.toList()) {
         session.cancel();
@@ -203,14 +215,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (context == null) return;
       if (ownsSubmission) {
         debugPrint(
-          '[zcash] Voting: process-local state reset skipped '
+          '[zcash] Voting: session cache reset skipped '
           'round=${context.round.roundId} account=${context.accountUuid} '
           'reason=provider-dispose activeSubmission=true',
         );
         return;
       }
       unawaited(
-        _resetVotingSessionState(
+        _resetVotingSessionCaches(
           rust: rust,
           context: context,
           reason: 'provider-dispose',
@@ -267,7 +279,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (previousContext != null) {
       if (!_activeSubmissionOwnsContext(previousContext)) {
         unawaited(
-          _resetVotingSessionState(
+          _resetVotingSessionCaches(
             rust: ref.read(votingRustApiProvider),
             context: previousContext,
             reason: 'active-account-switch',
@@ -284,7 +296,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _snapshotBundlePrecomputes.clear();
     _backgroundDelegationProofPrecomputes.clear();
     _completedSnapshotBundlePrecomputes.clear();
-    _hotkeyEnsures.clear();
     if (!hadSessionAccount || _isDisposed) return;
 
     final generation = _sessionGeneration;
@@ -473,7 +484,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         !_isCurrentPrecomputeContext(context, accountUuid)) {
       return;
     }
-    if (context.isHardwareAccount || bundleCount == 0) {
+    if (bundleCount == 0) {
       _completedSnapshotBundlePrecomputes.add(precomputeKey);
       return;
     }
@@ -747,7 +758,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> prepareKeystoneSigning() {
-    return _enqueue(_prepareKeystoneSigningUnlocked);
+    return _enqueue(
+      _prepareKeystoneSigningUnlocked,
+      cleanupProcessStateOnError: false,
+    );
   }
 
   Future<void> handleKeystoneBatchSignatures(
@@ -872,7 +886,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
       await _prepareKeystoneSigningUnlocked();
-    });
+    }, cleanupProcessStateOnError: false);
   }
 
   Future<void> reportKeystoneScanError(String message) {
@@ -1866,49 +1880,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context, {
     bool alreadyBound = false,
   }) {
-    final key = _hotkeyEnsureKey(context);
-    final inFlight = _hotkeyEnsures[key];
-    if (inFlight != null) return inFlight;
-
-    late final Future<List<int>> ensureFuture;
-    ensureFuture = _ensureHotkeyUncached(context, alreadyBound: alreadyBound)
-        .whenComplete(() {
-          if (identical(_hotkeyEnsures[key], ensureFuture)) {
-            _hotkeyEnsures.remove(key);
-          }
-        });
-    _hotkeyEnsures[key] = ensureFuture;
-    return ensureFuture;
-  }
-
-  Future<List<int>> _ensureHotkeyUncached(
-    _VotingSessionContext context, {
-    required bool alreadyBound,
-  }) async {
-    final existing = await _readStoredHotkey(context);
-    if (existing != null && existing.isNotEmpty) return existing;
-    if (alreadyBound || _hotkeyAlreadyBound(context)) {
-      throw const VotingHotkeyUnavailable('missing stored voting hotkey');
-    }
-
     final rust = ref.read(votingRustApiProvider);
-    final hotkey = await rust.generateVotingHotkey(network: context.network);
-    final storedAfterGeneration = await _readStoredHotkey(context);
-    if (storedAfterGeneration != null && storedAfterGeneration.isNotEmpty) {
-      return storedAfterGeneration;
-    }
-    await ref
+    return ref
         .read(votingHotkeyStoreProvider)
-        .writeHotkey(
+        .getOrCreate(
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
-          hotkey: hotkey,
+          generate: () => rust.generateVotingHotkey(network: context.network),
+          allowCreation: !(alreadyBound || _hotkeyAlreadyBound(context)),
         );
-    return hotkey;
-  }
-
-  static String _hotkeyEnsureKey(_VotingSessionContext context) {
-    return '${context.accountUuid}:${context.round.roundId}';
   }
 
   Future<List<int>?> _readStoredHotkey(_VotingSessionContext context) async {
@@ -2724,10 +2704,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Uri pirEndpoint,
     required int bundleCount,
   }) async {
-    // Keystone must retain the original PCZT bytes for its QR signing request.
-    // The software path can persist ZKP1 now and reconstruct its signed payload
-    // from the stored setup fields later without retaining those bytes in Dart.
-    if (context.isHardwareAccount || bundleCount == 0) return true;
+    // The SDK retains the exact PCZT for the later Keystone signing request.
+    if (bundleCount == 0) return true;
     if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
       return false;
     }
@@ -2735,7 +2713,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final rust = ref.read(votingRustApiProvider);
     late final List<int> storedHotkeySecret;
     try {
-      storedHotkeySecret = await _ensureHotkey(context);
+      final signatures = context.isHardwareAccount
+          ? await _loadKeystoneSignatures(context)
+          : const <int, rust_wire.KeystoneSignatureRecord>{};
+      storedHotkeySecret = await _ensureHotkey(
+        context,
+        alreadyBound: signatures.isNotEmpty,
+      );
     } catch (e) {
       debugPrint(
         '[zcash] Voting: background delegation proof skipped '
@@ -2769,11 +2753,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           'round=${context.round.roundId} bundle=$bundleIndex',
         );
         try {
-          final generated = await rust.precomputeDelegationProof(
-            ctx: _apiRoundContext(context),
-            pirServerUrls: pirServerUrls,
-            storedHotkeySecret: storedHotkeySecret,
-            bundleIndex: bundleIndex,
+          final generated = await withVotingRetry(
+            policy: _delegationSetupRetryPolicy,
+            isCancelled: () =>
+                !_isCurrentPrecomputeContext(context, context.accountUuid),
+            operation: () => rust.precomputeDelegationProof(
+              ctx: _apiRoundContext(context),
+              pirServerUrls: pirServerUrls,
+              storedHotkeySecret: storedHotkeySecret,
+              bundleIndex: bundleIndex,
+            ),
           );
           debugPrint(
             '[zcash] Voting: background delegation proof completed '
@@ -2867,7 +2856,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       } catch (e, st) {
         debugPrint('[zcash] Voting: session action failed: $e\n$st');
         if (cleanupProcessStateOnError) {
-          await _cleanupCurrentSessionState(reason: 'action-failed');
+          await _cleanupCurrentSessionCaches(reason: 'action-failed');
         }
         if (publishError) {
           _setError(
@@ -2973,73 +2962,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
 
     final rust = ref.read(votingRustApiProvider);
-    late final List<rust_delegate.KeystoneSigningRequest> requests;
-    try {
-      requests = await rust.buildKeystoneDelegationRequests(
+    final requests = await withVotingRetry(
+      policy: _delegationSetupRetryPolicy,
+      isCancelled: () =>
+          !_isCurrentPrecomputeContext(context, context.accountUuid),
+      operation: () => rust.buildKeystoneDelegationRequests(
         ctx: _apiRoundContext(context),
         storedHotkeySecret: storedHotkeySecret,
         bundleIndices: unsignedBundleIndexes,
-      );
-    } catch (error) {
-      if (!_isKeystoneSetupOverwriteError(error)) rethrow;
-      debugPrint(
-        '[zcash] Voting: Keystone request detected stale bundle setup '
-        'round=${context.round.roundId} bundles=$unsignedBundleIndexes',
-      );
-      await _resetVotingSessionState(
-        rust: rust,
-        context: context,
-        reason: 'keystone-stale-setup',
-      );
-      await rust.setupDelegationBundles(ctx: _apiRoundContext(context));
-      roundPlan = await _loadRoundPlan(context);
-      signatures = await _loadKeystoneSignatures(context);
-      final maxBundleIndex = roundPlanBundleCount(roundPlan);
-      if (maxBundleIndex >= 0) {
-        signatures = {
-          for (final entry in signatures.entries)
-            if (entry.key >= 0 && entry.key < maxBundleIndex)
-              entry.key: entry.value,
-        };
-      }
-      unsignedBundleIndexes = delegationBundleIndexesNeedingSigning(
-        roundPlan,
-      ).where((bundleIndex) => !signatures.containsKey(bundleIndex)).toList();
-      if (unsignedBundleIndexes.isEmpty) {
-        _setStateForContext(
-          context,
-          (state.value ?? current).copyWith(
-            phase: VotingSessionPhase.readyToDelegate,
-            isHardwareAccount: true,
-            roundPlan: roundPlan,
-            keystoneSignatures: signatures,
-            clearKeystoneSigningRequest: true,
-            clearKeystoneScanError: true,
-            clearCurrentBundleIndex: true,
-            clearError: true,
-          ),
-        );
-        return;
-      }
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: VotingSessionPhase.keystoneSigning,
-          isHardwareAccount: true,
-          roundPlan: roundPlan,
-          keystoneSignatures: signatures,
-          currentBundleIndex: unsignedBundleIndexes.first,
-          clearKeystoneSigningRequest: true,
-          clearKeystoneScanError: true,
-          clearError: true,
-        ),
-      );
-      requests = await rust.buildKeystoneDelegationRequests(
-        ctx: _apiRoundContext(context),
-        storedHotkeySecret: storedHotkeySecret,
-        bundleIndices: unsignedBundleIndexes,
-      );
-    }
+      ),
+    );
 
     if (requests.length != unsignedBundleIndexes.length ||
         !List.generate(
@@ -3568,22 +3500,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  /// Clear process-local state for the current round after an action failure.
+  /// Clear cached vote-tree state for the current round after an action failure.
   ///
   /// The context is reloaded so cleanup follows the session account and DB path.
   /// If that lookup fails, cleanup is skipped because there is no safe key to
   /// clear.
-  Future<void> _cleanupCurrentSessionState({required String reason}) async {
+  Future<void> _cleanupCurrentSessionCaches({required String reason}) async {
     try {
       final context = await _loadContext(_roundId);
-      await _resetVotingSessionState(
+      await _resetVotingSessionCaches(
         rust: ref.read(votingRustApiProvider),
         context: context,
         reason: reason,
       );
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: process-local cleanup skipped '
+        '[zcash] Voting: session cache cleanup skipped '
         'round=$_roundId reason=$reason error=$e',
       );
     } finally {
@@ -3594,27 +3526,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// Clear round-scoped Rust voting caches for this session.
   ///
   /// Passing the round ID intentionally preserves the account-wide vote-tree
-  /// sync client while discarding prepared delegation PCZTs for abandoned work.
-  /// This cache reset does not abort in-flight proof or vote jobs.
-  static Future<void> _resetVotingSessionState({
+  /// sync client. Durable delegation setup remains available to in-flight proof
+  /// jobs and to the next signing request.
+  static Future<void> _resetVotingSessionCaches({
     required VotingRustApi rust,
     required _VotingSessionContext context,
     required String reason,
   }) async {
     try {
-      await rust.resetVotingSessionState(
+      await rust.resetVoteTree(
         dbPath: context.dbPath,
         accountUuid: context.accountUuid,
         roundId: context.round.roundId,
       );
       debugPrint(
-        '[zcash] Voting: process-local state reset '
+        '[zcash] Voting: session cache reset '
         'round=${context.round.roundId} account=${context.accountUuid} '
         'reason=$reason',
       );
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: process-local state reset failed '
+        '[zcash] Voting: session cache reset failed '
         'round=${context.round.roundId} account=${context.accountUuid} '
         'reason=$reason error=$e',
       );
@@ -3693,11 +3625,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   static int _unixSeconds(DateTime value) {
     return value.toUtc().millisecondsSinceEpoch ~/ 1000;
-  }
-
-  static bool _isKeystoneSetupOverwriteError(Object error) {
-    return error is VotingRustException &&
-        error.kind == rust_wire.VotingErrorKindView.setupAlreadyPersisted;
   }
 }
 

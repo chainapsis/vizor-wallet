@@ -800,11 +800,11 @@ pub async fn build_keystone_delegation_requests(
 
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
-/// Existing tuples for the same sighash and randomized key are accepted as
-/// idempotent retries, even when randomized signing produced different valid
-/// signature bytes. A tuple for a different signing context is a
-/// `KeystoneSignatureConflict` error, and any validation or database error
-/// rolls back the complete batch.
+/// The SDK checks each tuple against the bundle's current sighash and
+/// randomized key in the storage transaction, including idempotent retries.
+/// Missing or replaced setup returns `KeystoneSignatureConflict`. Existing
+/// matching tuples remain idempotent even when signature bytes differ, and any
+/// validation or database error rolls back the complete batch.
 pub fn store_keystone_signatures_batch(
     db_path: String,
     account_uuid: String,
@@ -1254,7 +1254,6 @@ pub fn set_voting_observability_sink(sink: StreamSink<ApiVotingObservability>) {
 pub fn clear_voting_observability_sink() {
     observability::set_observer(None);
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -2586,6 +2585,24 @@ mod tests {
         );
     }
 
+    fn seed_keystone_signing_context(db_path: &std::path::Path) {
+        rusqlite::Connection::open(zcash_voting::storage::VotingDb::wallet_sidecar_path(
+            db_path,
+        ))
+        .unwrap()
+        .execute(
+            "UPDATE bundles SET pczt_sighash = ?1, rk = ?2
+             WHERE round_id = ?3 AND wallet_id = ?4 AND bundle_index = 0",
+            rusqlite::params![
+                vec![8u8; KEYSTONE_SIGHASH_LEN],
+                vec![9u8; KEYSTONE_RK_LEN],
+                ROUND_ID,
+                TEST_ACCOUNT_UUID
+            ],
+        )
+        .unwrap();
+    }
+
     #[test]
     fn keystone_signature_round_trip_and_length_validation() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -2598,6 +2615,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        seed_keystone_signing_context(&db_path);
 
         let signature = |sig_len: usize| ApiKeystoneSignatureInput {
             bundle_index: 0,
@@ -2645,6 +2663,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        seed_keystone_signing_context(&db_path);
         drop(db);
 
         let signature = ApiKeystoneSignatureInput {
@@ -2730,6 +2749,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        seed_keystone_signing_context(&db_path);
         drop(db);
 
         let input = |bundle_index| ApiKeystoneSignatureInput {

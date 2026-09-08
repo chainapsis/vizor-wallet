@@ -117,8 +117,7 @@ version = "=0.1.0-rc4"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-git = "https://github.com/valargroup/zcash_voting.git"
-rev = "20e0b600ab0b68ae34e50cf32413b89b57147dfe"
+version = "=4.0.0"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -170,16 +169,19 @@ anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
 
 [dev-dependencies.zcash_voting]
-git = "https://github.com/valargroup/zcash_voting.git"
-rev = "20e0b600ab0b68ae34e50cf32413b89b57147dfe"
+version = "=4.0.0"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
 version = "=0.6.0"
-git = "https://github.com/valargroup/zcash_voting.git"
-rev = "20e0b600ab0b68ae34e50cf32413b89b57147dfe"
 default-features = false
 features = ["zakura"]
+
+[patch.crates-io]
+# Combine durable Keystone setup with the feature branch's voting observability.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "98785d2b544b3f39e9b525e3a87421dcfa67d172" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "98785d2b544b3f39e9b525e3a87421dcfa67d172" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "98785d2b544b3f39e9b525e3a87421dcfa67d172" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }

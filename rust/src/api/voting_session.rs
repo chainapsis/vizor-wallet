@@ -607,20 +607,20 @@ impl VotingRoundSession {
         let report = observability::report(
             "confirm_pending_share",
             zcash_voting::share_tracking::confirm_pending_share_with_report(
-            &database,
-            &zcash_voting::share_tracking::ShareConfirmationParams {
-                round_id: &self.inputs.round_params.vote_round_id,
-                share: zcash_voting::share_tracking::ShareKey {
-                    bundle_index,
-                    proposal_id,
-                    share_index,
+                &database,
+                &zcash_voting::share_tracking::ShareConfirmationParams {
+                    round_id: &self.inputs.round_params.vote_round_id,
+                    share: zcash_voting::share_tracking::ShareKey {
+                        bundle_index,
+                        proposal_id,
+                        share_index,
+                    },
+                    configured_server_urls: &self.binding.configured_helper_urls,
+                    now_seconds: unix_now_seconds(0),
                 },
-                configured_server_urls: &self.binding.configured_helper_urls,
-                now_seconds: unix_now_seconds(0),
-            },
-            &client,
-            &cancel,
-            observability::options(),
+                &client,
+                &cancel,
+                observability::options(),
             )
             .await,
         )
