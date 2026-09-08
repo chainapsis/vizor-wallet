@@ -26,10 +26,16 @@ exit 7
   )
   $exitCode = Invoke-WindowsNativeCommand -FilePath $shell -ArgumentList (@('-NoProfile', '-File', $child, $result) + $expected)
   if ($exitCode -ne 7) { throw "Child exit code was not preserved: $exitCode" }
-  $actual = @(Get-Content -LiteralPath $result -Raw | ConvertFrom-Json)
-  if ($actual.Count -ne $expected.Count) { throw "Argument count changed: $($actual.Count) vs $($expected.Count)" }
+  $rawJson = Get-Content -LiteralPath $result -Raw
+  # Windows PowerShell 5.1 emits the JSON array as one pipeline object.
+  # @(... | ConvertFrom-Json) would wrap it again and report Count=1.
+  $actual = $rawJson | ConvertFrom-Json
+  if ($actual -isnot [System.Array] -or $actual.Count -ne $expected.Count) {
+    $actualType = if ($null -eq $actual) { '<null>' } else { $actual.GetType().FullName }
+    throw "Argument shape changed: type=$actualType; count=$($actual.Count); expected=$($expected.Count); raw JSON=$rawJson"
+  }
   for ($i = 0; $i -lt $expected.Count; $i++) {
-    if ($actual[$i] -cne $expected[$i]) { throw "Argument $i changed: '$($actual[$i])'" }
+    if ($actual[$i] -cne $expected[$i]) { throw "Argument $i changed: expected '$($expected[$i])', received '$($actual[$i])'; raw JSON=$rawJson" }
   }
   Write-Host "PASS: native argv round-trip and exit code ($($PSVersionTable.PSVersion))"
 } finally {
