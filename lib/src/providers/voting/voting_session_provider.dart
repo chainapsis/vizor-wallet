@@ -695,7 +695,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           delegationBundleIndexesNeedingSigning(
             refreshedRoundPlan,
           ).where((index) => !completedBundleIndexes.contains(index)).isEmpty
-          ? VotingSessionPhase.delegated
+          ? ((state.value?.phase == VotingSessionPhase.castingVotes)
+                ? VotingSessionPhase.castingVotes
+                : VotingSessionPhase.delegated)
           : VotingSessionPhase.readyToDelegate;
       _setStateForContext(
         context,
@@ -1111,6 +1113,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               voteKeys: inFlightKeys,
               completedBundleTasks: completedBundleTasks,
               totalBundleTasks: totalBundleTasks,
+              tally: tally,
             ),
           ),
         );
@@ -1337,6 +1340,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           voteSubmissionProgress: _voteSubmissionProgress(
             completedBundleTasks: completedBundleTasks,
             totalBundleTasks: totalBundleTasks,
+            tally: tally,
           ),
           clearCurrentBundleIndex: true,
           clearCurrentVoteKey: true,
@@ -1591,6 +1595,36 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }) async {
     final batchTimer = Stopwatch()..start();
     final completed = <int>{};
+    var castingVotes = false;
+    var roundPlan = fallbackState.roundPlan;
+    rust_wire.RoundWorkTallyView? tally;
+    final voteProgress = Map<VotingVoteKey, VotingSessionProgress>.of(
+      fallbackState.voteProgress,
+    );
+    final stepVoteKeys = <VotingVoteKey, Set<VotingVoteKey>>{};
+
+    void publishVotes({VotingVoteKey? currentKey}) {
+      final total = tally?.totalProposals ?? 0;
+      final finished = tally?.completedProposals ?? 0;
+      _setStateForContext(
+        context,
+        (state.value ?? fallbackState).copyWith(
+          phase: VotingSessionPhase.castingVotes,
+          roundPlan: roundPlan,
+          voteProgress: Map<VotingVoteKey, VotingSessionProgress>.of(
+            voteProgress,
+          ),
+          currentBundleIndex: currentKey?.bundleIndex,
+          currentVoteKey: currentKey,
+          clearCurrentBundleIndex: currentKey == null,
+          clearCurrentVoteKey: currentKey == null,
+          voteSubmissionCompletedCount: finished,
+          voteSubmissionTotalCount: total,
+          voteSubmissionProgress: total > 0 ? finished / total : null,
+          clearVoteSubmissionProgress: total == 0,
+        ),
+      );
+    }
 
     void publishProgress(VotingSessionProgress update) {
       final bundleIndex = update.bundleIndex;
@@ -1599,7 +1633,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _setStateForContext(
         context,
         (state.value ?? fallbackState).copyWith(
-          phase: VotingSessionPhase.delegating,
+          // A sibling delegation can finish after voting has begun. Keep the
+          // presentation on voting instead of bouncing between the two steps.
+          phase: castingVotes
+              ? VotingSessionPhase.castingVotes
+              : VotingSessionPhase.delegating,
           delegationProgress: Map<int, VotingSessionProgress>.of(progress),
           clearCurrentBundleIndex: true,
         ),
@@ -1611,10 +1649,53 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       context,
       signer: signer,
       label: '$logLabel-delegation',
+      policy: const rust_session.ApiRoundDrivePolicy(
+        selectedChoiceProgress: true,
+      ),
       onEvent: (event) {
+        // This is a whole-round drive, even though the caller starts it to
+        // delegate. Durable ballot intents let it cast votes and deliver
+        // shares in the same run, before castVotes() is ever called.
+        if (event.kind == rust_wire.RoundDriveEventKind.planRefreshed) {
+          roundPlan = event.plan ?? roundPlan;
+          tally = event.tally ?? tally;
+          if (castingVotes) publishVotes();
+          return;
+        }
         final step = event.step;
         final bundleIndex = step?.bundleIndex;
         if (bundleIndex == null) return;
+        if (_isVoteStep(step!)) {
+          castingVotes = true;
+          final key = _voteKeyForStep(step);
+          final keys = stepVoteKeys.putIfAbsent(key, () => {key});
+          switch (event.kind) {
+            case rust_wire.RoundDriveEventKind.stepProgress:
+              final update = event.progress;
+              if (update != null) {
+                _applyVoteProgress(update, step, keys, voteProgress);
+              }
+            case rust_wire.RoundDriveEventKind.stepFinished:
+              if (event.disposition ==
+                  rust_wire.RoundStepDispositionView.advanced) {
+                for (final voteKey in keys) {
+                  voteProgress[voteKey] = VotingSessionProgress(
+                    phase: VotingProgressPhase.completed,
+                    bundleIndex: voteKey.bundleIndex,
+                    proposalId: voteKey.proposalId,
+                    proofProgress: 1,
+                  );
+                }
+              }
+            default:
+              break;
+          }
+          publishVotes(currentKey: key);
+          return;
+        }
+        // Chain outcomes are attributed to a step, not just a bundle: a vote
+        // confirmation must never overwrite that bundle's delegation state.
+        if (!_isDelegationStep(step)) return;
         switch (event.kind) {
           case rust_wire.RoundDriveEventKind.stepProgress:
             final update = event.progress;
@@ -1649,9 +1730,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 break;
             }
           case rust_wire.RoundDriveEventKind.stepFinished:
-            if (_isDelegationStep(step!) &&
-                event.disposition ==
-                    rust_wire.RoundStepDispositionView.advanced) {
+            if (event.disposition ==
+                rust_wire.RoundStepDispositionView.advanced) {
               completed.add(bundleIndex);
             }
           default:
@@ -1659,6 +1739,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
       },
     );
+
+    if (castingVotes) {
+      roundPlan = report.plan ?? roundPlan;
+      tally = report.tally;
+      publishVotes();
+    }
 
     final failures = [
       for (final record in report.failures)
@@ -1844,10 +1930,48 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int completedBundleTasks,
     required int totalBundleTasks,
     double? currentBundleProgress,
+    rust_wire.RoundWorkTallyView? tally,
   }) {
+    return _submissionProgress(
+      tally: tally,
+      inFlightProgress: currentBundleProgress ?? 0,
+      completedBundleTasks: completedBundleTasks,
+      totalBundleTasks: totalBundleTasks,
+    );
+  }
+
+  /// How far through the ballot the bar should sit.
+  ///
+  /// The tally is the authority whenever the SDK sends one, because it counts
+  /// the same proposals the "question N of M" label counts. Counting steps
+  /// cannot: an atomic batch is one step carrying every proposal in it, and
+  /// the planner may collapse a round's casts into one at any refresh — so
+  /// `completedBundleTasks`, which subtracts a refreshed plan's step count
+  /// from the count the run started with, compares two different shapes and
+  /// lands on a number belonging to neither. A six-question ballot that
+  /// started as six casts and refreshed as one batch reported five of six
+  /// done and stayed there for the whole submission.
+  ///
+  /// Step counting survives only as the pre-tally fallback, covering the
+  /// window before the run's first plan refresh arrives.
+  static double? _submissionProgress({
+    required rust_wire.RoundWorkTallyView? tally,
+    required double inFlightProgress,
+    required int completedBundleTasks,
+    required int totalBundleTasks,
+  }) {
+    final total = tally?.totalProposals ?? 0;
+    if (total > 0) {
+      final completed = tally!.completedProposals.clamp(0, total);
+      // The in-flight step is credited with at most one more question. It may
+      // cover several — a batch does — but crediting it for more would
+      // overshoot the label, and the next refresh corrects it upward anyway.
+      final withinQuestion = inFlightProgress.clamp(0.0, 1.0) / total;
+      return ((completed / total) + withinQuestion).clamp(0.0, 1.0).toDouble();
+    }
     if (totalBundleTasks <= 0) return null;
-    final currentProgress = (currentBundleProgress ?? 0).clamp(0.0, 1.0);
-    return ((completedBundleTasks + currentProgress) / totalBundleTasks)
+    return ((completedBundleTasks + inFlightProgress.clamp(0.0, 1.0)) /
+            totalBundleTasks)
         .clamp(0.0, 1.0)
         .toDouble();
   }
@@ -1869,8 +1993,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required List<VotingVoteKey> voteKeys,
     required int completedBundleTasks,
     required int totalBundleTasks,
+    rust_wire.RoundWorkTallyView? tally,
   }) {
-    if (totalBundleTasks <= 0) return null;
     var pipelineProgress = 0.0;
     for (final key in voteKeys) {
       final item = progress[key];
@@ -1883,9 +2007,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _ => (item?.proofProgress ?? 0).clamp(0.0, 1.0) * 0.8,
       };
     }
-    return ((completedBundleTasks + pipelineProgress) / totalBundleTasks)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    return _submissionProgress(
+      tally: tally,
+      inFlightProgress: pipelineProgress,
+      completedBundleTasks: completedBundleTasks,
+      totalBundleTasks: totalBundleTasks,
+    );
   }
 
   Future<Map<int, rust_wire.KeystoneSignatureRecord>> _loadKeystoneSignatures(

@@ -5519,6 +5519,111 @@ void main() {
     },
   );
 
+  test('an atomic batch advances the bar with the questions', () async {
+    // One `AdvanceVoteBatch` step carries every proposal in the unit, so the
+    // bar cannot be counted in steps. Worse, a run that starts from a plan of
+    // six casts and refreshes into one batch subtracts the refreshed step
+    // count from the starting one: that reported five of six done and froze
+    // there for the whole submission while the label walked 1/6 to 6/6.
+    final rust = FakeVotingRustApi(bundleCount: 1);
+    const batch = rust_wire.NextStepView(
+      kind: rust_wire.NextStepKind.advanceVoteBatch,
+      bundleIndex: 0,
+      proposalId: 1,
+      choice: 0,
+      shareIndex: 0,
+    );
+    rust_wire.RoundPlanView planWith(List<rust_wire.NextStepView> steps) =>
+        apiRoundPlan(
+          roundId: kRoundId,
+          pendingRecovery: steps.isNotEmpty,
+          nextSteps: steps,
+          openProposals: Uint32List(0),
+          allDecided: true,
+          completedVoteArtifact: steps.isEmpty,
+        );
+    rust_wire.RoundWorkTallyView tallyOf(int completed) =>
+        rust_wire.RoundWorkTallyView(
+          completedProposals: completed,
+          totalProposals: 6,
+          remainingObligations: completed >= 6 ? 0 : 1,
+        );
+    rust.scriptedRoundRuns.add([
+      for (final completed in [0, 1, 2, 3, 4, 5])
+        roundRunProgress(
+          kind: rust_wire.RoundDriveEventKind.planRefreshed,
+          plan: planWith(const [batch]),
+          tally: tallyOf(completed),
+        ),
+      roundRunProgress(
+        kind: rust_wire.RoundDriveEventKind.stepFinished,
+        step: batch,
+        disposition: rust_wire.RoundStepDispositionView.advanced,
+      ),
+      roundRunProgress(
+        kind: rust_wire.RoundDriveEventKind.planRefreshed,
+        plan: planWith(const []),
+        tally: tallyOf(6),
+      ),
+      roundRunReport(plan: planWith(const []), tally: tallyOf(6)),
+    ]);
+
+    final container = _sessionContainer(
+      rust: rust,
+      recoveryApi: FakeVotingRecoveryApi(
+        state: recoveryState(bundleCount: 1),
+        roundPlan: planWith(const [batch]),
+      ),
+    );
+    addTearDown(container.dispose);
+    final observed = <VotingSessionState>[];
+    final subscription = container.listen(votingSessionProvider(kRoundId), (
+      previous,
+      next,
+    ) {
+      final value = next.value;
+      if (value != null) observed.add(value);
+    });
+    addTearDown(subscription.close);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            for (var proposalId = 1; proposalId <= 6; proposalId++)
+              VotingDraftVote(proposalId: proposalId, choice: 0, numOptions: 2),
+          ],
+        );
+
+    // Paired rather than sequenced: consecutive publishes inside one turn are
+    // coalesced, so what is observable is the label and the bar in the same
+    // state, not every intermediate value.
+    final batching = observed
+        .where((state) => state.voteSubmissionTotalCount == 6)
+        .where((state) => state.voteSubmissionProgress != null)
+        .toList();
+    expect(batching, isNotEmpty, reason: 'the run published a batching state');
+    for (final state in batching) {
+      expect(
+        state.voteSubmissionProgress,
+        closeTo(state.voteSubmissionCompletedCount / 6, 1e-9),
+        reason:
+            'the bar reads the same questions the label does, not the step '
+            'count the batch happens to have',
+      );
+    }
+    expect(
+      batching.any(
+        (state) =>
+            state.voteSubmissionProgress! > 0 &&
+            state.voteSubmissionProgress! < 1,
+      ),
+      isTrue,
+      reason: 'the bar moves during the batch, not only when it lands',
+    );
+  });
+
   test('a resumed ballot keeps the total the voter already saw', () async {
     // The regression this guards: Dart used to rebuild "question N of M" from
     // the shrinking step list, so a resume that picked up only the last
