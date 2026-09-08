@@ -1,5 +1,9 @@
 # Runs the real packaging script in a disposable repo with fake FVM and vpk.
 # No Windows build, signing credentials, or wallet data is used.
+# -NativeProbe runs a real child process to exercise stderr and exit codes.
+# Run both modes under Windows PowerShell 5.1 and PowerShell 7 on Windows.
+param([switch]$NativeProbe)
+
 $ErrorActionPreference = "Stop"
 $sourceScripts = $PSScriptRoot
 $originalLocation = Get-Location
@@ -22,6 +26,24 @@ try {
   Copy-Item (Join-Path $sourceScripts "package-windows-velopack.ps1") $fixtureScripts
   Copy-Item (Join-Path $sourceScripts "windows-build-arch.dart") $fixtureScripts
   $packageScript = Join-Path $fixtureScripts "package-windows-velopack.ps1"
+  Set-Content (Join-Path $testRoot '.fvmrc') '{"flutter":"3.47.2"}'
+  # Existing SDK directories must not take priority over the host Dart PATH.
+  $fakeSdk = Join-Path $testRoot 'fvm/versions/3.47.2'
+  New-Item -ItemType Directory -Path (Join-Path $fakeSdk 'bin/cache/dart-sdk/bin') -Force | Out-Null
+  $env:VIZOR_TEST_FORBIDDEN_PATH = $fakeSdk
+  $env:VIZOR_TEST_NATIVE_PROBE = "$NativeProbe"
+  $shellName = if ($PSVersionTable.PSEdition -eq 'Desktop') { 'powershell.exe' } elseif ($env:OS -eq 'Windows_NT') { 'pwsh.exe' } else { 'pwsh' }
+  $env:VIZOR_TEST_SHELL = Join-Path $PSHOME $shellName
+  $env:VIZOR_TEST_PROBE_SCRIPT = Join-Path $testRoot 'native-probe.ps1'
+  Set-Content $env:VIZOR_TEST_PROBE_SCRIPT @'
+if ($env:PATH.Contains($env:VIZOR_TEST_FORBIDDEN_PATH)) {
+  [Console]::Error.WriteLine('Host Dart PATH was replaced by the Flutter SDK')
+  exit 99
+}
+if ($env:VIZOR_TEST_PROBE_STDERR) { [Console]::Error.WriteLine($env:VIZOR_TEST_PROBE_STDERR) }
+[Console]::Out.WriteLine($env:VIZOR_TEST_PROBE)
+exit ([int]$env:VIZOR_TEST_PROBE_EXIT)
+'@
   $env:USERPROFILE = $testRoot
   $env:LOCALAPPDATA = $testRoot
   $env:DOTNET_ROOT = ""
@@ -34,6 +56,12 @@ try {
   Set-Content (Join-Path $mockBin "fvm.ps1") @'
 if ($args[0] -eq 'dart') {
   if (-not (Test-Path $args[1])) { throw 'Missing ABI probe script.' }
+  if ($env:PATH.Contains($env:VIZOR_TEST_FORBIDDEN_PATH)) { throw 'Host Dart PATH was replaced' }
+  if ($env:VIZOR_TEST_NATIVE_PROBE -eq 'True') {
+    & $env:VIZOR_TEST_SHELL -NoProfile -File $env:VIZOR_TEST_PROBE_SCRIPT
+    $global:LASTEXITCODE = $LASTEXITCODE
+    return
+  }
   Write-Output 'FVM informational output'
   Write-Output $env:VIZOR_TEST_PROBE
   $global:LASTEXITCODE = [int]$env:VIZOR_TEST_PROBE_EXIT
@@ -60,12 +88,17 @@ $global:LASTEXITCODE = 0
     @{ Name = "explicit arm64 testnet"; Sdk = "arm64"; Arch = "arm64"; Network = "testnet" },
     @{ Name = "default rejects ARM SDK"; Sdk = "arm64"; Arch = $null; Error = "Requested Windows x64" },
     @{ Name = "ARM request rejects x64 SDK"; Sdk = "x64"; Arch = "arm64"; Error = "Requested Windows arm64" },
+    @{ Name = "stderr warning with successful probe"; Sdk = "x64"; Network = "mainnet"; Stderr = "harmless native warning" },
+    @{ Name = "stderr with failed probe"; Sdk = "x64"; Exit = 7; Stderr = "native probe failure detail"; Error = "probe failed" },
+    @{ Name = "missing probe result"; Sdk = "x64"; Probe = ""; Error = "unique Windows architecture" },
+    @{ Name = "duplicate same ABI"; Sdk = "x64"; Probe = "VIZOR_WINDOWS_BUILD_ARCH=x64`nVIZOR_WINDOWS_BUILD_ARCH=x64"; Error = "unique Windows architecture" },
     @{ Name = "failed probe"; Sdk = "x64"; Exit = 1; Error = "probe failed" },
     @{ Name = "unrecognized probe"; Sdk = "x64"; Probe = "unknown"; Error = "unique Windows architecture" },
     @{ Name = "conflicting probe"; Sdk = "x64"; Probe = "VIZOR_WINDOWS_BUILD_ARCH=x64`nVIZOR_WINDOWS_BUILD_ARCH=arm64"; Error = "unique Windows architecture" }
   )
   foreach ($case in $cases) {
     $env:PROCESSOR_ARCHITECTURE = "ARM64"
+    $env:VIZOR_TEST_PROBE_STDERR = $case.Stderr
     $env:VIZOR_TEST_SDK_ARCH = $case.Sdk
     $env:VIZOR_TEST_PROBE = if ($case.ContainsKey("Probe")) { $case.Probe } else { "VIZOR_WINDOWS_BUILD_ARCH=$($case.Sdk)" }
     $env:VIZOR_TEST_PROBE_EXIT = if ($case.ContainsKey("Exit")) { "$($case.Exit)" } else { "0" }

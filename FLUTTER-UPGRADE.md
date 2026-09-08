@@ -111,3 +111,31 @@ These exact failures occur on both SDKs and remain outside the SDK compatibility
 - `test/features/onboarding/mobile_onboarding_progress_test.dart: import progress includes the review step`
 - `test/features/onboarding/mobile_import_birthday_screen_test.dart: the date field is not typeable and opens the calendar`
 - `test/features/onboarding/mobile_import_birthday_screen_test.dart: tapping the date field still opens the calendar`
+
+## Windows packaging probe follow-up
+
+The first internal run passed each runner's FVM ABI check, but both Windows
+packaging jobs stopped in the script's second ABI probe before compilation.
+The catch handler discarded the original exception, so the exact triggering
+stderr message could not be recovered from that run.
+
+The packaging script now preserves the host Dart PATH used to activate FVM,
+logs the shell and resolved command paths, and captures probe diagnostics.
+Redirected native stderr is tolerated only during the probe; a nonzero or missing
+exit code, missing/duplicate ABI marker, or requested/actual ABI mismatch still
+stops packaging. Existing x64 naming, package IDs, and ARM64 runtime selection
+are unchanged.
+
+Validation: 13 packaging cases passed in each of the mocked and real-child-process
+modes on macOS PowerShell 7, plus 4 release metadata tests / 72 assertions.
+The child-process cases cover stderr with success, stderr with nonzero exit,
+missing/duplicate ABI output, architecture mismatches, and host Dart PATH
+preservation. Windows PowerShell 5.1, Windows PowerShell 7, and actual Windows
+builds still require runner verification. Run both modes on each Windows shell:
+
+```powershell
+./scripts/test-windows-packaging.ps1
+./scripts/test-windows-packaging.ps1 -NativeProbe
+```
+
+No new internal tag or workflow run was created for this follow-up.

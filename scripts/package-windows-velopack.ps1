@@ -72,27 +72,35 @@ function Remove-BuildSubdirectory($path) {
   }
 }
 
-function Get-FvmVersion {
-  if (-not (Test-Path ".fvmrc")) {
-    return $null
-  }
-
-  $config = Get-Content -Raw -Path ".fvmrc" | ConvertFrom-Json
-  return $config.flutter
-}
-
 function Assert-WindowsBuildArch($fvmCommand, $requestedArch) {
   # Flutter selects the Windows target from its Dart process ABI, not the OS.
   # Use FVM for both this probe and the build, including custom FVM cache paths.
   $probePath = Join-Path $scriptDir "windows-build-arch.dart"
+  $dartCommand = Get-Command dart -ErrorAction SilentlyContinue
+  Write-Host "SDK probe: PowerShell $($PSVersionTable.PSVersion); requested=$requestedArch"
+  Write-Host "FVM command: $fvmCommand"
+  Write-Host "Host Dart command: $($dartCommand.Source)"
+  Write-Host "Pinned Flutter: $((Get-Content -Raw (Join-Path $repoRoot '.fvmrc') | ConvertFrom-Json).flutter)"
+  $probeOutput = @()
+  $probeExitCode = $null
+  $savedErrorActionPreference = $ErrorActionPreference
   try {
+    # Windows PowerShell 5.1 turns redirected native stderr into ErrorRecords.
+    # A warning must not abort before the process exits. Scope this preference
+    # to the probe and continue to reject nonzero exits and invalid ABI output.
+    $ErrorActionPreference = "Continue"
+    $global:LASTEXITCODE = $null
     $probeOutput = @(& $fvmCommand dart $probePath 2>&1)
     $probeExitCode = $LASTEXITCODE
   } catch {
-    throw "Could not determine the FVM Dart SDK architecture. Run 'fvm dart scripts/windows-build-arch.dart' and ensure the pinned Windows SDK is installed."
+    throw "FVM Dart architecture probe could not run: $($_.Exception.Message)"
+  } finally {
+    $ErrorActionPreference = $savedErrorActionPreference
+    foreach ($line in $probeOutput) { Write-Host "FVM probe: $line" }
+    Write-Host "FVM probe exit code: $probeExitCode"
   }
-  if ($probeExitCode -ne 0) {
-    throw "FVM Dart architecture probe failed with exit code $probeExitCode. Run 'fvm dart scripts/windows-build-arch.dart' and ensure the pinned Windows SDK is installed."
+  if ($null -eq $probeExitCode -or $probeExitCode -ne 0) {
+    throw "FVM Dart architecture probe failed with exit code '$probeExitCode'. See FVM probe output above."
   }
   $archLines = @($probeOutput | ForEach-Object { "$($_)".Trim() } |
     Where-Object { $_ -cmatch '^VIZOR_WINDOWS_BUILD_ARCH=(x64|arm64)$' })
@@ -261,12 +269,9 @@ function Write-UpdateFeedSignature($feedPath, $signingKeyBase64) {
   )
 }
 
-$fvmVersion = Get-FvmVersion
-if ($fvmVersion) {
-  $fvmSdk = Join-Path $env:USERPROFILE "fvm\versions\$fvmVersion"
-  Add-PathIfExists (Join-Path $fvmSdk "bin\cache\dart-sdk\bin")
-  Add-PathIfExists (Join-Path $fvmSdk "bin")
-}
+# Keep the host Dart that activated FVM on PATH. Prepending Flutter's bundled
+# Dart here can invalidate FVM's cached snapshot (the two SDKs may differ).
+# FVM itself selects the project's pinned SDK for both the probe and build.
 Add-PathIfExists "C:\Program Files\Git\cmd"
 $userDotnetRoot = Join-Path $env:USERPROFILE ".dotnet"
 $dotnetRoot = $env:DOTNET_ROOT
