@@ -1,11 +1,13 @@
 use std::{panic, path::Path, sync::Arc, time::Instant};
 
+use crate::frb_generated::StreamSink;
+
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
 use super::voting_helpers::delegation_static_inputs;
 use crate::wallet::{
     keys,
-    voting::{db, delegation, hotkey, network::voting_network},
+    voting::{db, delegation, hotkey, network::voting_network, observability},
 };
 use zcash_voting::config;
 use zcash_voting::wire::{
@@ -1197,6 +1199,62 @@ pub fn resolve_voting_config_from_attempts(
             .collect(),
     })
 }
+
+/// One SDK observability snapshot, flattened for codegen.
+///
+/// Mirrors [`crate::wallet::voting::observability::VotingObservabilitySnapshot`]
+/// rather than re-exporting the SDK's types: those are `#[non_exhaustive]` and
+/// nest `Vec`s of further structs, neither of which suits this surface.
+/// `rendered` is the SDK's own `Display`, so a Dart line and its os_log
+/// counterpart always say the same thing.
+pub struct ApiVotingObservability {
+    /// The Vizor call site that asked, not the SDK operation.
+    pub context: String,
+    pub operation: String,
+    pub round_id: Option<String>,
+    pub outcome: String,
+    pub elapsed_us: u64,
+    pub started_at_unix_us: u64,
+    pub rendered: String,
+    /// One entry per record that failed, was rejected, or may have been
+    /// dispatched, each carrying the SDK's stable `error_kind`. Empty on a
+    /// clean run. `rendered` cannot show these: it prints summaries, and a
+    /// summary has an outcome but no error category.
+    pub failures: Vec<String>,
+}
+
+/// Streams voting observability snapshots to Dart until the sink is closed.
+///
+/// Rust `log` records reach os_log, never the Flutter console, so a debugging
+/// aid that lives only in `log stream` is invisible where developers actually
+/// look. This is the second sink, not a replacement: os_log still receives
+/// every line whether or not Dart ever registers.
+///
+/// Registering twice replaces the previous sink and closes it. Collection
+/// itself stays governed by `VOTING_OBSERVABILITY_ENABLED`, so on a build with
+/// observability off this stream is simply silent.
+pub fn set_voting_observability_sink(sink: StreamSink<ApiVotingObservability>) {
+    observability::set_observer(Some(Box::new(move |context, observability| {
+        // A closed sink is the normal end of the stream, not an error worth
+        // failing voting work over.
+        let _ = sink.add(ApiVotingObservability {
+            context: context.to_string(),
+            operation: observability.operation.clone(),
+            round_id: observability.round_id.clone(),
+            outcome: observability.outcome.to_string(),
+            elapsed_us: observability.elapsed_us,
+            started_at_unix_us: observability.started_at_unix_us,
+            rendered: observability.to_string(),
+            failures: observability::failure_lines(observability),
+        });
+    })));
+}
+
+/// Stops streaming snapshots to Dart, closing any registered sink.
+pub fn clear_voting_observability_sink() {
+    observability::set_observer(None);
+}
+
 
 #[cfg(test)]
 mod tests {
