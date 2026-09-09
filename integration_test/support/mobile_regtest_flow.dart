@@ -245,7 +245,7 @@ Future<void> cleanupE2eWalletState() async {
   }
 
   final storage = AppSecureStore.instance;
-  final dbName = await getWalletDbName();
+  final dbName = await readWalletDbName();
 
   logE2e('cleaning regtest wallet state');
   await stopRustWorkForCleanup();
@@ -265,6 +265,7 @@ Future<void> cleanupE2eWalletState() async {
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
 
+  if (dbName == null) return;
   final votingCache = Directory('${supportDir.path}/$dbName.voting-cache');
   if (await votingCache.exists()) await votingCache.delete(recursive: true);
 

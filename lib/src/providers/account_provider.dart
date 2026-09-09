@@ -23,6 +23,7 @@ import '../core/storage/app_secure_store.dart';
 import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/payment_links/providers/gift_card_tracking_lifecycle_provider.dart';
+import '../core/storage/wallet_recovery.dart';
 import '../features/swap/providers/swap_activity_store.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
@@ -177,7 +178,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   Future<String> _createAccount({String? name}) async {
     try {
-      final dbPath = await _getDbPath();
+      final dbPath = await _getDbPathForAccountCreation();
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
 
@@ -274,7 +275,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String profilePictureId = kDefaultProfilePictureId,
   }) async {
     try {
-      final dbPath = await _getDbPath();
+      final dbPath = await _getDbPathForAccountCreation();
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
 
@@ -384,7 +385,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     List<int> additionalAccountIndices = const [],
   }) async {
     try {
-      final dbPath = await _getDbPath();
+      final dbPath = await _getDbPathForAccountCreation();
       final endpoint = ref.read(rpcEndpointProvider);
       final network = (state.value?.accounts ?? const <AccountInfo>[]).isEmpty
           ? endpoint.networkName
@@ -491,10 +492,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     int? birthdayHeight,
   }) async {
     try {
-      final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
+      // First-wallet discovery is network-only; Rust ignores the DB path in
+      // that branch. Do not allocate or persist a DB name for this preview.
+      final dbPath = isFirstWalletAccount ? '' : await _getDbPath();
       final network = isFirstWalletAccount
           ? endpoint.networkName
           : await _getNetwork();
@@ -1362,7 +1365,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         profilePictureId,
       );
       final prev = state.value ?? const AccountState();
-      final dbPath = await _getDbPath();
+      final dbPath = await _getDbPathForAccountCreation();
       final network = await _getNetwork();
 
       final result = await rust_wallet.importHardwareAccount(
@@ -1556,7 +1559,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         current: prev,
       );
 
-      final dbPath = await _getDbPath();
+      final dbPath = await _getDbPathForAccountCreation();
       if (prev.accounts.isEmpty) {
         await _deleteExistingDb(dbPath);
         await _storage.writeString(_networkKey, normalizedNetwork);
@@ -1836,6 +1839,37 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('removeAccount: failed to get next active address: $e');
       return null;
     }
+  }
+
+  Future<String> _getDbPathForAccountCreation() async {
+    if ((state.value?.accounts ?? const <AccountInfo>[]).isEmpty) {
+      final network = await _getNetwork();
+      final existingName = await readWalletDbName();
+      if (existingName != null) {
+        final path = await getWalletDbPath();
+        final type = await FileSystemEntity.type(path, followLinks: false);
+        if (type == FileSystemEntityType.file) {
+          final accounts = await rust_wallet.inspectWalletForRecovery(
+            dbPath: path,
+            network: network,
+          );
+          if (accounts.isEmpty) return path;
+        } else if (type == FileSystemEntityType.notFound &&
+            (await findWalletRecoveryCandidates(network: network)).isEmpty) {
+          return path;
+        }
+        throw StateError(
+          'Recover the existing wallet before creating another.',
+        );
+      }
+      if ((await findWalletRecoveryCandidates(network: network)).isNotEmpty) {
+        throw StateError(
+          'Recover the existing wallet before creating another.',
+        );
+      }
+      return createWalletDbPath();
+    }
+    return getWalletDbPath();
   }
 
   Future<String> _getDbPath() async {
