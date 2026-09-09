@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -736,20 +737,14 @@ void main() {
 
     await tester.tap(find.text('Confirm with Ledger'));
     await _flushRealAsync(tester);
-    expect(
-      find.text('Review Transaction 1 of 2 on your Ledger'),
-      findsOneWidget,
-    );
+    expect(find.text('Approval 1 of 2'), findsOneWidget);
     expect(signingRequests, const [
       [1, 4],
     ]);
 
     firstApproval.complete([9, 1]);
     await _flushRealAsync(tester);
-    expect(
-      find.text('Review Transaction 2 of 2 on your Ledger'),
-      findsOneWidget,
-    );
+    expect(find.text('Approval 2 of 2'), findsOneWidget);
     expect(signingRequests, const [
       [1, 4],
       [2, 4],
@@ -772,6 +767,63 @@ void main() {
     expect(rustApi.redactPcztCalls, 2);
     expect(rustApi.addProofsCalls, 2);
   });
+
+  for (final error in [
+    'Ledger supports at most 32 transparent inputs; found 33',
+    'Ledger signing preconditions were not met (0x6986)',
+  ]) {
+    testWidgets('Ledger requires a new transaction for $error', (tester) async {
+      final operations = _FakeLedgerSignedOperationService();
+      var calls = 0;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'tex', address: _texAddress),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerOperationService: operations,
+          ledgerSigner: (_) async {
+            calls++;
+            throw StateError(error);
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+      final capacity = error.contains('Ledger supports at most');
+      expect(
+        find.text(capacity ? 'Edit amount' : 'Create new transaction'),
+        findsOneWidget,
+      );
+      if (capacity) {
+        expect(find.text('Ledger requires a smaller transfer'), findsOneWidget);
+      }
+      expect(find.text('Try again'), findsNothing);
+      expect(calls, 1);
+      expect(operations.batchCheckpoints, isEmpty);
+      if (capacity) {
+        final router = GoRouter.of(
+          tester.element(find.byType(SendReviewScreen)),
+        );
+        await tester.tap(find.text('Edit amount'));
+        await _flushRealAsync(tester);
+        expect(find.text('send-route'), findsOneWidget);
+        final prefill =
+            router.routerDelegate.currentConfiguration.extra!
+                as SendPrefillArgs;
+        expect(prefill.address, _texAddress);
+        expect(
+          prefill.memoText,
+          _reviewArgs(addressType: 'tex', address: _texAddress).memo,
+        );
+        expect(prefill.amountText, isNotEmpty);
+        expect(calls, 1);
+      }
+    });
+  }
 
   testWidgets('Ledger TEX second rejection can cancel without checkpointing', (
     tester,
@@ -812,10 +864,12 @@ void main() {
     expect(operationService.batchCheckpoints, isEmpty);
 
     await tester.tap(
-      find.descendant(
-        of: find.byType(LedgerSigningModal),
-        matching: find.text('Cancel'),
-      ),
+      find
+          .descendant(
+            of: find.byType(LedgerSigningModal),
+            matching: find.text('Cancel'),
+          )
+          .hitTestable(),
     );
     await _flushRealAsync(tester);
     expect(find.byType(SendReviewScreen), findsOneWidget);
@@ -891,7 +945,7 @@ void main() {
 
         await tester.tap(find.text('Confirm with Ledger'));
         await _flushRealAsync(tester);
-        expect(find.text('Review on your Ledger'), findsOneWidget);
+        expect(find.text('Getting ready'), findsOneWidget);
 
         switch (dismissal) {
           case 'button':
@@ -986,7 +1040,7 @@ void main() {
 
     firstSignerResult.complete(_fakeSignatureBytes);
     await _flushRealAsync(tester);
-    expect(find.text('Review on your Ledger'), findsOneWidget);
+    expect(find.text('Getting ready'), findsOneWidget);
     expect(operationService.checkpoints, isEmpty);
 
     secondSignerResult.complete(_fakeSignatureBytes);
@@ -1116,10 +1170,12 @@ void main() {
     expect(find.text('Could not save signed transaction'), findsOneWidget);
     expect(find.text('Retry saving'), findsOneWidget);
     expect(
-      find.descendant(
-        of: find.byType(LedgerSigningModal),
-        matching: find.text('Cancel'),
-      ),
+      find
+          .descendant(
+            of: find.byType(LedgerSigningModal),
+            matching: find.text('Cancel'),
+          )
+          .hitTestable(),
       findsNothing,
     );
     expect(signerCalls, 1);
@@ -1190,10 +1246,12 @@ void main() {
     expect(find.text('Retry saving'), findsNothing);
     expect(find.text('Try again'), findsNothing);
     expect(
-      find.descendant(
-        of: find.byType(LedgerSigningModal),
-        matching: find.text('Cancel'),
-      ),
+      find
+          .descendant(
+            of: find.byType(LedgerSigningModal),
+            matching: find.text('Cancel'),
+          )
+          .hitTestable(),
       findsNothing,
     );
 
@@ -1237,10 +1295,12 @@ void main() {
     await _flushRealAsync(tester);
     expect(find.text('Saving signed transaction'), findsOneWidget);
     expect(
-      find.descendant(
-        of: find.byType(LedgerSigningModal),
-        matching: find.text('Cancel'),
-      ),
+      find
+          .descendant(
+            of: find.byType(LedgerSigningModal),
+            matching: find.text('Cancel'),
+          )
+          .hitTestable(),
       findsNothing,
     );
 

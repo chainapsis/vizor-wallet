@@ -6,12 +6,102 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_device_illustration.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
+  testWidgets(
+    'device guidance keeps actions anchored through app opening and recovery',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      Rect? cancelBounds;
+      var retries = 0;
+      for (final (phase, readiness) in [
+        (
+          LedgerSigningModalPhase.preparing,
+          const LedgerAppReadinessState.idle(),
+        ),
+        (
+          LedgerSigningModalPhase.awaitingDevice,
+          const LedgerAppReadinessState.inProgress(
+            LedgerAppReadinessPhase.confirmOpening,
+          ),
+        ),
+        (
+          LedgerSigningModalPhase.awaitingDevice,
+          const LedgerAppReadinessState.ready('3.9.3'),
+        ),
+        (
+          LedgerSigningModalPhase.reconnecting,
+          const LedgerAppReadinessState.idle(),
+        ),
+        (
+          LedgerSigningModalPhase.readyToRetry,
+          const LedgerAppReadinessState.idle(),
+        ),
+      ]) {
+        await tester.pumpWidget(
+          _harness(
+            phase: phase,
+            readiness: readiness,
+            onFailureAction: () => retries++,
+          ),
+        );
+        final bounds = tester.getRect(find.text('Cancel'));
+        if (cancelBounds != null) expect(bounds, cancelBounds);
+        cancelBounds = bounds;
+        expect(tester.takeException(), isNull);
+      }
+      expect(retries, 0);
+      expect(
+        tester
+            .widget<LedgerDeviceIllustration>(
+              find.byType(LedgerDeviceIllustration),
+            )
+            .complete,
+        isTrue,
+      );
+      final retryBounds = tester.getRect(find.text('Try again'));
+      expect(retryBounds.center.dx, cancelBounds!.center.dx);
+      expect(retryBounds.bottom, lessThan(cancelBounds.top));
+      await tester.tap(find.text('Try again'));
+      expect(retries, 1);
+    },
+  );
+
+  testWidgets('preparation transitions keep guidance and cancel in place', (
+    tester,
+  ) async {
+    Rect? guidance;
+    Rect? cancel;
+    for (final phase in [
+      LedgerSigningModalPhase.preparing,
+      LedgerSigningModalPhase.connecting,
+      LedgerSigningModalPhase.coolingDown,
+      LedgerSigningModalPhase.awaitingDevice,
+    ]) {
+      await tester.pumpWidget(_harness(phase: phase));
+      expect(find.text('Getting ready'), findsOneWidget);
+      expect(find.text('Waiting'), findsNothing);
+      final nextGuidance = tester.getRect(
+        find.byKey(const ValueKey('ledger_action_guidance')),
+      );
+      final nextCancel = tester.getRect(find.text('Cancel'));
+      if (guidance != null) expect(nextGuidance, guidance);
+      if (cancel != null) expect(nextCancel, cancel);
+      guidance = nextGuidance;
+      cancel = nextCancel;
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('equivalent parent rebuild preserves pending recovery', (
     tester,
   ) async {
@@ -36,7 +126,6 @@ void main() {
         title: 'Failed',
         statusLabel: 'Interrupted',
         message: 'Disconnected',
-        showDeviceAppPrompt: true,
         actionLabel: 'Try again',
         requiresReconnect: true,
       ),
@@ -44,6 +133,7 @@ void main() {
     );
 
     await tester.pumpWidget(build());
+    await tester.ensureVisible(find.text('Reconnect'));
     await tester.tap(find.text('Reconnect'));
     await tester.pump();
     await tester.pumpWidget(build());
@@ -51,7 +141,7 @@ void main() {
     expect(find.text('Reconnect'), findsNothing);
     completed.complete();
     await tester.pump();
-    expect(find.text('Your Ledger is connected'), findsOneWidget);
+    expect(find.text('Ready when you are'), findsOneWidget);
     expect(reconnects, 1);
     expect(tester.takeException(), isNull);
   });
@@ -76,7 +166,6 @@ void main() {
             title: 'Failed',
             statusLabel: 'Interrupted',
             message: 'Disconnected',
-            showDeviceAppPrompt: true,
             actionLabel: 'Try again',
             requiresReconnect: true,
           ),
@@ -87,6 +176,7 @@ void main() {
           onFailureAction: () => signs++,
         ),
       );
+      await tester.ensureVisible(find.text('Reconnect'));
       await tester.tap(find.text('Reconnect'));
       await tester.pump();
       expect(find.text('Reconnecting your Ledger'), findsOneWidget);
@@ -94,7 +184,7 @@ void main() {
       expect(signs, 0);
       completed.complete();
       await tester.pump();
-      expect(find.text('Your Ledger is connected'), findsOneWidget);
+      expect(find.text('Ready when you are'), findsOneWidget);
       expect(signs, 0);
       await tester.tap(find.text('Try again'));
       expect(signs, 1);
@@ -121,7 +211,6 @@ void main() {
           title: 'Failed',
           statusLabel: 'Interrupted',
           message: 'Disconnected',
-          showDeviceAppPrompt: true,
           actionLabel: 'Try again',
           requiresReconnect: true,
         ),
@@ -129,6 +218,7 @@ void main() {
         onFailureAction: () => signs++,
       ),
     );
+    await tester.ensureVisible(find.text('Reconnect'));
     await tester.tap(find.text('Reconnect'));
     await tester.pump();
     expect(find.textContaining('Connection is still closing'), findsOneWidget);
@@ -143,14 +233,11 @@ void main() {
       _harness(phase: LedgerSigningModalPhase.awaitingDevice),
     );
 
-    expect(find.text('Review on your Ledger'), findsOneWidget);
-    expect(find.text('Zcash · Ledger'), findsOneWidget);
-    expect(find.text('Open the Zcash app'), findsOneWidget);
-    expect(find.text('Waiting for approval'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
-      findsOneWidget,
-    );
+    expect(find.text('Getting ready'), findsOneWidget);
+    expect(find.text('Zcash · Ledger'), findsNothing);
+    expect(find.text('Open the Zcash app'), findsNothing);
+    expect(find.text('Waiting for approval'), findsNothing);
+    expect(find.text('Waiting'), findsNothing);
   });
 
   testWidgets('keeps retry next to a failed signing status', (tester) async {
@@ -162,7 +249,6 @@ void main() {
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
           message: 'Reconnect your Ledger and try again.',
-          showDeviceAppPrompt: true,
           actionLabel: 'Try again',
         ),
         onFailureAction: () => retryCount++,
@@ -190,12 +276,9 @@ void main() {
       ),
     );
 
-    expect(find.text('Confirm opening Zcash'), findsOneWidget);
-    expect(find.text('Opening Zcash'), findsOneWidget);
+    expect(find.text('Open the Zcash app'), findsOneWidget);
     expect(
-      find.text(
-        'Confirm the request on your Ledger. Vizor will reconnect automatically.',
-      ),
+      find.text('Confirm the app opening request on your Ledger.'),
       findsOneWidget,
     );
   });
@@ -210,19 +293,18 @@ void main() {
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
           message: 'Open the Zcash app, then try again.',
-          showDeviceAppPrompt: true,
           actionLabel: 'Try again',
         ),
         readiness: const LedgerAppReadinessState.failed(
           failure: LedgerAppReadinessFailure.unsupportedVersion,
-          message: 'Update the Ledger Zcash app to version 3.9.2 or newer.',
+          message: 'Update the Ledger Zcash app to version 3.9.3 or newer.',
         ),
       ),
     );
 
     expect(find.text('Ledger needs attention'), findsOneWidget);
     expect(
-      find.text('Update the Ledger Zcash app to version 3.9.2 or newer.'),
+      find.text('Update the Ledger Zcash app to version 3.9.3 or newer.'),
       findsOneWidget,
     );
     expect(find.text('Try again'), findsOneWidget);
@@ -236,9 +318,8 @@ void main() {
     );
 
     expect(find.text('Saving signed transaction'), findsOneWidget);
-    expect(find.text('Securing transaction'), findsOneWidget);
-    expect(find.text('Saving'), findsOneWidget);
-    expect(find.text('Cancel'), findsNothing);
+    expect(find.text('Saving'), findsNothing);
+    expect(find.text('Cancel').hitTestable(), findsNothing);
     expect(find.text('Open the Zcash app'), findsNothing);
   });
 
@@ -251,7 +332,6 @@ void main() {
           title: 'Could not save signed transaction',
           statusLabel: 'Signature preserved',
           message: 'Retry saving without approving another transaction.',
-          showDeviceAppPrompt: false,
           actionLabel: 'Retry saving',
         ),
         onCancel: null,
@@ -260,7 +340,7 @@ void main() {
     );
 
     expect(find.text('Retry saving'), findsOneWidget);
-    expect(find.text('Cancel'), findsNothing);
+    expect(find.text('Cancel').hitTestable(), findsNothing);
     expect(find.text('Open the Zcash app'), findsNothing);
 
     await tester.tap(find.text('Retry saving'));
@@ -286,7 +366,6 @@ void main() {
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
           message: 'Reconnect your Ledger and try again.',
-          showDeviceAppPrompt: true,
           actionLabel: 'Try again',
         ),
         account: account,
@@ -328,7 +407,6 @@ void main() {
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
           message: 'Reconnect your Ledger and try again.',
-          showDeviceAppPrompt: true,
           actionLabel: 'Try again',
         ),
         account: account,
@@ -348,6 +426,7 @@ void main() {
 }
 
 Widget _harness({
+  bool pageLayout = false,
   required LedgerSigningModalPhase phase,
   LedgerSigningFailurePresentation? failure,
   LedgerAppReadinessState readiness = const LedgerAppReadinessState.idle(),
@@ -373,14 +452,24 @@ Widget _harness({
       home: Builder(
         builder: (context) => AppTheme(
           data: AppThemeData.light,
-          child: Center(
-            child: LedgerSigningModal(
-              phase: phase,
-              failure: failure,
-              onCancel: onCancel,
-              onFailureAction: onFailureAction,
-              accountUuid: account?.uuid,
-            ),
+          child: Builder(
+            builder: (_) {
+              final modal = LedgerSigningModal(
+                pageLayout: pageLayout,
+                phase: phase,
+                failure: failure,
+                onCancel: onCancel,
+                onFailureAction: onFailureAction,
+                accountUuid: account?.uuid,
+              );
+              return pageLayout
+                  ? MobileLedgerSigningSurface(
+                      onBack: _noop,
+                      canLeave: true,
+                      child: modal,
+                    )
+                  : Center(child: modal);
+            },
           ),
         ),
       ),

@@ -50,6 +50,42 @@ void main() {
     });
   });
 
+  testWidgets('capacity failure cannot retry or broadcast the same shield', (
+    tester,
+  ) async {
+    final operations = _FakeLedgerSignedOperationService();
+    await tester.pumpWidget(
+      _harness(
+        operationService: operations,
+        sync: _FakeSyncNotifier(),
+        ledgerSigner: (_) async => throw StateError(
+          'Ledger supports at most 32 transparent inputs; found 33',
+        ),
+        onComplete: () => fail('Oversized shield must not complete'),
+      ),
+    );
+    for (
+      var i = 0;
+      i < 100 &&
+          find.text('Ledger requires a smaller transfer').evaluate().isEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    expect(find.text('Ledger requires a smaller transfer'), findsOneWidget);
+    expect(
+      find.textContaining('cannot split this request yet'),
+      findsOneWidget,
+    );
+    expect(find.text('Try again'), findsNothing);
+    expect(operations.checkpoints, isEmpty);
+    expect(operations.broadcasts, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('checkpoints Ledger shield signatures before broadcasting', (
     tester,
   ) async {

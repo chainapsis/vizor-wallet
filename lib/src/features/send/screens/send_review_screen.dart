@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_connection_recovery.dart';
 
 import 'package:flutter/widgets.dart';
@@ -29,10 +30,11 @@ import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
-import '../../ledger/widgets/ledger_device_app_prompt.dart';
+import '../../ledger/ledger_app_instructions.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../services/sapling_params.dart';
 import '../services/send_flow.dart';
+import '../models/send_prefill_args.dart';
 import 'keystone_send_scan_screen.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/send_recipient_resolver.dart';
@@ -374,14 +376,26 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     late final LedgerSigningFailurePresentation failure;
     late final _LedgerSendRecoveryAction? action;
 
-    if (lower.contains('proposal not found') ||
+    if (ledgerRequestNeedsRebuilding(error)) {
+      failure = LedgerSigningFailurePresentation(
+        canChangeConnection: false,
+        title: ledgerRequestExceedsCapacity(error)
+            ? kLedgerSmallerTransferTitle
+            : 'Review your transaction',
+        statusLabel: 'New transaction required',
+        message: ledgerActionableErrorMessage(error)!,
+        actionLabel: ledgerRequestExceedsCapacity(error)
+            ? 'Edit amount'
+            : 'Create new transaction',
+      );
+      action = _LedgerSendRecoveryAction.createNewTransaction;
+    } else if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
       failure = const LedgerSigningFailurePresentation(
         title: 'Transaction expired',
         statusLabel: 'New transaction required',
         message:
             'This transaction can no longer be signed. Create and review a new transaction.',
-        showDeviceAppPrompt: false,
         actionLabel: 'Create new transaction',
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
@@ -390,7 +404,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         title: 'Ledger app update required',
         statusLabel: 'Recovery unavailable',
         message: kLedgerLegacyOrchardRecoveryUnavailableMessage,
-        showDeviceAppPrompt: false,
       );
       action = null;
     } else if (lower.contains('sapling')) {
@@ -399,7 +412,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         statusLabel: 'Unsupported transaction',
         message:
             'This Ledger preview does not support Sapling inputs or outputs.',
-        showDeviceAppPrompt: false,
       );
       action = null;
     } else {
@@ -416,8 +428,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       failure = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
-        message: message,
-        showDeviceAppPrompt: true,
+        message: ledgerActionableErrorMessage(error) ?? message,
         actionLabel: 'Try again',
         requiresReconnect: ledgerFailureNeedsReconnect(error),
       );
@@ -473,7 +484,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           message: terminal
               ? 'Vizor could not verify the saved transaction. Do not sign or send it again.'
               : 'Your Ledger signature is preserved. Retry saving without approving another transaction.',
-          showDeviceAppPrompt: false,
           actionLabel: terminal ? null : 'Retry saving',
         );
         _ledgerRecoveryAction = terminal
@@ -560,7 +570,16 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     _scheduleDiscard();
     ref.read(sendStatusRoutePayloadProvider.notifier).clear();
     if (!mounted) return;
-    context.go('/send');
+    context.go(
+      '/send',
+      extra: SendPrefillArgs(
+        id: newSendFlowId(),
+        source: 'ledger-rebuild',
+        address: widget.args.address,
+        amountText: formatZecAmount(widget.args.amountZatoshi),
+        memoText: widget.args.memo,
+      ),
+    );
   }
 
   void _handleLedgerRecoveryAction() {

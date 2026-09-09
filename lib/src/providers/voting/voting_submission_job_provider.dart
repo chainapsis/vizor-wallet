@@ -9,6 +9,7 @@ import '../../features/keystone/services/keystone_batch_signing.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/ledger/services/ledger_signing_service.dart';
 import '../../features/ledger/services/ledger_connection_recovery.dart';
+import '../../features/ledger/ledger_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
@@ -858,7 +859,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failJob(
           key: key,
           generation: generation,
-          message: _messageFromError(error),
+          message:
+              ledgerActionableErrorMessage(
+                error,
+                requestKind: LedgerRequestKind.voting,
+              ) ??
+              _messageFromError(error),
           ledgerReconnectRequired: ledgerFailureNeedsReconnect(error),
         );
         return;

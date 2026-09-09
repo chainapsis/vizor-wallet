@@ -321,7 +321,6 @@ class _MobileLedgerSendSignScreenState
         statusLabel: 'New transaction required',
         message:
             'This transaction can no longer be signed. Create and review a new transaction.',
-        showDeviceAppPrompt: false,
         actionLabel: 'Create new transaction',
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
@@ -330,7 +329,6 @@ class _MobileLedgerSendSignScreenState
         title: 'Ledger app update required',
         statusLabel: 'Recovery unavailable',
         message: kLedgerLegacyOrchardRecoveryUnavailableMessage,
-        showDeviceAppPrompt: false,
       );
       action = null;
     } else if (lower.contains('sapling')) {
@@ -339,7 +337,6 @@ class _MobileLedgerSendSignScreenState
         statusLabel: 'Unsupported transaction',
         message:
             'This Ledger preview does not support Sapling inputs or outputs.',
-        showDeviceAppPrompt: false,
       );
       action = null;
     } else {
@@ -357,7 +354,6 @@ class _MobileLedgerSendSignScreenState
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
         message: message,
-        showDeviceAppPrompt: true,
         actionLabel: 'Try again',
         requiresReconnect: ledgerFailureNeedsReconnect(error),
       );
@@ -412,7 +408,6 @@ class _MobileLedgerSendSignScreenState
           message: terminal
               ? 'Vizor could not verify the saved transaction. Do not sign or send it again.'
               : 'Your Ledger signature is preserved. Retry saving without approving another transaction.',
-          showDeviceAppPrompt: false,
           actionLabel: terminal ? null : 'Retry saving',
         );
         _recoveryAction = terminal

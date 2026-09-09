@@ -685,7 +685,6 @@ LedgerSigningFailurePresentation _failurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Signature not received',
         message: 'Check your Ledger, then try signing again.',
-        showDeviceAppPrompt: false,
         actionLabel: 'Try again',
       ),
     LedgerSigningPlaygroundFailure.openApp =>
@@ -693,7 +692,6 @@ LedgerSigningFailurePresentation _failurePresentation(
         title: 'Open the Zcash app',
         statusLabel: 'Zcash app is not ready',
         message: 'Open the Zcash app on your Ledger, then try again.',
-        showDeviceAppPrompt: true,
         actionLabel: 'Try again',
       ),
     LedgerSigningPlaygroundFailure.reconnect => LedgerSigningFailurePresentation(
@@ -703,7 +701,6 @@ LedgerSigningFailurePresentation _failurePresentation(
       message:
           'Keep your Ledger unlocked. Reconnect first, then choose when to try signing again.',
       isError: false,
-      showDeviceAppPrompt: true,
       actionLabel: 'Reconnect',
     ),
     LedgerSigningPlaygroundFailure.accountMismatch =>
@@ -712,7 +709,6 @@ LedgerSigningFailurePresentation _failurePresentation(
         statusLabel: 'Transaction could not be verified',
         message:
             'Ledger could not match this transaction to the selected account. Go back and check the account before continuing.',
-        showDeviceAppPrompt: false,
         actionLabel: 'Back to review',
       ),
     LedgerSigningPlaygroundFailure.saving =>
@@ -722,7 +718,6 @@ LedgerSigningFailurePresentation _failurePresentation(
         message:
             'Vizor could not save the signed transaction. Try saving again. You won’t need to approve it on your Ledger again.',
         isError: false,
-        showDeviceAppPrompt: false,
         actionLabel: 'Retry saving',
       ),
   };

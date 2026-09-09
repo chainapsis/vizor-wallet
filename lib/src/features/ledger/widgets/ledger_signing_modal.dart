@@ -12,7 +12,8 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../ledger_capability.dart';
 import '../services/ledger_app_readiness_service.dart';
 import '../services/ledger_connection_recovery.dart';
-import 'ledger_device_app_prompt.dart';
+import 'ledger_device_signing_content.dart';
+import '../ledger_app_instructions.dart' show ledgerZcashAppName;
 
 enum LedgerSigningModalPhase {
   preparing,
@@ -33,19 +34,19 @@ class LedgerSigningFailurePresentation {
     required this.title,
     required this.statusLabel,
     required this.message,
-    required this.showDeviceAppPrompt,
     this.actionLabel,
     this.isError = true,
     this.requiresReconnect = false,
+    this.canChangeConnection = true,
   });
 
   final String title;
   final String statusLabel;
   final String message;
-  final bool showDeviceAppPrompt;
   final String? actionLabel;
   final bool isError;
   final bool requiresReconnect;
+  final bool canChangeConnection;
 }
 
 class LedgerSigningModal extends ConsumerStatefulWidget {
@@ -62,6 +63,7 @@ class LedgerSigningModal extends ConsumerStatefulWidget {
     this.roundNumber = 1,
     this.roundCount = 1,
     this.showWaitingHint = false,
+    this.pageLayout = false,
     super.key,
   }) : assert(roundNumber > 0 && roundNumber <= roundCount),
        assert(roundCount > 0),
@@ -85,6 +87,7 @@ class LedgerSigningModal extends ConsumerStatefulWidget {
   final int roundNumber;
   final int roundCount;
   final bool showWaitingHint;
+  final bool pageLayout;
 
   @override
   ConsumerState<LedgerSigningModal> createState() => _LedgerSigningModalState();
@@ -153,7 +156,6 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
         needsReconnect && _recoveryPhase != LedgerSigningModalPhase.readyToRetry
         ? () => unawaited(_reconnect())
         : widget.onFailureAction;
-    final colors = context.colors;
     final networkName = ref.watch(
       rpcEndpointProvider.select((endpoint) => endpoint.networkName),
     );
@@ -166,6 +168,13 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
     final settling =
         phase == LedgerSigningModalPhase.cancelling ||
         phase == LedgerSigningModalPhase.reconnecting;
+    final approving = switch (phase) {
+      LedgerSigningModalPhase.preparing ||
+      LedgerSigningModalPhase.connecting ||
+      LedgerSigningModalPhase.coolingDown ||
+      LedgerSigningModalPhase.awaitingDevice => true,
+      _ => false,
+    };
     var title = switch (phase) {
       LedgerSigningModalPhase.preparing => 'Preparing for Ledger',
       LedgerSigningModalPhase.connecting => 'Connecting to your Ledger',
@@ -202,39 +211,12 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
       LedgerSigningModalPhase.failed => failure!.message,
     };
 
-    var statusLabel = switch (phase) {
-      LedgerSigningModalPhase.preparing => 'Preparing transaction',
-      LedgerSigningModalPhase.connecting => 'Connecting',
-      LedgerSigningModalPhase.coolingDown => 'Getting ready',
-      LedgerSigningModalPhase.cancelling => 'Finishing up',
-      LedgerSigningModalPhase.reconnecting => 'Connecting',
-      LedgerSigningModalPhase.cancelled => 'Ready when you are',
-      LedgerSigningModalPhase.readyToRetry => 'Ready when you are',
-      LedgerSigningModalPhase.awaitingDevice => 'Waiting for approval',
-      LedgerSigningModalPhase.saving => 'Securing transaction',
-      LedgerSigningModalPhase.broadcasting => 'Broadcasting to the network',
-      LedgerSigningModalPhase.failed => failure!.statusLabel,
-    };
+    var statusLabel = failed ? failure!.statusLabel : null;
     if (failed && needsReconnect) {
       title = 'Let’s reconnect your Ledger';
       message =
           _recoveryError ??
           'Your signing request was interrupted. Reconnect first, then choose when to try signing again.';
-      statusLabel = 'Connection needed';
-    }
-    if (roundCount > 1) {
-      final progress = 'Transaction $roundNumber of $roundCount';
-      if (phase == LedgerSigningModalPhase.preparing) {
-        title = 'Preparing $progress';
-        statusLabel = progress;
-      } else if (phase == LedgerSigningModalPhase.awaitingDevice) {
-        title = 'Review $progress on your Ledger';
-        statusLabel = 'Waiting for approval · $roundNumber of $roundCount';
-        message =
-            'Approve this transaction on the device. Vizor will request the next transaction separately.';
-      } else if (phase == LedgerSigningModalPhase.saving) {
-        statusLabel = 'Securing both signed transactions';
-      }
     }
     if (!needsReconnect &&
         phase == LedgerSigningModalPhase.failed &&
@@ -243,237 +225,96 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
       statusLabel = 'Action needed';
       message = readiness.message!;
     }
-    if (phase == LedgerSigningModalPhase.awaitingDevice) {
-      switch (readiness.phase) {
-        case LedgerAppReadinessPhase.checkingDevice:
-          title = 'Checking your Ledger';
-          statusLabel = 'Checking device';
-          message = 'Vizor is checking whether the Zcash app is ready.';
-        case LedgerAppReadinessPhase.confirmOpening:
-          title = 'Confirm opening Zcash';
-          statusLabel = 'Opening Zcash';
-          message =
-              'Confirm the request on your Ledger. Vizor will reconnect automatically.';
-        case LedgerAppReadinessPhase.idle ||
-            LedgerAppReadinessPhase.ready ||
-            LedgerAppReadinessPhase.failed:
-          break;
+    if (approving) {
+      title = 'Approve with Ledger';
+      message = 'Keep your Ledger connected and unlocked.';
+      if (phase == LedgerSigningModalPhase.awaitingDevice) {
+        if (readiness.phase == LedgerAppReadinessPhase.confirmOpening) {
+          message = 'Confirm the app opening request on your Ledger.';
+        } else if (readiness.phase != LedgerAppReadinessPhase.checkingDevice) {
+          message = 'Check the details on your Ledger before approving.';
+        }
       }
     }
-    final actionLabel = failed
+    final String? actionLabel = failed
         ? needsReconnect
               ? 'Reconnect'
               : failure!.actionLabel
         : phase == LedgerSigningModalPhase.saving
         ? 'Saving'
-        : 'Waiting';
-    final showDeviceAppPrompt = switch (phase) {
-      LedgerSigningModalPhase.saving ||
-      LedgerSigningModalPhase.broadcasting ||
-      LedgerSigningModalPhase.coolingDown ||
-      LedgerSigningModalPhase.cancelling ||
-      LedgerSigningModalPhase.readyToRetry ||
-      LedgerSigningModalPhase.cancelled => false,
-      LedgerSigningModalPhase.failed =>
-        !needsReconnect && failure!.showDeviceAppPrompt,
-      LedgerSigningModalPhase.preparing ||
-      LedgerSigningModalPhase.connecting ||
-      LedgerSigningModalPhase.reconnecting ||
-      LedgerSigningModalPhase.awaitingDevice => true,
-    };
-
+        : null;
+    final opening =
+        phase == LedgerSigningModalPhase.awaitingDevice &&
+        readiness.phase == LedgerAppReadinessPhase.confirmOpening;
+    final reviewing =
+        phase == LedgerSigningModalPhase.awaitingDevice &&
+        readiness.phase == LedgerAppReadinessPhase.ready;
+    final ready = phase == LedgerSigningModalPhase.readyToRetry;
+    final cancelled = phase == LedgerSigningModalPhase.cancelled;
+    final guidanceTitle = approving
+        ? opening
+              ? 'Open the $appName app'
+              : reviewing
+              ? 'Your turn on Ledger'
+              : 'Getting ready'
+        : ready
+        ? 'Ready when you are'
+        : title;
+    const reconnectMessage =
+        'Keep your Ledger connected and unlocked. Reconnecting will not send a new signing request.';
+    final guidanceMessage = showWaitingHint && reviewing
+        ? 'No request on your Ledger? Make sure it’s unlocked and the $appName app is open.'
+        : approving && !opening && !reviewing
+        ? 'Keep your Ledger connected and unlocked.'
+        : message;
+    final content = LedgerDeviceSigningContent(
+      pageLayout: widget.pageLayout,
+      waitingLabel: reviewing
+          ? 'Waiting for your approval'
+          : opening
+          ? 'Waiting for you on Ledger'
+          : null,
+      accountName: account?.name ?? 'Ledger',
+      approvalLabel: roundCount > 1
+          ? 'Approval $roundNumber of $roundCount'
+          : null,
+      title: guidanceTitle,
+      detailLabel: failed && !needsReconnect && statusLabel != guidanceTitle
+          ? statusLabel
+          : null,
+      connectionPicker:
+          failed &&
+              failure!.canChangeConnection &&
+              account != null &&
+              ref.watch(ledgerTargetPlatformProvider) == TargetPlatform.macOS
+          ? _LedgerFailureConnectionPicker(account: account)
+          : null,
+      message: guidanceMessage,
+      busy: !failed && !ready && !cancelled && !opening && !reviewing,
+      attention: opening || reviewing,
+      destructive: destructive,
+      complete: ready,
+      reservedMessages: [reconnectMessage, widget.recoveryReadyMessage],
+      primaryLabel: ready
+          ? widget.recoveryActionLabel
+          : cancelled
+          ? 'Try again'
+          : failed
+          ? actionLabel
+          : null,
+      onPrimary: settling
+          ? null
+          : (ready || cancelled || failed)
+          ? onFailureAction
+          : null,
+      secondaryLabel: cancelled ? 'Back' : cancelLabel,
+      showSecondary: onCancel != null || settling,
+      onSecondary: settling ? null : onCancel,
+    );
+    if (widget.pageLayout) return content;
     return AppModalCard(
-      width: 328,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: colors.background.neutralSubtleOpacity,
-                    borderRadius: BorderRadius.circular(AppRadii.medium),
-                    border: Border.all(color: colors.border.subtle),
-                  ),
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.ledger,
-                      size: 22,
-                      color: colors.icon.regular,
-                      semanticLabel: 'Ledger',
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.s),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: AppTypography.bodyLarge.copyWith(
-                          color: colors.text.accent,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.xxs),
-                      Text(
-                        '$appName · Ledger',
-                        style: AppTypography.bodySmall.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (showDeviceAppPrompt) ...[
-              const SizedBox(height: AppSpacing.md),
-              LedgerDeviceAppPrompt(networkName: networkName),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.s),
-              decoration: BoxDecoration(
-                color: colors.background.neutralSubtleOpacity,
-                borderRadius: BorderRadius.circular(AppRadii.medium),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 32,
-                    height: 32,
-                    child: Center(
-                      child: AppIcon(
-                        failed
-                            ? AppIcons.warningCircle
-                            : phase == LedgerSigningModalPhase.cancelled ||
-                                  phase == LedgerSigningModalPhase.readyToRetry
-                            ? AppIcons.checkCircle
-                            : AppIcons.loader,
-                        size: failed ? 24 : 20,
-                        color: destructive
-                            ? colors.icon.destructive
-                            : colors.icon.regular,
-                        animated: !failed,
-                        semanticLabel: statusLabel,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          statusLabel,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: destructive
-                                ? colors.text.destructive
-                                : colors.text.accent,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xxs),
-                        Text(
-                          message,
-                          style: AppTypography.bodySmall.copyWith(
-                            color: destructive
-                                ? colors.text.destructive
-                                : colors.text.secondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (failed &&
-                account != null &&
-                ref.watch(ledgerTargetPlatformProvider) ==
-                    TargetPlatform.macOS) ...[
-              const SizedBox(height: AppSpacing.sm),
-              _LedgerFailureConnectionPicker(account: account),
-            ],
-            if (showWaitingHint &&
-                phase == LedgerSigningModalPhase.awaitingDevice &&
-                readiness.phase == LedgerAppReadinessPhase.ready) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'No request on your Ledger? Make sure it’s unlocked and the $appName app is open.',
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            if (settling)
-              AppButton(
-                onPressed: null,
-                variant: AppButtonVariant.primary,
-                size: AppButtonSize.mediumLarge,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      phase == LedgerSigningModalPhase.cancelling
-                          ? 'Finishing up'
-                          : 'Reconnecting',
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    const AppIcon(AppIcons.loader, size: 16),
-                  ],
-                ),
-              )
-            else if (phase == LedgerSigningModalPhase.readyToRetry)
-              AppModalActions(
-                onCancel: onCancel,
-                cancelLabel: 'Back',
-                actionLabel: widget.recoveryActionLabel,
-                onAction: onFailureAction,
-              )
-            else if (phase == LedgerSigningModalPhase.cancelled)
-              AppModalActions(
-                onCancel: onFailureAction,
-                cancelLabel: 'Try again',
-                actionLabel: 'Back',
-                onAction: onCancel,
-              )
-            else if (actionLabel == null && onCancel == null)
-              const SizedBox.shrink()
-            else if (actionLabel == null)
-              AppButton(
-                onPressed: onCancel,
-                variant: AppButtonVariant.ghost,
-                size: AppButtonSize.mediumLarge,
-                minWidth: 280,
-                child: Text(cancelLabel),
-              )
-            else if (onCancel == null)
-              AppButton(
-                onPressed: failed ? onFailureAction : null,
-                variant: AppButtonVariant.primary,
-                size: AppButtonSize.mediumLarge,
-                minWidth: 280,
-                child: Text(actionLabel),
-              )
-            else
-              AppModalActions(
-                onCancel: onCancel,
-                cancelLabel: cancelLabel,
-                actionLabel: actionLabel,
-                onAction: failed ? onFailureAction : null,
-              ),
-          ],
-        ),
-      ),
+      width: 360,
+      child: SingleChildScrollView(child: content),
     );
   }
 

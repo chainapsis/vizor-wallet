@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_connection_recovery.dart';
 
 import 'package:flutter/widgets.dart';
@@ -12,7 +13,7 @@ import '../../../providers/sync_provider.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
-import '../../ledger/widgets/ledger_device_app_prompt.dart';
+import '../../ledger/ledger_app_instructions.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../../send/services/sapling_params.dart';
@@ -50,6 +51,8 @@ class _SwapLedgerSigningOverlayState
   bool _cancelled = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  bool _requestNeedsRebuilding = false;
+  bool _requestExceedsCapacity = false;
   bool _needsReconnect = false;
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
@@ -189,7 +192,8 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
         _error = _friendlyError(e);
-        _needsReconnect = !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
+        _needsReconnect =
+            !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
       });
     }
   }
@@ -261,7 +265,8 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
         _error = _friendlyError(e);
-        _needsReconnect = !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
+        _needsReconnect =
+            !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
       });
     }
   }
@@ -434,6 +439,15 @@ class _SwapLedgerSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _requestNeedsRebuilding = ledgerRequestNeedsRebuilding(error);
+    _requestExceedsCapacity = ledgerRequestExceedsCapacity(error);
+    final actionable = ledgerActionableErrorMessage(
+      error,
+      requestKind: widget.intent.payMode
+          ? LedgerRequestKind.payment
+          : LedgerRequestKind.swap,
+    );
+    if (actionable != null) return actionable;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
@@ -466,16 +480,22 @@ class _SwapLedgerSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
-              requiresReconnect: !_operationCheckpointed && _needsReconnect,
-              title: legacyOrchardRecoveryUnavailable
+              canChangeConnection: !_requestNeedsRebuilding,
+              requiresReconnect:
+                  !_requestNeedsRebuilding &&
+                  !_operationCheckpointed &&
+                  _needsReconnect,
+              title: _requestExceedsCapacity
+                  ? kLedgerSmallerTransferTitle
+                  : legacyOrchardRecoveryUnavailable
                   ? 'Ledger app update required'
                   : 'Ledger signing failed',
               statusLabel: legacyOrchardRecoveryUnavailable
                   ? 'Recovery unavailable'
                   : 'Action needed',
               message: _error ?? 'Ledger signing could not be completed.',
-              showDeviceAppPrompt: !legacyOrchardRecoveryUnavailable,
-              actionLabel: legacyOrchardRecoveryUnavailable
+              actionLabel:
+                  legacyOrchardRecoveryUnavailable || _requestNeedsRebuilding
                   ? null
                   : 'Try again',
             )
@@ -484,7 +504,8 @@ class _SwapLedgerSigningOverlayState
       cancelLabel: 'Back to activity',
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed &&
-              !legacyOrchardRecoveryUnavailable
+              !legacyOrchardRecoveryUnavailable &&
+              !_requestNeedsRebuilding
           ? () => unawaited(_retry())
           : null,
     );

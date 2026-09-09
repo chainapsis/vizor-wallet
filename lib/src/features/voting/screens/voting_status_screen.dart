@@ -442,7 +442,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
               title: 'Voting approval interrupted',
               statusLabel: 'Connection needed',
               message: 'Reconnect your Ledger to continue voting.',
-              showDeviceAppPrompt: false,
               actionLabel: 'Continue voting',
               requiresReconnect: true,
             ),

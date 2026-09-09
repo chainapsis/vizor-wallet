@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_immediate_migration_service.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -41,6 +42,8 @@ class _LedgerImmediateMigrationSigningOverlayState
   late final LedgerOperationCanceller _cancelLedgerOperation;
   String? _error;
   bool _cancelled = false;
+  bool _requestNeedsRebuilding = false;
+  bool _requestExceedsCapacity = false;
 
   bool get _canLeave => _phase != LedgerSigningModalPhase.broadcasting;
 
@@ -97,7 +100,9 @@ class _LedgerImmediateMigrationSigningOverlayState
   }
 
   Future<void> _retry() async {
-    if (_phase != LedgerSigningModalPhase.failed) return;
+    if (_phase != LedgerSigningModalPhase.failed || _requestNeedsRebuilding) {
+      return;
+    }
     await _run();
   }
 
@@ -119,6 +124,13 @@ class _LedgerImmediateMigrationSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _requestNeedsRebuilding = ledgerRequestNeedsRebuilding(error);
+    _requestExceedsCapacity = ledgerRequestExceedsCapacity(error);
+    final actionable = ledgerActionableErrorMessage(
+      error,
+      requestKind: LedgerRequestKind.migration,
+    );
+    if (actionable != null) return actionable;
     final message = error.toString().toLowerCase();
     if (message.contains('rejected') || message.contains('6985')) {
       return 'The migration transaction was rejected on your Ledger.';
@@ -145,16 +157,19 @@ class _LedgerImmediateMigrationSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
-              title: 'Ledger migration failed',
+              canChangeConnection: !_requestNeedsRebuilding,
+              title: _requestExceedsCapacity
+                  ? kLedgerSmallerTransferTitle
+                  : 'Ledger migration failed',
               statusLabel: 'Action needed',
               message: _error ?? 'Ledger migration could not be completed.',
-              showDeviceAppPrompt: true,
-              actionLabel: 'Try again',
+              actionLabel: _requestNeedsRebuilding ? null : 'Try again',
             )
           : null,
       onCancel: _canLeave ? () => unawaited(_cancel()) : null,
       cancelLabel: 'Back to review',
-      onFailureAction: _phase == LedgerSigningModalPhase.failed
+      onFailureAction:
+          _phase == LedgerSigningModalPhase.failed && !_requestNeedsRebuilding
           ? () => unawaited(_retry())
           : null,
     );

@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_connection_recovery.dart';
 
 import 'package:flutter/widgets.dart';
@@ -16,7 +17,7 @@ import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
-import '../../ledger/widgets/ledger_device_app_prompt.dart';
+import '../../ledger/ledger_app_instructions.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../../send/services/sapling_params.dart';
@@ -47,6 +48,7 @@ class _LedgerShieldSigningOverlayState
   bool _showSaplingParamsPrompt = false;
   bool _cancelled = false;
   bool _canRetry = false;
+  bool _requestExceedsCapacity = false;
   bool _needsSaplingParams = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
@@ -185,7 +187,8 @@ class _LedgerShieldSigningOverlayState
         _phase = LedgerSigningModalPhase.failed;
         _canRetry = true;
         _error = _friendlyError(e);
-        _needsReconnect = !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
+        _needsReconnect =
+            !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
       });
     }
   }
@@ -258,7 +261,8 @@ class _LedgerShieldSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
         _error = _friendlyError(e);
-        _needsReconnect = !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
+        _needsReconnect =
+            !_operationCheckpointed && ledgerFailureNeedsReconnect(e);
       });
     }
   }
@@ -405,6 +409,15 @@ class _LedgerShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _requestExceedsCapacity = ledgerRequestExceedsCapacity(error);
+    final actionable = ledgerActionableErrorMessage(
+      error,
+      requestKind: LedgerRequestKind.shield,
+    );
+    if (actionable != null) {
+      if (ledgerRequestNeedsRebuilding(error)) _canRetry = false;
+      return actionable;
+    }
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
@@ -455,11 +468,14 @@ class _LedgerShieldSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
-              requiresReconnect: _canRetry && !_operationCheckpointed && _needsReconnect,
-              title: 'Ledger signing failed',
+              canChangeConnection: !_requestExceedsCapacity,
+              requiresReconnect:
+                  _canRetry && !_operationCheckpointed && _needsReconnect,
+              title: _requestExceedsCapacity
+                  ? kLedgerSmallerTransferTitle
+                  : 'Ledger signing failed',
               statusLabel: 'Action needed',
               message: _error ?? 'Ledger shielding could not be completed.',
-              showDeviceAppPrompt: true,
               actionLabel: _canRetry ? 'Try again' : null,
             )
           : null,
