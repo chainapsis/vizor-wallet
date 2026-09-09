@@ -105,8 +105,10 @@ Packaging checks `fvm dart scripts/windows-build-arch.dart` before building.
 The requested architecture must match that Dart SDK's ABI: an ARM64 OS running
 an x64 Dart SDK still builds x64. Select the matching SDK or packaging option
 if the check fails; this option does not enable cross-compilation. ARM64 uses
-separate `win-arm64-mainnet` / `win-arm64-testnet` update channels. Existing x64
-installations continue to use their x64 channels.
+separate `win-arm64-mainnet` / `win-arm64-testnet` update channels. Windows update checks select the native host architecture, preserving the network.
+On an ARM64 PC, an x64 installation switches to a newer ARM64 release after it
+has received this updater implementation. Equal-version moves and downgrades
+remain disabled. If host detection fails, the installed channel is retained.
 
 Packaging regression checks (no actual Windows build or signing required):
 
@@ -116,6 +118,26 @@ powershell.exe -NoProfile -File scripts/test-windows-packaging.ps1
 ```
 
 The PowerShell checks also run with `pwsh` on macOS/Linux using mocked tools.
+
+The updater validates the signed feed's selected package identity, SHA-256,
+manifest channel/RID and app/engine/Rust PE architecture. Package inspection
+uses Windows' built-in PowerShell and .NET ZIP/XML readers in a hidden worker
+process; the validator is embedded in the executable, not loaded from an
+adjacent script. If PowerShell is unavailable or blocked, the update is rejected.
+No wallet data is read or modified. Cached downloads are reused only after a
+fresh signed-feed check, so a pending update is not restored offline after
+restarting the app. Full packages are validated before updater extraction and
+again before application.
+
+```sh
+clang++ -std=c++17 test/native/windows_update_policy_test.cpp -o /tmp/vizor-update-policy
+/tmp/vizor-update-policy
+pwsh -NoProfile -File scripts/test-windows-update-package.ps1
+```
+
+These tests cover policy and package validation, not Windows installation or
+x64-to-ARM64 process restart. Verify that transition on an ARM64 Windows host
+with a newer signed release before deployment.
 
 ### Running the app
 

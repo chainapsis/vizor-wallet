@@ -1,0 +1,4 @@
+#ifndef RUNNER_UPDATE_PACKAGE_SCRIPT_H_
+#define RUNNER_UPDATE_PACKAGE_SCRIPT_H_
+inline constexpr wchar_t kUpdatePackageScript[] = LR"VIZORSCRIPT(@UPDATE_PACKAGE_SCRIPT@)VIZORSCRIPT";
+#endif

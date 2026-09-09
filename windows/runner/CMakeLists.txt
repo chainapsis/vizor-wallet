@@ -140,3 +140,9 @@ add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
+
+# Embed the read-only package validator so an adjacent script cannot be substituted.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/validate_update_package.ps1")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/validate_update_package.ps1" UPDATE_PACKAGE_SCRIPT)
+configure_file("update_package_script.h.in" "${CMAKE_CURRENT_BINARY_DIR}/update_package_script.h" @ONLY)
