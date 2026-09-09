@@ -92,6 +92,7 @@ class _LedgerTransferPreviewState extends State<LedgerTransferPreview> {
                   validateAddress: _validateAddress,
                   estimateFee: _estimateFee,
                   openScanner: (_) async => null,
+                  onReview: _openReview,
                 )
               : SendScreen(prefill: _prefill, onReview: _openReview),
         ),

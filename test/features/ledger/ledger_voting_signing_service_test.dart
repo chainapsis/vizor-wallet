@@ -8,6 +8,9 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  test('mobile signing cooldown is three seconds', () {
+    expect(kLedgerMobileSigningStatusCooldown, const Duration(seconds: 3));
+  });
   test(
     'mobile signing gate waits between sequential signing streams',
     () async {

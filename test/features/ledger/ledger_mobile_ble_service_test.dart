@@ -235,30 +235,35 @@ void main() {
     ]);
   });
 
-  test('non-0x6901 status fault is never retried', () async {
-    var calls = 0;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          calls++;
-          return <List<int>>[
-            <int>[0x69, 0x85],
-          ];
-        });
-    final command = LedgerApduCommand(
-      cla: 0xe0,
-      ins: 0x52,
-      p1: 0,
-      p2: 0,
-      data: Uint8List.fromList(<int>[1]),
+  for (final status in [0x6985, 0x6986, 0x6f01, 0x6f03]) {
+    test(
+      'status $status is preserved and never automatically retried',
+      () async {
+        var calls = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls++;
+              return <List<int>>[
+                <int>[status >> 8, status & 0xff],
+              ];
+            });
+        final command = LedgerApduCommand(
+          cla: 0xe0,
+          ins: 0x52,
+          p1: 0,
+          p2: 0,
+          data: Uint8List.fromList(<int>[1]),
+        );
+
+        final responses = await service.exchangeApdus([command]);
+
+        expect(calls, 1);
+        expect(responses, [
+          Uint8List.fromList(<int>[status >> 8, status & 0xff]),
+        ]);
+      },
     );
-
-    final responses = await service.exchangeApdus([command]);
-
-    expect(calls, 1);
-    expect(responses, [
-      Uint8List.fromList(<int>[0x69, 0x85]),
-    ]);
-  });
+  }
 
   test('fault injection retries the UFVK review start after 0x6901', () async {
     var calls = 0;

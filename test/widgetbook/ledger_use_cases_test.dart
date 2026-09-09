@@ -648,7 +648,7 @@ void main() {
 
     await _pumpUseCase(tester, buildLedgerDevicePickerPermissionDeniedUseCase);
     await _pumpAsyncState(tester);
-    expect(find.text('Could not find your Ledger'), findsOne);
+    expect(find.text('Let’s find your Ledger'), findsOne);
     expect(find.textContaining('Bluetooth permission is required'), findsOne);
     expect(tester.takeException(), isNull);
   });
@@ -758,7 +758,7 @@ void main() {
     await _pumpUseCase(tester, buildMobileLedgerAccountDetailsUseCase);
     await tester.pump(const Duration(milliseconds: 10));
 
-    expect(find.text('Account Details'), findsOne);
+    expect(find.text('Recovery info'), findsOne);
     expect(
       find.byKey(const ValueKey('ledger_details_account_name')),
       findsNothing,

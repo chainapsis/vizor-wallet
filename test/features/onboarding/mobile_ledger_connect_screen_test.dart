@@ -35,6 +35,120 @@ void main() {
       ..devicePixelRatio = 1;
   });
 
+  testWidgets(
+    'prioritizes device selection and keeps Continue visible on a small phone',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 700);
+      final ble = _FakeBleService();
+      await tester.pumpWidget(
+        _ledgerHarness(ble: ble, connector: (_) => throw StateError('unused')),
+      );
+      await tester.pumpAndSettle();
+
+      final select = find.byKey(
+        const ValueKey('mobile_ledger_select_device_button'),
+      );
+      final prompt = find.byKey(
+        const ValueKey('ledger_connection_preparation'),
+      );
+      final submit = find.byKey(const ValueKey('mobile_ledger_import_button'));
+      expect(
+        tester.getTopLeft(select).dy,
+        lessThan(tester.getTopLeft(prompt).dy),
+      );
+      expect(tester.getBottomRight(submit).dy, lessThanOrEqualTo(700));
+      final submitSurface = find.descendant(
+        of: submit,
+        matching: find.byType(AnimatedContainer),
+      );
+      expect(tester.getSize(submitSurface).width, 393 - AppSpacing.sm * 2);
+      expect(tester.widget<AppButton>(submit).onPressed, isNull);
+      expect(
+        find.byKey(const ValueKey('mobile_ledger_account_index_field')),
+        findsNothing,
+      );
+      expect(find.textContaining('watch-only'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('keeps a long nearby-device list scrollable on a small phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 700);
+    final ble = _FakeBleService();
+    await tester.pumpWidget(
+      _ledgerHarness(ble: ble, connector: (_) => throw StateError('unused')),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_ledger_select_device_button')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ledger_select_device_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    ble.emit(
+      LedgerDevicesDiscovered([
+        for (var index = 0; index < 8; index++)
+          LedgerBleDevice(
+            id: 'device-$index',
+            name: 'Personal Ledger device $index',
+            model: 'Nano X',
+          ),
+      ]),
+    );
+    await tester.pump();
+
+    final list = find.byKey(const ValueKey('mobile_ledger_device_list'));
+    expect(tester.getSize(list).height, lessThanOrEqualTo(280));
+    expect(tester.takeException(), isNull);
+    await tester.drag(list, const Offset(0, -800));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_ledger_device_device-7')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows connection errors without hiding the discovered device', (
+    tester,
+  ) async {
+    final ble = _FakeBleService(
+      connectError: const LedgerMobileException(
+        LedgerMobileFailure.disconnected,
+        'Your Ledger disconnected. Keep it nearby, then try again.',
+      ),
+    );
+    await tester.pumpWidget(
+      _ledgerHarness(ble: ble, connector: (_) => throw StateError('unused')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ledger_select_device_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    ble.emit(
+      const LedgerDevicesDiscovered([
+        LedgerBleDevice(id: 'ledger', name: 'Personal Ledger', model: 'Nano X'),
+      ]),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Personal Ledger'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Personal Ledger'), findsOneWidget);
+    expect(
+      find.text('Your Ledger disconnected. Keep it nearby, then try again.'),
+      findsOneWidget,
+    );
+    expect(find.text('Try again'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   group('mobile method selection Ledger visibility', () {
     testWidgets('shows Ledger for iOS and Android mainnet software wallets', (
       tester,
@@ -280,7 +394,7 @@ void main() {
         ufvk: 'uview-12',
         seedFingerprint: [1, 2, 3],
         accountIndex: 12,
-        appVersion: '3.9.2',
+        appVersion: '3.9.3',
       ),
     );
     await tester.pumpAndSettle();
@@ -513,6 +627,37 @@ void main() {
         findsOneWidget,
       );
       expect(identityCalls, 0);
+
+      final indexInput = find.byKey(
+        const ValueKey('mobile_ledger_account_index_field'),
+      );
+      final indexMessage = find.byKey(
+        const ValueKey('mobile_ledger_account_index_message'),
+      );
+      expect(tester.widget<AppTextField>(indexInput).messageText, isNull);
+      expect(
+        tester.getRect(indexMessage).top,
+        greaterThan(tester.getRect(indexInput).bottom),
+      );
+      expect(
+        find.text(
+          'Use a different index to restore or add another Ledger account.',
+        ),
+        findsNothing,
+      );
+
+      await tester.enterText(indexInput, '1');
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Index 2 is already used by this Ledger wallet.'),
+        findsNothing,
+      );
+      expect(
+        find.text(
+          'Use a different index to restore or add another Ledger account.',
+        ),
+        findsOneWidget,
+      );
       expect(connectorCalls, 0);
     },
   );
@@ -711,10 +856,12 @@ class _FakeBleService implements LedgerMobileBleService {
   _FakeBleService({
     List<bool> permissionResults = const [true],
     this.failCleanupStopsAfter,
+    this.connectError,
   }) : _permissionResults = permissionResults;
 
   final List<bool> _permissionResults;
   final int? failCleanupStopsAfter;
+  final Object? connectError;
   final _updates = StreamController<LedgerDiscoveryUpdate>.broadcast(
     sync: true,
   );
@@ -732,13 +879,14 @@ class _FakeBleService implements LedgerMobileBleService {
   @override
   Future<void> connect(LedgerBleDevice device) async {
     calls.add('connect');
+    if (connectError case final error?) throw error;
     connectedIds.add(device.id);
     connectedDeviceId = device.id;
   }
 
   @override
   Future<LedgerMobileAppInfo> currentApp() async =>
-      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
 
   @override
   Stream<LedgerDiscoveryUpdate> discoverDevices() {
@@ -777,7 +925,7 @@ class _FakeBleService implements LedgerMobileBleService {
 
   @override
   Future<LedgerMobileAppInfo> requestOpenZcashApp() async =>
-      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
 
   @override
   Future<void> stopDiscovery() async {

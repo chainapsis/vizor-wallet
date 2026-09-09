@@ -15,7 +15,7 @@ import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
 import '../../ledger/services/ledger_signing_service.dart';
-import '../../ledger/widgets/ledger_device_app_prompt.dart';
+import '../../ledger/widgets/ledger_connection_guide.dart';
 import '../ledger/ledger_account_import_context.dart';
 import '../ledger/ledger_setup_args.dart';
 import 'mobile_ledger_device_sheet.dart';
@@ -225,24 +225,12 @@ class _MobileLedgerConnectScreenState
     return 'Vizor could not read this Ledger account. Check the connection and try again.';
   }
 
-  String _buttonLabel(LedgerAppReadinessState readiness) {
-    if (_phase == _MobileLedgerConnectPhase.idle) return 'Continue';
-    return switch (readiness.phase) {
-      LedgerAppReadinessPhase.checkingDevice => 'Checking device',
-      LedgerAppReadinessPhase.confirmOpening => 'Confirm opening Zcash',
-      LedgerAppReadinessPhase.ready ||
-      LedgerAppReadinessPhase.idle ||
-      LedgerAppReadinessPhase.failed => 'Approve on Ledger',
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final networkName = ref.watch(
       rpcEndpointProvider.select((endpoint) => endpoint.networkName),
     );
-    final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final accounts = ref.watch(accountProvider).value?.accounts ?? const [];
     final accountContext = resolveLedgerAccountImportContext(
       accounts: accounts,
@@ -256,19 +244,18 @@ class _MobileLedgerConnectScreenState
         setState(() {});
       });
     }
-    final disclosureLabel = accountContext == null
-        ? 'Advanced options'
-        : 'Choose a different index';
+    final disclosureLabel =
+        'Account index · ${_accountIndexController.text.isEmpty ? '—' : _accountIndexController.text}';
     return MobileOnboardingStepScaffold(
       progress: 0.25,
       title: 'Connect Ledger',
-      subtitle:
-          'Select your Ledger, then approve sharing its viewing key to add a watch-only account.',
+      subtitle: 'Add your Ledger account to Vizor.',
       onBack: () => context.pop(),
       bottomArea: SizedBox(
         width: double.infinity,
         child: AppButton(
           key: const ValueKey('mobile_ledger_import_button'),
+          expand: true,
           onPressed: _busy || _selectedDevice == null
               ? null
               : () => unawaited(_continue()),
@@ -282,34 +269,39 @@ class _MobileLedgerConnectScreenState
                   semanticLabel: 'Connecting to Ledger',
                 )
               : null,
-          child: Text(_buttonLabel(readiness)),
+          child: Text(_busy ? 'Waiting for Ledger' : 'Continue'),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          LedgerDeviceAppPrompt(networkName: networkName),
+          LedgerConnectionGuide(
+            networkName: networkName,
+            awaitingAccountApproval: _busy,
+            connectionAction: _DeviceSelection(
+              device: _selectedDevice,
+              enabled: !_busy,
+              onPressed: () => unawaited(_chooseDevice()),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'The viewing key lets Vizor show your balance and activity. You’ll still approve spending on your Ledger.',
+            style: AppTypography.bodySmall.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
           if (accountContext != null) ...[
             const SizedBox(height: AppSpacing.sm),
             _KnownLedgerAccountsCard(accountContext: accountContext),
           ],
           const SizedBox(height: AppSpacing.sm),
-          _DeviceSelectionCard(
-            device: _selectedDevice,
-            enabled: !_busy,
-            onPressed: () => unawaited(_chooseDevice()),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: colors.background.neutralSubtleOpacity,
-              borderRadius: BorderRadius.circular(AppRadii.medium),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Semantics(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Semantics(
                   key: const ValueKey(
                     'mobile_ledger_advanced_options_disclosure',
                   ),
@@ -322,7 +314,8 @@ class _MobileLedgerConnectScreenState
                     child: AppButton(
                       onPressed: _busy ? null : _toggleAdvancedOptions,
                       variant: AppButtonVariant.ghost,
-                      size: AppButtonSize.medium,
+                      size: AppButtonSize.small,
+                      constrainContent: false,
                       trailing: RotatedBox(
                         quarterTurns: _showAdvancedOptions ? 2 : 0,
                         child: const AppIcon(AppIcons.arrowDown),
@@ -331,24 +324,34 @@ class _MobileLedgerConnectScreenState
                     ),
                   ),
                 ),
-                if (_showAdvancedOptions) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  AppTextField(
-                    key: const ValueKey('mobile_ledger_account_index_field'),
-                    label: 'Ledger account index',
-                    controller: _accountIndexController,
-                    enabled: !_busy,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    onChanged: _handleAccountIndexChanged,
-                    messageText: _accountIndexError,
-                    tone: _accountIndexError == null
-                        ? AppTextFieldTone.neutral
-                        : AppTextFieldTone.destructive,
+              ),
+              if (_showAdvancedOptions) ...[
+                const SizedBox(height: AppSpacing.sm),
+                AppTextField(
+                  key: const ValueKey('mobile_ledger_account_index_field'),
+                  label: 'Ledger account index',
+                  controller: _accountIndexController,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: _handleAccountIndexChanged,
+                  tone: _accountIndexError == null
+                      ? AppTextFieldTone.neutral
+                      : AppTextFieldTone.destructive,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  _accountIndexError ??
+                      'Use a different index to restore or add another Ledger account.',
+                  key: const ValueKey('mobile_ledger_account_index_message'),
+                  style: AppTypography.bodySmall.copyWith(
+                    color: _accountIndexError == null
+                        ? colors.text.secondary
+                        : colors.text.destructive,
                   ),
-                ],
+                ),
               ],
-            ),
+            ],
           ),
           if (_error case final error?) ...[
             const SizedBox(height: AppSpacing.sm),
@@ -449,8 +452,8 @@ class _LedgerDuplicateIndexException implements Exception {
   final int accountIndex;
 }
 
-class _DeviceSelectionCard extends StatelessWidget {
-  const _DeviceSelectionCard({
+class _DeviceSelection extends StatelessWidget {
+  const _DeviceSelection({
     required this.device,
     required this.enabled,
     required this.onPressed,
@@ -464,54 +467,63 @@ class _DeviceSelectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final selected = device;
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (selected == null)
-            Text(
-              'Choose a nearby Bluetooth Ledger before importing.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.secondary,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (selected != null)
+          Row(
+            children: [
+              AppIcon(AppIcons.ledger, size: 32, color: colors.text.accent),
+              const SizedBox(width: AppSpacing.s),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      selected.name,
+                      key: const ValueKey('mobile_ledger_selected_device_name'),
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      selected.model,
+                      key: const ValueKey(
+                        'mobile_ledger_selected_device_model',
+                      ),
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            )
-          else ...[
-            Text(
-              'Selected device',
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              selected.name,
-              key: const ValueKey('mobile_ledger_selected_device_name'),
-              style: AppTypography.bodyMediumStrong.copyWith(
+              const SizedBox(width: AppSpacing.xs),
+              AppIcon(
+                AppIcons.checkCircle,
+                size: 20,
                 color: colors.text.accent,
+                semanticLabel: 'Selected device',
               ),
+            ],
+          )
+        else
+          Text(
+            'Connect a nearby device with Bluetooth.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.primary,
             ),
-            Text(
-              selected.model,
-              key: const ValueKey('mobile_ledger_selected_device_model'),
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ],
-          const SizedBox(height: AppSpacing.xs),
-          AppButton(
-            key: const ValueKey('mobile_ledger_select_device_button'),
-            onPressed: enabled ? onPressed : null,
-            variant: AppButtonVariant.secondary,
-            child: Text(selected == null ? 'Select Ledger' : 'Change device'),
           ),
-        ],
-      ),
+        const SizedBox(height: AppSpacing.sm),
+        AppButton(
+          key: const ValueKey('mobile_ledger_select_device_button'),
+          onPressed: enabled ? onPressed : null,
+          variant: AppButtonVariant.secondary,
+          child: Text(selected == null ? 'Select Ledger' : 'Change device'),
+        ),
+      ],
     );
   }
 }

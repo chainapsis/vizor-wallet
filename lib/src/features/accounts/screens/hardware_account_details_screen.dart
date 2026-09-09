@@ -126,7 +126,7 @@ class MobileHardwareAccountDetailsScreen extends ConsumerWidget {
         child: Column(
           children: [
             MobileTopNav.back(
-              title: 'Account Details',
+              title: 'Recovery info',
               onBack: () => context.pop(),
             ),
             Expanded(

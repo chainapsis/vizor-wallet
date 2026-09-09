@@ -503,6 +503,7 @@ Widget buildLedgerSigningPreview({
       phase == LedgerSigningModalPhase.saving ||
       phase == LedgerSigningModalPhase.broadcasting;
   final modal = LedgerSigningModal(
+    pageLayout: mobile,
     phase: phase,
     failure: phase == LedgerSigningModalPhase.failed
         ? _failurePresentation(

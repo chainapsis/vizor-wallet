@@ -40,6 +40,10 @@ import '../../services/send_amount_conversion.dart';
 import '../../services/send_proving_key_warmup.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
+import '../../widgets/send_amount_suggestion.dart';
+import '../../widgets/send_amount_adjustment_prompt.dart';
+import '../../models/send_prefill_args.dart';
+import '../../services/send_compose_dependencies.dart';
 import 'mobile_send_scan_screen.dart';
 
 enum _SendStep { recipient, amount, review }
@@ -172,6 +176,8 @@ class MobileSendAmountArgs {
     required this.addressType,
     this.contactLabel,
     this.contactPictureId,
+    this.amountText,
+    this.memo,
   });
 
   final String sendFlowId;
@@ -179,6 +185,8 @@ class MobileSendAmountArgs {
   final String addressType;
   final String? contactLabel;
   final String? contactPictureId;
+  final String? amountText;
+  final String? memo;
 }
 
 class MobileSendReviewDraftArgs {
@@ -220,6 +228,8 @@ class MobileSendAmountScreen extends StatelessWidget {
       initialAddressType: args.addressType,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
+      initialAmount: args.amountText,
+      initialMemo: args.memo,
     );
   }
 }
@@ -315,6 +325,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.initialContactLabel,
     this.initialContactPictureId,
     this.initialRecipientFocused = false,
+    this.onReview,
     super.key,
   });
 
@@ -346,6 +357,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final String? initialContactLabel;
   final String? initialContactPictureId;
   final bool initialRecipientFocused;
+  final ValueChanged<SendPrefillArgs>? onReview;
 
   /// Preview/test seam for the direct Rust validation call.
   final MobileSendAddressValidator? validateAddress;
@@ -385,6 +397,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   int _validateSeq = 0;
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
+  bool _isChoosingAmount = false;
+  SendAmountSuggestion? _amountSuggestion;
   int _maxSeq = 0;
   _MobileSendMaxQuote? _maxQuote;
 
@@ -785,7 +799,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     });
   }
 
-  void _handleAmountChanged(String value) {
+  Future<void> _handleAmountChanged(String value) async {
     if (_amountInputIsUsd) {
       _handleFiatAmountChanged(value);
       return;
@@ -797,7 +811,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _clearMaxMode();
       }
     });
-    unawaited(_validateAmount());
+    await _validateAmount();
   }
 
   void _handleFiatAmountChanged(String value) {
@@ -920,7 +934,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) {
                 return null;
               }
-              return rust_sync.estimateSendMax(
+              return ref.read(sendMaxEstimatorProvider)(
                 dbPath: dbPath,
                 network: endpoint.networkName,
                 accountUuid: accountUuid,
@@ -1019,6 +1033,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   /// mobile copy is the design's "Not enough ZEC".
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
+    setState(() => _amountSuggestion = null);
     final text = _amountText.trim();
     if (text.isEmpty || text == '.' || text == '0.') {
       setState(() => _amountError = '');
@@ -1053,28 +1068,45 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       final endpoint = ref.read(rpcEndpointProvider);
       final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
       if (!mounted || seq != _validateSeq || accountUuid == null) return;
-      final fee = await (widget.estimateFee ?? rust_sync.estimateFee)(
+      final address = _addressController.text.trim();
+      final memo = _effectiveMemo;
+      final quote = await estimateSendAmountQuote(
+        estimateFee: widget.estimateFee ?? ref.read(sendFeeEstimatorProvider),
+        estimateMax: ref.read(sendMaxEstimatorProvider),
+        isLedger: _activeHardwareSignerKind == HardwareSignerKind.ledger,
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
-        toAddress: _addressController.text.trim(),
+        toAddress: address,
         amountZatoshi: zatoshi,
-        memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
+        memo: memo.isNotEmpty ? memo : null,
       );
-      if (!mounted || seq != _validateSeq) return;
-      if (zatoshi + fee > _spendable) {
+      if (!mounted ||
+          seq != _validateSeq ||
+          accountUuid != _activeAccountUuid ||
+          address != _addressController.text.trim() ||
+          memo != _effectiveMemo) {
+        return;
+      }
+      final fee = quote.fee;
+      if ((quote.suggestedAmount ?? zatoshi) + fee > _spendable) {
         setState(() => _amountError = _notEnoughZecText);
       } else {
         setState(() {
           _amountError = null;
+          _amountSuggestion = quote.suggestedAmount == null
+              ? null
+              : SendAmountSuggestion(amountZatoshi: quote.suggestedAmount!);
           _feeZatoshi = fee;
-          _reviewFeeQuote = _MobileSendFeeQuote(
-            accountUuid: accountUuid,
-            address: _addressController.text.trim(),
-            memo: _effectiveMemo,
-            amountZatoshi: zatoshi,
-            feeZatoshi: fee,
-          );
+          _reviewFeeQuote = quote.suggestedAmount != null
+              ? null
+              : _MobileSendFeeQuote(
+                  accountUuid: accountUuid,
+                  address: _addressController.text.trim(),
+                  memo: _effectiveMemo,
+                  amountZatoshi: zatoshi,
+                  feeZatoshi: fee,
+                );
           _reviewFeeRetryAvailable = false;
           _reviewFeeNotice = null;
         });
@@ -1085,8 +1117,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
         setState(() => _amountError = _notEnoughZecText);
       } else {
-        log('MobileSend: fee estimation failed (non-blocking): $e');
-        setState(() => _amountError = null);
+        log('MobileSend: fee estimation failed: $e');
+        setState(
+          () => _amountError =
+              _activeHardwareSignerKind == HardwareSignerKind.ledger
+              ? 'Could not check this Ledger transfer. Edit the amount to try again.'
+              : null,
+        );
       }
     }
   }
@@ -1097,6 +1134,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       (!_amountInputIsUsd || ref.read(zecLiveUsdUnitPriceProvider) != null) &&
       (parseZecAmount(_amountText.trim()) ?? BigInt.zero) > BigInt.zero &&
       (!_isMaxMode || _hasCurrentMaxQuote);
+
+  bool get _needsAmountAdjustment =>
+      _activeHardwareSignerKind == HardwareSignerKind.ledger &&
+      (_amountSuggestion?.appliesTo(parseZecAmount(_amountText.trim())) ??
+          false);
 
   String get _amountCtaLabel {
     if (_isResolvingMax) return 'Calculating max amount';
@@ -1109,9 +1151,70 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return 'Enter amount to continue';
   }
 
-  void _continueToReview() {
-    if (!_amountReady) return;
+  Future<void> _applySuggestedAmount() async {
+    if (!_amountReady || !_needsAmountAdjustment) return;
+    setState(() {
+      _amountInputMode = MobileSendAmountInputMode.zec;
+      _amountController.text = _amountSuggestion!.amountText;
+    });
+    await _handleAmountChanged(_amountController.text);
+  }
+
+  Future<void> _continueToReview() async {
+    if (!_amountReady || _isChoosingAmount) return;
+    if (_needsAmountAdjustment) {
+      final suggestion = _amountSuggestion!;
+      final originalAmount = _amountText;
+      final originalAddress = _addressController.text;
+      final originalMemo = _memo;
+      final accountUuid = _activeAccountUuid;
+      setState(() => _isChoosingAmount = true);
+      try {
+        final choice = await showMobileSendAmountAdjustmentSheet(
+          context,
+          enteredAmount: parseZecAmount(originalAmount)!,
+          suggestion: suggestion,
+        );
+        if (!mounted ||
+            accountUuid != _activeAccountUuid ||
+            originalAmount != _amountText ||
+            originalAddress != _addressController.text ||
+            originalMemo != _memo ||
+            suggestion != _amountSuggestion) {
+          return;
+        }
+        if (choice == SendAmountAdjustmentChoice.edit) {
+          _amountFocus.requestFocus();
+          return;
+        }
+        if (choice != SendAmountAdjustmentChoice.review) return;
+        await _applySuggestedAmount();
+        if (!mounted ||
+            !_amountReady ||
+            _needsAmountAdjustment ||
+            accountUuid != _activeAccountUuid ||
+            originalAddress != _addressController.text ||
+            originalMemo != _memo ||
+            _amountText != suggestion.amountText) {
+          return;
+        }
+      } finally {
+        if (mounted) setState(() => _isChoosingAmount = false);
+      }
+    }
     _amountFocus.unfocus();
+    if (widget.onReview case final onReview?) {
+      onReview(
+        SendPrefillArgs(
+          id: _sendFlowId,
+          source: 'send',
+          address: _addressController.text.trim(),
+          amountText: _amountText,
+          memoText: _memo,
+        ),
+      );
+      return;
+    }
     if (widget.useRouteSteps) {
       unawaited(
         context.push<void>(
@@ -1576,6 +1679,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (previous, next) {
+        if (previous == next) return;
+        _validateSeq++;
+        _amountSuggestion = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted &&
+              next == _activeAccountUuid &&
+              _step == _SendStep.amount &&
+              _amountText.isNotEmpty) {
+            unawaited(_validateAmount());
+          }
+        });
+      },
+    );
     ref.listen<double?>(zecLiveUsdUnitPriceProvider, (previous, next) {
       if (previous == next || !mounted) return;
       _handleZecUsdPriceChanged(next);
@@ -2043,6 +2162,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
+  Widget _scrollForAmountGuidance(Widget child) =>
+      _activeHardwareSignerKind != HardwareSignerKind.ledger
+      ? child
+      : SingleChildScrollView(child: child);
+
   Widget _buildAmountStep(BuildContext context) {
     final colors = context.colors;
     final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
@@ -2072,103 +2196,109 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               AppSpacing.sm,
               0,
             ),
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: SizedBox(
-                key: const ValueKey('mobile_send_amount_top_content'),
-                height: _kMobileSendAmountTopContentHeight,
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildAmountField(
-                      context,
-                      showError: showError,
-                      spendableText: spendableText,
-                      zecUsdUnitPrice: zecUsdUnitPrice,
-                      amountStyle: amountStyle,
-                      amountUnitStyle: amountUnitStyle,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    SizedBox(
-                      key: const ValueKey('mobile_send_amount_recipient_block'),
-                      height: _kMobileSendAmountRecipientBlockHeight,
-                      width: double.infinity,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            height: _kMobileSendAmountRecipientLabelHeight,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                'Sending to',
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.secondary,
+            child: _scrollForAmountGuidance(
+              Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  key: const ValueKey('mobile_send_amount_top_content'),
+                  height: _activeHardwareSignerKind != HardwareSignerKind.ledger
+                      ? _kMobileSendAmountTopContentHeight
+                      : null,
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildAmountField(
+                        context,
+                        showError: showError,
+                        spendableText: spendableText,
+                        zecUsdUnitPrice: zecUsdUnitPrice,
+                        amountStyle: amountStyle,
+                        amountUnitStyle: amountUnitStyle,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      SizedBox(
+                        key: const ValueKey(
+                          'mobile_send_amount_recipient_block',
+                        ),
+                        height: _kMobileSendAmountRecipientBlockHeight,
+                        width: double.infinity,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              height: _kMobileSendAmountRecipientLabelHeight,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Sending to',
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: colors.text.secondary,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: AppSpacing.xxs),
-                          SizedBox(
-                            key: const ValueKey(
-                              'mobile_send_amount_recipient_row',
-                            ),
-                            height: _kMobileSendAmountRecipientRowHeight,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: AppSpacing.s,
+                            const SizedBox(height: AppSpacing.xxs),
+                            SizedBox(
+                              key: const ValueKey(
+                                'mobile_send_amount_recipient_row',
                               ),
-                              child: Row(
-                                children: [
-                                  AppProfilePicture(
-                                    key: const ValueKey(
-                                      'mobile_send_amount_recipient_picture',
+                              height: _kMobileSendAmountRecipientRowHeight,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: AppSpacing.s,
+                                ),
+                                child: Row(
+                                  children: [
+                                    AppProfilePicture(
+                                      key: const ValueKey(
+                                        'mobile_send_amount_recipient_picture',
+                                      ),
+                                      profilePictureId: _contactPictureId ?? '',
+                                      size: AppProfilePictureSize.navLarge,
                                     ),
-                                    profilePictureId: _contactPictureId ?? '',
-                                    size: AppProfilePictureSize.navLarge,
-                                  ),
-                                  const SizedBox(width: AppSpacing.s),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: _contactLabel == null
-                                          ? [
-                                              _RecipientLineText(
-                                                _truncateAddress(
-                                                  _addressController.text,
+                                    const SizedBox(width: AppSpacing.s),
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: _contactLabel == null
+                                            ? [
+                                                _RecipientLineText(
+                                                  _truncateAddress(
+                                                    _addressController.text,
+                                                  ),
+                                                  color: colors.text.accent,
                                                 ),
-                                                color: colors.text.accent,
-                                              ),
-                                            ]
-                                          : [
-                                              _RecipientLineText(
-                                                _contactLabel!,
-                                                color: colors.text.accent,
-                                              ),
-                                              const SizedBox(
-                                                height: AppSpacing.xxs,
-                                              ),
-                                              _RecipientLineText(
-                                                _truncateAddress(
-                                                  _addressController.text,
+                                              ]
+                                            : [
+                                                _RecipientLineText(
+                                                  _contactLabel!,
+                                                  color: colors.text.accent,
                                                 ),
-                                                color: colors.text.secondary,
-                                              ),
-                                            ],
+                                                const SizedBox(
+                                                  height: AppSpacing.xxs,
+                                                ),
+                                                _RecipientLineText(
+                                                  _truncateAddress(
+                                                    _addressController.text,
+                                                  ),
+                                                  color: colors.text.secondary,
+                                                ),
+                                              ],
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2182,19 +2312,28 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             AppSpacing.sm,
             AppSpacing.s,
           ),
-          child: SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              key: const ValueKey('mobile_send_review_button'),
-              expand: true,
-              constrainContent: true,
-              onPressed: _amountReady ? _continueToReview : null,
-              child: Text(
-                _amountCtaLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_needsAmountAdjustment) ...[
+                const SendAmountSuggestionReviewHint(),
+                const SizedBox(height: AppSpacing.s),
+              ],
+              AppButton(
+                key: const ValueKey('mobile_send_review_button'),
+                expand: true,
+                constrainContent: true,
+                onPressed: _amountReady && !_isChoosingAmount
+                    ? _continueToReview
+                    : null,
+                child: Text(
+                  _amountCtaLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ],

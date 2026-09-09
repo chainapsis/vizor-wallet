@@ -181,10 +181,7 @@ Widget _app({
                 )
               : const MobileSettingsScreen(),
         )
-      : MaterialApp.router(
-          routerConfig: router,
-          builder: themedBuilder,
-        );
+      : MaterialApp.router(routerConfig: router, builder: themedBuilder);
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
@@ -996,7 +993,7 @@ void main() {
       find.byKey(const ValueKey('mobile_settings_seed_row')),
     );
     expect(find.text('Secret Passphrase'), findsOneWidget);
-    expect(find.text('Account Details'), findsNothing);
+    expect(find.text('Recovery information'), findsNothing);
     expect(row.enabled, isTrue);
     expect(row.onTap, isNotNull);
 
@@ -1029,7 +1026,7 @@ void main() {
       final row = tester.widget<MobileListRow>(
         find.byKey(const ValueKey('mobile_settings_hardware_account_row')),
       );
-      expect(find.text('Account Details'), findsOneWidget);
+      expect(find.text('Recovery information'), findsOneWidget);
       expect(find.text('Secret Passphrase'), findsNothing);
       expect(row.enabled, isTrue);
       expect(row.onTap, isNotNull);

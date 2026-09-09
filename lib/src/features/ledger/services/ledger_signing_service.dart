@@ -22,7 +22,7 @@ typedef LedgerWalletDbPathLoader = Future<String> Function();
 typedef LedgerSigningDelay = Future<void> Function(Duration duration);
 typedef LedgerSigningClock = DateTime Function();
 
-const kLedgerMobileSigningStatusCooldown = Duration(seconds: 4);
+const kLedgerMobileSigningStatusCooldown = Duration(seconds: 3);
 
 /// Serializes mobile signing streams and waits until the Zcash app can accept
 /// another stream after returning its previous signatures.

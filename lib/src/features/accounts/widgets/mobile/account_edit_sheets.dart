@@ -361,6 +361,14 @@ class _LedgerWalletRenameSheetState extends State<_LedgerWalletRenameSheet> {
                   color: context.colors.text.accent,
                 ),
               ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Give accounts from this Ledger a name you’ll recognize.',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
               const SizedBox(height: AppSpacing.md),
               Text(
                 'Group name',
@@ -395,7 +403,8 @@ class _LedgerWalletRenameSheetState extends State<_LedgerWalletRenameSheet> {
                 key: const ValueKey('mobile_ledger_wallet_rename'),
                 expand: true,
                 onPressed: _isSubmitting ? null : _submit,
-                child: Text(_isSubmitting ? 'Renaming...' : 'Rename'),
+                trailing: _isSubmitting ? const AppIcon(AppIcons.loader) : null,
+                child: const Text('Rename'),
               ),
               const SizedBox(height: AppSpacing.s),
               MobileSheetCancel(

@@ -192,20 +192,51 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
               color: colors.text.secondary,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          if (_devices.isNotEmpty)
-            ..._devices.map(
-              (device) => Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: _LedgerDeviceRow(
-                  device: device,
-                  connecting: _connectingDeviceId == device.id,
-                  enabled: !busy,
-                  onTap: () => unawaited(_connect(device)),
+          const SizedBox(height: AppSpacing.md),
+          if (_devices.isNotEmpty) ...[
+            Text(
+              'Nearby devices',
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.4,
+              ),
+              child: SingleChildScrollView(
+                key: const ValueKey('mobile_ledger_device_list'),
+                child: Column(
+                  children: [
+                    for (final device in _devices)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: _LedgerDeviceRow(
+                          device: device,
+                          connecting: _connectingDeviceId == device.id,
+                          enabled: !busy,
+                          onTap: () => unawaited(_connect(device)),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-            )
-          else if (_state == _DiscoveryState.requestingPermission ||
+            ),
+            if (_error case final error?) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  error,
+                  key: const ValueKey('mobile_ledger_connection_error'),
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.primary,
+                  ),
+                ),
+              ),
+            ],
+          ] else if (_state == _DiscoveryState.requestingPermission ||
               _state == _DiscoveryState.scanning)
             const _StatusMessage(
               key: ValueKey('mobile_ledger_scanning'),
@@ -224,7 +255,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
             _StatusMessage(
               key: const ValueKey('mobile_ledger_discovery_error'),
               iconName: AppIcons.warningCircle,
-              title: 'Could not find your Ledger',
+              title: 'Let’s find your Ledger',
               message: _error ?? 'Try again.',
             ),
           if (_state == _DiscoveryState.empty ||
@@ -233,7 +264,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
             AppButton(
               key: const ValueKey('mobile_ledger_discovery_retry'),
               onPressed: busy ? null : () => unawaited(_startDiscovery()),
-              variant: AppButtonVariant.secondary,
+              variant: AppButtonVariant.primary,
               child: const Text('Try again'),
             ),
           ],
@@ -268,10 +299,10 @@ class _LedgerDeviceRow extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: enabled ? onTap : null,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 52),
+          constraints: const BoxConstraints(minHeight: 72),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.sm,
-            vertical: AppSpacing.xs,
+            vertical: AppSpacing.s,
           ),
           decoration: BoxDecoration(
             color: colors.background.neutralSubtleOpacity,
@@ -279,12 +310,8 @@ class _LedgerDeviceRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              AppIcon(
-                connecting ? AppIcons.loader : AppIcons.ledger,
-                size: 20,
-                color: colors.icon.regular,
-              ),
-              const SizedBox(width: AppSpacing.xs),
+              AppIcon(AppIcons.ledger, size: 28, color: colors.text.accent),
+              const SizedBox(width: AppSpacing.s),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,7 +331,12 @@ class _LedgerDeviceRow extends StatelessWidget {
                   ],
                 ),
               ),
-              const AppIcon(AppIcons.chevronForward, size: 20),
+              const SizedBox(width: AppSpacing.xs),
+              AppIcon(
+                connecting ? AppIcons.loader : AppIcons.chevronForward,
+                size: 20,
+                color: colors.text.secondary,
+              ),
             ],
           ),
         ),
@@ -328,36 +360,27 @@ class _StatusMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 76),
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          AppIcon(iconName, size: 20, color: colors.icon.muted),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  message,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
+          AppIcon(iconName, size: 32, color: colors.text.secondary),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyLarge.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
             ),
           ),
         ],

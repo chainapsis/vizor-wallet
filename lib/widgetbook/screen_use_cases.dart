@@ -2873,6 +2873,17 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
           ),
         ),
         GoRoute(
+          path: '/onboarding/ledger',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/onboarding/ledger'),
+        ),
+        GoRoute(
+          path: '/settings/hardware-account',
+          builder: (_, _) => const _PreviewRoutePlaceholder(
+            label: '/settings/hardware-account',
+          ),
+        ),
+        GoRoute(
           path: '/add-account',
           builder: (_, _) =>
               const _PreviewRoutePlaceholder(label: '/add-account'),

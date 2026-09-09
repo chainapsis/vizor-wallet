@@ -33,14 +33,14 @@ class MobileLedgerSigningSurface extends StatelessWidget {
             children: [
               MobileTopNav.back(title: title, onBack: canLeave ? onBack : null),
               Expanded(
-                child: SingleChildScrollView(
+                child: Padding(
                   padding: const EdgeInsets.fromLTRB(
                     AppSpacing.sm,
                     AppSpacing.md,
                     AppSpacing.sm,
                     AppSpacing.md,
                   ),
-                  child: Center(child: child),
+                  child: child,
                 ),
               ),
             ],

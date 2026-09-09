@@ -464,6 +464,7 @@ class _LedgerShieldSigningOverlayState
   Widget build(BuildContext context) {
     final canLeave = !_isBroadcasting;
     final modal = LedgerSigningModal(
+      pageLayout: widget.mobile,
       accountUuid: _accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed

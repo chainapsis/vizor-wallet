@@ -17,6 +17,75 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
   testWidgets(
+    'page layout keeps actions at the bottom while guidance scrolls',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 568));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      Rect? actions;
+      for (final phase in [
+        LedgerSigningModalPhase.awaitingDevice,
+        LedgerSigningModalPhase.reconnecting,
+        LedgerSigningModalPhase.readyToRetry,
+      ]) {
+        await tester.pumpWidget(
+          _harness(
+            phase: phase,
+            pageLayout: true,
+            readiness: const LedgerAppReadinessState.ready('3.9.3'),
+          ),
+        );
+        expect(find.byType(AppModalCard), findsNothing);
+        final guidanceAnnouncement = find.ancestor(
+          of: find.byKey(const ValueKey('ledger_action_guidance')),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Semantics && widget.properties.liveRegion == true,
+          ),
+        );
+        expect(guidanceAnnouncement, findsOneWidget);
+        final accountRow = find.byKey(const ValueKey('ledger_signing_account'));
+        final iconBounds = tester.getRect(
+          find.descendant(of: accountRow, matching: find.byType(AppIcon)),
+        );
+        final nameBounds = tester.getRect(
+          find.descendant(of: accountRow, matching: find.byType(Text)),
+        );
+        expect(
+          (iconBounds.left + nameBounds.right) / 2,
+          tester.getRect(accountRow).center.dx,
+        );
+        final bounds = tester.getRect(
+          find.byKey(const ValueKey('ledger_signing_actions')),
+        );
+        if (actions != null) expect(bounds, actions);
+        actions = bounds;
+        expect(bounds.bottom, lessThanOrEqualTo(568));
+        if (phase == LedgerSigningModalPhase.awaitingDevice) {
+          await tester.ensureVisible(find.text('Waiting for your approval'));
+          expect(
+            find.text('Waiting for your approval').hitTestable(),
+            findsOneWidget,
+          );
+        } else {
+          expect(
+            find.text('Waiting for your approval').hitTestable(),
+            findsNothing,
+          );
+        }
+        await tester.drag(
+          find.byType(SingleChildScrollView),
+          const Offset(0, -150),
+        );
+        await tester.pump();
+        expect(
+          tester.getRect(find.byKey(const ValueKey('ledger_signing_actions'))),
+          bounds,
+        );
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+  testWidgets(
     'device guidance keeps actions anchored through app opening and recovery',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(390, 844));

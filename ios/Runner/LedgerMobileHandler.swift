@@ -26,6 +26,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var signingTaskGeneration: Int?
   private var signingResult: FlutterResult?
   private var signingGeneration = 0
+  private var appPreparationGeneration = 0
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
@@ -362,7 +363,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     connectedDevice = nil
     cancelSigningOperation(
       code: "disconnected",
-      message: "The Ledger disconnected. Reconnect and try again."
+      message: "The Ledger disconnected. Reconnect and try again.",
+      cancelPreparation: false
     )
   }
 
@@ -381,6 +383,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private func openZcashApp(_ result: @escaping FlutterResult) {
     guard let device = requireConnected(result) else { return }
     let transport = ensureTransport()
+    let generation = appPreparationGeneration
     Task { @MainActor [weak self] in
       guard let self else { return }
       do {
@@ -403,7 +406,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
             )
             self.connectedDevice = connected
           },
-          readCurrentApp: { try await self.readCurrentApp() }
+          readCurrentApp: { try await self.readCurrentApp() },
+          isCancelled: { self.appPreparationGeneration != generation }
         )
         connectedDevice = device
         result(app.asFlutterMap())
@@ -548,7 +552,15 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func cancelSigningOperation(code: String, message: String) {
+  private func cancelSigningOperation(
+    code: String,
+    message: String,
+    cancelPreparation: Bool = true
+  ) {
+    // App switching may disconnect BLE without cancelling the user's request.
+    // Explicit Cancel, disconnect and close must invalidate preparation even
+    // before the first signing APDU exists.
+    if cancelPreparation { appPreparationGeneration += 1 }
     guard let pending = signingResult else { return }
     signingGeneration += 1
     signingResult = nil
@@ -607,6 +619,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func flutterError(for error: Error) -> FlutterError {
+    if error is CancellationError {
+      return flutterError(code: "cancelled", message: "Ledger preparation was cancelled.")
+    }
     if let protocolError = error as? LedgerMobileProtocolError {
       switch protocolError {
       case .status(0x5515):
@@ -775,19 +790,19 @@ struct LedgerMobileAppInfo: Equatable {
 }
 
 struct LedgerMobileAppSwitchCoordinator {
-  let maxPollAttempts: Int
-  let maxReconnectAttempts: Int
-  let waitBetweenAttempts: () async -> Void
+  let recoveryTimeout: TimeInterval
+  let now: () -> TimeInterval
+  let waitBetweenAttempts: (TimeInterval) async throws -> Void
 
   init(
-    maxPollAttempts: Int = 40,
-    maxReconnectAttempts: Int = 3,
-    waitBetweenAttempts: @escaping () async -> Void = {
-      try? await Task.sleep(nanoseconds: 250_000_000)
+    recoveryTimeout: TimeInterval = 10,
+    now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+    waitBetweenAttempts: @escaping (TimeInterval) async throws -> Void = {
+      try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000))
     }
   ) {
-    self.maxPollAttempts = maxPollAttempts
-    self.maxReconnectAttempts = maxReconnectAttempts
+    self.recoveryTimeout = recoveryTimeout
+    self.now = now
     self.waitBetweenAttempts = waitBetweenAttempts
   }
 
@@ -795,46 +810,84 @@ struct LedgerMobileAppSwitchCoordinator {
     openApplication: () async throws -> Void,
     isConnected: () -> Bool,
     reconnect: () async throws -> Void,
-    readCurrentApp: () async throws -> LedgerMobileAppInfo
+    readCurrentApp: () async throws -> LedgerMobileAppInfo,
+    isCancelled: () -> Bool = { false }
   ) async throws -> LedgerMobileAppInfo {
-    try await openApplication()
+    func checkCancellation() throws {
+      try Task.checkCancellation()
+      if isCancelled() { throw CancellationError() }
+    }
 
+    try checkCancellation()
     var lastAppName: String?
     var lastError: Error?
-    var reconnectAttempts = 0
+    do {
+      // Never repeat this command: its response can be lost while the device
+      // is already opening Zcash. Recover by observing that same device.
+      try await openApplication()
+    } catch {
+      try checkCancellation()
+      guard Self.isTransientTransitionError(error) else { throw error }
+      lastError = error
+    }
 
-    for attempt in 0..<maxPollAttempts {
+    // User approval of the open request does not consume the recovery budget.
+    // The SDK's in-flight calls must drain; check elapsed time between calls
+    // rather than racing an uncancellable exchange with another BLE request.
+    let deadline = now() + recoveryTimeout
+    while now() < deadline {
+      try checkCancellation()
       if !isConnected() {
-        guard reconnectAttempts < maxReconnectAttempts else {
-          if let lastError { throw lastError }
-          throw LedgerMobileProtocolError.appSwitchTimedOut(lastAppName)
-        }
-        reconnectAttempts += 1
         do {
           try await reconnect()
         } catch {
+          try checkCancellation()
+          guard Self.isTransientTransitionError(error) else { throw error }
           lastError = error
         }
       }
 
+      try checkCancellation()
+      guard now() < deadline else { break }
       if isConnected() {
         do {
           let app = try await readCurrentApp()
+          try checkCancellation()
           lastAppName = app.name
           lastError = nil
           if app.name == "Zcash" { return app }
         } catch {
+          try checkCancellation()
+          guard Self.isTransientTransitionError(error) else { throw error }
           lastError = error
         }
       }
 
-      if attempt + 1 < maxPollAttempts {
-        await waitBetweenAttempts()
-      }
+      let remaining = deadline - now()
+      guard remaining > 0 else { break }
+      try await waitBetweenAttempts(min(0.25, remaining))
     }
 
+    try checkCancellation()
     if lastAppName == nil, let lastError { throw lastError }
     throw LedgerMobileProtocolError.appSwitchTimedOut(lastAppName)
+  }
+
+  static func isTransientTransitionError(_ error: Error) -> Bool {
+    if let error = error as? LedgerMobileProtocolError {
+      // Only explicit device-busy statuses are safe to wait through. Rejection,
+      // lock, missing-app and malformed responses must still fail immediately.
+      return error == .status(0x6601) || error == .status(0x6901)
+    }
+    guard let error = error as? BleTransportError else { return false }
+    switch error {
+    case .connectError, .currentConnectedError, .writeError, .readError,
+      .listenError, .pendingActionOnDevice, .scanningTimedOut, .scanError:
+      return true
+    case .bluetoothNotAvailable, .pairingError, .userRefusedOnDevice,
+      .lowerLevelError:
+      return false
+    }
   }
 }
 

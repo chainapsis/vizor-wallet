@@ -107,7 +107,12 @@ void main() {
         );
         // Simulates the explicit Continue action, not automatic signing.
         final fresh = await gate.run(() async {
-          expect(clock.elapsedMilliseconds, greaterThanOrEqualTo(3800));
+          expect(
+            clock.elapsedMilliseconds,
+            greaterThanOrEqualTo(
+              kLedgerMobileSigningStatusCooldown.inMilliseconds - 200,
+            ),
+          );
           debugPrint(
             'PASS actual Dart cooldown elapsed: ${clock.elapsedMilliseconds}ms',
           );
@@ -117,6 +122,17 @@ void main() {
           [3, 144, 0],
         ]);
         debugPrint('PASS bridge fresh response after actual Dart gate');
+        final nextClock = Stopwatch()..start();
+        final next = await gate.run(() {
+          expect(nextClock.elapsedMilliseconds, greaterThanOrEqualTo(2800));
+          debugPrint(
+            'PASS connected three-second gate elapsed: ${nextClock.elapsedMilliseconds}ms',
+          );
+          return service.exchangeApdus(command(0xf1));
+        });
+        expect(next, [
+          [1, 144, 0],
+        ]);
       } finally {
         recovery.dispose();
         await service.disconnect();

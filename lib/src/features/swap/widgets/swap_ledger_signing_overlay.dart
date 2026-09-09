@@ -476,6 +476,7 @@ class _SwapLedgerSigningOverlayState
     final legacyOrchardRecoveryUnavailable =
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
     final modal = LedgerSigningModal(
+      pageLayout: widget.mobile,
       accountUuid: widget.intent.accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed

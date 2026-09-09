@@ -29,6 +29,7 @@ import '../../../migration/models/ironwood_migration_phases.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../../onboarding/ledger/ledger_setup_args.dart';
 import '../../widgets/mobile/account_edit_sheets.dart';
+import '../../widgets/ledger_grouped_account_row.dart';
 
 /// Mobile account management — Figma `Accounts` / `Accounts Edits` /
 /// `Remove` / `PFP Modal` (4514:53389 / 4514:84873 / 4514:85954 /
@@ -239,7 +240,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         item(
           key: const ValueKey('mobile_account_menu_account_details'),
           iconName: AppIcons.wallet,
-          label: 'Account details',
+          label: 'Recovery information',
           action: _AccountAction.viewAccountDetails,
         )
       else
@@ -692,86 +693,77 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   }) {
     final colors = context.colors;
     final menuOpen = _openRowMenuAccountUuid == account.uuid;
-    return MobileListRow(
-      key: ValueKey('mobile_accounts_row_${account.uuid}'),
-      leading: MobileAccountAvatar(
-        profilePictureId: account.profilePictureId,
-        size: AppProfilePictureSize.navLarge,
-        hardwareSignerKind: account.hardwareSignerKind,
-        badgeRingColor: colors.background.ground,
-        badgeBorderWidth: 3,
-        badgeRight: -5,
-        badgeBottom: 0,
-      ),
-      label: account.name,
-      minRowHeight: 44,
-      textStyle: AppTypography.labelLarge,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showLedgerAccountIndex) ...[
-            Text(
-              [
-                '#${account.zip32AccountIndex ?? '—'}',
-                if (isCurrent) 'Current',
-              ].join(' · '),
-              maxLines: 1,
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-          ],
-          Builder(
-            builder: (anchorContext) {
-              _openInitialRowMenuIfNeeded(account, anchorContext);
-              return Semantics(
-                button: true,
-                label: 'Account options for ${account.name}',
-                excludeSemantics: true,
-                child: GestureDetector(
-                  key: ValueKey('mobile_accounts_menu_${account.uuid}'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: enabled
-                      ? () => _showRowMenu(account, anchorContext)
-                      : null,
+    final avatar = MobileAccountAvatar(
+      profilePictureId: account.profilePictureId,
+      size: AppProfilePictureSize.navLarge,
+      hardwareSignerKind: account.hardwareSignerKind,
+      badgeRingColor: colors.background.ground,
+      badgeBorderWidth: 3,
+      badgeRight: -5,
+      badgeBottom: 0,
+    );
+    final options = Builder(
+      builder: (anchorContext) {
+        _openInitialRowMenuIfNeeded(account, anchorContext);
+        return Semantics(
+          button: true,
+          label: 'Account options for ${account.name}',
+          excludeSemantics: true,
+          child: GestureDetector(
+            key: ValueKey('mobile_accounts_menu_${account.uuid}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled ? () => _showRowMenu(account, anchorContext) : null,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(
+                child: DecoratedBox(
+                  key: ValueKey('mobile_accounts_menu_button_${account.uuid}'),
+                  decoration: BoxDecoration(
+                    color: menuOpen
+                        ? colors.state.hover
+                        : const Color(0x00000000),
+                    borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  ),
                   child: SizedBox(
-                    width: 44,
-                    height: 44,
+                    width: 20,
+                    height: 20,
                     child: Center(
-                      child: DecoratedBox(
-                        key: ValueKey(
-                          'mobile_accounts_menu_button_${account.uuid}',
-                        ),
-                        decoration: BoxDecoration(
-                          color: menuOpen
-                              ? colors.state.hover
-                              : const Color(0x00000000),
-                          borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                        ),
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: Center(
-                            child: Transform.rotate(
-                              angle: -math.pi / 2,
-                              child: AppIcon(
-                                AppIcons.options,
-                                size: AppIconSize.medium,
-                                color: colors.icon.accent,
-                              ),
-                            ),
-                          ),
+                      child: Transform.rotate(
+                        angle: -math.pi / 2,
+                        child: AppIcon(
+                          AppIcons.options,
+                          size: AppIconSize.medium,
+                          color: colors.icon.accent,
                         ),
                       ),
                     ),
                   ),
                 ),
-              );
-            },
+              ),
+            ),
           ),
-        ],
-      ),
+        );
+      },
+    );
+    if (showLedgerAccountIndex) {
+      return LedgerGroupedAccountRow(
+        key: ValueKey('mobile_accounts_row_${account.uuid}'),
+        accountUuid: account.uuid,
+        name: account.name,
+        accountIndex: account.zip32AccountIndex,
+        isCurrent: isCurrent,
+        leading: avatar,
+        options: options,
+      );
+    }
+    return MobileListRow(
+      key: ValueKey('mobile_accounts_row_${account.uuid}'),
+      leading: avatar,
+      label: account.name,
+      minRowHeight: 44,
+      textStyle: AppTypography.labelLarge,
+      trailing: options,
     );
   }
 }
@@ -833,26 +825,38 @@ class _AccountsGroupCard extends StatelessWidget {
                       ),
                       const SizedBox(width: AppSpacing.xs),
                       Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: context.colors.text.secondary,
-                          ),
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.labelLarge.copyWith(
+                                  color: context.colors.text.secondary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.xxs),
+                            Semantics(
+                              label: 'Rename group name',
+                              child: AppButton(
+                                key: ValueKey(
+                                  'mobile_accounts_rename_ledger_family_'
+                                  '$ledgerFamilyAnchorUuid',
+                                ),
+                                variant: AppButtonVariant.ghost,
+                                size: AppButtonSize.small,
+                                height: 40,
+                                minWidth: 40,
+                                onPressed: onRenameLedgerWallet,
+                                child: const AppIcon(AppIcons.edit),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xs),
-                      AppButton(
-                        key: ValueKey(
-                          'mobile_accounts_rename_ledger_family_'
-                          '$ledgerFamilyAnchorUuid',
-                        ),
-                        variant: AppButtonVariant.ghost,
-                        size: AppButtonSize.small,
-                        onPressed: onRenameLedgerWallet,
-                        child: const AppIcon(AppIcons.edit),
-                      ),
                       AppButton(
                         key: ValueKey(
                           'mobile_accounts_add_ledger_family_'
@@ -860,6 +864,7 @@ class _AccountsGroupCard extends StatelessWidget {
                         ),
                         variant: AppButtonVariant.ghost,
                         size: AppButtonSize.small,
+                        height: 40,
                         onPressed: onAddLedgerAccount,
                         leading: const AppIcon(AppIcons.addNew),
                         child: const Text('Add'),

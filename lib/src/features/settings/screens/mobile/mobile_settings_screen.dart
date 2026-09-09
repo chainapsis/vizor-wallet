@@ -97,7 +97,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                           'mobile_settings_hardware_account_row',
                         ),
                         leading: _RowIcon(AppIcons.wallet),
-                        label: 'Account Details',
+                        label: 'Recovery information',
                         minRowHeight: _settingsRowHeight,
                         textStyle: settingsRowStyle,
                         chevronColor: settingsChevronColor,

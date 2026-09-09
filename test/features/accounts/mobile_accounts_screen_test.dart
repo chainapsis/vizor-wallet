@@ -121,6 +121,9 @@ Widget _app(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accounts)),
+      hardwareAccountBirthdayBlockTimeProvider.overrideWith(
+        (ref, height) async => 1785196800,
+      ),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
       biometricUnlockProvider.overrideWith(
@@ -408,10 +411,62 @@ void main() {
 
       expect(find.text('Ledger wallet'), findsOneWidget);
       expect(find.text('aaaa…aaaa'), findsNothing);
-      expect(find.text('#0 · Current'), findsOneWidget);
-      expect(find.text('#1'), findsOneWidget);
+      expect(find.text('Account 0'), findsOneWidget);
+      expect(find.text('Account 1'), findsOneWidget);
+      expect(find.text('Current'), findsNothing);
+      expect(
+        tester
+            .widget<Semantics>(
+              find.byKey(
+                const ValueKey('ledger_grouped_account_selection_ledger-0'),
+              ),
+            )
+            .properties
+            .selected,
+        isTrue,
+      );
+      expect(
+        find.byKey(const ValueKey('ledger_grouped_account_current_ledger-1')),
+        findsNothing,
+      );
+      expect(
+        tester.getTopLeft(find.text('Account 0')).dy,
+        greaterThan(tester.getBottomLeft(find.text('Ledger primary')).dy),
+      );
+      expect(
+        tester
+            .getTopRight(
+              find.byKey(
+                const ValueKey('ledger_grouped_account_current_ledger-0'),
+              ),
+            )
+            .dx,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey('mobile_accounts_menu_ledger-0')),
+              )
+              .dx,
+        ),
+      );
       expect(find.text('Other'), findsOneWidget);
       expect(find.text('Daily wallet'), findsOneWidget);
+
+      final groupTitle = find.text('Ledger wallet');
+      final groupRename = find.byKey(
+        const ValueKey('mobile_accounts_rename_ledger_family_ledger-0'),
+      );
+      final groupAdd = find.byKey(
+        const ValueKey('mobile_accounts_add_ledger_family_ledger-0'),
+      );
+      expect(
+        tester.getTopLeft(groupRename).dx - tester.getTopRight(groupTitle).dx,
+        moreOrLessEquals(AppSpacing.xxs, epsilon: 0.1),
+      );
+      expect(
+        tester.getTopLeft(groupAdd).dx,
+        greaterThan(tester.getTopRight(groupRename).dx),
+      );
 
       await tester.tap(
         find.byKey(
@@ -554,7 +609,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View secret phrase'), findsOneWidget);
-    expect(find.text('Account details'), findsNothing);
+    expect(find.text('Recovery information'), findsNothing);
     expect(
       find.ancestor(
         of: find.text('View secret phrase'),
@@ -616,7 +671,7 @@ void main() {
         find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
         findsNothing,
       );
-      expect(find.text('Account details'), findsOneWidget);
+      expect(find.text('Recovery information'), findsOneWidget);
       expect(find.text('View viewing key'), findsOneWidget);
 
       await tester.tap(
@@ -628,27 +683,26 @@ void main() {
         find.byKey(const ValueKey('hardware_account_details_screen')),
         findsOneWidget,
       );
-      expect(find.text('$signerName hardware wallet'), findsOneWidget);
+      expect(find.text('Recovery info'), findsOneWidget);
+      expect(find.text('$signerName hardware wallet'), findsNothing);
       expect(find.text('$birthday'), findsOneWidget);
       expect(find.text('$accountIndex'), findsOneWidget);
-      expect(find.textContaining('recovery phrase'), findsOneWidget);
+      expect(
+        find.text(
+          'Use these values when restoring this account with your hardware wallet.',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('View secret phrase'), findsNothing);
-      if (kind == HardwareSignerKind.ledger) {
-        expect(find.text('Connection preference'), findsOneWidget);
-        expect(find.text('Bluetooth'), findsOneWidget);
-        expect(
-          find.byKey(const ValueKey('ledger_change_connection_button')),
-          findsNothing,
-        );
-        final addButton = find.byKey(
-          const ValueKey('ledger_add_another_account_button'),
-        );
-        expect(addButton, findsOneWidget);
-        await tester.ensureVisible(addButton);
-        await tester.tap(addButton);
-        await tester.pumpAndSettle();
-        expect(find.text('ledger add b'), findsOneWidget);
-      }
+      expect(
+        find.byKey(const ValueKey('ledger_details_account_name')),
+        findsNothing,
+      );
+      expect(find.text('Connection preference'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ledger_add_another_account_button')),
+        findsNothing,
+      );
     });
   }
 

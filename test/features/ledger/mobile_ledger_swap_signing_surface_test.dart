@@ -24,6 +24,69 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
+  for (final payMode in [false, true]) {
+    testWidgets(
+      'capacity failure preserves the quote and blocks retry (pay=$payMode)',
+      (tester) async {
+        final operations = _OperationService(
+          Completer<LedgerSignedOperationBroadcastResult>().future,
+        );
+        final intent = _intent.copyWith(payMode: payMode);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appBootstrapProvider.overrideWithValue(_bootstrap),
+              ledgerPcztSignerProvider.overrideWithValue(
+                (_, _) async => throw StateError(
+                  'Ledger supports at most 32 shielded actions; found 33',
+                ),
+              ),
+              ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+              ledgerSignedOperationServiceProvider.overrideWithValue(
+                operations,
+              ),
+              swapHardwareSigningServiceProvider.overrideWithValue(
+                _HardwareSigningService(),
+              ),
+              syncProvider.overrideWith(
+                () => FakeSyncNotifier(
+                  SyncState(
+                    accountUuid: 'account-1',
+                    hasAccountScopedData: true,
+                  ),
+                ),
+              ),
+            ],
+            child: MaterialApp(
+              builder: (_, child) =>
+                  AppTheme(data: AppThemeData.light, child: child!),
+              home: SwapLedgerSigningOverlay(
+                mobile: true,
+                intent: intent,
+                onCancel: () {},
+                onDepositBroadcast: (_) async =>
+                    fail('Oversized deposit must not complete'),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Ledger requires a smaller transfer'), findsOneWidget);
+        expect(
+          find.textContaining(
+            payMode ? 'Do not send a smaller amount' : 'review the new quote',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Try again'), findsNothing);
+        expect(operations.checkpointCalls, 0);
+        expect(operations.broadcastCalls, 0);
+        expect(intent.sellAmountBaseUnits, _intent.sellAmountBaseUnits);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('mobile Ledger broadcast blocks back until durable completion', (
     tester,
   ) async {

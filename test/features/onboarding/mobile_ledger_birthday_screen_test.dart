@@ -17,7 +17,7 @@ const _account = LedgerDeviceAccount(
   ufvk: 'uview-ledger',
   seedFingerprint: [1, 2, 3],
   accountIndex: 7,
-  appVersion: '3.9.2',
+  appVersion: '3.9.3',
 );
 
 void main() {

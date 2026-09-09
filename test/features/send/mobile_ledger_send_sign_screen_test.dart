@@ -5,6 +5,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart'
+    show MobileSendAmountArgs;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -56,6 +58,54 @@ void main() {
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
   });
+
+  for (final error in [
+    'Ledger supports at most 32 shielded actions; found 33',
+    'Ledger signing preconditions were not met (0x6986)',
+  ]) {
+    testWidgets('requires a new transaction for $error', (tester) async {
+      final operations = _FakeOperationService();
+      var calls = 0;
+      await tester.pumpWidget(
+        _app(
+          operationService: operations,
+          signer: (_) async {
+            calls++;
+            throw StateError(error);
+          },
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pumpAndSettle();
+      final capacity = error.contains('Ledger supports at most');
+      expect(
+        find.text(capacity ? 'Edit amount' : 'Create new transaction'),
+        findsOneWidget,
+      );
+      if (capacity) {
+        expect(find.text('Ledger requires a smaller transfer'), findsOneWidget);
+      }
+      expect(find.text('Try again'), findsNothing);
+      expect(calls, 1);
+      if (capacity) {
+        final router = GoRouter.of(
+          tester.element(find.byType(MobileLedgerSendSignScreen)),
+        );
+        await tester.tap(find.text('Edit amount'));
+        await tester.pumpAndSettle();
+        final draft =
+            router.routerDelegate.currentConfiguration.extra!
+                as MobileSendAmountArgs;
+        expect(draft.recipient, _args.address);
+        expect(draft.addressType, _args.addressType);
+        expect(draft.memo, _args.memo);
+        expect(draft.amountText, isNotEmpty);
+        expect(draft.sendFlowId, isNot(_args.sendFlowId));
+        expect(find.text('new send'), findsOneWidget);
+        expect(calls, 1);
+      }
+    });
+  }
 
   testWidgets('redacts, proves, signs, and checkpoints before handoff', (
     tester,
@@ -332,20 +382,14 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(
-      find.text('Review Transaction 1 of 2 on your Ledger'),
-      findsOneWidget,
-    );
-    expect(find.text('Waiting for approval · 1 of 2'), findsOneWidget);
+    expect(find.text('Getting ready'), findsOneWidget);
+    expect(find.text('Approval 1 of 2'), findsOneWidget);
 
     first.complete(const [4]);
     await tester.pump();
     await tester.pump();
-    expect(
-      find.text('Review Transaction 2 of 2 on your Ledger'),
-      findsOneWidget,
-    );
-    expect(find.text('Waiting for approval · 2 of 2'), findsOneWidget);
+    expect(find.text('Getting ready'), findsOneWidget);
+    expect(find.text('Approval 2 of 2'), findsOneWidget);
 
     second.complete(const [8]);
     await tester.pumpAndSettle();
@@ -423,6 +467,7 @@ Widget _app({
         ),
       ),
       GoRoute(path: '/send', builder: (_, _) => const Text('new send')),
+      GoRoute(path: '/send/amount', builder: (_, _) => const Text('new send')),
     ],
   );
   return ProviderScope(

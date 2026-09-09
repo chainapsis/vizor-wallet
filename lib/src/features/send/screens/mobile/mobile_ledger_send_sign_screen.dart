@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../ledger/ledger_error_messages.dart';
 import '../../../ledger/services/ledger_connection_recovery.dart';
 
 import 'package:flutter/widgets.dart';
@@ -7,18 +8,20 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../ledger/ledger_capability.dart';
 import '../../../ledger/services/ledger_signed_operation_service.dart';
 import '../../../ledger/services/ledger_signing_service.dart';
-import '../../../ledger/widgets/ledger_device_app_prompt.dart';
+import '../../../ledger/ledger_app_instructions.dart';
 import '../../../ledger/widgets/ledger_signing_modal.dart';
 import '../../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
-import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
+import 'mobile_send_screen.dart'
+    show MobileSaplingParamsSheet, MobileSendAmountArgs;
 
 enum _LedgerSendRecoveryAction {
   retrySigning,
@@ -314,7 +317,20 @@ class _MobileLedgerSendSignScreenState
     late final LedgerSigningFailurePresentation presentation;
     late final _LedgerSendRecoveryAction? action;
 
-    if (lower.contains('proposal not found') ||
+    if (ledgerRequestNeedsRebuilding(error)) {
+      presentation = LedgerSigningFailurePresentation(
+        canChangeConnection: false,
+        title: ledgerRequestExceedsCapacity(error)
+            ? kLedgerSmallerTransferTitle
+            : 'Review your transaction',
+        statusLabel: 'New transaction required',
+        message: ledgerActionableErrorMessage(error)!,
+        actionLabel: ledgerRequestExceedsCapacity(error)
+            ? 'Edit amount'
+            : 'Create new transaction',
+      );
+      action = _LedgerSendRecoveryAction.createNewTransaction;
+    } else if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
       presentation = const LedgerSigningFailurePresentation(
         title: 'Transaction expired',
@@ -353,7 +369,7 @@ class _MobileLedgerSendSignScreenState
       presentation = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
-        message: message,
+        message: ledgerActionableErrorMessage(error) ?? message,
         actionLabel: 'Try again',
         requiresReconnect: ledgerFailureNeedsReconnect(error),
       );
@@ -441,7 +457,16 @@ class _MobileLedgerSendSignScreenState
         _attemptGeneration++;
         _scheduleDiscard('MobileLedgerSendSign(expired)');
         ref.read(sendStatusRoutePayloadProvider.notifier).clear();
-        context.go('/send');
+        context.go(
+          '/send/amount',
+          extra: MobileSendAmountArgs(
+            sendFlowId: newSendFlowId(),
+            recipient: widget.args.address,
+            addressType: widget.args.addressType,
+            amountText: formatZecAmount(widget.args.amountZatoshi),
+            memo: widget.args.memo,
+          ),
+        );
       case null:
         return;
     }
@@ -490,6 +515,7 @@ class _MobileLedgerSendSignScreenState
       canLeave: canLeave,
       onBack: () => unawaited(_cancelAndPop()),
       child: LedgerSigningModal(
+        pageLayout: true,
         accountUuid: widget.args.proposalAccountUuid,
         phase: _phase,
         failure: _failure,

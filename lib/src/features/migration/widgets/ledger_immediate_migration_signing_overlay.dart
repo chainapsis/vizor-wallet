@@ -153,6 +153,7 @@ class _LedgerImmediateMigrationSigningOverlayState
   @override
   Widget build(BuildContext context) {
     final modal = LedgerSigningModal(
+      pageLayout: widget.mobile,
       accountUuid: widget.accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
