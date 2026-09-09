@@ -218,6 +218,81 @@ void main() {
     },
   );
 
+  test(
+    'iOS stop keeps the same native lease across failed cleanup and retry',
+    () async {
+      const channel = MethodChannel('test/background_migration/stop_lease');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final lifecycle = IronwoodMigrationBackgroundLifecycle(
+        channel: channel,
+        isIOS: true,
+      );
+      var terminal = false;
+      var revokeCalls = 0;
+      final service = IronwoodMigrationService(
+        operationRegistry: IronwoodMigrationOperationRegistry(),
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(activeRunId: terminal ? null : 'run-a'),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        isAndroid: () => false,
+        quiesceBackgroundMigration: lifecycle.quiesce,
+        resumeBackgroundMigration: lifecycle.resumeAfterMutation,
+        listMigrationOutboxReceipts: () async => const [],
+        listMigrationOutboxAttemptedTxids:
+            ({required network, required accountUuid, required runId}) async =>
+                const [],
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              if (++revokeCalls == 1) throw StateError('Native revoke failed');
+            },
+        stopMigrationRun:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+              required nativeAttemptedTxids,
+            }) async {
+              terminal = true;
+            },
+      );
+      await expectLater(
+        service.stop(accountUuid: 'account-a', expectedRunId: 'run-a'),
+        throwsStateError,
+      );
+      expect(calls.map((call) => call.method), ['quiesce']);
+      await service.stop(accountUuid: 'account-a', expectedRunId: 'run-a');
+      expect(calls.map((call) => call.method), [
+        'quiesce',
+        'quiesce',
+        'resume',
+      ]);
+      expect(calls.map((call) => (call.arguments as Map)['leaseId']).toSet(), {
+        'stop:test:account-a:run-a',
+      });
+    },
+  );
+
   test('stop drains native work before abandoning the durable run', () async {
     final events = <String>[];
     final service = IronwoodMigrationService(

@@ -26,6 +26,10 @@ void main() {
 
     expect(bridge.posts, hasLength(1));
     expect(
+      bridge.posts.single.timeout!.inMilliseconds,
+      inInclusiveRange(19_900, 20_000),
+    );
+    expect(
       bridge.posts.single.uri.toString(),
       'https://functions.example.test/api/wallet-link/v1/packages/'
       '$packageId/revoke',
@@ -117,14 +121,21 @@ class _RecordingTorBridge implements TorHttpBridge {
     required Duration? timeout,
     Future<void>? cancelSignal,
   }) async {
-    posts.add(_RecordedPost(uri: uri, bodyBytes: List.of(bodyBytes)));
+    posts.add(
+      _RecordedPost(uri: uri, bodyBytes: List.of(bodyBytes), timeout: timeout),
+    );
     return responses[posts.length - 1];
   }
 }
 
 class _RecordedPost {
-  const _RecordedPost({required this.uri, required this.bodyBytes});
+  const _RecordedPost({
+    required this.uri,
+    required this.bodyBytes,
+    required this.timeout,
+  });
 
   final Uri uri;
   final List<int> bodyBytes;
+  final Duration? timeout;
 }

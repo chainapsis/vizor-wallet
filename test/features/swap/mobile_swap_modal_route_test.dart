@@ -393,6 +393,33 @@ void main() {
     expect(stateAfter.widget.focusNode.hasFocus, isTrue);
   });
 
+  testWidgets('fiat amount input rejects a third fractional digit', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    final field = find.byKey(const ValueKey('swap_receive_amount_field'));
+    final textField = find.descendant(
+      of: field,
+      matching: find.byType(TextField),
+    );
+    await tester.tap(field);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('swap_fiat_value_mode_icon')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(field, '5.12');
+    await tester.pump();
+    expect(tester.widget<TextField>(textField).controller?.text, '5.12');
+
+    await tester.enterText(field, '5.123');
+    await tester.pump();
+    expect(tester.widget<TextField>(textField).controller?.text, '5.12');
+  });
+
   testWidgets(
     'review quote loading shows loader and disables slippage settings',
     (tester) async {

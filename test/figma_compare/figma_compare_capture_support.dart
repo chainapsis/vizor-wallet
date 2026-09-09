@@ -43,6 +43,10 @@ void runFigmaCompareCaptureTest({
           : 'pay-recipient',
     );
     final scenario = configuration.resolveScenario(expectedFormFactor);
+    if (scenario.allowFocus) {
+      EditableText.debugDeterministicCursor = true;
+      addTearDown(() => EditableText.debugDeterministicCursor = false);
+    }
     final output = File(
       configuration.outputPath.isEmpty
           ? '${Directory.systemTemp.path}/vizor-figma-compare/'

@@ -1144,126 +1144,129 @@ class IronwoodMigrationService {
           accountUuid: accountUuid,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         );
-        await _serializeCredentialState(context, () async {
-          var quiesceAttempted = false;
-          var mayResumeBackgroundWork = true;
-          try {
-            // Native may already have acquired its mutation lease even if the
-            // MethodChannel reply is lost, so every attempt gets a matching
-            // best-effort resume.
-            if (_usesNativeMigrationLifecycle) {
-              quiesceAttempted = true;
-              await quiesceBackgroundMigration();
-            }
-            final currentStatus = await _getStatusForContext(context);
-            if (currentStatus.activeRunId == null) {
-              // This is a cleanup retry after the durable run became
-              // terminal. Revoke the stale native batch before retrying
-              // idempotent Rust cleanup, so a cleanup error can never resume
-              // abandoned work.
+        await IronwoodMigrationBackgroundLifecycle.runWithQuiescenceLease(
+          'stop:${context.network}:${context.accountUuid}:$expectedRunId',
+          () => _serializeCredentialState(context, () async {
+            var quiesceAttempted = false;
+            var mayResumeBackgroundWork = true;
+            try {
+              // Native may already have acquired its mutation lease even if the
+              // MethodChannel reply is lost, so every attempt gets a matching
+              // best-effort resume.
               if (_usesNativeMigrationLifecycle) {
-                mayResumeBackgroundWork = false;
-                await revokeMigrationAccount(
+                quiesceAttempted = true;
+                await quiesceBackgroundMigration();
+              }
+              final currentStatus = await _getStatusForContext(context);
+              if (currentStatus.activeRunId == null) {
+                // This is a cleanup retry after the durable run became
+                // terminal. Revoke the stale native batch before retrying
+                // idempotent Rust cleanup, so a cleanup error can never resume
+                // abandoned work.
+                if (_usesNativeMigrationLifecycle) {
+                  mayResumeBackgroundWork = false;
+                  await revokeMigrationAccount(
+                    network: context.network,
+                    accountUuid: context.accountUuid,
+                  );
+                  mayResumeBackgroundWork = true;
+                }
+                await stopMigrationRun(
+                  dbPath: context.dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
                   network: context.network,
                   accountUuid: context.accountUuid,
+                  expectedRunId: expectedRunId,
+                  nativeAttemptedTxids: const [],
                 );
-                mayResumeBackgroundWork = true;
+                return;
               }
-              await stopMigrationRun(
-                dbPath: context.dbPath,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-                network: context.network,
-                accountUuid: context.accountUuid,
-                expectedRunId: expectedRunId,
-                nativeAttemptedTxids: const [],
-              );
-              return;
-            }
 
-            var nativeAttemptedTxids = const <String>[];
-            if (_usesNativeMigrationOutbox) {
-              final receipts = await _reconcileMigrationOutboxReceipts(
-                context: context,
-              );
-              if (receipts.unreconciledCount > 0) {
-                throw StateError(
-                  'Migration cannot stop until submitted transactions are '
-                  'reconciled.',
+              var nativeAttemptedTxids = const <String>[];
+              if (_usesNativeMigrationOutbox) {
+                final receipts = await _reconcileMigrationOutboxReceipts(
+                  context: context,
+                );
+                if (receipts.unreconciledCount > 0) {
+                  throw StateError(
+                    'Migration cannot stop until submitted transactions are '
+                    'reconciled.',
+                  );
+                }
+                nativeAttemptedTxids = await listMigrationOutboxAttemptedTxids(
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                  runId: expectedRunId,
                 );
               }
-              nativeAttemptedTxids = await listMigrationOutboxAttemptedTxids(
-                network: context.network,
-                accountUuid: context.accountUuid,
-                runId: expectedRunId,
-              );
-            }
-            if (currentStatus.activeRunId != expectedRunId) {
-              // A retry after the Rust transaction committed must still finish
-              // wallet-lock reconciliation, but a stale UI must never revoke
-              // the native credential/outbox belonging to a newer run.
-              await stopMigrationRun(
-                dbPath: context.dbPath,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-                network: context.network,
-                accountUuid: context.accountUuid,
-                expectedRunId: expectedRunId,
-                nativeAttemptedTxids: nativeAttemptedTxids,
-              );
-              return;
-            }
+              if (currentStatus.activeRunId != expectedRunId) {
+                // A retry after the Rust transaction committed must still finish
+                // wallet-lock reconciliation, but a stale UI must never revoke
+                // the native credential/outbox belonging to a newer run.
+                await stopMigrationRun(
+                  dbPath: context.dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                  expectedRunId: expectedRunId,
+                  nativeAttemptedTxids: nativeAttemptedTxids,
+                );
+                return;
+              }
 
-            try {
-              await stopMigrationRun(
-                dbPath: context.dbPath,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-                network: context.network,
-                accountUuid: context.accountUuid,
-                expectedRunId: expectedRunId,
-                nativeAttemptedTxids: nativeAttemptedTxids,
-              );
-            } catch (stopError, stopStackTrace) {
-              // A local FFI response can be lost after Rust committed. Re-read
-              // the durable projection before deciding whether native work may
-              // resume or still needs to be revoked.
               try {
-                final afterFailure = await _getStatusForContext(context);
-                if (afterFailure.activeRunId == expectedRunId ||
-                    afterFailure.activeRunId != null) {
+                await stopMigrationRun(
+                  dbPath: context.dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                  expectedRunId: expectedRunId,
+                  nativeAttemptedTxids: nativeAttemptedTxids,
+                );
+              } catch (stopError, stopStackTrace) {
+                // A local FFI response can be lost after Rust committed. Re-read
+                // the durable projection before deciding whether native work may
+                // resume or still needs to be revoked.
+                try {
+                  final afterFailure = await _getStatusForContext(context);
+                  if (afterFailure.activeRunId == expectedRunId ||
+                      afterFailure.activeRunId != null) {
+                    Error.throwWithStackTrace(stopError, stopStackTrace);
+                  }
+                } catch (statusError) {
+                  if (identical(statusError, stopError)) rethrow;
                   Error.throwWithStackTrace(stopError, stopStackTrace);
                 }
-              } catch (statusError) {
-                if (identical(statusError, stopError)) rethrow;
-                Error.throwWithStackTrace(stopError, stopStackTrace);
               }
-            }
 
-            if (_usesNativeMigrationLifecycle) {
-              try {
-                // Rust has already made the run terminal. If this reply is
-                // lost, leave native quiesced; a later idempotent stop retries
-                // only this cleanup and cannot submit the abandoned batch.
-                await revokeMigrationAccount(
-                  network: context.network,
-                  accountUuid: context.accountUuid,
-                );
-              } catch (error, stackTrace) {
-                mayResumeBackgroundWork = false;
-                Error.throwWithStackTrace(error, stackTrace);
+              if (_usesNativeMigrationLifecycle) {
+                try {
+                  // Rust has already made the run terminal. If this reply is
+                  // lost, leave native quiesced; a later idempotent stop retries
+                  // only this cleanup and cannot submit the abandoned batch.
+                  await revokeMigrationAccount(
+                    network: context.network,
+                    accountUuid: context.accountUuid,
+                  );
+                } catch (error, stackTrace) {
+                  mayResumeBackgroundWork = false;
+                  Error.throwWithStackTrace(error, stackTrace);
+                }
+              }
+            } finally {
+              if (quiesceAttempted && mayResumeBackgroundWork) {
+                try {
+                  await resumeBackgroundMigration();
+                } catch (error) {
+                  debugPrint(
+                    'Failed to resume Ironwood background work after stop: '
+                    '$error',
+                  );
+                }
               }
             }
-          } finally {
-            if (quiesceAttempted && mayResumeBackgroundWork) {
-              try {
-                await resumeBackgroundMigration();
-              } catch (error) {
-                debugPrint(
-                  'Failed to resume Ironwood background work after stop: '
-                  '$error',
-                );
-              }
-            }
-          }
-        });
+          }),
+        );
       },
     );
   }

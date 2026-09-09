@@ -8,47 +8,16 @@ import '../domain/swap_contract.dart';
 final swapZecStagingAddressServiceProvider =
     Provider<SwapZecStagingAddressService>((ref) {
       return SwapZecStagingAddressService(
-        loadCurrentShieldedAddress: ({required accountUuid}) {
+        reserveFreshOrchardAddress: ({required accountUuid}) {
           return ref
               .read(receiveAddressServiceProvider)
-              .loadShieldedAddress(accountUuid: accountUuid);
-        },
-        prepareFreshShieldedAddress: ({required accountUuid}) {
-          return _loadSwapShieldedRecipientAddress(
-            ref,
-            accountUuid: accountUuid,
-          );
+              .reserveOrchardAddress(accountUuid: accountUuid);
         },
       );
     });
 
-typedef LoadShieldedAddress =
+typedef ReserveOrchardAddress =
     Future<String> Function({required String accountUuid});
-
-Future<String> _loadSwapShieldedRecipientAddress(
-  Ref ref, {
-  required String accountUuid,
-}) async {
-  final receiveAddressService = ref.read(receiveAddressServiceProvider);
-  try {
-    return await receiveAddressService.renewShieldedAddress(
-      accountUuid: accountUuid,
-    );
-  } catch (e) {
-    if (!_isSaplingReceiverUnsupported(e)) rethrow;
-    log(
-      'SwapZecStagingAddressService: diversified Sapling+Orchard UA '
-      'generation is unavailable; using current shielded UA: $e',
-    );
-    return receiveAddressService.loadShieldedAddress(accountUuid: accountUuid);
-  }
-}
-
-bool _isSaplingReceiverUnsupported(Object error) {
-  return error.toString().contains(
-    'Unified Address generation does not yet support receivers of type Sapling',
-  );
-}
 
 class SwapZecStagingAddress {
   const SwapZecStagingAddress({required this.address});
@@ -83,35 +52,23 @@ class SwapZecStagingAddressUnavailableException implements Exception {
 
 class SwapZecStagingAddressService {
   const SwapZecStagingAddressService({
-    required LoadShieldedAddress loadCurrentShieldedAddress,
-    LoadShieldedAddress? prepareFreshShieldedAddress,
-  }) : _prepareFreshShieldedAddress =
-           prepareFreshShieldedAddress ?? loadCurrentShieldedAddress;
+    required ReserveOrchardAddress reserveFreshOrchardAddress,
+  }) : _reserveFreshOrchardAddress = reserveFreshOrchardAddress;
 
-  final LoadShieldedAddress _prepareFreshShieldedAddress;
+  final ReserveOrchardAddress _reserveFreshOrchardAddress;
 
   Future<SwapZecStagingAddress> prepareForQuote({
     required String accountUuid,
   }) async {
-    return _prepareShieldedRecipient(
-      accountUuid,
-      loadShieldedAddress: _prepareFreshShieldedAddress,
-      operationLabel: 'quote',
-    );
-  }
-
-  Future<SwapZecStagingAddress> _prepareShieldedRecipient(
-    String accountUuid, {
-    required LoadShieldedAddress loadShieldedAddress,
-    required String operationLabel,
-  }) async {
     try {
-      final address = await loadShieldedAddress(accountUuid: accountUuid);
+      final address = await _reserveFreshOrchardAddress(
+        accountUuid: accountUuid,
+      );
       return SwapZecStagingAddress(address: address);
     } catch (e) {
       log(
-        'SwapZecStagingAddressService: shielded receive address preparation '
-        'failed; blocking $operationLabel: $e',
+        'SwapZecStagingAddressService: Orchard receive address preparation '
+        'failed; blocking quote: $e',
       );
       throw SwapZecStagingAddressUnavailableException(e);
     }

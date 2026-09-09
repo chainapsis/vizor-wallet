@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
+import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_amount_step.dart';
@@ -127,6 +129,15 @@ void main() {
       expect(amountInput.textAlign, TextAlign.center);
       expect(amountInput.cursorWidth, 3);
       expect(amountInput.cursorRadius, const Radius.circular(AppRadii.full));
+      expect(
+        amountInput.inputFormatters?.first,
+        isA<CommaToDotInputFormatter>(),
+      );
+      expect(
+        (amountInput.inputFormatters?.last as DecimalAmountInputFormatter)
+            .maxFractionDigits,
+        SwapAsset.usdc.decimals,
+      );
 
       expect(
         tester.getSize(

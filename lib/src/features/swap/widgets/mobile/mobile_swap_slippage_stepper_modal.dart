@@ -306,9 +306,8 @@ class _StepperButton extends StatelessWidget {
 }
 
 /// Rejects any candidate with more than two decimal places (1.55 ok,
-/// 1.555 rejected) by restoring [oldValue] — same approach as
-/// `_DecimalAmountInputFormatter` in the composer ticket, pinned to two
-/// fraction digits for the slippage percentage.
+/// 1.555 rejected) by restoring [oldValue] — the same rejection behavior as
+/// the composer amount fields, pinned to two fraction digits for slippage.
 class _TwoDecimalInputFormatter extends TextInputFormatter {
   const _TwoDecimalInputFormatter();
 

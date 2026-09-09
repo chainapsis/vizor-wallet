@@ -448,7 +448,8 @@ final class BackgroundMigrationManager {
   }
 
   private var isMutationQuiesced: Bool {
-    stateLock.vizorWithLock { mutationQuiesced }
+    BackgroundMigrationOutboxExecutionGate.shared.isPaused
+      || stateLock.vizorWithLock { mutationQuiesced }
   }
 
   private var isNotificationWorkDisabled: Bool {
@@ -517,7 +518,8 @@ final class BackgroundMigrationManager {
 
   private func submitAuthorized(earliestBeginDate: Date) -> Bool {
     stateLock.vizorWithLock {
-      guard !mutationQuiesced && !notificationAuthorization.isDisabled else {
+      guard !mutationQuiesced && !notificationAuthorization.isDisabled
+        && !BackgroundMigrationOutboxExecutionGate.shared.isPaused else {
         return false
       }
       BGTaskScheduler.shared.cancel(
@@ -607,14 +609,35 @@ final class BackgroundMigrationManager {
     }
   }
 
+  /// Revocation may also be called directly by account removal. Hold a local
+  /// lease in addition to the caller's lease so no foreground sender can race
+  /// record deletion, even when no BGProcessingTask is active.
+  private func revokeAfterDrainingOutbox(
+    _ operation: @escaping () -> Bool,
+    completion: @escaping (Bool) -> Void
+  ) {
+    let gate = BackgroundMigrationOutboxExecutionGate.shared
+    let leaseId = "revoke:" + UUID().uuidString
+    gate.pause(leaseId: leaseId)
+    DispatchQueue.global(qos: .utility).async {
+      gate.waitUntilIdle()
+      self.queue.async {
+        self.stopActiveWork(quiesceForMutation: true)
+        let success = operation()
+        gate.resume(leaseId: leaseId)
+        self.scheduleRemainingWork()
+        DispatchQueue.main.async { completion(success) }
+      }
+    }
+  }
+
   func revokeAccount(
     network: String,
     accountUuid: String,
     completion: @escaping (Bool) -> Void
   ) {
-    stopActiveWork(quiesceForMutation: true)
-    queue.async { [weak self] in
-      let batchIds = self?.batchIds(network: network, accountUuid: accountUuid) ?? []
+    revokeAfterDrainingOutbox {
+      let batchIds = self.batchIds(network: network, accountUuid: accountUuid)
       let revoked =
         (try? BackgroundMigrationOutboxChannel.revoke(
           network: network,
@@ -625,34 +648,35 @@ final class BackgroundMigrationManager {
           network: network,
           accountUuid: accountUuid
         )
+        BackgroundMigrationOutboxExecutionGate.shared.discardStopLeases(
+          network: network, accountUuid: accountUuid
+        )
       }
-      let hasRemainingWork = self?.hasRunnableOutboxWork() ?? false
+      let hasRemainingWork = self.hasRunnableOutboxWork()
       BackgroundMigrationNotification.remove(
         batchIds: batchIds,
         includeNeedsAction: !hasRemainingWork
       )
-      self?.scheduleRemainingWork()
-      DispatchQueue.main.async { completion(revoked) }
-    }
+      return revoked
+    } completion: { completion($0) }
   }
 
   func revokeAll(completion: @escaping (Bool) -> Void) {
-    stopActiveWork(quiesceForMutation: true)
-    queue.async { [weak self] in
+    revokeAfterDrainingOutbox {
       let batchIds =
         (try? BackgroundMigrationOutboxStore.shared.read().batches.map(\.batchId))
         ?? []
       let removed = (try? BackgroundMigrationOutboxChannel.removeAll()) != nil
       if removed {
         IronwoodMigrationBackgroundCredentialStore.deleteAll()
+        BackgroundMigrationOutboxExecutionGate.shared.discardStopLeases()
       }
       BackgroundMigrationNotification.remove(
         batchIds: batchIds,
         includeNeedsAction: true
       )
-      self?.endMutationQuiescence()
-      DispatchQueue.main.async { completion(removed) }
-    }
+      return removed
+    } completion: { completion($0) }
   }
 
   #if DEBUG || targetEnvironment(simulator)
@@ -876,7 +900,8 @@ final class BackgroundMigrationManager {
 
   private func prepareForBackgroundWake() -> Bool {
     stateLock.vizorWithLock {
-      guard !mutationQuiesced && !notificationAuthorization.isDisabled else {
+      guard !mutationQuiesced && !notificationAuthorization.isDisabled
+        && !BackgroundMigrationOutboxExecutionGate.shared.isPaused else {
         return false
       }
       expired = false

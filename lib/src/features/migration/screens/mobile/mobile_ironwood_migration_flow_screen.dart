@@ -45,6 +45,7 @@ part 'mobile_ironwood_migration_back_scope.dart';
 part 'mobile_ironwood_migration_routes.dart';
 part 'mobile_ironwood_migration_start.dart';
 part 'mobile_ironwood_migration_schedule.dart';
+part 'mobile_ironwood_migration_manage.dart';
 part 'mobile_ironwood_migration_intro_options.dart';
 part 'mobile_ironwood_migration_review.dart';
 part 'mobile_ironwood_migration_live_states.dart';

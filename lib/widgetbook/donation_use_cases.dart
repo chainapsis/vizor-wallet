@@ -22,6 +22,14 @@ Widget buildDonationZecSelectedUseCase(BuildContext context) =>
       conversion: r'$ 16.00',
     );
 
+Widget buildDonationZecMiddleCursorUseCase(BuildContext context) =>
+    const _DonationComposePreview(
+      mode: DonationAmountMode.zec,
+      amount: '123.45',
+      selectionOffset: 2,
+      conversion: r'$ 98,760.00',
+    );
+
 Widget buildDonationUsdSelectedUseCase(BuildContext context) =>
     const _DonationComposePreview(
       mode: DonationAmountMode.usd,
@@ -81,12 +89,14 @@ class _DonationComposePreview extends StatefulWidget {
     this.amount = '',
     this.selectedPreset,
     this.conversion = r'$ 0',
+    this.selectionOffset,
   });
 
   final DonationAmountMode mode;
   final String amount;
   final String? selectedPreset;
   final String conversion;
+  final int? selectionOffset;
 
   @override
   State<_DonationComposePreview> createState() =>
@@ -94,9 +104,17 @@ class _DonationComposePreview extends StatefulWidget {
 }
 
 class _DonationComposePreviewState extends State<_DonationComposePreview> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.amount,
-  );
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.amount);
+    final selectionOffset = widget.selectionOffset;
+    if (selectionOffset != null) {
+      _controller.selection = TextSelection.collapsed(offset: selectionOffset);
+    }
+  }
 
   @override
   void dispose() {

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/core/network/network_http_client.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 class _FakeSource implements ZecMarketDataSource {
@@ -56,6 +57,15 @@ class _FakeCache implements ZecMarketDataCache {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('CoinGecko source uses a 20 second request timeout by default', () {
+    final networkClient = NetworkHttpClient(torDesired: () => false);
+    addTearDown(() => networkClient.close(force: true));
+
+    final source = CoinGeckoZecMarketDataSource(networkClient: networkClient);
+
+    expect(source.timeout, const Duration(seconds: 20));
+  });
 
   group('parseZecMarketData', () {
     test('reads ZEC price and 24h change from a CoinGecko response', () {

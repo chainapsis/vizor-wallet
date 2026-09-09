@@ -2,4 +2,6 @@ Vizor is a self-custody Zcash wallet for creating, receiving, shielding, and sen
 
 Features include shielded Unified Addresses, transparent receiving addresses, local transaction scanning, optional Tor routing for network requests, multiple accounts, Keystone hardware-wallet support, configurable lightwalletd endpoints, and local passcode protection.
 
+Optional price data, swap availability and routing, and Wallet Link use functions.vizor.cash. Wallet synchronization uses the lightwalletd endpoint you select.
+
 Back up your recovery phrase before using the wallet. Vizor cannot recover it for you. Transparent Zcash addresses and transactions are public on-chain.

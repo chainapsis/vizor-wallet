@@ -97,56 +97,64 @@ class FdroidMetadataTest(unittest.TestCase):
             rendered,
         )
         self.assertEqual(
+            rendered.count(f"git -C $$flutter$$ checkout -f {GENERATOR.FLUTTER_REVISION}"),
+            3,
+        )
+        self.assertEqual(
             rendered.count("cargo fetch --locked --manifest-path rust/Cargo.toml"),
             3,
         )
         self.assertEqual(
             rendered.count(
-                f"--default-toolchain {GENERATOR.RELEASE_RUST_TOOLCHAIN}"
+                f"rustup toolchain install {GENERATOR.RELEASE_RUST_TOOLCHAIN}"
             ),
             3,
         )
-        self.assertEqual(rendered.count(f"flutter@{GENERATOR.FLUTTER_VERSION}"), 3)
-        self.assertNotIn("flutter@stable", rendered)
+        self.assertEqual(rendered.count("flutter@stable"), 3)
+        self.assertNotIn(
+            "db50e20168db8fee486b9abf32fc912de3bc5b6a",
+            rendered,
+        )
+        self.assertNotIn("rustup@", rendered)
+        self.assertNotIn("source $CARGO_HOME/env", rendered)
+        self.assertNotIn("sources.list.d/trixie.list", rendered)
         self.assertEqual(
-            rendered.count(
-                'echo "deb https://deb.debian.org/debian bookworm main" > '
-                "/etc/apt/sources.list.d/bookworm.list"
-            ),
+            rendered.count("apt-get install -y build-essential rustup"),
             3,
         )
+        self.assertNotIn("apt-get install -y -t trixie", rendered)
+        self.assertNotIn("update-java-alternatives", rendered)
         self.assertEqual(
-            rendered.count("apt-get install -y build-essential"),
-            3,
-        )
-        self.assertEqual(
-            rendered.count(
-                "apt-get install -y -t bookworm openjdk-17-jdk-headless"
-            ),
-            3,
-        )
-        self.assertEqual(
-            rendered.count(
-                "update-java-alternatives -s java-1.17.0-openjdk-amd64"
-            ),
-            3,
-        )
-        self.assertEqual(
-            rendered.count("export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"),
+            rendered.count("export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64"),
             6,
         )
         self.assertEqual(
-            rendered.count(
-                "export PUB_CACHE=/tmp/vizor-android-reproducible/pub-cache"
-            ),
+            rendered.count("export PUB_CACHE=$(pwd)/.pub-cache"),
             6,
+        )
+        self.assertEqual(rendered.count("    scandelete:\n      - .pub-cache"), 3)
+        self.assertEqual(
+            rendered.count(
+                "cp -a $PUB_CACHE/. /tmp/vizor-android-reproducible/pub-cache/"
+            ),
+            3,
+        )
+        self.assertLess(
+            rendered.index("    scandelete:\n      - .pub-cache"),
+            rendered.index(
+                "cp -a $PUB_CACHE/. /tmp/vizor-android-reproducible/pub-cache/"
+            ),
         )
         self.assertEqual(
             rendered.count(
                 "export CARGO_HOME=/tmp/vizor-android-reproducible/cargo-home"
             ),
-            6,
+            3,
         )
+        self.assertNotIn("export GRADLE_USER_HOME=", rendered)
+        self.assertIn("  TetheredNet:", rendered)
+        self.assertEqual(rendered.count("functions.vizor.cash"), 2)
+        self.assertNotIn("third-party or Vizor-operated", rendered)
 
     def test_rejects_unexpected_signing_key(self) -> None:
         metadata = release_metadata()

@@ -6999,6 +6999,12 @@ void main() {
       find.byKey(const ValueKey('swap_receive_amount_field')),
       '105.26',
     );
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_receive_amount_field')),
+      '105.267',
+    );
+    await tester.pump();
+    expect(_fieldText(tester, 'swap_receive_amount_field'), '105.26');
     await _enterDestinationText(
       tester,
       '0x52908400098527886e0f7030069857d2e4169ee7',
@@ -7822,7 +7828,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('review quote uses shielded unified address as ZEC recipient', (
+  testWidgets('review quote uses Orchard-only UA as ZEC recipient', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -9367,7 +9373,7 @@ Widget _routerHarness(
       SpendableBalanceFreshness.authoritative,
   Duration? statusPollInterval,
   Duration? priceRefreshInterval,
-  LoadShieldedAddress? loadShieldedAddress,
+  ReserveOrchardAddress? loadShieldedAddress,
   bool seedSwapActivityFixtures = true,
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
@@ -9411,20 +9417,13 @@ Widget _routerHarness(
       ),
       swapZecStagingAddressServiceProvider.overrideWith(
         (ref) => SwapZecStagingAddressService(
-          loadCurrentShieldedAddress:
-              loadShieldedAddress ??
-              ({required accountUuid}) {
-                return ref
-                    .read(receiveAddressServiceProvider)
-                    .loadShieldedAddress(accountUuid: accountUuid);
-              },
-          prepareFreshShieldedAddress:
+          reserveFreshOrchardAddress:
               loadShieldedAddress ??
               ({required accountUuid}) {
                 final receiveAddressService = ref.read(
                   receiveAddressServiceProvider,
                 );
-                return receiveAddressService.renewShieldedAddress(
+                return receiveAddressService.reserveOrchardAddress(
                   accountUuid: accountUuid,
                 );
               },

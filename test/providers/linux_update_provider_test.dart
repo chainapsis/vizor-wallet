@@ -131,7 +131,7 @@ void main() {
   );
 
   test(
-    'a slow Linux release feed times out without blocking startup',
+    'a slow Linux release feed retries once without blocking startup',
     () async {
       final bridge = _LinuxUpdateTorBridge(waitForever: true);
 
@@ -149,7 +149,7 @@ void main() {
       );
 
       expect(update, isNull);
-      expect(bridge.requests, hasLength(1));
+      expect(bridge.requests, hasLength(2));
     },
   );
 

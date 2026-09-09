@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/review_info_row.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
@@ -412,11 +413,16 @@ class _DonationAmountEditorState extends State<_DonationAmountEditor> {
               child: TextField(
                 key: const ValueKey('donation_amount_field'),
                 controller: widget.controller,
+                autofocus: true,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 inputFormatters: [
-                  _DonationAmountInputFormatter(isUsd: widget.isUsd),
+                  const CommaToDotInputFormatter(),
+                  DecimalAmountInputFormatter(
+                    maxFractionDigits: widget.isUsd ? 2 : 8,
+                    maxLength: widget.isUsd ? 12 : 17,
+                  ),
                 ],
                 onChanged: widget.onChanged,
                 style: valueStyle,
@@ -431,49 +437,6 @@ class _DonationAmountEditorState extends State<_DonationAmountEditor> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _DonationAmountInputFormatter extends TextInputFormatter {
-  const _DonationAmountInputFormatter({required this.isUsd});
-
-  final bool isUsd;
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    var text = newValue.text.replaceAll(',', '.');
-    if (text.isEmpty) return newValue.copyWith(text: text);
-
-    final buffer = StringBuffer();
-    var hasDecimal = false;
-    for (final codeUnit in text.codeUnits) {
-      final character = String.fromCharCode(codeUnit);
-      if (character == '.') {
-        if (hasDecimal) continue;
-        hasDecimal = true;
-        buffer.write(character);
-      } else if (codeUnit >= 0x30 && codeUnit <= 0x39) {
-        buffer.write(character);
-      }
-    }
-
-    text = buffer.toString();
-    if (text.startsWith('.')) text = '0$text';
-    final maxLength = isUsd ? 12 : 17;
-    if (text.length > maxLength) text = text.substring(0, maxLength);
-    final decimalIndex = text.indexOf('.');
-    if (decimalIndex >= 0) {
-      final maxEnd = decimalIndex + 1 + (isUsd ? 2 : 8);
-      if (text.length > maxEnd) text = text.substring(0, maxEnd);
-    }
-
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

@@ -24,6 +24,7 @@ class FigmaCompareScenario {
     this.desktop = true,
     this.mobile = false,
     this.scrollToEnd = false,
+    this.allowFocus = false,
   });
 
   final String id;
@@ -32,6 +33,7 @@ class FigmaCompareScenario {
   final bool desktop;
   final bool mobile;
   final bool scrollToEnd;
+  final bool allowFocus;
 }
 
 /// Deterministic previews for the screens changed on the current branch.
@@ -69,6 +71,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'donation-zec-selected',
     description: 'Desktop donation composer with 0.02 ZEC selected',
     builder: buildDonationZecSelectedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'donation-zec-middle-cursor',
+    description: 'Desktop donation amount with a middle text cursor',
+    builder: buildDonationZecMiddleCursorUseCase,
+    allowFocus: true,
   ),
   FigmaCompareScenario(
     id: 'donation-usd-selected',
@@ -176,6 +184,28 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-recipient',
     description: 'Pay recipient selection with recent contacts',
     builder: buildPayRecipientUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-amount-empty-focused',
+    description: 'Desktop Pay amount with empty focused input',
+    builder: buildPayAmountUseCase,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-amount-empty-unfocused',
+    description: 'Desktop Pay amount with empty unfocused input',
+    builder: buildPayAmountEmptyUnfocusedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-amount-value-focused',
+    description: 'Desktop Pay amount with a focused value',
+    builder: buildPayAmountValueFocusedUseCase,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-amount-value-unfocused',
+    description: 'Desktop Pay amount with an unfocused value',
+    builder: buildPayAmountValueUnfocusedUseCase,
   ),
   FigmaCompareScenario(
     id: 'pay-recipient-new-address',

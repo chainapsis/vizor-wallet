@@ -479,13 +479,26 @@ class IronwoodMigrationBackgroundLifecycle {
 
   static final instance = IronwoodMigrationBackgroundLifecycle();
   static final Object _callerManagedQuiescenceZoneKey = Object();
+  static final Object _quiescenceLeaseZoneKey = Object();
 
   final IronwoodMigrationBackgroundCredentialStore _credentialStore;
   final MethodChannel _channel;
   final bool _isIOS;
   final bool _isAndroid;
   final List<Duration> _resumeRetryDelays;
-  final Queue<String> _androidQuiescenceLeaseIds = Queue<String>();
+  final Queue<String> _quiescenceLeaseIds = Queue<String>();
+  final Set<String> _pendingResumeLeaseIds = <String>{};
+
+  /// A stop retry must release the same native lease left by failed cleanup.
+  /// Async-local binding also prevents overlapping accounts from releasing one
+  /// another's leases when they finish in a different order.
+  static Future<T> runWithQuiescenceLease<T>(
+    String leaseId,
+    Future<T> Function() action,
+  ) => runZoned(action, zoneValues: {_quiescenceLeaseZoneKey: leaseId});
+
+  String? get _scopedLeaseId =>
+      Zone.current[_quiescenceLeaseZoneKey] as String?;
 
   bool get isQuiescenceManagedByCaller =>
       Zone.current[_callerManagedQuiescenceZoneKey] == true;
@@ -499,12 +512,11 @@ class IronwoodMigrationBackgroundLifecycle {
 
   Future<void> quiesce() async {
     if (!_isIOS && !_isAndroid) return;
-    final leaseId = _isAndroid ? _newAndroidQuiescenceLeaseId() : null;
-    if (leaseId != null) _androidQuiescenceLeaseIds.addLast(leaseId);
-    final quiesced = await _channel.invokeMethod<bool>(
-      'quiesce',
-      leaseId == null ? null : {'leaseId': leaseId},
-    );
+    final leaseId = _scopedLeaseId ?? _newQuiescenceLeaseId();
+    if (_scopedLeaseId == null) _quiescenceLeaseIds.addLast(leaseId);
+    final quiesced = await _channel.invokeMethod<bool>('quiesce', {
+      'leaseId': leaseId,
+    });
     if (quiesced != true) {
       throw StateError(
         'Failed to pause Ironwood migration before wallet data changed.',
@@ -514,39 +526,53 @@ class IronwoodMigrationBackgroundLifecycle {
 
   Future<void> resumeAfterMutation() async {
     if (!_isIOS && !_isAndroid) return;
-    final leaseId = _isAndroid && _androidQuiescenceLeaseIds.isNotEmpty
-        ? _androidQuiescenceLeaseIds.first
-        : null;
+    final scopedLeaseId = _scopedLeaseId;
+    // Reserve before awaiting the channel so concurrent resumes cannot select
+    // the same lease. Retries within this call keep using the reserved ID.
+    final leaseId =
+        scopedLeaseId ??
+        (_quiescenceLeaseIds.isNotEmpty
+            ? _quiescenceLeaseIds.removeFirst()
+            : _newQuiescenceLeaseId());
+    // Failed releases belong to completed mutations, not the pause queue.
+    // Try them separately and always release this mutation's own lease too.
+    final pendingLeaseIds = _pendingResumeLeaseIds.toList();
+    _pendingResumeLeaseIds.clear();
     Object? lastError;
-    for (final delay in _resumeRetryDelays) {
-      if (delay != Duration.zero) await Future<void>.delayed(delay);
-      try {
-        final resumed = await _channel.invokeMethod<bool>(
-          'resume',
-          leaseId == null ? null : {'leaseId': leaseId},
-        );
-        if (resumed == true) {
-          if (leaseId != null &&
-              _androidQuiescenceLeaseIds.isNotEmpty &&
-              _androidQuiescenceLeaseIds.first == leaseId) {
-            _androidQuiescenceLeaseIds.removeFirst();
+    for (final id in {...pendingLeaseIds, leaseId}) {
+      Object? releaseError;
+      var released = false;
+      for (final delay in _resumeRetryDelays) {
+        if (delay != Duration.zero) await Future<void>.delayed(delay);
+        try {
+          final resumed = await _channel.invokeMethod<bool>('resume', {
+            'leaseId': id,
+          });
+          if (resumed == true) {
+            released = true;
+            break;
           }
-          return;
+          releaseError = StateError('Native migration resume returned false.');
+        } catch (error) {
+          releaseError = error;
         }
-        lastError = StateError('Native migration resume returned false.');
-      } catch (error) {
-        lastError = error;
+      }
+      if (!released) {
+        if (id != scopedLeaseId) _pendingResumeLeaseIds.add(id);
+        lastError =
+            releaseError ?? StateError('Native resume was not attempted.');
       }
     }
+    if (lastError == null) return;
     throw StateError(
       'Failed to resume Ironwood migration after wallet data changed'
-      '${lastError == null ? '.' : ': $lastError'}',
+      ': $lastError',
     );
   }
 
   Future<void> resumeAfterFailedMutation() => resumeAfterMutation();
 
-  static String _newAndroidQuiescenceLeaseId() {
+  static String _newQuiescenceLeaseId() {
     final bytes = Uint8List(16);
     final random = Random.secure();
     for (var index = 0; index < bytes.length; index++) {

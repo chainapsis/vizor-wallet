@@ -16,10 +16,11 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
@@ -2291,7 +2292,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
     final inputFormatters = [
       const CommaToDotInputFormatter(),
-      _DecimalAmountInputFormatter(
+      DecimalAmountInputFormatter(
         maxFractionDigits: _amountInputIsUsd ? 2 : 8,
         maxLength: _amountInputIsUsd ? 12 : 17,
       ),
@@ -3109,54 +3110,6 @@ RenderEditable? _findRenderEditable(RenderObject root) {
     found ??= _findRenderEditable(child);
   });
   return found;
-}
-
-class _DecimalAmountInputFormatter extends TextInputFormatter {
-  const _DecimalAmountInputFormatter({
-    required this.maxFractionDigits,
-    required this.maxLength,
-  });
-
-  final int maxFractionDigits;
-  final int maxLength;
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    var text = newValue.text;
-    if (text.isEmpty) return newValue;
-
-    final buffer = StringBuffer();
-    var hasDecimal = false;
-    for (final codeUnit in text.codeUnits) {
-      final ch = String.fromCharCode(codeUnit);
-      if (ch == '.') {
-        if (hasDecimal) continue;
-        hasDecimal = true;
-        buffer.write(ch);
-        continue;
-      }
-      if (codeUnit >= 0x30 && codeUnit <= 0x39) {
-        buffer.write(ch);
-      }
-    }
-
-    text = buffer.toString();
-    if (text.startsWith('.')) text = '0$text';
-    if (text.length > maxLength) text = text.substring(0, maxLength);
-    final decimalIndex = text.indexOf('.');
-    if (decimalIndex >= 0) {
-      final maxEnd = decimalIndex + 1 + maxFractionDigits;
-      if (text.length > maxEnd) text = text.substring(0, maxEnd);
-    }
-
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-  }
 }
 
 class _ReviewZecIcon extends StatelessWidget {

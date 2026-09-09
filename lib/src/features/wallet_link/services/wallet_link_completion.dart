@@ -4,6 +4,8 @@ import '../models/wallet_link_models.dart';
 import 'wallet_link_api_client.dart';
 import 'wallet_link_completion_crypto.dart';
 
+const _bestEffortCompletionTimeout = Duration(seconds: 10);
+
 Future<void> completeWalletLinkPackageBestEffort({
   required String packageId,
   required String completionToken,
@@ -11,7 +13,7 @@ Future<void> completeWalletLinkPackageBestEffort({
   required int importedAccountCount,
   required int importedContactCount,
 }) async {
-  final client = WalletLinkApiClient(timeout: const Duration(seconds: 4));
+  final client = WalletLinkApiClient(timeout: _bestEffortCompletionTimeout);
   try {
     final completionEnvelope = await encryptWalletLinkImportSummary(
       summary: WalletLinkImportSummary(

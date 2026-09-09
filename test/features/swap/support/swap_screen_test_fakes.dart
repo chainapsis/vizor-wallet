@@ -18,6 +18,11 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     return 'u1actualshieldedrecipient';
   }
+
+  @override
+  Future<String> reserveOrchardAddress({required String accountUuid}) async {
+    return 'u1actualshieldedrecipient';
+  }
 }
 
 class _FakeSwapSyncNotifier extends SyncNotifier {

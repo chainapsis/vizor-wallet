@@ -1456,6 +1456,7 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func resumeAfterMutation() {
+    guard !BackgroundMigrationOutboxExecutionGate.shared.isPaused else { return }
     stateLock.withPreparationLock {
       expired = false
       mutationQuiesced = false

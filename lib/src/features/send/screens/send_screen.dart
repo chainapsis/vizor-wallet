@@ -20,6 +20,8 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/account_provider.dart';
@@ -1279,8 +1281,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               decimal: true,
                             ),
                             inputFormatters: [
-                              _SendAmountInputFormatter(
-                                isUsd: _amountInputIsUsd,
+                              const CommaToDotInputFormatter(),
+                              DecimalAmountInputFormatter(
+                                maxFractionDigits: _amountInputIsUsd ? 2 : 8,
+                                maxLength: _amountInputIsUsd ? 12 : 17,
                               ),
                             ],
                             onChanged: (_) => _handleAmountChanged(),
@@ -2095,51 +2099,6 @@ class _SendAmountPriceLoadingBar extends StatelessWidget {
         color: colors.background.overlay.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(AppRadii.full),
       ),
-    );
-  }
-}
-
-class _SendAmountInputFormatter extends TextInputFormatter {
-  const _SendAmountInputFormatter({required this.isUsd});
-
-  final bool isUsd;
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    var text = newValue.text.replaceAll(',', '.');
-    if (text.isEmpty) return newValue.copyWith(text: text);
-
-    final buffer = StringBuffer();
-    var hasDecimal = false;
-    for (final codeUnit in text.codeUnits) {
-      final ch = String.fromCharCode(codeUnit);
-      if (ch == '.') {
-        if (hasDecimal) continue;
-        hasDecimal = true;
-        buffer.write(ch);
-        continue;
-      }
-      if (codeUnit >= 0x30 && codeUnit <= 0x39) {
-        buffer.write(ch);
-      }
-    }
-
-    text = buffer.toString();
-    if (text.startsWith('.')) text = '0$text';
-    final maxLength = isUsd ? 12 : 17;
-    if (text.length > maxLength) text = text.substring(0, maxLength);
-    final decimalIndex = text.indexOf('.');
-    if (decimalIndex >= 0) {
-      final maxEnd = decimalIndex + 1 + (isUsd ? 2 : 8);
-      if (text.length > maxEnd) text = text.substring(0, maxEnd);
-    }
-
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

@@ -12,6 +12,8 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
+import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
@@ -65,6 +67,41 @@ void main() {
 
     expect(find.byType(SendScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount input preserves a middle selection while editing', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    final textField = tester.widget<TextField>(
+      find.descendant(
+        of: find.byKey(const ValueKey('send_amount_field')),
+        matching: find.byType(TextField),
+      ),
+    );
+    final formatters = textField.inputFormatters!;
+    expect(formatters.first, isA<CommaToDotInputFormatter>());
+    final formatter = formatters.last as DecimalAmountInputFormatter;
+    expect(formatter.maxFractionDigits, 8);
+    expect(formatter.maxLength, 17);
+
+    const edit = TextEditingValue(
+      text: '1293.45',
+      selection: TextSelection.collapsed(offset: 3),
+    );
+    expect(
+      formatter.formatEditUpdate(
+        const TextEditingValue(
+          text: '123.45',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+        edit,
+      ),
+      edit,
+    );
   });
 
   testWidgets('uses shell window backing behind the send sidebar and pane', (

@@ -271,24 +271,48 @@ import UIKit
         }
         result(true)
       case "quiesce":
-        BackgroundMigrationManager.shared.quiesce {
-          outboxSuccess in
-          guard outboxSuccess else {
-            result(false)
-            return
-          }
-          if #available(iOS 26.0, *) {
-            BackgroundMigrationPreparationManager.shared.quiesce {
-              preparationSuccess in result(preparationSuccess)
+        guard let arguments = call.arguments as? [String: Any],
+          let leaseId = arguments["leaseId"] as? String, !leaseId.isEmpty
+        else {
+          result(FlutterError(code: "invalid_arguments", message: "Missing migration mutation lease.", details: nil))
+          return
+        }
+        let gate = BackgroundMigrationOutboxExecutionGate.shared
+        gate.pause(leaseId: leaseId)
+        DispatchQueue.global(qos: .utility).async {
+          // Includes runOutboxOnceNow, not just BGProcessingTask's queue.
+          gate.waitUntilIdle()
+          DispatchQueue.main.async {
+            BackgroundMigrationManager.shared.quiesce { outboxSuccess in
+              guard outboxSuccess else {
+                result(false)
+                return
+              }
+              if #available(iOS 26.0, *) {
+                BackgroundMigrationPreparationManager.shared.quiesce {
+                  preparationSuccess in result(preparationSuccess)
+                }
+              } else {
+                result(true)
+              }
             }
-          } else {
-            result(true)
           }
         }
       case "resume":
+        guard let arguments = call.arguments as? [String: Any],
+          let leaseId = arguments["leaseId"] as? String, !leaseId.isEmpty
+        else {
+          result(FlutterError(code: "invalid_arguments", message: "Missing migration mutation lease.", details: nil))
+          return
+        }
+        let gate = BackgroundMigrationOutboxExecutionGate.shared
+        guard gate.resume(leaseId: leaseId) else {
+          result(true)
+          return
+        }
         BackgroundMigrationManager.shared.resumeAfterFailedMutation {
           resumed in
-          if #available(iOS 26.0, *) {
+          if #available(iOS 26.0, *), !gate.isPaused {
             BackgroundMigrationPreparationManager.shared.resumeAfterMutation()
           }
           DispatchQueue.main.async { result(resumed) }
