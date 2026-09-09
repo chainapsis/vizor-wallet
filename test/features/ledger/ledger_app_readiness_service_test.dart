@@ -14,13 +14,13 @@ void main() {
       device: _FakeDevice([
         const LedgerDeviceAppSnapshot(
           status: LedgerDeviceAppStatus.open,
-          version: '3.9.2',
+          version: '3.9.3',
         ),
       ]),
       onState: states.add,
     );
 
-    expect(await service.ensureReady(), '3.9.2');
+    expect(await service.ensureReady(), '3.9.3');
     expect(states.map((state) => state.phase), [
       LedgerAppReadinessPhase.checkingDevice,
       LedgerAppReadinessPhase.ready,
@@ -67,7 +67,7 @@ void main() {
           ),
           const LedgerDeviceAppSnapshot(
             status: LedgerDeviceAppStatus.open,
-            version: '3.9.2',
+            version: '3.9.3',
           ),
         ],
         openErrors: [StateError('request rejected 6985'), null],
@@ -90,12 +90,12 @@ void main() {
       expect(states.last.phase, LedgerAppReadinessPhase.failed);
       expect(states.last.failure, LedgerAppReadinessFailure.rejected);
 
-      expect(await service.ensureReady(), '3.9.2');
+      expect(await service.ensureReady(), '3.9.3');
       expect(states.last.phase, LedgerAppReadinessPhase.ready);
     },
   );
 
-  test('rejects a Zcash app older than 3.9.2', () async {
+  test('rejects a Zcash app older than 3.9.3', () async {
     final states = <LedgerAppReadinessState>[];
     final service = LedgerAppReadinessService(
       device: _FakeDevice([
@@ -116,7 +116,7 @@ void main() {
               'failure',
               LedgerAppReadinessFailure.unsupportedVersion,
             )
-            .having((error) => error.message, 'message', contains('3.9.2')),
+            .having((error) => error.message, 'message', contains('3.9.3')),
       ),
     );
     expect(states.last.failure, LedgerAppReadinessFailure.unsupportedVersion);
@@ -135,7 +135,7 @@ void main() {
 
       expect(
         await container.read(ledgerAppReadinessServiceProvider).ensureReady(),
-        '3.9.2',
+        '3.9.3',
       );
       expect(mobile.currentAppCalls, 1);
       expect(mobile.connectCalls, 0);
@@ -250,7 +250,7 @@ class _FakeMobileBleService implements LedgerMobileBleService {
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
     currentAppCalls++;
-    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
   }
 
   @override

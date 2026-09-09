@@ -186,7 +186,13 @@ pub(crate) fn map_status_word(status: u16) -> String {
             "Ledger device is locked; unlock it and reopen the Zcash app".into()
         }
         0x5501 => "Ledger request was rejected on the device".into(),
-        0x6985 => "Ledger request was rejected or the PCZT was not finalized".into(),
+        0x6985 => "Ledger request was rejected on the device (0x6985)".into(),
+        0x6986 => {
+            "Ledger signing preconditions were not met (0x6986): account path or PCZT finalization"
+                .into()
+        }
+        0x6f01 => "Ledger app version could not be parsed (0x6f01)".into(),
+        0x6f03 => "Ledger app random number generation failed (0x6f03)".into(),
         0x5502 => "Ledger device PIN is not set".into(),
         0x5223 => "Ledger device returned an internal error".into(),
         0x6601 => "Ledger device is busy switching apps; retry shortly".into(),
@@ -203,6 +209,17 @@ pub(crate) fn map_status_word(status: u16) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn status_words_distinguish_denial_preconditions_and_internal_failures() {
+        assert!(super::map_status_word(0x6985).contains("rejected"));
+        assert!(!super::map_status_word(0x6985).contains("finalized"));
+        for code in [0x6986, 0x6f01, 0x6f03] {
+            let message = super::map_status_word(code);
+            assert!(message.contains(&format!("0x{code:04x}")));
+            assert!(!message.contains("returned status"));
+            assert!(!message.contains("rejected"));
+        }
+    }
     use super::*;
 
     #[test]

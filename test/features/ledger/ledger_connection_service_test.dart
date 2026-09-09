@@ -311,7 +311,7 @@ class _ReadyDevice implements LedgerAppReadinessDevice {
     if (!available) throw StateError('No Ledger HID device');
     return const LedgerDeviceAppSnapshot(
       status: LedgerDeviceAppStatus.open,
-      version: '3.9.2',
+      version: '3.9.3',
     );
   }
 
@@ -382,7 +382,7 @@ class _FakeBleService implements LedgerMobileBleService {
 
   @override
   Future<LedgerMobileAppInfo> currentApp() async =>
-      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
 
   @override
   Future<LedgerMobileAppInfo> requestOpenZcashApp() => currentApp();

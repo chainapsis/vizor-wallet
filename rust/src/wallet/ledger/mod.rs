@@ -7,7 +7,7 @@
 pub(crate) mod apdu;
 mod operations;
 mod parse;
-mod serializer;
+pub(crate) mod serializer;
 
 pub(crate) use operations::{
     acknowledge as acknowledge_signed_operation, broadcast as broadcast_signed_operation,
@@ -47,7 +47,7 @@ const LEDGER_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const APP_TRANSITION_TIMEOUT: Duration = Duration::from_secs(10);
 const APP_TRANSITION_POLL_INTERVAL: Duration = Duration::from_millis(200);
 #[cfg(target_os = "macos")]
-const SIGNING_STATUS_COOLDOWN: Duration = Duration::from_secs(4);
+const SIGNING_STATUS_COOLDOWN: Duration = Duration::from_secs(3);
 #[cfg(target_os = "macos")]
 const SIGNING_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const ZCASH_APP_NAME: &str = "Zcash";
@@ -322,7 +322,7 @@ pub(crate) fn validate_pczt_release_support(pczt_bytes: &[u8]) -> Result<(), Str
     require_legacy_orchard_recovery_support(has_orchard_spend, has_ironwood_output)
 }
 
-fn require_legacy_orchard_recovery_support(
+pub(crate) fn require_legacy_orchard_recovery_support(
     has_orchard_spend: bool,
     has_ironwood_output: bool,
 ) -> Result<(), String> {
@@ -961,6 +961,12 @@ mod tests {
         consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
         value::Zatoshis,
     };
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn signing_cooldown_is_three_seconds() {
+        assert_eq!(SIGNING_STATUS_COOLDOWN, Duration::from_secs(3));
+    }
 
     #[test]
     fn cancellation_targets_only_the_active_operation_generation() {

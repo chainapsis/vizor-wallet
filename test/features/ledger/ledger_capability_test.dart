@@ -48,12 +48,16 @@ void main() {
   });
 
   test('accepts the minimum and newer Ledger Zcash app versions', () {
-    expect(() => requireSupportedLedgerAppVersion('3.9.2'), returnsNormally);
+    expect(() => requireSupportedLedgerAppVersion('3.9.3'), returnsNormally);
     expect(() => requireSupportedLedgerAppVersion('3.10.0'), returnsNormally);
     expect(() => requireSupportedLedgerAppVersion('4.0.0'), returnsNormally);
   });
 
   test('rejects old or malformed Ledger Zcash app versions', () {
+    expect(
+      () => requireSupportedLedgerAppVersion('3.9.2'),
+      throwsUnsupportedError,
+    );
     expect(
       () => requireSupportedLedgerAppVersion('3.9.1'),
       throwsUnsupportedError,

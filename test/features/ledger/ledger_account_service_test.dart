@@ -14,7 +14,7 @@ void main() {
     ufvk: 'uview-test',
     seedFingerprint: [1, 2, 3],
     accountIndex: 0,
-    appVersion: '3.9.2',
+    appVersion: '3.9.3',
   );
 
   test('Ledger import rejects an export without wallet identity', () async {

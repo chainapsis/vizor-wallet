@@ -7,6 +7,11 @@ use super::parse::{
 
 pub(super) const MAX_PACKET_SIZE: usize = 255;
 
+// Ledger Zcash app 3.9.3. These are per bundle, not per signing session.
+pub(crate) const MAX_TRANSPARENT_INPUTS: usize = 32;
+pub(crate) const MAX_TRANSPARENT_OUTPUTS: usize = 10;
+pub(crate) const MAX_SHIELDED_ACTIONS: usize = 32;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct CommandPackets {
     pub instruction: u8,
@@ -51,7 +56,7 @@ pub(super) fn serialize_pczt(pczt: &ParsedPczt) -> Result<Vec<CommandPackets>, S
 }
 
 fn serialize_transparent_inputs(inputs: &[TransparentInput]) -> Result<Vec<Vec<u8>>, String> {
-    ensure_count("transparent inputs", inputs.len())?;
+    ensure_count("transparent inputs", inputs.len(), MAX_TRANSPARENT_INPUTS)?;
     let mut packets = vec![compact_size(inputs.len())?];
 
     for input in inputs {
@@ -94,7 +99,11 @@ fn serialize_header(global: &Global) -> Vec<u8> {
 }
 
 fn serialize_transparent_outputs(outputs: &[TransparentOutput]) -> Result<Vec<Vec<u8>>, String> {
-    ensure_count("transparent outputs", outputs.len())?;
+    ensure_count(
+        "transparent outputs",
+        outputs.len(),
+        MAX_TRANSPARENT_OUTPUTS,
+    )?;
     let mut packets = vec![compact_size(outputs.len())?];
 
     for output in outputs {
@@ -145,7 +154,7 @@ fn serialize_shielded_bundle(
     anchor: &[u8; 32],
     note_version: impl Fn(usize) -> Option<u8>,
 ) -> Result<Vec<Vec<u8>>, String> {
-    ensure_count("shielded actions", actions.len())?;
+    ensure_count("shielded actions", actions.len(), MAX_SHIELDED_ACTIONS)?;
     let mut packets = vec![compact_size(actions.len())?];
     if actions.is_empty() {
         return Ok(packets);
@@ -260,9 +269,11 @@ fn compact_size(value: usize) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn ensure_count(label: &str, count: usize) -> Result<(), String> {
-    if count > 10 {
-        Err(format!("Ledger supports at most 10 {label}; found {count}"))
+fn ensure_count(label: &str, count: usize, maximum: usize) -> Result<(), String> {
+    if count > maximum {
+        Err(format!(
+            "Ledger supports at most {maximum} {label}; found {count}"
+        ))
     } else {
         Ok(())
     }
@@ -314,6 +325,19 @@ fn push_optional_u32_le(bytes: &mut Vec<u8>, value: Option<u32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn category_limits_are_not_interchangeable() {
+        assert!(ensure_count("shielded actions", 32, MAX_SHIELDED_ACTIONS).is_ok());
+        assert!(ensure_count("shielded actions", 33, MAX_SHIELDED_ACTIONS).is_err());
+        let output = TransparentOutput {
+            value: 1,
+            script_pubkey: transparent_input().script_pubkey,
+            derivation: None,
+        };
+        assert!(serialize_transparent_outputs(&vec![output.clone(); 10]).is_ok());
+        assert!(serialize_transparent_outputs(&vec![output; 11]).is_err());
+    }
 
     fn global(tx_version: u32) -> Global {
         Global {
@@ -447,10 +471,11 @@ mod tests {
     }
 
     #[test]
-    fn transparent_input_packets_reject_more_than_ten_inputs() {
-        let inputs = vec![transparent_input(); 11];
+    fn transparent_input_packets_accept_32_and_reject_33_inputs() {
+        assert!(serialize_transparent_inputs(&vec![transparent_input(); 32]).is_ok());
+        let inputs = vec![transparent_input(); 33];
         assert!(serialize_transparent_inputs(&inputs)
             .unwrap_err()
-            .contains("at most 10 transparent inputs"));
+            .contains("at most 32 transparent inputs"));
     }
 }
