@@ -1,11 +1,14 @@
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
+import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -21,6 +24,30 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 
 void main() {
+  testWidgets('Ledger sidebar export preserves 2x pixels and transparency', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      final bytes = await rootBundle.load(
+        'assets/illustrations/onboarding_ledger_sidebar.png',
+      );
+      final codec = await ui.instantiateImageCodec(bytes.buffer.asUint8List());
+      final frame = await codec.getNextFrame();
+      expect(frame.image.width, 512);
+      expect(frame.image.height, 860);
+      final pixels = await frame.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      expect(
+        pixels!.getUint8(3),
+        0,
+        reason: 'Top edge must blend with either sidebar theme',
+      );
+      frame.image.dispose();
+      codec.dispose();
+    });
+  });
+
   testWidgets('exports the approved Ledger account and continues setup', (
     tester,
   ) async {
@@ -53,6 +80,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Connect Ledger'), findsWidgets);
+    final illustration = tester.widget<Image>(
+      find.byKey(const ValueKey('ledger_connect_sidebar_illustration')),
+    );
+    expect(illustration.image, isA<ExactAssetImage>());
+    final asset = illustration.image as ExactAssetImage;
+    expect(
+      asset.assetName,
+      'assets/illustrations/onboarding_ledger_sidebar.png',
+    );
+    expect(asset.scale, 2);
+    expect(illustration.width, 256);
+    expect(illustration.height, 430);
+    expect(illustration.fit, BoxFit.contain);
     expect(
       find.byKey(const ValueKey('ledger_account_index_field')),
       findsNothing,
@@ -96,7 +136,7 @@ void main() {
     expect(
       tester.getSemantics(disclosure),
       isSemantics(
-        label: 'Advanced options',
+        label: 'Account index · 0',
         isButton: true,
         isEnabled: true,
         isExpanded: false,
@@ -118,7 +158,7 @@ void main() {
     expect(
       tester.getSemantics(disclosure),
       isSemantics(
-        label: 'Advanced options',
+        label: 'Account index · 0',
         isButton: true,
         isEnabled: true,
         isExpanded: true,
@@ -162,6 +202,9 @@ void main() {
       find.byKey(const ValueKey('ledger_account_index_field')),
       '12',
     );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('ledger_connect_button')),
+    );
     await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
     await tester.pumpAndSettle();
 
@@ -195,6 +238,17 @@ void main() {
       );
       await tester.tap(disclosure);
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('ledger_connect_button')),
+      );
+      final prompt = find.byKey(
+        const ValueKey('ledger_connection_preparation'),
+      );
+      final promptBounds = tester.getRect(prompt);
+      final indexField = find.byKey(
+        const ValueKey('ledger_account_index_field'),
+      );
+      final indexBounds = tester.getRect(indexField);
       await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
       await tester.pump();
 
@@ -208,13 +262,16 @@ void main() {
       expect(spinner, findsOneWidget);
       expect(
         tester.getCenter(spinner).dx,
-        greaterThan(tester.getCenter(find.text('Approve on Ledger')).dx),
+        greaterThan(tester.getCenter(find.text('Waiting for Ledger')).dx),
       );
+      expect(tester.getRect(prompt), promptBounds);
+      expect(tester.getRect(indexField), indexBounds);
+      expect(find.text('Check your Ledger'), findsOneWidget);
 
       expect(
         tester.getSemantics(disclosure),
         isSemantics(
-          label: 'Advanced options',
+          label: 'Account index · 0',
           isButton: true,
           isEnabled: false,
           isExpanded: true,
@@ -268,7 +325,7 @@ void main() {
     expect(find.text('home-route'), findsNothing);
   });
 
-  testWidgets('keeps the import route while showing the readiness stage', (
+  testWidgets('keeps a calm waiting label while the device is being prepared', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -293,7 +350,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
     await tester.pump();
 
-    expect(find.text('Checking device'), findsOneWidget);
+    expect(find.text('Waiting for Ledger'), findsOneWidget);
+    expect(find.text('Checking device'), findsNothing);
     expect(find.text('Connect Ledger'), findsWidgets);
     expect(find.text('home-route'), findsNothing);
 
@@ -318,7 +376,7 @@ void main() {
             ufvk: 'uview-bluetooth',
             seedFingerprint: const [4, 5, 6],
             accountIndex: accountIndex,
-            appVersion: '3.9.2',
+            appVersion: '3.9.3',
             transport: LedgerConnectionTransport.bluetooth,
             device: device,
           );
@@ -344,6 +402,23 @@ void main() {
       find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
       findsOneWidget,
     );
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
+    final modalPaneRect = tester.getRect(
+      find.byKey(const ValueKey('ledger_desktop_ble_modal_pane')),
+    );
+    final cardRect = tester.getRect(
+      find.byKey(const ValueKey('ledger_desktop_ble_connect_dialog')),
+    );
+    expect(modalPaneRect, paneRect);
+    expect(cardRect.center.dx, paneRect.center.dx);
+    expect(cardRect.width, 440);
+    expect(find.byType(AppPaneModalOverlay), findsOneWidget);
+    // The route barrier blocks background interaction without dimming the sidebar.
+    for (final barrier in tester.widgetList<ModalBarrier>(
+      find.byType(ModalBarrier),
+    )) {
+      expect(barrier.color?.a ?? 0, 0);
+    }
     await tester.tap(
       find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
     );
@@ -351,7 +426,9 @@ void main() {
 
     expect(find.text('Ledger Flex is ready'), findsOneWidget);
     expect(
-      find.text('Zcash 3.9.2 approved account 0 over Bluetooth.'),
+      find.text(
+        'Your viewing key was shared. Continue to finish adding your account.',
+      ),
       findsOneWidget,
     );
     expect(ble.connectedDeviceId, 'ledger-1');
@@ -428,6 +505,9 @@ void main() {
       expect(find.text('Different Ledger'), findsNothing);
       expect(find.text('Next available index: 1'), findsOneWidget);
 
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('ledger_advanced_options_disclosure')),
+      );
       await tester.tap(
         find.byKey(const ValueKey('ledger_advanced_options_disclosure')),
       );
@@ -440,11 +520,70 @@ void main() {
         find.byKey(const ValueKey('ledger_account_index_field')),
         '2',
       );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('ledger_connect_button')),
+      );
       await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
       await tester.pumpAndSettle();
 
       expect(
         find.text('Index 2 is already used by this Ledger wallet.'),
+        findsOneWidget,
+      );
+
+      final indexInput = find.byKey(
+        const ValueKey('ledger_account_index_field'),
+      );
+      final indexMessage = find.byKey(
+        const ValueKey('ledger_account_index_message'),
+      );
+      expect(tester.widget<AppTextField>(indexInput).messageText, isNull);
+      expect(
+        tester.getRect(indexMessage).top,
+        greaterThan(tester.getRect(indexInput).bottom),
+      );
+      expect(
+        find.text(
+          'Use a different index to restore or add another Ledger account.',
+        ),
+        findsNothing,
+      );
+      final usb = find.byKey(const ValueKey('ledger_connect_button'));
+      final bluetooth = find.byKey(
+        const ValueKey('ledger_desktop_ble_connect_button'),
+      );
+      expect(
+        tester.getRect(usb).top,
+        greaterThan(tester.getRect(indexMessage).bottom),
+      );
+      expect(tester.getSize(usb), tester.getSize(bluetooth));
+      expect(tester.getRect(usb).top, tester.getRect(bluetooth).top);
+      expect(
+        tester.getRect(usb).right,
+        lessThan(tester.getRect(bluetooth).left),
+      );
+      expect(
+        tester.widget<AppButton>(usb).variant,
+        tester.widget<AppButton>(bluetooth).variant,
+      );
+      expect(
+        (tester.widget<AppButton>(usb).leading! as AppIcon).name,
+        AppIcons.usb,
+      );
+      expect(
+        (tester.widget<AppButton>(bluetooth).leading! as AppIcon).name,
+        AppIcons.bluetooth,
+      );
+      await tester.enterText(indexInput, '1');
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Index 2 is already used by this Ledger wallet.'),
+        findsNothing,
+      );
+      expect(
+        find.text(
+          'Use a different index to restore or add another Ledger account.',
+        ),
         findsOneWidget,
       );
       expect(connectorCalls, 0);
@@ -493,6 +632,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('ledger_connect_button')),
+    );
     await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
     await tester.pumpAndSettle();
 
@@ -655,7 +797,7 @@ class _FakeLedgerBleService implements LedgerMobileBleService {
   @override
   Future<LedgerMobileAppInfo> requestOpenZcashApp() async {
     openAppCalls++;
-    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
   }
 
   @override

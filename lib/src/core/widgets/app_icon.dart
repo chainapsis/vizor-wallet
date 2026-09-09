@@ -17,6 +17,7 @@ import 'app_loading_icon.dart';
 /// [loader] is code-drawn rather than loaded from SVG.
 abstract final class AppIcons {
   static const addNew = 'add_new';
+  static const usb = 'usb';
   static const arrowBack = 'arrow_back';
   static const arrowBottomLeft = 'arrow_bottom_left';
   static const arrowDown = 'arrow_down';
@@ -28,6 +29,7 @@ abstract final class AppIcons {
   static const backspace = 'backspace';
   static const bell = 'bell';
   static const block = 'block';
+  static const bluetooth = 'bluetooth';
   static const book = 'book';
   static const calendar = 'calendar';
   static const camera = 'camera';

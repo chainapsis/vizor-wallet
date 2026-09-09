@@ -17,7 +17,8 @@ import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
 import '../../ledger/services/ledger_signing_service.dart';
-import '../../ledger/widgets/ledger_device_app_prompt.dart';
+import '../../ledger/ledger_app_instructions.dart';
+import '../../ledger/widgets/ledger_connection_guide.dart';
 import '../shared/onboarding_chrome.dart';
 import 'ledger_desktop_ble_probe_dialog.dart';
 import 'ledger_account_import_context.dart';
@@ -70,14 +71,31 @@ class LedgerOnboardingShell extends ConsumerWidget {
               active: step == activeStep,
             ),
         ],
-        illustration: Center(
-          child: AppIcon(
-            AppIcons.ledgerBrand,
-            size: 88,
-            color: context.colors.icon.muted,
-            semanticLabel: 'Ledger',
-          ),
-        ),
+        illustration: activeStep == LedgerOnboardingStep.connect
+            ? IgnorePointer(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Image.asset(
+                    'assets/illustrations/onboarding_ledger_sidebar.png',
+                    key: const ValueKey('ledger_connect_sidebar_illustration'),
+                    // Figma 8495:28027 is 256 × 430, exported at 2×.
+                    width: 256,
+                    height: 430,
+                    scale: 2,
+                    fit: BoxFit.contain,
+                    alignment: Alignment.bottomCenter,
+                    excludeFromSemantics: true,
+                  ),
+                ),
+              )
+            : Center(
+                child: AppIcon(
+                  AppIcons.ledgerBrand,
+                  size: 88,
+                  color: context.colors.icon.muted,
+                  semanticLabel: 'Ledger',
+                ),
+              ),
       ),
       pane: OnboardingPaneChrome(
         backTarget: backTarget,
@@ -310,23 +328,11 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     return 'Vizor could not read this Ledger account. $appInstruction Then try again.';
   }
 
-  String _connectButtonLabel(LedgerAppReadinessState readiness) {
-    if (_phase == _LedgerConnectPhase.idle) return 'Connect and continue';
-    return switch (readiness.phase) {
-      LedgerAppReadinessPhase.checkingDevice => 'Checking device',
-      LedgerAppReadinessPhase.confirmOpening => 'Confirm opening Zcash',
-      LedgerAppReadinessPhase.ready ||
-      LedgerAppReadinessPhase.idle ||
-      LedgerAppReadinessPhase.failed => 'Approve on Ledger',
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     final networkName = ref.watch(
       rpcEndpointProvider.select((endpoint) => endpoint.networkName),
     );
-    final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final accounts = ref.watch(accountProvider).value?.accounts ?? const [];
     final accountContext = resolveLedgerAccountImportContext(
       accounts: accounts,
@@ -340,9 +346,8 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
         setState(() {});
       });
     }
-    final disclosureLabel = accountContext == null
-        ? 'Advanced options'
-        : 'Choose a different index';
+    final disclosureLabel =
+        'Account index · ${_accountIndexController.text.isEmpty ? '—' : _accountIndexController.text}';
     return LedgerOnboardingShell(
       activeStep: LedgerOnboardingStep.connect,
       backTarget: accountContext == null
@@ -354,133 +359,196 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
               label: 'Accounts',
               routePath: '/accounts',
             ),
-      child: Center(
-        child: SingleChildScrollView(
-          child: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Connect Ledger',
-                  style: AppTypography.displayLarge.copyWith(
-                    fontFamily: 'Young Serif',
-                    fontWeight: FontWeight.w400,
-                    color: context.colors.text.accent,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'Vizor imports a watch-only account after you approve sharing its viewing key.',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: context.colors.text.primary,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.base),
-                LedgerDeviceAppPrompt(networkName: networkName),
-                if (accountContext != null) ...[
-                  const SizedBox(height: AppSpacing.base),
-                  _KnownLedgerAccountsCard(accountContext: accountContext),
-                ],
-                const SizedBox(height: AppSpacing.base),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: context.colors.background.neutralSubtleOpacity,
-                    borderRadius: BorderRadius.circular(AppRadii.medium),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Semantics(
-                        key: const ValueKey(
-                          'ledger_advanced_options_disclosure',
-                        ),
-                        button: true,
-                        enabled: !_busy,
-                        expanded: _showAdvancedOptions,
-                        label: disclosureLabel,
-                        onTap: _busy ? null : _toggleAdvancedOptions,
-                        child: ExcludeSemantics(
-                          child: AppButton(
-                            onPressed: _busy ? null : _toggleAdvancedOptions,
-                            variant: AppButtonVariant.ghost,
-                            size: AppButtonSize.medium,
-                            trailing: RotatedBox(
-                              quarterTurns: _showAdvancedOptions ? 2 : 0,
-                              child: const AppIcon(AppIcons.arrowDown),
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          key: const ValueKey('ledger_connect_scroll'),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Connect Ledger',
+                      style: AppTypography.displayLarge.copyWith(
+                        fontFamily: 'Young Serif',
+                        fontWeight: FontWeight.w400,
+                        color: context.colors.text.accent,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Add your Ledger account to Vizor.',
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    LedgerConnectionGuide(
+                      networkName: networkName,
+                      awaitingAccountApproval: _busy,
+                    ),
+                    if (accountContext != null) ...[
+                      const SizedBox(height: AppSpacing.base),
+                      _KnownLedgerAccountsCard(accountContext: accountContext),
+                    ],
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Semantics(
+                              key: const ValueKey(
+                                'ledger_advanced_options_disclosure',
+                              ),
+                              button: true,
+                              enabled: !_busy,
+                              expanded: _showAdvancedOptions,
+                              label: disclosureLabel,
+                              onTap: _busy ? null : _toggleAdvancedOptions,
+                              child: ExcludeSemantics(
+                                child: AppButton(
+                                  onPressed: _busy
+                                      ? null
+                                      : _toggleAdvancedOptions,
+                                  variant: AppButtonVariant.ghost,
+                                  size: AppButtonSize.small,
+                                  expand: false,
+                                  constrainContent: false,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.s,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(disclosureLabel),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      RotatedBox(
+                                        quarterTurns: _showAdvancedOptions
+                                            ? 2
+                                            : 0,
+                                        child: const AppIcon(
+                                          AppIcons.arrowDown,
+                                          key: ValueKey(
+                                            'ledger_advanced_options_chevron',
+                                          ),
+                                          size: 16,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
-                            child: Text(disclosureLabel),
+                          ),
+                          if (_showAdvancedOptions) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.sm,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  AppTextField(
+                                    key: const ValueKey(
+                                      'ledger_account_index_field',
+                                    ),
+                                    label: 'Ledger account index',
+                                    controller: _accountIndexController,
+                                    enabled: !_busy,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
+                                    onChanged: _handleAccountIndexChanged,
+                                    tone: _accountIndexError == null
+                                        ? AppTextFieldTone.neutral
+                                        : AppTextFieldTone.destructive,
+                                  ),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Text(
+                                    _accountIndexError ??
+                                        'Use a different index to restore or add another Ledger account.',
+                                    key: const ValueKey(
+                                      'ledger_account_index_message',
+                                    ),
+                                    style: AppTypography.bodySmall.copyWith(
+                                      color: _accountIndexError == null
+                                          ? context.colors.text.secondary
+                                          : context.colors.text.destructive,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (_error case final error?) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        error,
+                        key: const ValueKey('ledger_connect_error'),
+                        style: AppTypography.bodySmall.copyWith(
+                          color: context.colors.text.destructive,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.sm),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: AppButton(
+                            key: const ValueKey('ledger_connect_button'),
+                            onPressed: _busy
+                                ? null
+                                : () => unawaited(_connect()),
+                            variant: AppButtonVariant.secondary,
+                            leading: _busy ? null : const AppIcon(AppIcons.usb),
+                            expand: true,
+                            constrainContent: true,
+                            trailing: _busy
+                                ? const AppIcon(
+                                    AppIcons.loader,
+                                    key: ValueKey('ledger_connect_spinner'),
+                                    semanticLabel: 'Connecting to Ledger',
+                                  )
+                                : null,
+                            child: Text(_busy ? 'Waiting for Ledger' : 'USB'),
                           ),
                         ),
-                      ),
-                      if (_showAdvancedOptions) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        AppTextField(
-                          key: const ValueKey('ledger_account_index_field'),
-                          label: 'Ledger account index',
-                          controller: _accountIndexController,
-                          enabled: !_busy,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          onChanged: _handleAccountIndexChanged,
-                          messageText: _accountIndexError,
-                          tone: _accountIndexError == null
-                              ? AppTextFieldTone.neutral
-                              : AppTextFieldTone.destructive,
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: AppButton(
+                            key: const ValueKey(
+                              'ledger_desktop_ble_connect_button',
+                            ),
+                            onPressed: _busy
+                                ? null
+                                : () => unawaited(_connectBluetooth()),
+                            variant: AppButtonVariant.secondary,
+                            expand: true,
+                            leading: const AppIcon(AppIcons.bluetooth),
+                            constrainContent: true,
+                            child: const Text('Bluetooth'),
+                          ),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-                if (_error case final error?) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    error,
-                    key: const ValueKey('ledger_connect_error'),
-                    style: AppTypography.bodySmall.copyWith(
-                      color: context.colors.text.destructive,
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.base),
-                AppButton(
-                  key: const ValueKey('ledger_connect_button'),
-                  onPressed: _busy ? null : () => unawaited(_connect()),
-                  variant: AppButtonVariant.primary,
-                  minWidth: 230,
-                  leading: _busy
-                      ? null
-                      : const AppIcon(AppIcons.ledger, semanticLabel: 'Ledger'),
-                  trailing: _busy
-                      ? const AppIcon(
-                          AppIcons.loader,
-                          key: ValueKey('ledger_connect_spinner'),
-                          semanticLabel: 'Connecting to Ledger',
-                        )
-                      : null,
-                  child: Text(_connectButtonLabel(readiness)),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                AppButton(
-                  key: const ValueKey('ledger_desktop_ble_connect_button'),
-                  onPressed: _busy
-                      ? null
-                      : () => unawaited(_connectBluetooth()),
-                  variant: AppButtonVariant.ghost,
-                  leading: const AppIcon(
-                    AppIcons.ledger,
-                    semanticLabel: 'Ledger',
-                  ),
-                  child: const Text('Connect with Bluetooth'),
-                ),
-              ],
+              ),
             ),
           ),
         ),

@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/layout/content_overlay_inset.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
@@ -16,15 +18,45 @@ Future<LedgerDeviceAccount?> showLedgerDesktopBleConnectDialog({
   required LedgerBluetoothAccountConnector connector,
   required int accountIndex,
 }) async {
+  final appTheme = AppTheme.of(context);
   final account = await showDialog<LedgerDeviceAccount>(
     context: context,
     barrierDismissible: false,
-    builder: (dialogContext) => _LedgerDesktopBleConnectDialog(
-      service: service,
-      connector: connector,
-      accountIndex: accountIndex,
-      onConnected: (account) => Navigator.of(dialogContext).pop(account),
-      onClose: () => Navigator.of(dialogContext).pop(),
+    barrierColor: Colors.transparent,
+    builder: (dialogContext) => AppTheme(
+      data: appTheme,
+      child: ValueListenableBuilder<double>(
+        valueListenable: contentOverlayLeftInset,
+        builder: (_, leftInset, child) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            leftInset,
+            AppSpacing.xs,
+            AppSpacing.xs,
+            AppSpacing.xs,
+          ),
+          child: Stack(
+            key: const ValueKey('ledger_desktop_ble_modal_pane'),
+            fit: StackFit.expand,
+            children: [
+              AppPaneModalOverlay(
+                // Closing stays explicit while device operations are active.
+                onDismiss: () {},
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  child: child!,
+                ),
+              ),
+            ],
+          ),
+        ),
+        child: _LedgerDesktopBleConnectDialog(
+          service: service,
+          connector: connector,
+          accountIndex: accountIndex,
+          onConnected: (account) => Navigator.of(dialogContext).pop(account),
+          onClose: () => Navigator.of(dialogContext).pop(),
+        ),
+      ),
     ),
   );
   if (account == null) {
@@ -208,64 +240,84 @@ class _LedgerDesktopBleConnectDialogState
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      key: const ValueKey('ledger_desktop_ble_connect_dialog'),
-      backgroundColor: Colors.transparent,
+    return Material(
+      type: MaterialType.transparency,
       child: AppModalCard(
+        key: const ValueKey('ledger_desktop_ble_connect_dialog'),
         width: 440,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Connect Ledger with Bluetooth',
-              style: AppTypography.headlineMedium.copyWith(
-                color: context.colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Supported on Ledger ${ledgerBluetoothSupportedModels(TargetPlatform.macOS)}. Vizor will read the public viewing key after you approve it on the device.',
-              style: AppTypography.bodySmall.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            _buildBody(context),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (_phase == _ProbePhase.empty ||
-                    _phase == _ProbePhase.failed) ...[
-                  AppButton(
-                    key: const ValueKey('ledger_desktop_ble_retry'),
-                    onPressed: _busy
-                        ? null
-                        : () => unawaited(_startDiscovery()),
-                    variant: AppButtonVariant.secondary,
-                    child: const Text('Try again'),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                ],
-                if (_phase == _ProbePhase.ready) ...[
-                  AppButton(
-                    key: const ValueKey('ledger_desktop_ble_continue'),
-                    onPressed: () => widget.onConnected(_account!),
-                    variant: AppButtonVariant.primary,
-                    child: const Text('Continue'),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                ],
-                AppButton(
-                  key: const ValueKey('ledger_desktop_ble_close'),
-                  onPressed: widget.onClose,
-                  variant: AppButtonVariant.ghost,
-                  child: const Text('Close'),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Choose your Ledger',
+                textAlign: TextAlign.center,
+                style: AppTypography.headlineMedium.copyWith(
+                  color: context.colors.text.accent,
                 ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Unlock your Ledger, turn on Bluetooth, and keep it nearby.',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _buildBody(context),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Bluetooth is available on Ledger ${ledgerBluetoothSupportedModels(TargetPlatform.macOS)}.',
+                style: AppTypography.bodySmall.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Visibility(
+                    visible:
+                        _phase == _ProbePhase.empty ||
+                        _phase == _ProbePhase.failed ||
+                        _phase == _ProbePhase.ready,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: AppButton(
+                      expand: true,
+                      constrainContent: true,
+                      key: ValueKey(
+                        _phase == _ProbePhase.ready
+                            ? 'ledger_desktop_ble_continue'
+                            : 'ledger_desktop_ble_retry',
+                      ),
+                      onPressed: _phase == _ProbePhase.ready
+                          ? () => widget.onConnected(_account!)
+                          : _busy
+                          ? null
+                          : () => unawaited(_startDiscovery()),
+                      child: Text(
+                        _phase == _ProbePhase.ready ? 'Continue' : 'Try again',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppButton(
+                    key: const ValueKey('ledger_desktop_ble_close'),
+                    expand: true,
+                    constrainContent: true,
+                    onPressed: widget.onClose,
+                    variant: AppButtonVariant.ghost,
+                    child: const Text('Cancel'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -273,17 +325,24 @@ class _LedgerDesktopBleConnectDialogState
 
   Widget _buildBody(BuildContext context) {
     if (_phase == _ProbePhase.devices) {
-      return Column(
-        children: [
-          for (final device in _devices)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: _DeviceRow(
-                device: device,
-                onTap: () => unawaited(_connect(device)),
-              ),
-            ),
-        ],
+      return ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.3,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              for (final device in _devices)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: _DeviceRow(
+                    device: device,
+                    onTap: () => unawaited(_connect(device)),
+                  ),
+                ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -294,7 +353,7 @@ class _LedgerDesktopBleConnectDialogState
         'macOS may ask for Bluetooth permission.',
       ),
       _ProbePhase.scanning => (
-        AppIcons.search,
+        AppIcons.loader,
         'Scanning for Ledger devices',
         'This can take a few seconds.',
       ),
@@ -305,13 +364,13 @@ class _LedgerDesktopBleConnectDialogState
       ),
       _ProbePhase.readingAccount => (
         AppIcons.loader,
-        'Reading Ledger account',
+        'Approve on your Ledger',
         'Confirm opening Zcash and approve the viewing-key request on your Ledger.',
       ),
       _ProbePhase.ready => (
-        AppIcons.ledger,
+        AppIcons.checkCircle,
         '${_connectedDevice?.name ?? 'Ledger'} is ready',
-        'Zcash ${_account?.appVersion ?? ''} approved account ${_account?.accountIndex ?? ''} over Bluetooth.',
+        'Your viewing key was shared. Continue to finish adding your account.',
       ),
       _ProbePhase.empty => (
         AppIcons.search,
@@ -319,42 +378,34 @@ class _LedgerDesktopBleConnectDialogState
         'Check Bluetooth and make sure the Ledger is unlocked.',
       ),
       _ProbePhase.failed => (
-        AppIcons.warningCircle,
-        'Bluetooth test failed',
+        AppIcons.ledger,
+        'Let’s reconnect',
         _error ?? 'Try again.',
       ),
       _ProbePhase.devices => throw StateError('Device list handled above'),
     };
 
-    return Container(
+    return Padding(
       key: ValueKey('ledger_desktop_ble_${_phase.name}'),
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: context.colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Column(
         children: [
-          AppIcon(icon, size: 20, color: context.colors.icon.muted),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: context.colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  message,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
-                ),
-              ],
+          AppIcon(icon, size: 32, color: context.colors.text.secondary),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyLarge.copyWith(
+              color: context.colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.secondary,
             ),
           ),
         ],
