@@ -20,6 +20,8 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_recovery.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_connect_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
@@ -34,6 +36,177 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1;
   });
+
+  for (final mismatch in ['none', 'wallet', 'ufvk']) {
+    testWidgets(
+      'connects a linked Ledger only after identity checks: $mismatch',
+      (tester) async {
+        tester.view.physicalSize = const Size(393, 700);
+        final ble = _FakeBleService();
+        const fingerprint =
+            '0000000000000000000000000000000000000000000000000000000000000001';
+        const accountState = AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'linked-ledger',
+              name: 'Imported Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+              zip32AccountIndex: 7,
+              birthdayHeight: 3000000,
+              ledgerWalletFingerprint: fingerprint,
+            ),
+          ],
+        );
+        final notifier = _FakeAccountNotifier(accountState);
+        var exports = 0;
+        var birthdayVisits = 0;
+        await tester.pumpWidget(
+          _ledgerHarness(
+            ble: ble,
+            accountState: accountState,
+            accountNotifier: notifier,
+            connectionAccountUuid: 'linked-ledger',
+            ufvkLoader: (uuid) async {
+              expect(uuid, 'linked-ledger');
+              return 'uview1stored';
+            },
+            identityConnector: (_) async => LedgerWalletIdentity(
+              fingerprint: mismatch == 'wallet'
+                  ? 'different-wallet'
+                  : fingerprint,
+            ),
+            connector: (index) async {
+              exports++;
+              expect(index, 7);
+              return LedgerDeviceAccount(
+                ufvk: mismatch == 'ufvk' ? 'uview1other' : 'uview1stored',
+                seedFingerprint: List.filled(32, 7),
+                accountIndex: index,
+                appVersion: '3.9.3',
+              );
+            },
+            onBirthday: (_) => birthdayVisits++,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Connect the Ledger for this account.'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            const ValueKey('mobile_ledger_advanced_options_disclosure'),
+          ),
+          findsNothing,
+        );
+        expect(
+          tester
+              .getBottomRight(
+                find.byKey(const ValueKey('mobile_ledger_import_button')),
+              )
+              .dy,
+          lessThanOrEqualTo(700),
+        );
+        await _selectLedger(tester, ble);
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_ledger_import_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(birthdayVisits, 0);
+        expect(exports, mismatch == 'wallet' ? 0 : 1);
+        if (mismatch == 'none') {
+          expect(find.text('connection-return'), findsOneWidget);
+          expect(notifier.connectedUuid, 'linked-ledger');
+          expect(notifier.connectedDeviceId, 'ledger');
+          expect(notifier.preference, LedgerConnectionPreference.bluetooth);
+        } else {
+          expect(
+            find.byKey(const ValueKey('mobile_ledger_connect_error')),
+            findsOneWidget,
+          );
+          expect(notifier.connectedUuid, isNull);
+          expect(notifier.preference, isNull);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final cancel in [false, true]) {
+    testWidgets(
+      'first-signature connection requires an explicit retry, cancel=$cancel',
+      (tester) async {
+        final ble = _FakeBleService();
+        const accountState = AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'linked-ledger',
+              name: 'Imported Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+              zip32AccountIndex: 7,
+              ledgerWalletFingerprint:
+                  '0000000000000000000000000000000000000000000000000000000000000001',
+            ),
+          ],
+        );
+        var signatures = 0;
+        var reconnects = 0;
+        await tester.pumpWidget(
+          _ledgerHarness(
+            ble: ble,
+            accountState: accountState,
+            startAtSigning: true,
+            onSign: () => signatures++,
+            reconnect: (_) async => reconnects++,
+            ufvkLoader: (_) async => 'uview1stored',
+            connector: (index) async => LedgerDeviceAccount(
+              ufvk: 'uview1stored',
+              seedFingerprint: List.filled(32, 7),
+              accountIndex: index,
+              appVersion: '3.9.3',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Reconnect'));
+        await tester.tap(find.text('Reconnect'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Connect the Ledger for this account.'),
+          findsOneWidget,
+        );
+        if (cancel) {
+          Navigator.of(
+            tester.element(find.byType(MobileLedgerConnectScreen)),
+          ).pop();
+        } else {
+          await _selectLedger(tester, ble);
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_ledger_import_button')),
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(signatures, 0);
+        expect(reconnects, 0);
+        if (cancel) {
+          expect(
+            find.text('Connect your Ledger before retrying.'),
+            findsOneWidget,
+          );
+          expect(find.text('Ready when you are'), findsNothing);
+        } else {
+          expect(find.text('Ready when you are'), findsOneWidget);
+          await tester.tap(find.text('Try again'));
+          expect(signatures, 1);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'prioritizes device selection and keeps Continue visible on a small phone',
@@ -146,6 +319,90 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Try again'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'shows pending-request recovery instead of scanning and can retry',
+    (tester) async {
+      const message =
+          'Finish or reject the pending request on your Ledger, then try again.';
+      final ble = _FakeBleService()
+        ..disconnectError = const LedgerMobileException(
+          LedgerMobileFailure.unavailable,
+          message,
+        );
+      await tester.pumpWidget(
+        _ledgerHarness(ble: ble, connector: (_) => throw StateError('unused')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ledger_select_device_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(message), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile_ledger_scanning')),
+        findsNothing,
+      );
+      expect(ble.permissionCalls, 0);
+
+      ble.disconnectError = null;
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      ble.emit(
+        const LedgerDevicesDiscovered([
+          LedgerBleDevice(id: 'ledger', name: 'Ready Ledger', model: 'Nano X'),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Ready Ledger'), findsOneWidget);
+      expect(find.text(message), findsNothing);
+      expect(ble.disconnectCalls, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('leaving UFVK approval cancels once and ignores a late account', (
+    tester,
+  ) async {
+    final ble = _FakeBleService();
+    final approval = Completer<LedgerDeviceAccount>();
+    var cancels = 0;
+    var birthdays = 0;
+    var exports = 0;
+    await tester.pumpWidget(
+      _ledgerHarness(
+        ble: ble,
+        connector: (_) {
+          exports++;
+          return approval.future;
+        },
+        canceller: () async {
+          cancels++;
+        },
+        onBirthday: (_) => birthdays++,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _selectLedger(tester, ble);
+    await tester.tap(find.byKey(const ValueKey('mobile_ledger_import_button')));
+    await tester.pump();
+    expect(exports, 1);
+    expect(find.text('Waiting for Ledger'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(cancels, 1);
+    approval.complete(
+      const LedgerDeviceAccount(
+        ufvk: 'uview-late',
+        seedFingerprint: [1, 2, 3],
+        accountIndex: 0,
+        appVersion: '3.9.3',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(birthdays, 0);
+    expect(cancels, 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -732,15 +989,56 @@ Widget _ledgerHarness({
   required _FakeBleService ble,
   required LedgerAccountConnector connector,
   LedgerBluetoothWalletIdentityConnector? identityConnector,
+  LedgerOperationCanceller? canceller,
   AccountState accountState = const AccountState(
     accounts: [AccountInfo(uuid: 'software', name: 'Main', order: 0)],
   ),
   String? sourceAccountUuid,
+  String? connectionAccountUuid,
+  _FakeAccountNotifier? accountNotifier,
+  Future<String> Function(String)? ufvkLoader,
+  bool startAtSigning = false,
+  VoidCallback? onSign,
+  Future<void> Function(String)? reconnect,
   ValueChanged<LedgerBirthdayArgs>? onBirthday,
 }) {
   final router = GoRouter(
-    initialLocation: '/onboarding/ledger',
+    initialLocation: startAtSigning
+        ? '/signing'
+        : connectionAccountUuid == null
+        ? '/onboarding/ledger'
+        : '/connection/connect',
     routes: [
+      GoRoute(
+        path: '/signing',
+        builder: (_, _) => Scaffold(
+          body: LedgerSigningModal(
+            pageLayout: true,
+            accountUuid: 'linked-ledger',
+            phase: LedgerSigningModalPhase.failed,
+            failure: const LedgerSigningFailurePresentation(
+              title: 'Connection required',
+              statusLabel: 'Disconnected',
+              message: 'Connect your Ledger with Bluetooth, then try again.',
+              requiresReconnect: true,
+            ),
+            onCancel: () {},
+            onFailureAction: onSign,
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/connection',
+        builder: (_, _) => const Text('connection-return'),
+        routes: [
+          GoRoute(
+            path: 'connect',
+            builder: (_, _) => MobileLedgerConnectScreen(
+              connectionAccountUuid: connectionAccountUuid,
+            ),
+          ),
+        ],
+      ),
       GoRoute(
         path: '/onboarding/ledger',
         builder: (_, _) =>
@@ -764,7 +1062,15 @@ Widget _ledgerHarness({
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accounts: accountState.accounts),
       ),
-      accountProvider.overrideWith(() => _FakeAccountNotifier(accountState)),
+      accountProvider.overrideWith(
+        () => accountNotifier ?? _FakeAccountNotifier(accountState),
+      ),
+      if (ufvkLoader != null)
+        ledgerAccountUfvkLoaderProvider.overrideWithValue(ufvkLoader),
+      if (startAtSigning)
+        ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.iOS),
+      if (reconnect != null)
+        ledgerReconnectProvider.overrideWithValue(reconnect),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       ledgerMobileBleServiceProvider.overrideWithValue(ble),
       ledgerBluetoothAccountConnectorProvider.overrideWithValue((
@@ -788,7 +1094,9 @@ Widget _ledgerHarness({
                   '0000000000000000000000000000000000000000000000000000000000000001',
             ),
       ),
-      ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+      ledgerOperationCancellerProvider.overrideWithValue(
+        canceller ?? () async {},
+      ),
       ledgerAppReadinessStateProvider.overrideWith(
         _FakeReadinessController.new,
       ),
@@ -801,6 +1109,9 @@ Widget _ledgerHarness({
 }
 
 Future<void> _selectLedger(WidgetTester tester, _FakeBleService ble) async {
+  await tester.ensureVisible(
+    find.byKey(const ValueKey('mobile_ledger_select_device_button')),
+  );
   await tester.tap(
     find.byKey(const ValueKey('mobile_ledger_select_device_button')),
   );
@@ -842,6 +1153,29 @@ class _FakeAccountNotifier extends AccountNotifier {
   _FakeAccountNotifier(this.initialState);
 
   final AccountState initialState;
+  String? connectedUuid;
+  String? connectedDeviceId;
+  LedgerConnectionPreference? preference;
+
+  @override
+  Future<void> recordLedgerConnection({
+    required String uuid,
+    required LedgerConnectionTransport transport,
+    String? deviceId,
+    String? deviceName,
+    String? deviceModel,
+  }) async {
+    connectedUuid = uuid;
+    connectedDeviceId = deviceId;
+  }
+
+  @override
+  Future<void> updateLedgerConnectionPreference(
+    String uuid,
+    LedgerConnectionPreference value,
+  ) async {
+    preference = value;
+  }
 
   @override
   Future<AccountState> build() async => initialState;
@@ -862,6 +1196,7 @@ class _FakeBleService implements LedgerMobileBleService {
   final List<bool> _permissionResults;
   final int? failCleanupStopsAfter;
   final Object? connectError;
+  Object? disconnectError;
   final _updates = StreamController<LedgerDiscoveryUpdate>.broadcast(
     sync: true,
   );
@@ -898,6 +1233,7 @@ class _FakeBleService implements LedgerMobileBleService {
   Future<void> disconnect() async {
     calls.add('disconnect');
     disconnectCalls++;
+    if (disconnectError case final error?) throw error;
     connectedDeviceId = null;
   }
 

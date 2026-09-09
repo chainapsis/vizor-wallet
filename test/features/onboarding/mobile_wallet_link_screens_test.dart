@@ -278,6 +278,49 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
+  testWidgets('Ledger accounts can be selected without connecting a device', (
+    tester,
+  ) async {
+    final ledger = WalletLinkTransferAccount.fromJson({
+      'uuid': 'ledger',
+      'name': 'Travel Ledger account',
+      'order': 0,
+      'isHardware': true,
+      'isSeedAnchor': false,
+      'hardwareKind': 'ledger',
+      'birthdayHeight': 3000000,
+      'zip32AccountIndex': 7,
+      'ufvk': 'uview1ledger',
+      'seedFingerprint': List.filled(32, 7),
+      'ledgerWalletFingerprint': List.filled(64, 'a').join(),
+      'ledgerWalletName': 'Travel Ledger',
+    });
+    await tester.pumpWidget(
+      _app(
+        const MobileWalletLinkSelectAccountsScreen(),
+        state: MobileWalletLinkState(
+          payload: WalletLinkTransferPayload(
+            version: 1,
+            exportedAt: DateTime.utc(2026, 9, 9),
+            network: 'main',
+            activeAccountUuid: 'ledger',
+            accounts: [ledger],
+            contacts: const [],
+          ),
+          selectedAccountUuids: const {'ledger'},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Travel Ledger account'), findsOneWidget);
+    expect(_hasIcon(tester, AppIcons.ledger), isTrue);
+    expect(find.text('Link 1 account'), findsOneWidget);
+    await tester.tap(find.text('Deselect all'));
+    await tester.pump();
+    expect(find.text('Select all'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('account selection shows importing progress while submitting', (
     tester,
   ) async {

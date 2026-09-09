@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -12,6 +12,8 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../ledger_capability.dart';
 import '../services/ledger_app_readiness_service.dart';
 import '../services/ledger_connection_recovery.dart';
+import '../services/ledger_connection_service.dart';
+import '../../onboarding/mobile/mobile_ledger_connect_screen.dart';
 import 'ledger_device_signing_content.dart';
 import '../ledger_app_instructions.dart' show ledgerZcashAppName;
 
@@ -130,10 +132,39 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
     }
   }
 
-  Future<void> _reconnect() => _recovery.reconnect(
-    widget.accountUuid!,
-    ref.read(ledgerReconnectProvider),
-  );
+  Future<void> _reconnect() {
+    final originalContext = _context(widget);
+    return _recovery.reconnect(widget.accountUuid!, (uuid) async {
+      final account = ref
+          .read(accountProvider)
+          .value
+          ?.accounts
+          .where((account) => account.uuid == uuid)
+          .firstOrNull;
+      final mobile = isLedgerMobilePlatform(
+        ref.read(ledgerTargetPlatformProvider),
+      );
+      if (mobile &&
+          account?.isLedger == true &&
+          (account!.ledgerDeviceId?.isNotEmpty != true)) {
+        final connected = await Navigator.of(context, rootNavigator: true)
+            .push<bool>(
+              MaterialPageRoute(
+                builder: (_) =>
+                    MobileLedgerConnectScreen(connectionAccountUuid: uuid),
+              ),
+            );
+        if (!mounted || _context(widget) != originalContext) return;
+        if (connected != true) {
+          throw const LedgerConnectionRequiredException(
+            'Connect your Ledger before retrying.',
+          );
+        }
+        return;
+      }
+      await ref.read(ledgerReconnectProvider)(uuid);
+    });
+  }
 
   @override
   void dispose() {

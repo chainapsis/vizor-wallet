@@ -83,6 +83,8 @@ class LinkedWalletAccountImport {
     this.seedFingerprint,
     this.profilePictureId,
     this.sourceAccountUuid,
+    this.ledgerWalletFingerprint,
+    this.ledgerWalletName,
   });
 
   final String name;
@@ -97,6 +99,8 @@ class LinkedWalletAccountImport {
   final List<int>? seedFingerprint;
   final String? profilePictureId;
   final String? sourceAccountUuid;
+  final String? ledgerWalletFingerprint;
+  final String? ledgerWalletName;
 }
 
 class LinkedWalletAccountsImportResult {
@@ -1237,6 +1241,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
     }
 
+    for (final input in accountsToImport) {
+      if (input.isHardware &&
+          input.hardwareSignerKind == HardwareSignerKind.ledger &&
+          !RegExp(
+            r'^[0-9a-f]{64}$',
+            caseSensitive: false,
+          ).hasMatch(input.ledgerWalletFingerprint?.trim() ?? '')) {
+        throw ArgumentError(
+          'A linked Ledger account needs its wallet fingerprint.',
+        );
+      }
+    }
+
     try {
       final prev = state.value ?? const AccountState();
       final normalizedNetwork = await _validateLinkedWalletNetwork(
@@ -1314,12 +1331,34 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         }
         firstImportedUuid ??= accountUuid;
         firstImportedAddress ??= unifiedAddress;
+        final ledgerFingerprint =
+            input.isHardware &&
+                input.hardwareSignerKind == HardwareSignerKind.ledger
+            ? input.ledgerWalletFingerprint!.trim().toLowerCase()
+            : null;
+        final ledgerName = ledgerFingerprint == null
+            ? null
+            : [...prev.accounts, ...importedAccounts]
+                      .where(
+                        (account) =>
+                            account.isLedger &&
+                            account.ledgerWalletFingerprint ==
+                                ledgerFingerprint,
+                      )
+                      .map((account) => account.ledgerWalletName)
+                      .whereType<String>()
+                      .firstOrNull ??
+                  _normalizedOptionalString(input.ledgerWalletName);
         importedAccounts.add(
           AccountInfo(
             uuid: accountUuid,
             name: input.name,
             order: nextOrder,
             isHardware: input.isHardware,
+            birthdayHeight: input.birthdayHeight,
+            zip32AccountIndex: input.zip32AccountIndex,
+            ledgerWalletFingerprint: ledgerFingerprint,
+            ledgerWalletName: ledgerName,
             hardwareSignerKind: input.isHardware
                 ? input.hardwareSignerKind ?? HardwareSignerKind.keystone
                 : null,

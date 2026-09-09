@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../core/storage/wallet_paths.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
+import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_mobile_ble_service.dart';
@@ -60,6 +62,18 @@ typedef LedgerAccountImporter =
       required LedgerDeviceAccount account,
       required int birthdayHeight,
       required String profilePictureId,
+    });
+
+final ledgerAccountUfvkLoaderProvider =
+    Provider<Future<String> Function(String)>((ref) {
+      return (uuid) async {
+        final network = ref.read(rpcEndpointProvider).networkName;
+        return rust_wallet.getAccountUfvk(
+          dbPath: await getWalletDbPath(),
+          network: network,
+          accountUuid: uuid,
+        );
+      };
     });
 
 final ledgerAccountConnectorProvider = Provider<LedgerAccountConnector>((ref) {

@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 final _rustApi = _AccountMutationRustApiFake();
 
@@ -197,6 +198,137 @@ void main() {
       );
 
       expect(container.read(accountProvider).value?.accounts, isEmpty);
+    },
+  );
+
+  test(
+    'wallet link preserves Ledger identity and recovery metadata without pairing',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-wallet-link-import',
+      );
+      addTearDown(() => supportDirectory.deleteSync(recursive: true));
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            pathProvider,
+            (_) async => supportDirectory.path,
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      const fingerprint =
+          'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      LinkedWalletAccountImport linked(int index, String name) =>
+          LinkedWalletAccountImport(
+            sourceAccountUuid: 'desktop-$index',
+            name: 'Ledger $index',
+            birthdayHeight: 3000000 + index,
+            zip32AccountIndex: index,
+            isHardware: true,
+            isSeedAnchor: false,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+            ufvk: 'uview1ledger$index',
+            seedFingerprint: List.filled(32, index),
+            ledgerWalletFingerprint: fingerprint,
+            ledgerWalletName: name,
+          );
+      final result = await container
+          .read(accountProvider.notifier)
+          .importLinkedWalletAccounts(
+            network: 'main',
+            accountsToImport: [
+              linked(2, '  Travel Ledger  '),
+              linked(7, 'Other name'),
+            ],
+          );
+      expect(result.importedCount, 2);
+      final accounts = container
+          .read(accountProvider)
+          .requireValue
+          .accounts
+          .where((account) => account.isLedger)
+          .toList();
+      expect(accounts.map((account) => account.zip32AccountIndex), [2, 7]);
+      expect(accounts.map((account) => account.birthdayHeight), [
+        3000002,
+        3000007,
+      ]);
+      for (final account in accounts) {
+        expect(account.ledgerWalletFingerprint, fingerprint.toLowerCase());
+        expect(account.ledgerWalletName, 'Travel Ledger');
+        expect(account.ledgerDeviceId, isNull);
+        expect(account.ledgerLastTransport, isNull);
+        final restored = AccountInfo.fromJson(account.toJson());
+        expect(restored.ledgerWalletName, account.ledgerWalletName);
+        expect(
+          restored.ledgerWalletFingerprint,
+          account.ledgerWalletFingerprint,
+        );
+        expect(restored.zip32AccountIndex, account.zip32AccountIndex);
+        expect(restored.birthdayHeight, account.birthdayHeight);
+      }
+      await container
+          .read(accountProvider.notifier)
+          .renameLedgerWallet(accounts.first.uuid, 'Local name');
+      await container
+          .read(accountProvider.notifier)
+          .importLinkedWalletAccounts(
+            network: 'main',
+            accountsToImport: [linked(8, 'Desktop name')],
+          );
+      expect(
+        container
+            .read(accountProvider)
+            .requireValue
+            .accounts
+            .last
+            .ledgerWalletName,
+        'Local name',
+      );
+      expect(_rustApi.importedHardwareKinds, ['ledger', 'ledger', 'ledger']);
+    },
+  );
+
+  test(
+    'wallet link rejects a Ledger without identity before importing any account',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .importLinkedWalletAccounts(
+              network: 'main',
+              accountsToImport: const [
+                LinkedWalletAccountImport(
+                  name: 'Ledger',
+                  birthdayHeight: 3000000,
+                  zip32AccountIndex: 0,
+                  isHardware: true,
+                  isSeedAnchor: false,
+                  hardwareSignerKind: HardwareSignerKind.ledger,
+                ),
+              ],
+            ),
+        throwsArgumentError,
+      );
+      expect(_rustApi.importedHardwareKinds, isEmpty);
     },
   );
 
@@ -583,8 +715,31 @@ class _FakeAnyhowException implements Exception {
 
 class _AccountMutationRustApiFake implements RustLibApi {
   final deletedAccountUuids = <String>[];
+  final importedHardwareKinds = <String>[];
 
-  void reset() => deletedAccountUuids.clear();
+  void reset() {
+    deletedAccountUuids.clear();
+    importedHardwareKinds.clear();
+  }
+
+  @override
+  Future<rust_wallet.AccountCreationResult>
+  crateApiWalletImportHardwareAccount({
+    required String dbPath,
+    required String network,
+    required String name,
+    required String ufvkString,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    BigInt? birthdayHeight,
+    required String hardwareSignerKind,
+  }) async {
+    importedHardwareKinds.add(hardwareSignerKind);
+    return rust_wallet.AccountCreationResult(
+      accountUuid: 'imported-$zip32Index',
+      unifiedAddress: 'u1imported$zip32Index',
+    );
+  }
 
   @override
   Future<void> crateApiWalletDeleteAccount({

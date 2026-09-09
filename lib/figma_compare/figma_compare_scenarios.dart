@@ -62,6 +62,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: _buildLedgerConnect,
   ),
   FigmaCompareScenario(
+    id: 'mobile-ledger-linked-connection',
+    description:
+        'Mobile verification of a Ledger account imported through Wallet Link',
+    builder: _buildMobileLedgerLinkedConnection,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'accounts-ledger-family',
     description: 'Desktop accounts grouped by verified Ledger wallet',
     builder: buildAccountsLedgerFamilyUseCase,
@@ -977,6 +985,9 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
 
 Widget _buildLedgerConnect(BuildContext context) =>
     buildLedgerFlowPreview(screen: 'Connect Ledger', mobile: false);
+
+Widget _buildMobileLedgerLinkedConnection(BuildContext context) =>
+    buildLedgerFlowPreview(screen: 'Connect linked account', mobile: true);
 
 FigmaCompareScenario? findFigmaCompareScenario(String id) {
   for (final scenario in figmaCompareScenarios) {

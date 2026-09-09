@@ -1129,7 +1129,7 @@ class _WalletLinkAccountRow extends StatelessWidget {
                       ? AppIcons.keystone
                       : account.effectiveHardwareKind ==
                             kWalletLinkHardwareKindLedger
-                      ? AppIcons.key
+                      ? AppIcons.ledger
                       : AppIcons.user,
                   size: 20,
                   color: enabled ? colors.icon.accent : colors.icon.muted,

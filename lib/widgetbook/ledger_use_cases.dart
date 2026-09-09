@@ -90,6 +90,8 @@ WidgetbookFolder buildLedgerWidgetbookFolder() {
         name: 'Onboarding & import',
         children: [
           screen('Connect Ledger', 'Connect Ledger'),
+          if (mobile)
+            screen('Connect linked account', 'Connect linked account'),
           screen('Additional account', 'Add another account'),
         ],
       ),
@@ -167,6 +169,10 @@ Widget buildLedgerFlowPreview({
   builder: (context) {
     final content = switch (screen) {
       'Connect Ledger' => _LedgerConnectReview(mobile: mobile),
+      'Connect linked account' => const _LedgerConnectReview(
+        mobile: true,
+        linkedAccount: true,
+      ),
       'Add another account' =>
         mobile
             ? buildMobileLedgerAdditionalAccountUseCase(context)
@@ -298,15 +304,19 @@ class _LedgerDemoConnections extends StatelessWidget {
 }
 
 class _LedgerConnectReview extends StatefulWidget {
-  const _LedgerConnectReview({required this.mobile});
+  const _LedgerConnectReview({
+    required this.mobile,
+    this.linkedAccount = false,
+  });
   final bool mobile;
+  final bool linkedAccount;
   @override
   State<_LedgerConnectReview> createState() => _LedgerConnectReviewState();
 }
 
 class _LedgerConnectReviewState extends State<_LedgerConnectReview> {
   late final _router = GoRouter(
-    initialLocation: '/connect',
+    initialLocation: widget.linkedAccount ? '/accounts/connect' : '/connect',
     routes: [
       GoRoute(
         path: '/connect',
@@ -321,6 +331,14 @@ class _LedgerConnectReviewState extends State<_LedgerConnectReview> {
       GoRoute(
         path: '/accounts',
         builder: (_, _) => const Center(child: Text('Accounts preview')),
+        routes: [
+          GoRoute(
+            path: 'connect',
+            builder: (_, _) => const MobileLedgerConnectScreen(
+              connectionAccountUuid: _ledgerAccountUuid,
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: '/add-account',
@@ -343,7 +361,15 @@ class _LedgerConnectReviewState extends State<_LedgerConnectReview> {
     final child = ProviderScope(
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-        accountProvider.overrideWith(_LedgerEmptyPreviewAccounts.new),
+        accountProvider.overrideWith(
+          widget.linkedAccount
+              ? _LedgerPreviewAccountNotifier.new
+              : _LedgerEmptyPreviewAccounts.new,
+        ),
+        if (widget.linkedAccount)
+          ledgerAccountUfvkLoaderProvider.overrideWithValue(
+            (_) async => 'widgetbook-viewing-key',
+          ),
       ],
       child: widget.mobile
           ? LayoutBuilder(

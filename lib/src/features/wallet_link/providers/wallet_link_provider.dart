@@ -218,6 +218,10 @@ class WalletLinkController extends Notifier<WalletLinkState> {
         'seedFingerprint': account.isHardware
             ? seedFingerprint!.toList()
             : null,
+        if (account.isLedger) ...{
+          'ledgerWalletFingerprint': account.ledgerWalletFingerprint,
+          'ledgerWalletName': account.ledgerWalletName,
+        },
         if (softwareSecret != null)
           ...walletLinkSoftwareRecoveryFields(
             mnemonic: softwareSecret.mnemonic,

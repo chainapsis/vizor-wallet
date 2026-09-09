@@ -120,7 +120,7 @@ class LedgerConnectionService {
     final deviceId = account.ledgerDeviceId;
     if (deviceId == null) {
       throw const LedgerConnectionRequiredException(
-        'Set up Bluetooth for this Ledger account in Account details first.',
+        'Connect your Ledger with Bluetooth, then try again.',
       );
     }
     final platform = _ref.read(ledgerTargetPlatformProvider);

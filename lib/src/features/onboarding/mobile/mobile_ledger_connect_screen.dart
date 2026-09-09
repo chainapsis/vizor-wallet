@@ -24,9 +24,16 @@ import 'mobile_onboarding_scaffold.dart';
 enum _MobileLedgerConnectPhase { idle, awaitingApproval }
 
 class MobileLedgerConnectScreen extends ConsumerStatefulWidget {
-  const MobileLedgerConnectScreen({this.sourceAccountUuid, super.key});
+  const MobileLedgerConnectScreen({
+    this.sourceAccountUuid,
+    this.connectionAccountUuid,
+    super.key,
+  }) : assert(sourceAccountUuid == null || connectionAccountUuid == null);
 
   final String? sourceAccountUuid;
+
+  /// Verify and connect an existing account without importing another account.
+  final String? connectionAccountUuid;
 
   @override
   ConsumerState<MobileLedgerConnectScreen> createState() =>
@@ -46,6 +53,17 @@ class _MobileLedgerConnectScreenState
   bool _accountIndexInitialized = false;
 
   bool get _busy => _phase != _MobileLedgerConnectPhase.idle;
+  bool get _connectingExisting => widget.connectionAccountUuid != null;
+
+  AccountInfo? _connectionAccount() => ref
+      .read(accountProvider)
+      .value
+      ?.accounts
+      .where(
+        (account) =>
+            account.uuid == widget.connectionAccountUuid && account.isLedger,
+      )
+      .firstOrNull;
 
   @override
   void initState() {
@@ -55,7 +73,8 @@ class _MobileLedgerConnectScreenState
     _accountIndexInitialized =
         widget.sourceAccountUuid == null || accountContext != null;
     _accountIndexController = TextEditingController(
-      text: '${accountContext?.suggestedIndex ?? 0}',
+      text:
+          '${_connectionAccount()?.zip32AccountIndex ?? accountContext?.suggestedIndex ?? 0}',
     );
   }
 
@@ -86,7 +105,19 @@ class _MobileLedgerConnectScreenState
 
   Future<void> _continue() async {
     if (_busy || _selectedDevice == null) return;
-    final accountIndex = _validatedAccountIndex();
+    final existingAccount = _connectionAccount();
+    if (_connectingExisting &&
+        (existingAccount == null ||
+            existingAccount.zip32AccountIndex == null)) {
+      setState(
+        () =>
+            _error = 'This Ledger account is missing its recovery information.',
+      );
+      return;
+    }
+    final accountIndex = _connectingExisting
+        ? existingAccount!.zip32AccountIndex
+        : _validatedAccountIndex();
     if (accountIndex == null) return;
     setState(() {
       _phase = _MobileLedgerConnectPhase.awaitingApproval;
@@ -97,13 +128,50 @@ class _MobileLedgerConnectScreenState
       final identity = await ref.read(
         ledgerBluetoothWalletIdentityConnectorProvider,
       )(_selectedDevice!);
+      if (!mounted) return;
+      if (existingAccount != null &&
+          existingAccount.ledgerWalletFingerprint != identity.fingerprint) {
+        throw const _LedgerWalletMismatchException();
+      }
       await _verifyWalletIdentity(identity, accountContext);
-      _throwIfConnectedWalletUsesIndex(identity, accountIndex);
+      if (!mounted) return;
+      if (!_connectingExisting) {
+        _throwIfConnectedWalletUsesIndex(identity, accountIndex);
+      }
       final account = (await ref.read(ledgerBluetoothAccountConnectorProvider)(
         accountIndex,
         _selectedDevice!,
       )).withWalletIdentity(identity);
       if (!mounted) return;
+      if (existingAccount != null) {
+        final storedUfvk = await ref.read(ledgerAccountUfvkLoaderProvider)(
+          existingAccount.uuid,
+        );
+        if (!mounted) return;
+        if (account.ufvk != storedUfvk) {
+          throw const _LedgerWalletMismatchException();
+        }
+        await ref
+            .read(accountProvider.notifier)
+            .recordLedgerConnection(
+              uuid: existingAccount.uuid,
+              transport: LedgerConnectionTransport.bluetooth,
+              deviceId: _selectedDevice!.id,
+              deviceName: _selectedDevice!.name,
+              deviceModel: _selectedDevice!.model,
+            );
+        if (!mounted) return;
+        await ref
+            .read(accountProvider.notifier)
+            .updateLedgerConnectionPreference(
+              existingAccount.uuid,
+              LedgerConnectionPreference.bluetooth,
+            );
+        if (!mounted) return;
+        setState(() => _phase = _MobileLedgerConnectPhase.idle);
+        Navigator.of(context).pop(true);
+        return;
+      }
       setState(() => _phase = _MobileLedgerConnectPhase.idle);
       context.push(
         '/onboarding/ledger/birthday',
@@ -248,9 +316,13 @@ class _MobileLedgerConnectScreenState
         'Account index · ${_accountIndexController.text.isEmpty ? '—' : _accountIndexController.text}';
     return MobileOnboardingStepScaffold(
       progress: 0.25,
+      showProgress: !_connectingExisting,
       title: 'Connect Ledger',
-      subtitle: 'Add your Ledger account to Vizor.',
-      onBack: () => context.pop(),
+      subtitle: _connectingExisting
+          ? 'Connect the Ledger for this account.'
+          : 'Add your Ledger account to Vizor.',
+      onBack: () =>
+          _connectingExisting ? Navigator.of(context).pop() : context.pop(),
       bottomArea: SizedBox(
         width: double.infinity,
         child: AppButton(
@@ -269,7 +341,13 @@ class _MobileLedgerConnectScreenState
                   semanticLabel: 'Connecting to Ledger',
                 )
               : null,
-          child: Text(_busy ? 'Waiting for Ledger' : 'Continue'),
+          child: Text(
+            _busy
+                ? 'Waiting for Ledger'
+                : _connectingExisting
+                ? 'Connect'
+                : 'Continue',
+          ),
         ),
       ),
       child: Column(
@@ -286,7 +364,9 @@ class _MobileLedgerConnectScreenState
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'The viewing key lets Vizor show your balance and activity. You’ll still approve spending on your Ledger.',
+            _connectingExisting
+                ? 'Approve sharing the viewing key to verify this account. Connecting does not sign or send a transaction.'
+                : 'The viewing key lets Vizor show your balance and activity. You’ll still approve spending on your Ledger.',
             style: AppTypography.bodySmall.copyWith(
               color: colors.text.secondary,
             ),
@@ -296,63 +376,64 @@ class _MobileLedgerConnectScreenState
             _KnownLedgerAccountsCard(accountContext: accountContext),
           ],
           const SizedBox(height: AppSpacing.sm),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Semantics(
-                  key: const ValueKey(
-                    'mobile_ledger_advanced_options_disclosure',
-                  ),
-                  button: true,
-                  enabled: !_busy,
-                  expanded: _showAdvancedOptions,
-                  label: disclosureLabel,
-                  onTap: _busy ? null : _toggleAdvancedOptions,
-                  child: ExcludeSemantics(
-                    child: AppButton(
-                      onPressed: _busy ? null : _toggleAdvancedOptions,
-                      variant: AppButtonVariant.ghost,
-                      size: AppButtonSize.small,
-                      constrainContent: false,
-                      trailing: RotatedBox(
-                        quarterTurns: _showAdvancedOptions ? 2 : 0,
-                        child: const AppIcon(AppIcons.arrowDown),
+          if (!_connectingExisting)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Semantics(
+                    key: const ValueKey(
+                      'mobile_ledger_advanced_options_disclosure',
+                    ),
+                    button: true,
+                    enabled: !_busy,
+                    expanded: _showAdvancedOptions,
+                    label: disclosureLabel,
+                    onTap: _busy ? null : _toggleAdvancedOptions,
+                    child: ExcludeSemantics(
+                      child: AppButton(
+                        onPressed: _busy ? null : _toggleAdvancedOptions,
+                        variant: AppButtonVariant.ghost,
+                        size: AppButtonSize.small,
+                        constrainContent: false,
+                        trailing: RotatedBox(
+                          quarterTurns: _showAdvancedOptions ? 2 : 0,
+                          child: const AppIcon(AppIcons.arrowDown),
+                        ),
+                        child: Text(disclosureLabel),
                       ),
-                      child: Text(disclosureLabel),
                     ),
                   ),
                 ),
-              ),
-              if (_showAdvancedOptions) ...[
-                const SizedBox(height: AppSpacing.sm),
-                AppTextField(
-                  key: const ValueKey('mobile_ledger_account_index_field'),
-                  label: 'Ledger account index',
-                  controller: _accountIndexController,
-                  enabled: !_busy,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: _handleAccountIndexChanged,
-                  tone: _accountIndexError == null
-                      ? AppTextFieldTone.neutral
-                      : AppTextFieldTone.destructive,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _accountIndexError ??
-                      'Use a different index to restore or add another Ledger account.',
-                  key: const ValueKey('mobile_ledger_account_index_message'),
-                  style: AppTypography.bodySmall.copyWith(
-                    color: _accountIndexError == null
-                        ? colors.text.secondary
-                        : colors.text.destructive,
+                if (_showAdvancedOptions) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  AppTextField(
+                    key: const ValueKey('mobile_ledger_account_index_field'),
+                    label: 'Ledger account index',
+                    controller: _accountIndexController,
+                    enabled: !_busy,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: _handleAccountIndexChanged,
+                    tone: _accountIndexError == null
+                        ? AppTextFieldTone.neutral
+                        : AppTextFieldTone.destructive,
                   ),
-                ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    _accountIndexError ??
+                        'Use a different index to restore or add another Ledger account.',
+                    key: const ValueKey('mobile_ledger_account_index_message'),
+                    style: AppTypography.bodySmall.copyWith(
+                      color: _accountIndexError == null
+                          ? colors.text.secondary
+                          : colors.text.destructive,
+                    ),
+                  ),
+                ],
               ],
-            ],
-          ),
+            ),
           if (_error case final error?) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
