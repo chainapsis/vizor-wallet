@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -321,4 +323,110 @@ void main() {
       ),
     );
   });
+
+  for (final ufvk in [true, false]) {
+    for (final cancellation in ['cancelSigning', 'disconnect']) {
+      test(
+        '$cancellation stops pending ${ufvk ? 'UFVK' : 'APDU'} retries',
+        () async {
+          final waiting = Completer<void>();
+          final resume = Completer<void>();
+          final calls = <String>[];
+          service = MethodChannelLedgerMobileBleService(
+            reviewBusyDelay: (_) {
+              waiting.complete();
+              return resume.future;
+            },
+          );
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, (call) async {
+                calls.add(call.method);
+                if (call.method == cancellation) return null;
+                return <List<int>>[
+                  <int>[0x69, 0x01],
+                ];
+              });
+
+          final pending = _exchangeForCancellationTest(service, ufvk: ufvk);
+          final cancelled = expectLater(pending, throwsA(_cancelledFailure));
+          await waiting.future;
+          if (cancellation == 'disconnect') {
+            await service.disconnect();
+          } else {
+            await service.cancelSigning();
+          }
+          resume.complete();
+          await cancelled;
+          expect(calls, [
+            ufvk ? 'exchangeUfvk' : 'exchangeApdus',
+            cancellation,
+          ]);
+        },
+      );
+    }
+
+    test(
+      'ignores late ${ufvk ? 'UFVK' : 'APDU'} results without cancelling a new request',
+      () async {
+        final started = Completer<void>();
+        final lateResponse = Completer<List<List<int>>>();
+        var requests = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              if (call.method == 'cancelSigning') return null;
+              if (++requests == 1) {
+                started.complete();
+                return lateResponse.future;
+              }
+              return <List<int>>[
+                <int>[0x90, 0],
+              ];
+            });
+        final pending = _exchangeForCancellationTest(service, ufvk: ufvk);
+        final cancelled = expectLater(pending, throwsA(_cancelledFailure));
+        await started.future;
+        await service.cancelSigning();
+        final fresh = await _exchangeForCancellationTest(service, ufvk: ufvk);
+        expect(fresh.single, [0x90, 0]);
+        lateResponse.complete([
+          [0x90, 0],
+        ]);
+        await cancelled;
+        expect(requests, 2);
+      },
+    );
+  }
+}
+
+final _cancelledFailure = isA<LedgerMobileException>().having(
+  (error) => error.failure,
+  'failure',
+  LedgerMobileFailure.cancelled,
+);
+
+Future<List<Uint8List>> _exchangeForCancellationTest(
+  LedgerMobileBleService service, {
+  required bool ufvk,
+}) {
+  final first = LedgerApduCommand(
+    cla: 0xe0,
+    ins: 0x50,
+    p1: 0,
+    p2: 0,
+    data: Uint8List(4),
+  );
+  return ufvk
+      ? service.exchangeUfvk(
+          LedgerUfvkApduPlan(
+            first: first,
+            continuation: LedgerApduCommand(
+              cla: 0xe0,
+              ins: 0x50,
+              p1: 0x80,
+              p2: 0,
+              data: Uint8List(0),
+            ),
+          ),
+        )
+      : service.exchangeApdus([first]);
 }

@@ -111,6 +111,7 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
   static const _reviewBusyRetryDelay = Duration(milliseconds: 200);
   final Future<void> Function(Duration duration) _reviewBusyDelay;
   String? _connectedDeviceId;
+  int _operationGeneration = 0;
 
   @override
   String? get connectedDeviceId => _connectedDeviceId;
@@ -160,6 +161,7 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
 
   @override
   Future<void> disconnect() async {
+    _operationGeneration++;
     await _invokeVoid('disconnect');
     _connectedDeviceId = null;
   }
@@ -187,12 +189,15 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
   Future<List<Uint8List>> exchangeUfvk(
     rust_ledger.LedgerUfvkApduPlan plan,
   ) async {
+    final generation = _operationGeneration;
     try {
       for (var attempt = 0; attempt < _reviewBusyMaxAttempts; attempt++) {
+        _checkOperationActive(generation);
         final responses = await _invokeApduResponses('exchangeUfvk', {
           'first': _encodeCommand(plan.first),
           'continuation': _encodeCommand(plan.continuation),
         });
+        _checkOperationActive(generation);
         // The UFVK review starts on the first command. A 0x6901 reply means
         // the SDK rejected that command before the Zcash app received it.
         if (responses.length != 1 ||
@@ -212,6 +217,7 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
   Future<List<Uint8List>> exchangeApdus(
     List<rust_ledger.LedgerApduCommand> commands,
   ) async {
+    final generation = _operationGeneration;
     try {
       if (commands.isEmpty) {
         return await _invokeApduResponses('exchangeApdus', const {
@@ -223,9 +229,11 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
       var pending = commands;
       var reviewBusyAttempts = 0;
       while (pending.isNotEmpty) {
+        _checkOperationActive(generation);
         final responses = await _invokeApduResponses('exchangeApdus', {
           'commands': pending.map(_encodeCommand).toList(growable: false),
         });
+        _checkOperationActive(generation);
         if (responses.isEmpty) return completed;
 
         var retryIndex = -1;
@@ -260,7 +268,20 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
   }
 
   @override
-  Future<void> cancelSigning() => _invokeVoid('cancelSigning');
+  Future<void> cancelSigning() {
+    // Invalidate Dart retries before waiting for the native cancellation reply.
+    _operationGeneration++;
+    return _invokeVoid('cancelSigning');
+  }
+
+  void _checkOperationActive(int generation) {
+    if (generation != _operationGeneration) {
+      throw const LedgerMobileException(
+        LedgerMobileFailure.cancelled,
+        'The Ledger operation was cancelled.',
+      );
+    }
+  }
 
   Future<void> _invokeVoid(
     String method, [

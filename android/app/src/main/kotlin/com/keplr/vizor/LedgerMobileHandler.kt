@@ -43,18 +43,20 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamHandler {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity)
+class LedgerMobileHandler(
+    private val activity: Activity,
+    private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity),
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+) : EventChannel.StreamHandler {
     private var discoveryJob: Job? = null
     private var eventSink: EventChannel.EventSink? = null
     private var discoveryRequested = false
     private val discoveredDevices = mutableMapOf<String, DiscoveryDevice>()
     private var connectedDevice: ConnectedDevice? = null
     private var permissionResult: MethodChannel.Result? = null
-    private var signingJob: Job? = null
-    private var signingResult: MethodChannel.Result? = null
-    private var signingGeneration = 0L
+    private var exchangeJob: Job? = null
+    private var exchangeResult: MethodChannel.Result? = null
+    private var exchangeGeneration = 0L
     private val connectionMutex = Mutex()
     private var connectionToClose: ConnectedDevice? = null
 
@@ -97,7 +99,7 @@ class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamH
 
     fun close() {
         stopDiscovery()
-        cancelSigningOperation()
+        cancelExchangeOperation()
         scope.cancel()
     }
 
@@ -253,7 +255,7 @@ class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamH
     }
 
     private fun disconnect(result: MethodChannel.Result) {
-        cancelSigningOperation()
+        cancelExchangeOperation()
         scope.launch { connectionMutex.withLock {
             val device = connectionToClose ?: connectedDevice
             connectedDevice = null
@@ -299,39 +301,26 @@ class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamH
         val device = requireConnected(result) ?: return
         val first = parseCommand(call.argument("first"), result) ?: return
         val continuation = parseCommand(call.argument("continuation"), result) ?: return
-        scope.launch {
+        startExchange(result) { generation ->
             val responses = mutableListOf<ByteArray>()
-            val firstResponse = exchange(device.uid, first, result) ?: return@launch
+            val firstResponse = exchange(device.uid, first, generation) ?: return@startExchange null
             responses += firstResponse
-            if (!firstResponse.hasSuccessStatus()) {
-                result.success(responses.map { it.asUnsignedList() })
-                return@launch
-            }
-            if (firstResponse.size < 4) {
-                result.success(responses.map { it.asUnsignedList() })
-                return@launch
+            if (!firstResponse.hasSuccessStatus() || firstResponse.size < 4) {
+                return@startExchange responses
             }
             val expectedPayloadLength = 2 + ((firstResponse[0].toInt() and 0xff) shl 8) +
                 (firstResponse[1].toInt() and 0xff)
-            if (expectedPayloadLength > MAX_UFVK_RESPONSE) {
-                result.success(responses.map { it.asUnsignedList() })
-                return@launch
-            }
-            var payloadLength = firstResponse.size - 2
+            if (expectedPayloadLength > MAX_UFVK_RESPONSE) return@startExchange responses
+            var payloadLength = firstResponse.size - APDU_STATUS_SIZE
             while (payloadLength < expectedPayloadLength) {
-                val response = exchange(device.uid, continuation, result) ?: return@launch
+                val response = exchange(device.uid, continuation, generation) ?: return@startExchange null
                 responses += response
-                if (!response.hasSuccessStatus()) {
-                    result.success(responses.map { it.asUnsignedList() })
-                    return@launch
+                if (!response.hasSuccessStatus() || response.size == APDU_STATUS_SIZE) {
+                    return@startExchange responses
                 }
-                if (response.size == APDU_STATUS_SIZE) {
-                    result.success(responses.map { it.asUnsignedList() })
-                    return@launch
-                }
-                payloadLength += response.size - 2
+                payloadLength += response.size - APDU_STATUS_SIZE
             }
-            result.success(responses.map { it.asUnsignedList() })
+            responses
         }
     }
 
@@ -347,91 +336,101 @@ class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamH
             val command = parseCommand(value as? Map<*, *>, result) ?: return
             commands += command
         }
-        if (signingJob != null) {
-            result.error("unavailable", "A Ledger signing operation is already active.", null)
+        startExchange(result) { generation ->
+            val responses = mutableListOf<ByteArray>()
+            for (command in commands) {
+                val response = exchange(device.uid, command, generation) ?: return@startExchange null
+                responses += response
+                if (!response.hasSuccessStatus()) break
+            }
+            responses
+        }
+    }
+
+    private fun startExchange(
+        result: MethodChannel.Result,
+        operation: suspend (Long) -> List<ByteArray>?,
+    ) {
+        if (exchangeJob != null) {
+            result.error("unavailable", "A Ledger operation is already active.", null)
             return
         }
-
-        val generation = ++signingGeneration
-        signingResult = result
+        val generation = ++exchangeGeneration
+        exchangeResult = result
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val responses = mutableListOf<ByteArray>()
-                for (command in commands) {
-                    currentCoroutineContext().ensureActive()
-                    when (val operation = sendApdu(device.uid, command)) {
-                        is DeviceOperationResult.Success -> {
-                            currentCoroutineContext().ensureActive()
-                            responses += operation.value
-                            if (!operation.value.hasSuccessStatus()) break
-                        }
-                        is DeviceOperationResult.Failure -> {
-                            finishSigningFailure(generation, operation.reason)
-                            return@launch
-                        }
-                    }
+                currentCoroutineContext().ensureActive()
+                val responses = operation(generation)
+                currentCoroutineContext().ensureActive()
+                if (responses != null) {
+                    finishExchangeSuccess(generation, responses.map { it.asUnsignedList() })
                 }
-                finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
             } catch (_: CancellationException) {
-                finishSigningCancelled(generation)
+                finishExchangeCancelled(generation)
+            } catch (_: Exception) {
+                takeExchangeResult(generation)?.error(
+                    "unavailable", "Could not complete the Ledger operation. Reconnect and try again.", null,
+                )
             } finally {
-                if (signingJob === coroutineContext[Job]) signingJob = null
+                if (exchangeJob === coroutineContext[Job]) exchangeJob = null
             }
         }
-        signingJob = job
+        exchangeJob = job
         job.start()
     }
 
     private fun cancelSigning(result: MethodChannel.Result) {
-        cancelSigningOperation()
+        cancelExchangeOperation()
         result.success(null)
     }
 
-    private fun cancelSigningOperation() {
-        val pending = signingResult ?: return
-        signingGeneration++
-        signingResult = null
-        val job = signingJob
-        pending.error("cancelled", "Ledger signing was cancelled.", null)
+    private fun cancelExchangeOperation() {
+        val pending = exchangeResult ?: return
+        exchangeGeneration++
+        exchangeResult = null
+        val job = exchangeJob
+        pending.error("cancelled", "The Ledger operation was cancelled.", null)
         job?.cancel()
     }
 
-    private fun finishSigningSuccess(generation: Long, value: Any) {
-        val result = takeSigningResult(generation) ?: return
+    private fun finishExchangeSuccess(generation: Long, value: Any) {
+        val result = takeExchangeResult(generation) ?: return
         result.success(value)
     }
 
-    private fun finishSigningFailure(
+    private fun finishExchangeFailure(
         generation: Long,
         reason: DeviceOperationFailureReason,
     ) {
-        val result = takeSigningResult(generation) ?: return
+        val result = takeExchangeResult(generation) ?: return
         operationFailure(result, reason)
     }
 
-    private fun finishSigningCancelled(generation: Long) {
-        val result = takeSigningResult(generation) ?: return
-        result.error("cancelled", "Ledger signing was cancelled.", null)
+    private fun finishExchangeCancelled(generation: Long) {
+        val result = takeExchangeResult(generation) ?: return
+        result.error("cancelled", "The Ledger operation was cancelled.", null)
     }
 
-    private fun takeSigningResult(generation: Long): MethodChannel.Result? {
-        if (generation != signingGeneration) return null
-        val result = signingResult ?: return null
-        signingResult = null
-        signingJob = null
+    private fun takeExchangeResult(generation: Long): MethodChannel.Result? {
+        if (generation != exchangeGeneration) return null
+        val result = exchangeResult ?: return null
+        exchangeResult = null
+        exchangeJob = null
         return result
     }
 
     private suspend fun exchange(
         uid: String,
         command: ApduCommand,
-        result: MethodChannel.Result,
+        generation: Long,
     ): ByteArray? {
+        currentCoroutineContext().ensureActive()
         val operation = sendApdu(uid, command)
+        currentCoroutineContext().ensureActive()
         return when (operation) {
             is DeviceOperationResult.Success -> operation.value
             is DeviceOperationResult.Failure -> {
-                operationFailure(result, operation.reason)
+                finishExchangeFailure(generation, operation.reason)
                 null
             }
         }

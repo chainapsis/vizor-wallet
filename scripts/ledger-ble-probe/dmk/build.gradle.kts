@@ -18,6 +18,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     sourceSets["main"].java.srcDir(layout.buildDirectory.dir("handler-source"))
+    sourceSets["test"].java.srcDir("../../../android/app/src/test/kotlin")
 }
 val copyHandler by tasks.registering(Copy::class) {
     from("../../../android/app/src/main/kotlin/com/keplr/vizor/LedgerMobileHandler.kt")
@@ -28,4 +29,6 @@ dependencies {
     implementation("androidx.core:core:1.16.0")
     implementation("io.github.ledgerhq:device-management-kit:0.0.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.mockito:mockito-core:5.18.0")
 }

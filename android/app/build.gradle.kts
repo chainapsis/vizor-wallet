@@ -124,5 +124,6 @@ dependencies {
     // Biometric passcode escrow (BiometricPrompt + Keystore-bound key).
     implementation("androidx.biometric:biometric:1.1.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.mockito:mockito-core:5.18.0")
     androidTestImplementation("androidx.test:runner:1.2.0")
 }
