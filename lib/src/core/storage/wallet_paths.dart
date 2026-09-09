@@ -30,8 +30,32 @@ Future<Directory> getWalletSupportDirectory() async {
   return dir;
 }
 
+Future<String?> readWalletDbName() async {
+  final name = await AppSecureStore.instance.readPlain(kWalletDbNameKey);
+  if (name == null || name.isEmpty) return null;
+  if (!isWalletDbFileName(name)) {
+    throw StateError('The wallet database connection needs to be recovered.');
+  }
+  return name;
+}
+
 Future<String> getWalletDbName() async {
-  return AppSecureStore.instance.ensureWalletDbName();
+  final name = await readWalletDbName();
+  if (name == null) {
+    throw StateError('The wallet database connection needs to be recovered.');
+  }
+  return name;
+}
+
+/// DB pointers are basenames inside the app support directory, never paths.
+bool isWalletDbFileName(String? name) =>
+    name != null &&
+    RegExp(r'^zcash_wallet(?:_[a-zA-Z0-9_-]+)?\.db$').hasMatch(name);
+
+Future<String> createWalletDbPath() async {
+  final dir = await getWalletSupportDirectory();
+  final name = await AppSecureStore.instance.createWalletDbName();
+  return '${dir.path}${Platform.pathSeparator}$name';
 }
 
 Future<String> getWalletDbPath() async {

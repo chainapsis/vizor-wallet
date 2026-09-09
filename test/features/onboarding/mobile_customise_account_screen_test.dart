@@ -689,7 +689,7 @@ class _RecordingSecurityNotifier extends AppSecurityNotifier {
   }
 
   @override
-  void commitPasswordSetup() {
+  Future<void> commitPasswordSetup() async {
     committed = true;
   }
 

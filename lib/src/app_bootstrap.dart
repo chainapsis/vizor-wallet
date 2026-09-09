@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show ThemeMode;
@@ -12,8 +13,9 @@ import 'core/config/rpc_endpoint_config.dart';
 import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
 import 'core/storage/app_secure_store.dart';
-import 'core/storage/wallet_paths.dart';
 import 'core/storage/secure_storage_diagnostics.dart';
+import 'core/storage/wallet_paths.dart';
+import 'core/storage/wallet_recovery.dart';
 import 'providers/account_models.dart';
 import 'rust/api/sync.dart' as rust_sync;
 import 'rust/api/wallet.dart' as rust_wallet;
@@ -63,6 +65,7 @@ class AppBootstrapState {
     this.syncKeepAwakePromptSeen = false,
     this.failureKind,
     this.failureMessage,
+    this.walletRecovery,
   });
 
   final String initialLocation;
@@ -86,6 +89,7 @@ class AppBootstrapState {
   final bool passwordRotationRecoveryFailed;
   final AppBootstrapFailureKind? failureKind;
   final String? failureMessage;
+  final WalletRecoveryState? walletRecovery;
 
   bool get hasWallet => initialAccountState.hasAccounts;
   bool get requiresUnlock => hasWallet && !isUnlocked;
@@ -121,6 +125,21 @@ class AppBootstrapState {
     failureKind: failureKind,
     failureMessage: failureMessage,
   );
+
+  static AppBootstrapState recovery(WalletRecoveryState recovery) =>
+      AppBootstrapState(
+        initialLocation: '/wallet-recovery',
+        initialAccountState: const AccountState(),
+        initialSyncSnapshot: AppSyncSnapshot.empty,
+        network: recovery.network,
+        rpcEndpointConfig: defaultRpcEndpointConfig(recovery.network),
+        themeMode: ThemeMode.system,
+        privacyModeEnabled: false,
+        isPasswordConfigured: recovery.isPasswordConfigured,
+        isUnlocked: false,
+        passwordRotationRecoveryFailed: false,
+        walletRecovery: recovery,
+      );
 }
 
 class AppSyncSnapshot {
@@ -223,7 +242,6 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       StorageBootstrapStage.started,
     );
     await ensureIosSecureStoreAccessibilityMigrated();
-    await storage.ensureWalletDbName();
     await _applyE2eBootstrapOverrides(storage);
     var passwordRotationRecoveryFailed = false;
     try {
@@ -258,11 +276,56 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag',
     );
-    final isPasswordConfigured = await storage.isPasswordConfigured();
+    var isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
-    final dbPath = await _getDbPath();
-    final databaseExists = rust_wallet.walletExists(dbPath: dbPath);
-    if (databaseExists) {
+    final storedAccounts = await _readStoredAccounts(storage);
+    final storedActiveUuid = await storage.readString(_activeAccountKey);
+    final dbName = await storage.readPlain(kWalletDbNameKey);
+    final support = await getWalletSupportDirectory();
+    final dbPath = isWalletDbFileName(dbName)
+        ? '${support.path}${Platform.pathSeparator}$dbName'
+        : null;
+    final hasExistingDb =
+        dbPath != null &&
+        await FileSystemEntity.type(dbPath, followLinks: false) ==
+            FileSystemEntityType.file;
+    final interruptedRecovery = await storage.readPlain(
+      kWalletRecoveryPendingKey,
+    );
+    var canResumeEmptySetup = false;
+    if (!hasExistingDb ||
+        !isPasswordConfigured ||
+        interruptedRecovery != null) {
+      final candidates = await findWalletRecoveryCandidates(network: network);
+      canResumeEmptySetup =
+          interruptedRecovery == kWalletSetupPendingValue &&
+          (dbName == null ? candidates.isEmpty : hasExistingDb) &&
+          storedAccounts.isEmpty &&
+          storedActiveUuid == null &&
+          candidates.every((candidate) => candidate.isEmptyDatabase);
+      if (canResumeEmptySetup) {
+        // No native account exists yet. Keep the unused file and credentials;
+        // explicit setup may safely resume after another password entry.
+        isPasswordConfigured = false;
+      }
+      final hasWalletEvidence =
+          candidates.isNotEmpty ||
+          dbName != null ||
+          storedAccounts.isNotEmpty ||
+          storedActiveUuid != null ||
+          isPasswordConfigured ||
+          interruptedRecovery != null;
+      if (hasWalletEvidence && !canResumeEmptySetup) {
+        return AppBootstrapState.recovery(
+          WalletRecoveryState(
+            candidates: candidates,
+            network: network,
+            isPasswordConfigured: isPasswordConfigured,
+          ),
+        );
+      }
+    }
+    if (hasExistingDb && !canResumeEmptySetup) {
       try {
         log('bootstrap: ensuring wallet DB migrations before startup snapshot');
         await rust_wallet.ensureWalletDbMigrated(
@@ -280,21 +343,19 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         );
       }
     }
-    final storedAccounts = await _readStoredAccounts(storage);
     final storedAccountsByUuid = {
       for (final account in storedAccounts) account.uuid: account,
     };
-    final storedActiveUuid = await storage.readString(_activeAccountKey);
     await SecureStorageDiagnostics.instance.bootstrap(
       StorageBootstrapStage.metadata,
       passwordConfigured: isPasswordConfigured,
-      databaseExists: databaseExists,
+      databaseExists: hasExistingDb,
       storedAccountCount: storedAccounts.length,
     );
 
     var rustAccounts = <AccountInfo>[];
     final rustAddressesByUuid = <String, String>{};
-    if (rust_wallet.walletExists(dbPath: dbPath)) {
+    if (hasExistingDb && !canResumeEmptySetup) {
       try {
         final listed = await rust_wallet.listAccounts(
           dbPath: dbPath,
@@ -322,6 +383,21 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       }
     }
 
+    if (hasExistingDb &&
+        !canResumeEmptySetup &&
+        (rustAccounts.isEmpty ||
+            storedAccounts.any(
+              (stored) => !rustAccounts.any((a) => a.uuid == stored.uuid),
+            ))) {
+      return AppBootstrapState.recovery(
+        WalletRecoveryState(
+          candidates: await findWalletRecoveryCandidates(network: network),
+          network: network,
+          isPasswordConfigured: isPasswordConfigured,
+        ),
+      );
+    }
+
     final accounts = rustAccounts.isNotEmpty ? rustAccounts : storedAccounts;
     final activeAccountUuid = _resolveActiveUuid(storedActiveUuid, accounts);
     final activeAddress = !isUnlocked || activeAccountUuid == null
@@ -330,10 +406,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     final hasWallet = accounts.isNotEmpty;
     var initialSyncSnapshot = AppSyncSnapshot.empty;
 
-    if (isUnlocked &&
-        hasWallet &&
-        activeAccountUuid != null &&
-        rust_wallet.walletExists(dbPath: dbPath)) {
+    if (isUnlocked && hasWallet && activeAccountUuid != null && hasExistingDb) {
       initialSyncSnapshot = await _loadInitialSyncSnapshot(
         dbPath: dbPath,
         network: network,
@@ -581,10 +654,6 @@ String? _resolveActiveUuid(
     return storedActiveUuid;
   }
   return accounts.first.uuid;
-}
-
-Future<String> _getDbPath() async {
-  return getWalletDbPath();
 }
 
 Future<AppSyncSnapshot> _loadInitialSyncSnapshot({

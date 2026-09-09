@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,7 @@ import '../core/security/password_policy.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
+import '../core/storage/wallet_recovery.dart';
 import '../features/migration/models/ironwood_migration_phases.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/wallet.dart' as rust_wallet;
@@ -76,6 +79,30 @@ final passwordChangePreflightProvider = Provider<PasswordChangePreflight>((
   };
 });
 
+/// A failed import may already have committed an account in Rust. Only an
+/// inspectable, account-free database permits removing its setup password.
+final passwordSetupRollbackSafetyProvider = Provider<Future<bool> Function()>((
+  ref,
+) {
+  return () async {
+    final network = ref.read(rpcEndpointProvider).networkName;
+    if (await readWalletDbName() == null) {
+      return (await findWalletRecoveryCandidates(network: network)).isEmpty;
+    }
+    final path = await getWalletDbPath();
+    final type = await FileSystemEntity.type(path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) {
+      return (await findWalletRecoveryCandidates(network: network)).isEmpty;
+    }
+    if (type != FileSystemEntityType.file) return false;
+    final accounts = await rust_wallet.inspectWalletForRecovery(
+      dbPath: path,
+      network: network,
+    );
+    return accounts.isEmpty;
+  };
+});
+
 class AppSecurityState {
   const AppSecurityState({
     required this.isPasswordConfigured,
@@ -108,6 +135,9 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
   int _unlockRequestGeneration = 0;
   int _confirmRequestGeneration = 0;
   int? _pendingUnlockSessionGeneration;
+  bool _requiresWalletSetupRecovery = false;
+
+  bool get requiresWalletSetupRecovery => _requiresWalletSetupRecovery;
 
   @override
   AppSecurityState build() {
@@ -134,7 +164,7 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
 
   Future<void> _configurePassword(String password) async {
     await preparePasswordSetup(password);
-    commitPasswordSetup();
+    await commitPasswordSetup();
   }
 
   Future<void> preparePasswordSetup(String password) => ref
@@ -145,8 +175,17 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     final lifecycleGeneration = _lifecycleGeneration;
     final requestGeneration = _unlockRequestGeneration;
     final sessionGeneration = _store.sessionGeneration;
-    if (state.isPasswordConfigured) {
-      throw StateError('Password is already configured.');
+    if (_requiresWalletSetupRecovery) {
+      throw StateError('Recover the existing wallet before continuing setup.');
+    }
+    if (state.isPasswordConfigured || await _store.isPasswordConfigured()) {
+      final canResumeEmptySetup =
+          await _store.readPlain(kWalletRecoveryPendingKey) ==
+              kWalletSetupPendingValue &&
+          await ref.read(passwordSetupRollbackSafetyProvider)();
+      if (!canResumeEmptySetup) {
+        throw StateError('Password is already configured.');
+      }
     }
     if (_isPasswordSetupPrepared) {
       throw StateError('Password setup is already pending.');
@@ -160,6 +199,18 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     // is still delayed until commit so the router never sees half-completed
     // onboarding.
     await _store.configurePassword(password);
+    try {
+      // Establish recovery before the first native DB mutation. A later
+      // keyring failure must not prevent recording the incomplete setup.
+      await _store.writePlain(
+        kWalletRecoveryPendingKey,
+        kWalletSetupPendingValue,
+      );
+    } catch (_) {
+      // The caller has not started account creation yet.
+      await _store.clearPasswordConfiguration();
+      rethrow;
+    }
     _isPasswordSetupPrepared = true;
     _passwordSetupSessionGeneration = _store.sessionGeneration;
     if (_store.enforcesSessionGeneration &&
@@ -178,9 +229,13 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     }
   }
 
-  void commitPasswordSetup() {
+  Future<void> commitPasswordSetup() async {
     if (!_isPasswordSetupPrepared) {
       throw StateError('Password setup was not prepared.');
+    }
+    await _store.delete(kWalletRecoveryPendingKey);
+    if (await _store.readPlain(kWalletRecoveryPendingKey) != null) {
+      throw StateError('Wallet setup could not be saved. Retry recovery.');
     }
     final sessionGeneration = _passwordSetupSessionGeneration;
     _isPasswordSetupPrepared = false;
@@ -201,9 +256,38 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
 
   Future<void> _rollbackPasswordSetup() async {
     if (!_isPasswordSetupPrepared) return;
+    var canRollback = false;
+    try {
+      canRollback = await ref.read(passwordSetupRollbackSafetyProvider)();
+    } catch (_) {
+      // An unreadable database is not evidence that no account was created.
+    }
+    if (canRollback) {
+      await _store.clearPasswordConfiguration();
+      final name = await readWalletDbName();
+      if (name != null &&
+          await FileSystemEntity.type(
+                await getWalletDbPath(),
+                followLinks: false,
+              ) ==
+              FileSystemEntityType.notFound) {
+        // An explicit setup attempt allocated a name but never created a DB.
+        // Do not leave that unused locator looking like a missing wallet.
+        await _store.delete(kWalletDbNameKey);
+      }
+      // Keep the setup marker so a restart can distinguish this unused DB
+      // from a wallet whose password configuration was unexpectedly lost.
+      _isPasswordSetupPrepared = false;
+      _passwordSetupSessionGeneration = null;
+      return;
+    }
+
+    _requiresWalletSetupRecovery = true;
     _isPasswordSetupPrepared = false;
     _passwordSetupSessionGeneration = null;
-    await _store.clearPasswordConfiguration();
+    _store.clearSessionPassword();
+    // Keep the verifier, any saved signing material, and the marker written
+    // before account creation. No further keyring write is needed to recover.
   }
 
   Future<bool> unlock(String password) async {
@@ -328,6 +412,7 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     _confirmRequestGeneration++;
     _isPasswordSetupPrepared = false;
     _passwordSetupSessionGeneration = null;
+    _requiresWalletSetupRecovery = false;
     _store.clearSessionPassword();
     state = const AppSecurityState(
       isPasswordConfigured: false,

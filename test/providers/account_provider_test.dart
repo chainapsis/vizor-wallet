@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -25,6 +26,7 @@ import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 final _rustApi = _AccountMutationRustApiFake();
 
@@ -191,6 +193,23 @@ void main() {
         },
       );
     }
+  });
+
+  test('first wallet account discovery does not allocate a database', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    await container
+        .read(accountProvider.notifier)
+        .discoverAdditionalSoftwareAccounts(mnemonic: 'discovery fixture');
+    expect(_rustApi.lastDiscoveryPath, '');
+    expect(_rustApi.firstWalletDiscovery, isTrue);
+    expect(await AppSecureStore.instance.readPlain(kWalletDbNameKey), isNull);
   });
 
   test('wallet db cleanup paths include main db and voting sidecar files', () {
@@ -625,7 +644,9 @@ void main() {
   );
 
   test('successful account removal requests share restoration', () async {
-    FlutterSecureStorage.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({
+      kWalletDbNameKey: 'zcash_wallet_test.db',
+    });
     final supportDirectory = Directory.systemTemp.createTempSync(
       'vizor-account-removal',
     );
@@ -1221,6 +1242,28 @@ class _SwitchTestSecurityNotifier extends AppSecurityNotifier {
 }
 
 class _AccountMutationRustApiFake implements RustLibApi {
+  String? lastDiscoveryPath;
+  bool? firstWalletDiscovery;
+
+  @override
+  Future<rust_wallet.SoftwareWalletImportDiscoveryResult>
+  crateApiWalletDiscoverSoftwareWalletImportAccounts({
+    required String mnemonic,
+    required String bip39Passphrase,
+    BigInt? birthdayHeight,
+    required String network,
+    required String dbPath,
+    required String lightwalletdUrl,
+    required bool isFirstWalletAccount,
+  }) async {
+    lastDiscoveryPath = dbPath;
+    firstWalletDiscovery = isFirstWalletAccount;
+    return const rust_wallet.SoftwareWalletImportDiscoveryResult(
+      primaryAccountAlreadyExists: false,
+      accounts: [],
+    );
+  }
+
   final deletedAccountUuids = <String>[];
   final requestedAccounts = <String>[];
   var lookupStarted = Completer<void>();
@@ -1273,7 +1316,9 @@ class _AccountMutationRustApiFake implements RustLibApi {
 Future<void> _expectAccountDeletionDrainsLiveShareTracking({
   bool redeemedCard = false,
 }) async {
-  FlutterSecureStorage.setMockInitialValues({});
+  FlutterSecureStorage.setMockInitialValues({
+    kWalletDbNameKey: 'zcash_wallet_test.db',
+  });
   final supportDirectory = Directory.systemTemp.createTempSync(
     'vizor-account-share-drain',
   );

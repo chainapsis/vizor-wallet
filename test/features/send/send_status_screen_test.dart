@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/zcash_explorer.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -45,7 +46,9 @@ void main() {
 
   setUp(() async {
     rustApi.reset();
-    FlutterSecureStorage.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({
+      kWalletDbNameKey: 'zcash_wallet_send_status_test.db',
+    });
     final tempDir = await Directory.systemTemp.createTemp('send_status_test');
     addTearDown(() async {
       try {

@@ -234,6 +234,43 @@ Future<List<AccountInfo>> listAccounts({
   network: network,
 );
 
+/// Read an existing recovery candidate without migrations or file creation.
+Future<List<AccountInfo>> inspectWalletForRecovery({
+  required String dbPath,
+  required String network,
+}) => RustLib.instance.api.crateApiWalletInspectWalletForRecovery(
+  dbPath: dbPath,
+  network: network,
+);
+
+/// Verify a software recovery secret against one account's full viewing key.
+Future<bool> verifyRecoveryMnemonic({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String mnemonic,
+  required String bip39Passphrase,
+}) => RustLib.instance.api.crateApiWalletVerifyRecoveryMnemonic(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  mnemonic: mnemonic,
+  bip39Passphrase: bip39Passphrase,
+);
+
+/// Verify a hardware recovery key independently obtained from the device.
+Future<bool> verifyRecoveryHardwareKey({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String ufvk,
+}) => RustLib.instance.api.crateApiWalletVerifyRecoveryHardwareKey(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  ufvk: ufvk,
+);
+
 Future<AccountExportMetadata> getAccountExportMetadata({
   required String dbPath,
   required String network,

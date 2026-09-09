@@ -841,7 +841,7 @@ Future<void> _cleanupE2eWalletState() async {
   }
 
   final storage = AppSecureStore.instance;
-  final dbName = await getWalletDbName();
+  final dbName = await readWalletDbName();
 
   _log('cleaning regtest wallet state');
   await _stopRustWorkForCleanup();
@@ -851,6 +851,7 @@ Future<void> _cleanupE2eWalletState() async {
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
 
+  if (dbName == null) return;
   for (final name in [dbName, '$dbName-shm', '$dbName-wal']) {
     final file = File('${supportDir.path}${Platform.pathSeparator}$name');
     if (file.existsSync()) file.deleteSync();
