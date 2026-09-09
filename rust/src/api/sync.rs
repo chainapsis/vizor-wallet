@@ -11,6 +11,7 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 // ======================== Sync Mode ========================
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
+static ENHANCE_PIR_ENABLED: AtomicBool = AtomicBool::new(false);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 
@@ -34,6 +35,16 @@ pub fn set_active_sync_account(account_uuid: Option<String>) {
     *ACTIVE_SYNC_ACCOUNT
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = account_uuid;
+}
+
+/// Enable private Ironwood transaction enhancement for future sync work.
+#[frb(sync)]
+pub fn set_enhance_pir_enabled(enabled: bool) {
+    ENHANCE_PIR_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+pub(crate) fn enhance_pir_enabled() -> bool {
+    ENHANCE_PIR_ENABLED.load(Ordering::SeqCst)
 }
 
 // ======================== Full Sync ========================

@@ -14,8 +14,8 @@
 //!     backfill its activity).
 //!
 //! Librustzcash signals these gaps by populating
-//! `db.transaction_data_requests()`. This module services the queue
-//! against lightwalletd via three gRPC calls (`GetTransaction`,
+//! `db.transaction_data_requests()`. This module services the non-private
+//! portions of the queue against lightwalletd via gRPC (`GetTransaction`,
 //! `TransactionsInvolvingAddress`) and writes the results back into
 //! `db` using `decrypt_and_store_transaction` and
 //! `set_transaction_status`. The loop retries up to three times
@@ -29,8 +29,8 @@ use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
     data_api::{
-        wallet::decrypt_and_store_transaction, TransactionDataRequest, TransactionStatus,
-        WalletRead, WalletWrite,
+        enhance_pir::EnhancementMode, wallet::decrypt_and_store_transaction,
+        TransactionDataRequest, TransactionStatus, WalletRead, WalletWrite,
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
@@ -56,8 +56,14 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    enhance_pir_enabled: bool,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
+    db.set_enhancement_mode(if enhance_pir_enabled {
+        EnhancementMode::PrivateIronwood
+    } else {
+        EnhancementMode::Standard
+    });
 
     backfill_stored_fees(client, db, db_path).await?;
 
@@ -68,12 +74,16 @@ pub(super) async fn run_enhancement(
         if requests.is_empty() {
             break;
         }
-
         // If nothing in the queue is actionable (e.g. address-scoped
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests.iter().any(request_is_actionable);
+        let actionable = requests.iter().any(|request| match request {
+            TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
+            TransactionDataRequest::TransactionsInvolvingAddress(request) => {
+                request.block_range_end().is_some()
+            }
+        });
         if !actionable {
             break;
         }
@@ -290,17 +300,6 @@ fn stored_transaction_ids_missing_fee(db_path: &str) -> Result<Vec<TxId>, SyncEr
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| SyncError::db(format!("read missing fee transaction: {e}")))
-}
-
-/// Whether servicing `request` can make progress right now. Transaction
-/// requests always can; address-scoped requests need a bounded block range.
-fn request_is_actionable(request: &TransactionDataRequest) -> bool {
-    match request {
-        TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
-        TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-            req.block_range_end().is_some()
-        }
-    }
 }
 
 async fn fill_missing_fee(
