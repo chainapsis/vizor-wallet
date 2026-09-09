@@ -469,7 +469,7 @@ class _SettingsList extends StatelessWidget {
             if (activeAccountIsHardware)
               _SettingsRow(
                 iconName: AppIcons.wallet,
-                label: 'Account details',
+                label: 'Recovery information',
                 onTap: onHardwareAccountDetails,
               )
             else

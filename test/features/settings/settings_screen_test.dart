@@ -95,9 +95,9 @@ void main() {
       await tester.pump();
 
       expect(find.text('Secret passphrase'), findsNothing);
-      expect(find.text('Account details'), findsOneWidget);
+      expect(find.text('Recovery information'), findsOneWidget);
 
-      await tester.tap(find.text('Account details'));
+      await tester.tap(find.text('Recovery information'));
       await tester.pumpAndSettle();
 
       expect(
@@ -114,7 +114,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Secret passphrase'), findsOneWidget);
-    expect(find.text('Account details'), findsNothing);
+    expect(find.text('Recovery information'), findsNothing);
 
     await tester.tap(find.text('Secret passphrase'));
     await tester.pumpAndSettle();

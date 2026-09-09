@@ -195,14 +195,60 @@ void main() {
       expect(find.text('Account 0'), findsOneWidget);
       expect(find.text('Current'), findsNothing);
       expect(
-        find.byKey(const ValueKey('accounts_current_badge_ledger-0')),
+        find.byKey(const ValueKey('ledger_grouped_account_current_ledger-0')),
         findsOneWidget,
       );
       expect(
-        tester.getSize(
-          find.byKey(const ValueKey('accounts_current_badge_ledger-0')),
+        tester
+            .widget<Text>(
+              find.byKey(
+                const ValueKey('ledger_grouped_account_current_ledger-0'),
+              ),
+            )
+            .data,
+        '· Current',
+      );
+      expect(
+        tester
+            .widget<Semantics>(
+              find.byKey(
+                const ValueKey('ledger_grouped_account_selection_ledger-0'),
+              ),
+            )
+            .properties
+            .selected,
+        isTrue,
+      );
+      expect(
+        tester.getTopLeft(find.text('Account 0')).dy,
+        greaterThan(
+          tester
+              .getBottomLeft(
+                find.descendant(
+                  of: find.byKey(
+                    const ValueKey('accounts_active_row_ledger-0'),
+                  ),
+                  matching: find.text('Ledger primary'),
+                ),
+              )
+              .dy,
         ),
-        const Size.square(18),
+      );
+      expect(
+        tester
+            .getTopRight(
+              find.byKey(
+                const ValueKey('ledger_grouped_account_current_ledger-0'),
+              ),
+            )
+            .dx,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey('accounts_row_menu_button_ledger-0')),
+              )
+              .dx,
+        ),
       );
       expect(find.text('Account 1'), findsOneWidget);
       expect(
@@ -447,10 +493,10 @@ void main() {
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     expect(find.text('View secret phrase'), findsNothing);
-    expect(find.text('Account details'), findsOneWidget);
+    expect(find.text('Recovery information'), findsOneWidget);
     expect(find.text('View viewing key'), findsOneWidget);
     _expectVerticalTextOrder(tester, const [
-      'Account details',
+      'Recovery information',
       'View viewing key',
       'Copy address',
       'Send ZEC',
@@ -604,27 +650,27 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View secret phrase'), findsNothing);
-    expect(find.text('Account details'), findsOneWidget);
+    expect(find.text('Recovery information'), findsOneWidget);
     // Unlike the secret passphrase, a UFVK export never grants spend
     // authority, so hardware accounts still get the viewing-key shortcut.
     expect(find.text('View viewing key'), findsOneWidget);
 
     _expectVerticalTextOrder(tester, const [
-      'Account details',
+      'Recovery information',
       'View viewing key',
       'Edit account',
       'Copy address',
       'Remove account',
     ]);
 
-    await tester.tap(find.text('Account details'));
+    await tester.tap(find.text('Recovery information'));
     await tester.pumpAndSettle();
 
     expect(
       find.byKey(const ValueKey('hardware_account_details_screen')),
       findsOneWidget,
     );
-    expect(find.text('Keystone hardware wallet'), findsOneWidget);
+    expect(find.text('Keystone hardware wallet'), findsNothing);
     expect(find.text('2500000'), findsOneWidget);
     expect(find.text('7'), findsOneWidget);
   });
@@ -679,29 +725,22 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Add Ledger account'), findsOneWidget);
-    await tester.tap(find.text('Account details'));
+    await tester.tap(find.text('Recovery information'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ledger hardware wallet'), findsOneWidget);
+    expect(find.text('Recovery information'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ledger_details_account_name')),
+      findsNothing,
+    );
     expect(find.text('2600000'), findsOneWidget);
     expect(find.text('12'), findsOneWidget);
-    expect(find.text('Connection preference'), findsOneWidget);
-    expect(find.text('Automatic'), findsOneWidget);
-    expect(find.text('Nano X'), findsOneWidget);
-    expect(find.text('Rowan Ledger'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('ledger_change_connection_button')),
-      findsOneWidget,
-    );
+    expect(find.text('Connection preference'), findsNothing);
+    expect(find.text('Ledger connection'), findsNothing);
     expect(
       find.byKey(const ValueKey('ledger_add_another_account_button')),
-      findsOneWidget,
+      findsNothing,
     );
-    await tester.tap(
-      find.byKey(const ValueKey('ledger_add_another_account_button')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('ledger add ledger-account'), findsOneWidget);
   });
 
   testWidgets('Ledger context menu starts add-account from that wallet', (
@@ -776,19 +815,10 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_ledger-account')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Account details'));
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('ledger_change_connection_button')),
-    );
+    await tester.tap(find.text('Ledger connection'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.text(
-        'Nano S Plus is not supported over Bluetooth by this Vizor build.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Nano S Plus uses USB in Vizor.'), findsOneWidget);
     final bluetoothButton = tester.widget<AppButton>(
       find.ancestor(
         of: find.text('Set up Bluetooth'),
@@ -796,6 +826,21 @@ void main() {
       ),
     );
     expect(bluetoothButton.onPressed, isNull);
+    final selectedChoices = find.descendant(
+      of: find.byType(Dialog),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Semantics && widget.properties.selected == true,
+      ),
+    );
+    expect(selectedChoices, findsOneWidget);
+    expect(
+      find.descendant(of: selectedChoices, matching: find.text('USB')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsNothing);
+    expect(find.text('USB'), findsNothing);
   });
 
   testWidgets('current imported account can be removed', (tester) async {
@@ -1696,6 +1741,9 @@ Widget _accountsHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
+      hardwareAccountBirthdayBlockTimeProvider.overrideWith(
+        (ref, height) async => 1785196800,
+      ),
       ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),

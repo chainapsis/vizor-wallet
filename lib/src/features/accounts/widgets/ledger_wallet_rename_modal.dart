@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import 'account_modal_card.dart';
 
@@ -83,6 +85,14 @@ class _LedgerWalletRenameModalState extends State<LedgerWalletRenameModal> {
               color: context.colors.text.accent,
             ),
           ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Give accounts from this Ledger a name you’ll recognize.',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
           const SizedBox(height: AppSpacing.md),
           AppTextField(
             key: const ValueKey('ledger_wallet_rename_field'),
@@ -100,10 +110,34 @@ class _LedgerWalletRenameModalState extends State<LedgerWalletRenameModal> {
             onSubmitted: (_) => _submit(),
           ),
           const SizedBox(height: AppSpacing.md),
-          AccountModalActions(
-            onCancel: _isSubmitting ? null : widget.onCancel,
-            actionLabel: _isSubmitting ? 'Renaming...' : 'Rename',
-            onAction: _canRename ? _submit : null,
+          Row(
+            children: [
+              Expanded(
+                child: AppButton(
+                  key: const ValueKey('account_modal_cancel_button'),
+                  variant: AppButtonVariant.secondary,
+                  size: AppButtonSize.mediumLarge,
+                  expand: true,
+                  constrainContent: true,
+                  onPressed: _isSubmitting ? null : widget.onCancel,
+                  child: const Text('Cancel'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: AppButton(
+                  key: const ValueKey('account_modal_action_button'),
+                  size: AppButtonSize.mediumLarge,
+                  expand: true,
+                  constrainContent: true,
+                  onPressed: _canRename ? _submit : null,
+                  trailing: _isSubmitting
+                      ? const AppIcon(AppIcons.loader)
+                      : null,
+                  child: const Text('Rename'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
