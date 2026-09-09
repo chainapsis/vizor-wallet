@@ -37,7 +37,6 @@ import 'src/features/donation/screens/donation_screen.dart';
 import 'src/features/ledger/ledger_capability.dart';
 import 'src/features/ledger/services/ledger_account_service.dart';
 import 'src/features/ledger/services/ledger_operation_recovery.dart';
-import 'src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';

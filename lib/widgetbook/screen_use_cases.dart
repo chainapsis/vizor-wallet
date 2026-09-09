@@ -5212,4 +5212,9 @@ class _PreviewReceiveAddressService implements ReceiveAddressService {
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     return 'u1widgetbookaccountsrenewedaddress';
   }
+
+  @override
+  Future<String> reserveOrchardAddress({required String accountUuid}) async {
+    return 'u1widgetbookaccountsorchardaddress';
+  }
 }
