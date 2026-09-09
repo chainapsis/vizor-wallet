@@ -1410,6 +1410,9 @@ class _WindowsUpdatePromptHostState
                   ).animate(animation);
                   return FadeTransition(
                     opacity: animation,
+                    // Keep semantics attached through zero-opacity frames
+                    // when a dismissed update prompt is shown again.
+                    alwaysIncludeSemantics: true,
                     child: SlideTransition(position: position, child: child),
                   );
                 },

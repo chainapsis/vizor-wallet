@@ -1272,11 +1272,7 @@ class _MobileVotingEntryCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppIcon(
-                  AppIcons.vote,
-                  size: 20,
-                  color: colors.icon.accent,
-                ),
+                AppIcon(AppIcons.vote, size: 20, color: colors.icon.accent),
                 const SizedBox(width: AppSpacing.s),
                 Expanded(
                   child: Column(
@@ -1728,7 +1724,7 @@ class _AnimatedMobileTransparentBalanceStripState
       key: const ValueKey('mobile_home_transparent_balance_strip'),
       child: SizeTransition(
         sizeFactor: _sizeFactor,
-        axisAlignment: -1,
+        alignment: AlignmentDirectional.topStart,
         child: FadeTransition(
           opacity: _opacity,
           child: SlideTransition(

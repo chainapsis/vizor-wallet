@@ -64,6 +64,18 @@ def release_metadata() -> dict:
 
 
 class FdroidMetadataTest(unittest.TestCase):
+    def test_flutter_pin_rejects_version_drift_and_mutable_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pin = pathlib.Path(directory) / "flutter-sdk.json"
+            pin.write_text(json.dumps({"version": "3.41.6", "revision": "a" * 40}))
+            with self.assertRaisesRegex(ValueError, "match the version"):
+                GENERATOR.load_flutter_revision(pin, "3.47.2")
+            pin.write_text(json.dumps({"version": "3.47.2", "revision": "stable"}))
+            with self.assertRaisesRegex(ValueError, "full Git commit SHA"):
+                GENERATOR.load_flutter_revision(pin, "3.47.2")
+            pin.write_text(json.dumps({"version": "3.47.2", "revision": "a" * 40}))
+            self.assertEqual(GENERATOR.load_flutter_revision(pin, "3.47.2"), "a" * 40)
+
     def test_renders_three_reproducible_builds(self) -> None:
         metadata = release_metadata()
         GENERATOR.validate_release(metadata)
@@ -81,11 +93,11 @@ class FdroidMetadataTest(unittest.TestCase):
         self.assertIn(f"AllowedAPKSigningKeys: {GENERATOR.SIGNING_SHA256}", rendered)
         self.assertIn("AutoUpdateMode: Version mobile/v%v", rendered)
         self.assertIn(
-            "flutterVersion=$(sed -n -E ",
+            f"git -C $$flutter$$ checkout -f {GENERATOR.FLUTTER_REVISION}",
             rendered,
         )
         self.assertEqual(
-            rendered.count("git -C $$flutter$$ checkout -f $flutterVersion"),
+            rendered.count(f"git -C $$flutter$$ checkout -f {GENERATOR.FLUTTER_REVISION}"),
             3,
         )
         self.assertEqual(

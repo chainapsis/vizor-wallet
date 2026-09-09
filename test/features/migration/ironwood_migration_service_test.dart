@@ -3868,6 +3868,10 @@ void main() {
               startedPassword = password;
               startedSalt = saltBase64;
               expect(mnemonicBytes, [1, 2, 3, 4]);
+              // The caller must keep the buffer alive until native work
+              // finishes, then wipe it in its finally block.
+              await Future<void>.delayed(Duration.zero);
+              expect(mnemonicBytes, [1, 2, 3, 4]);
               expect(approvedSchedule, isEmpty);
               return _migrationResult();
             },

@@ -779,7 +779,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
           accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
         return null;
       }
-      return rust_sync.getTransactionDetail(
+      return await rust_sync.getTransactionDetail(
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
