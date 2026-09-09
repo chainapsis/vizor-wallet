@@ -1,9 +1,35 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 
 void main() {
+  test(
+    'Windows cancellation uses Rust without initializing native BLE',
+    () async {
+      var cancelCalls = 0;
+      final container = ProviderContainer(
+        overrides: [
+          ledgerTargetPlatformProvider.overrideWithValue(
+            TargetPlatform.windows,
+          ),
+          ledgerRustOperationCancellerProvider.overrideWithValue(() async {
+            cancelCalls++;
+          }),
+          ledgerMobileBleServiceProvider.overrideWith((_) {
+            throw StateError('Windows must not initialize BLE');
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(ledgerOperationCancellerProvider)();
+      expect(cancelCalls, 1);
+      expect(container.exists(ledgerMobileBleServiceProvider), isFalse);
+    },
+  );
+
   test('release validation runs before the Ledger transport signer', () async {
     final events = <String>[];
     final container = ProviderContainer(

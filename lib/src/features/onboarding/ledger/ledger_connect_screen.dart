@@ -18,6 +18,7 @@ import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/ledger_app_instructions.dart';
+import '../../ledger/ledger_capability.dart';
 import '../../ledger/widgets/ledger_connection_guide.dart';
 import '../shared/onboarding_chrome.dart';
 import 'ledger_desktop_ble_probe_dialog.dart';
@@ -528,22 +529,26 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                             child: Text(_busy ? 'Waiting for Ledger' : 'USB'),
                           ),
                         ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: AppButton(
-                            key: const ValueKey(
-                              'ledger_desktop_ble_connect_button',
+                        if (isLedgerBluetoothPlatform(
+                          ref.watch(ledgerTargetPlatformProvider),
+                        )) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Expanded(
+                            child: AppButton(
+                              key: const ValueKey(
+                                'ledger_desktop_ble_connect_button',
+                              ),
+                              onPressed: _busy
+                                  ? null
+                                  : () => unawaited(_connectBluetooth()),
+                              variant: AppButtonVariant.secondary,
+                              expand: true,
+                              leading: const AppIcon(AppIcons.bluetooth),
+                              constrainContent: true,
+                              child: const Text('Bluetooth'),
                             ),
-                            onPressed: _busy
-                                ? null
-                                : () => unawaited(_connectBluetooth()),
-                            variant: AppButtonVariant.secondary,
-                            expand: true,
-                            leading: const AppIcon(AppIcons.bluetooth),
-                            constrainContent: true,
-                            child: const Text('Bluetooth'),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ],

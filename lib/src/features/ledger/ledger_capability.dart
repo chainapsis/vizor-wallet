@@ -54,6 +54,9 @@ LedgerBluetoothCapability ledgerBluetoothTransportCapabilityForModel({
   required String? model,
   required TargetPlatform platform,
 }) {
+  if (!isLedgerBluetoothPlatform(platform)) {
+    return LedgerBluetoothCapability.unsupported;
+  }
   final hardware = ledgerBluetoothCapabilityForModel(model);
   if (hardware != LedgerBluetoothCapability.supported) return hardware;
   final normalized = (model ?? '').toLowerCase().replaceAll(
@@ -98,9 +101,11 @@ LedgerCapability ledgerStaticCapability({
   required TargetPlatform platform,
   required String networkName,
 }) {
-  if (platform != TargetPlatform.macOS && !isLedgerMobilePlatform(platform)) {
+  if (platform != TargetPlatform.macOS &&
+      platform != TargetPlatform.windows &&
+      !isLedgerMobilePlatform(platform)) {
     return const LedgerCapability.unsupported(
-      'Ledger is currently supported only on Vizor for macOS, iOS, and Android.',
+      'Ledger is currently supported only on Vizor for macOS, Windows, iOS, and Android.',
     );
   }
   if (zcashNetworkFromName(networkName) != ZcashNetwork.mainnet) {
@@ -113,6 +118,9 @@ LedgerCapability ledgerStaticCapability({
 
 bool isLedgerMobilePlatform(TargetPlatform platform) =>
     platform == TargetPlatform.iOS || platform == TargetPlatform.android;
+
+bool isLedgerBluetoothPlatform(TargetPlatform platform) =>
+    platform == TargetPlatform.macOS || isLedgerMobilePlatform(platform);
 
 void requireSupportedLedgerAppVersion(String version) {
   final parsed = _parseVersion(version);

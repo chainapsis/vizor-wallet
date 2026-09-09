@@ -14,6 +14,73 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  for (final preference in LedgerConnectionPreference.values) {
+    test('Windows uses USB without touching BLE for $preference', () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: preference,
+          deviceModel: 'Nano X',
+          lastTransport: LedgerConnectionTransport.bluetooth,
+        ),
+      );
+      final ble = _FakeBleService();
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        platform: TargetPlatform.windows,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final result = await container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async => 'signed-over-usb',
+            bluetooth: (_) => throw StateError('Windows BLE must not run'),
+          );
+      expect(result, 'signed-over-usb');
+      expect(ble.recoveryEvents, isEmpty);
+      expect(ble.connectCalls, 0);
+      expect(notifier.recordedTransports, [LedgerConnectionTransport.usb]);
+    });
+  }
+
+  test('Windows USB failure does not offer or probe Bluetooth', () async {
+    final notifier = _FakeAccountNotifier(
+      _ledgerAccount(
+        preference: LedgerConnectionPreference.automatic,
+        deviceModel: 'Nano X',
+      ),
+    );
+    final ble = _FakeBleService();
+    final container = _container(
+      notifier: notifier,
+      ble: ble,
+      platform: TargetPlatform.windows,
+      usbReady: false,
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    await expectLater(
+      container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () => throw StateError('Unavailable USB must not sign'),
+            bluetooth: (_) => throw StateError('Windows BLE must not run'),
+          ),
+      throwsA(
+        isA<LedgerConnectionRequiredException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('with USB'), isNot(contains('Bluetooth'))),
+        ),
+      ),
+    );
+    expect(ble.connectCalls, 0);
+    expect(notifier.recordedTransports, isEmpty);
+  });
+
   test(
     'explicit reconnect cleans up, rediscovers the same peer and never signs',
     () async {

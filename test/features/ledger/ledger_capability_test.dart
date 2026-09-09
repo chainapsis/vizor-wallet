@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 
 void main() {
-  test('supports macOS, iOS, and Android mainnet only', () {
+  test('supports macOS, Windows, iOS, and Android mainnet only', () {
     expect(
       ledgerStaticCapability(
         platform: TargetPlatform.android,
@@ -37,6 +37,20 @@ void main() {
         platform: TargetPlatform.windows,
         networkName: 'main',
       ).supported,
+      isTrue,
+    );
+    expect(
+      ledgerStaticCapability(
+        platform: TargetPlatform.windows,
+        networkName: 'test',
+      ).supported,
+      isFalse,
+    );
+    expect(
+      ledgerStaticCapability(
+        platform: TargetPlatform.linux,
+        networkName: 'main',
+      ).supported,
       isFalse,
     );
   });
@@ -45,7 +59,35 @@ void main() {
     expect(isLedgerMobilePlatform(TargetPlatform.iOS), isTrue);
     expect(isLedgerMobilePlatform(TargetPlatform.android), isTrue);
     expect(isLedgerMobilePlatform(TargetPlatform.macOS), isFalse);
+    expect(isLedgerMobilePlatform(TargetPlatform.windows), isFalse);
   });
+
+  test(
+    'keeps Bluetooth unavailable on USB-only Windows and unsupported OSes',
+    () {
+      for (final platform in TargetPlatform.values) {
+        final supported =
+            platform == TargetPlatform.macOS ||
+            platform == TargetPlatform.iOS ||
+            platform == TargetPlatform.android;
+        expect(
+          isLedgerBluetoothPlatform(platform),
+          supported,
+          reason: '$platform',
+        );
+        expect(
+          ledgerBluetoothTransportCapabilityForModel(
+            model: 'Nano X',
+            platform: platform,
+          ),
+          supported
+              ? LedgerBluetoothCapability.supported
+              : LedgerBluetoothCapability.unsupported,
+          reason: '$platform',
+        );
+      }
+    },
+  );
 
   test('accepts the minimum and newer Ledger Zcash app versions', () {
     expect(() => requireSupportedLedgerAppVersion('3.9.3'), returnsNormally);

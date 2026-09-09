@@ -487,7 +487,7 @@ void main() {
       await tester.pumpWidget(
         _methodHarness(
           bootstrap: _bootstrap(accounts: const [account]),
-          platform: TargetPlatform.windows,
+          platform: TargetPlatform.linux,
         ),
       );
       await tester.pumpAndSettle();

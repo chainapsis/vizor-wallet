@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_connect_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -24,6 +25,39 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 
 void main() {
+  testWidgets('Windows offers USB only and continues to the birthday step', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.windows,
+        connector: (index) async => LedgerDeviceAccount(
+          ufvk: 'windows-usb-viewing-key',
+          seedFingerprint: const [1, 2, 3],
+          accountIndex: index,
+          appVersion: '3.9.3',
+        ),
+        importer:
+            ({
+              required name,
+              required account,
+              required birthdayHeight,
+              required profilePictureId,
+            }) async {},
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('USB'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('birthday-windows-usb-viewing-key'), findsOneWidget);
+  });
+
   testWidgets('Ledger sidebar export preserves 2x pixels and transparency', (
     tester,
   ) async {
@@ -649,6 +683,7 @@ void main() {
 Widget _harness({
   required LedgerAccountConnector connector,
   required LedgerAccountImporter importer,
+  TargetPlatform platform = TargetPlatform.macOS,
   LedgerBluetoothAccountConnector? bluetoothConnector,
   LedgerWalletIdentityConnector? identityConnector,
   LedgerBluetoothWalletIdentityConnector? bluetoothIdentityConnector,
@@ -679,6 +714,7 @@ Widget _harness({
 
   return ProviderScope(
     overrides: [
+      ledgerTargetPlatformProvider.overrideWithValue(platform),
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       accountProvider.overrideWith(() => _FakeAccountNotifier(accountState)),
       syncProvider.overrideWith(_FakeSyncNotifier.new),

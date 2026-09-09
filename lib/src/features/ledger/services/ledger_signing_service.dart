@@ -128,6 +128,9 @@ final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
   return () async {
     ref.read(ledgerMobileSigningStatusGateProvider).cancelPending();
     await ref.read(ledgerRustOperationCancellerProvider)();
+    if (!isLedgerBluetoothPlatform(ref.read(ledgerTargetPlatformProvider))) {
+      return;
+    }
     try {
       await ref.read(ledgerMobileBleServiceProvider).cancelSigning();
     } catch (_) {
