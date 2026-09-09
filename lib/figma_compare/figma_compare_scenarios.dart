@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
+import '../widgetbook/ledger_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/send_review_status_use_cases.dart';
@@ -54,6 +55,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildVotingShareStatusUseCase,
     desktop: false,
     mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-connect',
+    description: 'Desktop Ledger connection with the Figma sidebar artwork',
+    builder: _buildLedgerConnect,
   ),
   FigmaCompareScenario(
     id: 'accounts-ledger-family',
@@ -968,6 +974,9 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
 ];
+
+Widget _buildLedgerConnect(BuildContext context) =>
+    buildLedgerFlowPreview(screen: 'Connect Ledger', mobile: false);
 
 FigmaCompareScenario? findFigmaCompareScenario(String id) {
   for (final scenario in figmaCompareScenarios) {

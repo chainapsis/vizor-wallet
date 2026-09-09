@@ -2557,6 +2557,17 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
           ),
         ),
         GoRoute(
+          path: '/onboarding/ledger',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/onboarding/ledger'),
+        ),
+        GoRoute(
+          path: '/settings/hardware-account',
+          builder: (_, _) => const _PreviewRoutePlaceholder(
+            label: '/settings/hardware-account',
+          ),
+        ),
+        GoRoute(
           path: '/add-account',
           builder: (_, _) =>
               const _PreviewRoutePlaceholder(label: '/add-account'),
@@ -3381,6 +3392,12 @@ class _LedgerAdditionalAccountHarnessState
               const LedgerConnectScreen(sourceAccountUuid: 'ledger-primary'),
         ),
         GoRoute(
+          path: '/onboarding/ledger/birthday',
+          builder: (_, _) => const _PreviewRoutePlaceholder(
+            label: '/onboarding/ledger/birthday',
+          ),
+        ),
+        GoRoute(
           path: '/accounts',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/accounts'),
         ),
@@ -3945,6 +3962,10 @@ final _accountsLedgerFamilyState = AccountState(
       hardwareSignerKind: HardwareSignerKind.ledger,
       zip32AccountIndex: 0,
       ledgerWalletFingerprint: _previewLedgerWalletFingerprint,
+      birthdayHeight: 2870000,
+      ledgerDeviceId: 'preview-ledger-device',
+      ledgerDeviceName: 'Ledger Flex',
+      ledgerDeviceModel: 'Ledger Flex',
       profilePictureId: 'pfp-01',
     ),
     AccountInfo(
@@ -3955,6 +3976,10 @@ final _accountsLedgerFamilyState = AccountState(
       hardwareSignerKind: HardwareSignerKind.ledger,
       zip32AccountIndex: 1,
       ledgerWalletFingerprint: _previewLedgerWalletFingerprint,
+      birthdayHeight: 2870000,
+      ledgerDeviceId: 'preview-ledger-device',
+      ledgerDeviceName: 'Ledger Flex',
+      ledgerDeviceModel: 'Ledger Flex',
       profilePictureId: 'pfp-02',
     ),
     AccountInfo(

@@ -4,7 +4,8 @@ import 'dart:async';
 import '../src/features/ledger/services/ledger_connection_recovery.dart';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart' show Material, MaterialApp, ThemeMode;
+import 'package:flutter/material.dart'
+    show Material, MaterialApp, Theme, ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,99 +13,99 @@ import 'package:widgetbook/widgetbook.dart';
 
 import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
+import '../src/core/layout/app_form_factor.dart';
+import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/features/accounts/screens/hardware_account_details_screen.dart';
 import '../src/features/accounts/widgets/ledger_wallet_rename_modal.dart';
+import '../src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import '../src/features/ledger/ledger_capability.dart';
+import '../src/features/ledger/ledger_error_messages.dart';
 import '../src/features/ledger/services/ledger_app_readiness_service.dart';
+import '../src/features/ledger/services/ledger_account_service.dart';
+import '../src/features/ledger/services/ledger_signing_service.dart';
 import '../src/features/ledger/services/ledger_mobile_ble_service.dart';
-import '../src/features/ledger/widgets/ledger_device_app_prompt.dart';
 import '../src/features/ledger/widgets/ledger_signing_modal.dart';
 import '../src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../src/features/onboarding/mobile/mobile_ledger_device_sheet.dart';
+import '../src/features/onboarding/mobile/mobile_ledger_connect_screen.dart';
+import '../src/features/onboarding/ledger/ledger_connect_screen.dart';
 import '../src/features/voting/screens/voting_status_screen.dart';
+import '../src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/voting/voting_state.dart';
 import '../src/rust/api/ledger.dart' as rust_ledger;
 import 'screen_use_cases.dart';
+import 'ledger_transfer_preview.dart';
 
 WidgetbookFolder buildLedgerWidgetbookFolder() {
+  const mobile = kAppFormFactor == AppFormFactor.mobile;
+  WidgetbookComponent screen(String name, String preview) =>
+      WidgetbookComponent(
+        name: name,
+        useCases: [
+          WidgetbookUseCase(
+            name: mobile ? 'Mobile' : 'Desktop',
+            builder: (_) =>
+                buildLedgerFlowPreview(screen: preview, mobile: mobile),
+          ),
+        ],
+      );
   return WidgetbookFolder(
     name: 'Ledger',
     children: [
+      WidgetbookComponent(
+        name: 'Transfer limits',
+        useCases: [
+          for (final scenario in LedgerTransferScenario.values)
+            WidgetbookUseCase(
+              name: switch (scenario) {
+                LedgerTransferScenario.send => 'Send - adjust amount',
+                LedgerTransferScenario.ready => 'Send - ready',
+              },
+              builder: (_) => LedgerTransferPreview(
+                key: ValueKey(scenario),
+                scenario: scenario,
+              ),
+            ),
+          for (final kind in [
+            LedgerRequestKind.swap,
+            LedgerRequestKind.payment,
+            LedgerRequestKind.shield,
+            LedgerRequestKind.migration,
+          ])
+            WidgetbookUseCase(
+              name: '${kind.name} - smaller transfer',
+              builder: (_) => buildLedgerSigningPreview(
+                phase: LedgerSigningModalPhase.failed,
+                failureMode: LedgerSigningPlaygroundFailure.capacity,
+                capacityRequestKind: kind,
+                mobile: mobile,
+              ),
+            ),
+        ],
+      ),
       WidgetbookFolder(
         name: 'Onboarding & import',
         children: [
-          WidgetbookComponent(
-            name: 'Additional account',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Desktop',
-                builder: buildLedgerAdditionalAccountUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Mobile',
-                builder: buildMobileLedgerAdditionalAccountUseCase,
-              ),
-            ],
-          ),
-          WidgetbookComponent(
-            name: 'Device app prompt',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Mainnet',
-                builder: buildLedgerDeviceAppPromptUseCase,
-              ),
-            ],
-          ),
+          screen('Connect Ledger', 'Connect Ledger'),
+          screen('Additional account', 'Add another account'),
         ],
       ),
       WidgetbookFolder(
         name: 'Accounts',
         children: [
-          WidgetbookComponent(
-            name: 'Ledger family',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Desktop',
-                builder: buildAccountsLedgerFamilyUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Mobile',
-                builder: buildMobileAccountsLedgerFamilyUseCase,
-              ),
-            ],
-          ),
-          WidgetbookComponent(
-            name: 'Account details',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Desktop',
-                builder: buildLedgerAccountDetailsUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Mobile',
-                builder: buildMobileLedgerAccountDetailsUseCase,
-              ),
-            ],
-          ),
-          WidgetbookComponent(
-            name: 'Rename group',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Interactive',
-                builder: buildLedgerRenameUseCase,
-              ),
-            ],
-          ),
+          screen('Account groups', 'Account groups'),
+          screen('Recovery information', 'Recovery information'),
+          screen('Rename group', 'Rename group'),
         ],
       ),
       WidgetbookFolder(
         name: 'Signing',
         children: [
           WidgetbookComponent(
-            name: 'Signing modal',
+            name: 'Device approval',
             useCases: [
               WidgetbookUseCase(
                 name: 'Playground',
@@ -118,28 +119,29 @@ WidgetbookFolder buildLedgerWidgetbookFolder() {
           ),
         ],
       ),
-      WidgetbookFolder(
-        name: 'Mobile device picker',
-        children: [
-          WidgetbookComponent(
-            name: 'Discovery',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Devices found',
-                builder: buildLedgerDevicePickerFoundUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Empty',
-                builder: buildLedgerDevicePickerEmptyUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Permission denied',
-                builder: buildLedgerDevicePickerPermissionDeniedUseCase,
-              ),
-            ],
-          ),
-        ],
-      ),
+      if (mobile)
+        WidgetbookFolder(
+          name: 'Mobile device picker',
+          children: [
+            WidgetbookComponent(
+              name: 'Discovery',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Devices found',
+                  builder: buildLedgerDevicePickerFoundUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Empty',
+                  builder: buildLedgerDevicePickerEmptyUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Permission denied',
+                  builder: buildLedgerDevicePickerPermissionDeniedUseCase,
+                ),
+              ],
+            ),
+          ],
+        ),
       WidgetbookFolder(
         name: 'Voting',
         children: [
@@ -158,8 +160,228 @@ WidgetbookFolder buildLedgerWidgetbookFolder() {
   );
 }
 
-Widget buildLedgerDeviceAppPromptUseCase(BuildContext context) {
-  return const Center(child: LedgerDeviceAppPrompt(networkName: 'main'));
+Widget buildLedgerFlowPreview({
+  required String screen,
+  required bool mobile,
+}) => Builder(
+  builder: (context) {
+    final content = switch (screen) {
+      'Connect Ledger' => _LedgerConnectReview(mobile: mobile),
+      'Add another account' =>
+        mobile
+            ? buildMobileLedgerAdditionalAccountUseCase(context)
+            : buildLedgerAdditionalAccountUseCase(context),
+      'Recovery information' => _LedgerAccountDetailsPreview(mobile: mobile),
+      'Account groups' => ProviderScope(
+        overrides: [
+          ledgerTargetPlatformProvider.overrideWithValue(
+            mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
+          ),
+        ],
+        child: mobile
+            ? buildMobileAccountsLedgerFamilyUseCase(context)
+            : buildAccountsLedgerFamilyUseCase(context),
+      ),
+      'Rename group' =>
+        mobile
+            ? buildMobileLedgerRenameUseCase(context)
+            : buildLedgerRenameUseCase(context),
+      'Voting approval' => buildLedgerVotingPreview(
+        bundleNumber: 1,
+        bundleCount: 2,
+        displayMemo:
+            'Approve voting delegation\nAmount: 0.00000100 ZEC\nRound: community-grants',
+      ),
+      'Devices found' => buildLedgerDevicePickerFoundUseCase(context),
+      'No devices' => buildLedgerDevicePickerEmptyUseCase(context),
+      'Bluetooth permission' => buildLedgerDevicePickerPermissionDeniedUseCase(
+        context,
+      ),
+      _ => buildLedgerSigningPreview(
+        mobile: mobile,
+        phase: screen == 'Reconnect'
+            ? LedgerSigningModalPhase.failed
+            : screen == 'Ready to continue'
+            ? LedgerSigningModalPhase.readyToRetry
+            : LedgerSigningModalPhase.awaitingDevice,
+        readiness: screen == 'Open device app'
+            ? LedgerSigningPlaygroundReadiness.confirmOpening
+            : LedgerSigningPlaygroundReadiness.ready,
+        failureMode: LedgerSigningPlaygroundFailure.reconnect,
+        showWaitingHint: screen == 'Slow response',
+      ),
+    };
+    return _LedgerDemoConnections(
+      key: ValueKey((mobile, screen)),
+      child: mobile
+          ? Center(
+              child: SizedBox(
+                key: const ValueKey('ledger_flow_mobile_frame'),
+                width: 393,
+                height: 852,
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    bottomSheetTheme: Theme.of(context).bottomSheetTheme
+                        .copyWith(
+                          constraints: const BoxConstraints(maxWidth: 393),
+                        ),
+                  ),
+                  child: content,
+                ),
+              ),
+            )
+          : content,
+    );
+  },
+);
+
+/// Preview connections cannot reach USB, Bluetooth, wallet storage, or Rust.
+class _LedgerDemoConnections extends StatelessWidget {
+  const _LedgerDemoConnections({required this.child, super.key});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    const fingerprint =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    Future<LedgerDeviceAccount> account(
+      int index, [
+      LedgerBleDevice? device,
+    ]) async {
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      return LedgerDeviceAccount(
+        ufvk: 'widgetbook-viewing-key',
+        seedFingerprint: const [1, 2, 3],
+        accountIndex: index,
+        appVersion: '3.9.3',
+        walletFingerprint: fingerprint,
+        device: device,
+        transport: device == null
+            ? LedgerConnectionTransport.usb
+            : LedgerConnectionTransport.bluetooth,
+      );
+    }
+
+    return ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_LedgerEmptyPreviewAccounts.new),
+        syncProvider.overrideWith(_LedgerPreviewSyncNotifier.new),
+        ledgerAccountConnectorProvider.overrideWithValue(account),
+        ledgerBluetoothAccountConnectorProvider.overrideWithValue(
+          (index, device) => account(index, device),
+        ),
+        ledgerWalletIdentityConnectorProvider.overrideWithValue(
+          () async => const LedgerWalletIdentity(fingerprint: fingerprint),
+        ),
+        ledgerBluetoothWalletIdentityConnectorProvider.overrideWithValue(
+          (_) async => const LedgerWalletIdentity(fingerprint: fingerprint),
+        ),
+        ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+        ledgerMobileBleServiceProvider.overrideWithValue(
+          _ScriptedLedgerMobileBleService(
+            updates: const [
+              LedgerDevicesDiscovered([
+                LedgerBleDevice(
+                  id: 'preview-flex',
+                  name: 'Ledger Flex',
+                  model: 'Ledger Flex',
+                ),
+              ]),
+            ],
+          ),
+        ),
+      ],
+      child: child,
+    );
+  }
+}
+
+class _LedgerConnectReview extends StatefulWidget {
+  const _LedgerConnectReview({required this.mobile});
+  final bool mobile;
+  @override
+  State<_LedgerConnectReview> createState() => _LedgerConnectReviewState();
+}
+
+class _LedgerConnectReviewState extends State<_LedgerConnectReview> {
+  late final _router = GoRouter(
+    initialLocation: '/connect',
+    routes: [
+      GoRoute(
+        path: '/connect',
+        builder: (_, _) => widget.mobile
+            ? const MobileLedgerConnectScreen()
+            : const LedgerConnectScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding/ledger/birthday',
+        builder: (_, _) => const _LedgerConnectionCompletePreview(),
+      ),
+      GoRoute(
+        path: '/accounts',
+        builder: (_, _) => const Center(child: Text('Accounts preview')),
+      ),
+      GoRoute(
+        path: '/add-account',
+        builder: (_, _) => const Center(child: Text('Add account preview')),
+      ),
+      GoRoute(
+        path: '/welcome',
+        builder: (_, _) => const Center(child: Text('Welcome preview')),
+      ),
+    ],
+  );
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final child = ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_LedgerEmptyPreviewAccounts.new),
+      ],
+      child: widget.mobile
+          ? LayoutBuilder(
+              builder: (context, constraints) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(size: constraints.biggest),
+                child: MaterialApp.router(
+                  debugShowCheckedModeBanner: false,
+                  theme: Theme.of(context),
+                  routerConfig: _router,
+                ),
+              ),
+            )
+          : Router.withConfig(config: _router),
+    );
+    return widget.mobile
+        ? SizedBox(width: 393, height: 852, child: child)
+        : child;
+  }
+}
+
+class _LedgerEmptyPreviewAccounts extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState();
+}
+
+class _LedgerConnectionCompletePreview extends StatelessWidget {
+  const _LedgerConnectionCompletePreview();
+
+  @override
+  Widget build(BuildContext context) => const Center(
+    child: Text(
+      'Connection approved. The wallet birthday step follows.\n'
+      'Preview only. No account was imported.',
+      textAlign: TextAlign.center,
+    ),
+  );
 }
 
 Widget buildLedgerAccountDetailsUseCase(BuildContext context) {
@@ -183,6 +405,21 @@ Widget buildLedgerRenameUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileLedgerRenameUseCase(BuildContext context) {
+  return Builder(
+    builder: (context) => Center(
+      child: AppButton(
+        onPressed: () => showLedgerWalletRenameSheet(
+          context,
+          initialName: 'Rowan Ledger',
+          onRename: (_) async {},
+        ),
+        child: const Text('Open rename sheet'),
+      ),
+    ),
+  );
+}
+
 enum LedgerSigningPlaygroundReadiness {
   idle,
   checkingDevice,
@@ -197,6 +434,7 @@ enum LedgerSigningPlaygroundFailure {
   reconnect,
   accountMismatch,
   saving,
+  capacity,
 }
 
 Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
@@ -231,7 +469,7 @@ Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
     min: 1,
     max: roundCount,
   );
-  final mobile = context.knobs.boolean(label: 'Mobile', initialValue: false);
+  const mobile = kAppFormFactor == AppFormFactor.mobile;
   final showWaitingHint = context.knobs.boolean(label: 'Show delayed hint');
 
   return buildLedgerSigningPreview(
@@ -251,6 +489,7 @@ Widget buildLedgerSigningPreview({
       LedgerSigningPlaygroundReadiness.ready,
   LedgerSigningPlaygroundFailure failureMode =
       LedgerSigningPlaygroundFailure.retry,
+  LedgerRequestKind capacityRequestKind = LedgerRequestKind.send,
   int roundNumber = 1,
   int roundCount = 1,
   bool mobile = false,
@@ -269,6 +508,7 @@ Widget buildLedgerSigningPreview({
         ? _failurePresentation(
             failureMode,
             internalReconnect: onFailureAction == null,
+            capacityRequestKind: capacityRequestKind,
           )
         : null,
     onCancel: locked ? null : onCancel ?? () {},
@@ -319,7 +559,7 @@ class _LedgerSigningRecoveryPreviewState
     extends State<LedgerSigningRecoveryPreview> {
   LedgerSigningModalPhase _phase = LedgerSigningModalPhase.coolingDown;
   bool _hint = false;
-  bool _mobile = false;
+  static const _mobile = kAppFormFactor == AppFormFactor.mobile;
   bool _reconnect = false;
 
   void _setPhase(LedgerSigningModalPhase phase) => setState(() {
@@ -345,10 +585,6 @@ class _LedgerSigningRecoveryPreviewState
             spacing: 8,
             runSpacing: 8,
             children: [
-              AppButton(
-                onPressed: () => setState(() => _mobile = !_mobile),
-                child: Text(_mobile ? 'Show desktop' : 'Show mobile'),
-              ),
               AppButton(
                 onPressed: () {
                   _reconnect = false;
@@ -549,68 +785,82 @@ class _LedgerVotingPlaygroundState extends State<_LedgerVotingPlayground> {
         ? LedgerSigningPlaygroundReadiness.checkingDevice
         : LedgerSigningPlaygroundReadiness.ready;
 
+    final preview = Column(
+      children: [
+        Expanded(
+          child: VotingStatusContent(
+            phase: phase,
+            voteSubmissionDetail:
+                _stage == _LedgerVotingPreviewStage.castingVotes
+                ? '1 of 2 ballots submitted'
+                : null,
+            voteSubmissionProgress:
+                _stage == _LedgerVotingPreviewStage.castingVotes
+                ? 0.5
+                : _stage == _LedgerVotingPreviewStage.finalizing || complete
+                ? 1
+                : null,
+            delegationProgress: _stage == _LedgerVotingPreviewStage.delegating
+                ? 0.55
+                : null,
+            completedSubmission: complete,
+            submissionJobComplete: complete,
+            submissionJobInFlight: !complete && !cancelled,
+            isHardwareAccount: true,
+            isLedgerAccount: true,
+            ledgerAccountUuid: _ledgerAccountUuid,
+            ledgerDisplayMemo: signing ? widget.displayMemo : null,
+            ledgerSigningBundleIndex: signing ? _bundleNumber - 1 : null,
+            ledgerSigningBundleCount: widget.bundleCount,
+            errorMessage: cancelled
+                ? 'Ledger voting approval was cancelled.'
+                : null,
+            onRetry: cancelled ? () => setState(_restart) : null,
+            onCancelLedger: signing ? _cancel : null,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              Text(
+                'Widgetbook simulation — no device request is sent.',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+              AppButton(
+                key: const ValueKey('ledger_voting_preview_advance'),
+                onPressed: _advance,
+                variant: AppButtonVariant.primary,
+                child: Text(_advanceLabel),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
     return ProviderScope(
       key: ValueKey('ledger-voting-readiness-${readiness.name}'),
       overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_LedgerPreviewAccountNotifier.new),
         ledgerAppReadinessStateProvider.overrideWith(
           () => _LedgerPreviewReadinessController(_readinessState(readiness)),
         ),
       ],
-      child: Column(
-        children: [
-          Expanded(
-            child: VotingStatusContent(
-              phase: phase,
-              voteSubmissionDetail:
-                  _stage == _LedgerVotingPreviewStage.castingVotes
-                  ? '1 of 2 ballots submitted'
-                  : null,
-              voteSubmissionProgress:
-                  _stage == _LedgerVotingPreviewStage.castingVotes
-                  ? 0.5
-                  : _stage == _LedgerVotingPreviewStage.finalizing || complete
-                  ? 1
-                  : null,
-              delegationProgress: _stage == _LedgerVotingPreviewStage.delegating
-                  ? 0.55
-                  : null,
-              completedSubmission: complete,
-              submissionJobComplete: complete,
-              submissionJobInFlight: !complete && !cancelled,
-              isHardwareAccount: true,
-              isLedgerAccount: true,
-              ledgerDisplayMemo: signing ? widget.displayMemo : null,
-              ledgerSigningBundleIndex: signing ? _bundleNumber - 1 : null,
-              ledgerSigningBundleCount: widget.bundleCount,
-              errorMessage: cancelled
-                  ? 'Ledger voting approval was cancelled.'
-                  : null,
-              onRetry: cancelled ? () => setState(_restart) : null,
-              onCancelLedger: signing ? _cancel : null,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                const Text(
-                  'Widgetbook simulation — no device request is sent.',
-                ),
-                AppButton(
-                  key: const ValueKey('ledger_voting_preview_advance'),
-                  onPressed: _advance,
-                  variant: AppButtonVariant.primary,
-                  child: Text(_advanceLabel),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      child: kAppFormFactor == AppFormFactor.mobile && signing
+          ? MobileVotingScaffold(
+              title: 'Submit vote',
+              onBack: _cancel,
+              child: preview,
+            )
+          : preview,
     );
   }
 
@@ -678,8 +928,21 @@ Widget _buildDevicePicker(LedgerMobileBleService service, {required Key key}) {
 LedgerSigningFailurePresentation _failurePresentation(
   LedgerSigningPlaygroundFailure mode, {
   bool internalReconnect = true,
+  LedgerRequestKind capacityRequestKind = LedgerRequestKind.send,
 }) {
   return switch (mode) {
+    LedgerSigningPlaygroundFailure.capacity => LedgerSigningFailurePresentation(
+      canChangeConnection: false,
+      title: kLedgerSmallerTransferTitle,
+      statusLabel: 'New transaction required',
+      message: ledgerActionableErrorMessage(
+        'Ledger supports at most 32 shielded actions; found 33',
+        requestKind: capacityRequestKind,
+      )!,
+      actionLabel: capacityRequestKind == LedgerRequestKind.send
+          ? 'Edit amount'
+          : null,
+    ),
     LedgerSigningPlaygroundFailure.retry =>
       const LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
@@ -777,6 +1040,24 @@ class _LedgerAccountDetailsPreviewState
                   accountUuid: _ledgerAccountUuid,
                 ),
         ),
+        GoRoute(
+          path: '/onboarding/ledger',
+          builder: (_, _) => widget.mobile
+              ? const MobileLedgerConnectScreen(
+                  sourceAccountUuid: _ledgerAccountUuid,
+                )
+              : const LedgerConnectScreen(
+                  sourceAccountUuid: _ledgerAccountUuid,
+                ),
+        ),
+        GoRoute(
+          path: '/onboarding/ledger/birthday',
+          builder: (_, _) => const _LedgerConnectionCompletePreview(),
+        ),
+        GoRoute(
+          path: '/accounts',
+          builder: (_, _) => const Center(child: Text('Accounts preview')),
+        ),
       ],
     );
   }
@@ -793,6 +1074,9 @@ class _LedgerAccountDetailsPreviewState
       overrides: [
         appBootstrapProvider.overrideWithValue(_ledgerBootstrap),
         accountProvider.overrideWith(_LedgerPreviewAccountNotifier.new),
+        hardwareAccountBirthdayBlockTimeProvider.overrideWith(
+          (ref, height) async => 1785196800,
+        ),
         syncProvider.overrideWith(_LedgerPreviewSyncNotifier.new),
         ledgerTargetPlatformProvider.overrideWithValue(
           widget.mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
@@ -801,7 +1085,11 @@ class _LedgerAccountDetailsPreviewState
       child: SizedBox(
         width: widget.mobile ? 393 : 1160,
         height: widget.mobile ? 852 : 760,
-        child: MaterialApp.router(routerConfig: _router),
+        child: MaterialApp.router(
+          debugShowCheckedModeBanner: false,
+          theme: Theme.of(context),
+          routerConfig: _router,
+        ),
       ),
     );
   }
@@ -948,6 +1236,8 @@ const _ledgerAccount = AccountInfo(
   ledgerDeviceName: 'Ledger Flex',
   ledgerDeviceModel: 'Ledger Flex',
   ledgerWalletName: 'Rowan Ledger',
+  ledgerWalletFingerprint:
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 );
 
 const _ledgerAccountState = AccountState(
