@@ -35,6 +35,8 @@
 //! silently-invalid proof.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+
+mod ledger_selection;
 use std::convert::Infallible;
 use std::num::NonZeroUsize;
 use std::sync::{
@@ -809,6 +811,9 @@ pub(crate) fn propose_send(
             },
         );
 
+        if ledger_selection::is_ledger(&db, account_id)? {
+            ledger_selection::validate_release_support(&proposal)?;
+        }
         let needs_sapling = proposal
             .steps()
             .iter()
@@ -942,6 +947,9 @@ pub fn estimate_fee(
             )
         });
 
+    if ledger_selection::is_ledger(&db, account_id)? {
+        ledger_selection::validate_release_support(&proposal)?;
+    }
     Ok(proposal_fee_zatoshi(&proposal))
 }
 
@@ -960,6 +968,17 @@ pub(crate) fn estimate_send_max(
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
+    if ledger_selection::is_ledger(&db, account_id)? {
+        return ledger_selection::maximum(
+            db_path,
+            &db,
+            network,
+            account_id,
+            account_uuid,
+            to_address,
+            memo_str,
+        );
+    }
     // librustzcash's max-spend proposal path no longer takes a proposed tx
     // version: the version (and its fee shape) is decided when the PCZT is
     // created, so the quote stays aligned with what `propose_send` can build.
@@ -3350,11 +3369,47 @@ fn propose_send_with_reserved_notes(
         reserved,
         migration_locks,
     };
+    let is_ledger = ledger_selection::is_ledger(db, account_id)?;
+    let selection = if is_ledger {
+        Some(ledger_selection::select(
+            &reserved_db,
+            account_id,
+            &spend_policy.shielded().iter().copied().collect::<Vec<_>>(),
+            target_height,
+            network,
+        )?)
+    } else {
+        None
+    };
+    let mut bounded_reserved = reserved.clone();
+    if let Some(selection) = &selection {
+        bounded_reserved.extend(selection.excluded.iter().copied());
+    }
+    let reserved_db = ReservedInputSource {
+        inner: db,
+        reserved: &bounded_reserved,
+        migration_locks,
+    };
+    let ledger_policy = SpendPolicy::shielded_pools(
+        spend_policy
+            .shielded()
+            .iter()
+            .copied()
+            .filter(|pool| *pool != ShieldedPool::Sapling),
+    );
+    let spend_policy = if is_ledger {
+        &ledger_policy
+    } else {
+        spend_policy
+    };
     let zip318 = db.pool_migration_params();
-    let (change_strategy, input_selector) =
+    let (mut change_strategy, input_selector) =
         zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None);
+    if is_ledger {
+        change_strategy = ledger_change_strategy();
+    }
 
-    input_selector
+    let proposal = input_selector
         .propose_transaction(
             &network,
             &reserved_db,
@@ -3370,7 +3425,19 @@ fn propose_send_with_reserved_notes(
             spend_policy,
             proposed_tx_version,
         )
-        .map_err(|e| format!("Propose failed: {e}"))
+        .map_err(|e| {
+            let message = format!("Propose failed: {e}");
+            if selection.as_ref().is_some_and(|selection| selection.was_capped)
+                && matches!(e, zcash_client_backend::data_api::wallet::input_selection::InputSelectorError::InsufficientFunds { .. }) {
+                ledger_selection::capacity_error(message)
+            } else {
+                message
+            }
+        })?;
+    if is_ledger {
+        ledger_selection::validate(&proposal, network)?;
+    }
+    Ok(proposal)
 }
 
 fn ordinary_send_spend_pools(orchard_reserved_for_migration: bool) -> Vec<ShieldedPool> {
@@ -6237,10 +6304,20 @@ fn order_resubmittable_transactions(
         .collect()
 }
 
-/// ZIP-317 change-strategy / input-selector factory used by both
-/// `propose_send` and `estimate_fee`. Keeps the configuration
-/// (Orchard-preferred change, minimum 0.1 ZEC output split) in one
-/// place so the two entry points can't drift.
+/// Reserve one change output for Ledger; splitting change would consume the
+/// per-pool action budget differently for quotes and the final proposal.
+fn ledger_change_strategy<DbT: InputSource>() -> MultiOutputChangeStrategy<WalletFeeRule, DbT> {
+    MultiOutputChangeStrategy::new(
+        ConservativeZip317FeeRule,
+        None,
+        ShieldedPool::Orchard,
+        DustOutputPolicy::default(),
+        SplitPolicy::single_output(),
+    )
+}
+
+/// ZIP-317 change-strategy / input-selector factory for other signing accounts.
+/// Orchard-preferred change with a minimum 0.1 ZEC output split.
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
 ) -> (

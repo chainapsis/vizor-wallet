@@ -18,6 +18,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/comma_to_dot_input_formatter.dart';
@@ -38,8 +39,11 @@ import '../../migration/providers/ironwood_migration_announcement_provider.dart'
 import '../models/send_prefill_args.dart';
 import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
+import '../services/send_compose_dependencies.dart';
 import '../services/send_proving_key_warmup.dart';
 import '../widgets/send_recipient_resolver.dart';
+import '../widgets/send_amount_suggestion.dart';
+import '../widgets/send_amount_adjustment_prompt.dart';
 import '../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 
 final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
@@ -47,9 +51,12 @@ final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
 });
 
 class SendScreen extends ConsumerStatefulWidget {
-  const SendScreen({super.key, this.prefill});
+  const SendScreen({super.key, this.prefill, this.onReview});
 
   final SendPrefillArgs? prefill;
+
+  /// Optional presentation handoff, also used by isolated previews.
+  final ValueChanged<SendPrefillArgs>? onReview;
 
   @override
   ConsumerState<SendScreen> createState() => _SendScreenState();
@@ -100,6 +107,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       displaySpendableBalance: displaySpendableBalance,
       isUsingCompletedSpendableSnapshot: isUsingCompletedSpendableSnapshot,
       prefill: widget.prefill,
+      onReview: widget.onReview,
     );
   }
 }
@@ -114,9 +122,11 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     required this.displaySpendableBalance,
     required this.isUsingCompletedSpendableSnapshot,
     this.prefill,
+    this.onReview,
   });
 
   final AsyncValue<WalletState> walletAsync;
+  final ValueChanged<SendPrefillArgs>? onReview;
   final String? activeAccountUuid;
   final HardwareSignerKind? activeHardwareSignerKind;
   final BigInt spendableBalance;
@@ -204,6 +214,14 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   final _memoScrollController = ScrollController();
   late final String _sendFlowId = newSendFlowId();
   bool _isSending = false;
+  bool _isChoosingAmount = false;
+  SendAmountSuggestion? _amountSuggestion;
+  ({
+    BigInt enteredAmount,
+    SendAmountSuggestion suggestion,
+    Completer<SendAmountAdjustmentChoice?> result,
+  })?
+  _amountAdjustment;
   bool _messageExpanded = false;
   bool _contactPickerOpen = false;
   String? _error;
@@ -259,6 +277,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   @override
   void dispose() {
+    _amountAdjustment?.result.complete(null);
     _maxDebounceTimer?.cancel();
     _memoController.removeListener(_handleMemoChanged);
     _addressFocusNode.removeListener(_handleFieldVisualStateChanged);
@@ -352,7 +371,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
     try {
-      final result = await rust_sync.validateAddress(address: addr);
+      final result = await ref.read(sendAddressValidatorProvider)(
+        address: addr,
+      );
       if (!mounted || seq != _addressSeq) return;
       final nextAddressType = result.isValid ? result.addressType : 'invalid';
       setState(() {
@@ -402,7 +423,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
-  void _handleAmountChanged() {
+  Future<void> _handleAmountChanged() async {
     if (_programmaticAmountEdit) return;
     if (_amountInputIsUsd) {
       _handleFiatAmountChanged(_amountController.text);
@@ -419,7 +440,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       });
     }
     setState(() => _amountText = _amountController.text.trim());
-    _validateAmount();
+    await _validateAmount();
   }
 
   void _handleFiatAmountChanged(String value) {
@@ -601,7 +622,103 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
 
+  bool get _needsAmountAdjustment =>
+      widget.activeHardwareSignerKind == HardwareSignerKind.ledger &&
+      (_amountSuggestion?.appliesTo(parseZecAmount(_amountText.trim())) ??
+          false);
+
   String get _reviewButtonLabel => 'Review';
+
+  Future<void> _applySuggestedAmount() async {
+    if (!_canReview || !_needsAmountAdjustment) return;
+    _maxDebounceTimer?.cancel();
+    _maxSeq++;
+    setState(() {
+      _amountInputMode = _DesktopSendAmountInputMode.zec;
+      _amountController.text = _amountSuggestion!.amountText;
+    });
+    await _handleAmountChanged();
+  }
+
+  Future<SendAmountAdjustmentChoice?> _chooseAdjustedAmount({
+    required BigInt enteredAmount,
+    required SendAmountSuggestion suggestion,
+  }) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final result = Completer<SendAmountAdjustmentChoice?>();
+    setState(() {
+      _amountAdjustment = (
+        enteredAmount: enteredAmount,
+        suggestion: suggestion,
+        result: result,
+      );
+    });
+    final choice = await result.future;
+    // Let the pane overlay leave before restoring focus or opening Review.
+    // This follows the rendered frame, without an arbitrary timer.
+    if (mounted) await WidgetsBinding.instance.endOfFrame;
+    return choice;
+  }
+
+  void _closeAmountAdjustment([SendAmountAdjustmentChoice? choice]) {
+    final adjustment = _amountAdjustment;
+    if (adjustment == null) return;
+    setState(() => _amountAdjustment = null);
+    adjustment.result.complete(choice);
+  }
+
+  Future<void> _handleReviewAction() async {
+    if (!_canReview || _isChoosingAmount) return;
+    if (_needsAmountAdjustment) {
+      final suggestion = _amountSuggestion!;
+      final originalAmount = _amountText;
+      final originalAddress = _addressController.text;
+      final originalMemo = _memoController.text;
+      setState(() => _isChoosingAmount = true);
+      try {
+        final choice = await _chooseAdjustedAmount(
+          enteredAmount: parseZecAmount(originalAmount)!,
+          suggestion: suggestion,
+        );
+        if (!mounted ||
+            originalAmount != _amountText ||
+            originalAddress != _addressController.text ||
+            originalMemo != _memoController.text ||
+            suggestion != _amountSuggestion) {
+          return;
+        }
+        if (choice == SendAmountAdjustmentChoice.edit) {
+          _amountFocusNode.requestFocus();
+          return;
+        }
+        if (choice != SendAmountAdjustmentChoice.review) return;
+        await _applySuggestedAmount();
+        if (!mounted ||
+            !_canReview ||
+            _needsAmountAdjustment ||
+            originalAddress != _addressController.text ||
+            originalMemo != _memoController.text ||
+            _amountText != suggestion.amountText) {
+          return;
+        }
+      } finally {
+        if (mounted) setState(() => _isChoosingAmount = false);
+      }
+    }
+    if (widget.onReview case final onReview?) {
+      onReview(
+        SendPrefillArgs(
+          id: _sendFlowId,
+          source: 'send',
+          address: _addressController.text.trim(),
+          amountText: _amountText.trim(),
+          memoText: _effectiveMemo,
+        ),
+      );
+    } else {
+      unawaited(_openReview());
+    }
+  }
 
   String? _amountConversionText({
     required BigInt? amountZatoshi,
@@ -679,7 +796,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
               final dbPath = await ref.read(sendWalletDbPathProvider).call();
               final endpoint = ref.read(rpcEndpointProvider);
               if (!mounted || !_isMaxMode || seq != _maxSeq) return null;
-              return rust_sync.estimateSendMax(
+              return ref.read(sendMaxEstimatorProvider)(
                 dbPath: dbPath,
                 network: endpoint.networkName,
                 accountUuid: accountUuid,
@@ -756,6 +873,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
+    setState(() => _amountSuggestion = null);
     final text = _amountText.trim();
 
     // Empty, incomplete, or zero amounts are silently invalid: no error text,
@@ -800,7 +918,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       setState(() => _amountError = null);
       return;
     }
-    setState(() => _amountError = null);
+    setState(
+      () => _amountError =
+          widget.activeHardwareSignerKind == HardwareSignerKind.ledger
+          ? ''
+          : null,
+    );
     try {
       final memo = _effectiveMemo;
       final accountUuid = widget.activeAccountUuid;
@@ -808,16 +931,21 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         setState(() => _amountError = null);
         return;
       }
-      final fee = await ref
+      final quote = await ref
           .read(syncProvider.notifier)
-          .runWithAuthoritativeSpendable<BigInt?>(
+          .runWithAuthoritativeSpendable<SendAmountQuote?>(
             accountUuid: accountUuid,
             operation: () async {
               if (!mounted || seq != _validateSeq) return null;
               final dbPath = await ref.read(sendWalletDbPathProvider).call();
               final endpoint = ref.read(rpcEndpointProvider);
               if (!mounted || seq != _validateSeq) return null;
-              return rust_sync.estimateFee(
+              return estimateSendAmountQuote(
+                estimateFee: ref.read(sendFeeEstimatorProvider),
+                estimateMax: ref.read(sendMaxEstimatorProvider),
+                isLedger:
+                    widget.activeHardwareSignerKind ==
+                    HardwareSignerKind.ledger,
                 dbPath: dbPath,
                 network: endpoint.networkName,
                 accountUuid: accountUuid,
@@ -827,17 +955,29 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
               );
             },
           );
-      if (fee == null) return;
+      if (quote == null) return;
 
       // Stale check — new input arrived while awaiting
-      if (!mounted || seq != _validateSeq) return;
+      if (!mounted ||
+          seq != _validateSeq ||
+          accountUuid != widget.activeAccountUuid ||
+          address != _addressController.text.trim() ||
+          memo != _effectiveMemo) {
+        return;
+      }
 
-      final totalNeeded = zatoshi + fee;
+      final fee = quote.fee;
+      final totalNeeded = (quote.suggestedAmount ?? zatoshi) + fee;
       if (totalNeeded > _availableBalanceForCurrentAddress) {
         final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
         setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
       } else {
-        setState(() => _amountError = null);
+        setState(() {
+          _amountError = null;
+          _amountSuggestion = quote.suggestedAmount == null
+              ? null
+              : SendAmountSuggestion(amountZatoshi: quote.suggestedAmount!);
+        });
       }
     } catch (e) {
       if (!mounted || seq != _validateSeq) return;
@@ -845,8 +985,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
         setState(() => _amountError = _insufficientBalanceIncludingFeeText);
       } else {
-        log('Send: fee estimation failed (non-blocking): $e');
-        setState(() => _amountError = null);
+        log('Send: fee estimation failed: $e');
+        setState(
+          () => _amountError =
+              widget.activeHardwareSignerKind == HardwareSignerKind.ledger
+              ? 'Could not check this Ledger transfer. Edit the amount to try again.'
+              : null,
+        );
       }
     }
   }
@@ -1115,9 +1260,17 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                       ),
                     ),
                     data: (_) => _SendComposeLayout(
+                      pinReviewButton:
+                          widget.activeHardwareSignerKind ==
+                          HardwareSignerKind.ledger,
+                      reviewHint: _needsAmountAdjustment
+                          ? const SendAmountSuggestionReviewHint()
+                          : null,
                       reviewButton: AppButton(
                         key: const ValueKey('send_review_button'),
-                        onPressed: _canReview ? _openReview : null,
+                        onPressed: _canReview && !_isChoosingAmount
+                            ? _handleReviewAction
+                            : null,
                         variant: AppButtonVariant.primary,
                         minWidth: _SendComposeLayout.reviewButtonWidth,
                         constrainContent: true,
@@ -1246,77 +1399,87 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             height: _singleLineFieldOverlayReserve,
                           ),
                           const SizedBox(height: _singleLineFieldGap),
-                          AppTextField(
-                            key: const ValueKey('send_amount_field'),
-                            label: 'Amount',
-                            labelStyle: sendFieldLabelStyle,
-                            tone: _showAmountError
-                                ? AppTextFieldTone.destructive
-                                : AppTextFieldTone.neutral,
-                            borderColor: _showAmountError
-                                ? colors.border.utilityDestructive
-                                : null,
-                            focusNode: _amountFocusNode,
-                            controller: _amountController,
-                            hintText: '0',
-                            textStyle: amountValueStyle,
-                            hintStyle: AppTypography.labelLarge.copyWith(
-                              color: _showAmountError
-                                  ? colors.text.destructive
-                                  : colors.text.muted,
-                            ),
-                            leading: AppIcon(
-                              amountIconName,
-                              size: 20,
-                              color: amountIconColor,
-                            ),
-                            inlinePrefixText: _amountInputIsUsd ? r'$' : null,
-                            inlinePrefixStyle: amountAffixStyle,
-                            inlineSuffixText: _amountInputIsUsd
-                                ? null
-                                : kZcashDefaultCurrencyTicker,
-                            inlineSuffixStyle: amountAffixStyle,
-                            rightSlot: _SendMaxBalanceControl(
-                              spendableText: spendableText,
-                              onMaxPressed: _isResolvingMax
-                                  ? null
-                                  : _activateMaxMode,
-                            ),
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            inputFormatters: [
-                              const CommaToDotInputFormatter(),
-                              DecimalAmountInputFormatter(
-                                maxFractionDigits: _amountInputIsUsd ? 2 : 8,
-                                maxLength: _amountInputIsUsd ? 12 : 17,
+                          Column(
+                            children: [
+                              AppTextField(
+                                key: const ValueKey('send_amount_field'),
+                                label: 'Amount',
+                                labelStyle: sendFieldLabelStyle,
+                                tone: _showAmountError
+                                    ? AppTextFieldTone.destructive
+                                    : AppTextFieldTone.neutral,
+                                borderColor: _showAmountError
+                                    ? colors.border.utilityDestructive
+                                    : null,
+                                focusNode: _amountFocusNode,
+                                controller: _amountController,
+                                hintText: '0',
+                                textStyle: amountValueStyle,
+                                hintStyle: AppTypography.labelLarge.copyWith(
+                                  color: _showAmountError
+                                      ? colors.text.destructive
+                                      : colors.text.muted,
+                                ),
+                                leading: AppIcon(
+                                  amountIconName,
+                                  size: 20,
+                                  color: amountIconColor,
+                                ),
+                                inlinePrefixText: _amountInputIsUsd
+                                    ? r'$'
+                                    : null,
+                                inlinePrefixStyle: amountAffixStyle,
+                                inlineSuffixText: _amountInputIsUsd
+                                    ? null
+                                    : kZcashDefaultCurrencyTicker,
+                                inlineSuffixStyle: amountAffixStyle,
+                                rightSlot: _SendMaxBalanceControl(
+                                  spendableText: spendableText,
+                                  onMaxPressed: _isResolvingMax
+                                      ? null
+                                      : _activateMaxMode,
+                                ),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                inputFormatters: [
+                                  const CommaToDotInputFormatter(),
+                                  DecimalAmountInputFormatter(
+                                    maxFractionDigits: _amountInputIsUsd ? 2 : 8,
+                                    maxLength: _amountInputIsUsd ? 12 : 17,
+                                  ),
+                                ],
+                                onChanged: (_) => _handleAmountChanged(),
+                                showClearButton: true,
+                                onClear: () {
+                                  _maxDebounceTimer?.cancel();
+                                  _validateSeq++;
+                                  _maxSeq++;
+                                  setState(() {
+                                    _amountText = '';
+                                    _fiatAmountText = '';
+                                    _isMaxMode = false;
+                                    _isResolvingMax = false;
+                                    _maxQuote = null;
+                                    _amountError = '';
+                                    _error = null;
+                                  });
+                                },
+                              ),
+                              _SendAmountSubRows(
+                                errorText: _showAmountError
+                                    ? _amountError
+                                    : null,
+                                conversionText: amountConversionText,
+                                conversionLoading: amountConversionLoading,
+                                onConversionTap: _toggleAmountInputMode,
+                                conversionEnabled:
+                                    _amountInputIsUsd ||
+                                    zecUsdUnitPrice != null,
+                                enterUsdMode: !_amountInputIsUsd,
                               ),
                             ],
-                            onChanged: (_) => _handleAmountChanged(),
-                            showClearButton: true,
-                            onClear: () {
-                              _maxDebounceTimer?.cancel();
-                              _validateSeq++;
-                              _maxSeq++;
-                              setState(() {
-                                _amountText = '';
-                                _fiatAmountText = '';
-                                _isMaxMode = false;
-                                _isResolvingMax = false;
-                                _maxQuote = null;
-                                _amountError = '';
-                                _error = null;
-                              });
-                            },
-                          ),
-                          _SendAmountSubRows(
-                            errorText: _showAmountError ? _amountError : null,
-                            conversionText: amountConversionText,
-                            conversionLoading: amountConversionLoading,
-                            onConversionTap: _toggleAmountInputMode,
-                            conversionEnabled:
-                                _amountInputIsUsd || zecUsdUnitPrice != null,
-                            enterUsdMode: !_amountInputIsUsd,
                           ),
                           const SizedBox(height: _singleLineFieldGap),
                           if (!hideMemoControls) ...[
@@ -1425,6 +1588,31 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                   ),
                 ),
               ),
+            if (_amountAdjustment case final adjustment?)
+              AppPaneModalOverlay(
+                key: const ValueKey('send_amount_adjustment_overlay'),
+                onDismiss: _closeAmountAdjustment,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: AppModalCard(
+                      width: 360,
+                      child: SendAmountAdjustmentPrompt(
+                        enteredAmount: adjustment.enteredAmount,
+                        suggestion: adjustment.suggestion,
+                        onReview: () => _closeAmountAdjustment(
+                          SendAmountAdjustmentChoice.review,
+                        ),
+                        onEdit: () => _closeAmountAdjustment(
+                          SendAmountAdjustmentChoice.edit,
+                        ),
+                        onClose: _closeAmountAdjustment,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -1433,7 +1621,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 }
 
 class _SendComposeLayout extends StatelessWidget {
-  const _SendComposeLayout({required this.child, required this.reviewButton});
+  const _SendComposeLayout({
+    required this.child,
+    required this.reviewButton,
+    this.pinReviewButton = false,
+    this.reviewHint,
+  });
 
   static const contentWidth = 420.0;
   static const fieldsWidth = 396.0;
@@ -1445,6 +1638,8 @@ class _SendComposeLayout extends StatelessWidget {
 
   final Widget child;
   final Widget reviewButton;
+  final bool pinReviewButton;
+  final Widget? reviewHint;
 
   @override
   Widget build(BuildContext context) {
@@ -1468,29 +1663,59 @@ class _SendComposeLayout extends StatelessWidget {
                 horizontal: _containerHorizontalPadding,
                 vertical: _containerVerticalPadding,
               ),
-              child: SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: minHeight),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const _SendTitle(),
-                      const SizedBox(height: _sectionGap),
-                      SizedBox(
-                        width: fieldsWidth,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: _fieldsVerticalPadding,
+              child: pinReviewButton && height != null
+                  ? Column(
+                      children: [
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              children: [
+                                const _SendTitle(),
+                                const SizedBox(height: _sectionGap),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: _fieldsVerticalPadding,
+                                  ),
+                                  child: child,
+                                ),
+                              ],
+                            ),
                           ),
-                          child: child,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        if (reviewHint != null) ...[
+                          reviewHint!,
+                          const SizedBox(height: AppSpacing.s),
+                        ],
+                        SizedBox(width: reviewButtonWidth, child: reviewButton),
+                      ],
+                    )
+                  : SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: minHeight),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const _SendTitle(),
+                            const SizedBox(height: _sectionGap),
+                            SizedBox(
+                              width: fieldsWidth,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: _fieldsVerticalPadding,
+                                ),
+                                child: child,
+                              ),
+                            ),
+                            const SizedBox(height: _sectionGap),
+                            SizedBox(
+                              width: reviewButtonWidth,
+                              child: reviewButton,
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: _sectionGap),
-                      SizedBox(width: reviewButtonWidth, child: reviewButton),
-                    ],
-                  ),
-                ),
-              ),
+                    ),
             ),
           ),
         );

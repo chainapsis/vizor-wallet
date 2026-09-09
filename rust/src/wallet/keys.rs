@@ -78,7 +78,7 @@ impl HardwareSignerKind {
     }
 }
 
-fn hardware_signer_kind(source: &AccountSource) -> Option<HardwareSignerKind> {
+pub(crate) fn hardware_signer_kind(source: &AccountSource) -> Option<HardwareSignerKind> {
     match source.key_source() {
         Some(KEY_SOURCE_KEYSTONE) => Some(HardwareSignerKind::Keystone),
         Some(KEY_SOURCE_LEDGER) => Some(HardwareSignerKind::Ledger),

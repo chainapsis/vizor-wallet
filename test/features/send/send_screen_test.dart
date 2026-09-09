@@ -42,6 +42,63 @@ void main() {
 
   tearDownAll(RustLib.dispose);
 
+  for (final editRecipient in [false, true]) {
+    testWidgets(
+      'ignores a late Ledger max after ${editRecipient ? 'recipient' : 'amount'} changes',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        final pendingMax = Completer<SendMaxEstimateResult>();
+        rustApi.feeFailure = 'VIZOR_LEDGER_CAPACITY: input budget';
+        rustApi.pendingMax = pendingMax.future;
+        await tester.pumpWidget(
+          _sendHarness(
+            bootstrap: _ledgerHardwareBootstrap,
+            prefill: SendPrefillArgs(
+              id: 'late-quote',
+              source: 'test',
+              address: _shieldedAddress,
+              amountText: '2',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(rustApi.estimateSendMaxCalls, greaterThan(0));
+        expect(
+          tester
+              .widget<AppButton>(
+                find.byKey(const ValueKey('send_review_button')),
+              )
+              .onPressed,
+          isNull,
+        );
+
+        rustApi.feeFailure = null;
+        await tester.enterText(
+          _editableIn(
+            editRecipient ? 'send_address_field' : 'send_amount_field',
+          ),
+          editRecipient ? _transparentAddress : '1',
+        );
+        await tester.pumpAndSettle();
+        pendingMax.complete(
+          SendMaxEstimateResult(
+            amountZatoshi: BigInt.from(124000000),
+            feeZatoshi: BigInt.from(10000),
+            needsSaplingParams: false,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Ledger requires a smaller transfer.'), findsNothing);
+        expect(
+          _fieldText(tester, 'send_amount_field'),
+          editRecipient ? '2' : '1',
+        );
+        expect(rustApi.proposeSendCalls, 0);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('starts Orchard proving-key warmup when send loads', (
     tester,
   ) async {
@@ -1525,6 +1582,8 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
 }
 
 class _RustApiFake implements RustLibApi {
+  Object? feeFailure;
+  Future<SendMaxEstimateResult>? pendingMax;
   int proposeSendCalls = 0;
   int estimateSendMaxCalls = 0;
   String? lastProposeToAddress;
@@ -1534,6 +1593,8 @@ class _RustApiFake implements RustLibApi {
   String? lastEstimateSendMaxMemo;
 
   void reset() {
+    feeFailure = null;
+    pendingMax = null;
     proposeSendCalls = 0;
     estimateSendMaxCalls = 0;
     lastProposeToAddress = null;
@@ -1568,6 +1629,7 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    if (feeFailure != null) throw feeFailure!;
     return BigInt.from(10000);
   }
 
@@ -1582,6 +1644,7 @@ class _RustApiFake implements RustLibApi {
     estimateSendMaxCalls++;
     lastEstimateSendMaxToAddress = toAddress;
     lastEstimateSendMaxMemo = memo;
+    if (pendingMax != null) return pendingMax!;
     return SendMaxEstimateResult(
       amountZatoshi: BigInt.from(499990000),
       feeZatoshi: BigInt.from(10000),

@@ -7,6 +7,7 @@ import '../../../providers/sync_provider.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/account_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
 final swapMaxAmountEstimatorProvider = Provider<SwapMaxAmountEstimator>((ref) {
@@ -37,6 +38,29 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
             final estimateAddress = await _ref
                 .read(receiveAddressServiceProvider)
                 .loadTransparentReceiveAddress(accountUuid: accountUuid);
+
+            final isLedger =
+                _ref
+                    .read(accountProvider)
+                    .value
+                    ?.accounts
+                    .any(
+                      (account) =>
+                          account.uuid == accountUuid && account.isLedger,
+                    ) ??
+                false;
+            if (isLedger) {
+              // Use the same per-pool budget and exact SDK proposal as Send.
+              // The deposit flow still rechecks the real quoted destination.
+              final max = await rust_sync.estimateSendMax(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                toAddress: estimateAddress,
+                memo: null,
+              );
+              return max.amountZatoshi;
+            }
 
             log(
               'SwapMaxAmount: estimate begin account=$accountUuid '
