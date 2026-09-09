@@ -290,7 +290,9 @@ Future<void> showLedgerAccountConnectionSettings(
 ) async {
   final ref = ProviderScope.containerOf(context, listen: false);
   final platform = ref.read(ledgerTargetPlatformProvider);
-  if (platform != TargetPlatform.macOS) return;
+  if (platform != TargetPlatform.macOS && platform != TargetPlatform.windows) {
+    return;
+  }
   final appTheme = AppTheme.of(context);
   final selection = await showDialog<LedgerConnectionPreference>(
     context: context,

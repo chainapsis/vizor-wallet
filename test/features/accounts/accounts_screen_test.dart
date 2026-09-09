@@ -781,67 +781,72 @@ void main() {
     expect(find.text('ledger add ledger-account'), findsOneWidget);
   });
 
-  testWidgets('Ledger USB-only model disables Bluetooth preference', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1512, 982));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
+  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+    testWidgets(
+      '$platform Ledger USB-only model disables Bluetooth preference',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1512, 982));
+        addTearDown(() async {
+          await tester.binding.setSurfaceSize(null);
+        });
 
-    const accountState = AccountState(
-      accounts: [
-        AccountInfo(
-          uuid: 'ledger-account',
-          name: 'Ledger Vault',
-          order: 0,
-          isHardware: true,
-          hardwareSignerKind: HardwareSignerKind.ledger,
-          zip32AccountIndex: 0,
-          ledgerConnectionPreference: LedgerConnectionPreference.usb,
-          ledgerLastTransport: LedgerConnectionTransport.usb,
-          ledgerDeviceModel: 'Nano S Plus',
-        ),
-      ],
-      activeAccountUuid: 'ledger-account',
-    );
-    await tester.pumpWidget(
-      _accountsHarness(
-        accountNotifier: () => _FakeAccountNotifier(accountState),
-      ),
-    );
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const ValueKey('accounts_row_menu_button_ledger-account')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Ledger connection'));
-    await tester.pumpAndSettle();
+        const accountState = AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'ledger-account',
+              name: 'Ledger Vault',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+              zip32AccountIndex: 0,
+              ledgerConnectionPreference: LedgerConnectionPreference.usb,
+              ledgerLastTransport: LedgerConnectionTransport.usb,
+              ledgerDeviceModel: 'Nano S Plus',
+            ),
+          ],
+          activeAccountUuid: 'ledger-account',
+        );
+        await tester.pumpWidget(
+          _accountsHarness(
+            platform: platform,
+            accountNotifier: () => _FakeAccountNotifier(accountState),
+          ),
+        );
+        await tester.pump();
+        await tester.tap(
+          find.byKey(const ValueKey('accounts_row_menu_button_ledger-account')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Ledger connection'));
+        await tester.pumpAndSettle();
 
-    expect(find.text('Nano S Plus uses USB in Vizor.'), findsOneWidget);
-    final bluetoothButton = tester.widget<AppButton>(
-      find.ancestor(
-        of: find.text('Set up Bluetooth'),
-        matching: find.byType(AppButton),
-      ),
+        expect(find.text('Nano S Plus uses USB in Vizor.'), findsOneWidget);
+        final bluetoothButton = tester.widget<AppButton>(
+          find.ancestor(
+            of: find.text('Set up Bluetooth'),
+            matching: find.byType(AppButton),
+          ),
+        );
+        expect(bluetoothButton.onPressed, isNull);
+        final selectedChoices = find.descendant(
+          of: find.byType(Dialog),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Semantics && widget.properties.selected == true,
+          ),
+        );
+        expect(selectedChoices, findsOneWidget);
+        expect(
+          find.descendant(of: selectedChoices, matching: find.text('USB')),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(find.byType(Dialog), findsNothing);
+        expect(find.text('USB'), findsNothing);
+      },
     );
-    expect(bluetoothButton.onPressed, isNull);
-    final selectedChoices = find.descendant(
-      of: find.byType(Dialog),
-      matching: find.byWidgetPredicate(
-        (widget) => widget is Semantics && widget.properties.selected == true,
-      ),
-    );
-    expect(selectedChoices, findsOneWidget);
-    expect(
-      find.descendant(of: selectedChoices, matching: find.text('USB')),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(find.byType(Dialog), findsNothing);
-    expect(find.text('USB'), findsNothing);
-  });
+  }
 
   testWidgets('current imported account can be removed', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -1679,6 +1684,7 @@ void _expectVerticalTextOrder(WidgetTester tester, List<String> labels) {
 }
 
 Widget _accountsHarness({
+  TargetPlatform platform = TargetPlatform.macOS,
   AccountNotifier Function()? accountNotifier,
   SyncNotifier Function()? syncNotifier,
   AppSecurityNotifier Function()? securityNotifier,
@@ -1744,7 +1750,7 @@ Widget _accountsHarness({
       hardwareAccountBirthdayBlockTimeProvider.overrideWith(
         (ref, height) async => 1785196800,
       ),
-      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerTargetPlatformProvider.overrideWithValue(platform),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
       swapPendingIntentCountProvider.overrideWith((ref, accountUuid) async {

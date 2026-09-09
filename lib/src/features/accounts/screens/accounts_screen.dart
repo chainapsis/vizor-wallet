@@ -1210,10 +1210,11 @@ class _AccountRowState extends State<_AccountRow> {
       showSendZec: widget.showSendZec,
       onLedgerConnection:
           widget.account.isLedger &&
-              ProviderScope.containerOf(
-                    context,
-                  ).read(ledgerTargetPlatformProvider) ==
-                  TargetPlatform.macOS
+              const [TargetPlatform.macOS, TargetPlatform.windows].contains(
+                ProviderScope.containerOf(
+                  context,
+                ).read(ledgerTargetPlatformProvider),
+              )
           ? () => unawaited(
               showLedgerAccountConnectionSettings(context, widget.account),
             )

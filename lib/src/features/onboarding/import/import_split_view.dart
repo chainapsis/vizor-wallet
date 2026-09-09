@@ -175,13 +175,16 @@ class _Sidebar extends StatelessWidget {
             active: step == activeStep,
           ),
       ],
-      illustration: _SidebarIllustration(activeStep: activeStep),
+      illustration: ImportOnboardingSidebarIllustration(activeStep: activeStep),
     );
   }
 }
 
-class _SidebarIllustration extends StatelessWidget {
-  const _SidebarIllustration({required this.activeStep});
+class ImportOnboardingSidebarIllustration extends StatelessWidget {
+  const ImportOnboardingSidebarIllustration({
+    required this.activeStep,
+    super.key,
+  });
 
   final ImportOnboardingStep activeStep;
 

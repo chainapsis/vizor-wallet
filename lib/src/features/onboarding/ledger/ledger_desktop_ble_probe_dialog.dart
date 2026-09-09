@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/layout/content_overlay_inset.dart';
 import '../../../core/theme/app_theme.dart';
@@ -10,6 +11,7 @@ import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_account_service.dart';
+import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
 
 Future<LedgerDeviceAccount?> showLedgerDesktopBleConnectDialog({
@@ -17,8 +19,13 @@ Future<LedgerDeviceAccount?> showLedgerDesktopBleConnectDialog({
   required LedgerMobileBleService service,
   required LedgerBluetoothAccountConnector connector,
   required int accountIndex,
+  bool Function(Object error)? onAccountError,
 }) async {
   final appTheme = AppTheme.of(context);
+  final platform = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(ledgerTargetPlatformProvider);
   final account = await showDialog<LedgerDeviceAccount>(
     context: context,
     barrierDismissible: false,
@@ -53,6 +60,8 @@ Future<LedgerDeviceAccount?> showLedgerDesktopBleConnectDialog({
           service: service,
           connector: connector,
           accountIndex: accountIndex,
+          platform: platform,
+          onAccountError: onAccountError,
           onConnected: (account) => Navigator.of(dialogContext).pop(account),
           onClose: () => Navigator.of(dialogContext).pop(),
         ),
@@ -94,15 +103,21 @@ class _LedgerDesktopBleConnectDialog extends StatefulWidget {
     required this.service,
     required this.connector,
     required this.accountIndex,
+    required this.platform,
     required this.onConnected,
     required this.onClose,
+    this.onAccountError,
   });
 
   final LedgerMobileBleService service;
   final LedgerBluetoothAccountConnector connector;
   final int accountIndex;
+  final TargetPlatform platform;
   final ValueChanged<LedgerDeviceAccount> onConnected;
   final VoidCallback onClose;
+  // Returning true hands a form-level error back to the caller and closes the
+  // dialog. Transport errors stay in the dialog unless explicitly handled.
+  final bool Function(Object error)? onAccountError;
 
   @override
   State<_LedgerDesktopBleConnectDialog> createState() =>
@@ -216,6 +231,11 @@ class _LedgerDesktopBleConnectDialogState
         _phase = _ProbePhase.ready;
       });
     } catch (error) {
+      if (!mounted || generation != _generation) return;
+      if (widget.onAccountError?.call(error) ?? false) {
+        widget.onClose();
+        return;
+      }
       _handleError(generation, error);
     }
   }
@@ -224,6 +244,7 @@ class _LedgerDesktopBleConnectDialogState
     if (!mounted || generation != _generation) return;
     final message = switch (error) {
       LedgerMobileException(:final message) => message,
+      LedgerAppReadinessException(:final message) => message,
       UnsupportedError() =>
         'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
       _ => 'Vizor could not connect to this Ledger over Bluetooth. Try again.',
@@ -269,7 +290,7 @@ class _LedgerDesktopBleConnectDialogState
               _buildBody(context),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'Bluetooth is available on Ledger ${ledgerBluetoothSupportedModels(TargetPlatform.macOS)}.',
+                'Bluetooth is available on Ledger ${ledgerBluetoothSupportedModels(widget.platform)}.',
                 style: AppTypography.bodySmall.copyWith(
                   color: context.colors.text.secondary,
                 ),
@@ -350,7 +371,9 @@ class _LedgerDesktopBleConnectDialogState
       _ProbePhase.preparing => (
         AppIcons.loader,
         'Preparing Bluetooth',
-        'macOS may ask for Bluetooth permission.',
+        widget.platform == TargetPlatform.windows
+            ? 'Windows may ask for Bluetooth permission and pairing confirmation.'
+            : 'macOS may ask for Bluetooth permission.',
       ),
       _ProbePhase.scanning => (
         AppIcons.loader,

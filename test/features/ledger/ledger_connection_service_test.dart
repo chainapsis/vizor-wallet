@@ -15,7 +15,7 @@ import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
   for (final preference in LedgerConnectionPreference.values) {
-    test('Windows uses USB without touching BLE for $preference', () async {
+    test('Windows respects the connection preference $preference', () async {
       final notifier = _FakeAccountNotifier(
         _ledgerAccount(
           preference: preference,
@@ -36,19 +36,23 @@ void main() {
           .run(
             accountUuid: 'ledger-1',
             usb: () async => 'signed-over-usb',
-            bluetooth: (_) => throw StateError('Windows BLE must not run'),
+            bluetooth: (_) async => 'signed-over-ble',
           );
-      expect(result, 'signed-over-usb');
-      expect(ble.recoveryEvents, isEmpty);
-      expect(ble.connectCalls, 0);
-      expect(notifier.recordedTransports, [LedgerConnectionTransport.usb]);
+      final usesUsb = preference == LedgerConnectionPreference.usb;
+      expect(result, usesUsb ? 'signed-over-usb' : 'signed-over-ble');
+      expect(ble.connectCalls, usesUsb ? 0 : 1);
+      // The retained BLE transport is already persisted; only USB changes it.
+      expect(
+        notifier.recordedTransports,
+        usesUsb ? [LedgerConnectionTransport.usb] : isEmpty,
+      );
     });
   }
 
-  test('Windows USB failure does not offer or probe Bluetooth', () async {
+  test('Windows explicit USB failure does not probe Bluetooth', () async {
     final notifier = _FakeAccountNotifier(
       _ledgerAccount(
-        preference: LedgerConnectionPreference.automatic,
+        preference: LedgerConnectionPreference.usb,
         deviceModel: 'Nano X',
       ),
     );
@@ -112,39 +116,42 @@ void main() {
       expect(ble.apduCalls, 0);
     },
   );
-  test(
-    'Automatic falls back from unavailable USB to verified Bluetooth',
-    () async {
-      final notifier = _FakeAccountNotifier(
-        _ledgerAccount(
-          preference: LedgerConnectionPreference.automatic,
-          deviceModel: 'Nano X',
-        ),
-      );
-      final ble = _FakeBleService();
-      final container = _container(
-        notifier: notifier,
-        ble: ble,
-        usbReady: false,
-      );
-      addTearDown(container.dispose);
-      await container.read(accountProvider.future);
+  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+    test(
+      '$platform Automatic falls back from unavailable USB to verified Bluetooth',
+      () async {
+        final notifier = _FakeAccountNotifier(
+          _ledgerAccount(
+            preference: LedgerConnectionPreference.automatic,
+            deviceModel: 'Nano X',
+          ),
+        );
+        final ble = _FakeBleService();
+        final container = _container(
+          notifier: notifier,
+          ble: ble,
+          usbReady: false,
+          platform: platform,
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
 
-      final result = await container
-          .read(ledgerConnectionServiceProvider)
-          .run(
-            accountUuid: 'ledger-1',
-            usb: () => throw StateError('USB operation must not start'),
-            bluetooth: (_) async => 'signed-over-ble',
-          );
+        final result = await container
+            .read(ledgerConnectionServiceProvider)
+            .run(
+              accountUuid: 'ledger-1',
+              usb: () => throw StateError('USB operation must not start'),
+              bluetooth: (_) async => 'signed-over-ble',
+            );
 
-      expect(result, 'signed-over-ble');
-      expect(ble.connectCalls, 1);
-      expect(notifier.recordedTransports, [
-        LedgerConnectionTransport.bluetooth,
-      ]);
-    },
-  );
+        expect(result, 'signed-over-ble');
+        expect(ble.connectCalls, 1);
+        expect(notifier.recordedTransports, [
+          LedgerConnectionTransport.bluetooth,
+        ]);
+      },
+    );
+  }
 
   test(
     'Automatic never replays a started USB operation over Bluetooth',

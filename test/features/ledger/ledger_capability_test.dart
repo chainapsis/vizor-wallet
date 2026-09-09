@@ -63,11 +63,12 @@ void main() {
   });
 
   test(
-    'keeps Bluetooth unavailable on USB-only Windows and unsupported OSes',
+    'supports Bluetooth on Windows and Apple and Android platforms only',
     () {
       for (final platform in TargetPlatform.values) {
         final supported =
             platform == TargetPlatform.macOS ||
+            platform == TargetPlatform.windows ||
             platform == TargetPlatform.iOS ||
             platform == TargetPlatform.android;
         expect(

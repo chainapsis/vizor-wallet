@@ -25,7 +25,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 
 void main() {
-  testWidgets('Windows offers USB only and continues to the birthday step', (
+  testWidgets('Windows offers both transports and USB continues to birthday', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -51,12 +51,162 @@ void main() {
     expect(find.text('USB'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
-      findsNothing,
+      findsOneWidget,
     );
     await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
     await tester.pumpAndSettle();
     expect(find.text('birthday-windows-usb-viewing-key'), findsOneWidget);
   });
+
+  testWidgets('Windows Bluetooth preserves the app-readiness failure message', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    var accountRequests = 0;
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.windows,
+        connector: (_) => throw StateError('USB should not be used'),
+        bluetoothIdentityConnector: (_) async =>
+            throw const LedgerAppReadinessException(
+              LedgerAppReadinessFailure.unavailable,
+              'Vizor could not resume after opening Zcash. Open Zcash on your Ledger and try again.',
+            ),
+        bluetoothConnector: (_, _) async {
+          accountRequests++;
+          throw StateError('UFVK must not be requested before app readiness');
+        },
+        bleService: _FakeLedgerBleService(),
+        importer:
+            ({
+              required name,
+              required account,
+              required birthdayHeight,
+              required profilePictureId,
+            }) async {},
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Vizor could not resume after opening Zcash. Open Zcash on your Ledger and try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Vizor could not connect to this Ledger over Bluetooth. Try again.',
+      ),
+      findsNothing,
+    );
+    expect(accountRequests, 0);
+  });
+
+  testWidgets(
+    'Windows Bluetooth duplicate returns to index input and can retry',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      const fingerprint = 'same-ledger-wallet';
+      final ble = _FakeLedgerBleService();
+      final requestedIndexes = <int>[];
+      await tester.pumpWidget(
+        _harness(
+          platform: TargetPlatform.windows,
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(
+                uuid: 'ledger-0',
+                name: 'Existing Ledger',
+                order: 0,
+                isHardware: true,
+                hardwareSignerKind: HardwareSignerKind.ledger,
+                zip32AccountIndex: 0,
+                ledgerWalletFingerprint: fingerprint,
+              ),
+            ],
+            activeAccountUuid: 'ledger-0',
+          ),
+          connector: (_) => throw StateError('USB should not be used'),
+          bluetoothIdentityConnector: (_) async =>
+              const LedgerWalletIdentity(fingerprint: fingerprint),
+          bluetoothConnector: (index, device) async {
+            requestedIndexes.add(index);
+            return LedgerDeviceAccount(
+              ufvk: 'bluetooth-index-$index',
+              seedFingerprint: const [1, 2, 3],
+              accountIndex: index,
+              appVersion: '3.9.3',
+              transport: LedgerConnectionTransport.bluetooth,
+              device: device,
+            );
+          },
+          bleService: ble,
+          importer:
+              ({
+                required name,
+                required account,
+                required birthdayHeight,
+                required profilePictureId,
+              }) async {},
+        ),
+      );
+      await tester.pumpAndSettle();
+      final bluetooth = find.byKey(
+        const ValueKey('ledger_desktop_ble_connect_button'),
+      );
+      final device = find.byKey(
+        const ValueKey('ledger_desktop_ble_device_ledger-1'),
+      );
+      await tester.tap(bluetooth);
+      await tester.pumpAndSettle();
+      final disconnectsBeforeDuplicate = ble.disconnectCalls;
+      await tester.tap(device);
+      await tester.pumpAndSettle();
+
+      expect(requestedIndexes, isEmpty);
+      expect(ble.disconnectCalls, disconnectsBeforeDuplicate + 1);
+      expect(
+        find.byKey(const ValueKey('ledger_desktop_ble_connect_dialog')),
+        findsNothing,
+      );
+      expect(
+        find.text('Index 0 is already used by this Ledger wallet.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Vizor could not connect to this Ledger over Bluetooth. Try again.',
+        ),
+        findsNothing,
+      );
+      final indexInput = find.byKey(
+        const ValueKey('ledger_account_index_field'),
+      );
+      expect(indexInput, findsOneWidget);
+      await tester.enterText(indexInput, '1');
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Index 0 is already used by this Ledger wallet.'),
+        findsNothing,
+      );
+      await tester.tap(bluetooth);
+      await tester.pumpAndSettle();
+      await tester.tap(device);
+      await tester.pumpAndSettle();
+      expect(requestedIndexes, [1]);
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(find.text('birthday-bluetooth-index-1'), findsOneWidget);
+    },
+  );
 
   testWidgets('Ledger sidebar export preserves 2x pixels and transparency', (
     tester,
@@ -393,86 +543,91 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('imports the approved Ledger account over macOS Bluetooth', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    final ble = _FakeLedgerBleService();
-    LedgerBleDevice? requestedDevice;
+  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+    testWidgets('imports the approved Ledger account over $platform Bluetooth', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      final ble = _FakeLedgerBleService();
+      LedgerBleDevice? requestedDevice;
 
-    await tester.pumpWidget(
-      _harness(
-        connector: (_) => Future.error(StateError('USB should not be used')),
-        bluetoothConnector: (accountIndex, device) async {
-          requestedDevice = device;
-          await ble.requestOpenZcashApp();
-          return LedgerDeviceAccount(
-            ufvk: 'uview-bluetooth',
-            seedFingerprint: const [4, 5, 6],
-            accountIndex: accountIndex,
-            appVersion: '3.9.3',
-            transport: LedgerConnectionTransport.bluetooth,
-            device: device,
-          );
-        },
-        importer:
-            ({
-              required name,
-              required account,
-              required birthdayHeight,
-              required profilePictureId,
-            }) async {},
-        bleService: ble,
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        _harness(
+          platform: platform,
+          connector: (_) => Future.error(StateError('USB should not be used')),
+          bluetoothConnector: (accountIndex, device) async {
+            requestedDevice = device;
+            await ble.requestOpenZcashApp();
+            return LedgerDeviceAccount(
+              ufvk: 'uview-bluetooth',
+              seedFingerprint: const [4, 5, 6],
+              accountIndex: accountIndex,
+              appVersion: '3.9.3',
+              transport: LedgerConnectionTransport.bluetooth,
+              device: device,
+            );
+          },
+          importer:
+              ({
+                required name,
+                required account,
+                required birthdayHeight,
+                required profilePictureId,
+              }) async {},
+          bleService: ble,
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
-    );
-    await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
-      findsOneWidget,
-    );
-    final paneRect = tester.getRect(find.byType(AppDesktopPane));
-    final modalPaneRect = tester.getRect(
-      find.byKey(const ValueKey('ledger_desktop_ble_modal_pane')),
-    );
-    final cardRect = tester.getRect(
-      find.byKey(const ValueKey('ledger_desktop_ble_connect_dialog')),
-    );
-    expect(modalPaneRect, paneRect);
-    expect(cardRect.center.dx, paneRect.center.dx);
-    expect(cardRect.width, 440);
-    expect(find.byType(AppPaneModalOverlay), findsOneWidget);
-    // The route barrier blocks background interaction without dimming the sidebar.
-    for (final barrier in tester.widgetList<ModalBarrier>(
-      find.byType(ModalBarrier),
-    )) {
-      expect(barrier.color?.a ?? 0, 0);
-    }
-    await tester.tap(
-      find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
-    );
-    await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
+        findsOneWidget,
+      );
+      final paneRect = tester.getRect(find.byType(AppDesktopPane));
+      final modalPaneRect = tester.getRect(
+        find.byKey(const ValueKey('ledger_desktop_ble_modal_pane')),
+      );
+      final cardRect = tester.getRect(
+        find.byKey(const ValueKey('ledger_desktop_ble_connect_dialog')),
+      );
+      expect(modalPaneRect, paneRect);
+      expect(cardRect.center.dx, paneRect.center.dx);
+      expect(cardRect.width, 440);
+      expect(find.byType(AppPaneModalOverlay), findsOneWidget);
+      // The route barrier blocks background interaction without dimming the sidebar.
+      for (final barrier in tester.widgetList<ModalBarrier>(
+        find.byType(ModalBarrier),
+      )) {
+        expect(barrier.color?.a ?? 0, 0);
+      }
+      await tester.tap(
+        find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Ledger Flex is ready'), findsOneWidget);
-    expect(
-      find.text(
-        'Your viewing key was shared. Continue to finish adding your account.',
-      ),
-      findsOneWidget,
-    );
-    expect(ble.connectedDeviceId, 'ledger-1');
-    expect(ble.openAppCalls, 1);
-    expect(requestedDevice?.model, 'Ledger Flex');
+      expect(find.text('Ledger Flex is ready'), findsOneWidget);
+      expect(
+        find.text(
+          'Your viewing key was shared. Continue to finish adding your account.',
+        ),
+        findsOneWidget,
+      );
+      expect(ble.connectedDeviceId, 'ledger-1');
+      expect(ble.openAppCalls, 1);
+      expect(requestedDevice?.model, 'Ledger Flex');
 
-    await tester.tap(find.byKey(const ValueKey('ledger_desktop_ble_continue')));
-    await tester.pumpAndSettle();
-    expect(find.text('birthday-uview-bluetooth'), findsOneWidget);
-  });
+      await tester.tap(
+        find.byKey(const ValueKey('ledger_desktop_ble_continue')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('birthday-uview-bluetooth'), findsOneWidget);
+    });
+  }
 
   testWidgets(
     'shows same-wallet accounts, suggests the first gap, and blocks duplicates',

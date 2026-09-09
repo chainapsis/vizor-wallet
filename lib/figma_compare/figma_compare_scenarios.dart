@@ -2,7 +2,10 @@
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../src/app_bootstrap.dart';
+import '../src/features/onboarding/ledger/ledger_connect_screen.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
 import '../widgetbook/ledger_use_cases.dart';
@@ -60,6 +63,22 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-connect',
     description: 'Desktop Ledger connection with the Figma sidebar artwork',
     builder: _buildLedgerConnect,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-birthday-sidebar',
+    description: 'Ledger birthday sidebar with the existing import artwork',
+    builder: _buildLedgerBirthdaySidebar,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-password-sidebar',
+    description: 'Ledger password sidebar with the existing import artwork',
+    builder: _buildLedgerPasswordSidebar,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-customise-sidebar',
+    description:
+        'Ledger customisation sidebar with the existing import artwork',
+    builder: _buildLedgerCustomiseSidebar,
   ),
   FigmaCompareScenario(
     id: 'mobile-ledger-linked-connection',
@@ -985,6 +1004,25 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
 
 Widget _buildLedgerConnect(BuildContext context) =>
     buildLedgerFlowPreview(screen: 'Connect Ledger', mobile: false);
+
+Widget _buildLedgerBirthdaySidebar(BuildContext context) =>
+    _buildLedgerSidebar(LedgerOnboardingStep.birthday);
+
+Widget _buildLedgerPasswordSidebar(BuildContext context) =>
+    _buildLedgerSidebar(LedgerOnboardingStep.setPassword);
+
+Widget _buildLedgerCustomiseSidebar(BuildContext context) =>
+    _buildLedgerSidebar(LedgerOnboardingStep.customiseAccount);
+
+// Sidebar-only previews: no account, device, wallet storage, or Rust calls.
+Widget _buildLedgerSidebar(LedgerOnboardingStep step) => ProviderScope(
+  overrides: [appBootstrapProvider.overrideWithValue(AppBootstrapState.empty)],
+  child: LedgerOnboardingShell(
+    activeStep: step,
+    backTarget: null,
+    child: const SizedBox.shrink(),
+  ),
+);
 
 Widget _buildMobileLedgerLinkedConnection(BuildContext context) =>
     buildLedgerFlowPreview(screen: 'Connect linked account', mobile: true);

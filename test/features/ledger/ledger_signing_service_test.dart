@@ -6,29 +6,23 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 
 void main() {
-  test(
-    'Windows cancellation uses Rust without initializing native BLE',
-    () async {
-      var cancelCalls = 0;
-      final container = ProviderContainer(
-        overrides: [
-          ledgerTargetPlatformProvider.overrideWithValue(
-            TargetPlatform.windows,
-          ),
-          ledgerRustOperationCancellerProvider.overrideWithValue(() async {
-            cancelCalls++;
-          }),
-          ledgerMobileBleServiceProvider.overrideWith((_) {
-            throw StateError('Windows must not initialize BLE');
-          }),
-        ],
-      );
-      addTearDown(container.dispose);
-      await container.read(ledgerOperationCancellerProvider)();
-      expect(cancelCalls, 1);
-      expect(container.exists(ledgerMobileBleServiceProvider), isFalse);
-    },
-  );
+  test('Windows cancellation reaches both native transports', () async {
+    var cancelCalls = 0;
+    final ble = _CancelBleService();
+    final container = ProviderContainer(
+      overrides: [
+        ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.windows),
+        ledgerRustOperationCancellerProvider.overrideWithValue(() async {
+          cancelCalls++;
+        }),
+        ledgerMobileBleServiceProvider.overrideWithValue(ble),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(ledgerOperationCancellerProvider)();
+    expect(cancelCalls, 1);
+    expect(ble.cancelCalls, 1);
+  });
 
   test('release validation runs before the Ledger transport signer', () async {
     final events = <String>[];
@@ -80,4 +74,14 @@ void main() {
     );
     expect(transportCalls, 0);
   });
+}
+
+class _CancelBleService implements LedgerMobileBleService {
+  int cancelCalls = 0;
+
+  @override
+  Future<void> cancelSigning() async => cancelCalls++;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

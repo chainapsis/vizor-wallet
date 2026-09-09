@@ -20,6 +20,7 @@ import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/ledger_app_instructions.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/widgets/ledger_connection_guide.dart';
+import '../import/import_split_view.dart';
 import '../shared/onboarding_chrome.dart';
 import 'ledger_desktop_ble_probe_dialog.dart';
 import 'ledger_account_import_context.dart';
@@ -72,31 +73,36 @@ class LedgerOnboardingShell extends ConsumerWidget {
               active: step == activeStep,
             ),
         ],
-        illustration: activeStep == LedgerOnboardingStep.connect
-            ? IgnorePointer(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Image.asset(
-                    'assets/illustrations/onboarding_ledger_sidebar.png',
-                    key: const ValueKey('ledger_connect_sidebar_illustration'),
-                    // Figma 8495:28027 is 256 × 430, exported at 2×.
-                    width: 256,
-                    height: 430,
-                    scale: 2,
-                    fit: BoxFit.contain,
-                    alignment: Alignment.bottomCenter,
-                    excludeFromSemantics: true,
-                  ),
-                ),
-              )
-            : Center(
-                child: AppIcon(
-                  AppIcons.ledgerBrand,
-                  size: 88,
-                  color: context.colors.icon.muted,
-                  semanticLabel: 'Ledger',
-                ),
+        illustration: switch (activeStep) {
+          LedgerOnboardingStep.connect => IgnorePointer(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Image.asset(
+                'assets/illustrations/onboarding_ledger_sidebar.png',
+                key: const ValueKey('ledger_connect_sidebar_illustration'),
+                // Figma 8495:28027 is 256 × 430, exported at 2×.
+                width: 256,
+                height: 430,
+                scale: 2,
+                fit: BoxFit.contain,
+                alignment: Alignment.bottomCenter,
+                excludeFromSemantics: true,
               ),
+            ),
+          ),
+          LedgerOnboardingStep.birthday =>
+            const ImportOnboardingSidebarIllustration(
+              activeStep: ImportOnboardingStep.walletBirthdayHeight,
+            ),
+          LedgerOnboardingStep.setPassword =>
+            const ImportOnboardingSidebarIllustration(
+              activeStep: ImportOnboardingStep.setPassword,
+            ),
+          LedgerOnboardingStep.customiseAccount =>
+            const ImportOnboardingSidebarIllustration(
+              activeStep: ImportOnboardingStep.customiseAccount,
+            ),
+        },
       ),
       pane: OnboardingPaneChrome(
         backTarget: backTarget,
@@ -206,6 +212,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     final accountIndex = _validatedAccountIndex();
     if (accountIndex == null) return;
     final accountContext = _resolveAccountContext();
+    int? duplicateIndex;
     final account = await showLedgerDesktopBleConnectDialog(
       context: context,
       service: ref.read(ledgerMobileBleServiceProvider),
@@ -221,8 +228,25 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
         )).withWalletIdentity(identity);
       },
       accountIndex: accountIndex,
+      onAccountError: (error) {
+        if (error case _LedgerDuplicateIndexException(:final accountIndex)) {
+          duplicateIndex = accountIndex;
+          return true;
+        }
+        return false;
+      },
     );
-    if (!mounted || account == null) return;
+    if (!mounted) return;
+    if (duplicateIndex != null) {
+      setState(() {
+        _accountIndexError =
+            'Index $duplicateIndex is already used by this Ledger wallet.';
+        _showAdvancedOptions = true;
+        _error = null;
+      });
+      return;
+    }
+    if (account == null) return;
     context.go(
       '/onboarding/ledger/birthday',
       extra: LedgerBirthdayArgs(

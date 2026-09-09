@@ -85,9 +85,6 @@ class LedgerConnectionService {
     if (isLedgerMobilePlatform(platform)) {
       return const [LedgerConnectionTransport.bluetooth];
     }
-    if (platform == TargetPlatform.windows) {
-      return const [LedgerConnectionTransport.usb];
-    }
     return switch (account.ledgerConnectionPreference) {
       LedgerConnectionPreference.usb => const [LedgerConnectionTransport.usb],
       LedgerConnectionPreference.bluetooth => const [
@@ -240,9 +237,6 @@ class LedgerConnectionService {
 
   String _connectionFailureMessage(AccountInfo account, Object? error) {
     final suffix = error == null ? '' : ' ${error.toString()}';
-    if (_ref.read(ledgerTargetPlatformProvider) == TargetPlatform.windows) {
-      return 'Connect and unlock your Ledger with USB, then try again.$suffix';
-    }
     return switch (account.ledgerConnectionPreference) {
       LedgerConnectionPreference.usb =>
         'Connect and unlock your Ledger with USB, then try again.$suffix',
