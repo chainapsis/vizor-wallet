@@ -5,16 +5,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_profile_picture.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../services/voting/pir_snapshot_resolver.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
+import '../../ledger/widgets/ledger_device_illustration.dart';
+import '../../ledger/ledger_app_instructions.dart'
+    show ledgerZcashAppName;
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
@@ -474,6 +481,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           keystoneQrError: job?.keystoneQrError,
           keystoneScanError: state.keystoneScanError,
           ledgerDisplayMemo: job?.ledgerDisplayMemo,
+          ledgerAccountUuid: selectedKey?.accountUuid,
           ledgerSigningBundleIndex: job?.ledgerBundleIndex,
           ledgerSigningBundleCount: job?.ledgerBundleCount ?? 0,
           walletScannedHeight: state.walletScannedHeight,
@@ -785,6 +793,7 @@ class VotingStatusContent extends StatelessWidget {
     this.keystoneQrError,
     this.keystoneScanError,
     this.ledgerDisplayMemo,
+    this.ledgerAccountUuid,
     this.ledgerSigningBundleIndex,
     this.ledgerSigningBundleCount = 0,
     this.walletScannedHeight,
@@ -819,6 +828,7 @@ class VotingStatusContent extends StatelessWidget {
   final String? keystoneQrError;
   final String? keystoneScanError;
   final String? ledgerDisplayMemo;
+  final String? ledgerAccountUuid;
   final int? ledgerSigningBundleIndex;
   final int ledgerSigningBundleCount;
   final int? walletScannedHeight;
@@ -848,6 +858,21 @@ class VotingStatusContent extends StatelessWidget {
         phase != VotingSessionPhase.error;
     final awaitingLedgerApproval =
         isLedgerAccount && phase == VotingSessionPhase.ledgerSigning;
+    final showLedgerSigningPanel =
+        awaitingLedgerApproval &&
+        submissionJobInFlight &&
+        ledgerSigningBundleIndex != null;
+
+    if (showLedgerSigningPanel) {
+      return LedgerVotingSigningPanel(
+        accountUuid: ledgerAccountUuid,
+        displayMemo: ledgerDisplayMemo ?? '',
+        bundleIndex: ledgerSigningBundleIndex!,
+        bundleCount: ledgerSigningBundleCount,
+        onCancel: onCancelLedger,
+        horizontalPadding: horizontalPadding,
+      );
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -906,18 +931,6 @@ class VotingStatusContent extends StatelessWidget {
                   canSkipRemainingBundles: canSkipRemainingKeystoneBundles,
                   onScan: onScanKeystone,
                   onSkipRemainingBundles: onSkipKeystoneBundles,
-                ),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              if (isLedgerAccount &&
-                  submissionJobInFlight &&
-                  phase == VotingSessionPhase.ledgerSigning &&
-                  ledgerSigningBundleIndex != null) ...[
-                LedgerVotingSigningPanel(
-                  displayMemo: ledgerDisplayMemo ?? '',
-                  bundleIndex: ledgerSigningBundleIndex!,
-                  bundleCount: ledgerSigningBundleCount,
-                  onCancel: onCancelLedger,
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
@@ -1087,6 +1100,8 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
     required this.bundleIndex,
     required this.bundleCount,
     required this.onCancel,
+    this.accountUuid,
+    this.horizontalPadding = 0,
     super.key,
   });
 
@@ -1094,159 +1109,313 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
   final int bundleIndex;
   final int bundleCount;
   final VoidCallback? onCancel;
+  final String? accountUuid;
+  final double horizontalPadding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final signingAccount = accountUuid == null
+        ? null
+        : ref.watch(
+            accountProvider.select(
+              (state) => state.value?.accounts
+                  .where(
+                    (account) =>
+                        account.uuid == accountUuid && account.isLedger,
+                  )
+                  .firstOrNull,
+            ),
+          );
     final safeBundleCount = bundleCount > 0 ? bundleCount : bundleIndex + 1;
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final failed = readiness.phase == LedgerAppReadinessPhase.failed;
-    final (statusLabel, statusMessage) = switch (readiness.phase) {
-      LedgerAppReadinessPhase.checkingDevice => (
-        'Checking your Ledger',
-        'Vizor is checking whether the Zcash app is ready.',
-      ),
-      LedgerAppReadinessPhase.confirmOpening => (
-        'Confirm opening Zcash',
-        'Approve the request to open the Zcash app on your Ledger.',
-      ),
-      LedgerAppReadinessPhase.failed => (
-        'Ledger needs attention',
-        readiness.message ?? 'Reconnect your Ledger and try again.',
-      ),
-      LedgerAppReadinessPhase.idle || LedgerAppReadinessPhase.ready => (
-        'Waiting for Ledger approval',
-        'Approve bundle ${bundleIndex + 1} on the device. Vizor will continue automatically.',
-      ),
-    };
-    return DecoratedBox(
-      key: const ValueKey('ledger_voting_signing_panel'),
-      decoration: BoxDecoration(
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: Column(
-          children: [
-            AppIcon(
-              AppIcons.ledgerBrand,
-              size: 40,
-              color: colors.icon.regular,
-              semanticLabel: 'Ledger',
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Approve voting delegation',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              'Bundle ${bundleIndex + 1} of $safeBundleCount',
-              key: const ValueKey('ledger_voting_bundle_progress'),
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            if (displayMemo.trim().isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.sm),
-              SizedBox(
-                width: double.infinity,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.surface.input.primary,
-                    border: Border.all(color: colors.border.subtle),
-                    borderRadius: BorderRadius.circular(AppRadii.small),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.xs),
-                    child: SelectableText(
-                      displayMemo,
-                      key: const ValueKey('ledger_voting_display_memo'),
-                      style: AppTypography.bodySmall.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
+    final checking = readiness.phase == LedgerAppReadinessPhase.checkingDevice;
+    const mobile = kAppFormFactor == AppFormFactor.mobile;
+    final appName = ledgerZcashAppName(
+      ref.watch(rpcEndpointProvider.select((endpoint) => endpoint.networkName)),
+    );
+    final opening = readiness.phase == LedgerAppReadinessPhase.confirmOpening;
+    final statusLabel = failed
+        ? 'Ledger needs attention'
+        : checking
+        ? 'Checking your Ledger'
+        : opening
+        ? 'Confirm app opening'
+        : 'Waiting for your approval';
+    final guidance = failed
+        ? readiness.message ?? 'Reconnect your Ledger and try again.'
+        : checking
+        ? 'Keep your Ledger connected and unlocked.'
+        : opening
+        ? 'Open the $appName app on your Ledger.'
+        : 'Review the request on your Ledger, then approve.';
+
+    final device = Column(
+      key: const ValueKey('ledger_voting_device_guidance'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: LedgerDeviceIllustration(
+            large: mobile,
+            attention: !failed && !checking,
+            destructive: failed,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Semantics(
+          liveRegion: true,
+          child: IndexedStack(
+            index: 0,
+            alignment: Alignment.center,
+            children: [
+              for (final message in [
+                guidance,
+                'Keep your Ledger connected and unlocked.',
+                'Open the $appName app on your Ledger.',
+                'Review the request on your Ledger, then approve.',
+              ])
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
-              ),
             ],
-            const SizedBox(height: AppSpacing.sm),
-            Container(
-              key: const ValueKey('ledger_voting_waiting_status'),
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              decoration: BoxDecoration(
-                color: colors.background.neutralSubtleOpacity,
-                borderRadius: BorderRadius.circular(AppRadii.small),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        Row(
+          key: const ValueKey('ledger_voting_waiting_status'),
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
+                statusLabel,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: failed
+                      ? colors.text.destructive
+                      : colors.text.secondary,
+                ),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            AppIcon(
+              failed ? AppIcons.warningCircle : AppIcons.loader,
+              size: 16,
+              color: failed ? colors.text.destructive : colors.text.secondary,
+              animated: !failed,
+            ),
+          ],
+        ),
+      ],
+    );
+    final memo = _LedgerDelegationDetails(
+      displayMemo: displayMemo,
+      bundleIndex: bundleIndex,
+      bundleCount: safeBundleCount,
+    );
+    final body = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Approve voting delegation',
+          textAlign: TextAlign.center,
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.text.accent,
+          ),
+        ),
+        if (signingAccount != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _LedgerVotingAccountIdentity(account: signingAccount),
+        ],
+        const SizedBox(height: AppSpacing.md),
+        device,
+        const SizedBox(height: AppSpacing.md),
+        memo,
+      ],
+    );
+    final action = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: AppButton(
+          key: const ValueKey('ledger_voting_cancel'),
+          onPressed: onCancel,
+          variant: AppButtonVariant.ghost,
+          size: mobile ? AppButtonSize.large : AppButtonSize.mediumLarge,
+          expand: true,
+          constrainContent: true,
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+    return LayoutBuilder(
+      key: const ValueKey('ledger_voting_signing_panel'),
+      builder: (context, constraints) {
+        Widget content(double minHeight) => VotingPaneCenteredScrollView(
+          maxWidth: 480,
+          minHeight: minHeight,
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding > 0
+                ? horizontalPadding
+                : AppSpacing.sm,
+            vertical: AppSpacing.md,
+          ),
+          child: body,
+        );
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (constraints.hasBoundedHeight)
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, inner) => content(inner.maxHeight),
+                ),
+              )
+            else
+              content(0),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.xs,
+                AppSpacing.sm,
+                AppSpacing.sm,
+              ),
+              child: action,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _LedgerVotingAccountIdentity extends StatelessWidget {
+  const _LedgerVotingAccountIdentity({required this.account});
+
+  final AccountInfo account;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final groupName = account.ledgerWalletName?.trim();
+    return Column(
+      key: const ValueKey('ledger_voting_account_identity'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Voting with',
+          style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AppProfilePicture(profilePictureId: account.profilePictureId),
+            const SizedBox(width: AppSpacing.s),
+            Flexible(
+              child: Text(
+                account.name,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (groupName != null && groupName.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            groupName,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodySmall.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _LedgerDelegationDetails extends StatelessWidget {
+  const _LedgerDelegationDetails({
+    required this.displayMemo,
+    required this.bundleIndex,
+    required this.bundleCount,
+  });
+  final String displayMemo;
+  final int bundleIndex;
+  final int bundleCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      key: const ValueKey('ledger_voting_delegation_details'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: colors.background.neutralSubtleOpacity,
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppSpacing.s,
+                runSpacing: AppSpacing.xs,
                 children: [
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: Center(
-                      child: AppIcon(
-                        failed ? AppIcons.warningCircle : AppIcons.loader,
-                        size: failed ? 20 : 18,
-                        color: failed
-                            ? colors.icon.destructive
-                            : colors.icon.regular,
-                        animated: !failed,
-                        semanticLabel: statusLabel,
-                      ),
+                  Text(
+                    'Delegation details',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.secondary,
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          statusLabel,
-                          style: AppTypography.bodyMediumStrong.copyWith(
-                            color: failed
-                                ? colors.text.destructive
-                                : colors.text.accent,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xxs),
-                        Text(
-                          statusMessage,
-                          style: AppTypography.bodySmall.copyWith(
-                            color: failed
-                                ? colors.text.destructive
-                                : colors.text.secondary,
-                          ),
-                        ),
-                      ],
+                  Text(
+                    'Approval ${bundleIndex + 1} of $bundleCount',
+                    key: const ValueKey('ledger_voting_bundle_progress'),
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.accent,
                     ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            AppButton(
-              key: const ValueKey('ledger_voting_cancel'),
-              onPressed: onCancel,
-              variant: AppButtonVariant.secondary,
-              child: const Text('Cancel'),
-            ),
-          ],
+              if (displayMemo.trim().isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                SelectableText(
+                  displayMemo,
+                  key: const ValueKey('ledger_voting_display_memo'),
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
-      ),
+        if (displayMemo.trim().isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.s),
+          Text(
+            'Your Ledger may not display this memo verbatim. Review it here before approving.',
+            style: AppTypography.bodySmall.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

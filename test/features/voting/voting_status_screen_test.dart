@@ -4309,7 +4309,7 @@ void main() {
         expect(signedPczts.length, 2);
         ready.complete();
         await tester.pump();
-        expect(find.text('Your Ledger is connected'), findsOneWidget);
+        expect(find.text('Ready when you are'), findsOneWidget);
         expect(signedPczts.length, 2);
         expect(rust.storedKeystoneSignatures.keys, {0});
         await tester.tap(find.text('Continue voting'));
@@ -4400,16 +4400,27 @@ void main() {
           child: _statusHarness(withPlatformProgressBuilder: true),
         ),
       );
-      await _pumpUntilFound(tester, find.text('Bundle 2 of 2'), attempts: 100);
+      await _pumpUntilFound(
+        tester,
+        find.text('Approval 2 of 2'),
+        attempts: 100,
+      );
 
       expect(
         find.byKey(const ValueKey('ledger_voting_signing_panel')),
         findsOneWidget,
       );
-      expect(find.text('Approve on your Ledger'), findsOneWidget);
-      expect(find.text('Waiting for Ledger approval'), findsOneWidget);
+      expect(find.text('Approve voting delegation'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ledger_voting_account_identity')),
+          matching: find.text('Ledger'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Waiting for your approval'), findsOneWidget);
       expect(find.text('Signing with Keystone'), findsNothing);
-      expect(find.text('Signing with Ledger'), findsOneWidget);
+      expect(find.text('Signing with Ledger'), findsNothing);
       expect(find.text('platform submission progress'), findsNothing);
       expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
       expect(find.textContaining('may not display'), findsOneWidget);
