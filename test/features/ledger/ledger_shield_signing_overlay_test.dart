@@ -15,6 +15,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/home/providers/ledger_shielding_limit_notice_provider.dart';
 import 'package:zcash_wallet/src/features/home/widgets/ledger_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
@@ -148,6 +149,86 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+
+  testWidgets('shields the inputs beyond the device limit in further rounds', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService();
+    final sync = _FakeSyncNotifier();
+    final approvalLabels = <String>{};
+    var completed = false;
+
+    await tester.pumpWidget(
+      _harness(
+        operationService: operationService,
+        sync: sync,
+        // 40 inputs wait, then 8 after the first round, then none.
+        inputCounts: const [40, 8, 0],
+        ledgerSigner: (pcztBytes) async => [7, 8, 9],
+        onComplete: () => completed = true,
+      ),
+    );
+    await tester.pump();
+
+    for (var i = 0; i < 200 && !completed; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+      for (final text in tester.widgetList<Text>(find.byType(Text))) {
+        final data = text.data;
+        if (data != null && data.startsWith('Approval ')) {
+          approvalLabels.add(data);
+        }
+      }
+    }
+
+    expect(completed, isTrue);
+    expect(rustApi.createShieldCalls, 2);
+    expect(rustApi.addProofsCalls, 2);
+    expect(operationService.checkpoints, hasLength(2));
+    expect(operationService.broadcasts, hasLength(2));
+    expect(
+      operationService.checkpoints.map((c) => c.operationId).toSet(),
+      hasLength(2),
+    );
+    expect(sync.refreshCount, 2);
+    expect(approvalLabels, {'Approval 1 of 2', 'Approval 2 of 2'});
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('stops after a round that frees no inputs', (tester) async {
+    final operationService = _FakeLedgerSignedOperationService();
+    var completed = false;
+
+    await tester.pumpWidget(
+      _harness(
+        operationService: operationService,
+        sync: _FakeSyncNotifier(),
+        // The count never drops: the broadcast did not free the inputs, so
+        // asking the device to sign them again would double-spend them.
+        inputCounts: const [40],
+        ledgerSigner: (pcztBytes) async => [7, 8, 9],
+        onComplete: () => completed = true,
+      ),
+    );
+    await tester.pump();
+    for (var i = 0; i < 100 && !completed; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+
+    expect(completed, isTrue);
+    expect(rustApi.createShieldCalls, 1);
+    expect(operationService.broadcasts, hasLength(1));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
 }
 
 Widget _harness({
@@ -155,9 +236,32 @@ Widget _harness({
   required _FakeSyncNotifier sync,
   required Future<List<int>> Function(List<int> pcztBytes) ledgerSigner,
   required VoidCallback onComplete,
+  List<int> inputCounts = const [1, 0],
 }) {
+  // Each read reports how many transparent inputs still wait; the last value
+  // repeats once the script runs out.
+  var reads = 0;
   return ProviderScope(
     overrides: [
+      ledgerShieldStatusReaderProvider.overrideWithValue(({
+        required dbPath,
+        required network,
+        required accountUuid,
+      }) async {
+        final count =
+            inputCounts[reads < inputCounts.length
+                ? reads
+                : inputCounts.length - 1];
+        reads++;
+        return ShieldTransparentStatus(
+          canShield: count > 0,
+          feeZatoshi: BigInt.from(10_000),
+          shieldedZatoshi: BigInt.from(90_000),
+          reason: count > 0 ? '' : 'No transparent funds to shield',
+          transparentInputCount: count,
+          ledgerInputLimit: 32,
+        );
+      }),
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       walletProvider.overrideWith(_FakeWalletNotifier.new),
       syncProvider.overrideWith(() => sync),

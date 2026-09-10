@@ -42,10 +42,15 @@ void main() {
     expect(usb('User rejected approval (0x6985)'), isNull);
   });
 
-  test('shielding input limit copy names both counts', () {
+  test('shielding input limit copy counts the approvals', () {
     final message = ledgerShieldingInputLimitMessage(inputCount: 41, limit: 32);
     expect(message, contains('up to 32'));
-    expect(message, contains('32 of 41'));
+    expect(message, contains('all 41 inputs'));
+    expect(message, contains('2 approvals'));
+    expect(
+      ledgerShieldingInputLimitMessage(inputCount: 65, limit: 32),
+      contains('3 approvals'),
+    );
   });
 
   test('signatures from a different Ledger name the account mismatch', () {

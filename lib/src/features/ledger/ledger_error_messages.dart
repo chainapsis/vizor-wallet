@@ -100,13 +100,15 @@ String? ledgerUsbErrorMessage(
 }
 
 /// Shown on the home card while a Ledger account holds more transparent
-/// inputs than one device request can sign.
+/// inputs than one device approval can sign; shielding then asks for the
+/// approvals one after another.
 String ledgerShieldingInputLimitMessage({
   required int inputCount,
   required int limit,
 }) {
-  return 'Ledger shields up to $limit transparent inputs at once. '
-      'This shields $limit of $inputCount; shield again afterward for the rest.';
+  final approvals = (inputCount + limit - 1) ~/ limit;
+  return 'Ledger shields up to $limit transparent inputs per approval. '
+      'Shielding all $inputCount inputs takes $approvals approvals in a row on your Ledger.';
 }
 
 bool ledgerRequestNeedsRebuilding(Object error) {

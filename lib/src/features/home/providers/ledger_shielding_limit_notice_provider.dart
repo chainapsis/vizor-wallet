@@ -19,8 +19,8 @@ final ledgerShieldStatusReaderProvider = Provider<LedgerShieldStatusReader>(
   (_) => rust_sync.getShieldTransparentStatus,
 );
 
-/// Tells a Ledger account that one shielding round cannot take every
-/// transparent input: the device limit leaves the rest for another round.
+/// Tells a Ledger account that one device approval cannot take every
+/// transparent input: shielding will ask for several approvals in a row.
 /// Null when the active account is not a Ledger, cannot shield right now,
 /// holds no transparent balance, or fits within the limit.
 final ledgerShieldingLimitNoticeProvider = FutureProvider.autoDispose<String?>((
