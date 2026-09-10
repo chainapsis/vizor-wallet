@@ -212,9 +212,10 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'This account is not eligible for this voting round. It had no eligible '
-        'shielded funds at snapshot block 3,359,740. Switch to an eligible '
-        'account to vote.';
+        'Only Ironwood notes this account held at the snapshot can vote. '
+        'Notes you received or created after that point do not count, '
+        'even if you later moved funds or finished Ironwood. Eligibility is '
+        'measured at snapshot block 3,359,740. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
     expect(find.text(message), findsOneWidget);
@@ -244,9 +245,9 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least one eligible shielded note bundle with '
-        '0.125 ZEC '
-        'at snapshot block 123. Switch to an eligible account to vote.';
+        'Voting needs at least 0.125 ZEC in eligible Ironwood notes at the '
+        'snapshot. This account was below that minimum. Eligibility is measured at '
+        'snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
     expect(find.text(message), findsOneWidget);
@@ -304,9 +305,9 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least one eligible shielded note bundle with '
-        '0.125 ZEC '
-        'at snapshot block 123. Switch to an eligible account to vote.';
+        'Voting needs at least 0.125 ZEC in eligible Ironwood notes at the '
+        'snapshot. This account was below that minimum. Eligibility is measured at '
+        'snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
     expect(find.text(message), findsOneWidget);
@@ -347,9 +348,9 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least one eligible shielded note bundle with '
-        '0.125 ZEC '
-        'at snapshot block 123. Switch to an eligible account to vote.';
+        'Voting needs at least 0.125 ZEC in eligible Ironwood notes at the '
+        'snapshot. This account was below that minimum. Eligibility is measured at '
+        'snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
     expect(find.text(message), findsOneWidget);
@@ -379,9 +380,10 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'This account is not eligible for this voting round. It had no eligible '
-        'shielded funds at snapshot block 3,359,740. Switch to an eligible '
-        'account to vote.';
+        'Only Ironwood notes this account held at the snapshot can vote. '
+        'Notes you received or created after that point do not count, '
+        'even if you later moved funds or finished Ironwood. Eligibility is '
+        'measured at snapshot block 3,359,740. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
     await tester.tap(find.text('Retry'));
     await tester.pumpAndSettle();
@@ -557,9 +559,9 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least one eligible shielded note bundle with '
-        '0.125 ZEC '
-        'at snapshot block 3,359,740. Switch to an eligible account to vote.';
+        'Voting needs at least 0.125 ZEC in eligible Ironwood notes at the '
+        'snapshot. This account was below that minimum. Eligibility is measured at '
+        'snapshot block 3,359,740. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
     expect(find.text(message), findsOneWidget);
@@ -2919,9 +2921,9 @@ void main() {
       await tester.pumpAndSettle();
 
       const message =
-          'Voting requires at least one eligible shielded note bundle with '
-          '0.125 ZEC '
-          'at snapshot block 123. Switch to an eligible account to vote.';
+          'Voting needs at least 0.125 ZEC in eligible Ironwood notes at the '
+          'snapshot. This account was below that minimum. Eligibility is measured at '
+          'snapshot block 123. Switch to an eligible account to vote.';
       await _pumpUntilFound(tester, find.text('Not eligible'));
 
       expect(find.text(message), findsNothing);
@@ -2991,9 +2993,9 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least one eligible shielded note bundle with '
-        '0.125 ZEC '
-        'at snapshot block 123. Switch to an eligible account to vote.';
+        'Voting needs at least 0.125 ZEC in eligible Ironwood notes at the '
+        'snapshot. This account was below that minimum. Eligibility is measured at '
+        'snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text('Not eligible'));
 
     expect(find.text(message), findsNothing);
@@ -3046,9 +3048,9 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least one eligible shielded note bundle with '
-        '0.125 ZEC '
-        'at snapshot block 123. Switch to an eligible account to vote.';
+        'Voting needs at least 0.125 ZEC in eligible Ironwood notes at the '
+        'snapshot. This account was below that minimum. Eligibility is measured at '
+        'snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text('Not eligible'));
 
     expect(find.text(message), findsNothing);
@@ -3088,9 +3090,9 @@ void main() {
     await tester.pumpAndSettle();
 
     const message =
-        'Voting requires at least one eligible shielded note bundle with '
-        '0.125 ZEC '
-        'at snapshot block 123. Switch to an eligible account to vote.';
+        'Voting needs at least 0.125 ZEC in eligible Ironwood notes at the '
+        'snapshot. This account was below that minimum. Eligibility is measured at '
+        'snapshot block 123. Switch to an eligible account to vote.';
     await _pumpUntilFound(tester, find.text(message));
 
     expect(find.text(message), findsOneWidget);

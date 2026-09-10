@@ -165,6 +165,22 @@ class VotingRoundDetails {
   DateTime? get voteEndTime => _dateFromJson(rawJson, 'vote_end_time');
 
   DateTime? get ceremonyStart => _dateFromJson(rawJson, 'ceremony_phase_start');
+
+  /// Optional calendar time for the snapshot cutoff.
+  ///
+  /// Voting eligibility is defined at [snapshotHeight]. When the round JSON
+  /// also carries a timestamp, the UI can show that date next to the block.
+  DateTime? get snapshotTime {
+    for (final key in const [
+      'snapshot_time',
+      'snapshot_date',
+      'snapshot_timestamp',
+    ]) {
+      final value = _dateFromJson(rawJson, key);
+      if (value != null) return value;
+    }
+    return null;
+  }
 }
 
 DateTime? votingSessionVoteEndTime(String? sessionJson) {

@@ -20,12 +20,14 @@ import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
+import '../voting_eligibility_explanation.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_poll_ordering.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
+import '../widgets/voting_eligibility_notice.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 import '../widgets/voting_share_status_card.dart';
@@ -337,6 +339,7 @@ class _VotingProposalDetailViewState
           roundId: roundId,
           title: round.title.isEmpty ? 'Token holder voting' : round.title,
           snapshotHeight: round.snapshotHeight,
+          snapshotDate: round.snapshotTime,
           description: _roundDescription(round.rawJson),
           forumUri: forumUri,
           endDate: _roundEndDate(round.rawJson),
@@ -574,6 +577,8 @@ class VotingActivePollContent extends StatefulWidget {
     required this.roundId,
     required this.title,
     required this.snapshotHeight,
+    this.snapshotDate,
+    this.showInlineEligibilityExplanation = true,
     required this.description,
     required this.forumUri,
     required this.endDate,
@@ -593,6 +598,11 @@ class VotingActivePollContent extends StatefulWidget {
   final String roundId;
   final String title;
   final int snapshotHeight;
+  final DateTime? snapshotDate;
+
+  /// Variation A. When false, the page stays compact and the reason lives
+  /// in the ineligible sheet (Variation B).
+  final bool showInlineEligibilityExplanation;
   final String description;
   final Uri? forumUri;
   final DateTime? endDate;
@@ -618,6 +628,16 @@ class VotingActivePollContent extends StatefulWidget {
 class _ActivePollContentState extends State<VotingActivePollContent> {
   bool _showingIneligibleDialog = false;
 
+  VotingEligibilityExplanation? get _ineligibleExplanation {
+    final message = widget.votingEligibilityErrorMessage;
+    if (message == null) return null;
+    return VotingEligibilityExplanation.fromMessage(
+      message,
+      snapshotDate: widget.snapshotDate,
+      snapshotHeight: widget.snapshotHeight,
+    );
+  }
+
   Future<void> _showIneligibleDialog() async {
     final message = widget.votingEligibilityErrorMessage;
     if (message == null || _showingIneligibleDialog) return;
@@ -631,7 +651,11 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
           barrierColor: context.colors.background.neutralScrim,
           builder: (_) => AppTheme(
             data: appTheme,
-            child: VotingIneligibleDialog(message: message),
+            child: VotingIneligibleDialog(
+              message: message,
+              snapshotDate: widget.snapshotDate,
+              snapshotHeight: widget.snapshotHeight,
+            ),
           ),
         );
         final switchAccount = await Navigator.of(
@@ -650,7 +674,11 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     }
     await showDialog<void>(
       context: context,
-      builder: (_) => VotingIneligibleDialog(message: message),
+      builder: (_) => VotingIneligibleDialog(
+        message: message,
+        snapshotDate: widget.snapshotDate,
+        snapshotHeight: widget.snapshotHeight,
+      ),
     );
   }
 
@@ -709,6 +737,9 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
         votingPowerZatoshi: widget.votingPowerZatoshi,
         votingPowerPreparing: widget.votingPowerPreparing,
         votingEligibilityMessage: votingEligibilityMessage,
+        inlineExplanation: widget.showInlineEligibilityExplanation
+            ? _ineligibleExplanation
+            : null,
       );
     }
     return _PollSummary(
@@ -720,6 +751,9 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
       votingPowerZatoshi: widget.votingPowerZatoshi,
       votingPowerPreparing: widget.votingPowerPreparing,
       votingEligibilityMessage: widget.votingEligibilityMessage,
+      inlineExplanation: widget.showInlineEligibilityExplanation
+          ? _ineligibleExplanation
+          : null,
     );
   }
 
@@ -1004,9 +1038,24 @@ class _SkippedQuestionsDialog extends StatelessWidget {
 
 /// Shared by the live dialog route and deterministic visual previews.
 class VotingIneligibleDialog extends StatelessWidget {
-  const VotingIneligibleDialog({super.key, required this.message});
+  const VotingIneligibleDialog({
+    super.key,
+    required this.message,
+    this.snapshotDate,
+    this.snapshotHeight,
+  });
 
   final String message;
+  final DateTime? snapshotDate;
+  final int? snapshotHeight;
+
+  VotingEligibilityExplanation get explanation {
+    return VotingEligibilityExplanation.fromMessage(
+      message,
+      snapshotDate: snapshotDate,
+      snapshotHeight: snapshotHeight,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1040,7 +1089,7 @@ class VotingIneligibleDialog extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _MobileVotingEligibilityMessage(message: message),
+                    VotingEligibilitySheetBody(explanation: explanation),
                     const SizedBox(height: AppSpacing.md),
                     AppButton(
                       key: const ValueKey('voting_ineligible_switch_account'),
@@ -1114,12 +1163,7 @@ class VotingIneligibleDialog extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                message,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
+              VotingEligibilitySheetBody(explanation: explanation),
               const SizedBox(height: AppSpacing.md),
               AppButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -1129,52 +1173,6 @@ class VotingIneligibleDialog extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _MobileVotingEligibilityMessage extends StatelessWidget {
-  const _MobileVotingEligibilityMessage({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    const guidance = 'Switch to an eligible account to vote.';
-    final text = message.trim();
-    final hasGuidance = text.endsWith(guidance);
-    var reason = hasGuidance
-        ? text.substring(0, text.length - guidance.length).trimRight()
-        : text;
-    if (hasGuidance && reason.endsWith('.')) {
-      reason = reason.substring(0, reason.length - 1);
-    }
-    final spans = <TextSpan>[];
-    var offset = 0;
-    for (final match in RegExp(r'\b\d+(?:\.\d+)? ZEC\b').allMatches(reason)) {
-      spans.add(TextSpan(text: reason.substring(offset, match.start)));
-      spans.add(
-        TextSpan(
-          text: match.group(0),
-          style: TextStyle(color: context.colors.text.destructive),
-        ),
-      );
-      offset = match.end;
-    }
-    spans.add(TextSpan(text: reason.substring(offset)));
-    if (hasGuidance) {
-      spans.add(
-        TextSpan(
-          text: '\n\n$guidance',
-          style: TextStyle(color: context.colors.text.accent),
-        ),
-      );
-    }
-    return Text.rich(
-      TextSpan(children: spans),
-      style: AppTypography.bodyMedium.copyWith(
-        color: context.colors.text.primary,
       ),
     );
   }
@@ -1191,6 +1189,7 @@ class _MobilePollSummary extends StatelessWidget {
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
     required this.votingEligibilityMessage,
+    this.inlineExplanation,
   });
 
   final String title;
@@ -1202,6 +1201,7 @@ class _MobilePollSummary extends StatelessWidget {
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
   final String? votingEligibilityMessage;
+  final VotingEligibilityExplanation? inlineExplanation;
 
   @override
   Widget build(BuildContext context) {
@@ -1275,7 +1275,10 @@ class _MobilePollSummary extends StatelessWidget {
             ],
           ],
         ),
-        if (!isIneligible && votingEligibilityMessage != null) ...[
+        if (inlineExplanation != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          VotingEligibilityInlineNotice(explanation: inlineExplanation!),
+        ] else if (!isIneligible && votingEligibilityMessage != null) ...[
           const SizedBox(height: AppSpacing.xxs),
           Text(
             votingEligibilityMessage!,
@@ -1345,6 +1348,7 @@ class _PollSummary extends StatelessWidget {
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
     required this.votingEligibilityMessage,
+    this.inlineExplanation,
   });
 
   final String title;
@@ -1355,6 +1359,7 @@ class _PollSummary extends StatelessWidget {
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
   final String? votingEligibilityMessage;
+  final VotingEligibilityExplanation? inlineExplanation;
 
   @override
   Widget build(BuildContext context) {
@@ -1425,7 +1430,10 @@ class _PollSummary extends StatelessWidget {
             ],
           ],
         ),
-        if (votingEligibilityMessage != null) ...[
+        if (inlineExplanation != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          VotingEligibilityInlineNotice(explanation: inlineExplanation!),
+        ] else if (votingEligibilityMessage != null) ...[
           const SizedBox(height: AppSpacing.xxs),
           Text(
             votingEligibilityMessage!,

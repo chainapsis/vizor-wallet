@@ -108,6 +108,26 @@ void main() {
     );
   });
 
+  test('round details expose an optional snapshot calendar date', () {
+    final withDate = VotingRoundDetails.fromStatus(
+      VotingRoundStatus(
+        roundId: 'round-1',
+        status: 'active',
+        rawJson: _roundJson()..['snapshot_time'] = '2026-08-01T00:00:00Z',
+      ),
+    );
+    expect(withDate.snapshotTime, DateTime.utc(2026, 8, 1));
+
+    final withoutDate = VotingRoundDetails.fromStatus(
+      VotingRoundStatus(
+        roundId: 'round-1',
+        status: 'active',
+        rawJson: _roundJson(),
+      ),
+    );
+    expect(withoutDate.snapshotTime, isNull);
+  });
+
   test('round details require 32-byte round parameter fields', () {
     for (final entry in const {
       'ea_pk': 31,

@@ -243,8 +243,14 @@ Widget buildMobileVotingProposalDefaultUseCase(BuildContext context) {
 Widget buildMobileVotingEligibleUseCase(BuildContext context) =>
     _buildMobileVotingActiveUseCase(context, eligible: true);
 
+/// Variation A: snapshot date and exclusion reason stay on the poll page.
 Widget buildMobileVotingIneligibleUseCase(BuildContext context) =>
-    _buildMobileVotingActiveUseCase(context, eligible: false);
+    _buildMobileVotingActiveUseCase(
+      context,
+      eligible: false,
+      snapshotDate: _previewVotingSnapshotDate,
+      votingEligibilityErrorMessage: _previewMovedAfterSnapshotMessage,
+    );
 
 Widget buildMobileVotingPrivacyTrimUseCase(BuildContext context) =>
     _buildMobileVotingActiveUseCase(
@@ -267,7 +273,10 @@ Widget _buildMobileVotingActiveUseCase(
   BuildContext context, {
   required bool eligible,
   bool eligibilityUnknown = false,
+  bool showInlineEligibilityExplanation = true,
+  DateTime? snapshotDate,
   String? votingEligibilityMessage,
+  String? votingEligibilityErrorMessage,
 }) {
   return _mobileVotingFullPagePreview(
     context,
@@ -278,6 +287,8 @@ Widget _buildMobileVotingActiveUseCase(
         roundId: 'preview-nsm',
         title: '[TEST] Very Serious Snack Governance 3',
         snapshotHeight: 3543600,
+        snapshotDate: snapshotDate,
+        showInlineEligibilityExplanation: showInlineEligibilityExplanation,
         description:
             'A silly sample round for testing the shielded vote builder '
             'without using real governance content.',
@@ -294,8 +305,8 @@ Widget _buildMobileVotingActiveUseCase(
         votingEligibilityMessage: votingEligibilityMessage,
         votingEligibilityErrorMessage: eligible || eligibilityUnknown
             ? null
-            : 'This account did not have enough eligible '
-                  'shielded funds at snapshot block 3,543,600. Switch to an eligible account to vote.',
+            : votingEligibilityErrorMessage ??
+                  _previewMovedAfterSnapshotMessage,
         onVotingEligibilityRetry: _previewNoop,
         proposals: const [_previewNsmProposal],
         draft: const VotingDraftState(),
@@ -306,21 +317,33 @@ Widget _buildMobileVotingActiveUseCase(
   );
 }
 
+/// Variation B: compact page plus a structured reason sheet.
 Widget buildMobileVotingIneligibleModalUseCase(BuildContext context) {
   return Stack(
     fit: StackFit.expand,
     children: [
-      buildMobileVotingIneligibleUseCase(context),
+      _buildMobileVotingActiveUseCase(
+        context,
+        eligible: false,
+        showInlineEligibilityExplanation: false,
+        snapshotDate: _previewVotingSnapshotDate,
+        votingEligibilityErrorMessage: _previewMovedAfterSnapshotMessage,
+      ),
       ColoredBox(color: context.colors.background.neutralScrim),
-      const VotingIneligibleDialog(
-        message:
-            'Voting requires at least one eligible shielded note bundle '
-            'with 0.125 ZEC at snapshot block 3,459,350. '
-            'Switch to an eligible account to vote.',
+      VotingIneligibleDialog(
+        message: _previewMovedAfterSnapshotMessage,
+        snapshotDate: _previewVotingSnapshotDate,
+        snapshotHeight: 3543600,
       ),
     ],
   );
 }
+
+final _previewVotingSnapshotDate = DateTime.utc(2026, 8, 1);
+
+const _previewMovedAfterSnapshotMessage =
+    'This account had no eligible Ironwood notes at snapshot block 3,543,600. '
+    'Switch to an eligible account to vote.';
 
 const _previewNsmProposal = VotingProposalView(
   id: 1,
