@@ -8,6 +8,8 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../swap/models/swap_hardware_broadcast_result.dart';
@@ -52,6 +54,56 @@ bool ledgerStandaloneResultIsRecovered({
     return txids.every(recoveredTxids.contains);
   }
   return txids.any(recoveredTxids.contains);
+}
+
+/// A terminal outcome recovery found while the user was away: the signed
+/// request can no longer be sent, and Rust has already dropped it.
+class LedgerRecoveryNotice {
+  const LedgerRecoveryNotice({
+    required this.operationId,
+    required this.message,
+  });
+
+  final String operationId;
+  final String message;
+}
+
+class LedgerRecoveryNoticeController extends Notifier<LedgerRecoveryNotice?> {
+  @override
+  LedgerRecoveryNotice? build() => null;
+
+  void publish(LedgerRecoveryNotice notice) => state = notice;
+
+  void clear() => state = null;
+}
+
+final ledgerRecoveryNoticeProvider =
+    NotifierProvider<LedgerRecoveryNoticeController, LedgerRecoveryNotice?>(
+      LedgerRecoveryNoticeController.new,
+    );
+
+String ledgerRecoveryTerminalMessage({
+  required LedgerSignedOperationKind kind,
+  required Object error,
+}) {
+  final expired = error.toString().toLowerCase().contains('expired');
+  final subject = switch (kind) {
+    LedgerSignedOperationKind.send => 'transaction',
+    LedgerSignedOperationKind.shield => 'shielding transaction',
+    LedgerSignedOperationKind.swapDeposit => 'swap deposit',
+    LedgerSignedOperationKind.payDeposit => 'payment',
+  };
+  final reason = expired
+      ? 'expired before it could be sent'
+      : 'was rejected by the network';
+  final consequence = switch (kind) {
+    LedgerSignedOperationKind.swapDeposit => 'The swap was not funded.',
+    LedgerSignedOperationKind.payDeposit => 'The payment was not made.',
+    LedgerSignedOperationKind.send ||
+    LedgerSignedOperationKind.shield => 'Nothing was sent.',
+  };
+  return 'A Ledger-signed $subject $reason. $consequence '
+      'Create a new request when ready.';
 }
 
 /// Whether a swap or pay deposit may still be broadcast.
@@ -265,6 +317,22 @@ class LedgerOperationRecoveryCoordinator {
           'LedgerRecovery: operation=${operation.operationId} failed: '
           '$error\n$stackTrace',
         );
+        if (operation.state == 'signed_pending_broadcast' &&
+            isTerminalLedgerSignedOperationError(error)) {
+          // Rust has dropped the checkpoint; only this notice tells the user
+          // that a request they approved on the device was never sent.
+          _ref
+              .read(ledgerRecoveryNoticeProvider.notifier)
+              .publish(
+                LedgerRecoveryNotice(
+                  operationId: operation.operationId,
+                  message: ledgerRecoveryTerminalMessage(
+                    kind: operation.kind,
+                    error: error,
+                  ),
+                ),
+              );
+        }
       }
     }
 
@@ -292,6 +360,28 @@ class _LedgerOperationRecoveryHostState
     extends ConsumerState<LedgerOperationRecoveryHost> {
   bool _scheduledForCurrentUnlock = false;
   String? _scheduledSyncRevision;
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual<LedgerRecoveryNotice?>(ledgerRecoveryNoticeProvider, (
+      previous,
+      next,
+    ) {
+      if (next == null || identical(previous, next)) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showAppToast(
+          context,
+          next.message,
+          duration: const Duration(seconds: 6),
+          iconName: AppIcons.warningCircle,
+          tone: AppToastTone.destructive,
+        );
+        ref.read(ledgerRecoveryNoticeProvider.notifier).clear();
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

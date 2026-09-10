@@ -292,6 +292,7 @@ void main() {
             seedFingerprint: List.filled(32, index),
             ledgerWalletFingerprint: fingerprint,
             ledgerWalletName: name,
+            ledgerDeviceModel: 'Ledger Nano S Plus',
           );
       final result = await container
           .read(accountProvider.notifier)
@@ -317,10 +318,12 @@ void main() {
       for (final account in accounts) {
         expect(account.ledgerWalletFingerprint, fingerprint.toLowerCase());
         expect(account.ledgerWalletName, 'Travel Ledger');
+        expect(account.ledgerDeviceModel, 'Ledger Nano S Plus');
         expect(account.ledgerDeviceId, isNull);
         expect(account.ledgerLastTransport, isNull);
         final restored = AccountInfo.fromJson(account.toJson());
         expect(restored.ledgerWalletName, account.ledgerWalletName);
+        expect(restored.ledgerDeviceModel, account.ledgerDeviceModel);
         expect(
           restored.ledgerWalletFingerprint,
           account.ledgerWalletFingerprint,

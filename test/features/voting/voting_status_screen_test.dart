@@ -1390,6 +1390,53 @@ void main() {
   });
 
   testWidgets(
+    'status screen hides Retry when the Ledger request must be rebuilt',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      const message =
+          'This voting request exceeds your Ledger’s signing limit.';
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              key,
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.error,
+                generation: 1,
+                errorMessage: message,
+                retryUnavailable: true,
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider(
+            key,
+          ).overrideWithValue(const AsyncValue.loading()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(message), findsOneWidget);
+      expect(find.text('Retry'), findsNothing);
+      expect(find.text('Clear'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'status screen opens already completed job on confirmation route',
     (tester) async {
       const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');

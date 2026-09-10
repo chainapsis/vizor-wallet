@@ -52,6 +52,7 @@ class VotingSubmissionJobState {
     this.generation = 0,
     this.errorMessage,
     this.ledgerReconnectRequired = false,
+    this.retryUnavailable = false,
     this.softwareAccountRequired = false,
     this.keystoneUrParts = const [],
     this.keystoneBatchMemos = const [],
@@ -72,6 +73,9 @@ class VotingSubmissionJobState {
   final int generation;
   final String? errorMessage;
   final bool ledgerReconnectRequired;
+
+  /// The same request can never succeed, so Retry must not be offered.
+  final bool retryUnavailable;
   final bool softwareAccountRequired;
   final List<String> keystoneUrParts;
   final List<VotingKeystoneBatchMemo> keystoneBatchMemos;
@@ -101,6 +105,7 @@ class VotingSubmissionJobState {
     String? errorMessage,
     bool clearErrorMessage = false,
     bool? ledgerReconnectRequired,
+    bool? retryUnavailable,
     bool? softwareAccountRequired,
     List<String>? keystoneUrParts,
     List<VotingKeystoneBatchMemo>? keystoneBatchMemos,
@@ -129,6 +134,9 @@ class VotingSubmissionJobState {
       ledgerReconnectRequired: clearErrorMessage
           ? false
           : ledgerReconnectRequired ?? this.ledgerReconnectRequired,
+      retryUnavailable: clearErrorMessage
+          ? false
+          : retryUnavailable ?? this.retryUnavailable,
       softwareAccountRequired:
           softwareAccountRequired ?? this.softwareAccountRequired,
       keystoneUrParts: keystoneUrParts ?? this.keystoneUrParts,
@@ -866,6 +874,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
               ) ??
               _messageFromError(error),
           ledgerReconnectRequired: ledgerFailureNeedsReconnect(error),
+          retryUnavailable: ledgerRequestNeedsRebuilding(error),
         );
         return;
       }
@@ -1210,6 +1219,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required String message,
     bool softwareAccountRequired = false,
     bool ledgerReconnectRequired = false,
+    bool retryUnavailable = false,
   }) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     _cancelCompletionPoll();
@@ -1220,6 +1230,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       status: VotingSubmissionJobStatus.error,
       errorMessage: message,
       ledgerReconnectRequired: ledgerReconnectRequired,
+      retryUnavailable: retryUnavailable,
       softwareAccountRequired: softwareAccountRequired,
       keystoneUrParts: const [],
       keystoneBatchMemos: const [],

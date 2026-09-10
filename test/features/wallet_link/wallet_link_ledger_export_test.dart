@@ -68,6 +68,7 @@ void main() {
       expect(linked.hardwareSignerKind, HardwareSignerKind.ledger);
       expect(linked.ledgerWalletFingerprint, _fingerprint);
       expect(linked.ledgerWalletName, 'Travel Ledger');
+      expect(linked.ledgerDeviceModel, 'Ledger Flex');
       expect(linked.birthdayHeight, 3000000);
       expect(linked.zip32AccountIndex, 7);
       expect(linked.ufvk, 'uview1ledger');
@@ -99,6 +100,7 @@ class _Accounts extends AccountNotifier {
         ledgerWalletName: 'Travel Ledger',
         ledgerDeviceId: 'desktop-only-ble-id',
         ledgerDeviceName: 'My Flex',
+        ledgerDeviceModel: 'Ledger Flex',
         ledgerLastTransport: LedgerConnectionTransport.usb,
       ),
     ],

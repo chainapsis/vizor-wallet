@@ -249,6 +249,35 @@ void main() {
     },
   );
 
+  testWidgets('mobile Ledger swap abandons an unsignable request on leave', (
+    tester,
+  ) async {
+    var cancelled = 0;
+    var abandoned = 0;
+    await tester.pumpWidget(
+      _overlayApp(
+        intent: _intent,
+        operations: _OperationService(
+          Completer<LedgerSignedOperationBroadcastResult>().future,
+        ),
+        signing: _HardwareSigningService(),
+        signer: (_, _) async => throw StateError(
+          'Ledger supports at most 32 shielded actions; found 33',
+        ),
+        onCancel: () => cancelled++,
+        onAbandon: () => abandoned++,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Ledger requires a smaller transfer'), findsOneWidget);
+
+    await tester.tap(find.text('Back to activity'));
+    await tester.pumpAndSettle();
+
+    expect(abandoned, 1);
+    expect(cancelled, 0);
+  });
+
   testWidgets(
     'mobile Ledger swap does not sign after the deposit window closed',
     (tester) async {
@@ -475,6 +504,8 @@ Widget _overlayApp({
   required Future<List<int>> Function(String accountUuid, List<int> pczt)
   signer,
   Future<void> Function(SwapHardwareBroadcastResult)? onDepositBroadcast,
+  VoidCallback? onCancel,
+  VoidCallback? onAbandon,
 }) {
   return ProviderScope(
     overrides: [
@@ -494,7 +525,8 @@ Widget _overlayApp({
       home: SwapLedgerSigningOverlay(
         mobile: true,
         intent: intent,
-        onCancel: () {},
+        onCancel: onCancel ?? () {},
+        onAbandon: onAbandon,
         onDepositBroadcast: onDepositBroadcast ?? (_) async {},
       ),
     ),

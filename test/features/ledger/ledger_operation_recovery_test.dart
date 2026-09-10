@@ -185,6 +185,56 @@ void main() {
     });
   }
 
+  test('recovery tells the user when a signed send expired unsent', () async {
+    final operationService = _FakeLedgerSignedOperationService(
+      [_operation(kind: LedgerSignedOperationKind.send)],
+      broadcastError: StateError(
+        'Ledger signed operation cannot be retried: Hardware signing request '
+        'expired before broadcast',
+      ),
+    );
+    final container = _container(
+      operationService: operationService,
+      sync: _RecoverySyncNotifier(),
+    );
+    addTearDown(container.dispose);
+    await container.read(walletProvider.future);
+
+    await container.read(ledgerOperationRecoveryCoordinatorProvider).recover();
+
+    final notice = container.read(ledgerRecoveryNoticeProvider);
+    expect(notice?.operationId, 'operation-1');
+    expect(notice?.message, contains('expired before it could be sent'));
+    expect(notice?.message, contains('Nothing was sent'));
+    expect(operationService.acknowledged, isEmpty);
+  });
+
+  test('recovery stays quiet for a retryable broadcast failure', () async {
+    final operationService = _FakeLedgerSignedOperationService([
+      _operation(kind: LedgerSignedOperationKind.send),
+    ], broadcastError: StateError('lightwalletd unavailable'));
+    final container = _container(
+      operationService: operationService,
+      sync: _RecoverySyncNotifier(),
+    );
+    addTearDown(container.dispose);
+    await container.read(walletProvider.future);
+
+    await container.read(ledgerOperationRecoveryCoordinatorProvider).recover();
+
+    expect(container.read(ledgerRecoveryNoticeProvider), isNull);
+  });
+
+  test('terminal recovery copy names the deposit consequence', () {
+    expect(
+      ledgerRecoveryTerminalMessage(
+        kind: LedgerSignedOperationKind.payDeposit,
+        error: 'Ledger signed operation cannot be retried: broadcast rejected',
+      ),
+      allOf(contains('payment was rejected'), contains('was not made')),
+    );
+  });
+
   test('recovery keeps swap result when activity checkpoint fails', () async {
     final operationService = _FakeLedgerSignedOperationService([
       _operation(
@@ -389,9 +439,10 @@ LedgerSignedOperationMetadata _operation({
 
 class _FakeLedgerSignedOperationService
     implements LedgerSignedOperationService {
-  _FakeLedgerSignedOperationService(this.operations);
+  _FakeLedgerSignedOperationService(this.operations, {this.broadcastError});
 
   final List<LedgerSignedOperationMetadata> operations;
+  final Object? broadcastError;
   final broadcasts = <String>[];
   final acknowledged = <String>[];
   final discarded = <String>[];
@@ -407,6 +458,8 @@ class _FakeLedgerSignedOperationService
     String? outputParamsPath,
   }) async {
     broadcasts.add(operationId);
+    final error = broadcastError;
+    if (error != null) throw error;
     final operation = operations.singleWhere(
       (candidate) => candidate.operationId == operationId,
     );

@@ -273,6 +273,20 @@ class _SwapActivityDetailSurfaceState
     _cleanupCancelledHardwareSigningRequest(request);
   }
 
+  /// The request can never be signed as built, so drop the unsent intent
+  /// instead of leaving a "Deposit ZEC" action that repeats the failure.
+  void _abandonHardwareSigning() {
+    final request = _hardwareSigningRequest;
+    _closeHardwareSigning();
+    if (request == null) return;
+    final swap = ref.read(swapStateProvider.notifier);
+    swap.clearPendingHardwareSigningIntent(request.intentId);
+    unawaited(swap.removeUnsentHardwareDepositIntent(request.intentId));
+    if (request.clearPendingIntentOnCancel && mounted) {
+      context.go((widget.returnTarget ?? SwapActivityReturnTarget.swap).path);
+    }
+  }
+
   void _showPayRecipientAddress(String address, AddressBookContact? contact) {
     setState(() {
       _payRecipientOverlayRequest = _PayRecipientOverlayRequest(
@@ -481,6 +495,7 @@ class _SwapActivityDetailSurfaceState
                     intent: hardwareSigningIntent,
                     onCancel: () =>
                         _closeHardwareSigning(cleanupCancelledRequest: true),
+                    onAbandon: _abandonHardwareSigning,
                     onDepositBroadcast: (result) =>
                         _handleHardwareDepositBroadcast(context, result),
                   )

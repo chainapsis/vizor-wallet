@@ -20,8 +20,7 @@ import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/widgets/ledger_device_illustration.dart';
-import '../../ledger/ledger_app_instructions.dart'
-    show ledgerZcashAppName;
+import '../../ledger/ledger_app_instructions.dart' show ledgerZcashAppName;
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
@@ -337,7 +336,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: job?.errorMessage,
-            onRetry: _retry,
+            onRetry: job?.retryUnavailable == true ? null : _retry,
             onClear: _clearError,
           );
         }
@@ -357,7 +356,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         phase: VotingSessionPhase.error,
         horizontalPadding: widget.contentHorizontalPadding,
         errorMessage: job?.errorMessage ?? _messageFromError(error),
-        onRetry: _retry,
+        onRetry: job?.retryUnavailable == true ? null : _retry,
         onClear: job?.status == VotingSubmissionJobStatus.error
             ? _clearError
             : null,
@@ -488,7 +487,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           walletSnapshotHeight: state.walletSnapshotHeight,
           walletChainTipHeight: state.walletChainTipHeight,
           errorMessage: _sessionErrorMessage(state, localError),
-          onRetry: _retry,
+          onRetry: job?.retryUnavailable == true ? null : _retry,
           onClear: job?.status == VotingSubmissionJobStatus.error
               ? _clearError
               : null,
@@ -992,11 +991,12 @@ class VotingStatusContent extends StatelessWidget {
                         variant: AppButtonVariant.secondary,
                         child: const Text('Clear'),
                       ),
-                    AppButton(
-                      onPressed: onRetry,
-                      variant: AppButtonVariant.primary,
-                      child: const Text('Retry'),
-                    ),
+                    if (onRetry != null)
+                      AppButton(
+                        onPressed: onRetry,
+                        variant: AppButtonVariant.primary,
+                        child: const Text('Retry'),
+                      ),
                   ],
                 ),
               ],

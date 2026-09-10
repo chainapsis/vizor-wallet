@@ -242,6 +242,7 @@ void main() {
           'seedFingerprint': List<int>.filled(32, 9),
           'ledgerWalletFingerprint': List.filled(64, 'A').join(),
           'ledgerWalletName': '  Travel Ledger  ',
+          'ledgerDeviceModel': ' Ledger Nano S Plus ',
         },
       ],
     });
@@ -283,6 +284,7 @@ void main() {
     final ledgerImport = ledger.toAccountImport();
     expect(ledgerImport.ledgerWalletFingerprint, List.filled(64, 'a').join());
     expect(ledgerImport.ledgerWalletName, 'Travel Ledger');
+    expect(ledgerImport.ledgerDeviceModel, 'Ledger Nano S Plus');
     expect(ledgerImport.zip32AccountIndex, 3);
     expect(ledgerImport.birthdayHeight, 100);
 

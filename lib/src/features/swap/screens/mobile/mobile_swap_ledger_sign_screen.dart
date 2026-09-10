@@ -38,19 +38,29 @@ class MobileSwapLedgerSignScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    void leave() {
+      if (args.startedFromReview) {
+        // Ledger provider intents are persisted before signing so a rejected
+        // or disconnected device can be resumed safely from Activity.
+        context.go(args.returnTarget.path);
+      } else if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go(args.returnTarget.path);
+      }
+    }
+
     return SwapLedgerSigningOverlay(
       mobile: true,
       intent: args.intent,
-      onCancel: () {
-        if (args.startedFromReview) {
-          // Ledger provider intents are persisted before signing so a rejected
-          // or disconnected device can be resumed safely from Activity.
-          context.go(args.returnTarget.path);
-        } else if (context.canPop()) {
-          context.pop();
-        } else {
-          context.go(args.returnTarget.path);
-        }
+      onCancel: leave,
+      onAbandon: () async {
+        // The deposit cannot be signed as built, so Activity must not offer
+        // the same request again.
+        await ref
+            .read(swapStateProvider.notifier)
+            .removeUnsentHardwareDepositIntent(args.intent.id);
+        if (context.mounted) leave();
       },
       onDepositBroadcast: (broadcast) async {
         if (!args.startedFromReview) {

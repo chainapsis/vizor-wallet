@@ -2,6 +2,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
 
 void main() {
+  test('signatures from a different Ledger name the account mismatch', () {
+    for (final error in [
+      'Apply Ledger Orchard signature at action 0: InvalidSpendAuthSignature',
+      'Validate Ledger transparent signature 1: InvalidSignature',
+    ]) {
+      expect(
+        ledgerActionableErrorMessage(error),
+        contains('do not match this account'),
+      );
+      expect(ledgerRequestNeedsRebuilding(error), isFalse);
+    }
+  });
+
   test('only transaction counts are classified as smaller transfers', () {
     for (final label in [
       'transparent inputs',

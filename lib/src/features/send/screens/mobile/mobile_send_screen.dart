@@ -34,6 +34,7 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
+import '../../../ledger/ledger_capability.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
@@ -1119,8 +1120,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       } else {
         log('MobileSend: fee estimation failed: $e');
         setState(
-          () => _amountError =
-              _activeHardwareSignerKind == HardwareSignerKind.ledger
+          () => _amountError = isLedgerLegacyOrchardRecoveryUnsupported(e)
+              ? kLedgerLegacyOrchardRecoveryUnavailableMessage
+              : _activeHardwareSignerKind == HardwareSignerKind.ledger
               ? 'Could not check this Ledger transfer. Edit the amount to try again.'
               : null,
         );

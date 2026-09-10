@@ -3,6 +3,41 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 
 void main() {
+  test('an orphaned password verifier is cleared only without wallet data', () {
+    expect(
+      shouldClearOrphanedPasswordVerifier(
+        isPasswordConfigured: true,
+        hasWallet: false,
+        walletDbExists: false,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldClearOrphanedPasswordVerifier(
+        isPasswordConfigured: true,
+        hasWallet: true,
+        walletDbExists: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldClearOrphanedPasswordVerifier(
+        isPasswordConfigured: true,
+        hasWallet: false,
+        walletDbExists: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldClearOrphanedPasswordVerifier(
+        isPasswordConfigured: false,
+        hasWallet: false,
+        walletDbExists: false,
+      ),
+      isFalse,
+    );
+  });
+
   test('AccountInfo.fromJson normalizes legacy profile picture ids', () {
     final account = AccountInfo.fromJson({
       'uuid': 'account-1',

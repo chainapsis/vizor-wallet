@@ -85,6 +85,7 @@ class LinkedWalletAccountImport {
     this.sourceAccountUuid,
     this.ledgerWalletFingerprint,
     this.ledgerWalletName,
+    this.ledgerDeviceModel,
   });
 
   final String name;
@@ -101,6 +102,7 @@ class LinkedWalletAccountImport {
   final String? sourceAccountUuid;
   final String? ledgerWalletFingerprint;
   final String? ledgerWalletName;
+  final String? ledgerDeviceModel;
 }
 
 class LinkedWalletAccountsImportResult {
@@ -1402,6 +1404,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             zip32AccountIndex: input.zip32AccountIndex,
             ledgerWalletFingerprint: ledgerFingerprint,
             ledgerWalletName: ledgerName,
+            ledgerDeviceModel: ledgerFingerprint == null
+                ? null
+                : _normalizedOptionalString(input.ledgerDeviceModel),
             hardwareSignerKind: input.isHardware
                 ? input.hardwareSignerKind ?? HardwareSignerKind.keystone
                 : null,

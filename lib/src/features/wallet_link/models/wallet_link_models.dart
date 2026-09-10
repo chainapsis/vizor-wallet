@@ -354,6 +354,7 @@ class WalletLinkTransferAccount {
     this.bip39Passphrase = '',
     this.ledgerWalletFingerprint,
     this.ledgerWalletName,
+    this.ledgerDeviceModel,
   });
 
   final String uuid;
@@ -371,6 +372,7 @@ class WalletLinkTransferAccount {
   final String bip39Passphrase;
   final String? ledgerWalletFingerprint;
   final String? ledgerWalletName;
+  final String? ledgerDeviceModel;
 
   factory WalletLinkTransferAccount.fromJson(Map<String, Object?> json) {
     final recoveryMaterial = _walletLinkSoftwareRecoveryMaterial(json);
@@ -394,6 +396,12 @@ class WalletLinkTransferAccount {
         json['ledgerWalletFingerprint'],
       ),
       ledgerWalletName: (json['ledgerWalletName'] as String?)?.trim(),
+      // Keep the model's casing: it is shown to the user as-is.
+      ledgerDeviceModel: switch ((json['ledgerDeviceModel'] as String?)
+          ?.trim()) {
+        null || '' => null,
+        final value => value,
+      },
     );
   }
 
@@ -449,6 +457,7 @@ class WalletLinkTransferAccount {
       sourceAccountUuid: uuid,
       ledgerWalletFingerprint: ledgerWalletFingerprint?.trim().toLowerCase(),
       ledgerWalletName: ledgerWalletName,
+      ledgerDeviceModel: ledgerDeviceModel,
     );
   }
 }

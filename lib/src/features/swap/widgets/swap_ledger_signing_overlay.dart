@@ -37,6 +37,7 @@ class SwapLedgerSigningOverlay extends ConsumerStatefulWidget {
     required this.intent,
     required this.onCancel,
     required this.onDepositBroadcast,
+    this.onAbandon,
     this.mobile = false,
     super.key,
   });
@@ -44,6 +45,10 @@ class SwapLedgerSigningOverlay extends ConsumerStatefulWidget {
   final SwapIntent intent;
   final VoidCallback onCancel;
   final Future<void> Function(SwapHardwareBroadcastResult) onDepositBroadcast;
+
+  /// Called instead of [onCancel] when the request can never be signed as
+  /// built, so the caller can drop the intent rather than offer it again.
+  final VoidCallback? onAbandon;
   final bool mobile;
 
   @override
@@ -447,6 +452,11 @@ class _SwapLedgerSigningOverlayState
     _cancelled = true;
     await _cancelLedgerOperationSafely();
     unawaited(_discardDraft());
+    final abandon = widget.onAbandon;
+    if (_requestNeedsRebuilding && !_operationCheckpointed && abandon != null) {
+      abandon();
+      return;
+    }
     widget.onCancel();
   }
 

@@ -33,6 +33,11 @@ String? ledgerActionableErrorMessage(
         'This voting request exceeds your Ledger’s signing limit. Your vote was not signed. Changing a transfer amount will not fix this voting request.',
     };
   }
+  if ((text.contains('apply ledger') && text.contains('signature at action')) ||
+      text.contains('validate ledger transparent signature')) {
+    // The device signed, but its keys are not this account's keys.
+    return 'The signatures from this Ledger do not match this account. Connect the Ledger that holds this account, then try again.';
+  }
   if (text.contains('ledger supports at most')) {
     return 'Your Ledger cannot sign this transaction format. Go back and create a new request.';
   }

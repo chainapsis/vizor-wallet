@@ -35,6 +35,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
+import '../../ledger/ledger_capability.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/send_prefill_args.dart';
 import '../services/send_amount_conversion.dart';
@@ -987,8 +988,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       } else {
         log('Send: fee estimation failed: $e');
         setState(
-          () => _amountError =
-              widget.activeHardwareSignerKind == HardwareSignerKind.ledger
+          () => _amountError = isLedgerLegacyOrchardRecoveryUnsupported(e)
+              ? kLedgerLegacyOrchardRecoveryUnavailableMessage
+              : widget.activeHardwareSignerKind == HardwareSignerKind.ledger
               ? 'Could not check this Ledger transfer. Edit the amount to try again.'
               : null,
         );
@@ -1446,7 +1448,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                 inputFormatters: [
                                   const CommaToDotInputFormatter(),
                                   DecimalAmountInputFormatter(
-                                    maxFractionDigits: _amountInputIsUsd ? 2 : 8,
+                                    maxFractionDigits: _amountInputIsUsd
+                                        ? 2
+                                        : 8,
                                     maxLength: _amountInputIsUsd ? 12 : 17,
                                   ),
                                 ],

@@ -213,6 +213,16 @@ class AppSyncSnapshot {
   );
 }
 
+/// A password verifier without any account or wallet DB is an onboarding
+/// remnant rather than a wallet, so startup may drop it safely.
+bool shouldClearOrphanedPasswordVerifier({
+  required bool isPasswordConfigured,
+  required bool hasWallet,
+  required bool walletDbExists,
+}) {
+  return isPasswordConfigured && !hasWallet && !walletDbExists;
+}
+
 Future<AppBootstrapState> loadAppBootstrap() async {
   final storage = AppSecureStore.instance;
 
@@ -254,7 +264,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag',
     );
-    final isPasswordConfigured = await storage.isPasswordConfigured();
+    var isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
     if (rust_wallet.walletExists(dbPath: dbPath)) {
@@ -335,6 +345,22 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         ? null
         : rustAddressesByUuid[activeAccountUuid];
     final hasWallet = accounts.isNotEmpty;
+    if (shouldClearOrphanedPasswordVerifier(
+      isPasswordConfigured: isPasswordConfigured,
+      hasWallet: hasWallet,
+      walletDbExists: rust_wallet.walletExists(dbPath: dbPath),
+    )) {
+      // Onboarding stores the verifier before the first account exists. If
+      // the app died in between, keeping it would skip the password step for
+      // a wallet that has nothing behind it.
+      log('bootstrap: clearing password verifier left without any account');
+      try {
+        await storage.clearPasswordConfiguration();
+        isPasswordConfigured = false;
+      } catch (e) {
+        log('bootstrap: failed to clear orphaned password verifier: $e');
+      }
+    }
     var initialSyncSnapshot = AppSyncSnapshot.empty;
 
     if (isUnlocked &&
