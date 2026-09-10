@@ -645,6 +645,15 @@ while an executed denomination preparation waits for confirmations.
 - Post-send: `refreshAfterSend()` for immediate pending TX display
 - Friendly error messages via `_friendlyError()` pattern matching
 
+### Signing Cancellation
+
+Keep desktop and mobile consistent when cancelling signing, not merely closing the QR scanner:
+
+- Send / Gift Card: preserve inputs, return to Review, and refresh balance and fees before retry.
+- Swap / Pay: return to the composer without preserving inputs; obtain a new quote on the next Review.
+- Vote: preserve saved partial signatures and resume unsigned bundles.
+- For transaction proposals, finish input-lock release and balance refresh before allowing retry.
+
 ### Hardware Wallet (Keystone) Send Flow
 
 Normal hardware sends use Keystone's signatures-only batch protocol, even for
