@@ -43,7 +43,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart'
     show KeystoneActionSig, KeystoneMsgSig, KeystoneSigResult;
 import 'package:zcash_wallet/src/rust/api/sync.dart'
-    show KeystoneBatchPczt, TexPcztPairResult;
+    show KeystoneBatchPczt, TexPcztPairResult, ProposalResult;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     show ZcashBatchMessageInput;
@@ -342,6 +342,67 @@ void main() {
     await tester.pump();
 
     expect(rustApi.discardCalls, hasLength(1));
+  });
+
+  testWidgets('cancel waits for refreshed balance before exposing Send', (
+    tester,
+  ) async {
+    final syncNotifier = _FakeSyncNotifier();
+    final refreshed = Completer<void>();
+    syncNotifier.refreshCompleter = refreshed;
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(_reviewArgs(addressType: 'unified'), syncNotifier: syncNotifier),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.discardCalls, hasLength(1));
+    expect(syncNotifier.refreshedAccounts, ['test-account']);
+    expect(find.text('send-route'), findsNothing);
+    expect(find.text('Cancelling…'), findsOneWidget);
+    expect(
+      tester
+          .widget<SendReviewContentView>(find.byType(SendReviewContentView))
+          .onConfirm,
+      isNull,
+    );
+
+    refreshed.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('send-route'), findsOneWidget);
+  });
+
+  testWidgets('failed cancellation stays on review and retries cleanup only', (
+    tester,
+  ) async {
+    rustApi.discardError = StateError('database busy');
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_harness(_reviewArgs(addressType: 'unified')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    expect(find.text('send-route'), findsNothing);
+    expect(find.text('Review send'), findsOneWidget);
+    expect(rustApi.discardCalls, hasLength(3));
+    expect(
+      tester
+          .widget<SendReviewContentView>(find.byType(SendReviewContentView))
+          .onConfirm,
+      isNull,
+    );
+
+    rustApi.discardError = null;
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(rustApi.discardCalls, hasLength(4));
+    expect(find.text('send-route'), findsOneWidget);
   });
 
   testWidgets(
@@ -672,6 +733,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(KeystoneSigningModal), findsNothing);
+    expect(find.text('Review send'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
     expect(find.text('send-route'), findsOneWidget);
     expect(container.read(paymentUriBusySurfaceProvider), 0);
   });
@@ -692,11 +757,13 @@ void main() {
 
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    expect(find.text('send-route'), findsOneWidget);
+    expect(find.text('send-route'), findsNothing);
+    expect(find.text('Review send'), findsOneWidget);
     expect(container.read(paymentUriBusySurfaceProvider), 1);
 
     discardCompleter.complete();
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('send-route'), findsOneWidget);
     expect(container.read(paymentUriBusySurfaceProvider), 0);
   });
 
@@ -1022,21 +1089,92 @@ void main() {
         matching: find.text('Cancel'),
       ),
     );
+    await _flushRealAsync(tester);
     await tester.pumpAndSettle();
 
-    expect(find.text('send-route'), findsOneWidget);
+    expect(find.text('send-route'), findsNothing);
+    expect(find.text('Review send'), findsOneWidget);
+    expect(find.byType(KeystoneSigningModal), findsNothing);
     expect(rustApi.discardCalls, hasLength(1));
     expect(rustApi.createPcztCalls, 0);
   });
 
   testWidgets(
-    'Keystone reject after PCZT creation releases the retained input lock',
+    'cancelling only signature scanning keeps the signing request live',
     (tester) async {
       await _setDesktopViewport(tester);
       await tester.pumpWidget(
         _harness(
           _reviewArgs(addressType: 'unified'),
           bootstrap: _bootstrap(isHardware: true),
+          cancelScan: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm with Keystone'));
+      await _flushRealAsync(tester);
+      await tester.tap(find.text('Get signature'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('keystone-scan-route'));
+      await tester.pumpAndSettle();
+      expect(find.byType(KeystoneSigningModal), findsOneWidget);
+      expect(find.text('Get signature'), findsOneWidget);
+      expect(rustApi.discardCalls, isEmpty);
+      expect(rustApi.createPcztCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'Keystone cancellation blocks late preparation until release finishes',
+    (tester) async {
+      final released = Completer<void>();
+      rustApi.discardCompleter = released;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(isHardware: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm with Keystone'));
+      await tester.pump();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(KeystoneSigningModal),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await _flushRealAsync(tester);
+      expect(find.text('send-route'), findsNothing);
+      expect(find.text('Cancelling…'), findsWidgets);
+      expect(rustApi.createPcztCalls, 0);
+      expect(rustApi.discardCalls, hasLength(1));
+      expect(
+        tester
+            .widget<KeystoneSigningModal>(find.byType(KeystoneSigningModal))
+            .onPrimary,
+        isNull,
+      );
+      released.complete();
+      await _flushRealAsync(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('send-route'), findsNothing);
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.byType(KeystoneSigningModal), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Keystone cancel then re-sign hands off the fresh proposal and fee',
+    (tester) async {
+      final statusExtras = <Object?>[];
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(isHardware: true),
+          statusExtras: statusExtras,
         ),
       );
       await tester.pumpAndSettle();
@@ -1051,12 +1189,27 @@ void main() {
           matching: find.text('Cancel'),
         ),
       );
+      await _flushRealAsync(tester);
       await tester.pumpAndSettle();
 
-      expect(find.text('send-route'), findsOneWidget);
+      expect(find.text('send-route'), findsNothing);
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.byType(KeystoneSigningModal), findsNothing);
       // createPcztFromProposal consumes the replayable proposal but retains
       // its owner-scoped DB input lock until the hardware flow finishes.
       expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(find.text('0.0002 ZEC'), findsOneWidget);
+      await tester.tap(find.text('Confirm with Keystone'));
+      await _flushRealAsync(tester);
+      expect(rustApi.createdProposalIds, [BigInt.one, BigInt.two]);
+      expect(find.text('Get signature'), findsOneWidget);
+      await tester.tap(find.text('Get signature'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('keystone-scan-route'));
+      await tester.pumpAndSettle();
+      final handoff = statusExtras.last as KeystoneBroadcastArgs;
+      expect(handoff.reviewArgs.proposalId, BigInt.two);
+      expect(handoff.reviewArgs.feeZatoshi, BigInt.from(20000));
     },
   );
 }
@@ -1094,6 +1247,7 @@ Future<void> _flushRealAsync(WidgetTester tester) async {
 List<Override> _harnessOverrides({
   AppBootstrapState? bootstrap,
   AddressBookRepository? addressBookRepository,
+  _FakeSyncNotifier? syncNotifier,
 }) => [
   appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap()),
   zecMarketDataSourceProvider.overrideWithValue(const _FakeMarketDataSource()),
@@ -1101,7 +1255,7 @@ List<Override> _harnessOverrides({
   addressBookRepositoryProvider.overrideWithValue(
     addressBookRepository ?? _FakeAddressBookRepository(),
   ),
-  syncProvider.overrideWith(_FakeSyncNotifier.new),
+  syncProvider.overrideWith(() => syncNotifier ?? _FakeSyncNotifier()),
 ];
 
 /// Drives [router] — built from the app's own `/send/review` page builder — so
@@ -1122,6 +1276,8 @@ Widget _harness(
   List<Object?>? statusExtras,
   List<Object?>? scanExtras,
   Listenable? routerRefresh,
+  _FakeSyncNotifier? syncNotifier,
+  bool cancelScan = false,
 }) {
   final router = GoRouter(
     initialLocation: '/send/review',
@@ -1141,7 +1297,9 @@ Widget _harness(
         builder: (context, state) {
           scanExtras?.add(state.extra);
           return GestureDetector(
-            onTap: () => context.pop(Uint8List.fromList(_fakeSignatureBytes)),
+            onTap: () => context.pop(
+              cancelScan ? null : Uint8List.fromList(_fakeSignatureBytes),
+            ),
             child: const Text('keystone-scan-route'),
           );
         },
@@ -1171,6 +1329,7 @@ Widget _harness(
     overrides: _harnessOverrides(
       bootstrap: bootstrap,
       addressBookRepository: addressBookRepository,
+      syncNotifier: syncNotifier,
     ),
     child: MaterialApp.router(
       routerConfig: router,
@@ -1307,6 +1466,21 @@ class _FakePathProviderPlatform extends Fake
 }
 
 class _FakeSyncNotifier extends SyncNotifier {
+  Completer<void>? refreshCompleter;
+  final refreshedAccounts = <String>[];
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {
+    refreshedAccounts.add(accountUuid);
+    await refreshCompleter?.future;
+  }
+
+  @override
+  Future<T> runWithAuthoritativeSpendable<T>({
+    required String accountUuid,
+    required Future<T> Function() operation,
+  }) => operation();
+
   @override
   Future<SyncState> build() async => SyncState(
     accountUuid: 'test-account',
@@ -1319,6 +1493,7 @@ class _FakeSyncNotifier extends SyncNotifier {
 class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
   int createPcztCalls = 0;
+  final createdProposalIds = <BigInt>[];
   int prepareBatchCalls = 0;
   int encodeBatchCalls = 0;
   int encodeFullPcztCalls = 0;
@@ -1326,12 +1501,14 @@ class _RustApiFake implements RustLibApi {
   int previousTransactionCount = 0;
   Object? prepareBatchError;
   Completer<void>? discardCompleter;
+  Object? discardError;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
 
   void reset() {
     discardCalls.clear();
     createPcztCalls = 0;
+    createdProposalIds.clear();
     prepareBatchCalls = 0;
     encodeBatchCalls = 0;
     encodeFullPcztCalls = 0;
@@ -1339,9 +1516,25 @@ class _RustApiFake implements RustLibApi {
     previousTransactionCount = 0;
     prepareBatchError = null;
     discardCompleter = null;
+    discardError = null;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
   }
+
+  @override
+  Future<ProposalResult> crateApiSyncProposeSend({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required String toAddress,
+    required BigInt amountZatoshi,
+    String? memo,
+  }) async => ProposalResult(
+    proposalId: BigInt.two,
+    feeZatoshi: BigInt.from(20000),
+    needsSaplingParams: false,
+  );
 
   @override
   Future<void> crateApiSyncDiscardProposal({
@@ -1350,6 +1543,7 @@ class _RustApiFake implements RustLibApi {
   }) async {
     discardCalls.add((proposalId, sendFlowId));
     await discardCompleter?.future;
+    if (discardError != null) throw discardError!;
   }
 
   @override
@@ -1399,6 +1593,7 @@ class _RustApiFake implements RustLibApi {
     required String sendFlowId,
   }) async {
     createPcztCalls++;
+    createdProposalIds.add(proposalId);
     return Uint8List.fromList([1, 2, 3]);
   }
 

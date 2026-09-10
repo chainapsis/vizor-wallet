@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
@@ -19,6 +20,8 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
+import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
+import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -55,6 +58,121 @@ void main() {
     expect(calls, 1);
     expect(find.byType(SendScreen), findsOneWidget);
   });
+
+  testWidgets(
+    'released spendable balance clears the visible amount error and permits retry',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final syncNotifier = _FakeSyncNotifier(
+        spendableBalance: BigInt.zero,
+        displaySpendableBalance: null,
+        ironwoodBalance: BigInt.zero,
+        displaySpendableFreshness: SpendableBalanceFreshness.authoritative,
+        transparentBalance: BigInt.zero,
+      );
+      await tester.pumpWidget(_sendHarness(syncNotifier: syncNotifier));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.enterText(_editableIn('send_amount_field'), '1');
+      await tester.pumpAndSettle();
+      expect(find.text('Insufficient shielded balance'), findsOneWidget);
+
+      syncNotifier.restoreSpendable(BigInt.from(500000000));
+      await tester.pumpAndSettle();
+      expect(find.text('Insufficient shielded balance'), findsNothing);
+      expect(_fieldText(tester, 'send_amount_field'), '1');
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+      expect(rustApi.proposeSendCalls, 1);
+      expect(rustApi.lastProposeAmountZatoshi, BigInt.from(100000000));
+    },
+  );
+
+  testWidgets(
+    'Max is requoted when proposal release restores spendable balance',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final syncNotifier = _FakeSyncNotifier(
+        spendableBalance: BigInt.from(500000000),
+        displaySpendableBalance: null,
+        ironwoodBalance: BigInt.zero,
+        displaySpendableFreshness: SpendableBalanceFreshness.authoritative,
+        transparentBalance: BigInt.zero,
+      );
+      await tester.pumpWidget(_sendHarness(syncNotifier: syncNotifier));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Use Max'));
+      await tester.pumpAndSettle();
+      final initialQuotes = rustApi.estimateSendMaxCalls;
+      expect(initialQuotes, greaterThan(0));
+
+      syncNotifier.restoreSpendable(BigInt.from(600000000));
+      await tester.pumpAndSettle();
+      expect(rustApi.estimateSendMaxCalls, greaterThan(initialQuotes));
+      expect(_fieldText(tester, 'send_amount_field'), isNotEmpty);
+      expect(find.text('Max amount unavailable'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'review Back releases its lock and restores the same amount for another review',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final syncNotifier = _FakeSyncNotifier(
+        spendableBalance: BigInt.from(500000000),
+        displaySpendableBalance: null,
+        ironwoodBalance: BigInt.zero,
+        displaySpendableFreshness: SpendableBalanceFreshness.authoritative,
+        transparentBalance: BigInt.zero,
+      );
+      syncNotifier.balanceAfterRelease = BigInt.from(500000000);
+      await tester.pumpWidget(
+        _sendHarness(
+          syncNotifier: syncNotifier,
+          realReview: true,
+          addressBookRepository: _FakeAddressBookRepository([]),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.enterText(_editableIn('send_amount_field'), '1');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Review send'), findsOneWidget);
+
+      syncNotifier.restoreSpendable(BigInt.zero);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AppBackLink),
+          matching: find.text('Send'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SendScreen), findsOneWidget);
+      expect(_fieldText(tester, 'send_amount_field'), '1');
+      expect(find.text('Insufficient shielded balance'), findsNothing);
+      expect(rustApi.discardCalls, 1);
+
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Review send'), findsOneWidget);
+      expect(rustApi.proposeSendCalls, 2);
+      expect(rustApi.lastProposeAmountZatoshi, BigInt.from(100000000));
+    },
+  );
 
   testWidgets('keeps rendering if Orchard warmup cannot start', (tester) async {
     await _setDesktopViewport(tester);
@@ -1476,6 +1594,7 @@ Widget _sendHarness({
   _FakeSyncNotifier? syncNotifier,
   void Function()? warmProvingKey,
   void Function(SendReviewArgs?)? onReviewArgs,
+  bool realReview = false,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1488,6 +1607,9 @@ Widget _sendHarness({
         path: '/send/review',
         builder: (_, state) {
           onReviewArgs?.call(state.extra as SendReviewArgs?);
+          if (realReview) {
+            return SendReviewScreen(args: state.extra! as SendReviewArgs);
+          }
           return const SizedBox.shrink();
         },
       ),
@@ -1497,6 +1619,10 @@ Widget _sendHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      if (realReview)
+        ownAccountAddressesProvider.overrideWith((ref) async => {}),
+      if (realReview)
+        zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
       sendProvingKeyWarmupProvider.overrideWithValue(warmProvingKey ?? () {}),
       ironwoodHomeMigrationCtaProvider.overrideWithValue(
@@ -1659,6 +1785,22 @@ final _hardwareBootstrap = AppBootstrapState(
 );
 
 class _FakeSyncNotifier extends SyncNotifier {
+  BigInt? balanceAfterRelease;
+  void restoreSpendable(BigInt balance) {
+    state = AsyncData(
+      state.requireValue.copyWith(
+        spendableBalance: balance,
+        displaySpendableBalance: balance,
+      ),
+    );
+  }
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {
+    final balance = balanceAfterRelease;
+    if (balance != null && ref.mounted) restoreSpendable(balance);
+  }
+
   _FakeSyncNotifier({
     required this.spendableBalance,
     required this.displaySpendableBalance,
@@ -1711,6 +1853,16 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
 }
 
 class _RustApiFake implements RustLibApi {
+  int discardCalls = 0;
+
+  @override
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {
+    discardCalls++;
+  }
+
   int proposeSendCalls = 0;
   String? lastValidateNetwork;
   int estimateSendMaxCalls = 0;
@@ -1721,6 +1873,7 @@ class _RustApiFake implements RustLibApi {
   String? lastEstimateSendMaxMemo;
 
   void reset() {
+    discardCalls = 0;
     lastValidateNetwork = null;
     proposeSendCalls = 0;
     estimateSendMaxCalls = 0;

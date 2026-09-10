@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../providers/sync_provider.dart';
 
 import '../../../core/config/zcash_explorer.dart';
 import '../../../core/formatting/address_display.dart';
@@ -86,6 +87,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   /// Captured in [initState] so [dispose] can release the flag without reading
   /// from `ref` after the element is gone.
   late final SendStatusTerminalNotifier _sendStatusTerminal;
+  late final SyncNotifier _syncNotifier;
   bool get _suppressSidebarSelection =>
       widget.args.flowKind == SendFlowKind.donation;
 
@@ -93,6 +95,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   void initState() {
     super.initState();
     _sendStatusTerminal = ref.read(sendStatusTerminalProvider.notifier);
+    _syncNotifier = ref.read(syncProvider.notifier);
     _proposalConsumed = widget.keystone != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -123,6 +126,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           : _proposalRelease,
       // Idempotent in Rust, so no gate on the (optimistic) consumed flag.
       retryRelease: () => discardSendProposal(
+        syncNotifier: _syncNotifier,
+        accountUuid: widget.args.proposalAccountUuid,
         proposalId: widget.args.proposalId,
         sendFlowId: widget.args.sendFlowId,
         logContext: 'SendStatus(retry)',
@@ -140,6 +145,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   Future<bool> _discardProposalIfNeeded(String logContext) {
     if (_proposalConsumed) return Future<bool>.value(true);
     return _proposalRelease ??= discardSendProposal(
+      syncNotifier: _syncNotifier,
+      accountUuid: widget.args.proposalAccountUuid,
       proposalId: widget.args.proposalId,
       sendFlowId: widget.args.sendFlowId,
       logContext: logContext,
