@@ -23,48 +23,51 @@ Future<LedgerDeviceAccount?> showLedgerDesktopBleConnectDialog({
   bool Function(Object error)? onAccountError,
 }) async {
   final appTheme = AppTheme.of(context);
-  final platform = ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(ledgerTargetPlatformProvider);
+  // The dialog lives in the root overlay, which may sit outside the caller's
+  // ProviderScope (Widgetbook previews do), so it carries the container along.
+  final container = ProviderScope.containerOf(context, listen: false);
+  final platform = container.read(ledgerTargetPlatformProvider);
   final account = await showDialog<LedgerDeviceAccount>(
     context: context,
     barrierDismissible: false,
     barrierColor: Colors.transparent,
-    builder: (dialogContext) => AppTheme(
-      data: appTheme,
-      child: ValueListenableBuilder<double>(
-        valueListenable: contentOverlayLeftInset,
-        builder: (_, leftInset, child) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            leftInset,
-            AppSpacing.xs,
-            AppSpacing.xs,
-            AppSpacing.xs,
-          ),
-          child: Stack(
-            key: const ValueKey('ledger_desktop_ble_modal_pane'),
-            fit: StackFit.expand,
-            children: [
-              AppPaneModalOverlay(
-                // Closing stays explicit while device operations are active.
-                onDismiss: () {},
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  child: child!,
+    builder: (dialogContext) => UncontrolledProviderScope(
+      container: container,
+      child: AppTheme(
+        data: appTheme,
+        child: ValueListenableBuilder<double>(
+          valueListenable: contentOverlayLeftInset,
+          builder: (_, leftInset, child) => Padding(
+            padding: EdgeInsets.fromLTRB(
+              leftInset,
+              AppSpacing.xs,
+              AppSpacing.xs,
+              AppSpacing.xs,
+            ),
+            child: Stack(
+              key: const ValueKey('ledger_desktop_ble_modal_pane'),
+              fit: StackFit.expand,
+              children: [
+                AppPaneModalOverlay(
+                  // Closing stays explicit while device operations are active.
+                  onDismiss: () {},
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    child: child!,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        child: _LedgerDesktopBleConnectDialog(
-          service: service,
-          connector: connector,
-          accountIndex: accountIndex,
-          platform: platform,
-          onAccountError: onAccountError,
-          onConnected: (account) => Navigator.of(dialogContext).pop(account),
-          onClose: () => Navigator.of(dialogContext).pop(),
+          child: _LedgerDesktopBleConnectDialog(
+            service: service,
+            connector: connector,
+            accountIndex: accountIndex,
+            platform: platform,
+            onAccountError: onAccountError,
+            onConnected: (account) => Navigator.of(dialogContext).pop(account),
+            onClose: () => Navigator.of(dialogContext).pop(),
+          ),
         ),
       ),
     ),
