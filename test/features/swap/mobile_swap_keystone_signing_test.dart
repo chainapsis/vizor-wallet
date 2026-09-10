@@ -414,7 +414,12 @@ void main() {
 
     expect(find.text('Cancel'), findsOneWidget);
 
+    final release = Completer<void>();
+    hardwareSigningService.releaseCompleter = release;
     await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    expect(find.byType(MobileSwapKeystoneSignScreen), findsOneWidget);
+    release.complete();
     await tester.pumpAndSettle();
 
     expect(swapNotifier.pendingCleared, isTrue);
@@ -472,17 +477,9 @@ void main() {
     expect(swapNotifier.pendingCleared, isTrue);
     expect(
       find.byKey(const ValueKey('mobile_swap_review_inactive_notice')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(
-      router.routerDelegate.currentConfiguration.uri.toString(),
-      '/swap/review',
-    );
-
-    await tester.tap(
-      find.byKey(const ValueKey('swap_review_return_to_swap_button')),
-    );
-    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.toString(), '/swap');
 
     expect(find.byKey(const ValueKey('mobile_swap_route')), findsOneWidget);
     expect(router.routerDelegate.currentConfiguration.uri.toString(), '/swap');
@@ -646,50 +643,61 @@ void main() {
     );
   });
 
-  testWidgets('review-start pay signing cancel returns to the pay composer', (
-    tester,
-  ) async {
-    late _PendingSigningSwapNotifier swapNotifier;
-    final router = GoRouter(
-      initialLocation: '/swap/keystone-sign',
-      routes: [
-        GoRoute(
-          path: '/swap/keystone-sign',
-          builder: (_, _) => MobileSwapKeystoneSignScreen(
-            args: MobileSwapKeystoneSignArgs.fromReview(
-              intent: _hardwareIntent,
-              returnTarget: SwapActivityReturnTarget.pay,
+  for (final systemBack in [false, true]) {
+    testWidgets(
+      'review-start pay signing ${systemBack ? 'back' : 'cancel'} returns to the pay composer',
+      (tester) async {
+        late _PendingSigningSwapNotifier swapNotifier;
+        final router = GoRouter(
+          initialLocation: '/swap/keystone-sign',
+          routes: [
+            GoRoute(
+              path: '/swap/keystone-sign',
+              builder: (_, _) => MobileSwapKeystoneSignScreen(
+                args: MobileSwapKeystoneSignArgs.fromReview(
+                  intent: _hardwareIntent,
+                  returnTarget: SwapActivityReturnTarget.pay,
+                ),
+              ),
             ),
+            GoRoute(
+              path: '/pay',
+              builder: (_, _) =>
+                  const SizedBox(key: ValueKey('mobile_pay_route')),
+            ),
+          ],
+        );
+
+        await tester.pumpWidget(
+          _app(
+            router,
+            swapNotifier: () {
+              swapNotifier = _PendingSigningSwapNotifier(_hardwareIntent);
+              return swapNotifier;
+            },
+            hardwareSigningService: _FakeSwapHardwareSigningService(),
           ),
-        ),
-        GoRoute(
-          path: '/pay',
-          builder: (_, _) => const SizedBox(key: ValueKey('mobile_pay_route')),
-        ),
-      ],
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Cancel'), findsOneWidget);
+
+        if (systemBack) {
+          await tester.binding.handlePopRoute();
+        } else {
+          await tester.tap(find.text('Cancel'));
+        }
+        await tester.pumpAndSettle();
+
+        expect(swapNotifier.pendingCleared, isTrue);
+        expect(find.byKey(const ValueKey('mobile_pay_route')), findsOneWidget);
+        expect(
+          router.routerDelegate.currentConfiguration.uri.toString(),
+          '/pay',
+        );
+      },
     );
-
-    await tester.pumpWidget(
-      _app(
-        router,
-        swapNotifier: () {
-          swapNotifier = _PendingSigningSwapNotifier(_hardwareIntent);
-          return swapNotifier;
-        },
-        hardwareSigningService: _FakeSwapHardwareSigningService(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Cancel'), findsOneWidget);
-
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-
-    expect(swapNotifier.pendingCleared, isTrue);
-    expect(find.byKey(const ValueKey('mobile_pay_route')), findsOneWidget);
-    expect(router.routerDelegate.currentConfiguration.uri.toString(), '/pay');
-  });
+  }
 
   testWidgets(
     'review-start pay signing success opens the pay submitted screen',
@@ -1098,6 +1106,7 @@ class _FakeSwapDepositSender implements SwapDepositSender {
 
 class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   final discardedDrafts = <BigInt>[];
+  Completer<void>? releaseCompleter;
 
   @override
   Future<SwapHardwarePcztDraft> createZecDepositPczt({
@@ -1105,6 +1114,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
     required SwapIntent intent,
   }) async {
     return SwapHardwarePcztDraft(
+      accountUuid: accountUuid,
       pcztBytes: const [1, 2, 3],
       needsSaplingParams: false,
       feeZatoshi: BigInt.from(10000),
@@ -1140,6 +1150,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   @override
   Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {
     discardedDrafts.add(draft.proposalId);
+    await releaseCompleter?.future;
   }
 
   @override

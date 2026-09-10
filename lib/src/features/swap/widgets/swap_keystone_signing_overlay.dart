@@ -49,6 +49,10 @@ class _SwapKeystoneSigningOverlayState
   String? _error;
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
+  Future<SwapHardwarePcztDraft>? _draftCreation;
+  Future<void>? _discardFuture;
+  bool _cancelling = false;
+  bool _cancelled = false;
   List<String> _urParts = const [];
   List<int>? _pcztWithProofs;
   SaplingParamsStatus? _saplingParams;
@@ -69,7 +73,11 @@ class _SwapKeystoneSigningOverlayState
     if (completer != null && !completer.isCompleted) {
       completer.complete(false);
     }
-    unawaited(_discardDraft());
+    unawaited(
+      _discardDraft().catchError((Object e) {
+        log('SwapKeystoneSigning: cleanup failed: $e');
+      }),
+    );
     super.dispose();
   }
 
@@ -82,11 +90,17 @@ class _SwapKeystoneSigningOverlayState
 
       final service = ref.read(swapHardwareSigningServiceProvider);
       _signingService = service;
-      final draft = await service.createZecDepositPczt(
+      final creation = service.createZecDepositPczt(
         accountUuid: accountUuid,
         intent: widget.intent,
       );
+      _draftCreation = creation;
+      final draft = await creation;
       _draft = draft;
+      if (!mounted || _cancelled) {
+        await _discardDraft();
+        return;
+      }
 
       SaplingParamsStatus? saplingParams;
       if (draft.needsSaplingParams) {
@@ -112,6 +126,7 @@ class _SwapKeystoneSigningOverlayState
       }
 
       final urParts = await service.encodeSigningUrParts(draft: draft);
+      if (!mounted || _cancelled) return;
       final pcztWithProofs = await service.addProofsForSigning(
         draft: draft,
         spendParamsPath: draft.needsSaplingParams
@@ -121,7 +136,7 @@ class _SwapKeystoneSigningOverlayState
             ? saplingParams!.outputPath
             : null,
       );
-      if (!mounted) return;
+      if (!mounted || _cancelled) return;
       setState(() {
         _phase = _SwapKeystonePhase.ready;
         _draft = draft;
@@ -131,8 +146,15 @@ class _SwapKeystoneSigningOverlayState
       });
     } catch (e, st) {
       log('SwapKeystoneSigning._preparePczt: ERROR: $e\n$st');
-      await _discardDraft();
-      if (!mounted) return;
+      if (_cancelling) return;
+      if (!mounted) {
+        unawaited(
+          _discardDraft().catchError((Object e) {
+            log('SwapKeystoneSigning: cleanup failed: $e');
+          }),
+        );
+        return;
+      }
       setState(() {
         _phase = _SwapKeystonePhase.failed;
         _error = _friendlyError(e);
@@ -164,13 +186,17 @@ class _SwapKeystoneSigningOverlayState
   }
 
   Future<void> _getSignature() async {
-    if (_phase != _SwapKeystonePhase.ready || _pcztWithProofs == null) return;
+    if (_cancelled ||
+        _phase != _SwapKeystonePhase.ready ||
+        _pcztWithProofs == null) {
+      return;
+    }
     setState(() => _error = null);
     final responseCbor = await context.push<List<int>>(
       '/send/keystone/scan',
       extra: const KeystoneSendScanArgs.batch(),
     );
-    if (responseCbor == null || !mounted) return;
+    if (responseCbor == null || !mounted || _cancelled) return;
     final service = _signingService;
     final draft = _draft;
     if (service == null || draft == null) return;
@@ -179,7 +205,7 @@ class _SwapKeystoneSigningOverlayState
         draft: draft,
         responseCbor: responseCbor,
       );
-      if (!mounted) return;
+      if (!mounted || _cancelled) return;
       await _broadcast(signatures);
     } catch (e, st) {
       log('SwapKeystoneSigning._getSignature: ERROR: $e\n$st');
@@ -271,17 +297,41 @@ class _SwapKeystoneSigningOverlayState
     };
   }
 
-  void _cancel() {
-    if (_phase == _SwapKeystonePhase.broadcasting) return;
-    unawaited(_discardDraft());
-    widget.onCancel();
+  Future<void> _cancel() async {
+    if (_cancelling || _phase == _SwapKeystonePhase.broadcasting) return;
+    setState(() {
+      _cancelling = true;
+      _cancelled = true;
+    });
+    try {
+      await _discardDraft();
+      if (mounted) widget.onCancel();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _cancelling = false;
+        _phase = _SwapKeystonePhase.failed;
+        _error = 'Could not finish cancelling. Please try again.';
+      });
+    }
   }
 
-  Future<void> _discardDraft() async {
+  Future<void> _discardDraft() =>
+      _discardFuture ??= _releaseDraft().catchError((Object error) {
+        _discardFuture = null;
+        throw error;
+      });
+
+  Future<void> _releaseDraft() async {
+    try {
+      await _draftCreation;
+    } catch (_) {
+      // Failed creation owns cleanup of any partial proposal.
+    }
     final draft = _draft;
-    _draft = null;
     if (draft == null) return;
     await _signingService?.discardPcztDraft(draft: draft);
+    _draft = null;
   }
 
   @override
@@ -320,13 +370,17 @@ class _SwapKeystoneSigningOverlayState
                 ? null
                 : 'Get signature',
             onPrimary:
-                _phase == _SwapKeystonePhase.ready && _pcztWithProofs != null
+                !_cancelling &&
+                    _phase == _SwapKeystonePhase.ready &&
+                    _pcztWithProofs != null
                 ? () => unawaited(_getSignature())
                 : null,
-            secondaryLabel: isBroadcasting
+            secondaryLabel: _cancelling
+                ? 'Cancelling…'
+                : isBroadcasting
                 ? null
                 : _phase == _SwapKeystonePhase.failed
-                ? 'Back to activity'
+                ? 'Cancel'
                 : 'Cancel',
             onSecondary: _cancel,
           ),

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_service.dart';
@@ -23,6 +24,48 @@ void main() {
   });
 
   tearDownAll(RustLib.dispose);
+
+  test(
+    'hardware draft release refreshes the owner balance after Rust unlock',
+    () async {
+      final events = <String>[];
+      rustApi.releaseEvents = events;
+      final sync = _ReleaseSyncNotifier(events);
+      final container = ProviderContainer(
+        overrides: [syncProvider.overrideWith(() => sync)],
+      );
+      addTearDown(container.dispose);
+      final service = container.read(swapHardwareSigningServiceProvider);
+      await service.discardPcztDraft(draft: _releaseDraft);
+      expect(events, ['release', 'refresh-account-1']);
+    },
+  );
+
+  test(
+    'hardware draft release does not hide balance refresh failure',
+    () async {
+      final events = <String>[];
+      rustApi.releaseEvents = events;
+      final sync = _ReleaseSyncNotifier(events)..failRefresh = true;
+      final container = ProviderContainer(
+        overrides: [syncProvider.overrideWith(() => sync)],
+      );
+      addTearDown(container.dispose);
+      final service = container.read(swapHardwareSigningServiceProvider);
+      await expectLater(
+        service.discardPcztDraft(draft: _releaseDraft),
+        throwsStateError,
+      );
+      sync.failRefresh = false;
+      await service.discardPcztDraft(draft: _releaseDraft);
+      expect(events, [
+        'release',
+        'refresh-account-1',
+        'release',
+        'refresh-account-1',
+      ]);
+    },
+  );
 
   test('software ZEC deposit uses quote base units, not display text', () {
     final quote = _quote(
@@ -161,12 +204,23 @@ SwapIntent _intent({
 }
 
 class _RustApiFake implements RustLibApi {
+  List<String>? releaseEvents;
+
+  @override
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {
+    releaseEvents?.add('release');
+  }
+
   int proposeSendCalls = 0;
 
   /// The network the last address validation was asked about.
   String? lastValidatedNetwork;
 
   void reset() {
+    releaseEvents = null;
     proposeSendCalls = 0;
     lastValidatedNetwork = null;
   }
@@ -214,3 +268,27 @@ class _RustApiFake implements RustLibApi {
 }
 
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+
+final _releaseDraft = SwapHardwarePcztDraft(
+  accountUuid: 'account-1',
+  pcztBytes: const [1],
+  needsSaplingParams: false,
+  feeZatoshi: BigInt.one,
+  proposalId: BigInt.one,
+  sendFlowId: 'release-test',
+);
+
+class _ReleaseSyncNotifier extends SyncNotifier {
+  _ReleaseSyncNotifier(this.events);
+  final List<String> events;
+  bool failRefresh = false;
+
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {
+    events.add('refresh-$accountUuid');
+    if (failRefresh) throw StateError('balance unavailable');
+  }
+}

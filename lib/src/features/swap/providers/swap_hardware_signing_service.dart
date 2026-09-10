@@ -9,6 +9,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../keystone/services/keystone_batch_signing.dart';
+import '../../send/services/send_flow.dart';
 import '../models/swap_models.dart';
 
 final swapHardwareSigningServiceProvider = Provider<SwapHardwareSigningService>(
@@ -52,6 +53,7 @@ abstract interface class SwapHardwareSigningService {
 
 class SwapHardwarePcztDraft {
   const SwapHardwarePcztDraft({
+    required this.accountUuid,
     required this.pcztBytes,
     required this.needsSaplingParams,
     required this.feeZatoshi,
@@ -60,6 +62,7 @@ class SwapHardwarePcztDraft {
   });
 
   final List<int> pcztBytes;
+  final String accountUuid;
   final bool needsSaplingParams;
   final BigInt feeZatoshi;
   final BigInt proposalId;
@@ -129,6 +132,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
                 'needsSapling=${proposal.needsSaplingParams}',
               );
               return SwapHardwarePcztDraft(
+                accountUuid: accountUuid,
                 pcztBytes: pcztBytes,
                 needsSaplingParams: proposal.needsSaplingParams,
                 feeZatoshi: proposal.feeZatoshi,
@@ -212,34 +216,16 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
 
   @override
   Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {
-    Object? lastError;
-    for (var attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await rust_sync.discardProposal(
-          proposalId: draft.proposalId,
-          sendFlowId: draft.sendFlowId,
-        );
-        log(
-          'SwapHardwareSigning: released deposit proposal '
-          'flow=${draft.sendFlowId} proposal=${draft.proposalId}',
-        );
-        return;
-      } catch (e) {
-        lastError = e;
-        log(
-          'SwapHardwareSigning: discard deposit proposal attempt $attempt '
-          'failed flow=${draft.sendFlowId} proposal=${draft.proposalId} '
-          'error=$e',
-        );
-        if (attempt < 3) {
-          await Future<void>.delayed(Duration(milliseconds: attempt * 100));
-        }
-      }
-    }
-    log(
-      'SwapHardwareSigning: deposit proposal cleanup remains pending '
-      'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$lastError',
+    final released = await discardSendProposal(
+      proposalId: draft.proposalId,
+      sendFlowId: draft.sendFlowId,
+      accountUuid: draft.accountUuid,
+      syncNotifier: _ref.read(syncProvider.notifier),
+      logContext: 'SwapHardwareSigning',
     );
+    if (!released) {
+      throw StateError('Could not finish cancelling. Please try again.');
+    }
   }
 
   @override

@@ -638,6 +638,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
     required SwapIntent intent,
   }) async {
     return SwapHardwarePcztDraft(
+      accountUuid: accountUuid,
       pcztBytes: const [1, 2, 3],
       needsSaplingParams: false,
       feeZatoshi: BigInt.zero,
