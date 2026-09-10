@@ -67,6 +67,7 @@ class _LedgerShieldSigningOverlayState
   int _round = 1;
   int _roundCount = 1;
   int? _pendingInputs;
+  bool _pausedEarly = false;
   late final LedgerOperationCanceller _cancelLedgerOperation;
 
   bool get _isBroadcasting => _phase == LedgerSigningModalPhase.broadcasting;
@@ -127,9 +128,11 @@ class _LedgerShieldSigningOverlayState
       if (_round == 1) {
         final work = await _remainingInputs(accountUuid);
         if (!mounted || _cancelled) return;
-        _pendingInputs = work.inputs;
-        final rounds = _roundsFor(work);
-        if (rounds > 1) setState(() => _roundCount = rounds);
+        if (work != null) {
+          _pendingInputs = work.inputs;
+          final rounds = _roundsFor(work);
+          if (rounds > 1) setState(() => _roundCount = rounds);
+        }
       }
       final dbPath = await ref.read(ledgerWalletDbPathProvider)();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
@@ -349,9 +352,10 @@ class _LedgerShieldSigningOverlayState
 
   /// Transparent inputs still waiting for the device and how many one
   /// approval takes; zero inputs once nothing spendable is left or the rest
-  /// is below the shielding threshold. Unknown counts as zero, which ends the
-  /// flow and lets the home card resume it.
-  Future<({int inputs, int limit})> _remainingInputs(String accountUuid) async {
+  /// is below the shielding threshold. Null when the count cannot be read.
+  Future<({int inputs, int limit})?> _remainingInputs(
+    String accountUuid,
+  ) async {
     try {
       final dbPath = await ref.read(ledgerWalletDbPathProvider)();
       final status = await ref.read(ledgerShieldStatusReaderProvider)(
@@ -366,7 +370,7 @@ class _LedgerShieldSigningOverlayState
       );
     } catch (e) {
       log('LedgerShieldConfirm: remaining inputs unknown: $e');
-      return (inputs: 0, limit: 0);
+      return null;
     }
   }
 
@@ -377,19 +381,33 @@ class _LedgerShieldSigningOverlayState
   }
 
   /// After a broadcast, the inputs the device limit left over are shielded in
-  /// the next round with a fresh approval; done once none remain.
+  /// the next round with a fresh approval; complete once none remain. When
+  /// the count cannot be read, or a round left it unchanged, the flow pauses
+  /// and says so instead of reporting a finished shield.
   Future<void> _continueOrComplete({required String? accountUuid}) async {
     final work = accountUuid == null
         ? (inputs: 0, limit: 0)
         : await _remainingInputs(accountUuid);
     if (!mounted || _cancelled) return;
+    if (work == null) {
+      _pauseEarly(
+        'Round $_round was sent, but Vizor could not check what is left to shield. Shield again from your wallet once sync catches up.',
+      );
+      return;
+    }
     final previous = _pendingInputs;
     _pendingInputs = work.inputs;
+    if (work.inputs == 0) {
+      widget.onComplete();
+      return;
+    }
     // A round that leaves the count where it was means the broadcast did not
     // free those inputs yet; asking the device to sign them again would only
-    // produce a conflicting transaction, so the home card takes over.
-    if (work.inputs == 0 || (previous != null && work.inputs >= previous)) {
-      widget.onComplete();
+    // produce a conflicting transaction.
+    if (previous != null && work.inputs >= previous) {
+      _pauseEarly(
+        'Round $_round was sent, but its inputs still count as spendable. Wait for sync to confirm it, then shield again from your wallet.',
+      );
       return;
     }
     final remaining = _roundsFor(work);
@@ -406,6 +424,16 @@ class _LedgerShieldSigningOverlayState
       _operationCheckpointed = false;
     });
     await _prepareAndSign();
+  }
+
+  void _pauseEarly(String message) {
+    log('LedgerShieldConfirm: paused after round $_round: $message');
+    setState(() {
+      _phase = LedgerSigningModalPhase.failed;
+      _pausedEarly = true;
+      _canRetry = false;
+      _error = message;
+    });
   }
 
   Future<bool> _showDownloadPrompt() {
@@ -551,13 +579,16 @@ class _LedgerShieldSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
-              canChangeConnection: !_requestExceedsCapacity,
+              isError: !_pausedEarly,
+              canChangeConnection: !_requestExceedsCapacity && !_pausedEarly,
               requiresReconnect:
                   _canRetry && !_operationCheckpointed && _needsReconnect,
-              title: _requestExceedsCapacity
+              title: _pausedEarly
+                  ? 'Shielding paused'
+                  : _requestExceedsCapacity
                   ? kLedgerSmallerTransferTitle
                   : 'Ledger signing failed',
-              statusLabel: 'Action needed',
+              statusLabel: _pausedEarly ? 'Inputs remaining' : 'Action needed',
               message: _error ?? 'Ledger shielding could not be completed.',
               actionLabel: _canRetry ? 'Try again' : null,
             )

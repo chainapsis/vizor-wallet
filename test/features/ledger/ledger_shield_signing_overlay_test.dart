@@ -199,9 +199,8 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('stops after a round that frees no inputs', (tester) async {
+  testWidgets('pauses after a round that frees no inputs', (tester) async {
     final operationService = _FakeLedgerSignedOperationService();
-    var completed = false;
 
     await tester.pumpWidget(
       _harness(
@@ -211,19 +210,59 @@ void main() {
         // asking the device to sign them again would double-spend them.
         inputCounts: const [40],
         ledgerSigner: (pcztBytes) async => [7, 8, 9],
-        onComplete: () => completed = true,
+        onComplete: () => fail('A paused shield must not report completion'),
       ),
     );
     await tester.pump();
-    for (var i = 0; i < 100 && !completed; i++) {
+    for (
+      var i = 0;
+      i < 100 && find.text('Shielding paused').evaluate().isEmpty;
+      i++
+    ) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
       );
       await tester.pump(const Duration(milliseconds: 10));
     }
 
-    expect(completed, isTrue);
+    expect(find.text('Shielding paused'), findsOneWidget);
+    expect(find.textContaining('still count as spendable'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
     expect(rustApi.createShieldCalls, 1);
+    expect(operationService.broadcasts, hasLength(1));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('pauses when the remaining count cannot be read', (tester) async {
+    final operationService = _FakeLedgerSignedOperationService();
+
+    await tester.pumpWidget(
+      _harness(
+        operationService: operationService,
+        sync: _FakeSyncNotifier(),
+        inputCounts: const [40, 8],
+        statusFailsFromRead: 2,
+        ledgerSigner: (pcztBytes) async => [7, 8, 9],
+        onComplete: () =>
+            fail('An unknown remainder must not report completion'),
+      ),
+    );
+    await tester.pump();
+    for (
+      var i = 0;
+      i < 100 && find.text('Shielding paused').evaluate().isEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+
+    expect(find.text('Shielding paused'), findsOneWidget);
+    expect(find.textContaining('could not check'), findsOneWidget);
     expect(operationService.broadcasts, hasLength(1));
 
     await tester.pumpWidget(const SizedBox.shrink());
@@ -237,9 +276,11 @@ Widget _harness({
   required Future<List<int>> Function(List<int> pcztBytes) ledgerSigner,
   required VoidCallback onComplete,
   List<int> inputCounts = const [1, 0],
+  int? statusFailsFromRead,
 }) {
   // Each read reports how many transparent inputs still wait; the last value
-  // repeats once the script runs out.
+  // repeats once the script runs out. From `statusFailsFromRead` on (1-based)
+  // the read throws instead.
   var reads = 0;
   return ProviderScope(
     overrides: [
@@ -253,6 +294,9 @@ Widget _harness({
                 ? reads
                 : inputCounts.length - 1];
         reads++;
+        if (statusFailsFromRead != null && reads >= statusFailsFromRead) {
+          throw StateError('wallet database is busy');
+        }
         return ShieldTransparentStatus(
           canShield: count > 0,
           feeZatoshi: BigInt.from(10_000),
