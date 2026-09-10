@@ -84,7 +84,12 @@ class Handler : public std::enable_shared_from_this<Handler> {
   void Initialize(FlBinaryMessenger* messenger, GDBusConnection* bus = nullptr) {
     g_autoptr(GError) error = nullptr;
     bus_ = bus ? G_DBUS_CONNECTION(g_object_ref(bus)) : g_bus_get_sync(G_BUS_TYPE_SYSTEM, nullptr, &error);
-    if (bus_) transport_ = std::make_unique<ledger_bluez::Transport>(bus_);
+    if (bus_) {
+      transport_ = std::make_unique<ledger_bluez::Transport>(bus_);
+      transport_->SetPairingListener([weak = weak_from_this()](const std::string& code) {
+        Post([weak, code] { if (const auto self = weak.lock()) self->EmitPairing(code); });
+      });
+    }
     g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
     methods_ = fl_method_channel_new(messenger, "com.zcash.wallet/ledger_mobile", FL_METHOD_CODEC(codec));
     fl_method_channel_set_method_call_handler(methods_, [](FlMethodChannel*, FlMethodCall* call, gpointer data) {
@@ -102,6 +107,16 @@ class Handler : public std::enable_shared_from_this<Handler> {
           self->StopDiscovery(nullptr);
           return nullptr;
         }, this, nullptr);
+    connection_events_ = fl_event_channel_new(messenger, "com.zcash.wallet/ledger_mobile/connection", FL_METHOD_CODEC(codec));
+    fl_event_channel_set_stream_handlers(connection_events_,
+        [](FlEventChannel*, FlValue*, gpointer data) -> FlMethodErrorResponse* {
+          static_cast<Handler*>(data)->listening_connection_ = true;
+          return nullptr;
+        },
+        [](FlEventChannel*, FlValue*, gpointer data) -> FlMethodErrorResponse* {
+          static_cast<Handler*>(data)->listening_connection_ = false;
+          return nullptr;
+        }, this, nullptr);
   }
 
   ~Handler() {
@@ -109,6 +124,7 @@ class Handler : public std::enable_shared_from_this<Handler> {
     g_clear_object(&bus_);
     g_clear_object(&methods_);
     g_clear_object(&events_);
+    g_clear_object(&connection_events_);
   }
 
   void Close() {
@@ -118,6 +134,7 @@ class Handler : public std::enable_shared_from_this<Handler> {
     if (transport_) transport_->Close();
     fl_method_channel_set_method_call_handler(methods_, nullptr, nullptr, nullptr);
     fl_event_channel_set_stream_handlers(events_, nullptr, nullptr, nullptr, nullptr);
+    fl_event_channel_set_stream_handlers(connection_events_, nullptr, nullptr, nullptr, nullptr);
     if (!gate_.busy() && transport_) {
       const auto self = shared_from_this();
       Run([self](GCancellable*) { self->transport_->Disconnect(); return fl_value_new_null(); }, nullptr, true);
@@ -209,6 +226,17 @@ class Handler : public std::enable_shared_from_this<Handler> {
     if (closed_ || !listening_ || !value) return;
     g_autoptr(GError) error = nullptr;
     if (!fl_event_channel_send(events_, value, nullptr, &error)) g_warning("Ledger discovery event failed: %s", error->message);
+  }
+
+  // Pairing progress for the connect in flight: the code to compare with the
+  // Ledger, then the end of that prompt.
+  void EmitPairing(const std::string& code) {
+    if (closed_ || !listening_connection_) return;
+    Value event(fl_value_new_map());
+    fl_value_set_string_take(event.get(), "type", fl_value_new_string(code.empty() ? "pairing_ended" : "pairing"));
+    if (!code.empty()) fl_value_set_string_take(event.get(), "code", fl_value_new_string(code.c_str()));
+    g_autoptr(GError) error = nullptr;
+    if (!fl_event_channel_send(connection_events_, event.get(), nullptr, &error)) g_warning("Ledger connection event failed: %s", error->message);
   }
 
   void EmitError(const Error& error) {
@@ -379,6 +407,8 @@ class Handler : public std::enable_shared_from_this<Handler> {
   std::unique_ptr<ledger_bluez::Transport> transport_;
   FlMethodChannel* methods_ = nullptr;
   FlEventChannel* events_ = nullptr;
+  FlEventChannel* connection_events_ = nullptr;
+  bool listening_connection_ = false;
   GCancellable* cancel_ = nullptr;
   ledger_ble::OperationGate gate_;
   std::atomic<bool> closed_{false};

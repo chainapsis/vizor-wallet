@@ -13,6 +13,7 @@ import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
+import '../../ledger/services/ledger_pairing_code_provider.dart';
 
 Future<LedgerDeviceAccount?> showLedgerDesktopBleConnectDialog({
   required BuildContext context,
@@ -287,7 +288,14 @@ class _LedgerDesktopBleConnectDialogState
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              _buildBody(context),
+              Consumer(
+                builder: (context, ref, _) => _buildBody(
+                  context,
+                  pairingCode: _phase == _ProbePhase.connecting
+                      ? ref.watch(ledgerPairingCodeProvider).value
+                      : null,
+                ),
+              ),
               const SizedBox(height: AppSpacing.sm),
               Text(
                 'Bluetooth is available on Ledger ${ledgerBluetoothSupportedModels(widget.platform)}.',
@@ -344,7 +352,7 @@ class _LedgerDesktopBleConnectDialogState
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  Widget _buildBody(BuildContext context, {String? pairingCode}) {
     if (_phase == _ProbePhase.devices) {
       return ConstrainedBox(
         constraints: BoxConstraints(
@@ -373,7 +381,7 @@ class _LedgerDesktopBleConnectDialogState
         'Preparing Bluetooth',
         switch (widget.platform) {
           TargetPlatform.linux =>
-            'Linux may ask you to confirm pairing in Bluetooth settings.',
+            'If pairing is needed, Vizor shows a code to confirm on your Ledger.',
           TargetPlatform.windows =>
             'Windows may ask for Bluetooth permission and pairing confirmation.',
           _ => 'macOS may ask for Bluetooth permission.',
@@ -384,12 +392,15 @@ class _LedgerDesktopBleConnectDialogState
         'Scanning for Ledger devices',
         'This can take a few seconds.',
       ),
+      _ProbePhase.connecting when pairingCode != null => (
+        AppIcons.ledger,
+        'Confirm pairing on your Ledger',
+        'Approve pairing on your Ledger only if it shows this code.',
+      ),
       _ProbePhase.connecting => (
         AppIcons.loader,
         'Connecting to ${_connectedDevice?.name ?? 'Ledger'}',
-        widget.platform == TargetPlatform.linux
-            ? 'Keep your Ledger unlocked. After confirming any pairing prompt, close Bluetooth settings and return to Vizor.'
-            : 'Approve Bluetooth pairing on the device if prompted.',
+        'Approve Bluetooth pairing on the device if prompted.',
       ),
       _ProbePhase.readingAccount => (
         AppIcons.loader,
@@ -429,6 +440,18 @@ class _LedgerDesktopBleConnectDialogState
               fontWeight: FontWeight.w600,
             ),
           ),
+          if (pairingCode != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              pairingCode,
+              key: const ValueKey('ledger_desktop_ble_pairing_code'),
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineMedium.copyWith(
+                color: context.colors.text.accent,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.xs),
           Text(
             message,

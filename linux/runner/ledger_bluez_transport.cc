@@ -94,7 +94,7 @@ BusFailure BusError(GError* error) {
     return failure("unavailable", "Linux Bluetooth did not respond in time. Try again.");
   }
   if (name.find("Authentication") != std::string::npos) {
-    return failure("pairing_rejected", "Ledger Bluetooth pairing was not completed. Confirm the matching code in Linux Bluetooth settings and on your Ledger, then try again.");
+    return failure("pairing_rejected", "Ledger Bluetooth pairing was not completed. Try again and approve pairing on your Ledger when it shows the same code as Vizor.");
   }
   if (name.find("NotAuthorized") != std::string::npos ||
       name.find("AccessDenied") != std::string::npos ||
@@ -143,7 +143,7 @@ Transport::Transport(GDBusConnection* connection)
          GVariant* parameters, gpointer data) {
         static_cast<Transport*>(data)->Removed(parameters);
       }, this, nullptr);
-  RegisterAgent();
+  ExportAgent();
 }
 
 Transport::~Transport() {
@@ -159,7 +159,15 @@ void Transport::Close() {
   Wake();
 }
 
-void Transport::RegisterAgent() {
+void Transport::SetPairingListener(std::function<void(const std::string& code)> listener) {
+  pairing_listener_ = std::move(listener);
+}
+
+void Transport::NotifyPairing(const std::string& code) {
+  if (pairing_listener_) pairing_listener_(code);
+}
+
+void Transport::ExportAgent() {
   g_autoptr(GError) error = nullptr;
   agent_node_ = g_dbus_node_info_new_for_xml(kAgentXml, &error);
   if (!agent_node_) {
@@ -168,20 +176,24 @@ void Transport::RegisterAgent() {
   }
   static const GDBusInterfaceVTable table = {AgentMethod, nullptr, nullptr, {nullptr}};
   agent_id_ = g_dbus_connection_register_object(bus_, kAgentPath, agent_node_->interfaces[0], &table, this, nullptr, &error);
-  if (!agent_id_) {
-    g_warning("Ledger BLE agent: %s", error->message);
-    return;
+  if (!agent_id_) g_warning("Ledger BLE agent: %s", error->message);
+}
+
+void Transport::RegisterAgent(GCancellable* cancel) {
+  if (!agent_id_) return;
+  // Registered before each pairing so a restarted bluetoothd still routes the
+  // request here. Best effort: without an agent manager the session's own
+  // Bluetooth agent (if any) answers instead. DisplayYesNo matches what the
+  // agent does: it shows the code and the Ledger's screen gives the yes/no.
+  g_autoptr(GError) error = nullptr;
+  Variant reply(g_dbus_connection_call_sync(bus_, "org.bluez", "/org/bluez", kAgentManager, "RegisterAgent",
+      g_variant_new("(os)", kAgentPath, "DisplayYesNo"), nullptr, G_DBUS_CALL_FLAGS_NO_AUTO_START, 3000, cancel, &error));
+  if (reply) return;
+  if (g_dbus_error_is_remote_error(error)) {
+    g_autofree gchar* name = g_dbus_error_get_remote_error(error);
+    if (name && g_str_has_suffix(name, ".AlreadyExists")) return;
   }
-  // Registration is best effort: without an agent manager the session's own
-  // Bluetooth agent (if any) answers instead, as before. The callback must not
-  // touch this object, which may be gone by the time BlueZ replies.
-  g_dbus_connection_call(bus_, "org.bluez", "/org/bluez", kAgentManager, "RegisterAgent",
-      g_variant_new("(os)", kAgentPath, "KeyboardDisplay"), nullptr, G_DBUS_CALL_FLAGS_NO_AUTO_START, 3000, nullptr,
-      [](GObject* source, GAsyncResult* result, gpointer) {
-        g_autoptr(GError) failure = nullptr;
-        Variant reply(g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &failure));
-        if (!reply) g_message("Ledger BLE agent: not registered (%s); the session agent handles pairing", failure->message);
-      }, nullptr);
+  g_message("Ledger BLE agent: not registered (%s); the session agent handles pairing", error->message);
 }
 
 void Transport::UnregisterAgent() {
@@ -207,15 +219,24 @@ void Transport::AgentMethod(GDBusConnection*, const gchar*, const gchar*, const 
   };
   if (name == "Release" || name == "Cancel" || name == "DisplayPinCode" || name == "DisplayPasskey") {
     g_message("Ledger BLE agent: %s", method);
+    if (name == "Cancel") self.NotifyPairing("");
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
   }
   if (name == "RequestConfirmation" || name == "RequestAuthorization") {
     const char* device = nullptr;
     g_variant_get_child(parameters, 0, "&o", &device);
-    // The Ledger shows the same code and asks for confirmation on its own
-    // screen, so the host side only needs to be sure this is that Ledger.
+    // The host side confirms at once and hands the code to the UI: the user
+    // compares it with the Ledger's screen and gives the yes/no there, which
+    // is what protects the pairing against a device in the middle.
     if (self.AgentAccepts(device)) {
+      if (name == "RequestConfirmation") {
+        guint32 passkey = 0;
+        g_variant_get_child(parameters, 1, "u", &passkey);
+        char code[16];
+        g_snprintf(code, sizeof code, "%06u", passkey);
+        self.NotifyPairing(code);
+      }
       g_message("Ledger BLE agent: %s accepted", method);
       g_dbus_method_invocation_return_value(invocation, nullptr);
     } else {
@@ -367,19 +388,23 @@ void Transport::Connect(const std::string& id, GCancellable* cancel) {
       Boolean(properties.get(), "ServicesResolved"));
   if (!Boolean(properties.get(), "Paired")) {
     stage("pairing requested");
+    RegisterAgent(cancel);
     pairing_ = true;
+    std::optional<BusFailure> pair_failure;
     try {
       Call(id, kDevice, "Pair", nullptr, cancel, 120000);
     } catch (const BusFailure& failure) {
-      // AlreadyExists means the bond completed elsewhere while this call ran.
-      if (failure.remote.find("AlreadyExists") == std::string::npos) {
-        if (failure.timed_out) {
-          throw Error("pairing_rejected", "Ledger Bluetooth pairing timed out. Confirm the matching code in Linux Bluetooth settings and on your Ledger, then try again.");
-        }
-        throw Unreachable(failure);
-      }
+      pair_failure = failure;
     }
     pairing_ = false;
+    NotifyPairing("");
+    // AlreadyExists means the bond completed elsewhere while this call ran.
+    if (pair_failure && pair_failure->remote.find("AlreadyExists") == std::string::npos) {
+      if (pair_failure->timed_out) {
+        throw Error("pairing_rejected", "Ledger Bluetooth pairing timed out. Try again and approve pairing on your Ledger when it shows the same code as Vizor.");
+      }
+      throw Unreachable(*pair_failure);
+    }
     stage("pairing completed");
   }
   properties = Properties(id, kDevice, cancel);

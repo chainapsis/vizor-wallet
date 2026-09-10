@@ -32,10 +32,11 @@ struct Device {
 // Construct/Close on the GLib platform thread. Blocking methods run on one
 // worker; D-Bus signals arrive on the platform thread and wake that worker.
 //
-// The transport also registers an org.bluez.Agent1 for its own pairing
-// requests, so pairing works in sessions without a desktop Bluetooth agent.
-// BlueZ asks the registering application's agent for the pairings that
-// application starts; the agent answers only for the Ledger being connected.
+// The transport exports an org.bluez.Agent1 and registers it right before
+// each pairing it starts, so pairing works in sessions without a desktop
+// Bluetooth agent. BlueZ routes the pairings an application starts to that
+// application's agent; ours answers only for the Ledger being connected and
+// reports the code the user must compare with the Ledger's screen.
 class Transport {
  public:
   explicit Transport(GDBusConnection* connection);
@@ -44,6 +45,10 @@ class Transport {
   Transport& operator=(const Transport&) = delete;
 
   void Close();
+  // Receives the six-digit code to compare with the Ledger while a pairing
+  // waits for confirmation, and an empty string once that prompt is over.
+  // Set before any operation; called from the platform or worker thread.
+  void SetPairingListener(std::function<void(const std::string& code)> listener);
   void Wake();
   Variant Objects(GCancellable* cancel);
   static std::vector<Device> Devices(GVariant* objects, bool nearby);
@@ -65,9 +70,11 @@ class Transport {
   void Changed(const char* path, GVariant* parameters);
   void Removed(GVariant* parameters);
   void Check(GCancellable* cancel) const;
-  void RegisterAgent();
+  void ExportAgent();
+  void RegisterAgent(GCancellable* cancel);
   void UnregisterAgent();
   bool AgentAccepts(const std::string& device);
+  void NotifyPairing(const std::string& code);
   static void AgentMethod(GDBusConnection*, const gchar*, const gchar*, const gchar*,
                           const gchar* method, GVariant* parameters,
                           GDBusMethodInvocation* invocation, gpointer data);
@@ -82,6 +89,7 @@ class Transport {
   std::string write_;
   guint agent_id_ = 0;
   GDBusNodeInfo* agent_node_ = nullptr;
+  std::function<void(const std::string&)> pairing_listener_;
   bool connected_ = false;
   bool awaiting_ = false;
   std::atomic<bool> pairing_{false};
