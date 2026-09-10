@@ -3,6 +3,7 @@
 
 #include <gio/gio.h>
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -30,6 +31,11 @@ struct Device {
 
 // Construct/Close on the GLib platform thread. Blocking methods run on one
 // worker; D-Bus signals arrive on the platform thread and wake that worker.
+//
+// The transport also registers an org.bluez.Agent1 for its own pairing
+// requests, so pairing works in sessions without a desktop Bluetooth agent.
+// BlueZ asks the registering application's agent for the pairings that
+// application starts; the agent answers only for the Ledger being connected.
 class Transport {
  public:
   explicit Transport(GDBusConnection* connection);
@@ -59,6 +65,12 @@ class Transport {
   void Changed(const char* path, GVariant* parameters);
   void Removed(GVariant* parameters);
   void Check(GCancellable* cancel) const;
+  void RegisterAgent();
+  void UnregisterAgent();
+  bool AgentAccepts(const std::string& device);
+  static void AgentMethod(GDBusConnection*, const gchar*, const gchar*, const gchar*,
+                          const gchar* method, GVariant* parameters,
+                          GDBusMethodInvocation* invocation, gpointer data);
 
   GDBusConnection* bus_;
   guint changed_id_ = 0;
@@ -68,9 +80,11 @@ class Transport {
   std::string device_;
   std::string notify_;
   std::string write_;
+  guint agent_id_ = 0;
+  GDBusNodeInfo* agent_node_ = nullptr;
   bool connected_ = false;
   bool awaiting_ = false;
-  bool pairing_ = false;
+  std::atomic<bool> pairing_{false};
   std::deque<ledger_ble::Bytes> packets_;
   std::optional<ledger_ble::Error> failure_;
   size_t mtu_ = 20;

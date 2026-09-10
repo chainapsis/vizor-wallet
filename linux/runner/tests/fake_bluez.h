@@ -6,6 +6,7 @@
 
 #include "../ledger_bluez_transport.h"
 
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -31,6 +32,10 @@ constexpr const char* kXml = R"xml(<node>
 <property name='UUIDs' type='as' access='read'/><property name='Alias' type='s' access='read'/>
 <property name='Paired' type='b' access='read'/><property name='Connected' type='b' access='read'/><property name='ServicesResolved' type='b' access='read'/></interface>
 <interface name='org.bluez.GattService1'><property name='UUID' type='s' access='read'/><property name='Device' type='o' access='read'/></interface>
+<interface name='org.bluez.AgentManager1'>
+<method name='RegisterAgent'><arg type='o' direction='in'/><arg type='s' direction='in'/></method>
+<method name='UnregisterAgent'><arg type='o' direction='in'/></method>
+<method name='RequestDefaultAgent'><arg type='o' direction='in'/></method></interface>
 <interface name='org.bluez.GattCharacteristic1'>
 <method name='StartNotify'/><method name='StopNotify'/><method name='WriteValue'><arg type='ay' direction='in'/><arg type='a{sv}' direction='in'/></method>
 <property name='UUID' type='s' access='read'/><property name='Service' type='o' access='read'/><property name='MTU' type='q' access='read'/></interface>
@@ -52,6 +57,14 @@ struct FakeBluez {
   bool disconnect_on_write = false;
   bool hold_start = false, discovering = false;
   bool nearby = true;
+  // Pairing agent: BlueZ asks the registering application's agent to confirm
+  // its own pairing requests. `agent_manager` false models an old BlueZ
+  // without org.bluez.AgentManager1.
+  bool agent_manager = true;
+  std::string agent_path, agent_sender, agent_capability;
+  std::string agent_confirm_device = kDevice;
+  std::string agent_service_uuid;  // when set, AuthorizeService instead of RequestConfirmation
+  int agent_answers = 0, agent_rejections = 0;
   std::string fail_start, fail_pair, fail_connect;
   GCancellable* cancel_start = nullptr;
   GDBusMethodInvocation* pending_start = nullptr;
@@ -93,7 +106,8 @@ struct FakeBluez {
   }
 
   static std::vector<std::pair<const char*, const char*>> Entries() {
-    return {{"/", "org.freedesktop.DBus.ObjectManager"}, {kAdapter, "org.bluez.Adapter1"},
+    return {{"/", "org.freedesktop.DBus.ObjectManager"}, {"/org/bluez", "org.bluez.AgentManager1"},
+      {kAdapter, "org.bluez.Adapter1"},
       {kDevice, "org.bluez.Device1"}, {kService, "org.bluez.GattService1"},
       {kNotify, "org.bluez.GattCharacteristic1"}, {kWrite, "org.bluez.GattCharacteristic1"}};
   }
@@ -132,11 +146,54 @@ struct FakeBluez {
     Signal(kNotify, "org.bluez.GattCharacteristic1", "Value", g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, bytes.data(), bytes.size(), 1));
   }
 
-  static void Method(GDBusConnection*, const gchar*, const gchar*, const gchar*,
+  // Completes a Pair call through the registered agent, as BlueZ would.
+  void AskAgent(GDBusMethodInvocation* invocation) {
+    const bool authorize = !agent_service_uuid.empty();
+    auto* context = new std::pair<FakeBluez*, GDBusMethodInvocation*>(
+        this, G_DBUS_METHOD_INVOCATION(g_object_ref(invocation)));
+    g_dbus_connection_call(server, agent_sender.c_str(), agent_path.c_str(), "org.bluez.Agent1",
+        authorize ? "AuthorizeService" : "RequestConfirmation",
+        authorize ? g_variant_new("(os)", agent_confirm_device.c_str(), agent_service_uuid.c_str())
+                  : g_variant_new("(ou)", agent_confirm_device.c_str(), 123456u),
+        nullptr, G_DBUS_CALL_FLAGS_NONE, 5000, nullptr,
+        [](GObject* source, GAsyncResult* result, gpointer data) {
+          std::unique_ptr<std::pair<FakeBluez*, GDBusMethodInvocation*>> context(
+              static_cast<std::pair<FakeBluez*, GDBusMethodInvocation*>*>(data));
+          auto& self = *context->first;
+          auto* pair = context->second;
+          g_autoptr(GError) error = nullptr;
+          Variant reply(g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error));
+          ++self.agent_answers;
+          if (reply) {
+            self.paired = true;
+            g_dbus_method_invocation_return_value(pair, nullptr);
+          } else {
+            ++self.agent_rejections;
+            g_dbus_method_invocation_return_dbus_error(pair, "org.bluez.Error.AuthenticationRejected", "Pairing rejected by agent");
+          }
+          g_object_unref(pair);
+        }, context);
+  }
+
+  static void Method(GDBusConnection*, const gchar* sender, const gchar*, const gchar*,
       const gchar* method, GVariant* parameters, GDBusMethodInvocation* invocation, gpointer data) {
     auto& self = *static_cast<FakeBluez*>(data);
     const std::string name(method);
-    if (name == "GetManagedObjects") {
+    if (name == "RegisterAgent") {
+      if (!self.agent_manager) {
+        g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.DBus.Error.UnknownMethod", "no agent manager");
+        return;
+      }
+      const char* path = nullptr;
+      const char* capability = nullptr;
+      g_variant_get(parameters, "(&o&s)", &path, &capability);
+      self.agent_path = path;
+      self.agent_sender = sender;
+      self.agent_capability = capability;
+    } else if (name == "UnregisterAgent") {
+      self.agent_path.clear();
+      self.agent_sender.clear();
+    } else if (name == "GetManagedObjects") {
       GVariantBuilder objects;
       g_variant_builder_init(&objects, G_VARIANT_TYPE("a{oa{sa{sv}}}"));
       for (const auto& entry : Entries()) {
@@ -184,6 +241,10 @@ struct FakeBluez {
       if (!self.fail_pair.empty()) {
         self.paired = self.fail_pair == "org.bluez.Error.AlreadyExists";
         g_dbus_method_invocation_return_dbus_error(invocation, self.fail_pair.c_str(), "Pair failed");
+        return;
+      }
+      if (!self.agent_path.empty()) {
+        self.AskAgent(invocation);
         return;
       }
       self.paired = true;
