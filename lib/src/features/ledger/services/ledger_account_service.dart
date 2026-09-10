@@ -128,7 +128,7 @@ Future<LedgerWalletIdentity> _readLedgerWalletIdentity(
       .read(ledgerAppReadinessServiceForTransportProvider(transport))
       .ensureReady();
   final identity = transport == LedgerConnectionTransport.bluetooth
-      ? await _readMobileWalletIdentity(
+      ? await readMobileLedgerWalletIdentity(
           mobile: ref.read(ledgerMobileBleServiceProvider),
           networkName: networkName,
         )
@@ -136,7 +136,7 @@ Future<LedgerWalletIdentity> _readLedgerWalletIdentity(
   return LedgerWalletIdentity(fingerprint: identity.fingerprint);
 }
 
-Future<rust_ledger.LedgerWalletIdentity> _readMobileWalletIdentity({
+Future<rust_ledger.LedgerWalletIdentity> readMobileLedgerWalletIdentity({
   required LedgerMobileBleService mobile,
   required String networkName,
 }) async {
