@@ -293,6 +293,8 @@ void main() {
     );
     await tester.tap(find.text('Hide description'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(option);
+    await tester.pumpAndSettle();
     await tester.tap(option);
     await tester.pumpAndSettle();
     expect(find.text('Not eligible for this voting round'), findsOneWidget);
@@ -404,11 +406,15 @@ void main() {
   ) async {
     await _pumpMobileFixture(tester, buildMobileVotingIneligibleUseCase);
     final option = find.byKey(const ValueKey('voting_proposal_1_option_1'));
+    await tester.ensureVisible(option);
+    await tester.pumpAndSettle();
     await tester.tap(option);
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('Close').first);
     await tester.pumpAndSettle();
     expect(find.byType(VotingIneligibleDialog), findsNothing);
+    await tester.ensureVisible(option);
+    await tester.pumpAndSettle();
     await tester.tap(option);
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(5, 200));
@@ -428,14 +434,15 @@ void main() {
           textScaler: TextScaler.linear(scale),
         );
         final card = find.byType(VotingProposalCard);
+        await tester.ensureVisible(find.text('Show description'));
+        await tester.pumpAndSettle();
         final collapsedTop = tester.getTopLeft(card).dy;
         await tester.tap(find.text('Show description'));
         await tester.pumpAndSettle();
         expect(tester.getTopLeft(card).dy, greaterThan(collapsedTop));
         expect(find.byType(VotingForumLinkButton), findsOneWidget);
-        await tester.drag(
-          find.byType(VotingPaneScrollView),
-          const Offset(0, -1600),
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('voting_review_answers_button')),
         );
         await tester.pumpAndSettle();
         await tester.tap(

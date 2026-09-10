@@ -2920,13 +2920,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      const message =
+      const reasonBody =
           'Voting needs at least 0.125 ZEC in eligible Ironwood notes at the '
-          'snapshot. This account was below that minimum. Eligibility is measured at '
-          'snapshot block 123. Switch to an eligible account to vote.';
+          'snapshot. This account was below that minimum.';
       await _pumpUntilFound(tester, find.text('Not eligible'));
 
-      expect(find.text(message), findsNothing);
+      expect(find.text('Below the 0.125 ZEC minimum'), findsOneWidget);
+      expect(find.text(reasonBody), findsOneWidget);
       expect(find.text('First proposal'), findsOneWidget);
       expect(find.text('Voting power 0 ZEC'), findsOneWidget);
       expect(find.text('Yes'), findsOneWidget);
@@ -2939,7 +2939,8 @@ void main() {
 
       expect(container.read(votingDraftProvider(_draftKey)).isEmpty, true);
       expect(find.text('Not eligible for this voting round'), findsOneWidget);
-      expect(find.text(message), findsOneWidget);
+      expect(find.text('Why these funds do not count'), findsOneWidget);
+      expect(find.text(reasonBody), findsWidgets);
 
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
@@ -2948,7 +2949,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Not eligible for this voting round'), findsOneWidget);
-      expect(find.text(message), findsOneWidget);
+      expect(find.text('Why these funds do not count'), findsOneWidget);
+      expect(find.text(reasonBody), findsWidgets);
     },
   );
 
