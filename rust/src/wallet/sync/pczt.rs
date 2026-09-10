@@ -336,21 +336,48 @@ pub(crate) fn expiry_height_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<
     Ok(u32::from(effects.expiry_height()))
 }
 
+fn cached_prepared_orchard_proving_key(
+    circuit_version: orchard::circuit::OrchardCircuitVersion,
+) -> &'static orchard::circuit::ProvingKey {
+    let proving_key = cached_orchard_proving_key(circuit_version);
+    let _ = proving_key.prepare_proving();
+    proving_key
+}
+
 fn legacy_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
-    cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
+    cached_prepared_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
 }
 
 fn ironwood_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
-    cached_orchard_proving_key(ironwood_orchard_circuit_version())
+    cached_prepared_orchard_proving_key(ironwood_orchard_circuit_version())
 }
 
-/// Starts process-lifetime post-NU6.3 Orchard proving-key warm-up.
+/// Starts process-lifetime post-NU6.3 Orchard proving-key preparation.
 ///
-/// Returns immediately. A proof requested before warm-up completes blocks on
-/// the transaction builder's shared cache, so this is a latency optimization
-/// rather than a correctness requirement.
+/// Returns immediately. A proof requested before preparation completes blocks
+/// on the transaction builder's shared key cache, so this is a latency
+/// optimization rather than a correctness requirement.
 pub fn start_orchard_proving_key_warmup() {
-    zcash_client_backend::start_orchard_proving_key_warmup(ironwood_orchard_circuit_version());
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static STARTED: AtomicBool = AtomicBool::new(false);
+
+    if STARTED
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+
+    if let Err(error) = std::thread::Builder::new()
+        .name("orchard-proving-key-warmup".to_string())
+        .spawn(|| {
+            let _ = ironwood_orchard_proving_key();
+        })
+    {
+        STARTED.store(false, Ordering::Release);
+        log::warn!("Orchard proving-key warmup spawn failed: {error}; proving will prepare inline");
+    }
 }
 
 /// The Orchard circuit version implied by a PCZT's `consensus_branch_id`.
@@ -2533,12 +2560,13 @@ mod tests {
     }
 
     #[test]
-    fn pczt_and_warmup_share_the_transaction_builder_proving_key() {
+    fn pczt_and_warmup_share_and_prepare_the_transaction_builder_proving_key() {
         start_orchard_proving_key_warmup();
         start_orchard_proving_key_warmup();
 
         let builder_key = cached_orchard_proving_key(ironwood_orchard_circuit_version());
         assert!(std::ptr::eq(ironwood_orchard_proving_key(), builder_key));
+        assert!(builder_key.prepare_proving());
 
         let legacy_builder_key =
             cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2);
@@ -2546,6 +2574,7 @@ mod tests {
             legacy_orchard_proving_key(),
             legacy_builder_key
         ));
+        assert!(legacy_builder_key.prepare_proving());
     }
 
     #[test]

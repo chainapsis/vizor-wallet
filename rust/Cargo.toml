@@ -10,15 +10,15 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flutter_rust_bridge = "=2.11.1"
 
 zcash_script = "0.4.3"
-voting-crypto-deps = { version = "=0.2.2" }
-sapling-crypto = { package = "zakura-sapling-crypto", version = "=1.0.0", default-features = false, features = ["circuit"] }
+voting-crypto-deps = { version = "=0.2.3" }
+sapling-crypto = { package = "zakura-sapling-crypto", version = "=1.2.0", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
-pasta_curves = { package = "zakura-pasta-curves", version = "=1.0.0" }
+pasta_curves = { package = "zakura-pasta-curves", version = "=1.2.0" }
 ff = "0.14"
 # Required by no-op Sapling prover trait impls
-jubjub = { package = "zakura-jubjub", version = "=1.0.0" }
-bls12_381 = { package = "zakura-bls12-381", version = "=1.0.0" }
+jubjub = { package = "zakura-jubjub", version = "=1.2.0" }
+bls12_381 = { package = "zakura-bls12-381", version = "=1.2.0" }
 rand_core = "0.6"
 
 # Key generation
@@ -85,14 +85,14 @@ tendermint-light-client-verifier = "0.40.4"
 # `use orchard` / `use zcash_client_backend` keep working.
 [dependencies.zcash_primitives]
 package = "zakura-primitives"
-version = "=1.0.0"
+version = "=1.2.0"
 
 [dependencies.zcash_address]
 version = "0.13.0"
 
 [dependencies.zcash_keys]
 package = "zakura-keys"
-version = "=1.0.0"
+version = "=1.2.0"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
@@ -104,7 +104,7 @@ version = "0.10.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc4"
+version = "=0.1.0-rc5"
 features = [
     "orchard",
     "transparent-inputs",
@@ -117,25 +117,26 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc4"
+version = "=0.1.0-rc5"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
-tag = "v3.1.0-rc.16"
+rev = "0a5bcdc571afb2bcc17692b13fdeb4a8b70e86de"
 
 [dependencies.orchard]
 package = "zakura-orchard"
-version = "=1.0.0"
+version = "=1.2.0"
+features = ["weighted-merkle"]
 
 [dependencies.zcash_proofs]
 package = "zakura-proofs"
-version = "=1.0.0"
+version = "=1.2.0"
 features = ["local-prover"]
 
 [dependencies.pczt]
 package = "zakura-pczt"
-version = "=0.1.0-rc2"
+version = "=0.1.0-rc3"
 features = [
     "orchard",
     "io-finalizer",
@@ -172,15 +173,21 @@ zcash_note_encryption = "0.4"
 
 [dev-dependencies.zcash_voting]
 git = "https://github.com/valargroup/zcash_voting.git"
-tag = "v3.1.0-rc.16"
+rev = "0a5bcdc571afb2bcc17692b13fdeb4a8b70e86de"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.6.0"
+version = "=0.6.1"
 git = "https://github.com/valargroup/zcash_voting.git"
-tag = "v3.1.0-rc.16"
+rev = "0a5bcdc571afb2bcc17692b13fdeb4a8b70e86de"
 default-features = false
 features = ["zakura"]
+
+# Temporary stacked-PR overrides; remove after voting-circuits 0.11.3 is
+# published.
+[patch.crates-io]
+voting-circuits = { git = "https://github.com/valargroup/voting-circuits.git", rev = "39386cab9f0037b42bbccaaadf3c65f51112d0b1" }
+voting-crypto-deps = { git = "https://github.com/valargroup/voting-circuits.git", rev = "39386cab9f0037b42bbccaaadf3c65f51112d0b1" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
