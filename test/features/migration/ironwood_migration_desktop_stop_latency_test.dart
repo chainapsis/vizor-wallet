@@ -176,7 +176,7 @@ class _Harness {
         appBootstrapProvider.overrideWithValue(_bootstrap()),
         syncProvider.overrideWith(() => _SlowSyncNotifier(this)),
         rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-          (_) async => BigInt.from(1000),
+          (_, _) async => BigInt.from(1000),
         ),
         ironwoodMigrationServiceProvider.overrideWithValue(service),
       ],

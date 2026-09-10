@@ -33,6 +33,10 @@ class FakeSyncNotifier extends SyncNotifier {
   }
 
   @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) =>
+      refreshAfterSend();
+
+  @override
   Future<void> refreshAfterAccountSwitch() async {
     accountSwitchRefreshes++;
     await refreshAfterSend();

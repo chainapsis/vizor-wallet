@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
+import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +18,7 @@ import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/biometric_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
@@ -541,9 +542,13 @@ class _MobileSeedPhraseScreenState
             child: Center(
               child: PasscodeBiometricButton(
                 label: biometric.availability.kind.signInLabel,
-                icon: biometric.availability.kind == BiometricKind.face
-                    ? const Center(child: AppIcon(AppIcons.faceId, size: 13.5))
-                    : const Icon(Icons.fingerprint, size: 16),
+                icon: Center(
+                  child: BiometricIcon(
+                    kind: biometric.availability.kind,
+                    size: 13.5,
+                    fingerprintSize: 16,
+                  ),
+                ),
                 onPressed: () => unawaited(_tryBiometricGate()),
               ),
             ),

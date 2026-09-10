@@ -4,11 +4,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _oldPassword = 'Oldpass1!';
@@ -104,6 +106,60 @@ void main() {
     expect(await store.verifyPassword(_newPassword), isTrue);
     expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
+
+  test(
+    'payment-link secrets stay encrypted across password rotation',
+    () async {
+      const recoveryPayload =
+          '{"link":"https://example.test/payment-links/open#v1=secret-mnemonic-payload"}';
+      const receivedPayload =
+          '{"claimLink":"https://example.test/payment-links/open#v1=received-secret-payload"}';
+      await store.configurePassword(_oldPassword);
+      await store.writeSecretString(
+        kPaymentLinkRecoveryStorageKey,
+        recoveryPayload,
+      );
+      await store.writeSecretString(
+        kPaymentLinkReceivedStorageKey,
+        receivedPayload,
+      );
+
+      final storedBeforeRotation = await store.readPlain(
+        kPaymentLinkRecoveryStorageKey,
+      );
+      expect(storedBeforeRotation, isNot(contains('secret-mnemonic-payload')));
+      final receivedBeforeRotation = await store.readPlain(
+        kPaymentLinkReceivedStorageKey,
+      );
+      expect(
+        receivedBeforeRotation,
+        isNot(contains('received-secret-payload')),
+      );
+
+      final didChange = await store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      );
+
+      expect(didChange, isTrue);
+      store.clearSessionPassword();
+      expect(await store.verifyPassword(_newPassword), isTrue);
+      expect(
+        await store.readSecretStringWithOptions(
+          kPaymentLinkRecoveryStorageKey,
+          requireUnlockedSession: true,
+        ),
+        recoveryPayload,
+      );
+      expect(
+        await store.readSecretStringWithOptions(
+          kPaymentLinkReceivedStorageKey,
+          requireUnlockedSession: true,
+        ),
+        receivedPayload,
+      );
+    },
+  );
 
   test('readAccountMnemonicBytes returns mutable mnemonic bytes', () async {
     await store.configurePassword(_oldPassword);
@@ -213,10 +269,11 @@ void main() {
       await store.configurePassword(_oldPassword);
       final hotkey = List<int>.generate(32, (index) => index);
 
-      await store.writeVotingHotkey(
+      await store.votingHotkeys.getOrCreate(
         accountUuid: 'account-1',
         roundId: 'round-1',
-        hotkey: hotkey,
+        generate: () async => hotkey,
+        allowCreation: true,
       );
 
       expect(
@@ -255,17 +312,68 @@ void main() {
     },
   );
 
+  test('hotkey creation survives provider container replacement', () async {
+    // Default providers must share the actual application storage owner.
+    final appStore = AppSecureStore.instance;
+    await appStore.configurePassword(_oldPassword);
+    addTearDown(appStore.clearSessionPassword);
+    final generationStarted = Completer<void>();
+    final generationGate = Completer<List<int>>();
+    addTearDown(() {
+      if (!generationGate.isCompleted) generationGate.complete([7]);
+    });
+    final firstContainer = ProviderContainer();
+    final first = firstContainer
+        .read(votingHotkeyStoreProvider)
+        .getOrCreate(
+          accountUuid: 'account-1',
+          roundId: 'round-1',
+          allowCreation: true,
+          generate: () {
+            generationStarted.complete();
+            return generationGate.future;
+          },
+        );
+    await generationStarted.future;
+    firstContainer.dispose();
+
+    final secondContainer = ProviderContainer();
+    addTearDown(secondContainer.dispose);
+    final second = secondContainer
+        .read(votingHotkeyStoreProvider)
+        .getOrCreate(
+          accountUuid: 'account-1',
+          roundId: 'round-1',
+          allowCreation: true,
+          generate: () async =>
+              fail('replacement container generated another key'),
+        );
+    expect(identical(first, second), isTrue);
+    generationGate.complete([7]);
+    expect(await first, [7]);
+    expect(await second, [7]);
+    expect(
+      await appStore.readVotingHotkey(
+        accountUuid: 'account-1',
+        roundId: 'round-1',
+      ),
+      [7],
+    );
+  });
+
   test('deleteVotingHotkeysForAccount only clears matching account', () async {
     await store.configurePassword(_oldPassword);
-    await store.writeVotingHotkey(
+    await store.votingHotkeys.getOrCreate(
       accountUuid: 'account-1',
       roundId: 'round-1',
-      hotkey: const [1],
+      generate: () async => const [1],
+      allowCreation: true,
     );
-    await store.writeVotingHotkey(
+    await store.votingHotkeys.getOrCreate(
       accountUuid: 'account-2',
       roundId: 'round-1',
-      hotkey: const [2],
+      generate: () async => const [2],
+      allowCreation: true,
     );
 
     await store.deleteVotingHotkeysForAccount('account-1');
@@ -428,10 +536,11 @@ void main() {
   test('changePassword only rotates app-managed secret payloads', () async {
     await store.configurePassword(_oldPassword);
     await store.writeAccountMnemonic(_accountUuid, _mnemonic);
-    await store.writeVotingHotkey(
+    await store.votingHotkeys.getOrCreate(
       accountUuid: 'account-1',
       roundId: 'round-1',
-      hotkey: const [1, 2, 3],
+      generate: () async => const [1, 2, 3],
+      allowCreation: true,
     );
     await store.writeSecretString(_externalEncryptedKey, 'external secret');
     final externalPayload = await store.readPlain(_externalEncryptedKey);

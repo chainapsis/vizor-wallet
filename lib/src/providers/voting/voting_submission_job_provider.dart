@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/storage/linux_keyring_coordinator.dart';
+import '../../core/storage/linux_secret_operation_guard.dart';
 import '../../features/keystone/services/keystone_batch_signing.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/ledger/services/ledger_signing_service.dart';
@@ -64,7 +66,6 @@ class VotingSubmissionJobState {
     this.ledgerBundleCount = 0,
     this.pendingDraftVotes,
     this.pendingProposalIds = const [],
-    this.pendingProposalOptionCounts = const {},
     this.pendingRecoveryWithoutDraft = false,
   });
 
@@ -85,9 +86,8 @@ class VotingSubmissionJobState {
   final String? ledgerDisplayMemo;
   final int? ledgerBundleIndex;
   final int ledgerBundleCount;
-  final List<rust_wire.DraftVote>? pendingDraftVotes;
+  final List<VotingDraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
-  final Map<int, int> pendingProposalOptionCounts;
   final bool pendingRecoveryWithoutDraft;
 
   bool get hasVisibleJob =>
@@ -118,10 +118,9 @@ class VotingSubmissionJobState {
     int? ledgerBundleIndex,
     bool clearLedgerBundleIndex = false,
     int? ledgerBundleCount,
-    List<rust_wire.DraftVote>? pendingDraftVotes,
+    List<VotingDraftVote>? pendingDraftVotes,
     bool clearPendingDraftVotes = false,
     List<int>? pendingProposalIds,
-    Map<int, int>? pendingProposalOptionCounts,
     bool? pendingRecoveryWithoutDraft,
   }) {
     return VotingSubmissionJobState(
@@ -159,8 +158,6 @@ class VotingSubmissionJobState {
           ? null
           : pendingDraftVotes ?? this.pendingDraftVotes,
       pendingProposalIds: pendingProposalIds ?? this.pendingProposalIds,
-      pendingProposalOptionCounts:
-          pendingProposalOptionCounts ?? this.pendingProposalOptionCounts,
       pendingRecoveryWithoutDraft:
           pendingRecoveryWithoutDraft ?? this.pendingRecoveryWithoutDraft,
     );
@@ -548,9 +545,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       final proposals = proposalsFromRound(round);
-      final proposalOptionCounts = {
-        for (final proposal in proposals) proposal.id: proposal.options.length,
-      };
       final VotingDraftState draft;
       try {
         draft = await ref
@@ -635,7 +629,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       final recoveredDraftVotes =
           userDraftVotes.isEmpty && _roundPlanHasNoOpenProposals(activeSession)
           ? _draftVotesFromRoundPlan(activeSession.roundPlan, proposals)
-          : const <rust_wire.DraftVote>[];
+          : const <VotingDraftVote>[];
       final draftVotes = userDraftVotes.isNotEmpty
           ? userDraftVotes
           : recoveredDraftVotes;
@@ -663,8 +657,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         }
         activeSession = afterEligibilityCheck ?? activeSession;
       }
-      final needsDelegation = _sessionNeedsDelegation(activeSession);
-      final needsDelegationSigning = _sessionNeedsDelegationSigning(
+      var needsDelegation = _sessionNeedsDelegation(activeSession);
+      var needsDelegationSigning = _sessionNeedsDelegationSigning(
         activeSession,
       );
       if (draftVotes.isEmpty &&
@@ -678,13 +672,53 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
 
+      // The ballot is recorded before either account type branches, because
+      // the plan every branch below reads is derived from it: the SDK plans a
+      // bundle's delegation only while that bundle still has a vote to cast,
+      // so a round whose intents are not yet durable reports no delegation
+      // work and no bundle needing a signature. A Keystone voter took that as
+      // "nothing to sign", showed no QR, and reached the cast with a
+      // delegation that now needed a device signature nobody had asked for;
+      // a fresh hardware round could not be voted at all.
+      //
+      // `recordBallotIntents` is idempotent and persists the bundle plan
+      // first, so this is also what gives a fresh round the rows the
+      // delegation flags are computed from.
+      if (draftVotes.isNotEmpty &&
+          (needsDelegation || needsDelegationSigning)) {
+        await sessionNotifier.recordBallotIntents(
+          draftVotes: draftVotes,
+          allProposalIds: intentProposalIds,
+        );
+        if (!_isCurrentJob(key: key, generation: generation)) return;
+        final afterIntents = _sessionForJob(key);
+        if (afterIntents?.phase == VotingSessionPhase.error) {
+          _failFromSession(
+            key: key,
+            generation: generation,
+            session: afterIntents!,
+          );
+          return;
+        }
+        activeSession = afterIntents ?? activeSession;
+        // Widened, never narrowed: recording the ballot can only add work — a
+        // bundle with a vote to cast now owes the delegation that carries it —
+        // so a round that already owed delegation still owes it, and a plan
+        // that reports less than the pre-ballot one did must not be read as
+        // the round having been relieved of it.
+        needsDelegation =
+            needsDelegation || _sessionNeedsDelegation(activeSession);
+        needsDelegationSigning =
+            needsDelegationSigning ||
+            _sessionNeedsDelegationSigning(activeSession);
+      }
+
       if (activeSession.isHardwareAccount && needsDelegationSigning) {
         _storePendingHardwareState(
           key: key,
           generation: generation,
           draftVotes: draftVotes,
           intentProposalIds: intentProposalIds,
-          proposalOptionCounts: proposalOptionCounts,
           pendingRecoveryWithoutDraft:
               canRecoverWithoutDraft || canPollDelegationWithoutDraft,
         );
@@ -712,7 +746,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             generation: generation,
             draftVotes: draftVotes,
             intentProposalIds: intentProposalIds,
-            proposalOptionCounts: proposalOptionCounts,
             pendingRecoveryWithoutDraft:
                 canRecoverWithoutDraft || canPollDelegationWithoutDraft,
           );
@@ -729,18 +762,31 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             generation: generation,
             draftVotes: draftVotes,
             intentProposalIds: intentProposalIds,
-            proposalOptionCounts: proposalOptionCounts,
             initialSession: activeSession,
           );
         }
         return;
       }
       String? softwareMnemonic;
-      if (!activeSession.isHardwareAccount && needsDelegationSigning) {
+      LinuxSecretOperationGuard? secretGuard;
+      // Gated on `needsDelegation`, not `needsDelegationSigning`: the SDK
+      // round driver can need the seed to advance an in-flight delegation,
+      // which is why 17ca6f0b7 widened this. The guard follows the same
+      // condition as the secret it protects.
+      if (!activeSession.isHardwareAccount && needsDelegation) {
+        secretGuard = LinuxSecretOperationGuard(
+          store: ref.read(linuxSecretOperationStoreProvider),
+          coordinator: ref.read(linuxKeyringCoordinatorProvider),
+          isRequestCurrent: () =>
+              _isCurrentJob(key: key, generation: generation),
+          readAccounts: () => ref.read(accountProvider).value,
+          accountUuid: key.accountUuid,
+        );
         final softwareSecret = await ref
             .read(accountProvider.notifier)
             .getSoftwareWalletSecretForAccount(key.accountUuid);
         if (!_isCurrentJob(key: key, generation: generation)) return;
+        secretGuard.check();
         softwareMnemonic = softwareSecret?.encodeForStorage();
         if (softwareMnemonic == null || softwareMnemonic.isEmpty) {
           _failJob(
@@ -755,6 +801,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       if (needsDelegation) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
+        // The ballot is already durable: it is recorded above, before either
+        // account type branches, because the delegation work this drives is
+        // planned from it.
+        secretGuard?.check();
         await sessionNotifier.delegatePendingBundles(
           mnemonic: softwareMnemonic,
         );
@@ -784,7 +834,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         generation: generation,
         draftVotes: draftVotes,
         intentProposalIds: intentProposalIds,
-        proposalOptionCounts: proposalOptionCounts,
         initialSession: afterDelegation ?? activeSession,
       );
     } catch (error) {
@@ -983,7 +1032,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
     _setRunning(key: key, generation: generation);
     final beforeDelegation = _sessionForJob(key);
-    if (_sessionNeedsDelegationSubmission(beforeDelegation)) {
+    if (_sessionNeedsDelegation(beforeDelegation)) {
       if (signerKind == HardwareSignerKind.ledger) {
         await sessionNotifier.delegatePendingBundlesWithLedgerSignatures();
       } else {
@@ -1013,7 +1062,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         generation: generation,
         draftVotes: draftVotes,
         intentProposalIds: state.pendingProposalIds,
-        proposalOptionCounts: state.pendingProposalOptionCounts,
         initialSession: afterDelegation ?? beforeDelegation,
       );
       return;
@@ -1024,7 +1072,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       generation: generation,
       draftVotes: draftVotes,
       intentProposalIds: state.pendingProposalIds,
-      proposalOptionCounts: state.pendingProposalOptionCounts,
       initialSession: beforeDelegation,
     );
   }
@@ -1033,9 +1080,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     VotingSessionNotifier sessionNotifier, {
     required VotingSessionKey key,
     required int generation,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
     required List<int> intentProposalIds,
-    required Map<int, int> proposalOptionCounts,
     VotingSessionState? initialSession,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -1077,7 +1123,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       await sessionNotifier.castVotes(
         draftVotes: draftVotes,
         allProposalIds: intentProposalIds,
-        proposalOptionCounts: proposalOptionCounts,
       );
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -1102,11 +1147,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       return;
     }
     if (done != null && _hasRemainingVoteOrShareWork(done)) {
-      // Shares with no definite placement are still foreground recovery work.
-      // Once all shares are placed, finalization depends only on the designated
-      // immediate share and must not wait for a round-wide tracking pass.
-      await sessionNotifier.runShareTrackingPass();
+      // Shares with no definite placement are still recovery work, but the SDK
+      // drives it now: starting the run returns immediately and this poll sees
+      // placement progress on its next tick. Awaiting instead would block the
+      // job for as long as the round has shares to track.
+      await sessionNotifier.startShareTracking();
     } else {
+      // Once all shares are placed, finalization depends only on the
+      // designated immediate share, which answers without waiting for the
+      // tracking cadence.
       await sessionNotifier.refreshImmediateShareConfirmation();
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -1140,16 +1189,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   void _storePendingHardwareState({
     required VotingSessionKey key,
     required int generation,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
     required List<int> intentProposalIds,
-    required Map<int, int> proposalOptionCounts,
     required bool pendingRecoveryWithoutDraft,
   }) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     state = state.copyWith(
       pendingDraftVotes: draftVotes,
       pendingProposalIds: intentProposalIds,
-      pendingProposalOptionCounts: proposalOptionCounts,
       pendingRecoveryWithoutDraft: pendingRecoveryWithoutDraft,
     );
   }
@@ -1196,7 +1243,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       ledgerBundleCount: 0,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
-      pendingProposalOptionCounts: const {},
       pendingRecoveryWithoutDraft: false,
     );
   }
@@ -1242,7 +1288,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       ledgerBundleCount: 0,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
-      pendingProposalOptionCounts: const {},
       pendingRecoveryWithoutDraft: false,
     );
   }
@@ -1293,10 +1338,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   void _pinLiveShareTracking(VotingSessionKey key) {
     final hasUnconfirmedShares =
-        _sessionForJob(
-          key,
-        )?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ??
-        false;
+        _sessionForJob(key)?.roundPlan?.hasUnconfirmedShares ?? false;
     if (!hasUnconfirmedShares) return;
     final sessionNotifier = ref.read(
       votingSubmissionSessionProvider(key).notifier,
@@ -1306,7 +1348,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     // status screen on "Finalizing submission" for accepted-but-unrevealed
     // shares. The registry, not the job guard, is the drain barrier.
     unawaited(
-      sessionNotifier.runShareTrackingPass().catchError((
+      sessionNotifier.startShareTracking().catchError((
         Object error,
         StackTrace stack,
       ) {
@@ -1442,15 +1484,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (session == null) return false;
     return session.hasConfirmedVotingEligibility &&
         _hasCompletedSubmissionArtifacts(session) &&
-        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan);
+        hasConfirmedImmediateShare(session.roundPlan);
   }
 
   bool _hasExpiredUnconfirmedImmediateShare(
     VotingSessionState? session, {
     DateTime? now,
   }) {
-    if (session == null ||
-        hasConfirmedImmediateShare(session.roundPlan, session.resumePlan)) {
+    if (session == null || hasConfirmedImmediateShare(session.roundPlan)) {
       return false;
     }
     final voteEnd = session.round?.voteEndTime;
@@ -1507,8 +1548,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     bool requireNoUnconfirmedShares = false,
   }) {
     if (requireNoUnconfirmedShares &&
-        (session?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ??
-            false)) {
+        (session?.roundPlan?.hasUnconfirmedShares ?? false)) {
       return false;
     }
     if (!_canCompleteSubmission(session)) return false;
@@ -1579,15 +1619,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _canRecoverWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      return _roundPlanHasNoOpenProposals(session) &&
-          roundPlan.nextSteps.any(_stepCanRecoverWithoutDraft);
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
-            resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
-            resumePlan.unconfirmedShareDelegations.isNotEmpty);
+    return roundPlan != null &&
+        _roundPlanHasNoOpenProposals(session) &&
+        roundPlan.hasRecoverableVoteOrShareWork;
   }
 
   bool _roundPlanHasNoOpenProposals(VotingSessionState session) {
@@ -1596,123 +1630,93 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   bool _hasRemainingVoteOrShareWork(VotingSessionState session) {
-    final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      for (final step in roundPlan.nextSteps) {
-        if (step.kind == 'confirm_share') {
-          if (roundPlan.blockingShareWork) return true;
-          continue;
-        }
-        if (_stepCanRecoverWithoutDraft(step)) return true;
-      }
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
-            resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
-            resumePlan.hasBlockingShareWork);
+    return session.roundPlan?.hasRemainingVoteOrShareWork ?? false;
   }
 
+  /// Whether delegation work can continue without ballot choices.
+  ///
+  /// A delegation already on the wire is driven to its chain outcome
+  /// regardless of the draft. A bundle that has not been sent yet is not: the
+  /// round's ballot comes first, so a round with any unsigned bundle left
+  /// still asks for a vote.
+  ///
+  /// The in-flight flag is read on its own rather than through
+  /// `needsDelegationSigning`, which the SDK also sets for an in-flight
+  /// delegation because advancing one re-signs it.
   bool _canPollDelegationWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      var hasSubmittedDelegation = false;
-      for (final step in roundPlan.nextSteps) {
-        if (step.kind == 'delegate') return false;
-        if (step.kind == 'poll_delegation') hasSubmittedDelegation = true;
-      }
-      if (hasSubmittedDelegation) return true;
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        resumePlan.submittedDelegationBundleIndexes.isNotEmpty &&
-        resumePlan.pendingDelegationBundleIndexes.isEmpty;
+    if (roundPlan == null || !roundPlan.hasInFlightDelegation) return false;
+    // A submission the chain-submission lifecycle owns — submitting, tracking,
+    // or recovering — already carries its signature, so it is not signing work
+    // standing between this round and a poll. The planner says so itself: a
+    // bundle in that state is planned as an advance, never as a delegation to
+    // produce, so it is absent here. This used to be filtered out by phase in
+    // Dart, which is what left a rejected delegation unable to be retried
+    // without re-picking every vote when the filter and the planner disagreed.
+    return delegationBundleIndexesNeedingSigning(roundPlan).isEmpty;
   }
 
-  bool _stepCanRecoverWithoutDraft(rust_wire.NextStepView step) {
-    return step.kind == 'cast_vote' ||
-        step.kind == 'submit_vote' ||
-        step.kind == 'submit_shares' ||
-        step.kind == 'poll_vote' ||
-        step.kind == 'confirm_share';
-  }
-
+  /// Whether this session still owes delegation work.
+  ///
+  /// A bundle the plan lists any delegation step for — including one already
+  /// on the wire, which is advanced to its chain outcome regardless of the
+  /// draft — or a round whose bundles have not been set up yet.
+  ///
+  /// [_canPollDelegationWithoutDraft] is deliberately not consulted here: it
+  /// requires an in-flight delegation, which already makes
+  /// [_planNeedsDelegation] true, so it could only ever agree. It answers a
+  /// different question — whether work may proceed with no ballot choices —
+  /// and is asked where that is what the caller needs to know.
   bool _sessionNeedsDelegation(VotingSessionState? session) {
-    if (session == null) return false;
-    final roundPlan = session.roundPlan;
-    if (_planNeedsDelegation(roundPlan)) return true;
-    if (roundPlan != null && roundPlanNeedsDraftSetup(roundPlan)) return true;
-    if (roundPlan != null) {
-      return _canPollDelegationWithoutDraft(session);
-    }
-    return session.resumePlan?.submittedDelegationBundleIndexes.isNotEmpty ??
-        false;
-  }
-
-  bool _sessionNeedsDelegationSubmission(VotingSessionState? session) {
-    if (session == null) return false;
-    final roundPlan = session.roundPlan;
-    if (_planNeedsDelegation(roundPlan)) return true;
-    if (_canPollDelegationWithoutDraft(session)) return true;
-    return roundPlan != null && roundPlanNeedsDraftSetup(roundPlan);
+    final roundPlan = session?.roundPlan;
+    return _planNeedsDelegation(roundPlan) ||
+        roundPlanNeedsDraftSetup(roundPlan);
   }
 
   bool _sessionNeedsDelegationSigning(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
-          roundPlanNeedsDraftSetup(roundPlan);
-    }
-    return session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
-        false;
+    return roundPlan != null &&
+        (roundPlan.needsDelegationSigning ||
+            roundPlanNeedsDraftSetup(roundPlan));
   }
 
   bool _sessionNeedsVotePolling(VotingSessionState? session) {
     if (session == null) return false;
-    if (_planNeedsVotePolling(session.roundPlan)) return true;
-    if (session.roundPlan != null) return false;
-    return session.resumePlan?.submittedVoteConfirmationKeys.isNotEmpty ??
-        false;
+    return _planNeedsVotePolling(session.roundPlan);
   }
 
   bool _planNeedsDelegation(rust_wire.RoundPlanView? roundPlan) {
-    return roundPlan?.nextSteps.any(
-          (step) => step.kind == 'delegate' || step.kind == 'poll_delegation',
-        ) ??
-        false;
+    if (roundPlan == null) return false;
+    // Both flags are the planner's own summary, so this is reading its answer
+    // rather than restating its rules. `delegationBundlesNeedingWork` covers
+    // the same three step kinds and is the per-bundle form, but a round-level
+    // question is better asked at the round level: the bundle list is for code
+    // that acts on a particular bundle.
+    return roundPlan.needsDelegationSigning || roundPlan.hasInFlightDelegation;
   }
 
   bool _planNeedsVotePolling(rust_wire.RoundPlanView? roundPlan) {
-    return roundPlan?.nextSteps.any(
-          (step) =>
-              step.kind == 'cast_vote' ||
-              step.kind == 'submit_vote' ||
-              step.kind == 'submit_shares' ||
-              step.kind == 'poll_vote',
-        ) ??
-        false;
+    return roundPlan?.needsVotePolling ?? false;
   }
 
-  List<rust_wire.DraftVote> _draftVotesFromRoundPlan(
+  List<VotingDraftVote> _draftVotesFromRoundPlan(
     rust_wire.RoundPlanView? roundPlan,
     List<VotingProposalView> proposals,
   ) {
     if (roundPlan == null) return const [];
     final choicesByProposal = <int, int>{};
     for (final step in roundPlan.nextSteps) {
-      if (step.kind != 'cast_vote') continue;
+      if (step.kind != rust_wire.NextStepKind.castVote) continue;
       choicesByProposal.putIfAbsent(step.proposalId, () => step.choice);
     }
     if (choicesByProposal.isEmpty) return const [];
     return [
       for (final proposal in proposals)
         if (choicesByProposal[proposal.id] != null)
-          rust_wire.DraftVote(
+          VotingDraftVote(
             proposalId: proposal.id,
             choice: choicesByProposal[proposal.id]!,
             numOptions: proposal.options.length,
-            vcTreePosition: BigInt.zero,
-            singleShare: false,
           ),
     ];
   }

@@ -583,6 +583,7 @@ class _HardwareSigningService implements SwapHardwareSigningService {
   }) async {
     createCalls++;
     return SwapHardwarePcztDraft(
+      accountUuid: accountUuid,
       pcztBytes: const [1],
       needsSaplingParams: false,
       feeZatoshi: BigInt.one,

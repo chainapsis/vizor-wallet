@@ -57,7 +57,7 @@ use zcash_protocol::consensus::{BlockHeight, BranchId};
 
 use crate::wallet::network::WalletNetwork;
 
-use super::lwd::{get_latest_block, start_mempool_stream};
+use super::lwd::start_mempool_stream;
 use super::open_lwd_channel;
 
 /// Event emitted by [`run_mempool_observer`] for every wallet-relevant
@@ -467,7 +467,11 @@ where
                 log::info!("mempool: observer cancelled during tip refresh");
                 return Ok(());
             }
-            r = get_latest_block(&mut client) => r,
+            r = super::get_latest_block_recorded(
+                &mut client,
+                &lightwalletd_url,
+                network,
+            ) => r,
         };
         let tip = match tip_result {
             Ok(tip) => tip,

@@ -7,7 +7,11 @@ import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_models.dart';
+import '../../services/voting/voting_rust_exception.dart';
 import 'voting_config_provider.dart';
+import 'voting_home_cache_provider.dart';
+import 'voting_share_tracking_registry_provider.dart';
+import 'voting_config_source_provider.dart';
 import 'voting_round_visibility_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
@@ -102,9 +106,27 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   }
 
   Future<List<VotingRoundView>> _load({required bool showTestRounds}) async {
+    final release = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork();
+    if (release == null) return const [];
+    try {
+      return await _loadWithCache(showTestRounds: showTestRounds);
+    } finally {
+      release();
+    }
+  }
+
+  Future<List<VotingRoundView>> _loadWithCache({
+    required bool showTestRounds,
+  }) async {
+    final source = (await ref.read(
+      votingConfigSourceProvider.future,
+    )).sourceUrl;
+    final network = ref.read(votingRpcEndpointConfigProvider).networkName;
     final config = await ref.read(votingConfigProvider.future);
     final api = ref.read(votingApiClientProvider(config.apiServers));
-
+    final checkedAt = ref.read(votingHomeClockProvider)();
     final rounds = await api.listRounds();
     final authenticatedRoundIds = config.authenticatedRounds
         .map((round) => round.roundId)
@@ -119,12 +141,25 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
         'shown=${authenticatedRounds.length} total=${rounds.length}',
       );
     }
+    if (ref.mounted &&
+        ref.read(votingConfigSourceProvider).value?.sourceUrl == source &&
+        identical(ref.read(votingConfigProvider).value, config) &&
+        ref.read(votingConfigRefreshFailureProvider) == null) {
+      await ref
+          .read(votingHomeCacheProvider.notifier)
+          .recordList(
+            votingHomeListKey(network, source),
+            VotingHomeRoundList(
+              checkedAt: checkedAt,
+              fingerprint: config.sourceFingerprint,
+              rounds: authenticatedRounds,
+            ),
+          );
+    }
     final visibleRounds = showTestRounds
         ? authenticatedRounds
         : authenticatedRounds
-              .where(
-                (round) => !isHiddenTestVotingRoundTitle(round.title),
-              )
+              .where((round) => !isHiddenTestVotingRoundTitle(round.title))
               .toList(growable: false);
     if (visibleRounds.length != authenticatedRounds.length) {
       debugPrint(
@@ -136,6 +171,8 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     final recoveryStates = await _roundListRecoveryStates(
       visibleRounds,
       api: api,
+      network: network,
+      fingerprint: config.sourceFingerprint,
     );
     return [
       for (final round in visibleRounds)
@@ -151,6 +188,8 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   Future<Map<String, _RoundListRecoveryState>> _roundListRecoveryStates(
     Iterable<VotingRoundSummary> rounds, {
     required VotingApiClient api,
+    required String network,
+    required String fingerprint,
   }) async {
     final String accountUuid;
     final String dbPath;
@@ -173,6 +212,12 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
           dbPath: dbPath,
           accountUuid: accountUuid,
           round: round,
+          factKey: votingHomeFactKey(
+            network,
+            fingerprint,
+            accountUuid,
+            round.roundId,
+          ),
         );
         if (recoveryState.voted ||
             recoveryState.inProgress ||
@@ -180,6 +225,14 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
           states[round.roundId] = recoveryState;
         }
       } catch (error) {
+        // Opening and migrating the voting sidecar is global to the wallet,
+        // not specific to one round. Retrying the same structural failure for
+        // every visible round can keep the poll list on its entry spinner for
+        // a long time and flood the logs without producing useful state.
+        if (_isVotingDatabaseOpenFailure(error)) {
+          debugPrint('[zcash] Voting: poll-state database unavailable: $error');
+          rethrow;
+        }
         debugPrint(
           '[zcash] Voting: recovery lookup failed for round '
           '${round.roundId}: '
@@ -200,16 +253,21 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     required VotingRoundSummary round,
     required String dbPath,
     required String accountUuid,
+    required String factKey,
   }) async {
     final recovery = ref.read(votingRecoveryServiceProvider);
     final proposalIds = await _proposalIdsForRound(api, round);
     rust_voting.RoundPlanView? roundPlan;
     if (proposalIds.isNotEmpty) {
-      roundPlan = await recovery.loadRoundPlan(
-        dbPath: dbPath,
-        accountUuid: accountUuid,
-        roundId: round.roundId,
-        proposalIds: proposalIds,
+      roundPlan = await observeVotingHomeResult(
+        ref,
+        operation: () => recovery.loadRoundPlan(
+          dbPath: dbPath,
+          accountUuid: accountUuid,
+          roundId: round.roundId,
+          proposalIds: proposalIds,
+        ),
+        record: (cache, plan) => cache.recordPlan(factKey, plan),
       );
     }
     if (hasBlockingRoundRecoveryWork(roundPlan)) {
@@ -263,6 +321,21 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       return const [];
     }
   }
+}
+
+/// Whether [error] is a wallet-global voting-storage failure rather than one
+/// round's own lookup failing.
+///
+/// Opening and migrating the sidecar is global to the wallet, so the answer
+/// has to come from the SDK's error kind: the bridge returns the SDK failure
+/// unchanged, and the legacy `Error opening voting database:` wrapper text
+/// this used to match no longer exists anywhere. `dbBusy` is another writer
+/// holding the sidecar, `storage` is the sidecar itself failing — neither
+/// becomes true for one round by retrying it for the next.
+bool _isVotingDatabaseOpenFailure(Object error) {
+  final kind = votingRustExceptionOf(error)?.kind;
+  return kind == rust_voting.VotingErrorKindView.dbBusy ||
+      kind == rust_voting.VotingErrorKindView.storage;
 }
 
 final votingRoundsProvider =

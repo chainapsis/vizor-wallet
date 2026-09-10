@@ -28,6 +28,8 @@ import '../../../../providers/wallet_mutation_guard.dart';
 import '../../../migration/models/ironwood_migration_phases.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../../onboarding/ledger/ledger_setup_args.dart';
+import '../../../payment_links/services/payment_link_received_store.dart';
+import '../../../payment_links/services/payment_link_recovery_store.dart';
 import '../../widgets/mobile/account_edit_sheets.dart';
 import '../../widgets/ledger_grouped_account_row.dart';
 
@@ -504,13 +506,13 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     } catch (e, st) {
       log('MobileAccounts: remove failed: $e\n$st');
       if (mounted) {
-        showAppToast(
-          context,
-          isLastAccount
-              ? "Couldn't reset Vizor"
-              : "Couldn't remove the account",
-          iconName: AppIcons.cross,
-        );
+        showAppToast(context, switch (e) {
+          PaymentLinkInFlightClaimsException() => e.toString(),
+          WalletResetInFlightGiftCardClaimsException() => e.toString(),
+          PaymentLinkUnsharedGiftCardsException() => e.toString(),
+          _ when isLastAccount => "Couldn't reset Vizor",
+          _ => "Couldn't remove the account",
+        }, iconName: AppIcons.cross);
       }
     } finally {
       if (mounted) setState(() => _busy = false);

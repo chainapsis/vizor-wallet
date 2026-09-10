@@ -39,6 +39,7 @@ class MobileTopNav extends StatelessWidget {
   }) : _variant = _MobileTopNavVariant.account,
        title = '',
        titleStyle = null,
+       titleMaxLines = 1,
        height = kMobileTopNavHeight,
        progress = 0,
        showBackButton = true,
@@ -64,6 +65,7 @@ class MobileTopNav extends StatelessWidget {
        onAccountTap = null,
        title = '',
        titleStyle = null,
+       titleMaxLines = 1,
        height = kMobileTopNavHeight,
        trailing = null,
        foregroundColor = null,
@@ -75,6 +77,7 @@ class MobileTopNav extends StatelessWidget {
     this.trailing,
     this.backIcon = AppIcons.chevronBackward,
     this.titleStyle,
+    this.titleMaxLines = 1,
     this.foregroundColor,
     this.height = kMobileTopNavHeight,
     super.key,
@@ -124,6 +127,7 @@ class MobileTopNav extends StatelessWidget {
   /// Back variant: centered serif title.
   final String title;
   final TextStyle? titleStyle;
+  final int titleMaxLines;
   final Color? foregroundColor;
   final double height;
 
@@ -275,7 +279,7 @@ class MobileTopNav extends StatelessWidget {
             ),
             child: Text(
               title,
-              maxLines: 1,
+              maxLines: titleMaxLines,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: (titleStyle ?? AppTypography.headlineLarge).copyWith(

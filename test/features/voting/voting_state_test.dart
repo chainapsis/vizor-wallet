@@ -33,8 +33,14 @@ void main() {
 
   test('session state snapshots delegation progress maps', () {
     final progress = <int, VotingSessionProgress>{
-      0: const VotingSessionProgress(phase: 'proving', bundleIndex: 0),
-      1: const VotingSessionProgress(phase: 'submitted', bundleIndex: 1),
+      0: const VotingSessionProgress(
+        phase: VotingProgressPhase.buildingProof,
+        bundleIndex: 0,
+      ),
+      1: const VotingSessionProgress(
+        phase: VotingProgressPhase.submitted,
+        bundleIndex: 1,
+      ),
     };
     final state = VotingSessionState(
       roundId: 'round-1',
@@ -42,17 +48,23 @@ void main() {
     );
 
     progress[0] = const VotingSessionProgress(
-      phase: 'confirmed',
+      phase: VotingProgressPhase.confirmed,
       bundleIndex: 0,
     );
-    progress[2] = const VotingSessionProgress(phase: 'proving', bundleIndex: 2);
+    progress[2] = const VotingSessionProgress(
+      phase: VotingProgressPhase.buildingProof,
+      bundleIndex: 2,
+    );
 
-    expect(state.delegationProgress[0]?.phase, 'proving');
-    expect(state.delegationProgress[1]?.phase, 'submitted');
+    expect(
+      state.delegationProgress[0]?.phase,
+      VotingProgressPhase.buildingProof,
+    );
+    expect(state.delegationProgress[1]?.phase, VotingProgressPhase.submitted);
     expect(state.delegationProgress, isNot(contains(2)));
     expect(
       () => state.delegationProgress[3] = const VotingSessionProgress(
-        phase: 'proving',
+        phase: VotingProgressPhase.buildingProof,
         bundleIndex: 3,
       ),
       throwsUnsupportedError,
@@ -67,26 +79,32 @@ void main() {
       roundId: 'round-1',
       voteProgress: {
         activeA: const VotingSessionProgress(
-          phase: 'proving',
+          phase: VotingProgressPhase.buildingProof,
           bundleIndex: 0,
           proposalId: 7,
         ),
         activeB: const VotingSessionProgress(
-          phase: 'witness',
+          phase: VotingProgressPhase.proofProgress,
           bundleIndex: 1,
           proposalId: 7,
         ),
         completed: const VotingSessionProgress(
-          phase: 'completed',
+          phase: VotingProgressPhase.completed,
           bundleIndex: 2,
           proposalId: 7,
         ),
       },
     );
 
-    expect(state.voteProgress[activeA]?.phase, 'proving');
-    expect(state.voteProgress[activeB]?.phase, 'witness');
-    expect(state.voteProgress[completed]?.phase, 'completed');
+    expect(
+      state.voteProgress[activeA]?.phase,
+      VotingProgressPhase.buildingProof,
+    );
+    expect(
+      state.voteProgress[activeB]?.phase,
+      VotingProgressPhase.proofProgress,
+    );
+    expect(state.voteProgress[completed]?.phase, VotingProgressPhase.completed);
   });
 
   test('round details reject fractional snapshot heights', () {

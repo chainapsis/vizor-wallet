@@ -1,6 +1,12 @@
-import 'dart:async';
 import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_connection_recovery.dart';
+import '../../ledger/ledger_capability.dart';
+import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_signed_operation_service.dart';
+import '../../ledger/ledger_app_instructions.dart';
+import '../../ledger/widgets/ledger_signing_modal.dart';
+import '../models/send_prefill_args.dart';
+import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,21 +26,20 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/payment_uri_busy_surface_provider.dart';
+import '../../../core/navigation/app_back_resolver.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../keystone/services/keystone_batch_signing.dart';
 import '../../donation/widgets/donation_views.dart';
-import '../../keystone/widgets/keystone_signing_modal.dart';
-import '../../ledger/ledger_capability.dart';
-import '../../ledger/services/ledger_signing_service.dart';
-import '../../ledger/services/ledger_signed_operation_service.dart';
-import '../../ledger/ledger_app_instructions.dart';
-import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../services/sapling_params.dart';
 import '../services/send_flow.dart';
-import '../models/send_prefill_args.dart';
 import 'keystone_send_scan_screen.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/send_recipient_resolver.dart';
@@ -86,7 +91,16 @@ class SendReviewScreen extends ConsumerStatefulWidget {
 }
 
 class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
-  bool _discardScheduled = false;
+  late final PaymentUriBusySurfaceNotifier _paymentUriBusySurface;
+  bool _holdsPaymentUriBusySurface = false;
+  late final SyncNotifier _syncNotifier;
+  Future<bool>? _discardFuture;
+  bool _cancelling = false;
+  bool _proposalAbandoned = false;
+  late SendReviewArgs _reviewArgs;
+  int _signingGeneration = 0;
+  Future<Object?>? _proposalConsumption;
+  bool _reviewRecoveryFailed = false;
   bool _handoffToHardware = false;
   bool _showSaplingParamsPrompt = false;
   bool _messageExpanded = false;
@@ -101,6 +115,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   final List<List<int>> _keystoneSignatures = [];
   int _keystoneRound = 0;
   SaplingParamsStatus? _keystoneSaplingParams;
+
   LedgerSigningModalPhase? _ledgerPhase;
   LedgerSigningFailurePresentation? _ledgerFailure;
   _LedgerSendRecoveryAction? _ledgerRecoveryAction;
@@ -117,11 +132,18 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   @override
   void initState() {
     super.initState();
+    _reviewArgs = widget.args;
     _cancelLedgerOperation = ref.read(ledgerOperationCancellerProvider);
     _ledgerOperationId =
-        'send:${widget.args.proposalAccountUuid}:${widget.args.sendFlowId}';
+        'send:${_reviewArgs.proposalAccountUuid}:${_reviewArgs.sendFlowId}';
+    _paymentUriBusySurface = ref.read(paymentUriBusySurfaceProvider.notifier);
+    _syncNotifier = ref.read(syncProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (!_holdsPaymentUriBusySurface) {
+        _paymentUriBusySurface.acquire();
+        _holdsPaymentUriBusySurface = true;
+      }
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
     });
   }
@@ -141,22 +163,46 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         !hasUncheckpointedLedgerSignature) {
       unawaited(_cancelLedgerOperation());
     }
-    if (!_handoffToHardware && !hasUncheckpointedLedgerSignature) {
-      _scheduleDiscard();
-    }
+    final discard = _handoffToHardware || hasUncheckpointedLedgerSignature
+        ? null
+        : _scheduleDiscard();
+    _releasePaymentUriBusySurface(after: discard);
     super.dispose();
   }
 
-  void _scheduleDiscard() {
-    if (_discardScheduled) return;
-    _discardScheduled = true;
-    unawaited(
-      discardSendProposal(
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
-        logContext: 'SendReview',
-      ),
-    );
+  Future<bool> _scheduleDiscard() {
+    _proposalAbandoned = true;
+    final args = _reviewArgs;
+    return _discardFuture ??=
+        () async {
+          try {
+            await _proposalConsumption;
+          } catch (_) {
+            // A failed creator still needs idempotent proposal cleanup.
+          }
+          return discardSendProposal(
+            proposalId: args.proposalId,
+            sendFlowId: args.sendFlowId,
+            logContext: 'SendReview',
+            syncNotifier: _syncNotifier,
+            accountUuid: args.proposalAccountUuid,
+          );
+        }().then((released) {
+          if (!released) _discardFuture = null;
+          return released;
+        });
+  }
+
+  void _releasePaymentUriBusySurface({Future<void>? after}) {
+    if (!_holdsPaymentUriBusySurface) return;
+    _holdsPaymentUriBusySurface = false;
+    if (after == null) {
+      _paymentUriBusySurface.releaseAfterNavigation();
+      return;
+    }
+    // The route is already gone, but Rust may still hold the selected inputs.
+    // Do not re-drain the parked request until that release has completed.
+    unawaited(after.whenComplete(_paymentUriBusySurface.release));
   }
 
   String _formatAmount(BigInt zatoshi) {
@@ -174,22 +220,30 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _handleSend() async {
+    if (_reviewRecoveryFailed) {
+      await _cancelKeystoneSigning();
+      return;
+    }
+    if (_cancelling || _proposalAbandoned) return;
     final signerKind = ref
         .read(accountProvider.notifier)
-        .hardwareSignerKindForAccount(widget.args.proposalAccountUuid);
-    if (signerKind == HardwareSignerKind.ledger) {
+        .hardwareSignerKindForAccount(_reviewArgs.proposalAccountUuid);
+    final isHardware = signerKind != null;
+    final isLedger = signerKind == HardwareSignerKind.ledger;
+    if (isLedger) {
       _showLedgerSigningModal();
       return;
     }
-    if (signerKind == HardwareSignerKind.keystone) {
+    if (isHardware) {
       _showKeystoneSigningModal();
       return;
     }
 
-    ref.read(sendStatusRoutePayloadProvider.notifier).retain(widget.args);
+    ref.read(sendStatusRoutePayloadProvider.notifier).retain(_reviewArgs);
+    _releasePaymentUriBusySurface();
     await context.push(
-      sendStatusRouteLocation(widget.args.sendFlowId),
-      extra: widget.args,
+      sendStatusRouteLocation(_reviewArgs.sendFlowId),
+      extra: _reviewArgs,
     );
   }
 
@@ -223,7 +277,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       var saplingParams = await loadSaplingParamsStatus();
       if (!_isCurrentLedgerAttempt(generation)) return;
 
-      if (widget.args.needsSaplingParams && !saplingParams.complete) {
+      if (_reviewArgs.needsSaplingParams && !saplingParams.complete) {
         final confirmed = await _showDownloadPrompt();
         if (!_isCurrentLedgerAttempt(generation)) return;
         if (!confirmed) {
@@ -273,10 +327,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
             List<int>.unmodifiable(
               await rust_sync.addProofsToPczt(
                 pcztBytes: pczt,
-                spendParamsPath: widget.args.needsSaplingParams
+                spendParamsPath: _reviewArgs.needsSaplingParams
                     ? saplingParams.spendPath
                     : null,
-                outputParamsPath: widget.args.needsSaplingParams
+                outputParamsPath: _reviewArgs.needsSaplingParams
                     ? saplingParams.outputPath
                     : null,
               ),
@@ -298,7 +352,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           _ledgerPhase = LedgerSigningModalPhase.awaitingDevice;
         });
         final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-          widget.args.proposalAccountUuid,
+          _reviewArgs.proposalAccountUuid,
           signerPczts[index],
         );
         if (!_isCurrentLedgerAttempt(generation)) return;
@@ -331,14 +385,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (existingFuture != null) return existingFuture;
 
     final creationFuture =
-        (widget.args.addressType == 'tex'
+        (_reviewArgs.addressType == 'tex'
                 ? ref
                       .read(ledgerSendTexPcztsCreatorProvider)(
                         dbPath: dbPath,
                         lightwalletdUrl: lightwalletdUrl,
                         network: network,
-                        proposalId: widget.args.proposalId,
-                        sendFlowId: widget.args.sendFlowId,
+                        proposalId: _reviewArgs.proposalId,
+                        sendFlowId: _reviewArgs.sendFlowId,
                       )
                       .then((result) => result.pczts)
                 : ref
@@ -346,8 +400,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                         dbPath: dbPath,
                         lightwalletdUrl: lightwalletdUrl,
                         network: network,
-                        proposalId: widget.args.proposalId,
-                        sendFlowId: widget.args.sendFlowId,
+                        proposalId: _reviewArgs.proposalId,
+                        sendFlowId: _reviewArgs.sendFlowId,
                       )
                       .then((pczt) => <List<int>>[pczt]))
             .then<List<List<int>>>((createdPczts) {
@@ -358,6 +412,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               return _ledgerBasePczts!;
             });
     _ledgerBasePcztsFuture = creationFuture;
+    _proposalConsumption = creationFuture;
     try {
       return await creationFuture;
     } finally {
@@ -456,7 +511,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       if (pcztsWithProofs.length == 1) {
         await operationService.checkpoint(
           operationId: _ledgerOperationId,
-          accountUuid: widget.args.proposalAccountUuid,
+          accountUuid: _reviewArgs.proposalAccountUuid,
           kind: LedgerSignedOperationKind.send,
           pcztWithProofsBytes: pcztsWithProofs.single,
           pcztWithSignaturesBytes: _ledgerSignedPczts.single,
@@ -465,7 +520,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           case final LedgerSignedOperationBatchCheckpointService batchService) {
         await batchService.checkpointBatch(
           operationId: _ledgerOperationId,
-          accountUuid: widget.args.proposalAccountUuid,
+          accountUuid: _reviewArgs.proposalAccountUuid,
           kind: LedgerSignedOperationKind.send,
           pcztsWithProofs: pcztsWithProofs,
           pcztsWithSignatures: _ledgerSignedPczts,
@@ -494,13 +549,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       _ledgerRecoveryAction = null;
     });
     final statusArgs = LedgerBroadcastArgs(
-      reviewArgs: widget.args,
+      reviewArgs: _reviewArgs,
       operationId: _ledgerOperationId,
     );
     ref.read(sendStatusRoutePayloadProvider.notifier).retain(statusArgs);
     if (!mounted) return;
     context.go(
-      sendStatusRouteLocation(widget.args.sendFlowId),
+      sendStatusRouteLocation(_reviewArgs.sendFlowId),
       extra: statusArgs,
     );
   }
@@ -585,7 +640,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       return;
     }
     _ledgerAttemptGeneration++;
-    _scheduleDiscard();
+    unawaited(_scheduleDiscard());
     ref.read(sendStatusRoutePayloadProvider.notifier).clear();
     if (!mounted) return;
     context.go(
@@ -593,9 +648,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       extra: SendPrefillArgs(
         id: newSendFlowId(),
         source: 'ledger-rebuild',
-        address: widget.args.address,
-        amountText: formatZecAmount(widget.args.amountZatoshi),
-        memoText: widget.args.memo,
+        address: _reviewArgs.address,
+        amountText: formatZecAmount(_reviewArgs.amountZatoshi),
+        memoText: _reviewArgs.memo,
       ),
     );
   }
@@ -613,27 +668,51 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     }
   }
 
-  void _handleCancel() {
-    _scheduleDiscard();
-    ref.read(sendStatusRoutePayloadProvider.notifier).clear();
+  Future<void> _leaveReview(VoidCallback navigate) async {
+    if (_cancelling) return;
+    setState(() => _cancelling = true);
+    final released = await _scheduleDiscard();
     if (!mounted) return;
-    context.go(
-      widget.args.flowKind == SendFlowKind.donation ? '/donation' : '/send',
+    if (released) {
+      navigate();
+      return;
+    }
+    const error = 'Could not finish cancelling. Please try again.';
+    setState(() {
+      _cancelling = false;
+      if (_keystonePhase != null) {
+        _keystonePhase = KeystoneSigningModalPhase.failed;
+        _keystoneError = error;
+      }
+    });
+    showAppToast(
+      context,
+      error,
+      iconName: AppIcons.warningCircle,
+      tone: AppToastTone.destructive,
     );
   }
 
-  void _handleDonationBack() {
-    _scheduleDiscard();
-    if (!mounted) return;
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/donation');
-    }
-  }
+  void _handleCancel() => unawaited(
+    _leaveReview(
+      () => context.go(
+        _reviewArgs.flowKind == SendFlowKind.donation ? '/donation' : '/send',
+      ),
+    ),
+  );
+
+  Future<void> _handleDonationBack() => _keystonePhase != null
+      ? _cancelKeystoneSigning()
+      : _leaveReview(() {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/donation');
+          }
+        });
 
   void _showKeystoneSigningModal() {
-    if (_keystonePhase != null) return;
+    if (_keystonePhase != null || _proposalAbandoned) return;
     setState(() {
       _keystonePhase = KeystoneSigningModalPhase.preparing;
       _keystoneError = null;
@@ -645,7 +724,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       _keystoneRound = 0;
       _keystoneSaplingParams = null;
     });
-    unawaited(_prepareKeystonePczt());
+    unawaited(_prepareKeystonePczt(++_signingGeneration));
   }
 
   Future<bool> _showDownloadPrompt() {
@@ -675,16 +754,22 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     completer.complete(confirmed);
   }
 
-  Future<void> _prepareKeystonePczt() async {
+  Future<void> _prepareKeystonePczt(int generation) async {
+    bool isCurrent() =>
+        mounted && !_proposalAbandoned && generation == _signingGeneration;
+    final args = _reviewArgs;
     try {
       final dbPath = await getWalletDbPath();
+      if (!isCurrent()) return;
       final endpoint = ref.read(rpcEndpointProvider);
       final saplingParams = await loadSaplingParamsStatus();
+      if (!isCurrent()) return;
 
-      if (widget.args.needsSaplingParams && !saplingParams.complete) {
+      if (args.needsSaplingParams && !saplingParams.complete) {
         final confirmed = await _showDownloadPrompt();
+        if (!isCurrent()) return;
         if (!confirmed) {
-          _scheduleDiscard();
+          unawaited(_scheduleDiscard());
           if (!mounted) return;
           setState(() {
             _keystonePhase = KeystoneSigningModalPhase.failed;
@@ -700,35 +785,40 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         );
       }
 
-      if (!mounted) return;
+      if (!isCurrent()) return;
       final currentSaplingParams = await loadSaplingParamsStatus();
+      if (!isCurrent()) return;
       _keystoneSaplingParams = currentSaplingParams;
 
-      final texPczts = widget.args.addressType == 'tex'
-          ? await rust_sync.createTexPcztsFromProposal(
+      final texFuture = args.addressType == 'tex'
+          ? rust_sync.createTexPcztsFromProposal(
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
               network: endpoint.networkName,
-              proposalId: widget.args.proposalId,
-              sendFlowId: widget.args.sendFlowId,
+              proposalId: args.proposalId,
+              sendFlowId: args.sendFlowId,
             )
           : null;
-      final pczts =
-          texPczts?.pczts ??
-          [
-            await rust_sync.createPcztFromProposal(
+      _proposalConsumption = texFuture;
+      final texPczts = await texFuture;
+      if (!isCurrent()) return;
+      final pcztFuture = texPczts == null
+          ? rust_sync.createPcztFromProposal(
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
               network: endpoint.networkName,
-              proposalId: widget.args.proposalId,
-              sendFlowId: widget.args.sendFlowId,
-            ),
-          ];
+              proposalId: args.proposalId,
+              sendFlowId: args.sendFlowId,
+            )
+          : null;
+      if (pcztFuture != null) _proposalConsumption = pcztFuture;
+      final pczts = texPczts?.pczts ?? [await pcztFuture!];
+      if (!isCurrent()) return;
       final urPartsByRound = <List<String>>[];
       final batchRequestsByRound = <KeystoneBatchSigningRequest?>[];
       final signerPczts = texPczts?.signerPczts;
       for (var index = 0; index < pczts.length; index++) {
-        if (widget.args.addressType == 'tex') {
+        if (args.addressType == 'tex') {
           final redacted = signerPczts![index];
           urPartsByRound.add(
             await rust_keystone.encodePcztUrParts(
@@ -739,8 +829,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           batchRequestsByRound.add(null);
         } else {
           final request = await buildKeystoneBatchSigningRequest(
-            requestId:
-                'vizor-send-${widget.args.sendFlowId}-transaction-${index + 1}',
+            requestId: 'vizor-send-${args.sendFlowId}-transaction-${index + 1}',
             pczts: [
               KeystoneBatchPcztSource(
                 id: 'send-transaction-${index + 1}',
@@ -753,7 +842,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         }
       }
 
-      if (!mounted) return;
+      if (!isCurrent()) return;
       setState(() {
         _keystonePhase = KeystoneSigningModalPhase.ready;
         _keystoneUrPartsByRound = urPartsByRound;
@@ -766,23 +855,24 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         proofs.add(
           await rust_sync.addProofsToPczt(
             pcztBytes: pczt,
-            spendParamsPath: widget.args.needsSaplingParams
+            spendParamsPath: args.needsSaplingParams
                 ? currentSaplingParams.spendPath
                 : null,
-            outputParamsPath: widget.args.needsSaplingParams
+            outputParamsPath: args.needsSaplingParams
                 ? currentSaplingParams.outputPath
                 : null,
           ),
         );
       }
 
-      if (!mounted) return;
+      if (!isCurrent()) return;
       setState(() {
         _keystonePcztsWithProofs = proofs;
       });
     } catch (e, st) {
       log('SendReview._prepareKeystonePczt: ERROR: $e\n$st');
-      _scheduleDiscard();
+      if (!isCurrent()) return;
+      unawaited(_scheduleDiscard());
       if (!mounted) return;
       setState(() {
         _keystonePhase = KeystoneSigningModalPhase.failed;
@@ -806,17 +896,77 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _cancelKeystoneSigning() async {
-    _scheduleDiscard();
-    ref.read(sendStatusRoutePayloadProvider.notifier).clear();
+    if (_cancelling) return;
+    setState(() {
+      _cancelling = true;
+      _proposalAbandoned = true;
+      _reviewRecoveryFailed = false;
+      _signingGeneration++;
+    });
+    _resolveSaplingParamsDialog(false);
+    final released = await _scheduleDiscard();
     if (!mounted) return;
-    context.go(
-      widget.args.flowKind == SendFlowKind.donation ? '/donation' : '/send',
-    );
+    if (!released) {
+      setState(() {
+        _cancelling = false;
+        _keystonePhase = KeystoneSigningModalPhase.failed;
+        _keystoneError = 'Could not finish cancelling. Please try again.';
+      });
+      return;
+    }
+    setState(() => _keystonePhase = null);
+    final previous = _reviewArgs;
+    try {
+      final refreshed = await proposeSendTransfer(
+        ref: ref,
+        accountUuid: previous.proposalAccountUuid,
+        sendFlowId: previous.sendFlowId,
+        address: previous.address,
+        addressType: previous.addressType,
+        amountZatoshi: previous.amountZatoshi,
+        memo: previous.memo,
+        isPaymentRequest: previous.isPaymentRequest,
+        requestedBy: previous.requestedBy,
+        requestedAmountZatoshi: previous.requestedAmountZatoshi,
+        flowKind: previous.flowKind,
+      );
+      if (!mounted) {
+        await discardSendProposal(
+          proposalId: refreshed.proposalId,
+          sendFlowId: refreshed.sendFlowId,
+          accountUuid: refreshed.proposalAccountUuid,
+          syncNotifier: _syncNotifier,
+          logContext: 'SendReview(cancelled recovery)',
+        );
+        return;
+      }
+      setState(() {
+        _reviewArgs = refreshed;
+        _discardFuture = null;
+        _proposalConsumption = null;
+        _proposalAbandoned = false;
+        _cancelling = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _cancelling = false;
+        _reviewRecoveryFailed = true;
+      });
+      showAppToast(
+        context,
+        friendlyProposeSendError(error.toString()),
+        iconName: AppIcons.warningCircle,
+        tone: AppToastTone.destructive,
+      );
+    }
   }
 
   Future<void> _getKeystoneSignature() async {
+    final generation = _signingGeneration;
     final saplingParams = _keystoneSaplingParams;
-    if (_keystonePhase != KeystoneSigningModalPhase.ready ||
+    if (_proposalAbandoned ||
+        _keystonePhase != KeystoneSigningModalPhase.ready ||
         _keystonePcztsWithProofs.isEmpty ||
         saplingParams == null) {
       return;
@@ -827,14 +977,19 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       extra: _keystoneBatchRequestsByRound[_keystoneRound] == null
           ? KeystoneSendScanArgs(
               suppressSidebarSelection:
-                  widget.args.flowKind == SendFlowKind.donation,
+                  _reviewArgs.flowKind == SendFlowKind.donation,
             )
           : KeystoneSendScanArgs.batch(
               suppressSidebarSelection:
-                  widget.args.flowKind == SendFlowKind.donation,
+                  _reviewArgs.flowKind == SendFlowKind.donation,
             ),
     );
-    if (response == null || !mounted) return;
+    if (response == null ||
+        !mounted ||
+        _proposalAbandoned ||
+        generation != _signingGeneration) {
+      return;
+    }
     try {
       final batchRequest = _keystoneBatchRequestsByRound[_keystoneRound];
       if (batchRequest == null) {
@@ -842,10 +997,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       } else {
         _keystoneSignatures.addAll(await batchRequest.decodeResponse(response));
       }
-      if (mounted) setState(() => _keystoneError = null);
+      if (!mounted || _proposalAbandoned || generation != _signingGeneration) {
+        return;
+      }
+      setState(() => _keystoneError = null);
     } catch (e, st) {
       log('SendReview._getKeystoneSignature: ERROR: $e\n$st');
-      if (!mounted) return;
+      if (!mounted || generation != _signingGeneration) return;
       setState(() {
         _keystoneError =
             'This QR code does not match the current Keystone signing request.';
@@ -862,14 +1020,15 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (!mounted) return;
 
     _handoffToHardware = true;
+    _releasePaymentUriBusySurface();
     final statusArgs = KeystoneBroadcastArgs(
-      reviewArgs: widget.args,
+      reviewArgs: _reviewArgs,
       pcztWithProofs: _keystonePcztsWithProofs,
       pcztWithSignatures: List<List<int>>.of(_keystoneSignatures),
     );
     ref.read(sendStatusRoutePayloadProvider.notifier).retain(statusArgs);
     context.go(
-      sendStatusRouteLocation(widget.args.sendFlowId),
+      sendStatusRouteLocation(_reviewArgs.sendFlowId),
       extra: statusArgs,
     );
   }
@@ -878,7 +1037,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   Widget build(BuildContext context) {
     final signerKind = ref
         .read(accountProvider.notifier)
-        .hardwareSignerKindForAccount(widget.args.proposalAccountUuid);
+        .hardwareSignerKindForAccount(_reviewArgs.proposalAccountUuid);
     final isHardware = signerKind != null;
     final isLedger = signerKind == HardwareSignerKind.ledger;
     final keystonePhase = _keystonePhase;
@@ -890,148 +1049,202 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         const <String, AccountInfo>{};
     final recipient = sendReviewRecipientFor(
       contacts: addressBookContacts,
-      address: widget.args.address,
+      address: _reviewArgs.address,
       ownAccounts: ownAccounts,
     );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
-    final memo = widget.args.memo;
-    final hasMemo = memo != null && memo.trim().isNotEmpty;
+    final memo = _reviewArgs.memo;
+    // Present means non-empty, not non-blank: an edited request whose memo is
+    // only whitespace still sends that memo, so the row has to say so rather
+    // than omit a memo the transaction carries.
+    final hasMemo = memo != null && memo.isNotEmpty;
+    final requestedAmountZatoshi = _reviewArgs.differingRequestedAmountZatoshi;
+    final backTarget = AppBackResolver.resolve(context);
 
-    return AppDesktopShell(
-      sidebar: AppMainSidebar(
-        suppressActiveSelection: widget.args.flowKind == SendFlowKind.donation,
-      ),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            AppPaneScrollScaffold(
-              toolbar: AppPaneToolbar(
-                leading: widget.args.flowKind == SendFlowKind.donation
-                    ? AppBackLink(
-                        label: 'Support Vizor',
-                        minWidth: 60,
-                        onTap: _handleDonationBack,
+    return PopScope<Object?>(
+      canPop: keystonePhase == null && !_cancelling && !_proposalAbandoned,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (keystonePhase != null) {
+          unawaited(_cancelKeystoneSigning());
+        } else if (_proposalAbandoned) {
+          unawaited(_leaveReview(() => backTarget.navigate(context)));
+        }
+      },
+      child: AppDesktopShell(
+        sidebar: AppMainSidebar(
+          suppressActiveSelection:
+              _reviewArgs.flowKind == SendFlowKind.donation,
+        ),
+        pane: AppDesktopPane(
+          padding: EdgeInsets.zero,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              AppPaneScrollScaffold(
+                toolbar: AppPaneToolbar(
+                  leading: _reviewArgs.flowKind == SendFlowKind.donation
+                      ? AppBackLink(
+                          label: 'Support Vizor',
+                          minWidth: 60,
+                          onTap: _handleDonationBack,
+                        )
+                      : AppBackLink(
+                          label: backTarget.label,
+                          minWidth: 60,
+                          onTap: () => keystonePhase != null
+                              ? _cancelKeystoneSigning()
+                              : _leaveReview(
+                                  () => backTarget.navigate(context),
+                                ),
+                        ),
+                  backLinkMinWidth: 60,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                child: _reviewArgs.flowKind == SendFlowKind.donation
+                    ? DonationReviewContentView(
+                        amountText: _formatAmount(_reviewArgs.amountZatoshi),
+                        fiatText: fiatTextForZatoshi(
+                          _reviewArgs.amountZatoshi,
+                          zecUsdUnitPrice: zecUsdUnitPrice,
+                        ),
+                        feeText: _formatFee(_reviewArgs.feeZatoshi),
+                        confirmLabel: _reviewRecoveryFailed
+                            ? 'Retry'
+                            : _cancelling
+                            ? 'Cancelling…'
+                            : isLedger
+                            ? 'Confirm with Ledger'
+                            : isHardware
+                            ? 'Confirm with Keystone'
+                            : 'Confirm donation',
+                        confirmIcon: isHardware
+                            ? (isLedger ? AppIcons.ledger : AppIcons.qr)
+                            : AppIcons.donation,
+                        onConfirm:
+                            _cancelling ||
+                                (_proposalAbandoned && !_reviewRecoveryFailed)
+                            ? null
+                            : () => unawaited(_handleSend()),
                       )
-                    : null,
-                onBeforeNavigate: _scheduleDiscard,
-                backLinkMinWidth: 60,
+                    : SendReviewContentView(
+                        isPaymentRequest: _reviewArgs.isPaymentRequest,
+                        requestedAmountText: requestedAmountZatoshi == null
+                            ? null
+                            : _formatAmount(requestedAmountZatoshi),
+                        amountText: _formatAmount(_reviewArgs.amountZatoshi),
+                        fiatText: fiatTextForZatoshi(
+                          _reviewArgs.amountZatoshi,
+                          zecUsdUnitPrice: zecUsdUnitPrice,
+                        ),
+                        recipient: recipient,
+                        feeText: _formatFee(_reviewArgs.feeZatoshi),
+                        isShieldedRecipient: _reviewArgs.isShielded,
+                        recipientAddressType: _reviewArgs.addressType,
+                        memoText: hasMemo ? memo : null,
+                        memoExpanded: _messageExpanded,
+                        confirmLabel: _reviewRecoveryFailed
+                            ? 'Retry'
+                            : _cancelling
+                            ? 'Cancelling…'
+                            : isLedger
+                            ? 'Confirm with Ledger'
+                            : isHardware
+                            ? 'Confirm with Keystone'
+                            : 'Confirm & send',
+                        confirmLeadingIconName: isHardware
+                            ? (isLedger ? AppIcons.ledger : AppIcons.qr)
+                            : AppIcons.plane,
+                        onConfirm:
+                            _cancelling ||
+                                (_proposalAbandoned && !_reviewRecoveryFailed)
+                            ? null
+                            : () => unawaited(_handleSend()),
+                        onCancel: _cancelling ? null : _handleCancel,
+                        onShowFullAddress: () =>
+                            setState(() => _showVerifyAddress = true),
+                        onExpandMemo: _toggleMessageExpanded,
+                      ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: widget.args.flowKind == SendFlowKind.donation
-                  ? DonationReviewContentView(
-                      amountText: _formatAmount(widget.args.amountZatoshi),
-                      fiatText: fiatTextForZatoshi(
-                        widget.args.amountZatoshi,
-                        zecUsdUnitPrice: zecUsdUnitPrice,
-                      ),
-                      feeText: _formatFee(widget.args.feeZatoshi),
-                      confirmLabel: isLedger
-                          ? 'Confirm with Ledger'
-                          : isHardware
-                          ? 'Confirm with Keystone'
-                          : 'Confirm donation',
-                      confirmIcon: isHardware
-                          ? (isLedger ? AppIcons.ledger : AppIcons.qr)
-                          : AppIcons.donation,
-                      onConfirm: () => unawaited(_handleSend()),
-                    )
-                  : SendReviewContentView(
-                      amountText: _formatAmount(widget.args.amountZatoshi),
-                      fiatText: fiatTextForZatoshi(
-                        widget.args.amountZatoshi,
-                        zecUsdUnitPrice: zecUsdUnitPrice,
-                      ),
-                      recipient: recipient,
-                      feeText: _formatFee(widget.args.feeZatoshi),
-                      isShieldedRecipient: widget.args.isShielded,
-                      recipientAddressType: widget.args.addressType,
-                      memoText: hasMemo ? memo : null,
-                      memoExpanded: _messageExpanded,
-                      confirmLabel: isLedger
-                          ? 'Confirm with Ledger'
-                          : isHardware
-                          ? 'Confirm with Keystone'
-                          : 'Confirm & send',
-                      confirmLeadingIconName: isHardware
-                          ? (isLedger ? AppIcons.ledger : AppIcons.qr)
-                          : AppIcons.plane,
-                      onConfirm: () => unawaited(_handleSend()),
-                      onCancel: _handleCancel,
-                      onShowFullAddress: () =>
-                          setState(() => _showVerifyAddress = true),
-                      onExpandMemo: _toggleMessageExpanded,
+              if (_showVerifyAddress &&
+                  keystonePhase == null &&
+                  _ledgerPhase == null)
+                SendVerifyAddressOverlay(
+                  accountUuid: _reviewArgs.proposalAccountUuid,
+                  address: _reviewArgs.address.trim(),
+                  isShieldedAddress: _reviewArgs.isShielded,
+                  onClose: () => setState(() => _showVerifyAddress = false),
+                ),
+              // The review's outer hold protects its proposal inputs. This
+              // nested hold protects the live QR as well, so the latch cannot
+              // briefly open while signing subtrees change.
+              if (keystonePhase != null)
+                PaymentUriBusySurfaceHold(
+                  child: AppPaneModalOverlay(
+                    onDismiss: () => unawaited(_cancelKeystoneSigning()),
+                    child: KeystoneSigningModal(
+                      phase: keystonePhase,
+                      urParts: _keystoneUrParts,
+                      error: _keystoneError,
+                      title: 'Confirm with Keystone',
+                      subtitle: _keystoneUrPartsByRound.length == 2
+                          ? 'Transaction ${_keystoneRound + 1} of 2'
+                          : 'Scan with your Keystone',
+                      instruction:
+                          _keystoneError ??
+                          (_keystonePcztsWithProofs.isEmpty
+                              ? 'Scan now. Signature import unlocks after proofs are ready.'
+                              : 'After you scanned, click Get signature.'),
+                      primaryLabel: _keystonePcztsWithProofs.isEmpty
+                          ? 'Preparing'
+                          : 'Get signature',
+                      onPrimary:
+                          !_proposalAbandoned &&
+                              keystonePhase ==
+                                  KeystoneSigningModalPhase.ready &&
+                              _keystonePcztsWithProofs.isNotEmpty
+                          ? () => unawaited(_getKeystoneSignature())
+                          : null,
+                      secondaryLabel: _cancelling ? 'Cancelling…' : 'Cancel',
+                      onSecondary: _cancelling
+                          ? null
+                          : () => unawaited(_cancelKeystoneSigning()),
                     ),
-            ),
-            if (_showVerifyAddress &&
-                keystonePhase == null &&
-                _ledgerPhase == null)
-              SendVerifyAddressOverlay(
-                accountUuid: widget.args.proposalAccountUuid,
-                address: widget.args.address.trim(),
-                isShieldedAddress: widget.args.isShielded,
-                onClose: () => setState(() => _showVerifyAddress = false),
-              ),
-            if (keystonePhase != null)
-              AppPaneModalOverlay(
-                onDismiss: () => unawaited(_cancelKeystoneSigning()),
-                child: KeystoneSigningModal(
-                  phase: keystonePhase,
-                  urParts: _keystoneUrParts,
-                  error: _keystoneError,
-                  title: 'Confirm with Keystone',
-                  subtitle: _keystoneUrPartsByRound.length == 2
-                      ? 'Transaction ${_keystoneRound + 1} of 2'
-                      : 'Scan with your Keystone',
-                  instruction:
-                      _keystoneError ??
-                      (_keystonePcztsWithProofs.isEmpty
-                          ? 'Scan now. Signature import unlocks after proofs are ready.'
-                          : 'After you scanned, click Get signature.'),
-                  primaryLabel: _keystonePcztsWithProofs.isEmpty
-                      ? 'Preparing'
-                      : 'Get signature',
-                  onPrimary:
-                      keystonePhase == KeystoneSigningModalPhase.ready &&
-                          _keystonePcztsWithProofs.isNotEmpty
-                      ? () => unawaited(_getKeystoneSignature())
-                      : null,
-                  secondaryLabel: 'Cancel',
-                  onSecondary: () => unawaited(_cancelKeystoneSigning()),
+                  ),
                 ),
-              ),
-            if (_ledgerPhase case final ledgerPhase?)
-              AppPaneModalOverlay(
-                onDismiss: !_ledgerSigningComplete
-                    ? () => unawaited(_dismissLedgerSigningModal())
-                    : () {},
-                child: LedgerSigningModal(
-                  accountUuid: widget.args.proposalAccountUuid,
-                  phase: ledgerPhase,
-                  failure: _ledgerFailure,
-                  onCancel: !_ledgerSigningComplete
+              if (_ledgerPhase case final ledgerPhase?)
+                AppPaneModalOverlay(
+                  onDismiss: !_ledgerSigningComplete
                       ? () => unawaited(_dismissLedgerSigningModal())
-                      : ledgerPhase == LedgerSigningModalPhase.failed
-                      ? () => unawaited(_abandonUncheckpointedLedgerSignature())
-                      : null,
-                  onFailureAction:
-                      ledgerPhase == LedgerSigningModalPhase.failed &&
-                          _ledgerRecoveryAction != null
-                      ? _handleLedgerRecoveryAction
-                      : null,
-                  roundNumber: _ledgerRound + 1,
-                  roundCount: _ledgerBasePczts?.length ?? 1,
+                      : () {},
+                  child: LedgerSigningModal(
+                    accountUuid: _reviewArgs.proposalAccountUuid,
+                    phase: ledgerPhase,
+                    failure: _ledgerFailure,
+                    onCancel: !_ledgerSigningComplete
+                        ? () => unawaited(_dismissLedgerSigningModal())
+                        : ledgerPhase == LedgerSigningModalPhase.failed
+                        ? () =>
+                              unawaited(_abandonUncheckpointedLedgerSignature())
+                        : null,
+                    onFailureAction:
+                        ledgerPhase == LedgerSigningModalPhase.failed &&
+                            _ledgerRecoveryAction != null
+                        ? _handleLedgerRecoveryAction
+                        : null,
+                    roundNumber: _ledgerRound + 1,
+                    roundCount: _ledgerBasePczts?.length ?? 1,
+                  ),
                 ),
-              ),
-            if (_showSaplingParamsPrompt)
-              Positioned.fill(
-                child: SaplingParamsPrompt(
-                  onDownload: () => _resolveSaplingParamsDialog(true),
-                  onCancel: () => _resolveSaplingParamsDialog(false),
+              if (_showSaplingParamsPrompt)
+                Positioned.fill(
+                  child: SaplingParamsPrompt(
+                    onDownload: () => _resolveSaplingParamsDialog(true),
+                    onCancel: () => _resolveSaplingParamsDialog(false),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

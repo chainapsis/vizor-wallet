@@ -5,7 +5,50 @@
 #include <stdio.h>
 #include <windows.h>
 
+#include <cctype>
 #include <iostream>
+
+bool IsZcashUri(const std::string& value) {
+  constexpr char prefix[] = "zcash:";
+  constexpr size_t prefix_length = sizeof(prefix) - 1;
+  if (value.size() < prefix_length || value.size() > kMaxZcashUriBytes) {
+    return false;
+  }
+
+  for (size_t i = 0; i < prefix_length; ++i) {
+    const auto actual =
+        static_cast<unsigned char>(value[i]);
+    const auto expected =
+        static_cast<unsigned char>(prefix[i]);
+    if (std::tolower(actual) != std::tolower(expected)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Returns true when |value| is something the Dart side can actually decode.
+// The channel carries the URI through StandardMessageCodec, which throws on
+// malformed UTF-8; a bad payload that arrives before Dart is ready aborts
+// takePendingUris and wedges the payment-URI channel for the rest of the
+// session. Control characters are rejected too: no ZIP-321 URI contains one,
+// and they have no business reaching the send screen.
+bool IsDecodablePaymentUriPayload(const std::string& value) {
+  if (value.empty()) {
+    return false;
+  }
+
+  for (const char raw_byte : value) {
+    const auto byte = static_cast<unsigned char>(raw_byte);
+    if (byte < 0x20 || byte == 0x7F) {
+      return false;
+    }
+  }
+
+  return ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                               static_cast<int>(value.size()), nullptr,
+                               0) != 0;
+}
 
 void CreateAndAttachConsole() {
   if (::AllocConsole()) {
@@ -41,23 +84,48 @@ std::vector<std::string> GetCommandLineArguments() {
   return command_line_arguments;
 }
 
+std::vector<std::string> GetZcashUriArguments(
+    const std::vector<std::string>& arguments) {
+  std::vector<std::string> uris;
+  for (const auto& argument : arguments) {
+    // Screen a cold-start URI with the same rule the forwarding path applies,
+    // so the two entry points accept the same set. An argv URI reaches Dart
+    // through the identical channel, and an undecodable one wedges it just as
+    // thoroughly as a forwarded one would.
+    if (IsZcashUri(argument) && IsDecodablePaymentUriPayload(argument)) {
+      uris.push_back(argument);
+    }
+  }
+  return uris;
+}
+
 std::string Utf8FromUtf16(const wchar_t* utf16_string) {
   if (utf16_string == nullptr) {
     return std::string();
   }
-  unsigned int target_length = ::WideCharToMultiByte(
-      CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string,
-      -1, nullptr, 0, nullptr, nullptr)
-    -1; // remove the trailing null character
-  int input_length = (int)wcslen(utf16_string);
+  // WideCharToMultiByte answers 0 on failure, and WC_ERR_INVALID_CHARS makes
+  // it fail on input the shell can genuinely hand us -- an argv element
+  // holding an unpaired surrogate. Check the result before subtracting the
+  // terminator: doing that subtraction first underflowed the unsigned length
+  // to ~4 GB and turned a rejected argument into a bad_alloc or a crash.
+  const int size_with_terminator =
+      ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string, -1,
+                            nullptr, 0, nullptr, nullptr);
   std::string utf8_string;
-  if (target_length == 0 || target_length > utf8_string.max_size()) {
+  if (size_with_terminator <= 1) {
+    // 0 is failure; 1 is an empty string, whose conversion is already done.
     return utf8_string;
   }
+  const size_t target_length =
+      static_cast<size_t>(size_with_terminator) - 1;  // drop the terminator
+  if (target_length > utf8_string.max_size()) {
+    return utf8_string;
+  }
+  const int input_length = static_cast<int>(wcslen(utf16_string));
   utf8_string.resize(target_length);
-  int converted_length = ::WideCharToMultiByte(
-      CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string,
-      input_length, utf8_string.data(), target_length, nullptr, nullptr);
+  const int converted_length = ::WideCharToMultiByte(
+      CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string, input_length,
+      utf8_string.data(), static_cast<int>(target_length), nullptr, nullptr);
   if (converted_length == 0) {
     return std::string();
   }

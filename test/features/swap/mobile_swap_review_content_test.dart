@@ -211,7 +211,7 @@ void main() {
     expect(find.text('Full address'), findsNothing);
   });
 
-  testWidgets('full address sheet uses shared modal chunk layout', (
+  testWidgets('full address sheet uses wrapping monospace and a copy control', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
@@ -247,65 +247,25 @@ void main() {
 
     expect(find.text('Solana address'), findsOneWidget);
     final title = tester.widget<Text>(find.text('Solana address'));
-    expect(title.style?.fontSize, AppTypography.labelLarge.fontSize);
+    expect(title.style?.fontSize, AppTypography.bodyLarge.fontSize);
     expect(title.style?.fontWeight, FontWeight.w600);
 
-    final chunkScope = find.byKey(
+    final addressScope = find.byKey(
       const ValueKey('mobile_address_verify_chunks'),
     );
-    expect(chunkScope, findsOneWidget);
-    final chunkScopeRect = tester.getRect(chunkScope);
-    expect(chunkScopeRect.width, moreOrLessEquals(329));
+    expect(addressScope, findsOneWidget);
     expect(
-      find.descendant(of: chunkScope, matching: find.text('11111')),
+      find.descendant(of: addressScope, matching: find.text(address)),
       findsOneWidget,
     );
-    expect(
-      find.descendant(of: chunkScope, matching: find.text('22222')),
-      findsOneWidget,
+    final addressText = tester.widget<Text>(
+      find.byKey(const ValueKey('full_address_text')),
     );
-    expect(
-      find.descendant(of: chunkScope, matching: find.text('CCCCC')),
-      findsOneWidget,
-    );
-    final firstChunk = tester.widget<Text>(find.text('11111'));
-    expect(firstChunk.style?.fontSize, 14);
-    expect(firstChunk.style?.height, 16 / 14);
-    final firstLineScope = find.byKey(
-      const ValueKey('mobile_address_verify_line_0'),
-    );
-    final lastLineScope = find.byKey(
-      const ValueKey('mobile_address_verify_line_2'),
-    );
-    final firstLine = tester.widget<Row>(
-      find.descendant(of: firstLineScope, matching: find.byType(Row)),
-    );
-    final lastLine = tester.widget<Row>(
-      find.descendant(of: lastLineScope, matching: find.byType(Row)),
-    );
-    expect(firstLine.mainAxisAlignment, MainAxisAlignment.start);
-    expect(lastLine.mainAxisAlignment, MainAxisAlignment.start);
-    final firstDivider = find.byKey(
-      const ValueKey('mobile_address_verify_divider_0'),
-    );
-    expect(tester.getSize(firstDivider).width, moreOrLessEquals(305));
-    expect(
-      tester.getRect(find.text('11111')).left,
-      moreOrLessEquals(chunkScopeRect.left + 22, epsilon: 1),
-    );
-    final thirdChunk = tester.widget<Text>(find.text('33333'));
-    expect(
-      thirdChunk.style?.color,
-      AppThemeData.light.colors.text.brandCrimson,
-    );
-    final secondChunk = tester.widget<Text>(find.text('22222'));
-    expect(secondChunk.style?.color, AppThemeData.light.colors.text.primary);
-    expect(
-      tester.getRect(find.text('BBBBB')).left,
-      moreOrLessEquals(tester.getRect(find.text('66666')).left, epsilon: 1),
-    );
-    expect(find.text('DDDDD'), findsNothing);
-    expect(find.text('Cancel'), findsOneWidget);
+    expect(addressText.softWrap, isTrue);
+    expect(addressText.style?.fontFamily, 'Geist Mono');
+    expect(find.text('Copy address'), findsOneWidget);
+    expect(find.text('Cancel'), findsNothing);
+    expect(find.bySemanticsLabel('Close'), findsOneWidget);
   });
 }
 

@@ -27,6 +27,7 @@ import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/profile_pictures.dart';

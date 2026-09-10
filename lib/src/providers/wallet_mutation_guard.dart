@@ -4,6 +4,7 @@ import 'dart:developer';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
+import '../core/storage/linux_keyring_coordinator.dart';
 import 'account_provider.dart';
 import 'sync_provider.dart';
 import 'voting/voting_share_tracking_registry_provider.dart';
@@ -14,6 +15,34 @@ import 'voting/voting_share_tracking_registry_provider.dart';
 /// the sync pause. This prevents a waiting precompute from queuing a newer sync
 /// between the pause and the database mutation.
 Future<T> runWithSyncPausedForAccountMutation<T>(
+  WidgetRef ref,
+  Future<T> Function() action, {
+  FutureOr<void> Function()? onStoppingSync,
+  FutureOr<void> Function()? onSyncPaused,
+  bool resumeAfterMutation = true,
+  bool resumeAfterFailure = true,
+  bool Function(Object error, StackTrace stackTrace)? shouldResumeAfterFailure,
+  bool quiesceMigrationWork = true,
+  bool quiesceVotingWork = false,
+  IronwoodMigrationBackgroundLifecycle? migrationLifecycle,
+}) => ref
+    .read(linuxKeyringCoordinatorProvider)
+    .runMutation(
+      () => _runWithSyncPausedForAccountMutation(
+        ref,
+        action,
+        onStoppingSync: onStoppingSync,
+        onSyncPaused: onSyncPaused,
+        resumeAfterMutation: resumeAfterMutation,
+        resumeAfterFailure: resumeAfterFailure,
+        shouldResumeAfterFailure: shouldResumeAfterFailure,
+        quiesceMigrationWork: quiesceMigrationWork,
+        quiesceVotingWork: quiesceVotingWork,
+        migrationLifecycle: migrationLifecycle,
+      ),
+    );
+
+Future<T> _runWithSyncPausedForAccountMutation<T>(
   WidgetRef ref,
   Future<T> Function() action, {
   FutureOr<void> Function()? onStoppingSync,

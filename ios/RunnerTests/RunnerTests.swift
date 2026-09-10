@@ -8,6 +8,136 @@ import XCTest
 
 class RunnerTests: XCTestCase {
 
+  func testIncomingDeeplinkAcceptsOnlySupportedHTTPSRoutes() {
+    let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
+
+    XCTAssertTrue(
+      bridge.handles(
+        URL(
+          string: "https://\(host)/payment-links/open#v1=test"
+        )!
+      )
+    )
+    XCTAssertFalse(
+      bridge.handles(URL(string: "vizor://payment-link?p=test")!)
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(
+          string: "https://\(host)/payment-links/other#v1=test"
+        )!
+      )
+    )
+    XCTAssertTrue(bridge.handles(URL(string: "https://\(host)/")!))
+    XCTAssertFalse(
+      bridge.handles(URL(string: "https://\(host)/?source=test")!)
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(string: "https://example.com/payment-links/open#v1=test")!
+      )
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(
+          string: "https://user@\(host)/"
+        )!
+      )
+    )
+  }
+
+  func testIncomingDeeplinkAcceptsZcashPaymentUris() {
+    let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
+    let address =
+      "u1qwerty0000000000000000000000000000000000000000000000000000000000"
+
+    // A ZIP-321 request is an opaque `zcash:` URL: no authority component, so
+    // the host checks that gate the HTTPS routes cannot apply to it.
+    XCTAssertTrue(
+      bridge.handles(URL(string: "zcash:\(address)?amount=1")!)
+    )
+    XCTAssertTrue(
+      bridge.handles(
+        URL(
+          string: "zcash:\(address)?amount=1.5&memo=aGk#gift"
+        )!
+      )
+    )
+    // Schemes are case-insensitive per RFC 3986, and iOS hands back whatever
+    // casing the sender used.
+    XCTAssertTrue(
+      bridge.handles(URL(string: "ZCASH:\(address)?amount=1")!)
+    )
+
+    XCTAssertFalse(
+      bridge.handles(URL(string: "vizor://payment-link?p=test")!)
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(string: "https://\(host)/gift-cards/redeem#v1=test")!
+      )
+    )
+  }
+
+  func testIncomingDeeplinkForwardsOversizeLinksForDartToReject() {
+    let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
+    // Drain whatever an earlier case queued: this bridge is a singleton.
+    _ = bridge.takePending()
+
+    // Dart rejects a payment link over 16 KB with a message the user can
+    // read, so a link past that limit has to reach it. The native guard is
+    // only a memory ceiling.
+    let oversizeForDart = "https://\(host)/payment-links/open#v1=" +
+      String(repeating: "a", count: 32 * 1024)
+    XCTAssertTrue(
+      bridge.handle(userActivity: browsingActivity(oversizeForDart))
+    )
+    XCTAssertEqual(bridge.takePending(), [oversizeForDart])
+
+    // Past the memory ceiling it is still dropped, so a pathological link
+    // cannot sit in the queue.
+    let pathological = "https://\(host)/payment-links/open#v1=" +
+      String(repeating: "a", count: 128 * 1024)
+    XCTAssertTrue(
+      bridge.handle(userActivity: browsingActivity(pathological))
+    )
+    XCTAssertEqual(bridge.takePending(), [])
+  }
+
+  func testIncomingDeeplinkQueueDedupesAndCaps() {
+    let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
+    _ = bridge.takePending()
+
+    let link = "https://\(host)/payment-links/open#v1=duplicate"
+    XCTAssertTrue(bridge.handle(userActivity: browsingActivity(link)))
+    XCTAssertTrue(bridge.handle(userActivity: browsingActivity(link)))
+    // Deduped only while undelivered; the re-tap after delivery arrives.
+    XCTAssertEqual(bridge.takePending(), [link])
+    XCTAssertTrue(bridge.handle(userActivity: browsingActivity(link)))
+    XCTAssertEqual(bridge.takePending(), [link])
+
+    for index in 0..<20 {
+      XCTAssertTrue(
+        bridge.handle(
+          userActivity: browsingActivity(
+            "https://\(host)/payment-links/open#v1=cap\(index)"
+          )
+        )
+      )
+    }
+    XCTAssertEqual(bridge.takePending().count, 16)
+  }
+
+  private func browsingActivity(_ url: String) -> NSUserActivity {
+    let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    activity.webpageURL = URL(string: url)
+    return activity
+  }
+
   func testMigrationNotificationAuthorizationStatusIsFailClosed() {
     XCTAssertEqual(
       IronwoodMigrationNotificationAuthorizationStatus(.notDetermined),

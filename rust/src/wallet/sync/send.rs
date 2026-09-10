@@ -131,12 +131,10 @@ fn send_proposal_is_expired(
 
 pub(super) async fn live_send_expiry_height(
     lightwalletd_url: &str,
+    network: WalletNetwork,
     min_target_height: BlockHeight,
 ) -> Result<BlockHeight, String> {
-    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
-        .await
-        .map_err(|e| format!("Connect to lightwalletd before transaction construction: {e}"))?;
-    let tip = sync_engine::get_latest_block(&mut client)
+    let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
         .await
         .map_err(|e| format!("Read live chain tip before transaction construction: {e}"))?;
     let tip = u32::try_from(tip.height).map_err(|_| "Live chain tip exceeds u32")?;
@@ -353,6 +351,8 @@ pub struct ExecuteProposalResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// Server rejection is distinct from a missing response, but is not finality.
+    pub broadcast_failure_kind: Option<String>,
 }
 
 pub struct IronwoodMigrationResult {
@@ -1063,10 +1063,7 @@ pub(crate) async fn create_shield_transparent_pczt(
     account_uuid: &str,
 ) -> Result<ShieldTransparentPcztResult, String> {
     let live_expiry_height = {
-        let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
-            .await
-            .map_err(|e| format!("Connect to lightwalletd before shielding PCZT: {e}"))?;
-        let tip = sync_engine::get_latest_block(&mut client)
+        let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
             .await
             .map_err(|e| format!("Read live chain tip before shielding PCZT: {e}"))?;
         let tip = u32::try_from(tip.height).map_err(|_| "Shielding PCZT chain tip exceeds u32")?;
@@ -1158,10 +1155,7 @@ pub(crate) async fn shield_transparent_balance(
 ) -> Result<ShieldTransparentResult, String> {
     let shielding_threshold = shielding_threshold()?;
     let live_expiry_height = {
-        let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
-            .await
-            .map_err(|e| format!("Connect to lightwalletd before shielding: {e}"))?;
-        let tip = sync_engine::get_latest_block(&mut client)
+        let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
             .await
             .map_err(|e| format!("Read live chain tip before shielding: {e}"))?;
         let tip = u32::try_from(tip.height).map_err(|_| "Shielding chain tip exceeds u32")?;
@@ -1328,7 +1322,7 @@ async fn execute_stored_proposal(
 
     let min_target_height = BlockHeight::from(stored.proposal.min_target_height());
     let live_expiry_height =
-        match live_send_expiry_height(lightwalletd_url, min_target_height).await {
+        match live_send_expiry_height(lightwalletd_url, network, min_target_height).await {
             Ok(height) => height,
             Err(error) => {
                 return match finish_stored_proposal(proposal_id, &send_flow_id, true) {
@@ -2074,7 +2068,7 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Open migration recovery endpoint: {e}"))?;
-    let chain_tip = sync_engine::get_latest_block(&mut client)
+    let chain_tip = sync_engine::get_latest_block_recorded(&mut client, lightwalletd_url, network)
         .await
         .map_err(|e| format!("Read migration recovery chain tip: {e}"))?;
     let chain_tip_height =
@@ -2141,7 +2135,7 @@ async fn reconcile_scheduled_migration_txs_before_abandon(
     let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Open migration stop reconciliation endpoint: {e}"))?;
-    let chain_tip = sync_engine::get_latest_block(&mut client)
+    let chain_tip = sync_engine::get_latest_block_recorded(&mut client, lightwalletd_url, network)
         .await
         .map_err(|e| format!("Read migration stop reconciliation chain tip: {e}"))?;
     let chain_tip_height = u32::try_from(chain_tip.height)
@@ -4948,6 +4942,7 @@ fn retire_expired_denomination_run(
     );
     super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
     Ok(Some(CreatedBroadcastResult {
+        broadcast_failure_kind: None,
         txids: String::new(),
         status: super::migration::PHASE_FAILED_TERMINAL,
         broadcasted_count: 0,
@@ -4985,6 +4980,7 @@ fn denomination_stage_broadcast_readiness(
 
 fn denomination_expiry_scan_wait_result(txids: &str, total_count: u32) -> CreatedBroadcastResult {
     CreatedBroadcastResult {
+        broadcast_failure_kind: None,
         txids: txids.to_string(),
         status: CreatedBroadcastResult::PENDING_BROADCAST,
         broadcasted_count: 0,
@@ -5056,6 +5052,7 @@ async fn broadcast_pending_denomination_stages(
     }
     if policy.is_cancelled() {
         return Ok(Some(CreatedBroadcastResult {
+            broadcast_failure_kind: None,
             txids,
             status: CreatedBroadcastResult::PENDING_BROADCAST,
             broadcasted_count: 0,
@@ -5069,6 +5066,7 @@ async fn broadcast_pending_denomination_stages(
         Ok(client) => client,
         Err(e) => {
             return Ok(Some(CreatedBroadcastResult {
+                broadcast_failure_kind: None,
                 txids,
                 status: CreatedBroadcastResult::PENDING_BROADCAST,
                 broadcasted_count: 0,
@@ -5083,6 +5081,7 @@ async fn broadcast_pending_denomination_stages(
                 .map_err(|_| "Live migration chain tip exceeds u32".to_string())?,
             Err(e) => {
                 return Ok(Some(CreatedBroadcastResult {
+                    broadcast_failure_kind: None,
                     txids,
                     status: CreatedBroadcastResult::PENDING_BROADCAST,
                     broadcasted_count: 0,
@@ -5141,6 +5140,7 @@ async fn broadcast_pending_denomination_stages(
                 )?;
             }
             return Ok(Some(CreatedBroadcastResult {
+                broadcast_failure_kind: None,
                 txids,
                 status: if broadcasted_count == 0 {
                     CreatedBroadcastResult::PENDING_BROADCAST
@@ -5161,6 +5161,7 @@ async fn broadcast_pending_denomination_stages(
                 migration_storage_retry_message("Denomination split", &stage.expected_txid_hex, &e);
             log::warn!("migration: {message}");
             return Ok(Some(CreatedBroadcastResult {
+                broadcast_failure_kind: None,
                 txids,
                 status: if broadcasted_count == 0 {
                     CreatedBroadcastResult::PENDING_BROADCAST
@@ -5205,6 +5206,7 @@ async fn broadcast_pending_denomination_stages(
         );
     }
     Ok(Some(CreatedBroadcastResult {
+        broadcast_failure_kind: None,
         txids,
         status: if broadcasted_count == 0 {
             CreatedBroadcastResult::PENDING_BROADCAST
@@ -5842,6 +5844,7 @@ fn migration_result_from_split_broadcast(
 
 #[derive(Debug)]
 struct CreatedBroadcastResult {
+    broadcast_failure_kind: Option<&'static str>,
     txids: String,
     status: &'static str,
     broadcasted_count: u32,
@@ -5854,12 +5857,16 @@ impl CreatedBroadcastResult {
     const PENDING_BROADCAST: &'static str = "pending_broadcast";
     const PARTIAL_BROADCAST: &'static str = "partial_broadcast";
     fn into_execute_result(self) -> ExecuteProposalResult {
+        let failure_kind = self
+            .broadcast_failure_kind
+            .or_else(|| (self.status != Self::BROADCASTED).then_some("unknown"));
         ExecuteProposalResult {
             txids: self.txids,
             status: self.status.to_string(),
             broadcasted_count: self.broadcasted_count,
             total_count: self.total_count,
             message: self.message,
+            broadcast_failure_kind: failure_kind.map(str::to_owned),
         }
     }
 
@@ -5897,6 +5904,7 @@ async fn broadcast_created_transactions(
                 format!("Failed to open DB for broadcast after local transaction creation: {e}");
             log::warn!("{log_label}: {message}");
             return CreatedBroadcastResult {
+                broadcast_failure_kind: None,
                 txids: txids_joined,
                 status: CreatedBroadcastResult::PENDING_BROADCAST,
                 broadcasted_count: 0,
@@ -5920,6 +5928,7 @@ async fn broadcast_created_transactions(
                 );
                 log::warn!("{log_label}: {message}");
                 return CreatedBroadcastResult {
+                    broadcast_failure_kind: None,
                     txids: txids_joined,
                     status: if broadcast_ok.is_empty() {
                         CreatedBroadcastResult::PENDING_BROADCAST
@@ -5947,6 +5956,11 @@ async fn broadcast_created_transactions(
                 );
                 log::warn!("{log_label}: {message}");
                 return CreatedBroadcastResult {
+                    broadcast_failure_kind: Some(if e.starts_with("Broadcast rejected:") {
+                        "rejected"
+                    } else {
+                        "unknown"
+                    }),
                     txids: txids_joined,
                     status: if broadcast_ok.is_empty() {
                         CreatedBroadcastResult::PENDING_BROADCAST
@@ -5962,6 +5976,7 @@ async fn broadcast_created_transactions(
     }
 
     CreatedBroadcastResult {
+        broadcast_failure_kind: None,
         txids: txids_joined,
         status: CreatedBroadcastResult::BROADCASTED,
         broadcasted_count: total_count,

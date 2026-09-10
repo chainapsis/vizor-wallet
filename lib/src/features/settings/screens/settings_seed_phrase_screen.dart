@@ -11,6 +11,9 @@ import '../../../core/security/password_policy.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/storage/app_secure_store.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
+import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -116,6 +119,7 @@ class _SettingsSeedPhraseScreenState
   bool _isBirthdayHeightLoading = false;
   bool _isBirthdayDateLoading = false;
   int _birthdayLoadGeneration = 0;
+  int _secretRequestGeneration = 0;
   String? _revealError;
   _SeedPhraseCopyTarget? _copiedTarget;
   Timer? _copyResetTimer;
@@ -134,6 +138,7 @@ class _SettingsSeedPhraseScreenState
   }
 
   void _clearSensitiveState({String? passwordError}) {
+    _secretRequestGeneration++;
     _copyResetTimer?.cancel();
     _birthdayLoadGeneration++;
     _passwordController.clear();
@@ -206,6 +211,7 @@ class _SettingsSeedPhraseScreenState
       _passwordError = null;
       _revealError = null;
     });
+    final requestGeneration = ++_secretRequestGeneration;
 
     try {
       final accountState = ref.read(accountProvider).value;
@@ -216,10 +222,20 @@ class _SettingsSeedPhraseScreenState
         );
       }
       final targetAccountUuid = targetAccount.uuid;
+      final secretGuard = LinuxSecretOperationGuard(
+        store: ref.read(linuxSecretOperationStoreProvider),
+        coordinator: ref.read(linuxKeyringCoordinatorProvider),
+        isRequestCurrent: () =>
+            mounted && requestGeneration == _secretRequestGeneration,
+        readAccounts: () => ref.read(accountProvider).value,
+        accountUuid: targetAccountUuid,
+        trackActiveAccount: widget.accountUuid == null,
+      );
 
       final isValid = await ref
           .read(appSecurityProvider.notifier)
           .confirmPassword(_passwordController.text);
+      secretGuard.check();
       if (!isValid) {
         if (!mounted) return;
         setState(() {
@@ -249,6 +265,7 @@ class _SettingsSeedPhraseScreenState
       final secret = await ref
           .read(accountProvider.notifier)
           .getSoftwareWalletSecretForAccount(targetAccountUuid);
+      secretGuard.check();
       final mnemonic = secret?.mnemonic;
       if (mnemonic == null || mnemonic.isEmpty) {
         throw const _SeedPhraseUnavailableException(
@@ -285,6 +302,14 @@ class _SettingsSeedPhraseScreenState
       unawaited(
         _loadBirthdayHeightForReveal(targetAccountUuid, birthdayLoadGeneration),
       );
+    } on SecureStorageSessionChangedException {
+      if (!mounted || requestGeneration != _secretRequestGeneration) return;
+      setState(() {
+        _clearSensitiveState(
+          passwordError:
+              'The wallet session changed. Enter your password again.',
+        );
+      });
     } on _SeedPhraseUnavailableException catch (e) {
       if (!mounted) return;
       setState(() {

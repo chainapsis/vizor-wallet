@@ -70,11 +70,10 @@ class VotingPirWarmupCoordinator {
   final Set<String> _completed = {};
 
   /// Whole-pass single-flight so polls and round-detail entry share one
-  /// list/status/PIR-resolve burst instead of starting two in parallel.
-  Future<void>? _passInFlight;
+  /// list/status/PIR-resolve burst per account instead of starting duplicates.
+  final Map<String, Future<void>> _passesInFlight = {};
 
-  DateTime? _lastSuccessfulPassAt;
-  String? _lastSuccessfulPassAccountUuid;
+  final Map<String, DateTime> _lastSuccessfulPassAtByAccount = {};
 
   @visibleForTesting
   Map<String, Future<bool>> get inFlightForTesting => _inFlight;
@@ -89,36 +88,37 @@ class VotingPirWarmupCoordinator {
   /// same account within [votingPirWarmupMinIntervalProvider] is a no-op
   /// after a successful pass; a failed pass retries on the next trigger.
   Future<void> maybeWarmActiveRounds() {
-    final inFlight = _passInFlight;
-    if (inFlight != null) return inFlight;
-
-    final releaseBackgroundWork = _ref
+    final releaseLookup = _ref
         .read(votingShareTrackingRegistryProvider)
         .beginBackgroundWork();
-    if (releaseBackgroundWork == null) {
+    if (releaseLookup == null) {
       debugPrint(
         '[zcash] Voting: PIR cache warmup skipped '
         'reason=wallet-mutation-in-progress',
       );
       return Future.value();
     }
-
-    final pass = _startPass(releaseBackgroundWork);
-    _passInFlight = pass;
-    return pass;
+    return _resolveAccountAndMaybeStart(releaseLookup);
   }
 
-  Future<void> _startPass(VoidCallback releaseBackgroundWork) async {
+  Future<void> _resolveAccountAndMaybeStart(VoidCallback releaseLookup) async {
+    VoidCallback? release = releaseLookup;
     try {
       final accountUuid = await _ref
           .read(votingActiveAccountUuidProvider)
           .call();
       if (accountUuid == null) return;
 
+      final existing = _passesInFlight[accountUuid];
+      if (existing != null) {
+        release();
+        release = null;
+        return await existing;
+      }
+
       final minInterval = _ref.read(votingPirWarmupMinIntervalProvider);
-      final lastSuccess = _lastSuccessfulPassAt;
+      final lastSuccess = _lastSuccessfulPassAtByAccount[accountUuid];
       if (lastSuccess != null &&
-          _lastSuccessfulPassAccountUuid == accountUuid &&
           DateTime.now().difference(lastSuccess) < minInterval) {
         debugPrint(
           '[zcash] Voting: PIR cache warmup skipped reason=min-interval',
@@ -126,21 +126,43 @@ class VotingPirWarmupCoordinator {
         return;
       }
 
-      if (await _warmActiveRounds()) {
-        _lastSuccessfulPassAt = DateTime.now();
-        _lastSuccessfulPassAccountUuid = accountUuid;
-      }
+      // Keep the unscoped lease until the account-scoped lease is held. This
+      // closes the destructive-operation race between discovering the active
+      // account and binding the rest of the pass to it.
+      final releaseAccountWork = _ref
+          .read(votingShareTrackingRegistryProvider)
+          .beginBackgroundWork(accountUuid: accountUuid);
+      if (releaseAccountWork == null) return;
+      release();
+      release = null;
+
+      late final Future<void> tracked;
+      tracked = _runPass(accountUuid).whenComplete(() {
+        if (identical(_passesInFlight[accountUuid], tracked)) {
+          _passesInFlight.remove(accountUuid);
+        }
+        releaseAccountWork();
+      });
+      _passesInFlight[accountUuid] = tracked;
+      return await tracked;
     } catch (error) {
       debugPrint('[zcash] Voting: PIR cache warmup pass failed: $error');
     } finally {
-      _passInFlight = null;
-      releaseBackgroundWork();
+      release?.call();
     }
   }
 
-  Future<bool> _warmActiveRounds() async {
-    final accountUuid = await _ref.read(votingActiveAccountUuidProvider).call();
-    if (accountUuid == null) return false;
+  Future<void> _runPass(String accountUuid) async {
+    try {
+      if (await _warmActiveRounds(accountUuid)) {
+        _lastSuccessfulPassAtByAccount[accountUuid] = DateTime.now();
+      }
+    } catch (error) {
+      debugPrint('[zcash] Voting: PIR cache warmup pass failed: $error');
+    }
+  }
+
+  Future<bool> _warmActiveRounds(String accountUuid) async {
     final dbPath = await _ref.read(votingWalletDbPathProvider).call();
 
     final config = await _ref.read(votingConfigProvider.future);
@@ -148,9 +170,7 @@ class VotingPirWarmupCoordinator {
     final authenticatedRoundIds = config.authenticatedRounds
         .map((round) => round.roundId)
         .toSet();
-    final showTestRounds = await _ref.read(
-      showTestVotingRoundsProvider.future,
-    );
+    final showTestRounds = await _ref.read(showTestVotingRoundsProvider.future);
 
     final rounds = await api.listRounds();
     final activeRounds = <VotingRoundDetails>[];

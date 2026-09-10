@@ -263,12 +263,16 @@ class MobileModalScaffold extends StatelessWidget {
     this.showClose = true,
     this.bodyGap = AppSpacing.sm,
     this.bottomPadding = AppSpacing.md,
+    this.constrainBody = false,
     super.key,
   });
 
   final String title;
   final VoidCallback onClose;
   final Widget child;
+
+  /// Keeps a scrollable body within the height left below the fixed header.
+  final bool constrainBody;
   final Widget? leading;
   final TextStyle? titleStyle;
   final int titleMaxLines;
@@ -333,7 +337,7 @@ class MobileModalScaffold extends StatelessWidget {
                 ),
                 SizedBox(height: bodyGap),
               ],
-              child,
+              if (constrainBody) Flexible(child: child) else child,
             ],
           ),
         ),

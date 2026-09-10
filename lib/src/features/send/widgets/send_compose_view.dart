@@ -2,8 +2,11 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../core/widgets/decimal_amount_input_formatter.dart';
 
 /// Recipient address type used to choose the leading icon.
 ///
@@ -303,6 +306,13 @@ class SendComposeView extends StatelessWidget {
       inlineSuffixStyle: amountAffixStyle,
       showClearButton: true,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        const CommaToDotInputFormatter(),
+        DecimalAmountInputFormatter(
+          maxFractionDigits: amountInputIsUsd ? 2 : 8,
+          maxLength: amountInputIsUsd ? 12 : 17,
+        ),
+      ],
     );
   }
 
@@ -528,7 +538,9 @@ class _AmountConversionRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xxs),
-                const _AmountPriceLoadingBar(),
+                const AmountPriceLoadingBar(
+                  key: ValueKey('send_amount_price_loading'),
+                ),
               ] else
                 Text(
                   text ?? r'$ 0',
@@ -541,24 +553,6 @@ class _AmountConversionRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _AmountPriceLoadingBar extends StatelessWidget {
-  const _AmountPriceLoadingBar();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      key: const ValueKey('send_amount_price_loading'),
-      width: 48,
-      height: 12,
-      decoration: BoxDecoration(
-        color: colors.background.overlay.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(AppRadii.full),
       ),
     );
   }

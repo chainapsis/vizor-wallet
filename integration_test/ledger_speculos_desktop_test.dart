@@ -1153,7 +1153,7 @@ Widget _ledgerSwapHarness({
       paySelectedAssetStoreProvider.overrideWithValue(persistenceStore),
       swapZecStagingAddressServiceProvider.overrideWithValue(
         SwapZecStagingAddressService(
-          loadCurrentShieldedAddress: ({required accountUuid}) async =>
+          reserveFreshOrchardAddress: ({required accountUuid}) async =>
               'u1ledgerrefundaddress',
         ),
       ),
@@ -1170,7 +1170,7 @@ Widget _ledgerSwapHarness({
         (_) async => 'inert-no-failover',
       ),
       rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-        (_) async => BigInt.zero,
+        (_, _) async => BigInt.zero,
       ),
     ],
     child: MaterialApp.router(
@@ -1483,6 +1483,7 @@ class _SpeculosSwapHardwareSigningService
   }) async {
     draftCount++;
     return SwapHardwarePcztDraft(
+      accountUuid: accountUuid,
       pcztBytes: _pcztBytes,
       needsSaplingParams: false,
       feeZatoshi: BigInt.from(10000),
@@ -1737,6 +1738,9 @@ class _TrackingLedgerSignedOperationService
     lastOperationId = operationId;
     await delegate.acknowledge(operationId);
   }
+
+  @override
+  Future<void> discard(String operationId) => delegate.discard(operationId);
 }
 
 class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {

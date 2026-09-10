@@ -69,6 +69,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/swap_activity_fixture_intents.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
@@ -126,6 +128,34 @@ void main() {
     final parts = splitSwapSummaryAmountText(r'999K $SHIT', _testShitAsset);
     expect(parts.amount, '999K');
     expect(parts.symbol, r'$SHIT');
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: _FakeSwapProvider(),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(
+          find.byKey(const ValueKey('swap_fiat_value_mode_icon')),
+        );
+        await tester.pumpAndSettle();
+      }
+      for (final key in ['swap_amount_field', 'swap_receive_amount_field']) {
+        await expectLeadingDecimalInput(tester, find.byKey(ValueKey(key)));
+      }
+    }
   });
 
   testWidgets('review summary fits a long pay amount via FittedBox', (
@@ -4360,6 +4390,66 @@ void main() {
     expect(swapProvider.requests.single.slippageBps, 125);
   });
 
+  testWidgets(
+    'custom slippage normalizes leading decimals without relaxing limits',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final sessionStore = _FakeSwapPersistenceStore();
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _FakeSwapProvider(),
+          seedSwapActivityFixtures: false,
+          sessionStore: sessionStore,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('swap_slippage_custom_input'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('swap_slippage_update_button')),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      final controller = tester.widget<TextField>(field).controller!;
+      for (final invalid in ['0.555', '1234']) {
+        await tester.enterText(field, invalid);
+        await tester.pump();
+        expect(controller.text, '0.5');
+      }
+      await tester.enterText(field, '5.01');
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('swap_slippage_update_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.enterText(field, ',5');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(sessionStore.savedPreferences?.slippageBps, 50);
+    },
+  );
+
   testWidgets('custom slippage outside range disables update', (tester) async {
     await _setDesktopViewport(tester);
     final sessionStore = _FakeSwapPersistenceStore();
@@ -8477,7 +8567,7 @@ void main() {
         depositSender: depositSender,
         sessionStore: sessionStore,
         failoverChainNameGetter: (url) async => 'main',
-        failoverHeightGetter: (url) async =>
+        failoverHeightGetter: (url, _) async =>
             url == fallback.normalizedLightwalletdUrl
             ? BigInt.from(100)
             : BigInt.from(100),
@@ -9010,6 +9100,96 @@ void main() {
     },
   );
 
+  testWidgets(
+    'hardware Pay cancel returns to an empty composer and requires a fresh quote',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final provider = _FakeSwapProvider();
+      final signing = _FakeSwapHardwareSigningService();
+      final router = GoRouter(
+        initialLocation: '/pay',
+        routes: [_payRoute(), _swapActivityRoute()],
+      );
+      await tester.pumpWidget(
+        _routerHarness(
+          router,
+          bootstrap: _hardwareBootstrap,
+          swapProvider: provider,
+          hardwareSigningService: signing,
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '25',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      const recipient = '0x52908400098527886e0f7030069857d2e4169ee7';
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        recipient,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('pay_confirm_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('swap_keystone_signing_overlay_surface'),
+          ),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/pay');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(PayScreen)),
+      );
+      final restored = container.read(swapStateProvider);
+      expect(restored.payMode, isTrue);
+      expect(restored.quoteMode, SwapQuoteMode.exactOutput);
+      expect(restored.receiveAmountText, isEmpty);
+      expect(restored.destinationText, isEmpty);
+      expect(restored.reviewQuote, isNull);
+      expect(restored.pendingHardwareSigningIntent, isNull);
+      expect(
+        tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+        isEmpty,
+      );
+      final requests = provider.requests.length;
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '25',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        recipient,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(provider.requests, hasLength(requests + 1));
+      expect(provider.requests.last.mode, SwapQuoteMode.exactOutput);
+      expect(provider.requests.last.amount, 25);
+    },
+  );
+
   testWidgets('hardware ZEC auto signing cancel drops the pending intent', (
     tester,
   ) async {
@@ -9075,6 +9255,39 @@ void main() {
     expect(hardwareSigningService.discardedDrafts, [BigInt.one]);
     expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
     expect(find.text('Deposit ZEC'), findsNothing);
+    expect(
+      tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_amount_field')),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .controller
+          .text,
+      '',
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    final restored = container.read(swapStateProvider);
+    expect(restored.destinationText, isEmpty);
+    expect(restored.reviewQuote, isNull);
+    expect(restored.pendingHardwareSigningIntent, isNull);
+    final requestsBeforeRetry = swapProvider.requests.length;
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.003',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    expect(swapProvider.requests, hasLength(requestsBeforeRetry + 1));
+    expect(container.read(swapStateProvider).reviewQuote, isNotNull);
   });
 
   testWidgets(
@@ -9321,7 +9534,7 @@ void main() {
           hardwareSigningService: hardwareSigningService,
           sessionStore: sessionStore,
           failoverChainNameGetter: (_) async => 'main',
-          failoverHeightGetter: (_) async => BigInt.from(100),
+          failoverHeightGetter: (_, _) async => BigInt.from(100),
         ),
       );
       await tester.pumpAndSettle();
@@ -9643,7 +9856,7 @@ Widget _routerHarness(
         failoverChainNameGetter ?? (_) async => 'inert-no-failover',
       ),
       rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-        failoverHeightGetter ?? (_) async => BigInt.zero,
+        failoverHeightGetter ?? (_, _) async => BigInt.zero,
       ),
     ],
     child: MaterialApp.router(

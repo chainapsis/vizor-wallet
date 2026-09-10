@@ -1,3 +1,4 @@
+import '../../../../providers/sync_provider.dart';
 import 'dart:async';
 import '../../../ledger/ledger_error_messages.dart';
 import '../../../ledger/services/ledger_connection_recovery.dart';
@@ -113,6 +114,7 @@ class _MobileLedgerSendSignScreenState
   var _attemptGeneration = 0;
   var _ownershipTransferred = false;
   var _discardScheduled = false;
+  late final SyncNotifier _syncNotifier;
   var _cancelled = false;
   late final String _operationId;
   late final LedgerOperationCanceller _cancelOperation;
@@ -120,6 +122,7 @@ class _MobileLedgerSendSignScreenState
   @override
   void initState() {
     super.initState();
+    _syncNotifier = ref.read(syncProvider.notifier);
     _cancelOperation = ref.read(ledgerOperationCancellerProvider);
     _operationId =
         'send:${widget.args.proposalAccountUuid}:${widget.args.sendFlowId}';
@@ -511,6 +514,8 @@ class _MobileLedgerSendSignScreenState
         proposalId: widget.args.proposalId,
         sendFlowId: widget.args.sendFlowId,
         logContext: logContext,
+        syncNotifier: _syncNotifier,
+        accountUuid: widget.args.proposalAccountUuid,
       ),
     );
   }

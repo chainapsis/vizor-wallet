@@ -115,13 +115,15 @@ class VotingShareTrackingRestorer {
       if (pending.isEmpty) return;
 
       final accountSet = accountUuids.toSet();
+      final now = DateTime.now().toUtc();
       final candidates = pending
-          .where(
-            (round) =>
-                accountSet.contains(round.accountUuid) &&
+          .where((round) {
+            final voteEnd = votingSessionVoteEndTime(round.sessionJson);
+            return accountSet.contains(round.accountUuid) &&
                 !registry.isQuiesced(round.accountUuid) &&
-                votingSessionVoteEndTime(round.sessionJson) != null,
-          )
+                voteEnd != null &&
+                now.isBefore(voteEnd);
+          })
           .toList(growable: false);
       if (candidates.isEmpty) return;
 
@@ -147,21 +149,14 @@ class VotingShareTrackingRestorer {
           fireImmediately: true,
         );
         try {
-          final session = await _ref.read(provider.future);
+          await _ref.read(provider.future);
           if (_ref.read(appSecurityProvider).requiresUnlock) break;
           if (registry.isQuiesced(round.accountUuid)) continue;
-          final liveRound = session.round;
-          // The sidecar session JSON is immutable after the round is first
-          // inserted, so its cached deadline may predate a server extension.
-          // Session initialization has just loaded authenticated live status;
-          // use that result as the recovery boundary and avoid any helper/DB
-          // tracking pass when the server says the round is closed.
-          if (liveRound == null || !shouldTrackPendingVotingShares(liveRound)) {
-            continue;
-          }
           final notifier = _ref.read(provider.notifier);
           notifier.resumeShareTracking();
-          await notifier.runShareTrackingPassIfStale();
+          // Returns once the run is under way, so one round's tracking does
+          // not hold up restoring the next.
+          await notifier.startShareTracking();
         } catch (error, stackTrace) {
           failed = true;
           debugPrint(

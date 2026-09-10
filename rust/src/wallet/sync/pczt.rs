@@ -320,6 +320,22 @@ pub(crate) fn txid_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<TxId, Str
     ))
 }
 
+/// Returns the expiry height committed to by an IO-finalized PCZT.
+pub(crate) fn expiry_height_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<u32, String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+    if pczt.global().inputs_modifiable()
+        || pczt.global().outputs_modifiable()
+        || pczt.global().shielded_modifiable()
+    {
+        return Err("PCZT IO is not finalized".to_string());
+    }
+
+    let effects = pczt
+        .into_effects()
+        .map_err(|e| format!("Extract PCZT effects: {e:?}"))?;
+    Ok(u32::from(effects.expiry_height()))
+}
+
 fn legacy_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
     cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
 }
@@ -333,8 +349,70 @@ fn ironwood_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
 /// Returns immediately. A proof requested before warm-up completes blocks on
 /// the transaction builder's shared cache, so this is a latency optimization
 /// rather than a correctness requirement.
+///
+/// This also arms the key's prepared commitment tables once it exists (see
+/// [`start_ironwood_prepared_commitment_warmup`]).
 pub fn start_orchard_proving_key_warmup() {
     zcash_client_backend::start_orchard_proving_key_warmup(ironwood_orchard_circuit_version());
+    start_ironwood_prepared_commitment_warmup();
+}
+
+/// Arms the Ironwood proving key's prepared commitment tables once warm-up
+/// has produced the key.
+///
+/// `ProvingKey::prepare_proving` builds the fixed-base tables that the
+/// prover's polynomial commitments evaluate through. Key generation does not
+/// build them, so without this every send takes the unprepared path.
+///
+/// Runs on its own thread: reaching the key means blocking on the builder's
+/// shared cache until warm-up finishes, while the FRB entry point must stay
+/// non-blocking. Starts at most once per process, and a failed spawn leaves
+/// the flag clear so a later send retries — losing preparation costs latency,
+/// never correctness.
+///
+/// halo2 routes through the tables only on pools of at most eight effective
+/// threads (ten for Orchard's `k = 11` SRS on AArch64 macOS), falling back to
+/// the planned multiexp past that. So this pays off on phones and is neutral
+/// on wide desktop pools, where the tables are retained but unread.
+///
+/// Only the Ironwood key is armed; `FixedPostNu6_2` is the legacy branch and
+/// does not justify a second set of tables.
+fn start_ironwood_prepared_commitment_warmup() {
+    use std::sync::atomic::AtomicBool;
+
+    static STARTED: AtomicBool = AtomicBool::new(false);
+
+    start_ironwood_prepared_commitment_warmup_with(&STARTED, |task| {
+        std::thread::Builder::new()
+            .name("orchard-prepared-commitment-warmup".to_string())
+            .spawn(task)
+            .map(|_| ())
+    });
+}
+
+fn start_ironwood_prepared_commitment_warmup_with(
+    started: &std::sync::atomic::AtomicBool,
+    spawn: impl FnOnce(fn()) -> std::io::Result<()>,
+) {
+    use std::sync::atomic::Ordering;
+
+    if started
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+
+    if let Err(error) = spawn(prepare_ironwood_commitments) {
+        started.store(false, Ordering::Release);
+        log::warn!("orchard: could not start prepared commitment warm-up: {error}");
+    }
+}
+
+fn prepare_ironwood_commitments() {
+    // Blocks until key warm-up has populated the shared cache.
+    let armed = ironwood_orchard_proving_key().prepare_proving();
+    log::info!("orchard: prepared commitment tables armed={armed}");
 }
 
 /// The Orchard circuit version implied by a PCZT's `consensus_branch_id`.
@@ -439,6 +517,7 @@ pub async fn create_pczt_from_proposal(
     }
     let live_expiry_height = match super::send::live_send_expiry_height(
         lightwalletd_url,
+        network,
         zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
     )
     .await
@@ -554,6 +633,7 @@ pub async fn create_tex_pczts_from_proposal(
     }
     let live_expiry_height = match super::send::live_send_expiry_height(
         lightwalletd_url,
+        network,
         zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
     )
     .await
@@ -1549,7 +1629,7 @@ async fn store_and_broadcast_pczts_inner(
     let txids_joined = txids.join(",");
     let total_count = prepared.len() as u32;
 
-    // Resolve a live tip before touching either the DB or the network. An
+    // Resolve a recent tip before touching either the DB or the network. An
     // already-expired set is terminal and must not be persisted as pending.
     let mut expiry_client =
         match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
@@ -1561,7 +1641,13 @@ async fn store_and_broadcast_pczts_inner(
                 );
             }
         };
-    let latest = match crate::wallet::sync_engine::get_latest_block(&mut expiry_client).await {
+    let latest = match crate::wallet::sync_engine::latest_block_for_transaction_with_client(
+        &mut expiry_client,
+        lightwalletd_url,
+        network,
+    )
+    .await
+    {
         Ok(latest) => latest,
         Err(error) => {
             return release_signed_pczt_operation_after_failure(
@@ -2076,9 +2162,13 @@ pub async fn extract_and_broadcast_pczt(
     let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
-    let latest = crate::wallet::sync_engine::get_latest_block(&mut client)
-        .await
-        .map_err(|e| e.to_string())?;
+    let latest = crate::wallet::sync_engine::latest_block_for_transaction_with_client(
+        &mut client,
+        lightwalletd_url,
+        network,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     if let Some(error) =
         pczt_broadcast_expiry_error(&txid, u32::from(tx.expiry_height()), latest.height)
     {
@@ -2576,12 +2666,36 @@ mod tests {
     }
 
     #[test]
-    fn pczt_and_warmup_share_the_transaction_builder_proving_key() {
-        start_orchard_proving_key_warmup();
-        start_orchard_proving_key_warmup();
+    fn prepared_commitment_warmup_is_single_flight_over_the_builder_key() {
+        use std::sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Barrier,
+        };
+
+        const CALLERS: usize = 8;
+        let started = AtomicBool::new(false);
+        let spawn_calls = AtomicUsize::new(0);
+        let barrier = Barrier::new(CALLERS);
+        std::thread::scope(|scope| {
+            for _ in 0..CALLERS {
+                scope.spawn(|| {
+                    barrier.wait();
+                    start_ironwood_prepared_commitment_warmup_with(&started, |task| {
+                        spawn_calls.fetch_add(1, Ordering::Relaxed);
+                        task();
+                        Ok(())
+                    });
+                });
+            }
+        });
+        start_ironwood_prepared_commitment_warmup_with(&started, |_| {
+            panic!("prepared commitment warm-up scheduled more than once")
+        });
+        assert_eq!(spawn_calls.load(Ordering::Relaxed), 1);
 
         let builder_key = cached_orchard_proving_key(ironwood_orchard_circuit_version());
         assert!(std::ptr::eq(ironwood_orchard_proving_key(), builder_key));
+        assert!(builder_key.prepare_proving());
 
         let legacy_builder_key =
             cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2);
@@ -2589,6 +2703,20 @@ mod tests {
             legacy_orchard_proving_key(),
             legacy_builder_key
         ));
+    }
+
+    #[test]
+    fn prepared_commitment_warmup_retries_after_spawn_failure() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let started = AtomicBool::new(false);
+        start_ironwood_prepared_commitment_warmup_with(&started, |_| {
+            Err(std::io::Error::other("simulated spawn failure"))
+        });
+        assert!(!started.load(Ordering::Acquire));
+
+        start_ironwood_prepared_commitment_warmup_with(&started, |_| Ok(()));
+        assert!(started.load(Ordering::Acquire));
     }
 
     #[test]
@@ -2646,9 +2774,10 @@ mod tests {
         // levels up from this nested test module.
         use super::super::{
             apply_sigs_and_extract, ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
-            extract_compact_sigs_from_signed_pczt, extract_transaction_from_pczt,
-            ironwood_orchard_proving_key, preflight_orchard_spend_auth_signatures,
-            prepare_compact_signed_pczts, prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
+            expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_signed_pczt,
+            extract_transaction_from_pczt, ironwood_orchard_proving_key,
+            preflight_orchard_spend_auth_signatures, prepare_compact_signed_pczts,
+            prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
             set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt, validate_signed_pczts,
         };
         use orchard::tree::MerkleHashOrchard;
@@ -2937,6 +3066,8 @@ mod tests {
             let (base_bytes, orchard_ask, spend_index, _, _, _) = build_migration_base_pczt();
             let pre_signature_txid = txid_from_io_finalized_pczt(&base_bytes)
                 .expect("IO-finalized PCZT effects should have a stable txid");
+            let pre_signature_expiry = expiry_height_from_io_finalized_pczt(&base_bytes)
+                .expect("IO-finalized PCZT effects should have a stable expiry height");
 
             let pk = ironwood_orchard_proving_key();
             let proofs = Prover::new(pczt::Pczt::parse(&base_bytes).unwrap())
@@ -2953,6 +3084,10 @@ mod tests {
             let extracted = extract_transaction_from_pczt(&proofs, &signed, None, None).unwrap();
 
             assert_eq!(pre_signature_txid, extracted.txid);
+            assert_eq!(
+                pre_signature_expiry,
+                u32::from(extracted.tx.expiry_height())
+            );
         }
 
         #[test]

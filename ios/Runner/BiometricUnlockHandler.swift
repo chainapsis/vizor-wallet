@@ -57,7 +57,7 @@ final class BiometricUnlockHandler {
     case .faceID:
       kind = "face"
     case .touchID:
-      kind = "fingerprint"
+      kind = "touchId"
     default:
       kind = "none"
     }

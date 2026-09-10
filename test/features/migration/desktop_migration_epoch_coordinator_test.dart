@@ -131,6 +131,7 @@ Future<_EpochHarness> _startCoordinator({
       ironwoodMigrationServiceProvider.overrideWithValue(service),
       rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue((
         _,
+        _,
       ) async {
         // Each epoch's entry read observes a fresh tip (1_000, 1_001, ...) so
         // tests can prove which epoch's height flowed into a broadcast.

@@ -8,6 +8,8 @@ import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/config/swap_feature_config.dart';
+import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_layout.dart';
@@ -31,6 +33,10 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../send/widgets/send_recipient_resolver.dart';
 import '../../send/widgets/send_status_content_view.dart';
 import '../../send/widgets/send_verify_address_overlay.dart';
+import '../../payment_links/widgets/payment_link_gift_card.dart';
+import '../../payment_links/services/payment_link_transaction_matching.dart';
+import '../gift_card_activity_index.dart';
+import '../widgets/gift_card_activity_detail_view.dart';
 import '../widgets/received_receipt_view.dart';
 import '../widgets/shielded_receipt_view.dart';
 
@@ -40,12 +46,14 @@ class ActivityTransactionStatusArgs {
     this.txKind,
     this.initialTransaction,
     this.initialDetail,
+    this.giftCard,
   });
 
   final String txidHex;
   final String? txKind;
   final rust_sync.TransactionInfo? initialTransaction;
   final rust_sync.TransactionDetail? initialDetail;
+  final GiftCardActivityMetadata? giftCard;
 }
 
 class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
@@ -65,6 +73,7 @@ class _ActivityTransactionStatusScreenState
   bool _isLoading = false;
   String? _error;
   String? _activeAccountUuid;
+  String? _argsAccountUuid;
   bool _messageExpanded = false;
   String? _verifyAddress;
 
@@ -74,6 +83,7 @@ class _ActivityTransactionStatusScreenState
     _transaction = widget.args.initialTransaction;
     _detail = widget.args.initialDetail;
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    _argsAccountUuid = _activeAccountUuid;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -171,10 +181,9 @@ class _ActivityTransactionStatusScreenState
     String txidHex, {
     String? txKind,
   }) {
-    final normalized = txidHex.toLowerCase();
     if (txKind != null) {
       for (final tx in transactions) {
-        if (tx.txidHex.toLowerCase() == normalized &&
+        if (_txidsMatch(txidHex, tx.txidHex) &&
             _txKindMatches(txKind, tx.txKind)) {
           return tx;
         }
@@ -182,20 +191,19 @@ class _ActivityTransactionStatusScreenState
       return null;
     }
     for (final tx in transactions) {
-      if (tx.txidHex.toLowerCase() == normalized) return tx;
+      if (_txidsMatch(txidHex, tx.txidHex)) return tx;
     }
     return null;
   }
 
   String _recentTxSignature(SyncState? sync) {
-    final txid = widget.args.txidHex.toLowerCase();
     final txKind =
         _transaction?.txKind ??
         widget.args.initialTransaction?.txKind ??
         widget.args.txKind;
     if (txKind != null) {
       for (final tx in sync?.recentTransactions ?? const []) {
-        if (tx.txidHex.toLowerCase() == txid &&
+        if (_txidsMatch(widget.args.txidHex, tx.txidHex) &&
             _txKindMatches(txKind, tx.txKind)) {
           return [
             tx.txidHex,
@@ -203,23 +211,32 @@ class _ActivityTransactionStatusScreenState
             tx.expiredUnmined,
             tx.txKind,
             tx.displayAmount,
+            tx.fee,
           ].join(':');
         }
       }
       return '';
     }
     for (final tx in sync?.recentTransactions ?? const []) {
-      if (tx.txidHex.toLowerCase() == txid) {
+      if (_txidsMatch(widget.args.txidHex, tx.txidHex)) {
         return [
           tx.txidHex,
           tx.minedHeight,
           tx.expiredUnmined,
           tx.txKind,
           tx.displayAmount,
+          tx.fee,
         ].join(':');
       }
     }
     return '';
+  }
+
+  bool _txidsMatch(String first, String second) {
+    if (widget.args.giftCard != null) {
+      return paymentLinkTxidsMatch(first, second);
+    }
+    return first.toLowerCase() == second.toLowerCase();
   }
 
   bool _txKindMatches(String expected, String actual) {
@@ -283,16 +300,19 @@ class _ActivityTransactionStatusScreenState
   String _feeText(
     rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
+    GiftCardActivityMetadata? giftCard,
   }) {
     if (tx == null || tx.fee <= BigInt.zero) return '--';
+    final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
     return hideAmountIfPrivacyMode(
-      ZecAmount.fromZatoshi(tx.fee).fee.toString(),
+      ZecAmount.fromZatoshi(fee).fee.toString(),
       privacyModeEnabled: privacyModeEnabled,
     );
   }
 
   /// Figma receipt timestamp ("25 May, 13:30") for the redesigned views.
-  String _timestampText(rust_sync.TransactionInfo tx) {
+  String _timestampText(rust_sync.TransactionInfo tx, {DateTime? override}) {
+    if (override != null) return formatDayMonthTime(override);
     final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
     if (seconds <= BigInt.zero) return '--';
     return formatDayMonthTime(
@@ -305,7 +325,7 @@ class _ActivityTransactionStatusScreenState
   ) {
     final detail = _detail;
     if (tx == null || detail == null) return null;
-    if (detail.txidHex.toLowerCase() != tx.txidHex.toLowerCase()) {
+    if (!_txidsMatch(detail.txidHex, tx.txidHex)) {
       return null;
     }
     if (!_txKindMatches(detail.txKind, tx.txKind)) return null;
@@ -479,6 +499,56 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
+  Widget _giftCardContent(
+    rust_sync.TransactionInfo tx,
+    GiftCardActivityMetadata giftCard, {
+    required bool privacyModeEnabled,
+  }) {
+    final colors = context.colors;
+    final isFailed = tx.expiredUnmined && !giftCard.isClaimInFlight;
+    final isInFlight =
+        !isFailed &&
+        (tx.minedHeight == BigInt.zero || giftCard.isClaimInFlight);
+    final (statusText, statusIconName, statusColor) = isFailed
+        ? ('Failed', AppIcons.cancel, colors.text.destructive)
+        : isInFlight
+        ? ('In progress', AppIcons.loader, colors.text.secondary)
+        : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
+    final amountText = hideAmountIfPrivacyMode(
+      formatZecAmount(giftCard.amountZatoshi),
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    return GiftCardActivityDetailView(
+      kind: giftCard.kind,
+      isInFlight: isInFlight,
+      isFailed: isFailed,
+      artwork: PaymentLinkCardArtwork.fromProtocolId(giftCard.artworkId),
+      amountText: amountText,
+      supportingText:
+          ref.watch(swapFeatureEnabledProvider) &&
+              !privacyModeEnabled &&
+              giftCard.fiatSnapshot != null
+          ? swapFormatCompactFiatValue(giftCard.fiatSnapshot!.amount)
+          : null,
+      statusText: statusText,
+      statusIconName: statusIconName,
+      statusColor: statusColor,
+      message: giftCard.message,
+      messageExpanded: _messageExpanded,
+      onToggleMessage: giftCard.message?.trim().isNotEmpty == true
+          ? _toggleMessageExpanded
+          : null,
+      timestampText: _timestampText(tx, override: giftCard.activityTimestamp),
+      txIdText: truncatedTxid(tx.txidHex),
+      feeText: _feeText(
+        tx,
+        privacyModeEnabled: privacyModeEnabled,
+        giftCard: giftCard,
+      ),
+      onTxIdPressed: () => unawaited(_openTransactionExplorer()),
+    );
+  }
+
   /// Fallback for the states without a dedicated redesigned receipt: a
   /// loading / not-found message when no transaction is available, and a
   /// minimal receipt (amount + status card, no counterparty) for an unknown
@@ -597,6 +667,19 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
+  /// A row tapped before the Gift Card index finished loading arrives with no
+  /// metadata, so the receipt resolves it here instead of staying generic.
+  GiftCardActivityMetadata? _resolvedGiftCard(
+    rust_sync.TransactionInfo? tx,
+    String? accountUuid,
+  ) {
+    if (tx == null || accountUuid == null) return null;
+    return ref
+        .watch(giftCardActivityIndexProvider(accountUuid))
+        .value
+        ?.metadataFor(tx);
+  }
+
   Widget _redesignedPane(Widget content) {
     return Positioned.fill(
       child: AppPaneScrollScaffold(
@@ -628,10 +711,28 @@ class _ActivityTransactionStatusScreenState
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ?? const [];
     final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final activeAccountUuid =
+        ref.watch(accountProvider).value?.activeAccountUuid ??
+        _activeAccountUuid;
+    // The args metadata was resolved for the account that was active when the
+    // row was tapped; under another account only that account's index counts.
+    final suppliedGiftCard =
+        _argsAccountUuid == null || _argsAccountUuid == activeAccountUuid
+        ? widget.args.giftCard
+        : null;
+    final giftCard =
+        _resolvedGiftCard(tx, activeAccountUuid) ?? suppliedGiftCard;
 
     final sentRecipientAddress = detail?.primaryAddress?.trim();
     Widget? redesignedContent;
-    if (tx != null && (tx.txKind == 'received' || tx.txKind == 'receiving')) {
+    if (tx != null && giftCard != null) {
+      redesignedContent = _giftCardContent(
+        tx,
+        giftCard,
+        privacyModeEnabled: privacyModeEnabled,
+      );
+    } else if (tx != null &&
+        (tx.txKind == 'received' || tx.txKind == 'receiving')) {
       redesignedContent = _receivedContent(
         tx,
         detail,

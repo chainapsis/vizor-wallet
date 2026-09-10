@@ -21,6 +21,57 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(loadFigmaCompareFonts);
 
+  testWidgets(
+    'restored participation blocks review and offers an explicit retry',
+    (tester) async {
+      var retries = 0;
+      await _pumpMobileFixture(
+        tester,
+        (_) => MobileVotingScaffold(
+          title: 'Coinholder voting',
+          child: VotingActivePollContent(
+            showDesktopToolbar: false,
+            roundId: 'used',
+            title: 'Used round',
+            snapshotHeight: 100,
+            description: '',
+            forumUri: null,
+            endDate: null,
+            votingPowerZatoshi: BigInt.zero,
+            votingPowerPreparing: false,
+            votingEligibilityConfirmed: false,
+            answersEditable: false,
+            votingEligibilityMessage: null,
+            votingEligibilityErrorMessage: null,
+            onVotingEligibilityRetry: () {},
+            proposals: const [
+              VotingProposalView(
+                id: 1,
+                title: 'Question',
+                description: '',
+                options: [VotingOptionView(index: 0, label: 'Yes')],
+              ),
+            ],
+            draft: const VotingDraftState(),
+            onChoice: (_, _) {},
+            participationUnavailable: true,
+            onParticipationRetry: () => retries++,
+          ),
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('voting_participation_unavailable')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Check again'));
+      expect(retries, 1);
+      final action = tester.widget<AppButton>(
+        find.widgetWithText(AppButton, 'Unavailable'),
+      );
+      expect(action.onPressed, isNull);
+    },
+  );
+
   testWidgets('poll list matches Figma eligibility and active card geometry', (
     tester,
   ) async {
