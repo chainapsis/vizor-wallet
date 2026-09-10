@@ -105,8 +105,8 @@ String ledgerShieldingInputLimitMessage({
   required int inputCount,
   required int limit,
 }) {
-  return 'Ledger can shield up to $limit transparent inputs at once. '
-      'This account holds $inputCount, and Vizor cannot split them yet.';
+  return 'Ledger shields up to $limit transparent inputs at once. '
+      'This shields $limit of $inputCount; shield again afterward for the rest.';
 }
 
 bool ledgerRequestNeedsRebuilding(Object error) {

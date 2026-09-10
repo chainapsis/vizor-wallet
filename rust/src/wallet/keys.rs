@@ -1404,32 +1404,31 @@ pub fn wallet_exists(db_path: &str) -> bool {
     Path::new(db_path).exists()
 }
 
+/// A mainnet UFVK shaped like a hardware export: Orchard and P2PKH only.
+#[cfg(test)]
+pub(crate) fn hardware_style_ufvk(seed: &SecretVec<u8>, account_index: zip32::AccountId) -> String {
+    use zcash_address::unified::{Encoding, Fvk, Ufvk};
+    use zcash_protocol::consensus::NetworkType;
+
+    let full_ufvk =
+        UnifiedSpendingKey::from_seed(&WalletNetwork::Main, seed.expose_secret(), account_index)
+            .unwrap()
+            .to_unified_full_viewing_key();
+    let orchard_fvk = full_ufvk.orchard().unwrap().to_bytes();
+    let transparent_fvk = full_ufvk
+        .transparent()
+        .unwrap()
+        .serialize()
+        .try_into()
+        .unwrap();
+    Ufvk::try_from_items(vec![Fvk::Orchard(orchard_fvk), Fvk::P2pkh(transparent_fvk)])
+        .unwrap()
+        .encode(&NetworkType::Main)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn hardware_style_ufvk(seed: &SecretVec<u8>, account_index: zip32::AccountId) -> String {
-        use zcash_address::unified::{Encoding, Fvk, Ufvk};
-        use zcash_protocol::consensus::NetworkType;
-
-        let full_ufvk = UnifiedSpendingKey::from_seed(
-            &WalletNetwork::Main,
-            seed.expose_secret(),
-            account_index,
-        )
-        .unwrap()
-        .to_unified_full_viewing_key();
-        let orchard_fvk = full_ufvk.orchard().unwrap().to_bytes();
-        let transparent_fvk = full_ufvk
-            .transparent()
-            .unwrap()
-            .serialize()
-            .try_into()
-            .unwrap();
-        Ufvk::try_from_items(vec![Fvk::Orchard(orchard_fvk), Fvk::P2pkh(transparent_fvk)])
-            .unwrap()
-            .encode(&NetworkType::Main)
-    }
 
     #[test]
     fn test_generate_mnemonic_is_24_words() {

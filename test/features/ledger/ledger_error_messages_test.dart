@@ -45,7 +45,7 @@ void main() {
   test('shielding input limit copy names both counts', () {
     final message = ledgerShieldingInputLimitMessage(inputCount: 41, limit: 32);
     expect(message, contains('up to 32'));
-    expect(message, contains('holds 41'));
+    expect(message, contains('32 of 41'));
   });
 
   test('signatures from a different Ledger name the account mismatch', () {

@@ -34,6 +34,7 @@
 //! components) and the provers log+fail loudly rather than produce a
 //! silently-invalid proof.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 mod ledger_selection;
@@ -55,7 +56,8 @@ use shardtree::{
 use tonic::Code;
 use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::{
-    GreedyInputSelector, InputSelector, LockFilter, LockedInputPolicy, NoteSelection, SpendPolicy,
+    GreedyInputSelector, InputSelector, LockFilter, LockedInputPolicy, NoteSelection,
+    ShieldingSelector, SpendPolicy,
 };
 use zcash_client_backend::{
     data_api::{
@@ -1013,25 +1015,18 @@ pub(crate) fn get_shield_transparent_status(
     let account_id = parse_account_uuid(account_uuid)?;
 
     match build_shielding_proposal(&mut db, network, account_id, shielding_threshold) {
-        Ok((proposal, _)) => {
-            let transparent_input_count = shielding_transparent_input_count(&proposal);
+        Ok((proposal, _, skipped_inputs)) => {
+            // The proposal already respects the device limit; the whole count
+            // lets the home card say how many inputs wait for another round.
+            let transparent_input_count =
+                shielding_transparent_input_count(&proposal).saturating_add(skipped_inputs);
             let ledger_input_limit = ledger_selection::is_ledger(&db, account_id)?
                 .then_some(crate::wallet::ledger::serializer::MAX_TRANSPARENT_INPUTS as u32);
-            // The APDU serializer would reject the request much later, after
-            // proofs; surface the limit here so the home card can explain it.
-            let over_limit =
-                ledger_input_limit.is_some_and(|limit| transparent_input_count > limit);
             Ok(ShieldTransparentStatus {
-                can_shield: !over_limit,
+                can_shield: true,
                 fee_zatoshi: proposal_fee_zatoshi(&proposal),
                 shielded_zatoshi: proposal_shielded_zatoshi(&proposal),
-                reason: match ledger_input_limit {
-                    Some(limit) if over_limit => ledger_selection::shielding_input_limit_reason(
-                        transparent_input_count,
-                        limit,
-                    ),
-                    _ => String::new(),
-                },
+                reason: String::new(),
                 transparent_input_count,
                 ledger_input_limit,
             })
@@ -1093,7 +1088,7 @@ fn create_shield_transparent_pczt_with_expiry(
     with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
-        let (proposal, _) =
+        let (proposal, _, _) =
             build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
@@ -1176,7 +1171,7 @@ pub(crate) async fn shield_transparent_balance(
                 .map_err(|e| format!("{e}"))?
                 .ok_or("Account not found")?;
 
-            let (proposal, _) =
+            let (proposal, _, _) =
                 build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
             let fee_zatoshi = proposal_fee_zatoshi(&proposal);
             let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
@@ -3315,12 +3310,15 @@ fn shielding_threshold() -> Result<Zatoshis, String> {
         .map_err(|_| "Bad shielding threshold".to_string())
 }
 
+/// Builds the next shielding transaction. The last element counts spendable
+/// transparent inputs left for a later round because the signer cannot take
+/// them all at once (only Ledger accounts have such a limit).
 fn build_shielding_proposal(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     account_id: AccountUuid,
     shielding_threshold: Zatoshis,
-) -> Result<(Proposal<WalletFeeRule, Infallible>, Zatoshis), String> {
+) -> Result<(Proposal<WalletFeeRule, Infallible>, Zatoshis, u32), String> {
     let chain_height = db
         .chain_height()
         .map_err(|e| format!("Failed to read chain height: {e}"))?
@@ -3334,22 +3332,55 @@ fn build_shielding_proposal(
         .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
-    let proposal = propose_shielding::<_, _, _, _, Infallible>(
-        db,
-        &network,
-        &input_selector,
-        &change_strategy,
-        shielding_threshold,
-        &from_addrs,
-        account_id,
-        ConfirmationsPolicy::MIN,
-        CoinbaseFilter::AllTransparentOutputs,
-        None,
-    )
-    .map_err(|e| format!("Shield proposal failed: {e}"))?;
+    if !ledger_selection::is_ledger(db, account_id)? {
+        let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
+        let proposal = propose_shielding::<_, _, _, _, Infallible>(
+            db,
+            &network,
+            &input_selector,
+            &change_strategy,
+            shielding_threshold,
+            &from_addrs,
+            account_id,
+            ConfirmationsPolicy::MIN,
+            CoinbaseFilter::AllTransparentOutputs,
+            None,
+        )
+        .map_err(|e| format!("Shield proposal failed: {e}"))?;
+        return Ok((proposal, selected_value, 0));
+    }
 
-    Ok((proposal, selected_value))
+    // Ledger signs a bounded number of transparent inputs per transaction, so
+    // shield the largest ones now and report how many wait for another round.
+    let (target_height, anchor_height) = db
+        .get_target_and_anchor_heights(ConfirmationsPolicy::MIN.trusted())
+        .map_err(|e| format!("Failed to read target height: {e}"))?
+        .ok_or("Wallet must sync before shielding transparent funds")?;
+    let zip318 = db.pool_migration_params();
+    let source = CappedShieldingInputSource {
+        inner: &*db,
+        limit: crate::wallet::ledger::serializer::MAX_TRANSPARENT_INPUTS,
+        skipped: Cell::new(0),
+    };
+    let (change_strategy, input_selector) =
+        zip317_helper::<CappedShieldingInputSource<'_, WalletDatabase>>(None);
+    let proposal = input_selector
+        .propose_shielding(
+            &network,
+            &source,
+            &change_strategy,
+            shielding_threshold,
+            &from_addrs,
+            account_id,
+            target_height,
+            anchor_height,
+            &zip318,
+            ConfirmationsPolicy::MIN,
+            CoinbaseFilter::AllTransparentOutputs,
+        )
+        .map_err(|e| format!("Shield proposal failed: {e}"))?;
+
+    Ok((proposal, selected_value, source.skipped.get()))
 }
 
 fn build_send_request(
@@ -3835,6 +3866,162 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
             output_filter,
             lock_filter,
         )
+    }
+}
+
+/// Offers Ledger accounts at most `limit` transparent inputs per shielding
+/// transaction: the largest first, in the order the greedy selector would use,
+/// so the status quote and the signed transaction agree. Anything beyond the
+/// limit stays unspent for a later round and is counted in `skipped`.
+struct CappedShieldingInputSource<'a, I: InputSource> {
+    inner: &'a I,
+    limit: usize,
+    skipped: Cell<u32>,
+}
+
+impl<I: InputSource> InputSource for CappedShieldingInputSource<'_, I> {
+    type Error = I::Error;
+    type AccountId = I::AccountId;
+    type NoteRef = I::NoteRef;
+
+    fn anchor_computable(
+        &self,
+        protocol: ShieldedPool,
+        height: BlockHeight,
+    ) -> Result<bool, Self::Error> {
+        self.inner.anchor_computable(protocol, height)
+    }
+
+    fn get_spendable_note(
+        &self,
+        txid: &TxId,
+        protocol: ShieldedPool,
+        index: u32,
+        target_height: wallet::TargetHeight,
+        lock_filter: LockFilter<'_>,
+    ) -> Result<Option<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
+        self.inner
+            .get_spendable_note(txid, protocol, index, target_height, lock_filter)
+    }
+
+    fn select_spendable_notes(
+        &self,
+        account: Self::AccountId,
+        target_value: TargetValue,
+        sources: &[ShieldedPool],
+        target_height: wallet::TargetHeight,
+        confirmations_policy: ConfirmationsPolicy,
+        exclude: &[Self::NoteRef],
+        lock_filter: LockFilter<'_>,
+    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
+        self.inner.select_spendable_notes(
+            account,
+            target_value,
+            sources,
+            target_height,
+            confirmations_policy,
+            exclude,
+            lock_filter,
+        )
+    }
+
+    fn select_spendable_notes_for_consolidation(
+        &self,
+        account: Self::AccountId,
+        value: Zatoshis,
+        source: ShieldedPool,
+        target_height: wallet::TargetHeight,
+        confirmations_policy: ConfirmationsPolicy,
+        exclude: &[Self::NoteRef],
+        lock_filter: LockFilter<'_>,
+        max_additional_notes: usize,
+    ) -> Result<ConsolidationNotes<Self::NoteRef>, Self::Error> {
+        self.inner.select_spendable_notes_for_consolidation(
+            account,
+            value,
+            source,
+            target_height,
+            confirmations_policy,
+            exclude,
+            lock_filter,
+            max_additional_notes,
+        )
+    }
+
+    fn select_unspent_notes(
+        &self,
+        account: Self::AccountId,
+        sources: &[ShieldedPool],
+        target_height: wallet::TargetHeight,
+        exclude: &[Self::NoteRef],
+        lock_filter: LockFilter<'_>,
+    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
+        self.inner
+            .select_unspent_notes(account, sources, target_height, exclude, lock_filter)
+    }
+
+    fn get_account_metadata(
+        &self,
+        account: Self::AccountId,
+        selector: &NoteFilter,
+        target_height: wallet::TargetHeight,
+        exclude: &[Self::NoteRef],
+        lock_filter: LockFilter<'_>,
+    ) -> Result<AccountMeta, Self::Error> {
+        self.inner
+            .get_account_metadata(account, selector, target_height, exclude, lock_filter)
+    }
+
+    fn get_unspent_transparent_output(
+        &self,
+        outpoint: &OutPoint,
+        target_height: wallet::TargetHeight,
+    ) -> Result<Option<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
+        self.inner
+            .get_unspent_transparent_output(outpoint, target_height)
+    }
+
+    fn get_spendable_transparent_outputs(
+        &self,
+        address: &TransparentAddress,
+        target_height: wallet::TargetHeight,
+        confirmations_policy: ConfirmationsPolicy,
+        output_filter: CoinbaseFilter,
+        lock_filter: LockFilter<'_>,
+    ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
+        self.inner.get_spendable_transparent_outputs(
+            address,
+            target_height,
+            confirmations_policy,
+            output_filter,
+            lock_filter,
+        )
+    }
+
+    fn get_spendable_transparent_outputs_for_addresses(
+        &self,
+        addresses: &[TransparentAddress],
+        target_height: wallet::TargetHeight,
+        confirmations_policy: ConfirmationsPolicy,
+        output_filter: CoinbaseFilter,
+        lock_filter: LockFilter<'_>,
+    ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
+        let mut utxos = self.inner.get_spendable_transparent_outputs_for_addresses(
+            addresses,
+            target_height,
+            confirmations_policy,
+            output_filter,
+            lock_filter,
+        )?;
+        utxos.sort_by(|a, b| {
+            b.value()
+                .cmp(&a.value())
+                .then_with(|| a.outpoint().cmp(b.outpoint()))
+        });
+        let skipped = utxos.len().saturating_sub(self.limit);
+        self.skipped.set(u32::try_from(skipped).unwrap_or(u32::MAX));
+        utxos.truncate(self.limit);
+        Ok(utxos)
     }
 }
 

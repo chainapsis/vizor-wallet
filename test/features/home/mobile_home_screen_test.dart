@@ -2169,12 +2169,15 @@ void main() {
     );
   });
 
-  testWidgets('Ledger shield block explains the input limit on tap', (
+  testWidgets('Ledger shield stays available beyond the device input limit', (
     tester,
   ) async {
     await tester.pumpWidget(
       _app(
-        _syncedState(transparentBalance: BigInt.from(242000000)),
+        _syncedState(
+          transparentBalance: BigInt.from(242000000),
+          canShieldTransparentBalance: true,
+        ),
         accountState: const AccountState(
           accounts: [
             AccountInfo(
@@ -2195,9 +2198,9 @@ void main() {
           ledgerShieldStatusReaderProvider.overrideWithValue(
             ({required dbPath, required network, required accountUuid}) async =>
                 rust_sync.ShieldTransparentStatus(
-                  canShield: false,
-                  feeZatoshi: BigInt.zero,
-                  shieldedZatoshi: BigInt.zero,
+                  canShield: true,
+                  feeZatoshi: BigInt.from(10000),
+                  shieldedZatoshi: BigInt.from(241990000),
                   reason: '',
                   transparentInputCount: 41,
                   ledgerInputLimit: 32,
@@ -2210,23 +2213,20 @@ void main() {
     await tester.pump();
     await tester.pump();
 
+    // The first round shields the largest 32 inputs; the button keeps working
+    // so the remaining nine can follow in another round.
     final button = find.byKey(
       const ValueKey('mobile_home_shield_balance_button'),
     );
     expect(button, findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('mobile_ledger_shield_route')),
-      findsNothing,
-    );
+    expect(find.textContaining('up to 32'), findsNothing);
 
     await tester.tap(button);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.textContaining('up to 32'), findsOneWidget);
-    expect(find.textContaining('holds 41'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ledger_shield_route')),
-      findsNothing,
+      findsOneWidget,
     );
   });
 
