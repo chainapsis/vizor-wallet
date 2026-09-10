@@ -1052,13 +1052,15 @@ void main() {
     expect(find.byType(KeystoneSigningModal), findsOneWidget);
     await tester.tap(find.text('Cancel'));
     await tester.pump();
-    expect(find.byType(KeystoneSigningModal), findsNothing);
+    expect(find.byType(KeystoneSigningModal), findsOneWidget);
+    expect(find.text('Cancelling…'), findsOneWidget);
 
     createCompleter.complete(hardwareSigning.draft);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(hardwareSigning.discardedDrafts, [BigInt.one]);
+    expect(find.byType(KeystoneSigningModal), findsNothing);
   });
 
   testWidgets('account switch cancels an open Keystone Gift Card request', (

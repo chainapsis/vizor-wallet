@@ -381,7 +381,9 @@ class PaymentLinksMobileBody extends StatelessWidget {
       cardAmountText: '${formatZecAmount(quote.recipientAmountZatoshi)} ZEC',
       cardFeeText: '${formatZecAmount(quote.cardFeeZatoshi)} ZEC',
       totalAmountText: '${formatZecAmount(quote.totalDeductedZatoshi)} ZEC',
-      onContinue: operationInProgress
+      onContinue:
+          operationInProgress ||
+              (!hasPendingFundingMetadata && !canContinueAmount)
           ? null
           : !hasPendingFundingMetadata
           ? onCreateFundedLink

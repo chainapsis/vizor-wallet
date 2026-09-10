@@ -1089,11 +1089,45 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
-  void _cancelKeystoneFunding() {
+  Future<void> _cancelKeystoneFunding() async {
+    final request = _keystoneFundingRequest;
+    if (request == null) return;
+    // The signing surface has released its input lock and refreshed balance.
+    // Recheck fees before making the preserved review actionable again.
+    PaymentLinkFundingQuote? quote;
+    try {
+      quote = await ref
+          .read(paymentLinkOperationsProvider)
+          .quoteFunding(
+            amountZatoshi: request.amountZatoshi,
+            sourceAccountUuid: request.sourceAccountUuid,
+          );
+    } catch (error) {
+      log('PaymentLinks: cancelled funding review refresh failed: $error');
+    }
+    if (!mounted || _keystoneFundingRequest != request) return;
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid != request.sourceAccountUuid ||
+        (quote != null &&
+            quote.sourceAccountUuid != request.sourceAccountUuid)) {
+      throw StateError('Gift Card account changed. Review the amount again.');
+    }
     setState(() {
+      // Preserve the card for inspection even if a fresh fee is unavailable,
+      // but require returning to Amount before this old quote can be used.
+      if (quote != null) _fundingQuote = quote;
+      _amountSupportingText = quote == null
+          ? 'Card fee could not be updated. Return to the amount step and try again.'
+          : null;
+      _amountSupportingTextIsError = quote == null;
+      _maxFundingQuote = null;
+      _maxFundingQuoteGeneration++;
+      _maxFundingQuoteInProgress = false;
       _keystoneFundingRequest = null;
       _operationInProgress = false;
     });
+    if (quote == null) _showError(_amountSupportingText!);
+    unawaited(_loadMaxFundingQuote());
     unawaited(_loadRecoveries(showError: false));
   }
 
@@ -2395,7 +2429,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       cardFeeText: '${formatZecAmount(_fundingQuote!.cardFeeZatoshi)} ZEC',
       totalAmountText:
           '${formatZecAmount(_fundingQuote!.totalDeductedZatoshi)} ZEC',
-      onConfirm: _operationInProgress
+      onConfirm:
+          _operationInProgress ||
+              (_pendingFundingMetadata == null && !_canContinueAmount)
           ? null
           : _pendingFundingMetadata == null
           ? _createFundedLink
