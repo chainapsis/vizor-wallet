@@ -8,6 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -18,7 +19,10 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/home/providers/ledger_shielding_limit_notice_provider.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart'
+    show ledgerWalletDbPathProvider;
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -204,6 +208,7 @@ Widget _app(
   SwapActivityStore? swapActivityStore,
   AppThemeData theme = AppThemeData.dark,
   AccountState accountState = _accountState,
+  List<Override> extraOverrides = const [],
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -296,6 +301,7 @@ Widget _app(
               },
         ),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
+      ...extraOverrides,
       if (syncKeepAwakeNotifier != null)
         syncKeepAwakeProvider.overrideWith(() => syncKeepAwakeNotifier),
       privacyModeProvider.overrideWith(_FakePrivacyModeNotifier.new),
@@ -612,8 +618,7 @@ void main() {
       find.descendant(
         of: entry,
         matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is AppIcon && widget.name == AppIcons.vote,
+          (widget) => widget is AppIcon && widget.name == AppIcons.vote,
         ),
       ),
       findsOneWidget,
@@ -2153,6 +2158,67 @@ void main() {
     expect(
       find.byKey(const ValueKey('mobile_ledger_shield_route')),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('Ledger shield block explains the input limit on tap', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(transparentBalance: BigInt.from(242000000)),
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1homeaddress',
+        ),
+        extraOverrides: [
+          ledgerWalletDbPathProvider.overrideWithValue(
+            () async => '/tmp/wallet.db',
+          ),
+          ledgerShieldStatusReaderProvider.overrideWithValue(
+            ({required dbPath, required network, required accountUuid}) async =>
+                rust_sync.ShieldTransparentStatus(
+                  canShield: false,
+                  feeZatoshi: BigInt.zero,
+                  shieldedZatoshi: BigInt.zero,
+                  reason: '',
+                  transparentInputCount: 41,
+                  ledgerInputLimit: 32,
+                ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+
+    final button = find.byKey(
+      const ValueKey('mobile_home_shield_balance_button'),
+    );
+    expect(button, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ledger_shield_route')),
+      findsNothing,
+    );
+
+    await tester.tap(button);
+    await tester.pump();
+
+    expect(find.textContaining('up to 32'), findsOneWidget);
+    expect(find.textContaining('holds 41'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ledger_shield_route')),
+      findsNothing,
     );
   });
 

@@ -2,6 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
 
 void main() {
+  test('shielding input limit copy names both counts', () {
+    final message = ledgerShieldingInputLimitMessage(inputCount: 41, limit: 32);
+    expect(message, contains('up to 32'));
+    expect(message, contains('holds 41'));
+  });
+
   test('signatures from a different Ledger name the account mismatch', () {
     for (final error in [
       'Apply Ledger Orchard signature at action 0: InvalidSpendAuthSignature',

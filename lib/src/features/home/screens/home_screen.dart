@@ -47,6 +47,7 @@ import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
 import '../../swap/providers/swap_state_provider.dart';
+import '../providers/ledger_shielding_limit_notice_provider.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 import '../widgets/ledger_shield_signing_overlay.dart';
@@ -315,6 +316,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.transparentBalance + sync.transparentPendingBalance;
     final canShieldTransparentBalance =
         sync.canShieldTransparentBalance && !isMigrationRequired;
+    final shieldBalanceBlockedReason = isMigrationRequired
+        ? null
+        : ref.watch(ledgerShieldingLimitNoticeProvider).value;
     final isImportingForBackground =
         activeAccountUuid != null &&
         !sync.hasAccountScopedData &&
@@ -399,6 +403,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 isShieldingBalance: _isShieldingBalance,
                 shieldBalanceError: _shieldBalanceError,
                 shieldBalanceErrorDetail: _shieldBalanceErrorDetail,
+                shieldBalanceBlockedReason: shieldBalanceBlockedReason,
                 onTogglePrivacyMode: () =>
                     ref.read(privacyModeProvider.notifier).toggle(),
                 onShieldBalancePressed: isMigrationRequired
@@ -470,6 +475,7 @@ class _HomePane extends ConsumerStatefulWidget {
     required this.isShieldingBalance,
     required this.shieldBalanceError,
     required this.shieldBalanceErrorDetail,
+    required this.shieldBalanceBlockedReason,
     required this.onTogglePrivacyMode,
     required this.onShieldBalancePressed,
     required this.onDismissShieldBalanceError,
@@ -495,6 +501,7 @@ class _HomePane extends ConsumerStatefulWidget {
   final bool isShieldingBalance;
   final String? shieldBalanceError;
   final String? shieldBalanceErrorDetail;
+  final String? shieldBalanceBlockedReason;
   final VoidCallback onTogglePrivacyMode;
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onDismissShieldBalanceError;
@@ -674,6 +681,9 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         actionLabel: 'Dismiss',
         onTap: widget.onDismissShieldBalanceError,
       );
+    }
+    if (widget.shieldBalanceBlockedReason case final reason?) {
+      return _HomeNoticeData(iconName: AppIcons.warning, message: reason);
     }
     final syncFailure = widget.sync.failure;
     if (syncFailure != null) {
@@ -1009,15 +1019,15 @@ class _HomeNoticeData {
     required this.iconName,
     required this.message,
     this.detailMessage,
-    required this.actionLabel,
-    required this.onTap,
+    this.actionLabel,
+    this.onTap,
   });
 
   final String iconName;
   final String message;
   final String? detailMessage;
-  final String actionLabel;
-  final VoidCallback onTap;
+  final String? actionLabel;
+  final VoidCallback? onTap;
 }
 
 class _HomeNoticeCard extends StatelessWidget {
@@ -1089,13 +1099,14 @@ class _HomeNoticeCard extends StatelessWidget {
               ],
             ),
           ),
-          AppButton(
-            onPressed: data.onTap,
-            variant: AppButtonVariant.ghost,
-            size: AppButtonSize.small,
-            trailing: const AppIcon(AppIcons.chevronForward),
-            child: Text(data.actionLabel),
-          ),
+          if (data.actionLabel case final actionLabel?)
+            AppButton(
+              onPressed: data.onTap,
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.small,
+              trailing: const AppIcon(AppIcons.chevronForward),
+              child: Text(actionLabel),
+            ),
         ],
       ),
     );

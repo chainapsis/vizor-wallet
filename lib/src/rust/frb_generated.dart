@@ -12806,13 +12806,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ShieldTransparentStatus dco_decode_shield_transparent_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return ShieldTransparentStatus(
       canShield: dco_decode_bool(arr[0]),
       feeZatoshi: dco_decode_u_64(arr[1]),
       shieldedZatoshi: dco_decode_u_64(arr[2]),
       reason: dco_decode_String(arr[3]),
+      transparentInputCount: dco_decode_u_32(arr[4]),
+      ledgerInputLimit: dco_decode_opt_box_autoadd_u_32(arr[5]),
     );
   }
 
@@ -16557,11 +16559,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_feeZatoshi = sse_decode_u_64(deserializer);
     var var_shieldedZatoshi = sse_decode_u_64(deserializer);
     var var_reason = sse_decode_String(deserializer);
+    var var_transparentInputCount = sse_decode_u_32(deserializer);
+    var var_ledgerInputLimit = sse_decode_opt_box_autoadd_u_32(deserializer);
     return ShieldTransparentStatus(
       canShield: var_canShield,
       feeZatoshi: var_feeZatoshi,
       shieldedZatoshi: var_shieldedZatoshi,
       reason: var_reason,
+      transparentInputCount: var_transparentInputCount,
+      ledgerInputLimit: var_ledgerInputLimit,
     );
   }
 
@@ -19814,6 +19820,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.feeZatoshi, serializer);
     sse_encode_u_64(self.shieldedZatoshi, serializer);
     sse_encode_String(self.reason, serializer);
+    sse_encode_u_32(self.transparentInputCount, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.ledgerInputLimit, serializer);
   }
 
   @protected

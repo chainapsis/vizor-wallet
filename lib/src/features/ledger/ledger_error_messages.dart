@@ -53,6 +53,16 @@ String? ledgerActionableErrorMessage(
   return null;
 }
 
+/// Shown on the home card while a Ledger account holds more transparent
+/// inputs than one device request can sign.
+String ledgerShieldingInputLimitMessage({
+  required int inputCount,
+  required int limit,
+}) {
+  return 'Ledger can shield up to $limit transparent inputs at once. '
+      'This account holds $inputCount, and Vizor cannot split them yet.';
+}
+
 bool ledgerRequestNeedsRebuilding(Object error) {
   final text = error.toString().toLowerCase();
   return ledgerRequestExceedsCapacity(error) ||

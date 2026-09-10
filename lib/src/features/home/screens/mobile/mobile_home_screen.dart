@@ -45,6 +45,7 @@ import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
+import '../../providers/ledger_shielding_limit_notice_provider.dart';
 import '../../services/transparent_shielding_service.dart';
 import 'mobile_keystone_shield_screen.dart';
 import 'mobile_ledger_shield_screen.dart';
@@ -1098,6 +1099,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               ).compactBalance.amountText,
               hasTransparentBalance: transparentBalance > BigInt.zero,
               canShieldBalance: sync.canShieldTransparentBalance,
+              shieldBalanceBlockedReason: ref
+                  .watch(ledgerShieldingLimitNoticeProvider)
+                  .value,
               isShieldingBalance: _isShieldingBalance,
               privacyModeEnabled: privacyModeEnabled,
               ironwoodMigrationCta: widget.ironwoodMigrationCta,
@@ -1285,11 +1289,7 @@ class _MobileVotingEntryCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppIcon(
-                  AppIcons.vote,
-                  size: 20,
-                  color: colors.icon.accent,
-                ),
+                AppIcon(AppIcons.vote, size: 20, color: colors.icon.accent),
                 const SizedBox(width: AppSpacing.s),
                 Expanded(
                   child: Column(
@@ -1373,6 +1373,7 @@ class _BalanceCard extends StatelessWidget {
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
     required this.canShieldBalance,
+    this.shieldBalanceBlockedReason,
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.ironwoodMigrationCta,
@@ -1388,6 +1389,7 @@ class _BalanceCard extends StatelessWidget {
   final String transparentBalanceText;
   final bool hasTransparentBalance;
   final bool canShieldBalance;
+  final String? shieldBalanceBlockedReason;
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
   final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
@@ -1543,6 +1545,7 @@ class _BalanceCard extends StatelessWidget {
               visible: hasTransparentBalance,
               balanceText: transparentBalanceText,
               canShieldBalance: canShieldBalance,
+              shieldBalanceBlockedReason: shieldBalanceBlockedReason,
               isShieldingBalance: isShieldingBalance,
               privacyModeEnabled: privacyModeEnabled,
               onShieldBalancePressed: onShieldBalancePressed,
@@ -1625,6 +1628,7 @@ class _AnimatedMobileTransparentBalanceStrip extends StatefulWidget {
     required this.visible,
     required this.balanceText,
     required this.canShieldBalance,
+    required this.shieldBalanceBlockedReason,
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.onShieldBalancePressed,
@@ -1633,6 +1637,7 @@ class _AnimatedMobileTransparentBalanceStrip extends StatefulWidget {
   final bool visible;
   final String balanceText;
   final bool canShieldBalance;
+  final String? shieldBalanceBlockedReason;
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
   final VoidCallback onShieldBalancePressed;
@@ -1652,6 +1657,7 @@ class _AnimatedMobileTransparentBalanceStripState
 
   late String _balanceText;
   late bool _canShieldBalance;
+  late String? _shieldBalanceBlockedReason;
   late bool _isShieldingBalance;
   late bool _privacyModeEnabled;
   late VoidCallback _onShieldBalancePressed;
@@ -1717,6 +1723,7 @@ class _AnimatedMobileTransparentBalanceStripState
   void _cacheVisibleStrip() {
     _balanceText = widget.balanceText;
     _canShieldBalance = widget.canShieldBalance;
+    _shieldBalanceBlockedReason = widget.shieldBalanceBlockedReason;
     _isShieldingBalance = widget.isShieldingBalance;
     _privacyModeEnabled = widget.privacyModeEnabled;
     _onShieldBalancePressed = widget.onShieldBalancePressed;
@@ -1751,6 +1758,7 @@ class _AnimatedMobileTransparentBalanceStripState
               child: _MobileTransparentBalanceStrip(
                 balanceText: _balanceText,
                 canShieldBalance: _canShieldBalance,
+                shieldBalanceBlockedReason: _shieldBalanceBlockedReason,
                 isShieldingBalance: _isShieldingBalance,
                 privacyModeEnabled: _privacyModeEnabled,
                 onShieldBalancePressed: _onShieldBalancePressed,
@@ -1767,6 +1775,7 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
   const _MobileTransparentBalanceStrip({
     required this.balanceText,
     required this.canShieldBalance,
+    required this.shieldBalanceBlockedReason,
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.onShieldBalancePressed,
@@ -1774,6 +1783,7 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
 
   final String balanceText;
   final bool canShieldBalance;
+  final String? shieldBalanceBlockedReason;
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
   final VoidCallback onShieldBalancePressed;
@@ -1827,6 +1837,14 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
                 enabled: canShieldBalance,
                 isLoading: isShieldingBalance,
                 onPressed: onShieldBalancePressed,
+              )
+            else if (shieldBalanceBlockedReason case final reason?)
+              // Keep the action visible but inert; a tap explains the limit.
+              _MobileShieldBalanceButton(
+                enabled: false,
+                isLoading: false,
+                onPressed: onShieldBalancePressed,
+                blockedReason: reason,
               ),
           ],
         ),
@@ -1840,16 +1858,20 @@ class _MobileShieldBalanceButton extends StatelessWidget {
     required this.enabled,
     required this.isLoading,
     required this.onPressed,
+    this.blockedReason,
   });
 
   final bool enabled;
   final bool isLoading;
   final VoidCallback onPressed;
+  final String? blockedReason;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isInteractive = enabled && !isLoading;
+    final blockedReason = this.blockedReason;
+    final explainsBlock = !enabled && blockedReason != null;
+    final isInteractive = (enabled || explainsBlock) && !isLoading;
     final contentColor = isLoading || enabled
         ? colors.text.accent
         : colors.text.secondary.withValues(alpha: 0.64);
@@ -1860,7 +1882,16 @@ class _MobileShieldBalanceButton extends StatelessWidget {
       enabled: isInteractive,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: isInteractive ? onPressed : null,
+        onTap: !isInteractive
+            ? null
+            : explainsBlock
+            ? () => showAppToast(
+                context,
+                blockedReason,
+                iconName: AppIcons.warning,
+                duration: const Duration(seconds: 6),
+              )
+            : onPressed,
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.xxs,

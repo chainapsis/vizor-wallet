@@ -989,6 +989,8 @@ pub struct ShieldTransparentStatus {
     pub fee_zatoshi: u64,
     pub shielded_zatoshi: u64,
     pub reason: String,
+    pub transparent_input_count: u32,
+    pub ledger_input_limit: Option<u32>,
 }
 
 pub struct ShieldTransparentPcztResult {
@@ -2157,6 +2159,8 @@ pub fn get_shield_transparent_status(
             fee_zatoshi: r.fee_zatoshi,
             shielded_zatoshi: r.shielded_zatoshi,
             reason: r.reason,
+            transparent_input_count: r.transparent_input_count,
+            ledger_input_limit: r.ledger_input_limit,
         })
     })
 }

@@ -512,6 +512,10 @@ pub(crate) struct ShieldTransparentStatus {
     pub fee_zatoshi: u64,
     pub shielded_zatoshi: u64,
     pub reason: String,
+    pub transparent_input_count: u32,
+    /// Present for Ledger accounts: the most transparent inputs one device
+    /// request can sign.
+    pub ledger_input_limit: Option<u32>,
 }
 
 pub(crate) struct ShieldTransparentPcztResult {
@@ -1009,19 +1013,46 @@ pub(crate) fn get_shield_transparent_status(
     let account_id = parse_account_uuid(account_uuid)?;
 
     match build_shielding_proposal(&mut db, network, account_id, shielding_threshold) {
-        Ok((proposal, _)) => Ok(ShieldTransparentStatus {
-            can_shield: true,
-            fee_zatoshi: proposal_fee_zatoshi(&proposal),
-            shielded_zatoshi: proposal_shielded_zatoshi(&proposal),
-            reason: String::new(),
-        }),
+        Ok((proposal, _)) => {
+            let transparent_input_count = shielding_transparent_input_count(&proposal);
+            let ledger_input_limit = ledger_selection::is_ledger(&db, account_id)?
+                .then_some(crate::wallet::ledger::serializer::MAX_TRANSPARENT_INPUTS as u32);
+            // The APDU serializer would reject the request much later, after
+            // proofs; surface the limit here so the home card can explain it.
+            let over_limit = ledger_input_limit.is_some_and(|limit| transparent_input_count > limit);
+            Ok(ShieldTransparentStatus {
+                can_shield: !over_limit,
+                fee_zatoshi: proposal_fee_zatoshi(&proposal),
+                shielded_zatoshi: proposal_shielded_zatoshi(&proposal),
+                reason: match ledger_input_limit {
+                    Some(limit) if over_limit => {
+                        ledger_selection::shielding_input_limit_reason(transparent_input_count, limit)
+                    }
+                    _ => String::new(),
+                },
+                transparent_input_count,
+                ledger_input_limit,
+            })
+        }
         Err(reason) => Ok(ShieldTransparentStatus {
             can_shield: false,
             fee_zatoshi: 0,
             shielded_zatoshi: 0,
             reason,
+            transparent_input_count: 0,
+            ledger_input_limit: None,
         }),
     }
+}
+
+fn shielding_transparent_input_count<NoteRef>(proposal: &Proposal<WalletFeeRule, NoteRef>) -> u32 {
+    proposal
+        .steps()
+        .iter()
+        .map(|step| step.transparent_inputs().len() + step.prior_step_inputs().len())
+        .sum::<usize>()
+        .try_into()
+        .unwrap_or(u32::MAX)
 }
 
 /// Create a height-appropriate transparent-shielding PCZT for hardware accounts.
