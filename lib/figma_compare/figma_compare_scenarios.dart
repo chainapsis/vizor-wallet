@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/app_bootstrap.dart';
+import '../src/features/ledger/widgets/ledger_signing_modal.dart';
 import '../src/features/onboarding/ledger/ledger_connect_screen.dart';
 import '../widgetbook/activity_use_cases.dart';
 import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
@@ -185,6 +186,28 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description:
         'Ledger customisation sidebar with the existing import artwork',
     builder: _buildLedgerCustomiseSidebar,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-approve',
+    description: 'Desktop Ledger signing modal waiting for approval 1 of 2',
+    builder: _buildLedgerSigningApprove,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-open-app',
+    description: 'Desktop Ledger signing modal while the Zcash app opens',
+    builder: _buildLedgerSigningOpenApp,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-failed',
+    description: 'Desktop Ledger signing modal after a rejected approval',
+    builder: _buildLedgerSigningFailed,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ledger-signing-approve',
+    description: 'Mobile Ledger signing page waiting for approval 1 of 2',
+    builder: _buildMobileLedgerSigningApprove,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-ledger-linked-connection',
@@ -1829,6 +1852,34 @@ Widget _buildLedgerSidebar(LedgerOnboardingStep step) => ProviderScope(
 
 Widget _buildMobileLedgerLinkedConnection(BuildContext context) =>
     buildLedgerFlowPreview(screen: 'Connect linked account', mobile: true);
+
+// Signing modal previews reuse the Widgetbook fixture: no device or wallet.
+Widget _buildLedgerSigningApprove(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      roundNumber: 1,
+      roundCount: 2,
+    );
+
+Widget _buildLedgerSigningOpenApp(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      readiness: LedgerSigningPlaygroundReadiness.confirmOpening,
+    );
+
+Widget _buildLedgerSigningFailed(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      failureMode: LedgerSigningPlaygroundFailure.retry,
+    );
+
+Widget _buildMobileLedgerSigningApprove(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      roundNumber: 1,
+      roundCount: 2,
+      mobile: true,
+    );
 
 FigmaCompareScenario? findFigmaCompareScenario(String id) {
   for (final scenario in figmaCompareScenarios) {

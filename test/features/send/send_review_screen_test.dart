@@ -1000,14 +1000,14 @@ void main() {
 
     await tester.tap(find.text('Confirm with Ledger'));
     await _flushRealAsync(tester);
-    expect(find.text('Approval 1 of 2'), findsOneWidget);
+    expect(find.text('1 of 2'), findsOneWidget);
     expect(signingRequests, const [
       [1, 4],
     ]);
 
     firstApproval.complete([9, 1]);
     await _flushRealAsync(tester);
-    expect(find.text('Approval 2 of 2'), findsOneWidget);
+    expect(find.text('2 of 2'), findsOneWidget);
     expect(signingRequests, const [
       [1, 4],
       [2, 4],

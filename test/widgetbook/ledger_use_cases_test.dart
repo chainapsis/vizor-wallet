@@ -567,7 +567,7 @@ void main() {
     );
 
     expect(find.text('Your turn on Ledger'), findsOne);
-    expect(find.text('Approval 2 of 3'), findsOne);
+    expect(find.text('2 of 3'), findsOne);
     expect(find.text('Zcash · Ledger'), findsNothing);
     expect(tester.takeException(), isNull);
   });

@@ -16,6 +16,7 @@ import '../services/ledger_connection_service.dart';
 import '../services/ledger_pairing_code_provider.dart';
 import '../../onboarding/mobile/mobile_ledger_connect_screen.dart';
 import 'ledger_device_signing_content.dart';
+import 'ledger_app_step_card.dart';
 import '../ledger_app_instructions.dart' show ledgerZcashAppName;
 
 enum LedgerSigningModalPhase {
@@ -312,6 +313,12 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
       }
     });
     final pairingPrompt = pairingCode != null && !_pairingConfirmed;
+    final appStep = _appStepFor(
+      phase: phase,
+      readiness: readiness,
+      needsReconnect: needsReconnect,
+      pairing: pairingCode != null,
+    );
     final guidanceTitle = pairingCode != null
         ? _pairingConfirmed
               ? 'Approve pairing on your Ledger'
@@ -336,23 +343,45 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
         : approving && !opening && !reviewing
         ? 'Keep your Ledger connected and unlocked.'
         : message;
+    // The status card heading says what the device is doing right now; the
+    // header keeps the request's headline, so the two never repeat.
+    final statusTitle = pairingCode != null
+        ? 'Pairing code'
+        : reviewing
+        ? 'Waiting for your approval'
+        : opening
+        ? 'Waiting for you on Ledger'
+        : failed
+        ? (statusLabel ?? 'Action needed')
+        : switch (phase) {
+            LedgerSigningModalPhase.preparing => 'Preparing transaction',
+            LedgerSigningModalPhase.connecting => 'Connecting',
+            LedgerSigningModalPhase.coolingDown => 'Almost ready',
+            LedgerSigningModalPhase.reconnecting => 'Reconnecting',
+            LedgerSigningModalPhase.cancelling =>
+              'Finishing the previous request',
+            LedgerSigningModalPhase.cancelled => 'Canceled',
+            LedgerSigningModalPhase.readyToRetry => 'Connected',
+            LedgerSigningModalPhase.awaitingDevice => 'Checking your Ledger',
+            LedgerSigningModalPhase.saving => 'Securing transaction',
+            LedgerSigningModalPhase.broadcasting =>
+              'Broadcasting to the network',
+            LedgerSigningModalPhase.failed => statusLabel ?? 'Action needed',
+          };
     final content = LedgerDeviceSigningContent(
       pageLayout: widget.pageLayout,
-      waitingLabel: reviewing
-          ? 'Waiting for your approval'
-          : opening
-          ? 'Waiting for you on Ledger'
-          : null,
       accountName: account?.name ?? 'Ledger',
-      approvalLabel: roundCount > 1
-          ? 'Approval $roundNumber of $roundCount'
-          : null,
+      appStep: LedgerAppStepCard(
+        appName: appName,
+        hint: appStep.hint,
+        state: appStep.state,
+      ),
       title: guidanceTitle,
-      detailLabel:
-          pairingCode ??
-          (failed && !needsReconnect && statusLabel != guidanceTitle
-              ? statusLabel
-              : null),
+      statusTitle: statusTitle,
+      badge: roundCount > 1 && !failed && !ready && !cancelled
+          ? '$roundNumber of $roundCount'
+          : null,
+      detailLabel: pairingCode,
       connectionPicker:
           failed &&
               failure!.canChangeConnection &&
@@ -410,6 +439,69 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
       width: 360,
       child: SingleChildScrollView(child: content),
     );
+  }
+
+  /// Where the device app stands: connecting and pairing fold into it, since
+  /// nothing can be open before the device is reachable.
+  static ({LedgerAppStepState state, String hint}) _appStepFor({
+    required LedgerSigningModalPhase phase,
+    required LedgerAppReadinessState readiness,
+    required bool needsReconnect,
+    required bool pairing,
+  }) {
+    if (pairing) {
+      return (
+        state: LedgerAppStepState.active,
+        hint: 'Confirm the pairing code',
+      );
+    }
+    return switch (phase) {
+      LedgerSigningModalPhase.preparing ||
+      LedgerSigningModalPhase.connecting ||
+      LedgerSigningModalPhase.coolingDown ||
+      LedgerSigningModalPhase.reconnecting => (
+        state: LedgerAppStepState.active,
+        hint: 'Connecting to your Ledger',
+      ),
+      LedgerSigningModalPhase.readyToRetry => (
+        state: LedgerAppStepState.done,
+        hint: 'Connected',
+      ),
+      LedgerSigningModalPhase.awaitingDevice => switch (readiness.phase) {
+        LedgerAppReadinessPhase.ready => (
+          state: LedgerAppStepState.done,
+          hint: 'Open on your Ledger',
+        ),
+        LedgerAppReadinessPhase.confirmOpening => (
+          state: LedgerAppStepState.active,
+          hint: 'Confirm on your Ledger',
+        ),
+        LedgerAppReadinessPhase.failed => (
+          state: LedgerAppStepState.failed,
+          hint: 'Not open',
+        ),
+        LedgerAppReadinessPhase.idle ||
+        LedgerAppReadinessPhase.checkingDevice => (
+          state: LedgerAppStepState.active,
+          hint: 'Checking',
+        ),
+      },
+      LedgerSigningModalPhase.failed when needsReconnect => (
+        state: LedgerAppStepState.failed,
+        hint: 'Reconnect your Ledger',
+      ),
+      LedgerSigningModalPhase.failed
+          when readiness.phase == LedgerAppReadinessPhase.failed =>
+        (state: LedgerAppStepState.failed, hint: 'Not open'),
+      LedgerSigningModalPhase.cancelling ||
+      LedgerSigningModalPhase.cancelled ||
+      LedgerSigningModalPhase.saving ||
+      LedgerSigningModalPhase.broadcasting ||
+      LedgerSigningModalPhase.failed => (
+        state: LedgerAppStepState.done,
+        hint: 'Open on your Ledger',
+      ),
+    };
   }
 
   Future<void> _answerPairing(bool accept) async {

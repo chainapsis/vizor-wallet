@@ -9,7 +9,6 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
-import 'package:zcash_wallet/src/features/ledger/widgets/ledger_device_illustration.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_pairing_code_provider.dart';
@@ -44,16 +43,24 @@ void main() {
           ),
         );
         expect(guidanceAnnouncement, findsOneWidget);
+        // The header keeps the Ledger mark at the leading edge with the
+        // headline and account name beside it.
         final accountRow = find.byKey(const ValueKey('ledger_signing_account'));
         final iconBounds = tester.getRect(
           find.descendant(of: accountRow, matching: find.byType(AppIcon)),
         );
         final nameBounds = tester.getRect(
-          find.descendant(of: accountRow, matching: find.byType(Text)),
+          find.descendant(of: accountRow, matching: find.text('Ledger')),
         );
+        expect(iconBounds.left, lessThan(nameBounds.left));
         expect(
-          (iconBounds.left + nameBounds.right) / 2,
-          tester.getRect(accountRow).center.dx,
+          iconBounds.center.dy,
+          closeTo(
+            accountRow.evaluate().isEmpty
+                ? 0
+                : tester.getRect(accountRow).center.dy,
+            1,
+          ),
         );
         final bounds = tester.getRect(
           find.byKey(const ValueKey('ledger_signing_actions')),
@@ -130,14 +137,14 @@ void main() {
         expect(tester.takeException(), isNull);
       }
       expect(retries, 0);
+      // Reconnected: the app line reports the connection and the status card
+      // waits for the retry.
       expect(
-        tester
-            .widget<LedgerDeviceIllustration>(
-              find.byType(LedgerDeviceIllustration),
-            )
-            .complete,
-        isTrue,
+        find.byKey(const ValueKey('ledger_signing_step_app_done')),
+        findsOneWidget,
       );
+      expect(find.text('Connected'), findsWidgets);
+      expect(find.text('Ready when you are'), findsOneWidget);
       final retryBounds = tester.getRect(find.text('Try again'));
       expect(retryBounds.center.dx, cancelBounds!.center.dx);
       expect(retryBounds.bottom, lessThan(cancelBounds.top));
@@ -493,6 +500,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Codes differ'), findsOneWidget);
+      await tester.ensureVisible(find.text('Codes match'));
       await tester.tap(find.text('Codes match'));
       await tester.pump();
       expect(answers, [true]);
@@ -510,6 +518,7 @@ void main() {
       ),
     );
     await tester.pump();
+    await tester.ensureVisible(find.text('Codes differ'));
     await tester.tap(find.text('Codes differ'));
     await tester.pump();
     expect(rejected, [false]);
@@ -524,6 +533,120 @@ void main() {
     );
     await tester.pump();
     expect(find.textContaining('123456'), findsNothing);
+  });
+
+  testWidgets('the app card and status card follow the request', (
+    tester,
+  ) async {
+    Future<void> expectCards(
+      Widget harness, {
+      required String app,
+      required String appHint,
+      required String status,
+      String? badge,
+    }) async {
+      await tester.pumpWidget(harness);
+      await tester.pump();
+      expect(
+        find.byKey(ValueKey('ledger_signing_step_app_$app')),
+        findsOneWidget,
+        reason: 'app step should be $app',
+      );
+      expect(find.text(appHint), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ledger_signing_status')),
+          matching: find.text(status),
+        ),
+        findsOneWidget,
+        reason: 'status card should say $status',
+      );
+      if (badge != null) expect(find.text(badge), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+
+    await expectCards(
+      _harness(phase: LedgerSigningModalPhase.connecting),
+      app: 'active',
+      appHint: 'Connecting to your Ledger',
+      status: 'Connecting',
+    );
+    await expectCards(
+      _harness(
+        phase: LedgerSigningModalPhase.awaitingDevice,
+        readiness: const LedgerAppReadinessState.inProgress(
+          LedgerAppReadinessPhase.confirmOpening,
+        ),
+      ),
+      app: 'active',
+      appHint: 'Confirm on your Ledger',
+      status: 'Waiting for you on Ledger',
+    );
+    await expectCards(
+      _harness(
+        phase: LedgerSigningModalPhase.awaitingDevice,
+        readiness: const LedgerAppReadinessState.ready('3.9.3'),
+        roundNumber: 1,
+        roundCount: 2,
+      ),
+      app: 'done',
+      appHint: 'Open on your Ledger',
+      status: 'Waiting for your approval',
+      badge: '1 of 2',
+    );
+    await expectCards(
+      _harness(phase: LedgerSigningModalPhase.broadcasting, onCancel: null),
+      app: 'done',
+      appHint: 'Open on your Ledger',
+      status: 'Broadcasting to the network',
+    );
+    await expectCards(
+      _harness(
+        phase: LedgerSigningModalPhase.failed,
+        failure: const LedgerSigningFailurePresentation(
+          title: 'Ledger signing failed',
+          statusLabel: 'Signature not received',
+          message: 'Check your Ledger, then try signing again.',
+          actionLabel: 'Try again',
+        ),
+      ),
+      app: 'done',
+      appHint: 'Open on your Ledger',
+      status: 'Signature not received',
+    );
+    await expectCards(
+      _harness(
+        phase: LedgerSigningModalPhase.failed,
+        failure: const LedgerSigningFailurePresentation(
+          title: 'Let’s reconnect your Ledger',
+          statusLabel: 'Connection needed',
+          message: 'Reconnect first.',
+          actionLabel: 'Reconnect',
+          requiresReconnect: true,
+        ),
+        account: const AccountInfo(
+          uuid: 'ledger-1',
+          name: 'Ledger',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+      ),
+      app: 'failed',
+      appHint: 'Reconnect your Ledger',
+      status: 'Connection needed',
+    );
+    await expectCards(
+      _harness(
+        platform: TargetPlatform.linux,
+        phase: LedgerSigningModalPhase.awaitingDevice,
+        readiness: const LedgerAppReadinessState.ready('3.9.3'),
+        pairingCode: '123456',
+      ),
+      app: 'active',
+      appHint: 'Confirm the pairing code',
+      status: 'Pairing code',
+    );
   });
 
   testWidgets('does not offer Bluetooth before the account verifies a device', (
@@ -574,6 +697,8 @@ Widget _harness({
   Future<void> Function(String)? reconnect,
   String? pairingCode,
   List<bool>? pairingAnswers,
+  int roundNumber = 1,
+  int roundCount = 1,
 }) {
   return ProviderScope(
     key: ValueKey(readiness.phase),
@@ -609,6 +734,8 @@ Widget _harness({
                 onCancel: onCancel,
                 onFailureAction: onFailureAction,
                 accountUuid: account?.uuid,
+                roundNumber: roundNumber,
+                roundCount: roundCount,
               );
               return pageLayout
                   ? MobileLedgerSigningSurface(

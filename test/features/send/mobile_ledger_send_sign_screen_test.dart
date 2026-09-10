@@ -464,13 +464,13 @@ void main() {
     await tester.pump();
 
     expect(find.text('Getting ready'), findsOneWidget);
-    expect(find.text('Approval 1 of 2'), findsOneWidget);
+    expect(find.text('1 of 2'), findsOneWidget);
 
     first.complete(const [4]);
     await tester.pump();
     await tester.pump();
     expect(find.text('Getting ready'), findsOneWidget);
-    expect(find.text('Approval 2 of 2'), findsOneWidget);
+    expect(find.text('2 of 2'), findsOneWidget);
 
     second.complete(const [8]);
     await tester.pumpAndSettle();

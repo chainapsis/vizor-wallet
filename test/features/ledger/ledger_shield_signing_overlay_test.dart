@@ -177,7 +177,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 10));
       for (final text in tester.widgetList<Text>(find.byType(Text))) {
         final data = text.data;
-        if (data != null && data.startsWith('Approval ')) {
+        if (data != null && RegExp(r'^\d+ of \d+$').hasMatch(data)) {
           approvalLabels.add(data);
         }
       }
@@ -193,7 +193,7 @@ void main() {
       hasLength(2),
     );
     expect(sync.refreshCount, 2);
-    expect(approvalLabels, {'Approval 1 of 2', 'Approval 2 of 2'});
+    expect(approvalLabels, {'1 of 2', '2 of 2'});
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
