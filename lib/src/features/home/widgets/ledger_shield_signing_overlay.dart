@@ -21,6 +21,8 @@ import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/ledger_app_instructions.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../../ledger/widgets/mobile_ledger_signing_surface.dart';
+import '../providers/ledger_shielding_limit_notice_provider.dart'
+    show ledgerShieldStatusReaderProvider;
 import '../../send/services/sapling_params.dart';
 import '../../send/screens/mobile/mobile_send_screen.dart'
     show MobileSaplingParamsSheet;
@@ -60,6 +62,11 @@ class _LedgerShieldSigningOverlayState
   String? _accountUuid;
   String? _operationId;
   bool _operationCheckpointed = false;
+  // The device signs a bounded number of transparent inputs per approval, so
+  // a large balance is shielded in consecutive rounds, one approval each.
+  int _round = 1;
+  int _roundCount = 1;
+  int? _pendingInputs;
   late final LedgerOperationCanceller _cancelLedgerOperation;
 
   bool get _isBroadcasting => _phase == LedgerSigningModalPhase.broadcasting;
@@ -117,6 +124,13 @@ class _LedgerShieldSigningOverlayState
         return;
       }
 
+      if (_round == 1) {
+        final work = await _remainingInputs(accountUuid);
+        if (!mounted || _cancelled) return;
+        _pendingInputs = work.inputs;
+        final rounds = _roundsFor(work);
+        if (rounds > 1) setState(() => _roundCount = rounds);
+      }
       final dbPath = await ref.read(ledgerWalletDbPathProvider)();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       final shieldPczt = await rust_sync.createShieldTransparentPczt(
@@ -316,7 +330,7 @@ class _LedgerShieldSigningOverlayState
         });
         return;
       }
-      widget.onComplete();
+      await _continueOrComplete(accountUuid: _accountUuid);
     } catch (e, st) {
       log('LedgerShieldConfirm._broadcast: ERROR: $e\n$st');
       await _maybeSwitchBroadcastEndpoint(e, attemptedEndpoint);
@@ -331,6 +345,67 @@ class _LedgerShieldSigningOverlayState
         _error = _friendlyError(e);
       });
     }
+  }
+
+  /// Transparent inputs still waiting for the device and how many one
+  /// approval takes; zero inputs once nothing spendable is left or the rest
+  /// is below the shielding threshold. Unknown counts as zero, which ends the
+  /// flow and lets the home card resume it.
+  Future<({int inputs, int limit})> _remainingInputs(String accountUuid) async {
+    try {
+      final dbPath = await ref.read(ledgerWalletDbPathProvider)();
+      final status = await ref.read(ledgerShieldStatusReaderProvider)(
+        dbPath: dbPath,
+        network: ref.read(rpcEndpointProvider).networkName,
+        accountUuid: accountUuid,
+      );
+      if (!status.canShield) return (inputs: 0, limit: 0);
+      return (
+        inputs: status.transparentInputCount,
+        limit: status.ledgerInputLimit ?? 0,
+      );
+    } catch (e) {
+      log('LedgerShieldConfirm: remaining inputs unknown: $e');
+      return (inputs: 0, limit: 0);
+    }
+  }
+
+  int _roundsFor(({int inputs, int limit}) work) {
+    if (work.inputs == 0) return 0;
+    if (work.limit == 0) return 1;
+    return (work.inputs + work.limit - 1) ~/ work.limit;
+  }
+
+  /// After a broadcast, the inputs the device limit left over are shielded in
+  /// the next round with a fresh approval; done once none remain.
+  Future<void> _continueOrComplete({required String? accountUuid}) async {
+    final work = accountUuid == null
+        ? (inputs: 0, limit: 0)
+        : await _remainingInputs(accountUuid);
+    if (!mounted || _cancelled) return;
+    final previous = _pendingInputs;
+    _pendingInputs = work.inputs;
+    // A round that leaves the count where it was means the broadcast did not
+    // free those inputs yet; asking the device to sign them again would only
+    // produce a conflicting transaction, so the home card takes over.
+    if (work.inputs == 0 || (previous != null && work.inputs >= previous)) {
+      widget.onComplete();
+      return;
+    }
+    final remaining = _roundsFor(work);
+    setState(() {
+      _round += 1;
+      _roundCount = _round - 1 + remaining;
+      _phase = LedgerSigningModalPhase.preparing;
+      _canRetry = false;
+      _error = null;
+      _needsReconnect = false;
+      _pcztBytes = null;
+      _pcztWithProofs = null;
+      _operationId = null;
+      _operationCheckpointed = false;
+    });
+    await _prepareAndSign();
   }
 
   Future<bool> _showDownloadPrompt() {
@@ -489,6 +564,8 @@ class _LedgerShieldSigningOverlayState
           : null,
       onCancel: canLeave ? () => unawaited(_cancelToHome()) : null,
       cancelLabel: 'Back to wallet',
+      roundNumber: _round,
+      roundCount: _roundCount,
       onFailureAction: _phase == LedgerSigningModalPhase.failed && _canRetry
           ? () => unawaited(_retry())
           : null,

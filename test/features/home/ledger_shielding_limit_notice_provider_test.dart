@@ -12,7 +12,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
-  test('explains that one Ledger round shields part of the inputs', () async {
+  test('explains how many approvals the Ledger inputs need', () async {
     final reads = <String>[];
     final container = _container(
       ledger: true,
@@ -24,7 +24,7 @@ void main() {
 
     final notice = await _notice(container);
 
-    expect(notice, allOf(contains('up to 32'), contains('32 of 41')));
+    expect(notice, allOf(contains('up to 32'), contains('2 approvals')));
     expect(reads, ['account-1']);
   });
 
