@@ -28,7 +28,6 @@ import '../../keystone/services/keystone_batch_signing.dart';
 import '../../donation/widgets/donation_views.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../ledger/ledger_capability.dart';
-import '../../ledger/ledger_pending_approval.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/ledger_app_instructions.dart';
@@ -114,15 +113,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   int _ledgerRound = 0;
   late final String _ledgerOperationId;
   late final LedgerOperationCanceller _cancelLedgerOperation;
-  late final LedgerPendingApprovalHandle _ledgerApproval;
 
   @override
   void initState() {
     super.initState();
     _cancelLedgerOperation = ref.read(ledgerOperationCancellerProvider);
-    _ledgerApproval = LedgerPendingApprovalHandle(
-      ref.read(ledgerPendingApprovalProvider.notifier),
-    );
     _ledgerOperationId =
         'send:${widget.args.proposalAccountUuid}:${widget.args.sendFlowId}';
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -149,7 +144,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (!_handoffToHardware && !hasUncheckpointedLedgerSignature) {
       _scheduleDiscard();
     }
-    _ledgerApproval.release();
     super.dispose();
   }
 
@@ -902,8 +896,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = widget.args.memo;
     final hasMemo = memo != null && memo.trim().isNotEmpty;
-
-    _ledgerApproval.update(_ledgerPhase);
 
     return AppDesktopShell(
       sidebar: AppMainSidebar(

@@ -25,7 +25,6 @@ import 'package:zcash_wallet/src/features/address_book/models/address_book_conta
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
-import 'package:zcash_wallet/src/features/ledger/ledger_pending_approval.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
@@ -1274,42 +1273,6 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     expect(rustApi.discardCalls, hasLength(1));
-  });
-
-  testWidgets('sidebar navigation waits for a pending Ledger approval', (
-    tester,
-  ) async {
-    final signature = Completer<List<int>>();
-    var cancelCount = 0;
-
-    await _setDesktopViewport(tester);
-    await tester.pumpWidget(
-      _harness(
-        _reviewArgs(addressType: 'unified'),
-        bootstrap: _bootstrap(
-          isHardware: true,
-          hardwareSignerKind: HardwareSignerKind.ledger,
-        ),
-        ledgerSigner: (_) => signature.future,
-        ledgerCanceller: () async => cancelCount++,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Confirm with Ledger'));
-    await _flushRealAsync(tester);
-    expect(find.byType(LedgerSigningModal), findsOneWidget);
-
-    await tester.tap(find.text('Settings'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(find.byType(LedgerSigningModal), findsOneWidget);
-    expect(find.text(kLedgerApprovalPendingMessage), findsOneWidget);
-    expect(cancelCount, 0);
-
-    signature.complete(_fakeSignatureBytes);
-    await _flushRealAsync(tester);
   });
 
   testWidgets('Ledger saving state cannot be dismissed after signature', (
