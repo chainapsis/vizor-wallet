@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_s
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_device_illustration.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_pairing_code_provider.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
@@ -466,6 +467,36 @@ void main() {
     );
   }
 
+  testWidgets('shows the Linux pairing code while connecting', (tester) async {
+    for (final phase in [
+      LedgerSigningModalPhase.connecting,
+      LedgerSigningModalPhase.reconnecting,
+    ]) {
+      await tester.pumpWidget(
+        _harness(
+          platform: TargetPlatform.linux,
+          phase: phase,
+          pairingCode: '123456',
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Confirm pairing on your Ledger'), findsOneWidget);
+      expect(
+        find.text('Approve pairing on your Ledger only if it shows 123456.'),
+        findsOneWidget,
+      );
+    }
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.linux,
+        phase: LedgerSigningModalPhase.awaitingDevice,
+        pairingCode: '123456',
+      ),
+    );
+    await tester.pump();
+    expect(find.textContaining('123456'), findsNothing);
+  });
+
   testWidgets('does not offer Bluetooth before the account verifies a device', (
     tester,
   ) async {
@@ -512,12 +543,17 @@ Widget _harness({
   VoidCallback? onCancel = _noop,
   AccountInfo? account,
   Future<void> Function(String)? reconnect,
+  String? pairingCode,
 }) {
   return ProviderScope(
     key: ValueKey(readiness.phase),
     overrides: [
       if (reconnect != null)
         ledgerReconnectProvider.overrideWithValue(reconnect),
+      if (pairingCode != null)
+        ledgerPairingCodeProvider.overrideWith(
+          (_) => Stream.value(pairingCode),
+        ),
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       ledgerAppReadinessStateProvider.overrideWith(
         () => _FakeReadinessController(readiness),

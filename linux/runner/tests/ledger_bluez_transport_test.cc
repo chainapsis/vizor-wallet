@@ -43,6 +43,8 @@ Error Catch(Action action) {
 int main() {
   FakeBluez fake;
   ledger_bluez::Transport transport(fake.client);
+  std::vector<std::string> codes;
+  transport.SetPairingListener([&](const std::string& code) { codes.push_back(code); });
   try {
     Require(Run([&] { return transport.ReadyAdapter(nullptr); }) == kAdapter, "powered adapter");
     fake.powered = false;
@@ -74,9 +76,15 @@ int main() {
     fake.reject_pairing = false;
     Run([&] { transport.Connect(kDevice, nullptr); });
     Require(fake.pairs == 2, "pair before GATT");
-    Require(fake.agent_path == "/com/zcash/wallet/ledger/agent" && fake.agent_capability == "KeyboardDisplay",
+    Require(fake.agent_path == "/com/zcash/wallet/ledger/agent" && fake.agent_capability == "DisplayYesNo",
         "the transport registers its own pairing agent");
     Require(fake.agent_answers == 1 && fake.agent_rejections == 0, "the agent confirmed our own pairing");
+    // The rejected attempt registered too but got no code; the confirmed one
+    // reported the code to compare and then the end of the prompt.
+    Require(codes == std::vector<std::string>({"", "123456", ""}), "the pairing code reaches the listener, then clears");
+    Require(fake.agent_registrations == 2 && fake.agent_duplicate_registrations == 1,
+        "registration repeats before each pairing and tolerates an existing one");
+    codes.clear();
     Run([&] { transport.Disconnect(); });
     // The agent vouches only for the Ledger being connected, never for
     // another device BlueZ happens to pair in the same session.
@@ -84,6 +92,8 @@ int main() {
     fake.agent_confirm_device = "/org/bluez/hci0/dev_BB";
     Fails("pairing_rejected", [&] { transport.Connect(kDevice, nullptr); });
     Require(fake.agent_rejections == 1 && !fake.paired, "a foreign device is rejected");
+    Require(codes == std::vector<std::string>({""}), "a rejected request never shows a code");
+    codes.clear();
     Run([&] { transport.Disconnect(); });
     fake.agent_confirm_device = kDevice;
     fake.agent_service_uuid = "13d63400-2c97-6004-0000-4c6564676572";

@@ -16,6 +16,7 @@ using namespace ledger_test;
 using namespace std::chrono_literals;
 constexpr const char* kMethods = "com.zcash.wallet/ledger_mobile";
 constexpr const char* kEvents = "com.zcash.wallet/ledger_mobile/discovery";
+constexpr const char* kConnection = "com.zcash.wallet/ledger_mobile/connection";
 
 struct ValueDeleter { void operator()(FlValue* value) const { if (value) fl_value_unref(value); } };
 using Value = std::unique_ptr<FlValue, ValueDeleter>;
@@ -58,11 +59,11 @@ struct Channels {
 
   Response Call(const char* name, FlValue* args = nullptr) { return Wait(Send(kMethods, name, args)); }
 
-  // Events the handler pushed on the discovery stream, decoded, oldest first.
-  std::vector<Value> Events() {
+  // Events the handler pushed on an event stream, decoded, oldest first.
+  std::vector<Value> Events(const char* channel = kEvents) {
     std::vector<Value> events;
     for (auto& sent : test_messenger_sent(messenger)) {
-      if (sent.channel != kEvents) continue;
+      if (sent.channel != channel) continue;
       g_autoptr(GError) error = nullptr;
       Response response(fl_method_codec_decode_response(FL_METHOD_CODEC(codec), sent.bytes, &error));
       Require(response != nullptr && FL_IS_METHOD_SUCCESS_RESPONSE(response.get()), "decode event");
@@ -136,8 +137,17 @@ int main() {
     // Connect validates its arguments before touching the gate.
     Require(ErrorCode(channels.Call("connect"), "connect without a device") == "disconnected", "missing device id");
     Require(fake.connects == 0, "no connection attempt without a device id");
+    Success(channels.Wait(channels.Send(kConnection, "listen", nullptr)), "listen for connection events");
     Success(channels.Call("connect", DeviceArgs(kDevice)), "connect");
     Require(fake.pairs == 1 && fake.connects == 1, "pair then connect");
+    {
+      // Vizor's own agent confirmed the pairing, so Dart got the code to
+      // compare with the Ledger and then the end of the prompt.
+      const auto events = channels.Events(kConnection);
+      Require(events.size() == 2, "two pairing events");
+      Require(Str(events[0].get(), "type") == "pairing" && Str(events[0].get(), "code") == "123456", "pairing code event");
+      Require(Str(events[1].get(), "type") == "pairing_ended", "pairing ended event");
+    }
     {
       const auto app = channels.Call("currentApp");
       auto* result = Success(app, "currentApp");

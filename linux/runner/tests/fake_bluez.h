@@ -65,6 +65,7 @@ struct FakeBluez {
   std::string agent_confirm_device = kDevice;
   std::string agent_service_uuid;  // when set, AuthorizeService instead of RequestConfirmation
   int agent_answers = 0, agent_rejections = 0;
+  int agent_registrations = 0, agent_duplicate_registrations = 0;
   std::string fail_start, fail_pair, fail_connect;
   GCancellable* cancel_start = nullptr;
   GDBusMethodInvocation* pending_start = nullptr;
@@ -187,6 +188,12 @@ struct FakeBluez {
       const char* path = nullptr;
       const char* capability = nullptr;
       g_variant_get(parameters, "(&o&s)", &path, &capability);
+      ++self.agent_registrations;
+      if (self.agent_path == path) {
+        ++self.agent_duplicate_registrations;
+        g_dbus_method_invocation_return_dbus_error(invocation, "org.bluez.Error.AlreadyExists", "Already Exists");
+        return;
+      }
       self.agent_path = path;
       self.agent_sender = sender;
       self.agent_capability = capability;

@@ -13,6 +13,7 @@ import '../ledger_capability.dart';
 import '../services/ledger_app_readiness_service.dart';
 import '../services/ledger_connection_recovery.dart';
 import '../services/ledger_connection_service.dart';
+import '../services/ledger_pairing_code_provider.dart';
 import '../../onboarding/mobile/mobile_ledger_connect_screen.dart';
 import 'ledger_device_signing_content.dart';
 import '../ledger_app_instructions.dart' show ledgerZcashAppName;
@@ -293,7 +294,16 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
         readiness.phase == LedgerAppReadinessPhase.ready;
     final ready = phase == LedgerSigningModalPhase.readyToRetry;
     final cancelled = phase == LedgerSigningModalPhase.cancelled;
-    final guidanceTitle = approving
+    // Linux pairs through Vizor's own agent, so the code to compare with the
+    // Ledger is shown here rather than in a system prompt.
+    final pairingCode =
+        phase == LedgerSigningModalPhase.connecting ||
+            phase == LedgerSigningModalPhase.reconnecting
+        ? ref.watch(ledgerPairingCodeProvider).value
+        : null;
+    final guidanceTitle = pairingCode != null
+        ? 'Confirm pairing on your Ledger'
+        : approving
         ? opening
               ? 'Open the $appName app'
               : reviewing
@@ -304,7 +314,9 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
         : title;
     const reconnectMessage =
         'Keep your Ledger connected and unlocked. Reconnecting will not send a new signing request.';
-    final guidanceMessage = showWaitingHint && reviewing
+    final guidanceMessage = pairingCode != null
+        ? 'Approve pairing on your Ledger only if it shows $pairingCode.'
+        : showWaitingHint && reviewing
         ? 'No request on your Ledger? Make sure it’s unlocked and the $appName app is open.'
         : approving && !opening && !reviewing
         ? 'Keep your Ledger connected and unlocked.'
