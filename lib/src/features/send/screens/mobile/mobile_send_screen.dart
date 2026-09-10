@@ -1886,25 +1886,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           )) {
         return;
       }
-      if (amountZatoshi + args.feeZatoshi > _spendable) {
-        setState(() {
-          _invalidateReviewFeeQuote();
-          _amountError = _notEnoughZecText;
-          _reviewFeeNotice = _notEnoughZecText;
-        });
-        return;
-      }
       setState(() {
-        _isConfirmingSend = false;
-        _feeZatoshi = args.feeZatoshi;
-        _reviewFeeQuote = _MobileSendFeeQuote(
-          accountUuid: accountUuid,
-          address: address,
-          memo: memo,
-          amountZatoshi: amountZatoshi,
-          feeZatoshi: args.feeZatoshi,
-        );
-        _reviewFeeRetryAvailable = false;
         _reviewFeeNotice = 'Fee updated after sync. Review and confirm again.';
       });
       return;

@@ -1819,37 +1819,64 @@ void main() {
     );
   });
 
-  testWidgets('changed proposal fee requires a second confirmation', (
-    tester,
-  ) async {
-    _proposeSendSucceeds = true;
-    _proposalFeeZatoshi = BigInt.from(20000);
+  for (final recoveredFeeZatoshi in [20000, 30000]) {
+    testWidgets(
+      'changed proposal fee preserves recovery fee $recoveredFeeZatoshi',
+      (tester) async {
+        _proposeSendSucceeds = true;
+        _proposalFeeZatoshi = BigInt.from(20000);
 
-    await tester.pumpWidget(_sendFlowRouterApp());
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
-    await tester.pumpAndSettle();
-    await _toReviewStep(tester);
+        await tester.pumpWidget(
+          _sendFlowRouterApp(
+            estimateFee:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                  required toAddress,
+                  required amountZatoshi,
+                  memo,
+                }) async => BigInt.from(
+                  _proposeCalls == 0 ? 10000 : recoveredFeeZatoshi,
+                ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_send_open_from_home')),
+        );
+        await tester.pumpAndSettle();
+        await _toReviewStep(tester);
 
-    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
-    await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
 
-    expect(find.text('Review Send'), findsOneWidget);
-    expect(
-      find.text('Fee updated after sync. Review and confirm again.'),
-      findsOneWidget,
+        expect(find.text('Review Send'), findsOneWidget);
+        expect(
+          find.text('Fee updated after sync. Review and confirm again.'),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('mobile_send_fee')))
+              .data,
+          ZecAmount.fromZatoshi(
+            BigInt.from(recoveredFeeZatoshi),
+          ).fee.toString(),
+        );
+        expect(find.text('status can pop'), findsNothing);
+        expect(_discardCalls, 1);
+        _proposalFeeZatoshi = BigInt.from(recoveredFeeZatoshi);
+
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('status can pop'), findsOneWidget);
+        expect(_proposeCalls, 2);
+        expect(_discardCalls, 1);
+      },
     );
-    expect(
-      tester.widget<Text>(find.byKey(const ValueKey('mobile_send_fee'))).data,
-      ZecAmount.fromZatoshi(_proposalFeeZatoshi).fee.toString(),
-    );
-    expect(find.text('status can pop'), findsNothing);
-
-    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('status can pop'), findsOneWidget);
-  });
+  }
 
   for (final insufficient in [false, true]) {
     testWidgets('changed proposal fee preserves recovery quote failure '
