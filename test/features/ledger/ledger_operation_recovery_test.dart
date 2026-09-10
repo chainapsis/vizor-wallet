@@ -106,6 +106,85 @@ void main() {
     },
   );
 
+  test('deposit deadline helper treats the deadline instant as passed', () {
+    final deadline = DateTime.utc(2026, 9, 10, 12);
+    expect(
+      ledgerDepositDeadlinePassed(
+        deadline: deadline,
+        now: deadline.subtract(const Duration(seconds: 1)),
+      ),
+      isFalse,
+    );
+    expect(
+      ledgerDepositDeadlinePassed(deadline: deadline, now: deadline),
+      isTrue,
+    );
+    expect(ledgerDepositDeadlinePassed(deadline: null, now: deadline), isFalse);
+  });
+
+  test(
+    'recovery broadcasts a pending swap deposit inside its window',
+    () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.swapDeposit,
+          externalRef: 'intent-1',
+        ),
+      ]);
+      final recoveredDeposits = <String>[];
+      final container = _container(
+        operationService: operationService,
+        sync: _RecoverySyncNotifier(),
+        recoveredDeposits: recoveredDeposits,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(operationService.broadcasts, ['operation-1']);
+      expect(operationService.discarded, isEmpty);
+      expect(recoveredDeposits, ['intent-1:txid-1']);
+      expect(operationService.acknowledged, ['operation-1']);
+    },
+  );
+
+  for (final gate in [
+    LedgerDepositBroadcastGate.deadlinePassed,
+    LedgerDepositBroadcastGate.intentMissing,
+  ]) {
+    test('recovery discards a pending deposit when ${gate.name}', () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.payDeposit,
+          externalRef: 'intent-1',
+        ),
+      ]);
+      final recoveredDeposits = <String>[];
+      final sync = _RecoverySyncNotifier();
+      final container = _container(
+        operationService: operationService,
+        sync: sync,
+        recoveredDeposits: recoveredDeposits,
+        depositGate: gate,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(operationService.broadcasts, isEmpty);
+      expect(operationService.discarded, ['operation-1']);
+      expect(recoveredDeposits, isEmpty);
+      expect(operationService.acknowledged, isEmpty);
+      expect(sync.refreshCount, 0);
+    });
+  }
+
   test('recovery keeps swap result when activity checkpoint fails', () async {
     final operationService = _FakeLedgerSignedOperationService([
       _operation(
@@ -238,6 +317,7 @@ ProviderContainer _container({
   List<String>? recoveredDeposits,
   LedgerDepositRecovery? depositRecovery,
   LedgerStandaloneResultRecovery? standaloneRecovery,
+  LedgerDepositBroadcastGate depositGate = LedgerDepositBroadcastGate.broadcast,
 }) {
   return ProviderContainer(
     overrides: [
@@ -245,6 +325,9 @@ ProviderContainer _container({
       ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
       ledgerSignedOperationServiceProvider.overrideWithValue(operationService),
       syncProvider.overrideWith(() => sync),
+      ledgerDepositBroadcastGateProvider.overrideWithValue(
+        (_) async => depositGate,
+      ),
       ledgerDepositRecoveryProvider.overrideWithValue(
         depositRecovery ??
             ({required operation, required result}) async {
@@ -311,9 +394,11 @@ class _FakeLedgerSignedOperationService
   final List<LedgerSignedOperationMetadata> operations;
   final broadcasts = <String>[];
   final acknowledged = <String>[];
+  final discarded = <String>[];
 
   @override
-  Future<List<LedgerSignedOperationMetadata>> list() async => operations;
+  Future<List<LedgerSignedOperationMetadata>> list() async =>
+      List.of(operations);
 
   @override
   Future<LedgerSignedOperationBroadcastResult> broadcast({
@@ -338,6 +423,12 @@ class _FakeLedgerSignedOperationService
   @override
   Future<void> acknowledge(String operationId) async {
     acknowledged.add(operationId);
+  }
+
+  @override
+  Future<void> discard(String operationId) async {
+    discarded.add(operationId);
+    operations.removeWhere((operation) => operation.operationId == operationId);
   }
 
   @override

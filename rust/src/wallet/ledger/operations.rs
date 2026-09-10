@@ -338,6 +338,31 @@ pub(crate) fn acknowledge(
     })
 }
 
+/// Drop a signed operation that must never reach the network, such as a
+/// deposit whose provider deadline passed. Rows holding a result are kept.
+pub(crate) fn discard_pending(
+    db_path: &str,
+    network: WalletNetwork,
+    operation_id: &str,
+) -> Result<bool, String> {
+    validate_identifier("operation ID", operation_id)?;
+    let network = network_name(network);
+    with_wallet_db_write_lock("ledger.operations.discard_pending", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&conn)?;
+        let deleted = conn
+            .execute(
+                &format!(
+                    "DELETE FROM {TABLE}
+                     WHERE network = ?1 AND operation_id = ?2 AND state = ?3"
+                ),
+                params![network, operation_id, STATE_SIGNED_PENDING_BROADCAST],
+            )
+            .map_err(|e| format!("Discard pending Ledger operation: {e}"))?;
+        Ok(deleted == 1)
+    })
+}
+
 fn load_for_broadcast(
     db_path: &str,
     network: WalletNetwork,
@@ -1066,5 +1091,31 @@ mod tests {
 
         assert!(terminal);
         assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn discard_pending_removes_only_unbroadcast_operations() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        checkpoint_test_operation(db_path, "swap-1", "swap_deposit");
+        checkpoint_test_operation(db_path, "swap-2", "swap_deposit");
+        apply_broadcast_outcome(
+            db_path,
+            WalletNetwork::Main,
+            "swap-2",
+            OperationKind::SwapDeposit,
+            "txid-2",
+            "broadcasted",
+            None,
+        )
+        .unwrap();
+
+        assert!(discard_pending(db_path, WalletNetwork::Main, "swap-1").unwrap());
+        assert!(!discard_pending(db_path, WalletNetwork::Main, "swap-1").unwrap());
+        assert!(!discard_pending(db_path, WalletNetwork::Main, "swap-2").unwrap());
+        let listed = list(db_path, WalletNetwork::Main, None).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].operation_id, "swap-2");
+        assert_eq!(listed[0].state, STATE_RESULT_PENDING_ACK);
     }
 }

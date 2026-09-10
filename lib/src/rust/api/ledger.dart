@@ -253,6 +253,19 @@ Future<void> ledgerAckSignedOperation({
   operationId: operationId,
 );
 
+/// Discard a checkpointed operation that is still waiting for broadcast, for
+/// example a deposit whose provider deadline passed. Returns false when no such
+/// pending operation exists; results that reached the network are never removed.
+Future<bool> ledgerDiscardSignedOperation({
+  required String dbPath,
+  required String network,
+  required String operationId,
+}) => RustLib.instance.api.crateApiLedgerLedgerDiscardSignedOperation(
+  dbPath: dbPath,
+  network: network,
+  operationId: operationId,
+);
+
 /// Public account material approved by the user on the Ledger device.
 class LedgerAccountExport {
   final String ufvk;

@@ -248,6 +248,257 @@ void main() {
       expect(operationService.broadcastCalls, 0);
     },
   );
+
+  testWidgets(
+    'mobile Ledger swap does not sign after the deposit window closed',
+    (tester) async {
+      final operations = _OperationService(
+        Completer<LedgerSignedOperationBroadcastResult>().future,
+      );
+      final signing = _HardwareSigningService();
+      var signerCalls = 0;
+      await tester.pumpWidget(
+        _overlayApp(
+          intent: _intent.copyWith(
+            depositDeadline: DateTime.now().subtract(
+              const Duration(minutes: 1),
+            ),
+          ),
+          operations: operations,
+          signing: signing,
+          signer: (_, _) async {
+            signerCalls++;
+            return const [3];
+          },
+          onDepositBroadcast: (_) async =>
+              fail('Expired deposit must not send'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Deposit window closed'), findsOneWidget);
+      expect(find.textContaining('Nothing was sent'), findsWidgets);
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Back to activity'), findsOneWidget);
+      expect(signing.createCalls, 0);
+      expect(signerCalls, 0);
+      expect(operations.checkpointCalls, 0);
+      expect(operations.broadcastCalls, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'mobile Ledger swap discards a signed deposit whose window closed',
+    (tester) async {
+      const operationId = 'swap_deposit:account-1:swap-1';
+      final operations = _OperationService(
+        Completer<LedgerSignedOperationBroadcastResult>().future,
+        existing: [
+          LedgerSignedOperationMetadata(
+            operationId: operationId,
+            accountUuid: 'account-1',
+            kind: LedgerSignedOperationKind.swapDeposit,
+            externalRef: 'swap-1',
+            state: 'signed_pending_broadcast',
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _overlayApp(
+          intent: _intent.copyWith(
+            depositDeadline: DateTime.now().subtract(
+              const Duration(minutes: 1),
+            ),
+          ),
+          operations: operations,
+          signing: _HardwareSigningService(),
+          signer: (_, _) async =>
+              fail('A checkpointed deposit is never re-signed'),
+          onDepositBroadcast: (_) async =>
+              fail('Expired deposit must not send'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(operations.discarded, [operationId]);
+      expect(operations.broadcastCalls, 0);
+      expect(find.text('Deposit window closed'), findsOneWidget);
+      expect(find.text('Try again'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final payMode in [false, true]) {
+    testWidgets(
+      'mobile Ledger deposit stays queued when broadcast fails (pay=$payMode)',
+      (tester) async {
+        final operations = _OperationService(
+          Completer<LedgerSignedOperationBroadcastResult>().future,
+          broadcastError: StateError('lightwalletd unavailable'),
+        );
+        await tester.pumpWidget(
+          _overlayApp(
+            intent: _intent.copyWith(payMode: payMode),
+            operations: operations,
+            signing: _HardwareSigningService(),
+            signer: (_, _) async => const [3],
+            onDepositBroadcast: (_) async => fail('Broadcast did not happen'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(operations.checkpointCalls, 1);
+        expect(operations.broadcastCalls, 1);
+        expect(operations.discarded, isEmpty);
+        expect(
+          find.text(payMode ? 'Payment queued' : 'ZEC deposit queued'),
+          findsOneWidget,
+        );
+        expect(find.text('Will retry'), findsOneWidget);
+        expect(find.textContaining('will retry automatically'), findsOneWidget);
+        expect(find.text('Ledger signing failed'), findsNothing);
+        expect(find.text('Try again'), findsOneWidget);
+        expect(find.text('Back to activity'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'mobile Ledger swap blocks leaving while the deposit checkpoints',
+    (tester) async {
+      final checkpointGate = Completer<void>();
+      final broadcast = Completer<LedgerSignedOperationBroadcastResult>();
+      final operations = _OperationService(
+        broadcast.future,
+        checkpointGate: checkpointGate,
+      );
+      var cancelCalls = 0;
+      SwapHardwareBroadcastResult? completed;
+      late BuildContext signingContext;
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, _) => TextButton(
+              onPressed: () => context.push('/sign'),
+              child: const Text('Open signing'),
+            ),
+          ),
+          GoRoute(
+            path: '/sign',
+            builder: (context, _) {
+              signingContext = context;
+              return SwapLedgerSigningOverlay(
+                mobile: true,
+                intent: _intent,
+                onCancel: () => context.pop(),
+                onDepositBroadcast: (result) async {
+                  completed = result;
+                  if (signingContext.mounted) signingContext.pop();
+                },
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(_bootstrap),
+            ledgerPcztSignerProvider.overrideWithValue(
+              (_, _) async => const [3],
+            ),
+            ledgerOperationCancellerProvider.overrideWithValue(() async {
+              cancelCalls++;
+            }),
+            ledgerSignedOperationServiceProvider.overrideWithValue(operations),
+            swapHardwareSigningServiceProvider.overrideWithValue(
+              _HardwareSigningService(),
+            ),
+            syncProvider.overrideWith(
+              () => FakeSyncNotifier(
+                SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+              ),
+            ),
+          ],
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      for (var i = 0; i < 10 && operations.checkpointCalls == 0; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      await tester.pump();
+
+      // The device has approved but the checkpoint has not landed yet.
+      expect(operations.checkpointCalls, 1);
+      expect(operations.broadcastCalls, 0);
+      expect(find.text('Sending transaction'), findsOneWidget);
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pump();
+      expect(find.text('Sending transaction'), findsOneWidget);
+      expect(cancelCalls, 0);
+
+      checkpointGate.complete();
+      for (var i = 0; i < 10 && operations.broadcastCalls == 0; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(operations.broadcastCalls, 1);
+      broadcast.complete(
+        const LedgerSignedOperationBroadcastResult(
+          operationId: 'swap_deposit:account-1:swap-1',
+          txid: 'txid-1',
+          status: 'broadcasted',
+          requiresAck: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(completed?.txHash, 'txid-1');
+      expect(find.text('Open signing'), findsOneWidget);
+    },
+  );
+}
+
+Widget _overlayApp({
+  required SwapIntent intent,
+  required _OperationService operations,
+  required _HardwareSigningService signing,
+  required Future<List<int>> Function(String accountUuid, List<int> pczt)
+  signer,
+  Future<void> Function(SwapHardwareBroadcastResult)? onDepositBroadcast,
+}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap),
+      ledgerPcztSignerProvider.overrideWithValue(signer),
+      ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+      ledgerSignedOperationServiceProvider.overrideWithValue(operations),
+      swapHardwareSigningServiceProvider.overrideWithValue(signing),
+      syncProvider.overrideWith(
+        () => FakeSyncNotifier(
+          SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+        ),
+      ),
+    ],
+    child: MaterialApp(
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      home: SwapLedgerSigningOverlay(
+        mobile: true,
+        intent: intent,
+        onCancel: () {},
+        onDepositBroadcast: onDepositBroadcast ?? (_) async {},
+      ),
+    ),
+  );
 }
 
 final _intent = SwapIntent(
@@ -291,17 +542,22 @@ final _bootstrap = AppBootstrapState(
 );
 
 class _HardwareSigningService implements SwapHardwareSigningService {
+  var createCalls = 0;
+
   @override
   Future<SwapHardwarePcztDraft> createZecDepositPczt({
     required String accountUuid,
     required SwapIntent intent,
-  }) async => SwapHardwarePcztDraft(
-    pcztBytes: const [1],
-    needsSaplingParams: false,
-    feeZatoshi: BigInt.one,
-    proposalId: BigInt.one,
-    sendFlowId: 'flow-1',
-  );
+  }) async {
+    createCalls++;
+    return SwapHardwarePcztDraft(
+      pcztBytes: const [1],
+      needsSaplingParams: false,
+      feeZatoshi: BigInt.one,
+      proposalId: BigInt.one,
+      sendFlowId: 'flow-1',
+    );
+  }
 
   @override
   Future<List<int>> addProofsForSigning({
@@ -341,12 +597,21 @@ class _HardwareSigningService implements SwapHardwareSigningService {
 }
 
 class _OperationService implements LedgerSignedOperationService {
-  _OperationService(this.broadcastResult);
+  _OperationService(
+    this.broadcastResult, {
+    this.existing = const [],
+    this.checkpointGate,
+    this.broadcastError,
+  });
 
   final Future<LedgerSignedOperationBroadcastResult> broadcastResult;
+  final List<LedgerSignedOperationMetadata> existing;
+  final Completer<void>? checkpointGate;
+  final Object? broadcastError;
   var checkpointCalls = 0;
   var broadcastCalls = 0;
   var acknowledged = false;
+  final discarded = <String>[];
 
   @override
   Future<void> checkpoint({
@@ -358,6 +623,8 @@ class _OperationService implements LedgerSignedOperationService {
     String? externalRef,
   }) async {
     checkpointCalls++;
+    final gate = checkpointGate;
+    if (gate != null) await gate.future;
   }
 
   @override
@@ -365,8 +632,10 @@ class _OperationService implements LedgerSignedOperationService {
     required String operationId,
     String? spendParamsPath,
     String? outputParamsPath,
-  }) {
+  }) async {
     broadcastCalls++;
+    final error = broadcastError;
+    if (error != null) throw error;
     return broadcastResult;
   }
 
@@ -376,5 +645,10 @@ class _OperationService implements LedgerSignedOperationService {
   }
 
   @override
-  Future<List<LedgerSignedOperationMetadata>> list() async => const [];
+  Future<void> discard(String operationId) async {
+    discarded.add(operationId);
+  }
+
+  @override
+  Future<List<LedgerSignedOperationMetadata>> list() async => existing;
 }

@@ -1539,6 +1539,9 @@ class _EmptyLedgerSignedOperationService
 
   @override
   Future<void> acknowledge(String operationId) => throw UnimplementedError();
+
+  @override
+  Future<void> discard(String operationId) => throw UnimplementedError();
 }
 
 Future<void> _pumpUntilPresent(WidgetTester tester, Finder finder) async {

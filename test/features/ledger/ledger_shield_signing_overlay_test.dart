@@ -245,6 +245,7 @@ class _FakeLedgerSignedOperationService
   final checkpoints = <_Checkpoint>[];
   final broadcasts = <String>[];
   final acknowledged = <String>[];
+  final discarded = <String>[];
 
   @override
   Future<List<LedgerSignedOperationMetadata>> list() async => const [];
@@ -287,6 +288,11 @@ class _FakeLedgerSignedOperationService
   @override
   Future<void> acknowledge(String operationId) async {
     acknowledged.add(operationId);
+  }
+
+  @override
+  Future<void> discard(String operationId) async {
+    discarded.add(operationId);
   }
 }
 

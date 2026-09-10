@@ -14,6 +14,7 @@ pub(crate) use operations::{
     checkpoint as checkpoint_signed_operation,
     checkpoint_batch as checkpoint_signed_operation_batch,
     delete_for_account_with_tx as delete_signed_operations_for_account_with_tx,
+    discard_pending as discard_signed_operation,
     list as list_signed_operations, SignedOperationMetadata,
 };
 

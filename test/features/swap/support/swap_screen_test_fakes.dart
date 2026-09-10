@@ -998,6 +998,7 @@ class _FakeLedgerSignedOperationService
   final checkpoints = <_LedgerOperationCheckpoint>[];
   final broadcasts = <String>[];
   final acknowledged = <String>[];
+  final discarded = <String>[];
 
   @override
   Future<void> checkpoint({
@@ -1038,6 +1039,11 @@ class _FakeLedgerSignedOperationService
   @override
   Future<void> acknowledge(String operationId) async {
     acknowledged.add(operationId);
+  }
+
+  @override
+  Future<void> discard(String operationId) async {
+    discarded.add(operationId);
   }
 }
 

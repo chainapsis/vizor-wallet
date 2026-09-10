@@ -424,6 +424,18 @@ pub fn ledger_ack_signed_operation(
     ledger::acknowledge_signed_operation(&db_path, network, &operation_id)
 }
 
+/// Discard a checkpointed operation that is still waiting for broadcast, for
+/// example a deposit whose provider deadline passed. Returns false when no such
+/// pending operation exists; results that reached the network are never removed.
+pub fn ledger_discard_signed_operation(
+    db_path: String,
+    network: String,
+    operation_id: String,
+) -> Result<bool, String> {
+    let network = parse_ledger_db_network(&db_path, &network)?;
+    ledger::discard_signed_operation(&db_path, network, &operation_id)
+}
+
 fn to_signed_operation(operation: ledger::SignedOperationMetadata) -> LedgerSignedOperation {
     LedgerSignedOperation {
         operation_id: operation.operation_id,

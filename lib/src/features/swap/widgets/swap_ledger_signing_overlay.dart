@@ -1,6 +1,8 @@
 import 'dart:async';
 import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_connection_recovery.dart';
+import '../../ledger/services/ledger_operation_recovery.dart'
+    show ledgerDepositDeadlinePassed;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +26,11 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_hardware_signing_service.dart';
+
+/// The provider's deposit window closed before the signed deposit was sent.
+class _DepositWindowClosed implements Exception {
+  const _DepositWindowClosed();
+}
 
 class SwapLedgerSigningOverlay extends ConsumerStatefulWidget {
   const SwapLedgerSigningOverlay({
@@ -53,6 +60,7 @@ class _SwapLedgerSigningOverlayState
   String? _error;
   bool _requestNeedsRebuilding = false;
   bool _requestExceedsCapacity = false;
+  bool _depositWindowClosed = false;
   bool _needsReconnect = false;
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
@@ -64,6 +72,11 @@ class _SwapLedgerSigningOverlayState
   late final LedgerOperationCanceller _cancelLedgerOperation;
 
   bool get _isBroadcasting => _phase == LedgerSigningModalPhase.broadcasting;
+
+  bool get _deadlinePassed => ledgerDepositDeadlinePassed(
+    deadline: widget.intent.depositDeadline,
+    now: DateTime.now(),
+  );
 
   @override
   void initState() {
@@ -126,6 +139,7 @@ class _SwapLedgerSigningOverlayState
         await _broadcastCheckpointed();
         return;
       }
+      if (_deadlinePassed) throw const _DepositWindowClosed();
 
       final service = ref.read(swapHardwareSigningServiceProvider);
       _signingService = service;
@@ -174,6 +188,9 @@ class _SwapLedgerSigningOverlayState
         draft.pcztBytes,
       );
       if (!mounted || _cancelled) return;
+      // The device approved the deposit; leaving is blocked from here so a
+      // cancel cannot race the checkpoint and orphan a signed deposit.
+      setState(() => _phase = LedgerSigningModalPhase.broadcasting);
       await ref
           .read(ledgerSignedOperationServiceProvider)
           .checkpoint(
@@ -243,6 +260,7 @@ class _SwapLedgerSigningOverlayState
         draft.pcztBytes,
       );
       if (!mounted || _cancelled) return;
+      setState(() => _phase = LedgerSigningModalPhase.broadcasting);
       final operationKind = widget.intent.payMode
           ? LedgerSignedOperationKind.payDeposit
           : LedgerSignedOperationKind.swapDeposit;
@@ -281,6 +299,10 @@ class _SwapLedgerSigningOverlayState
       _phase = LedgerSigningModalPhase.broadcasting;
       _error = null;
     });
+    if (_deadlinePassed) {
+      await _abandonExpiredDeposit(operationId);
+      throw const _DepositWindowClosed();
+    }
     LedgerSignedOperationBroadcastResult result;
     try {
       final draft = _draft;
@@ -332,6 +354,18 @@ class _SwapLedgerSigningOverlayState
       log('SwapLedgerSigning: refreshAfterSend failed: $e');
     }
     await _completeProviderCheckpoint(result);
+  }
+
+  /// Drops a signed deposit whose provider window closed. Nothing reached the
+  /// network, so the proposal lock and the durable checkpoint are released.
+  Future<void> _abandonExpiredDeposit(String operationId) async {
+    await ref.read(ledgerSignedOperationServiceProvider).discard(operationId);
+    final draft = _draft;
+    _draft = null;
+    if (draft != null) await _signingService?.discardPcztDraft(draft: draft);
+    _operationCheckpointed = false;
+    _operationId = null;
+    _pendingBroadcastResult = null;
   }
 
   Future<void> _completeProviderCheckpoint(
@@ -439,8 +473,14 @@ class _SwapLedgerSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _depositWindowClosed = error is _DepositWindowClosed;
     _requestNeedsRebuilding = ledgerRequestNeedsRebuilding(error);
     _requestExceedsCapacity = ledgerRequestExceedsCapacity(error);
+    if (_depositWindowClosed) {
+      return widget.intent.payMode
+          ? 'The payment window closed before your signed deposit could be sent. Nothing was sent. Start the payment again for a new quote.'
+          : 'The deposit window for this swap closed before the ZEC deposit could be sent. Nothing was sent. Start a new swap for a fresh quote.';
+    }
     final actionable = ledgerActionableErrorMessage(
       error,
       requestKind: widget.intent.payMode
@@ -475,38 +515,64 @@ class _SwapLedgerSigningOverlayState
     final canLeave = !_isBroadcasting;
     final legacyOrchardRecoveryUnavailable =
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
+    final payMode = widget.intent.payMode;
+    final depositLabel = payMode ? 'payment' : 'ZEC deposit';
+    // After the device approved, a failure is about delivery, not signing:
+    // either the broadcast is deferred to recovery or it already reached the
+    // network and only the Activity record is missing.
+    final recorded = _operationCheckpointed && _pendingBroadcastResult != null;
+    final queued = _operationCheckpointed && !recorded;
+    final noRetry =
+        legacyOrchardRecoveryUnavailable ||
+        _requestNeedsRebuilding ||
+        _depositWindowClosed;
     final modal = LedgerSigningModal(
       pageLayout: widget.mobile,
       accountUuid: widget.intent.accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
-              canChangeConnection: !_requestNeedsRebuilding,
+              canChangeConnection:
+                  !_requestNeedsRebuilding &&
+                  !_operationCheckpointed &&
+                  !_depositWindowClosed,
               requiresReconnect:
                   !_requestNeedsRebuilding &&
                   !_operationCheckpointed &&
                   _needsReconnect,
-              title: _requestExceedsCapacity
+              title: _depositWindowClosed
+                  ? (payMode
+                        ? 'Payment window closed'
+                        : 'Deposit window closed')
+                  : recorded
+                  ? (payMode ? 'Payment sent' : 'ZEC deposit sent')
+                  : queued
+                  ? (payMode ? 'Payment queued' : 'ZEC deposit queued')
+                  : _requestExceedsCapacity
                   ? kLedgerSmallerTransferTitle
                   : legacyOrchardRecoveryUnavailable
                   ? 'Ledger app update required'
                   : 'Ledger signing failed',
-              statusLabel: legacyOrchardRecoveryUnavailable
+              statusLabel: _depositWindowClosed
+                  ? 'Nothing was sent'
+                  : recorded
+                  ? 'Activity not updated'
+                  : queued
+                  ? 'Will retry'
+                  : legacyOrchardRecoveryUnavailable
                   ? 'Recovery unavailable'
                   : 'Action needed',
-              message: _error ?? 'Ledger signing could not be completed.',
-              actionLabel:
-                  legacyOrchardRecoveryUnavailable || _requestNeedsRebuilding
-                  ? null
-                  : 'Try again',
+              message: recorded
+                  ? 'The $depositLabel reached the network, but Vizor could not record it in Activity yet. Try again to finish.'
+                  : queued
+                  ? 'The $depositLabel could not be broadcast yet. Vizor saved the signed $depositLabel and will retry automatically. Check Activity before ${payMode ? 'paying again' : 'starting another swap'}.'
+                  : _error ?? 'Ledger signing could not be completed.',
+              actionLabel: noRetry ? null : 'Try again',
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancel()) : null,
       cancelLabel: 'Back to activity',
-      onFailureAction:
-          _phase == LedgerSigningModalPhase.failed &&
-              !legacyOrchardRecoveryUnavailable &&
-              !_requestNeedsRebuilding
+      onFailureAction: _phase == LedgerSigningModalPhase.failed && !noRetry
           ? () => unawaited(_retry())
           : null,
     );

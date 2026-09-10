@@ -170,10 +170,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         unifiedAddress = result.unifiedAddress;
       }
 
-      // Store mnemonic per-account
-      await _storage.writeAccountMnemonic(accountUuid, mnemonic);
-
-      // Update account list
       final newAccount = AccountInfo(
         uuid: accountUuid,
         name: accountName,
@@ -181,8 +177,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         isSeedAnchor: accounts.isEmpty,
       );
       final updatedAccounts = [...accounts, newAccount];
-      await _saveAccounts(updatedAccounts);
-      await _storage.writeString(_activeAccountKey, accountUuid);
+      try {
+        await _storage.writeAccountMnemonic(accountUuid, mnemonic);
+        await _saveAccounts(updatedAccounts);
+        await _storage.writeString(_activeAccountKey, accountUuid);
+      } catch (_) {
+        await _rollbackUnpersistedAccounts(
+          dbPath: dbPath,
+          network: network,
+          accountUuids: [accountUuid],
+          deleteMnemonics: true,
+        );
+        rethrow;
+      }
 
       state = AsyncData(
         AccountState(
@@ -263,8 +270,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         unifiedAddress = result.unifiedAddress;
       }
 
-      await _storage.writeAccountMnemonic(accountUuid, mnemonic);
-
       final newAccount = AccountInfo(
         uuid: accountUuid,
         name: accountName,
@@ -273,8 +278,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         profilePictureId: normalizedProfilePictureId,
       );
       final updatedAccounts = [...accounts, newAccount];
-      await _saveAccounts(updatedAccounts);
-      await _storage.writeString(_activeAccountKey, accountUuid);
+      try {
+        await _storage.writeAccountMnemonic(accountUuid, mnemonic);
+        await _saveAccounts(updatedAccounts);
+        await _storage.writeString(_activeAccountKey, accountUuid);
+      } catch (_) {
+        await _rollbackUnpersistedAccounts(
+          dbPath: dbPath,
+          network: network,
+          accountUuids: [accountUuid],
+          deleteMnemonics: true,
+        );
+        rethrow;
+      }
 
       state = AsyncData(
         AccountState(
@@ -349,14 +365,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         await _storage.writeString(_networkKey, network);
       }
 
-      for (final account in result.accounts) {
-        await _storage.writeAccountMnemonic(
-          account.accountUuid,
-          mnemonic,
-          bip39Passphrase: bip39Passphrase,
-        );
-      }
-
       final importedAccounts = [
         for (var i = 0; i < result.accounts.length; i++)
           AccountInfo(
@@ -370,17 +378,34 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ),
       ];
       final updatedAccounts = [...accounts, ...importedAccounts];
-      await _saveAccounts(updatedAccounts);
       final activeAccountUuid = result.didImportPrimaryAccount
           ? result.accounts.first.accountUuid
           : previousActiveAccountUuid;
       final activeAddress = result.didImportPrimaryAccount
           ? result.accounts.first.unifiedAddress
           : previousActiveAddress;
-      if (activeAccountUuid == null) {
-        await _storage.delete(_activeAccountKey);
-      } else if (result.didImportPrimaryAccount) {
-        await _storage.writeString(_activeAccountKey, activeAccountUuid);
+      try {
+        for (final account in result.accounts) {
+          await _storage.writeAccountMnemonic(
+            account.accountUuid,
+            mnemonic,
+            bip39Passphrase: bip39Passphrase,
+          );
+        }
+        await _saveAccounts(updatedAccounts);
+        if (activeAccountUuid == null) {
+          await _storage.delete(_activeAccountKey);
+        } else if (result.didImportPrimaryAccount) {
+          await _storage.writeString(_activeAccountKey, activeAccountUuid);
+        }
+      } catch (_) {
+        await _rollbackUnpersistedAccounts(
+          dbPath: dbPath,
+          network: network,
+          accountUuids: result.accounts.map((account) => account.accountUuid),
+          deleteMnemonics: true,
+        );
+        rethrow;
       }
 
       state = AsyncData(
@@ -1112,8 +1137,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];
-      await _saveAccounts(updated);
-      await _storage.writeString(_activeAccountKey, accountUuid);
+      try {
+        await _saveAccounts(updated);
+        await _storage.writeString(_activeAccountKey, accountUuid);
+      } catch (_) {
+        await _rollbackUnpersistedAccounts(
+          dbPath: dbPath,
+          network: network,
+          accountUuids: [accountUuid],
+        );
+        rethrow;
+      }
 
       state = AsyncData(
         AccountState(
@@ -1212,8 +1246,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];
-      await _saveAccounts(updated);
-      await _storage.writeString(_activeAccountKey, accountUuid);
+      try {
+        await _saveAccounts(updated);
+        await _storage.writeString(_activeAccountKey, accountUuid);
+      } catch (_) {
+        await _rollbackUnpersistedAccounts(
+          dbPath: dbPath,
+          network: network,
+          accountUuids: [accountUuid],
+        );
+        rethrow;
+      }
 
       state = AsyncData(
         AccountState(
@@ -1527,6 +1570,29 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   // ======================== Helpers ========================
+
+  /// Removes Rust account rows whose Dart bookkeeping could not be persisted.
+  /// Otherwise the next launch lists an account while onboarding rolled back
+  /// its password, leaving an unlock screen no password can open.
+  Future<void> _rollbackUnpersistedAccounts({
+    required String dbPath,
+    required String network,
+    required Iterable<String> accountUuids,
+    bool deleteMnemonics = false,
+  }) async {
+    for (final accountUuid in accountUuids) {
+      try {
+        if (deleteMnemonics) await _storage.deleteAccountMnemonic(accountUuid);
+        await rust_wallet.deleteAccount(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+        );
+      } catch (e, st) {
+        log('rollbackUnpersistedAccounts: failed for $accountUuid: $e\n$st');
+      }
+    }
+  }
 
   Future<void> _saveAccounts(List<AccountInfo> accounts) async {
     final json = jsonEncode(accounts.map((a) => a.toJson()).toList());

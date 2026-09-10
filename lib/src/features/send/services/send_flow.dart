@@ -417,6 +417,11 @@ String _pcztBroadcastStatusMessage(
       'The transaction broadcast did not complete. Check Activity before sending again.';
 }
 
+String _ledgerDeferredBroadcastMessage(String reason) {
+  return '$reason Vizor saved the signed transaction and will submit it '
+      'automatically. Check Activity before sending again.';
+}
+
 String _ledgerBroadcastStatusMessage({
   required String status,
   required String? message,
@@ -572,15 +577,26 @@ Future<SendBroadcastOutcome> runSendBroadcast({
               sendFlowId: args.sendFlowId,
               logContext: 'SendBroadcast(ledger-terminal)',
             );
-          } else {
-            await retainSendProposalLockUntilExpiry(
-              proposalId: args.proposalId,
-              sendFlowId: args.sendFlowId,
-              logContext: 'SendBroadcast(ledger-retryable)',
-            );
+            proposalReleased = true;
+            rethrow;
           }
+          await retainSendProposalLockUntilExpiry(
+            proposalId: args.proposalId,
+            sendFlowId: args.sendFlowId,
+            logContext: 'SendBroadcast(ledger-retryable)',
+          );
           proposalReleased = true;
-          rethrow;
+          // The signed checkpoint survives and recovery retries it, so this
+          // send is pending rather than failed.
+          log('SendBroadcast: Ledger broadcast deferred to recovery: $error');
+          if (await abortRequested()) return aborted();
+          return SendBroadcastOutcome(
+            phase: SendBroadcastPhase.pendingBroadcast,
+            proposalConsumed: proposalConsumed,
+            statusMessage: _ledgerDeferredBroadcastMessage(
+              friendlyBroadcastError(error.toString()),
+            ),
+          );
         }
         if (result.status == 'broadcast_unknown' ||
             result.status == 'broadcasted_storage_failed') {

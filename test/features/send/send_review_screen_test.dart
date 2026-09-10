@@ -1900,6 +1900,9 @@ class _FakeLedgerSignedOperationService
   Future<void> acknowledge(String operationId) async {}
 
   @override
+  Future<void> discard(String operationId) async {}
+
+  @override
   Future<LedgerSignedOperationBroadcastResult> broadcast({
     required String operationId,
     String? spendParamsPath,

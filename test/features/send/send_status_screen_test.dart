@@ -919,6 +919,9 @@ class _FakeLedgerSignedOperationService
 
   @override
   Future<void> acknowledge(String operationId) async {}
+
+  @override
+  Future<void> discard(String operationId) async {}
 }
 
 AppBootstrapState _bootstrap(bool isHardware) {

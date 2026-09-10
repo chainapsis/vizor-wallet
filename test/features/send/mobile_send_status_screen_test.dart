@@ -269,6 +269,40 @@ void main() {
     expect(tester.getSize(subtitleFinder).width, greaterThan(300));
   });
 
+  testWidgets('failure without a reason keeps the nothing-was-sent copy', (
+    tester,
+  ) async {
+    const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      hapticsChannel,
+      (_) async => true,
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        hapticsChannel,
+        null,
+      );
+    });
+
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(_app(broadcastRunner: _runner(broadcast.future)));
+    await tester.pump();
+
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: true,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text("Nothing was sent, your funds haven't moved. Try again."),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('broadcast failure shows the failed state with custom haptic', (
     tester,
   ) async {
@@ -312,7 +346,7 @@ void main() {
       const SendBroadcastOutcome(
         phase: SendBroadcastPhase.failed,
         proposalConsumed: true,
-        error: 'failed',
+        error: 'The network rejected the transaction. Try again.',
       ),
     );
     await tester.pump();
@@ -321,8 +355,12 @@ void main() {
     expect(find.byKey(const ValueKey('mobile_send_status_failed')), findsOne);
     expect(find.text('Send failed'), findsOneWidget);
     expect(
-      find.text("Nothing was sent, your funds haven't moved. Try again."),
+      find.text('The network rejected the transaction. Try again.'),
       findsOneWidget,
+    );
+    expect(
+      find.text("Nothing was sent, your funds haven't moved. Try again."),
+      findsNothing,
     );
     expect(find.text('Return home'), findsOneWidget);
     expect(_statusRouteCanPop(tester), isTrue);

@@ -54,6 +54,44 @@ bool ledgerStandaloneResultIsRecovered({
   return txids.any(recoveredTxids.contains);
 }
 
+/// Whether a swap or pay deposit may still be broadcast.
+enum LedgerDepositBroadcastGate { broadcast, intentMissing, deadlinePassed }
+
+typedef LedgerDepositBroadcastGateCheck =
+    Future<LedgerDepositBroadcastGate> Function(
+      LedgerSignedOperationMetadata operation,
+    );
+
+bool ledgerDepositDeadlinePassed({
+  required DateTime? deadline,
+  required DateTime now,
+}) {
+  return deadline != null && !now.toUtc().isBefore(deadline.toUtc());
+}
+
+/// A signed deposit is only worth sending while its provider intent exists and
+/// its deposit window is open; a late deposit strands funds with the provider.
+final ledgerDepositBroadcastGateProvider =
+    Provider<LedgerDepositBroadcastGateCheck>((ref) {
+      return (operation) async {
+        final intentId = operation.externalRef?.trim();
+        if (intentId == null || intentId.isEmpty) {
+          return LedgerDepositBroadcastGate.intentMissing;
+        }
+        final intents = await ref
+            .read(swapActivityTrackerProvider)
+            .loadIntents(accountUuid: operation.accountUuid);
+        final intent = intents.swapIntentById(intentId);
+        if (intent == null) return LedgerDepositBroadcastGate.intentMissing;
+        return ledgerDepositDeadlinePassed(
+              deadline: intent.depositDeadline,
+              now: DateTime.now(),
+            )
+            ? LedgerDepositBroadcastGate.deadlinePassed
+            : LedgerDepositBroadcastGate.broadcast;
+      };
+    });
+
 final ledgerDepositRecoveryProvider = Provider<LedgerDepositRecovery>((ref) {
   return ({required operation, required result}) async {
     final intentId = operation.externalRef?.trim();
@@ -159,6 +197,20 @@ class LedgerOperationRecoveryCoordinator {
       LedgerSignedOperationBroadcastResult? result;
       try {
         if (operation.state == 'signed_pending_broadcast') {
+          if (operation.kind == LedgerSignedOperationKind.swapDeposit ||
+              operation.kind == LedgerSignedOperationKind.payDeposit) {
+            final gate = await _ref.read(ledgerDepositBroadcastGateProvider)(
+              operation,
+            );
+            if (gate != LedgerDepositBroadcastGate.broadcast) {
+              await operationService.discard(operation.operationId);
+              log(
+                'LedgerRecovery: discarded ${operation.kind.wireName} '
+                'operation=${operation.operationId} reason=${gate.name}',
+              );
+              continue;
+            }
+          }
           result = await operationService.broadcast(
             operationId: operation.operationId,
           );

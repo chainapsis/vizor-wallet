@@ -1,3 +1,5 @@
+// ignore_for_file: depend_on_referenced_packages
+
 import 'dart:async';
 import 'dart:io';
 
@@ -5,6 +7,8 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -197,6 +201,53 @@ void main() {
         ),
       );
 
+      expect(container.read(accountProvider).value?.accounts, isEmpty);
+    },
+  );
+
+  test(
+    'Ledger import removes the Rust account when Dart persistence fails',
+    () async {
+      FlutterSecureStoragePlatform.instance = _FailingAccountsWriteStorage();
+      addTearDown(() => FlutterSecureStorage.setMockInitialValues({}));
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-ledger-import-rollback',
+      );
+      addTearDown(() => supportDirectory.deleteSync(recursive: true));
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            pathProvider,
+            (_) async => supportDirectory.path,
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .importLedgerAccount(
+              name: 'Ledger',
+              ufvk: 'uview1ledger',
+              seedFingerprint: List.filled(32, 1),
+              zip32Index: 0,
+              birthdayHeight: 3000000,
+              ledgerWalletFingerprint: 'ab' * 32,
+            ),
+        throwsA(anything),
+      );
+
+      expect(_rustApi.importedHardwareKinds, ['ledger']);
+      expect(_rustApi.deletedAccountUuids, ['imported-0']);
       expect(container.read(accountProvider).value?.accounts, isEmpty);
     },
   );
@@ -711,6 +762,23 @@ class _FakeAnyhowException implements Exception {
 
   @override
   String toString() => 'AnyhowException($message)';
+}
+
+/// Secure storage whose account-list write fails after the Rust row exists.
+class _FailingAccountsWriteStorage extends TestFlutterSecureStoragePlatform {
+  _FailingAccountsWriteStorage() : super({});
+
+  @override
+  Future<void> write({
+    required String key,
+    required String value,
+    required Map<String, String> options,
+  }) async {
+    if (key.contains('accounts')) {
+      throw PlatformException(code: 'write_failed', message: 'disk full');
+    }
+    await super.write(key: key, value: value, options: options);
+  }
 }
 
 class _AccountMutationRustApiFake implements RustLibApi {

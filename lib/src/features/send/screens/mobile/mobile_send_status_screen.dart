@@ -51,6 +51,7 @@ class _MobileSendStatusScreenState
   var _proposalConsumed = false;
   var _discardScheduled = false;
   String? _statusMessage;
+  String? _error;
 
   @override
   void initState() {
@@ -113,6 +114,7 @@ class _MobileSendStatusScreenState
         SendBroadcastPhase.aborted => _MobileSendStatusPhase.failed,
       };
       _statusMessage = outcome.statusMessage;
+      _error = outcome.error;
     });
     // Success and failure use custom native haptic patterns without system
     // notification sounds.
@@ -172,8 +174,10 @@ class _MobileSendStatusScreenState
             : statusMessage,
       _MobileSendStatusPhase.succeeded =>
         'It will confirm on-chain shortly. Track it in Activity.',
-      _MobileSendStatusPhase.failed =>
-        "Nothing was sent, your funds haven't moved. Try again.",
+      _MobileSendStatusPhase.failed => switch (_error?.trim()) {
+        null || '' => "Nothing was sent, your funds haven't moved. Try again.",
+        final error => error,
+      },
     };
   }
 

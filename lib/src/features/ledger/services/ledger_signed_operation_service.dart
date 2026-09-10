@@ -84,6 +84,11 @@ abstract interface class LedgerSignedOperationService {
   });
 
   Future<void> acknowledge(String operationId);
+
+  /// Drops a checkpointed operation that must not be broadcast any more, such
+  /// as a deposit whose provider deadline passed. Results already on the
+  /// network are never discarded.
+  Future<void> discard(String operationId);
 }
 
 /// Optional capability for operations that contain dependent PCZT rounds.
@@ -205,6 +210,16 @@ class RustLedgerSignedOperationService
   Future<void> acknowledge(String operationId) async {
     final dbPath = await loadWalletDbPath();
     await rust_ledger.ledgerAckSignedOperation(
+      dbPath: dbPath,
+      network: network,
+      operationId: operationId,
+    );
+  }
+
+  @override
+  Future<void> discard(String operationId) async {
+    final dbPath = await loadWalletDbPath();
+    await rust_ledger.ledgerDiscardSignedOperation(
       dbPath: dbPath,
       network: network,
       operationId: operationId,
