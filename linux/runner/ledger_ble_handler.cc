@@ -81,9 +81,9 @@ void Post(std::function<void()> callback) {
 
 class Handler : public std::enable_shared_from_this<Handler> {
  public:
-  void Initialize(FlBinaryMessenger* messenger) {
+  void Initialize(FlBinaryMessenger* messenger, GDBusConnection* bus = nullptr) {
     g_autoptr(GError) error = nullptr;
-    bus_ = g_bus_get_sync(G_BUS_TYPE_SYSTEM, nullptr, &error);
+    bus_ = bus ? G_DBUS_CONNECTION(g_object_ref(bus)) : g_bus_get_sync(G_BUS_TYPE_SYSTEM, nullptr, &error);
     if (bus_) transport_ = std::make_unique<ledger_bluez::Transport>(bus_);
     g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
     methods_ = fl_method_channel_new(messenger, "com.zcash.wallet/ledger_mobile", FL_METHOD_CODEC(codec));
@@ -392,6 +392,21 @@ class Handler : public std::enable_shared_from_this<Handler> {
   std::vector<FlMethodCall*> disconnect_waiters_;
 };
 }  // namespace
+
+namespace {
+struct HandlerOwner : LedgerBleHandlerOwner {
+  std::shared_ptr<Handler> handler;
+  ~HandlerOwner() override { handler->Close(); }
+};
+}  // namespace
+
+std::unique_ptr<LedgerBleHandlerOwner> create_ledger_ble_handler_for_testing(
+    FlBinaryMessenger* messenger, GDBusConnection* bus) {
+  auto owner = std::make_unique<HandlerOwner>();
+  owner->handler = std::make_shared<Handler>();
+  owner->handler->Initialize(messenger, bus);
+  return owner;
+}
 
 void register_ledger_ble_handler(FlView* view) {
   auto handler = std::make_shared<Handler>();
