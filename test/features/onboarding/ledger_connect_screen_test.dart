@@ -25,6 +25,39 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 
 void main() {
+  testWidgets('Linux offers both transports and USB continues to birthday', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.linux,
+        connector: (index) async => LedgerDeviceAccount(
+          ufvk: 'linux-usb-viewing-key',
+          seedFingerprint: const [1, 2, 3],
+          accountIndex: index,
+          appVersion: '3.9.3',
+        ),
+        importer:
+            ({
+              required name,
+              required account,
+              required birthdayHeight,
+              required profilePictureId,
+            }) async {},
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('USB'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('birthday-linux-usb-viewing-key'), findsOneWidget);
+  });
+
   testWidgets('Windows offers both transports and USB continues to birthday', (
     tester,
   ) async {
@@ -543,7 +576,73 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+  testWidgets('Linux connection survives focus changes and explains settings', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final pending = Completer<void>();
+    final ble = _FakeLedgerBleService()..pendingConnection = pending.future;
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.linux,
+        connector: (_) => Future.error(StateError('USB should not be used')),
+        importer:
+            ({
+              required name,
+              required account,
+              required birthdayHeight,
+              required profilePictureId,
+            }) async =>
+                throw StateError('This test must not import an account'),
+        bluetoothConnector: (index, device) async => LedgerDeviceAccount(
+          ufvk: 'linux-bluetooth-viewing-key',
+          seedFingerprint: const [4, 5, 6],
+          accountIndex: index,
+          appVersion: '3.9.3',
+          transport: LedgerConnectionTransport.bluetooth,
+          device: device,
+        ),
+        bleService: ble,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
+    );
+    await tester.pump();
+    expect(
+      find.text(
+        'Keep your Ledger unlocked. After confirming any pairing prompt, close Bluetooth settings and return to Vizor.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Approve Bluetooth pairing on the device if prompted.'),
+      findsNothing,
+    );
+    final disconnects = ble.disconnectCalls;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(ble.disconnectCalls, disconnects);
+    expect(find.text('Connecting to Ledger Flex'), findsOneWidget);
+
+    pending.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Ledger Flex is ready'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final platform in [
+    TargetPlatform.macOS,
+    TargetPlatform.windows,
+    TargetPlatform.linux,
+  ]) {
     testWidgets('imports the approved Ledger account over $platform Bluetooth', (
       tester,
     ) async {
@@ -942,12 +1041,14 @@ class _FakeLedgerBleService implements LedgerMobileBleService {
   String? connectedDeviceId;
   int disconnectCalls = 0;
   int openAppCalls = 0;
+  Future<void>? pendingConnection;
 
   @override
   Future<void> cancelSigning() async {}
 
   @override
   Future<void> connect(LedgerBleDevice device) async {
+    await pendingConnection;
     connectedDeviceId = device.id;
   }
 

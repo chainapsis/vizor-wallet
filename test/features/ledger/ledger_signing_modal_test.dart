@@ -416,47 +416,55 @@ void main() {
     expect(retrySavingCount, 1);
   });
 
-  testWidgets('offers a compact transport switch after a signing failure', (
-    tester,
-  ) async {
-    const account = AccountInfo(
-      uuid: 'ledger-1',
-      name: 'Ledger',
-      order: 0,
-      isHardware: true,
-      hardwareSignerKind: HardwareSignerKind.ledger,
-      ledgerDeviceId: 'nano-x',
-      ledgerDeviceModel: 'Nano X',
-    );
-    await tester.pumpWidget(
-      _harness(
-        phase: LedgerSigningModalPhase.failed,
-        failure: const LedgerSigningFailurePresentation(
-          title: 'Ledger signing failed',
-          statusLabel: 'Action needed',
-          message: 'Reconnect your Ledger and try again.',
-          actionLabel: 'Try again',
-        ),
-        account: account,
-      ),
-    );
+  for (final platform in [
+    TargetPlatform.macOS,
+    TargetPlatform.windows,
+    TargetPlatform.linux,
+  ]) {
+    testWidgets(
+      '$platform offers a compact transport switch after a signing failure',
+      (tester) async {
+        const account = AccountInfo(
+          uuid: 'ledger-1',
+          name: 'Ledger',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+          ledgerDeviceId: 'nano-x',
+          ledgerDeviceModel: 'Nano X',
+        );
+        await tester.pumpWidget(
+          _harness(
+            phase: LedgerSigningModalPhase.failed,
+            platform: platform,
+            failure: const LedgerSigningFailurePresentation(
+              title: 'Ledger signing failed',
+              statusLabel: 'Action needed',
+              message: 'Reconnect your Ledger and try again.',
+              actionLabel: 'Try again',
+            ),
+            account: account,
+          ),
+        );
 
-    expect(
-      find.byKey(const ValueKey('ledger_failure_connection_picker')),
-      findsOneWidget,
+        expect(
+          find.byKey(const ValueKey('ledger_failure_connection_picker')),
+          findsOneWidget,
+        );
+        expect(find.text('Auto'), findsOneWidget);
+        expect(find.text('USB'), findsOneWidget);
+        expect(find.text('Bluetooth'), findsOneWidget);
+        expect(
+          tester
+              .widget<AppButton>(
+                find.byKey(const ValueKey('ledger_connection_bluetooth')),
+              )
+              .onPressed,
+          isNotNull,
+        );
+      },
     );
-    expect(find.text('Auto'), findsOneWidget);
-    expect(find.text('USB'), findsOneWidget);
-    expect(find.text('Bluetooth'), findsOneWidget);
-    expect(
-      tester
-          .widget<AppButton>(
-            find.byKey(const ValueKey('ledger_connection_bluetooth')),
-          )
-          .onPressed,
-      isNotNull,
-    );
-  });
+  }
 
   testWidgets('does not offer Bluetooth before the account verifies a device', (
     tester,
@@ -495,6 +503,7 @@ void main() {
 }
 
 Widget _harness({
+  TargetPlatform platform = TargetPlatform.macOS,
   bool pageLayout = false,
   required LedgerSigningModalPhase phase,
   LedgerSigningFailurePresentation? failure,
@@ -513,7 +522,7 @@ Widget _harness({
       ledgerAppReadinessStateProvider.overrideWith(
         () => _FakeReadinessController(readiness),
       ),
-      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerTargetPlatformProvider.overrideWithValue(platform),
       if (account != null)
         accountProvider.overrideWith(() => _StaticAccountNotifier(account)),
     ],

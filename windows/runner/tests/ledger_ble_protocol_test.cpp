@@ -1,5 +1,5 @@
-#include "../ledger_ble_protocol.h"
-#include "../ledger_ble_operation_gate.h"
+#include "../../../native/ledger/ble_protocol.h"
+#include "../../../native/ledger/ble_operation_gate.h"
 
 #include <cassert>
 #include <functional>

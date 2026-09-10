@@ -371,9 +371,13 @@ class _LedgerDesktopBleConnectDialogState
       _ProbePhase.preparing => (
         AppIcons.loader,
         'Preparing Bluetooth',
-        widget.platform == TargetPlatform.windows
-            ? 'Windows may ask for Bluetooth permission and pairing confirmation.'
-            : 'macOS may ask for Bluetooth permission.',
+        switch (widget.platform) {
+          TargetPlatform.linux =>
+            'Linux may ask you to confirm pairing in Bluetooth settings.',
+          TargetPlatform.windows =>
+            'Windows may ask for Bluetooth permission and pairing confirmation.',
+          _ => 'macOS may ask for Bluetooth permission.',
+        },
       ),
       _ProbePhase.scanning => (
         AppIcons.loader,
@@ -383,7 +387,9 @@ class _LedgerDesktopBleConnectDialogState
       _ProbePhase.connecting => (
         AppIcons.loader,
         'Connecting to ${_connectedDevice?.name ?? 'Ledger'}',
-        'Approve Bluetooth pairing on the device if prompted.',
+        widget.platform == TargetPlatform.linux
+            ? 'Keep your Ledger unlocked. After confirming any pairing prompt, close Bluetooth settings and return to Vizor.'
+            : 'Approve Bluetooth pairing on the device if prompted.',
       ),
       _ProbePhase.readingAccount => (
         AppIcons.loader,

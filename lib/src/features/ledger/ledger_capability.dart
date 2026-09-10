@@ -123,6 +123,7 @@ bool isLedgerMobilePlatform(TargetPlatform platform) =>
 bool isLedgerBluetoothPlatform(TargetPlatform platform) =>
     platform == TargetPlatform.macOS ||
     platform == TargetPlatform.windows ||
+    platform == TargetPlatform.linux ||
     isLedgerMobilePlatform(platform);
 
 void requireSupportedLedgerAppVersion(String version) {

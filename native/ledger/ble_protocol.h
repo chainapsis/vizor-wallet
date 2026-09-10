@@ -1,5 +1,5 @@
-#ifndef RUNNER_LEDGER_BLE_PROTOCOL_H_
-#define RUNNER_LEDGER_BLE_PROTOCOL_H_
+#ifndef VIZOR_LEDGER_BLE_PROTOCOL_H_
+#define VIZOR_LEDGER_BLE_PROTOCOL_H_
 
 #include <algorithm>
 #include <array>
@@ -167,4 +167,4 @@ inline AppInfo DecodeAppInfo(const Bytes& response) {
 
 }  // namespace ledger_ble
 
-#endif  // RUNNER_LEDGER_BLE_PROTOCOL_H_
+#endif  // VIZOR_LEDGER_BLE_PROTOCOL_H_

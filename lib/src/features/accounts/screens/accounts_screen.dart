@@ -1210,7 +1210,11 @@ class _AccountRowState extends State<_AccountRow> {
       showSendZec: widget.showSendZec,
       onLedgerConnection:
           widget.account.isLedger &&
-              const [TargetPlatform.macOS, TargetPlatform.windows].contains(
+              const [
+                TargetPlatform.macOS,
+                TargetPlatform.windows,
+                TargetPlatform.linux,
+              ].contains(
                 ProviderScope.containerOf(
                   context,
                 ).read(ledgerTargetPlatformProvider),

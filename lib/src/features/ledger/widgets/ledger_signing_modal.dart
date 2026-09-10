@@ -320,7 +320,9 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
               (ref.watch(ledgerTargetPlatformProvider) ==
                       TargetPlatform.macOS ||
                   ref.watch(ledgerTargetPlatformProvider) ==
-                      TargetPlatform.windows)
+                      TargetPlatform.windows ||
+                  ref.watch(ledgerTargetPlatformProvider) ==
+                      TargetPlatform.linux)
           ? _LedgerFailureConnectionPicker(account: account)
           : null,
       message: guidanceMessage,

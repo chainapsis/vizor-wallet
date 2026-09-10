@@ -6,6 +6,24 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 
 void main() {
+  test('Linux cancellation reaches both native transports', () async {
+    var cancelCalls = 0;
+    final ble = _CancelBleService();
+    final container = ProviderContainer(
+      overrides: [
+        ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.linux),
+        ledgerRustOperationCancellerProvider.overrideWithValue(() async {
+          cancelCalls++;
+        }),
+        ledgerMobileBleServiceProvider.overrideWithValue(ble),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(ledgerOperationCancellerProvider)();
+    expect(cancelCalls, 1);
+    expect(ble.cancelCalls, 1);
+  });
+
   test('Windows cancellation reaches both native transports', () async {
     var cancelCalls = 0;
     final ble = _CancelBleService();

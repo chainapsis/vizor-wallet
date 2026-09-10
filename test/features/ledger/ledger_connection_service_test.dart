@@ -15,6 +15,76 @@ import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
   for (final preference in LedgerConnectionPreference.values) {
+    test('Linux respects the connection preference $preference', () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: preference,
+          deviceModel: 'Nano X',
+          lastTransport: LedgerConnectionTransport.bluetooth,
+        ),
+      );
+      final ble = _FakeBleService();
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        platform: TargetPlatform.linux,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final result = await container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async => 'signed-over-usb',
+            bluetooth: (_) async => 'signed-over-ble',
+          );
+      final usesUsb = preference == LedgerConnectionPreference.usb;
+      expect(result, usesUsb ? 'signed-over-usb' : 'signed-over-ble');
+      expect(ble.connectCalls, usesUsb ? 0 : 1);
+      expect(
+        notifier.recordedTransports,
+        usesUsb ? [LedgerConnectionTransport.usb] : isEmpty,
+      );
+    });
+  }
+
+  test('Linux explicit USB failure does not probe Bluetooth', () async {
+    final notifier = _FakeAccountNotifier(
+      _ledgerAccount(
+        preference: LedgerConnectionPreference.usb,
+        deviceModel: 'Nano X',
+        lastTransport: LedgerConnectionTransport.bluetooth,
+      ),
+    );
+    final ble = _FakeBleService();
+    final container = _container(
+      notifier: notifier,
+      ble: ble,
+      platform: TargetPlatform.linux,
+      usbReady: false,
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    await expectLater(
+      container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () => throw StateError('Unavailable USB must not sign'),
+            bluetooth: (_) => throw StateError('Linux BLE must not run'),
+          ),
+      throwsA(
+        isA<LedgerConnectionRequiredException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('with USB'), isNot(contains('Bluetooth'))),
+        ),
+      ),
+    );
+    expect(ble.connectCalls, 0);
+    expect(notifier.recordedTransports, isEmpty);
+  });
+  for (final preference in LedgerConnectionPreference.values) {
     test('Windows respects the connection preference $preference', () async {
       final notifier = _FakeAccountNotifier(
         _ledgerAccount(

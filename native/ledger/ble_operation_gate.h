@@ -1,5 +1,5 @@
-#ifndef RUNNER_LEDGER_BLE_OPERATION_GATE_H_
-#define RUNNER_LEDGER_BLE_OPERATION_GATE_H_
+#ifndef VIZOR_LEDGER_BLE_OPERATION_GATE_H_
+#define VIZOR_LEDGER_BLE_OPERATION_GATE_H_
 
 #include <atomic>
 #include <cstdint>
@@ -33,4 +33,4 @@ class OperationGate {
 
 }  // namespace ledger_ble
 
-#endif  // RUNNER_LEDGER_BLE_OPERATION_GATE_H_
+#endif  // VIZOR_LEDGER_BLE_OPERATION_GATE_H_

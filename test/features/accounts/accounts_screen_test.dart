@@ -781,7 +781,11 @@ void main() {
     expect(find.text('ledger add ledger-account'), findsOneWidget);
   });
 
-  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+  for (final platform in [
+    TargetPlatform.macOS,
+    TargetPlatform.windows,
+    TargetPlatform.linux,
+  ]) {
     testWidgets(
       '$platform Ledger USB-only model disables Bluetooth preference',
       (tester) async {

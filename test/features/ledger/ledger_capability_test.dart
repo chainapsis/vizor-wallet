@@ -76,33 +76,31 @@ void main() {
     expect(isLedgerMobilePlatform(TargetPlatform.windows), isFalse);
   });
 
-  test(
-    'supports Bluetooth on Windows and Apple and Android platforms only',
-    () {
-      for (final platform in TargetPlatform.values) {
-        final supported =
-            platform == TargetPlatform.macOS ||
-            platform == TargetPlatform.windows ||
-            platform == TargetPlatform.iOS ||
-            platform == TargetPlatform.android;
-        expect(
-          isLedgerBluetoothPlatform(platform),
-          supported,
-          reason: '$platform',
-        );
-        expect(
-          ledgerBluetoothTransportCapabilityForModel(
-            model: 'Nano X',
-            platform: platform,
-          ),
-          supported
-              ? LedgerBluetoothCapability.supported
-              : LedgerBluetoothCapability.unsupported,
-          reason: '$platform',
-        );
-      }
-    },
-  );
+  test('supports Bluetooth on desktop and mobile platforms only', () {
+    for (final platform in TargetPlatform.values) {
+      final supported =
+          platform == TargetPlatform.macOS ||
+          platform == TargetPlatform.windows ||
+          platform == TargetPlatform.linux ||
+          platform == TargetPlatform.iOS ||
+          platform == TargetPlatform.android;
+      expect(
+        isLedgerBluetoothPlatform(platform),
+        supported,
+        reason: '$platform',
+      );
+      expect(
+        ledgerBluetoothTransportCapabilityForModel(
+          model: 'Nano X',
+          platform: platform,
+        ),
+        supported
+            ? LedgerBluetoothCapability.supported
+            : LedgerBluetoothCapability.unsupported,
+        reason: '$platform',
+      );
+    }
+  });
 
   test('accepts the minimum and newer Ledger Zcash app versions', () {
     expect(() => requireSupportedLedgerAppVersion('3.9.3'), returnsNormally);
