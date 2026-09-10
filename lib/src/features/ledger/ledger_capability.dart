@@ -103,9 +103,10 @@ LedgerCapability ledgerStaticCapability({
 }) {
   if (platform != TargetPlatform.macOS &&
       platform != TargetPlatform.windows &&
+      platform != TargetPlatform.linux &&
       !isLedgerMobilePlatform(platform)) {
     return const LedgerCapability.unsupported(
-      'Ledger is currently supported only on Vizor for macOS, Windows, iOS, and Android.',
+      'Ledger is currently supported only on Vizor for macOS, Windows, Linux, iOS, and Android.',
     );
   }
   if (zcashNetworkFromName(networkName) != ZcashNetwork.mainnet) {

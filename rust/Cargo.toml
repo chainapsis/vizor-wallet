@@ -153,7 +153,7 @@ features = ["std"]
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
-[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 ledger-transport = "0.11.0"
 ledger-transport-hid = "0.11.0"
 

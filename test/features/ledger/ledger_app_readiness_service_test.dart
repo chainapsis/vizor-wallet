@@ -168,6 +168,43 @@ void main() {
     },
   );
 
+  for (final detail in [
+    'Permission denied (os error 13)',
+    'Access is denied. (os error 5)',
+  ]) {
+    test(
+      'USB HID permission failure is not device rejection: $detail',
+      () async {
+        final states = <LedgerAppReadinessState>[];
+        final service = LedgerAppReadinessService(
+          device: _ErrorDevice(StateError('Open Ledger HID device: $detail')),
+          onState: states.add,
+        );
+
+        await expectLater(
+          service.ensureReady(),
+          throwsA(
+            isA<LedgerAppReadinessException>()
+                .having(
+                  (error) => error.failure,
+                  'failure',
+                  LedgerAppReadinessFailure.unavailable,
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
+                  allOf(
+                    contains('USB device permissions'),
+                    isNot(contains('rejected')),
+                  ),
+                ),
+          ),
+        );
+        expect(states.last.failure, LedgerAppReadinessFailure.unavailable);
+      },
+    );
+  }
+
   test('missing Ledger is classified as a disconnected device', () async {
     final states = <LedgerAppReadinessState>[];
     final service = LedgerAppReadinessService(

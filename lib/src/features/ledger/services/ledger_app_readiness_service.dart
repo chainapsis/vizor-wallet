@@ -238,6 +238,15 @@ class LedgerAppReadinessService {
       return LedgerAppReadinessException(failure, error.message);
     }
     final raw = '$error'.toLowerCase();
+    if (raw.contains('hid') &&
+        (raw.contains('permission denied') ||
+            raw.contains('access is denied') ||
+            raw.contains('access denied'))) {
+      return const LedgerAppReadinessException(
+        LedgerAppReadinessFailure.unavailable,
+        'Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.',
+      );
+    }
     if (raw.contains('rejected') ||
         raw.contains('denied') ||
         raw.contains('6985')) {

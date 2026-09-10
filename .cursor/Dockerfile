@@ -26,6 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgtk-3-dev libglib2.0-dev liblzma-dev \
       # flutter_secure_storage_linux -> libsecret + jsoncpp
       libsecret-1-dev libjsoncpp-dev \
+      # Ledger USB HID transport uses the hidraw backend and libudev.
+      libudev-dev \
       # Software OpenGL for headless rendering under Xvfb (no GPU)
       libgl1-mesa-dri libegl1 \
       # Headless GUI stack for launching / capturing the desktop app

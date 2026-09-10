@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 
 void main() {
-  test('supports macOS, Windows, iOS, and Android mainnet only', () {
+  test('supports desktop, iOS, and Android mainnet only', () {
     expect(
       ledgerStaticCapability(
         platform: TargetPlatform.android,
@@ -49,6 +49,20 @@ void main() {
     expect(
       ledgerStaticCapability(
         platform: TargetPlatform.linux,
+        networkName: 'main',
+      ).supported,
+      isTrue,
+    );
+    expect(
+      ledgerStaticCapability(
+        platform: TargetPlatform.linux,
+        networkName: 'test',
+      ).supported,
+      isFalse,
+    );
+    expect(
+      ledgerStaticCapability(
+        platform: TargetPlatform.fuchsia,
         networkName: 'main',
       ).supported,
       isFalse,
