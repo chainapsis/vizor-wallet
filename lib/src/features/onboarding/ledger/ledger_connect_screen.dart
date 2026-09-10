@@ -13,6 +13,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
@@ -335,13 +336,19 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     final lower = raw.toLowerCase();
     final networkName = ref.read(rpcEndpointProvider).networkName;
     final appInstruction = ledgerZcashAppOpenErrorInstruction(networkName);
+    final usb = ledgerUsbErrorMessage(
+      raw,
+      appInstruction: appInstruction,
+      platform: ref.read(ledgerTargetPlatformProvider),
+    );
+    if (usb != null) return usb;
     if (lower.contains('rejected') || lower.contains('6985')) {
       return 'The viewing-key request was rejected on your Ledger.';
     }
     if (lower.contains('locked') || lower.contains('5515')) {
       return 'Unlock your Ledger. $appInstruction';
     }
-    if (lower.contains('not found') || lower.contains('hid')) {
+    if (lower.contains('not found')) {
       return 'Connect and unlock your Ledger. $appInstruction';
     }
     if (raw.contains(_LedgerWalletMismatchException.message)) {

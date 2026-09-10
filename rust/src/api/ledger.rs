@@ -8,6 +8,8 @@ pub struct LedgerAccountExport {
     pub ufvk: String,
     pub seed_fingerprint: Vec<u8>,
     pub account_index: u32,
+    /// USB HID product string of the exporting device, when known.
+    pub device_model: Option<String>,
 }
 
 /// One transport-neutral APDU command. Mobile native code owns only the BLE
@@ -116,11 +118,12 @@ pub fn ledger_export_account(
     network: String,
 ) -> Result<LedgerAccountExport, String> {
     require_mainnet(&network)?;
-    let ufvk = ledger::get_ufvk(account_index)?;
+    let (ufvk, device_model) = ledger::get_ufvk_with_device_model(account_index)?;
     Ok(LedgerAccountExport {
         seed_fingerprint: ledger_account_fingerprint(&ufvk, account_index).to_vec(),
         ufvk,
         account_index,
+        device_model,
     })
 }
 
@@ -184,6 +187,7 @@ pub fn ledger_parse_mobile_ufvk_responses(
         seed_fingerprint: ledger_account_fingerprint(&ufvk, account_index).to_vec(),
         ufvk,
         account_index,
+        device_model: None,
     })
 }
 

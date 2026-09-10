@@ -17,6 +17,7 @@ class LedgerDeviceAccount {
     required this.appVersion,
     this.transport = LedgerConnectionTransport.usb,
     this.device,
+    this.deviceModel,
     this.walletFingerprint,
   });
 
@@ -26,6 +27,9 @@ class LedgerDeviceAccount {
   final String appVersion;
   final LedgerConnectionTransport transport;
   final LedgerBleDevice? device;
+
+  /// Model of a USB device; Bluetooth devices carry it in [device].
+  final String? deviceModel;
   final String? walletFingerprint;
 
   LedgerDeviceAccount withWalletIdentity(LedgerWalletIdentity identity) =>
@@ -36,6 +40,7 @@ class LedgerDeviceAccount {
         appVersion: appVersion,
         transport: transport,
         device: device,
+        deviceModel: deviceModel,
         walletFingerprint: identity.fingerprint,
       );
 }
@@ -167,6 +172,7 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
           accountIndex: accountIndex,
           network: networkName,
         );
+  final usbModel = account.deviceModel?.trim();
   return LedgerDeviceAccount(
     ufvk: account.ufvk,
     seedFingerprint: account.seedFingerprint,
@@ -174,6 +180,9 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
     appVersion: appVersion,
     transport: transport,
     device: bluetoothDevice,
+    deviceModel: usbModel == null || usbModel.isEmpty
+        ? null
+        : ledgerUsbDeviceModelName(usbModel),
   );
 }
 
@@ -216,7 +225,7 @@ final ledgerAccountImporterProvider = Provider<LedgerAccountImporter>((ref) {
           connectionTransport: account.transport,
           ledgerDeviceId: account.device?.id,
           ledgerDeviceName: account.device?.name,
-          ledgerDeviceModel: account.device?.model,
+          ledgerDeviceModel: account.device?.model ?? account.deviceModel,
           ledgerWalletFingerprint: walletFingerprint,
         );
   };

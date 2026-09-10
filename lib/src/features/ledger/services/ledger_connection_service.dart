@@ -135,6 +135,15 @@ class LedgerConnectionService {
     }
 
     final mobile = _ref.read(ledgerMobileBleServiceProvider);
+    if (isLedgerMobilePlatform(platform)) {
+      // Only onboarding asked before; a revoked permission otherwise surfaces
+      // as a generic discovery failure.
+      if (!await mobile.requestPermissions()) {
+        throw const LedgerConnectionRequiredException(
+          'Allow Bluetooth for Vizor in Settings, then try again.',
+        );
+      }
+    }
     final device = LedgerBleDevice(
       id: deviceId,
       name: account.ledgerDeviceName ?? 'Ledger',

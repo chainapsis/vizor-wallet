@@ -415,20 +415,25 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       );
       action = null;
     } else {
+      // USB transport failures first: "Permission denied" from hidapi is not a
+      // device rejection, and a missing device is not a stale app.
+      final usb = ledgerUsbErrorMessage(
+        error,
+        appInstruction: appInstruction,
+        platform: ref.read(ledgerTargetPlatformProvider),
+      );
       final message =
           lower.contains('rejected') ||
               lower.contains('denied') ||
               lower.contains('6985')
           ? 'The transaction was rejected on your Ledger.'
-          : lower.contains('not found') ||
-                lower.contains('no device') ||
-                lower.contains('hid')
+          : lower.contains('not found') || lower.contains('no device')
           ? 'Connect and unlock your Ledger. $appInstruction'
           : '$appInstruction Then try again.';
       failure = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
-        message: ledgerActionableErrorMessage(error) ?? message,
+        message: ledgerActionableErrorMessage(error) ?? usb ?? message,
         actionLabel: 'Try again',
         requiresReconnect: ledgerFailureNeedsReconnect(error),
       );

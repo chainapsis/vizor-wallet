@@ -272,15 +272,22 @@ class LedgerAccountExport {
   final Uint8List seedFingerprint;
   final int accountIndex;
 
+  /// USB HID product string of the exporting device, when known.
+  final String? deviceModel;
+
   const LedgerAccountExport({
     required this.ufvk,
     required this.seedFingerprint,
     required this.accountIndex,
+    this.deviceModel,
   });
 
   @override
   int get hashCode =>
-      ufvk.hashCode ^ seedFingerprint.hashCode ^ accountIndex.hashCode;
+      ufvk.hashCode ^
+      seedFingerprint.hashCode ^
+      accountIndex.hashCode ^
+      deviceModel.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -289,7 +296,8 @@ class LedgerAccountExport {
           runtimeType == other.runtimeType &&
           ufvk == other.ufvk &&
           seedFingerprint == other.seedFingerprint &&
-          accountIndex == other.accountIndex;
+          accountIndex == other.accountIndex &&
+          deviceModel == other.deviceModel;
 }
 
 /// A Ledger-produced spend authorization signature. `pool` is `0` for

@@ -51,10 +51,36 @@ void main() {
 
     expect(notifier.importedFingerprint, _fingerprint);
   });
+
+  test('Ledger import records the USB device model for the account', () async {
+    final notifier = _CapturingAccountNotifier();
+    final container = ProviderContainer(
+      overrides: [accountProvider.overrideWith(() => notifier)],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    await container.read(ledgerAccountImporterProvider)(
+      name: 'Ledger',
+      account: const LedgerDeviceAccount(
+        ufvk: 'uview1ledger',
+        seedFingerprint: [1],
+        accountIndex: 0,
+        appVersion: '3.9.3',
+        deviceModel: 'Ledger Nano S Plus',
+        walletFingerprint: _fingerprint,
+      ),
+      birthdayHeight: 2_900_000,
+      profilePictureId: kDefaultProfilePictureId,
+    );
+
+    expect(notifier.importedDeviceModel, 'Ledger Nano S Plus');
+  });
 }
 
 class _CapturingAccountNotifier extends AccountNotifier {
   String? importedFingerprint;
+  String? importedDeviceModel;
 
   @override
   FutureOr<AccountState> build() => const AccountState();
@@ -74,5 +100,6 @@ class _CapturingAccountNotifier extends AccountNotifier {
     required String ledgerWalletFingerprint,
   }) async {
     importedFingerprint = ledgerWalletFingerprint;
+    importedDeviceModel = ledgerDeviceModel;
   }
 }

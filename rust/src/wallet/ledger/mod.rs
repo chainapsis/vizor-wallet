@@ -633,6 +633,24 @@ pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
     Err(unsupported_platform())
 }
 
+/// Read the UFVK together with the USB device model, so an import can record
+/// which Ledger hardware holds the account.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub fn get_ufvk_with_device_model(account_index: u32) -> Result<(String, Option<String>), String> {
+    let operation = lock_operation()?;
+    let transport = transport::LedgerTransport::connect_ufvk(operation.context())?;
+    let model = transport.device_model().map(str::to_owned);
+    let ufvk = transport.ufvk(account_index)?;
+    Ok((ufvk, model))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+pub fn get_ufvk_with_device_model(
+    _account_index: u32,
+) -> Result<(String, Option<String>), String> {
+    Err(unsupported_platform())
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn get_wallet_identity() -> Result<WalletIdentity, String> {
     let operation = lock_operation()?;

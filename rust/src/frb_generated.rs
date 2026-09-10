@@ -10008,10 +10008,12 @@ impl SseDecode for crate::api::ledger::LedgerAccountExport {
         let mut var_ufvk = <String>::sse_decode(deserializer);
         let mut var_seedFingerprint = <Vec<u8>>::sse_decode(deserializer);
         let mut var_accountIndex = <u32>::sse_decode(deserializer);
+        let mut var_deviceModel = <Option<String>>::sse_decode(deserializer);
         return crate::api::ledger::LedgerAccountExport {
             ufvk: var_ufvk,
             seed_fingerprint: var_seedFingerprint,
             account_index: var_accountIndex,
+            device_model: var_deviceModel,
         };
     }
 }
@@ -14258,6 +14260,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ledger::LedgerAccountExport {
             self.ufvk.into_into_dart().into_dart(),
             self.seed_fingerprint.into_into_dart().into_dart(),
             self.account_index.into_into_dart().into_dart(),
+            self.device_model.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -16939,6 +16942,7 @@ impl SseEncode for crate::api::ledger::LedgerAccountExport {
         <String>::sse_encode(self.ufvk, serializer);
         <Vec<u8>>::sse_encode(self.seed_fingerprint, serializer);
         <u32>::sse_encode(self.account_index, serializer);
+        <Option<String>>::sse_encode(self.device_model, serializer);
     }
 }
 

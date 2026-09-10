@@ -79,6 +79,8 @@ enum TransportPurpose {
 pub(super) struct LedgerTransport {
     backend: Backend,
     operation: OperationContext,
+    /// The HID product string ("Nano S Plus", "Stax", ...), when known.
+    model: Option<String>,
 }
 
 impl LedgerTransport {
@@ -102,6 +104,7 @@ impl LedgerTransport {
             return Ok(Self {
                 backend: Backend::Speculos(client),
                 operation,
+                model: None,
             });
         }
         #[cfg(not(debug_assertions))]
@@ -114,6 +117,7 @@ impl LedgerTransport {
                 device.vendor_id() == LEDGER_VID && device.usage_page() == LEDGER_USAGE_PAGE
             })
             .ok_or_else(|| "No Ledger device found. Connect and unlock the Nano S+.".to_string())?;
+        let model = device_info.product_string().map(str::to_owned);
         let device = device_info
             .open_device(&hid)
             .map_err(|e| format!("Open Ledger HID device: {e}"))?;
@@ -121,7 +125,12 @@ impl LedgerTransport {
         Ok(Self {
             backend: Backend::Hid(device),
             operation,
+            model,
         })
+    }
+
+    pub(super) fn device_model(&self) -> Option<&str> {
+        self.model.as_deref()
     }
 
     pub(super) fn current_app(&self) -> Result<RunningDeviceApp, String> {

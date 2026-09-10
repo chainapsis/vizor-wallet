@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../ledger/ledger_capability.dart';
 import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_connection_recovery.dart';
 
@@ -422,10 +423,16 @@ class _LedgerShieldSigningOverlayState
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
+    final usb = ledgerUsbErrorMessage(
+      error,
+      appInstruction: appInstruction,
+      platform: ref.read(ledgerTargetPlatformProvider),
+    );
+    if (usb != null) return usb;
     if (lower.contains('rejected') || lower.contains('6985')) {
       return 'The shield transaction was rejected on your Ledger.';
     }
-    if (lower.contains('no ledger') || lower.contains('hid')) {
+    if (lower.contains('no ledger')) {
       return 'Connect and unlock your Ledger. $appInstruction';
     }
     if (lower.contains('sync')) {

@@ -502,13 +502,19 @@ class _SwapLedgerSigningOverlayState
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
+    final usb = ledgerUsbErrorMessage(
+      error,
+      appInstruction: appInstruction,
+      platform: ref.read(ledgerTargetPlatformProvider),
+    );
+    if (usb != null) return usb;
     if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
       return kLedgerLegacyOrchardRecoveryUnavailableMessage;
     }
     if (lower.contains('rejected') || lower.contains('6985')) {
       return 'The ZEC deposit was rejected on your Ledger.';
     }
-    if (lower.contains('no ledger') || lower.contains('hid')) {
+    if (lower.contains('no ledger')) {
       return 'Connect and unlock your Ledger. $appInstruction';
     }
     if (lower.contains('sapling')) {

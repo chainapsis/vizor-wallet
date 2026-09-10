@@ -176,6 +176,7 @@ void main() {
           .read(ledgerConnectionServiceProvider)
           .reconnect('ledger-1');
       expect(ble.recoveryEvents, [
+        'permission',
         'cancel',
         'disconnect',
         'discover',
@@ -184,6 +185,39 @@ void main() {
       ]);
       expect(ble.connectedDeviceIds, ['device-1']);
       expect(ble.apduCalls, 0);
+    },
+  );
+
+  test(
+    'mobile reconnect stops with a clear message when Bluetooth is denied',
+    () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.bluetooth,
+          deviceModel: 'Nano X',
+        ),
+      );
+      final ble = _FakeBleService()..grantPermissions = false;
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        platform: TargetPlatform.android,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container.read(ledgerConnectionServiceProvider).reconnect('ledger-1'),
+        throwsA(
+          isA<LedgerConnectionRequiredException>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Allow Bluetooth'),
+          ),
+        ),
+      );
+      expect(ble.recoveryEvents, ['permission']);
+      expect(ble.connectCalls, 0);
     },
   );
   for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
@@ -500,6 +534,7 @@ class _FakeAccountNotifier extends AccountNotifier {
 
 class _FakeBleService implements LedgerMobileBleService {
   final recoveryEvents = <String>[];
+  var grantPermissions = true;
   var apduCalls = 0;
   var connectCalls = 0;
   var disconnectCalls = 0;
@@ -532,7 +567,10 @@ class _FakeBleService implements LedgerMobileBleService {
   Future<LedgerMobileAppInfo> requestOpenZcashApp() => currentApp();
 
   @override
-  Future<bool> requestPermissions() async => true;
+  Future<bool> requestPermissions() async {
+    recoveryEvents.add('permission');
+    return grantPermissions;
+  }
 
   @override
   Stream<LedgerDiscoveryUpdate> discoverDevices() {

@@ -1,7 +1,47 @@
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
 
 void main() {
+  test('USB transport failures are told apart', () {
+    const app = 'Open the Zcash app.';
+    String? usb(
+      String error, {
+      TargetPlatform platform = TargetPlatform.macOS,
+    }) => ledgerUsbErrorMessage(error, appInstruction: app, platform: platform);
+
+    expect(
+      usb('No Ledger device found. Connect and unlock the Nano S+.'),
+      startsWith('Connect and unlock your Ledger.'),
+    );
+    expect(
+      usb(
+        "Open Ledger HID device: hidapi error: Failed to open a device with path '/dev/hidraw3': Permission denied",
+        platform: TargetPlatform.linux,
+      ),
+      contains('udev'),
+    );
+    expect(
+      usb(
+        'Open Ledger HID device: hidapi error: Access is denied.',
+        platform: TargetPlatform.windows,
+      ),
+      allOf(contains('USB device permissions'), isNot(contains('udev'))),
+    );
+    expect(
+      usb(
+        'Open Ledger HID device: hidapi error: exclusive access and device already open',
+      ),
+      contains('could not open it'),
+    );
+    expect(
+      usb('Read Ledger HID packet: hidapi error: device disconnected'),
+      contains('interrupted'),
+    );
+    expect(usb('Proposal not found (expired or already consumed)'), isNull);
+    expect(usb('User rejected approval (0x6985)'), isNull);
+  });
+
   test('shielding input limit copy names both counts', () {
     final message = ledgerShieldingInputLimitMessage(inputCount: 41, limit: 32);
     expect(message, contains('up to 32'));

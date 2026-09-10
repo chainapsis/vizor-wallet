@@ -50,6 +50,14 @@ LedgerBluetoothCapability ledgerBluetoothCapabilityForModel(String? model) {
   return LedgerBluetoothCapability.unknown;
 }
 
+/// Names a USB HID product string the way Bluetooth discovery names models,
+/// so one account field serves both transports.
+String ledgerUsbDeviceModelName(String product) {
+  final trimmed = product.trim();
+  if (trimmed.toLowerCase().startsWith('ledger')) return trimmed;
+  return 'Ledger $trimmed';
+}
+
 LedgerBluetoothCapability ledgerBluetoothTransportCapabilityForModel({
   required String? model,
   required TargetPlatform platform,

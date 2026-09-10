@@ -125,14 +125,21 @@ LedgerVotingSignature requireMatchingLedgerVotingSignature({
 final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
   ref,
 ) {
+  // Resolve every dependency now. Screens call the canceller from dispose(),
+  // when the scope that built it may already be gone, and a cancel that
+  // throws there never reaches the device.
+  final statusGate = ref.watch(ledgerMobileSigningStatusGateProvider);
+  final cancelRustOperation = ref.watch(ledgerRustOperationCancellerProvider);
+  final bluetooth = isLedgerBluetoothPlatform(
+    ref.watch(ledgerTargetPlatformProvider),
+  );
+  final ble = bluetooth ? ref.watch(ledgerMobileBleServiceProvider) : null;
   return () async {
-    ref.read(ledgerMobileSigningStatusGateProvider).cancelPending();
-    await ref.read(ledgerRustOperationCancellerProvider)();
-    if (!isLedgerBluetoothPlatform(ref.read(ledgerTargetPlatformProvider))) {
-      return;
-    }
+    statusGate.cancelPending();
+    await cancelRustOperation();
+    if (ble == null) return;
     try {
-      await ref.read(ledgerMobileBleServiceProvider).cancelSigning();
+      await ble.cancelSigning();
     } catch (_) {
       // Only one transport can own the active operation. Cancelling the idle
       // transport is best-effort and must not hide the real cancellation.

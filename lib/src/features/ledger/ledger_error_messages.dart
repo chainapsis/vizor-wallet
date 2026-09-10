@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
+
 /// Messages for failures that opening the app or changing transport cannot fix.
 /// Keep status codes in the Rust error for diagnostics, not in the UI copy.
 enum LedgerRequestKind { send, swap, payment, shield, migration, voting }
@@ -49,6 +52,41 @@ String? ledgerActionableErrorMessage(
   }
   if (text.contains('0x6f03')) {
     return 'The Zcash app could not prepare this request. Close and reopen the app on your Ledger, then try again.';
+  }
+  return null;
+}
+
+String ledgerUsbPermissionMessage(TargetPlatform platform) {
+  // Linux hidraw nodes stay root-only until a udev rule grants access.
+  return platform == TargetPlatform.linux
+      ? "Vizor cannot access your Ledger over USB. Install Ledger's udev rules for Linux (github.com/LedgerHQ/udev-rules), then reconnect your Ledger and try again."
+      : 'Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.';
+}
+
+/// Tells the Rust USB transport's failures apart, so "no Ledger plugged in"
+/// never reads as "Vizor cannot open the Ledger" or as a device rejection.
+String? ledgerUsbErrorMessage(
+  Object error, {
+  required String appInstruction,
+  TargetPlatform? platform,
+}) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('no ledger device found')) {
+    return 'Connect and unlock your Ledger. $appInstruction';
+  }
+  if (text.contains('open ledger hid device')) {
+    if (text.contains('permission denied') ||
+        text.contains('access is denied') ||
+        text.contains('access denied')) {
+      return ledgerUsbPermissionMessage(platform ?? defaultTargetPlatform);
+    }
+    return 'Vizor found your Ledger but could not open it. Close other wallet apps that use the Ledger, reconnect it, then try again.';
+  }
+  if (text.contains('initialize ledger hid')) {
+    return 'Vizor could not start USB access for your Ledger. Reconnect the device, then try again.';
+  }
+  if (text.contains('ledger hid')) {
+    return 'The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger, then try again.';
   }
   return null;
 }

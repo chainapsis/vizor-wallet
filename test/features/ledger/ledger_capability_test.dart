@@ -3,6 +3,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 
 void main() {
+  test('USB product strings become the shared Ledger model name', () {
+    expect(ledgerUsbDeviceModelName('Nano S Plus'), 'Ledger Nano S Plus');
+    expect(ledgerUsbDeviceModelName(' Ledger Nano X '), 'Ledger Nano X');
+    expect(
+      ledgerBluetoothCapabilityForModel(
+        ledgerUsbDeviceModelName('Nano S Plus'),
+      ),
+      LedgerBluetoothCapability.unsupported,
+    );
+    expect(
+      ledgerBluetoothCapabilityForModel(ledgerUsbDeviceModelName('Stax')),
+      LedgerBluetoothCapability.supported,
+    );
+  });
+
   test('supports desktop, iOS, and Android mainnet only', () {
     expect(
       ledgerStaticCapability(

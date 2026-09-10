@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_recovery.dart';
@@ -4292,6 +4293,9 @@ void main() {
         rust: rust,
         hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
         overrides: [
+          // A desktop platform: mobile reconnects open the device picker
+          // instead of calling the reconnect provider.
+          ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
           ledgerReconnectProvider.overrideWithValue((accountUuid) {
             expect(accountUuid, 'ledger-1');
             reconnects++;
@@ -4355,8 +4359,9 @@ void main() {
         expect(find.text('Reconnecting your Ledger'), findsOneWidget);
         expect(signedPczts.length, 2);
         ready.complete();
-        await tester.pump();
-        expect(find.text('Ready when you are'), findsOneWidget);
+        // The recovery controller serializes reconnects behind its tail
+        // future, so the ready state lands a few microtasks later.
+        await _pumpUntilFound(tester, find.text('Ready when you are'));
         expect(signedPczts.length, 2);
         expect(rust.storedKeystoneSignatures.keys, {0});
         await tester.tap(find.text('Continue voting'));

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/account_models.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
+import '../ledger_error_messages.dart';
 import 'ledger_mobile_ble_service.dart';
 
 enum LedgerDeviceAppStatus { open, dashboard, locked, disconnected, other }
@@ -248,14 +249,9 @@ class LedgerAppReadinessService {
         (raw.contains('permission denied') ||
             raw.contains('access is denied') ||
             raw.contains('access denied'))) {
-      // Linux hidraw nodes stay root-only until a udev rule grants access.
-      final linux =
-          (_platform ?? defaultTargetPlatform) == TargetPlatform.linux;
       return LedgerAppReadinessException(
         LedgerAppReadinessFailure.unavailable,
-        linux
-            ? "Vizor cannot access your Ledger over USB. Install Ledger's udev rules for Linux (github.com/LedgerHQ/udev-rules), then reconnect your Ledger and try again."
-            : 'Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.',
+        ledgerUsbPermissionMessage(_platform ?? defaultTargetPlatform),
       );
     }
     if (raw.contains('rejected') ||
