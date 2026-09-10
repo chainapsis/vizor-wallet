@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../keystone/services/keystone_batch_signing.dart';
 import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
@@ -72,8 +73,11 @@ class MobileSwapKeystoneSignScreen extends ConsumerStatefulWidget {
       _MobileSwapKeystoneSignScreenState();
 }
 
+// The whole screen is one signing session: a deposit PCZT QR the Keystone
+// camera reads, then the signed result scanned back. The hold covers both.
 class _MobileSwapKeystoneSignScreenState
-    extends ConsumerState<MobileSwapKeystoneSignScreen> {
+    extends ConsumerState<MobileSwapKeystoneSignScreen>
+    with PaymentUriBusySurfaceHoldMixin {
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
   SaplingParamsStatus? _saplingParams;
@@ -304,8 +308,15 @@ class _MobileSwapKeystoneSignScreenState
     context.pop(MobileSwapKeystoneSignFailure(message));
   }
 
-  void _handleCancel() {
-    unawaited(_discardDraft());
+  var _cancelling = false;
+
+  Future<void> _handleCancel() async {
+    if (_cancelling) return;
+    _cancelling = true;
+    // Awaited: the busy hold lifts on dispose, and a parked link must not be
+    // pre-checked against inputs the draft's proposal still holds.
+    await _discardDraft();
+    if (!mounted) return;
     if (widget.args.startedFromReview) {
       ref
           .read(swapStateProvider.notifier)

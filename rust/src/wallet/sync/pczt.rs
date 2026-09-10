@@ -320,6 +320,22 @@ pub(crate) fn txid_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<TxId, Str
     ))
 }
 
+/// Returns the expiry height committed to by an IO-finalized PCZT.
+pub(crate) fn expiry_height_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<u32, String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+    if pczt.global().inputs_modifiable()
+        || pczt.global().outputs_modifiable()
+        || pczt.global().shielded_modifiable()
+    {
+        return Err("PCZT IO is not finalized".to_string());
+    }
+
+    let effects = pczt
+        .into_effects()
+        .map_err(|e| format!("Extract PCZT effects: {e:?}"))?;
+    Ok(u32::from(effects.expiry_height()))
+}
+
 fn legacy_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
     cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
 }
@@ -439,6 +455,7 @@ pub async fn create_pczt_from_proposal(
     }
     let live_expiry_height = match super::send::live_send_expiry_height(
         lightwalletd_url,
+        network,
         zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
     )
     .await
@@ -554,6 +571,7 @@ pub async fn create_tex_pczts_from_proposal(
     }
     let live_expiry_height = match super::send::live_send_expiry_height(
         lightwalletd_url,
+        network,
         zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
     )
     .await
@@ -1549,7 +1567,7 @@ async fn store_and_broadcast_pczts_inner(
     let txids_joined = txids.join(",");
     let total_count = prepared.len() as u32;
 
-    // Resolve a live tip before touching either the DB or the network. An
+    // Resolve a recent tip before touching either the DB or the network. An
     // already-expired set is terminal and must not be persisted as pending.
     let mut expiry_client =
         match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
@@ -1561,7 +1579,13 @@ async fn store_and_broadcast_pczts_inner(
                 );
             }
         };
-    let latest = match crate::wallet::sync_engine::get_latest_block(&mut expiry_client).await {
+    let latest = match crate::wallet::sync_engine::latest_block_for_transaction_with_client(
+        &mut expiry_client,
+        lightwalletd_url,
+        network,
+    )
+    .await
+    {
         Ok(latest) => latest,
         Err(error) => {
             return release_signed_pczt_operation_after_failure(
@@ -2076,9 +2100,13 @@ pub async fn extract_and_broadcast_pczt(
     let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
-    let latest = crate::wallet::sync_engine::get_latest_block(&mut client)
-        .await
-        .map_err(|e| e.to_string())?;
+    let latest = crate::wallet::sync_engine::latest_block_for_transaction_with_client(
+        &mut client,
+        lightwalletd_url,
+        network,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     if let Some(error) =
         pczt_broadcast_expiry_error(&txid, u32::from(tx.expiry_height()), latest.height)
     {
@@ -2646,9 +2674,10 @@ mod tests {
         // levels up from this nested test module.
         use super::super::{
             apply_sigs_and_extract, ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
-            extract_compact_sigs_from_signed_pczt, extract_transaction_from_pczt,
-            ironwood_orchard_proving_key, preflight_orchard_spend_auth_signatures,
-            prepare_compact_signed_pczts, prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
+            expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_signed_pczt,
+            extract_transaction_from_pczt, ironwood_orchard_proving_key,
+            preflight_orchard_spend_auth_signatures, prepare_compact_signed_pczts,
+            prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
             set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt, validate_signed_pczts,
         };
         use orchard::tree::MerkleHashOrchard;
@@ -2937,6 +2966,8 @@ mod tests {
             let (base_bytes, orchard_ask, spend_index, _, _, _) = build_migration_base_pczt();
             let pre_signature_txid = txid_from_io_finalized_pczt(&base_bytes)
                 .expect("IO-finalized PCZT effects should have a stable txid");
+            let pre_signature_expiry = expiry_height_from_io_finalized_pczt(&base_bytes)
+                .expect("IO-finalized PCZT effects should have a stable expiry height");
 
             let pk = ironwood_orchard_proving_key();
             let proofs = Prover::new(pczt::Pczt::parse(&base_bytes).unwrap())
@@ -2953,6 +2984,10 @@ mod tests {
             let extracted = extract_transaction_from_pczt(&proofs, &signed, None, None).unwrap();
 
             assert_eq!(pre_signature_txid, extracted.txid);
+            assert_eq!(
+                pre_signature_expiry,
+                u32::from(extracted.tx.expiry_height())
+            );
         }
 
         #[test]

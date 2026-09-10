@@ -439,8 +439,13 @@ enum _KeystoneDenominationSignStage {
   failed,
 }
 
+// Every step this screen drives — combined, immediate, denomination, batch,
+// desktop or mobile — is an animated migration QR the device is reading, or a
+// scan of the signed result coming back. The hold covers the whole screen so
+// no card lands between the two halves of a round.
 class _IronwoodMigrationKeystonePrivateSignScreenState
-    extends ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen> {
+    extends ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen>
+    with PaymentUriBusySurfaceHoldMixin {
   _KeystoneDenominationSignStage _stage =
       _KeystoneDenominationSignStage.preparing;
   late final IronwoodMigrationService _migrationService;

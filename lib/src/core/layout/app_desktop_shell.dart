@@ -10,13 +10,27 @@ import '../widgets/app_icon.dart';
 import '../widgets/app_toast.dart';
 import 'content_overlay_inset.dart';
 
+/// Width the desktop shell reserves for its main sidebar.
+///
+/// Named rather than repeated because window-level overlays derive the
+/// content pane's geometry from it — see [contentOverlayInsets].
+const double kAppDesktopSidebarWidth = 256;
+
+/// Margin the shell leaves around the sidebar/pane row: outer padding on both
+/// window edges, and the same gap again between the two columns.
+const double kAppDesktopShellMargin = AppSpacing.xs;
+
+/// Where the trailing pane begins: outer padding + [sidebarWidth] + the gap.
+double appDesktopPaneLeftInset(double sidebarWidth) =>
+    kAppDesktopShellMargin * 2 + sidebarWidth;
+
 class AppDesktopShell extends StatelessWidget {
   const AppDesktopShell({
     required this.sidebar,
     required this.pane,
     this.background,
     this.backgroundColor,
-    this.sidebarWidth = 256,
+    this.sidebarWidth = kAppDesktopSidebarWidth,
     super.key,
   });
 
@@ -29,11 +43,11 @@ class AppDesktopShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = this.background;
-    // Where the trailing pane begins: outer padding + sidebar + the gap.
-    // Window-level overlays clear this so they align with the pane.
-    final paneLeftInset = AppSpacing.xs + sidebarWidth + AppSpacing.xs;
+    // Window-level overlays clear these so they align with the pane rather
+    // than with the whole window.
     return ContentOverlayInset(
-      leftInset: paneLeftInset,
+      leftInset: appDesktopPaneLeftInset(sidebarWidth),
+      rightInset: kAppDesktopShellMargin,
       child: Scaffold(
         backgroundColor: backgroundColor ?? context.colors.macosUtility.window,
         body: SafeArea(
@@ -43,12 +57,12 @@ class AppDesktopShell extends StatelessWidget {
               if (background != null)
                 Positioned.fill(child: IgnorePointer(child: background)),
               Padding(
-                padding: const EdgeInsets.all(AppSpacing.xs),
+                padding: const EdgeInsets.all(kAppDesktopShellMargin),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SizedBox(width: sidebarWidth, child: sidebar),
-                    const SizedBox(width: AppSpacing.xs),
+                    const SizedBox(width: kAppDesktopShellMargin),
                     Expanded(child: pane),
                   ],
                 ),

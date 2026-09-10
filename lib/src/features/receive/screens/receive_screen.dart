@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart'
     show CircularProgressIndicator, Colors, ScaffoldMessenger, SnackBar;
@@ -17,11 +18,18 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
+import '../../../providers/zec_price_change_provider.dart';
+import '../services/request_qr_export.dart';
+import '../services/zec_request_draft.dart';
 import '../widgets/receive_address_widgets.dart';
+import '../widgets/request/request_amount_card.dart';
+import '../widgets/request/request_amount_model.dart';
+import '../../../core/widgets/app_tooltip.dart';
 
 const _renewShieldedAddressErrorMessage =
     "We couldn't refresh your shielded address. Try again, or use your current one.";
@@ -54,9 +62,29 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   String? _transparentErrorText;
   String? _transparentLoadingAccountUuid;
   ReceiveAddressType? _infoDialogType;
+  ZecRequestDraft? _requestDraft;
+  RequestModalStep _requestStep = RequestModalStep.compose;
+
+  /// The request as it was when the user pressed Next. The result step
+  /// renders this snapshot, not the live draft: a USD request converts at the
+  /// live price, and a price tick after the user confirmed must not rewrite
+  /// the QR they are already showing someone.
+  ZecRequestView? _requestResult;
+  bool _requestMessageExpanded = false;
+  final TextEditingController _requestAmountController =
+      TextEditingController();
+  final TextEditingController _requestMessageController =
+      TextEditingController();
   bool _isLoading = true;
   bool _isLoadingTransparent = false;
   bool _isRenewingShielded = false;
+
+  @override
+  void dispose() {
+    _requestAmountController.dispose();
+    _requestMessageController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -277,6 +305,169 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     };
   }
 
+  /// Opens the request modal against the address currently on screen.
+  ///
+  /// The address is snapshotted here rather than read live: renewing the
+  /// shielded address afterwards must not repoint a link already handed out,
+  /// and switching tabs behind the modal must not silently change the pool
+  /// the request is asking to be paid into.
+  void _openRequest() {
+    final address = _selectedAddress;
+    if (address.isEmpty) return;
+    _requestAmountController.clear();
+    _requestMessageController.clear();
+    setState(() {
+      _requestDraft = ZecRequestDraft(address: address);
+      _requestStep = RequestModalStep.compose;
+      _requestResult = null;
+      _requestMessageExpanded = false;
+    });
+  }
+
+  void _closeRequest() {
+    if (_requestDraft == null) return;
+    setState(() {
+      _requestDraft = null;
+      _requestStep = RequestModalStep.compose;
+      _requestResult = null;
+      _requestMessageExpanded = false;
+    });
+  }
+
+  /// Moves to the artefact step.
+  ///
+  /// Guarded on the same `isReady` the button is disabled by, so a stray
+  /// programmatic call cannot land on a QR of the bare address.
+  void _showRequestResult() {
+    final draft = _requestDraft;
+    if (draft == null) return;
+    final result = draft.resolve(
+      zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider),
+    );
+    if (!result.isReady) return;
+    setState(() {
+      _requestResult = result;
+      _requestStep = RequestModalStep.result;
+    });
+  }
+
+  /// Returns to the form with the composed amount and message intact. The
+  /// form is live again from here: the next Next takes a fresh snapshot.
+  void _editRequestAgain() {
+    if (_requestStep == RequestModalStep.compose) return;
+    setState(() {
+      _requestResult = null;
+      _requestStep = RequestModalStep.compose;
+      _requestResult = null;
+    });
+  }
+
+  void _handleRequestAmountChanged(String value) {
+    final draft = _requestDraft;
+    if (draft == null) return;
+    // Through the draft's own setter, not `copyWith`: in USD mode it also
+    // records the ZEC the dollars currently mean, so a price that expires
+    // before the user switches back does not take the amount with it.
+    setState(
+      () => _requestDraft = draft.withInput(
+        value,
+        zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider),
+      ),
+    );
+  }
+
+  void _handleRequestMessageChanged(String value) {
+    final draft = _requestDraft;
+    if (draft == null) return;
+    final next = draft.copyWith(message: value);
+    // The draft drops the characters a ZIP-321 memo cannot carry. The field
+    // keeps whatever was typed unless it is told, so write the result back:
+    // the field, the byte counter and the link have to be the same string.
+    final stripped = next.message ?? '';
+    if (stripped != value) {
+      final offset = _requestMessageController.selection.baseOffset;
+      _requestMessageController.value = TextEditingValue(
+        text: stripped,
+        selection: TextSelection.collapsed(
+          offset: offset < 0 || offset > stripped.length
+              ? stripped.length
+              : offset,
+        ),
+      );
+    }
+    setState(() => _requestDraft = next);
+  }
+
+  void _toggleRequestAmountUnit() {
+    final draft = _requestDraft;
+    if (draft == null) return;
+    final next = draft.toggledUnit(
+      zecUsdUnitPrice: ref.read(zecLiveUsdUnitPriceProvider),
+    );
+    if (next.inputIsUsd == draft.inputIsUsd) return;
+    _requestAmountController.value = TextEditingValue(
+      text: next.input,
+      selection: TextSelection.collapsed(offset: next.input.length),
+    );
+    setState(() => _requestDraft = next);
+  }
+
+  void _expandRequestMessage() {
+    if (_requestMessageExpanded) return;
+    setState(() => _requestMessageExpanded = true);
+  }
+
+  /// Closes the memo editor, which is what its clear button says it does.
+  ///
+  /// The field's own clear already emptied the text and reported it through
+  /// [_handleRequestMessageChanged]; the draft is cleared here as well so the
+  /// collapse never leaves a message the prompt no longer shows.
+  void _closeRequestMessage() {
+    final draft = _requestDraft;
+    _requestMessageController.clear();
+    setState(() {
+      _requestMessageExpanded = false;
+      if (draft != null) {
+        _requestDraft = draft.copyWith(clearMessage: true);
+      }
+    });
+  }
+
+  Future<void> _saveRequestQrImage(Uint8List png, String amountZec) async {
+    try {
+      final saved = await saveRequestQrPng(
+        png: png,
+        amountZec: amountZec,
+        pickSaveLocation: ref.read(requestQrSaveLocationPickerProvider),
+      );
+      // Cancelling the save dialog is not an outcome worth a toast.
+      if (saved == null) return;
+      if (!mounted) return;
+      showAppToast(context, 'QR image saved to ${saved.folderName}');
+    } catch (e) {
+      log('Receive: ERROR saving request QR image: $e');
+      if (!mounted) return;
+      _reportRequestQrSaveFailed();
+    }
+  }
+
+  /// The one thing there is to say when the QR does not reach a file, whether
+  /// the encode or the write is what failed.
+  ///
+  /// The exception stays in the log: a FileSystemException with a path and an
+  /// errno pushes the one actionable sentence off the toast. Two lines need
+  /// longer than the two-second default to read.
+  void _reportRequestQrSaveFailed() {
+    showAppToast(
+      context,
+      "We couldn't save the QR image. Try another folder, or copy the "
+      'request link instead.',
+      iconName: AppIcons.cancel,
+      tone: AppToastTone.destructive,
+      duration: const Duration(seconds: 4),
+    );
+  }
+
   void _showAddressInfo(ReceiveAddressType type) {
     setState(() => _infoDialogType = type);
   }
@@ -291,6 +482,13 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     ref.listen(accountProvider, (previous, next) {
       final nextUuid = next.value?.activeAccountUuid;
       if (nextUuid != null && nextUuid != _activeAccountUuid) {
+        // The request modal covers only the trailing pane, so the sidebar's
+        // account selector stays reachable behind it. A draft snapshotted
+        // for the previous account would keep handing out that account's
+        // address — on the QR, the copied link, the saved image — under the
+        // new account's name. Close it rather than repoint it: the user
+        // opened it for the account they were looking at.
+        _closeRequest();
         unawaited(_loadAddresses());
       }
     });
@@ -314,6 +512,14 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         : _isLoadingTransparent;
     final selectedErrorText = isShielded ? _errorText : _transparentErrorText;
     final infoDialogType = _infoDialogType;
+    final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
+    final requestDraft = _requestDraft;
+    final requestView = requestDraft?.resolve(zecUsdUnitPrice: zecUsdUnitPrice);
+    // What the result step shows, copies and saves is the confirmed snapshot;
+    // the compose step is the live draft.
+    final shownRequest = _requestStep == RequestModalStep.result
+        ? (_requestResult ?? requestView)
+        : requestView;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -331,8 +537,44 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
               onTypeChanged: _selectAddressType,
               onRenewShielded: isShielded ? _renewShieldedAddress : null,
               onCopy: _copySelectedAddress,
+              onRequest: _openRequest,
               onShowHelp: () => _showAddressInfo(_selectedType),
             ),
+            if (requestDraft != null && requestView != null)
+              RequestAmountSurface(
+                key: const ValueKey('receive_request_modal'),
+                // The receive pane stays visible under the scrim: the request
+                // is composed on top of the address it pays to, not on a
+                // screen that replaced it.
+                background: const SizedBox.expand(),
+                request: shownRequest!,
+                step: _requestStep,
+                messageExpanded: _requestMessageExpanded,
+                amountController: _requestAmountController,
+                messageController: _requestMessageController,
+                onClose: _closeRequest,
+                onNext: _showRequestResult,
+                onBack: _editRequestAgain,
+                onAmountChanged: _handleRequestAmountChanged,
+                onMessageChanged: _handleRequestMessageChanged,
+                onCloseMessage: _closeRequestMessage,
+                onToggleAmountUnit: requestDraft.canToggleUnit(zecUsdUnitPrice)
+                    ? _toggleRequestAmountUnit
+                    : null,
+                onAddMessage: _expandRequestMessage,
+                onCopyLink: () {
+                  final uri = shownRequest.requestUri;
+                  if (uri == null) return;
+                  copyTextWithToast(
+                    context,
+                    text: uri,
+                    toastMessage: kRequestLinkCopiedToast,
+                  );
+                },
+                onSaveQrImage: (png) =>
+                    _saveRequestQrImage(png, shownRequest.amountZec),
+                onSaveQrImageError: _reportRequestQrSaveFailed,
+              ),
             if (infoDialogType != null)
               AppPaneModalOverlay(
                 onDismiss: _dismissAddressInfo,
@@ -358,6 +600,7 @@ class _ReceivePane extends StatelessWidget {
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
+    required this.onRequest,
     required this.onShowHelp,
   });
 
@@ -369,6 +612,7 @@ class _ReceivePane extends StatelessWidget {
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
+  final VoidCallback onRequest;
   final VoidCallback onShowHelp;
 
   @override
@@ -392,6 +636,7 @@ class _ReceivePane extends StatelessWidget {
             onTypeChanged: onTypeChanged,
             onRenewShielded: onRenewShielded,
             onCopy: onCopy,
+            onRequest: onRequest,
             onShowHelp: onShowHelp,
           ),
         ),
@@ -410,12 +655,24 @@ class _ReceiveContentLayout extends StatelessWidget {
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
+    required this.onRequest,
     required this.onShowHelp,
   });
 
   static const _contentWidth = 420.0;
+
+  /// One action row: the copy pill and, beside it, the compact request
+  /// button — the home card's "Pay" shape — so the fixed-coordinate content
+  /// keeps the single-button screen's height instead of growing a second row.
   static const _contentHeight = 656.0;
   static const _contentHeightWithError = 724.0;
+  static const _actionsTop = 596.0;
+  static const _actionButtonWidth = 230.0;
+  static const _actionButtonHeight = 44.0;
+  static const _requestButtonWidth = 60.0;
+  static const _actionsWidth =
+      _actionButtonWidth + AppSpacing.xs + _requestButtonWidth;
+  static const _actionsLeft = (_contentWidth - _actionsWidth) / 2;
 
   final ReceiveAddressType selectedType;
   final String address;
@@ -425,6 +682,7 @@ class _ReceiveContentLayout extends StatelessWidget {
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
+  final VoidCallback onRequest;
   final VoidCallback onShowHelp;
 
   bool get _isShielded => selectedType == ReceiveAddressType.shielded;
@@ -506,28 +764,60 @@ class _ReceiveContentLayout extends StatelessWidget {
                       ),
                     ),
                     Positioned(
-                      left: 95,
-                      top: 596,
-                      width: 230,
-                      height: 44,
-                      child: ReceiveCopyAddressButton(
-                        key: ValueKey(
-                          _isShielded
-                              ? 'receive_copy_shielded_address_button'
-                              : 'receive_copy_transparent_address_button',
-                        ),
-                        label: _isShielded
-                            ? 'Copy shielded address'
-                            : 'Copy transparent address',
-                        type: selectedType,
-                        enabled: address.isNotEmpty && !isLoading,
-                        onTap: onCopy,
+                      left: _actionsLeft,
+                      top: _actionsTop,
+                      width: _actionsWidth,
+                      height: _actionButtonHeight,
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: _actionButtonWidth,
+                            height: _actionButtonHeight,
+                            child: ReceiveCopyAddressButton(
+                              key: ValueKey(
+                                _isShielded
+                                    ? 'receive_copy_shielded_address_button'
+                                    : 'receive_copy_transparent_address_button',
+                              ),
+                              label: _isShielded
+                                  ? 'Copy shielded address'
+                                  : 'Copy transparent address',
+                              type: selectedType,
+                              enabled: address.isNotEmpty && !isLoading,
+                              onTap: onCopy,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          // Icon only, like the home card's "Pay" button: the
+                          // request is the secondary way to hand out this
+                          // address, and a second labelled pill under the
+                          // copy button pushed the screen past its frame.
+                          AppTooltip(
+                            message: 'Request $kZcashDefaultCurrencyTicker',
+                            child: Semantics(
+                              button: true,
+                              label: 'Request $kZcashDefaultCurrencyTicker',
+                              excludeSemantics: true,
+                              child: AppButton(
+                                key: const ValueKey('receive_request_button'),
+                                variant: AppButtonVariant.secondary,
+                                height: _actionButtonHeight,
+                                minWidth: _requestButtonWidth,
+                                contentPadding: EdgeInsets.zero,
+                                onPressed: address.isNotEmpty && !isLoading
+                                    ? onRequest
+                                    : null,
+                                child: const AppIcon(AppIcons.qr, size: 20),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     if (errorText != null)
                       Positioned(
                         left: 12,
-                        top: 656,
+                        top: _contentHeight,
                         width: 396,
                         child: Text(
                           errorText!,

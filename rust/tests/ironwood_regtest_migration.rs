@@ -168,7 +168,8 @@ fn ensure_stack_up() {
 }
 
 fn latest_height() -> u64 {
-    wallet_api::get_latest_block_height(lightwalletd_url()).expect("read Ironwood regtest tip")
+    wallet_api::get_latest_block_height(lightwalletd_url(), "regtest".into())
+        .expect("read Ironwood regtest tip")
 }
 
 fn lightwalletd_url() -> String {

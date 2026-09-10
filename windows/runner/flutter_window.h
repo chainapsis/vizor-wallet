@@ -6,6 +6,8 @@
 #include <flutter/method_channel.h>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "win32_window.h"
 #include "ledger_ble_handler.h"
@@ -14,7 +16,8 @@
 class FlutterWindow : public Win32Window {
  public:
   // Creates a new FlutterWindow hosting a Flutter view running |project|.
-  FlutterWindow(const flutter::DartProject& project, UINT activation_message);
+  FlutterWindow(const flutter::DartProject& project, UINT activation_message,
+                std::vector<std::string> initial_payment_uris);
   virtual ~FlutterWindow();
 
  protected:
@@ -38,10 +41,17 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       velopack_update_channel_;
   std::unique_ptr<LedgerBleHandler> ledger_ble_handler_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      payment_uri_channel_;
+  std::vector<std::string> pending_payment_uris_;
+  bool payment_uri_dart_ready_ = false;
 
   // Registered Windows message used by a secondary process to restore this
   // primary window. The message name is scoped to the storage prefix.
   UINT activation_message_ = 0;
+
+  flutter::EncodableValue TakePendingPaymentUris();
+  void FlushPendingPaymentUris();
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

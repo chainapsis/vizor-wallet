@@ -11,6 +11,7 @@ class MobileListRow extends StatelessWidget {
   const MobileListRow({
     required this.label,
     this.leading,
+    this.labelBadge,
     this.value,
     this.trailing,
     this.showChevron = false,
@@ -29,6 +30,9 @@ class MobileListRow extends StatelessWidget {
 
   final Widget? leading;
   final String label;
+
+  /// Small badge rendered immediately after [label] (e.g. a "New" pill).
+  final Widget? labelBadge;
 
   /// Overrides the default label color (e.g. destructive menu rows).
   final Color? labelColor;
@@ -91,6 +95,10 @@ class MobileListRow extends StatelessWidget {
           // the truncating Expanded when it is the sole text.
           if (value != null) ...[
             Text(label, style: labelTextStyle.copyWith(color: labelColor)),
+            if (labelBadge != null) ...[
+              const SizedBox(width: AppSpacing.xxs),
+              labelBadge!,
+            ],
             const SizedBox(width: AppSpacing.xs),
             Expanded(
               child: Text(
@@ -100,7 +108,23 @@ class MobileListRow extends StatelessWidget {
                 style: valueTextStyle.copyWith(color: valueColor),
               ),
             ),
-          ] else
+          ] else if (labelBadge != null)
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: labelTextStyle.copyWith(color: labelColor),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  labelBadge!,
+                ],
+              ),
+            )
+          else
             Expanded(
               child: Text(
                 label,

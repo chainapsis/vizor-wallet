@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
@@ -23,6 +24,8 @@ import 'package:zcash_wallet/src/features/home/providers/ledger_shielding_limit_
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart'
     show ledgerWalletDbPathProvider;
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
+import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -206,6 +209,7 @@ Widget _app(
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
+  GiftCardActivityIndex? giftCardActivityIndex,
   AppThemeData theme = AppThemeData.dark,
   AccountState accountState = _accountState,
   List<Override> extraOverrides = const [],
@@ -335,6 +339,10 @@ Widget _app(
       ),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
+      if (giftCardActivityIndex != null)
+        giftCardActivityIndexProvider.overrideWith(
+          (ref, accountUuid) async => giftCardActivityIndex,
+        ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -2479,6 +2487,209 @@ void main() {
       find.byKey(const ValueKey('mobile_home_activity_row_10')),
       findsNothing,
     );
+  });
+
+  testWidgets('recent activity shows a submitted claim before wallet history', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final record = PaymentLinkReceivedRecord(
+      claimSubmittedAt: DateTime.utc(2026, 8, 28),
+      network: 'main',
+      address: 'pending-card',
+      amountZatoshi: BigInt.from(445000000),
+      createdAt: DateTime.now(),
+      artworkId: 'ruby',
+      status: PaymentLinkReceivedStatus.receiving,
+      claimLink: null,
+      destinationAccountUuid: 'account-1',
+      claimTxids: 'claim-txid',
+      updatedAt: DateTime.now(),
+    );
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+        ).copyWith(recentTransactions: []),
+        giftCardActivityIndex: GiftCardActivityIndex.forAccount(
+          accountUuid: 'account-1',
+          createdRecords: [],
+          receivedRecords: [record],
+        ),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Redeeming a card...'), findsOneWidget);
+    expect(find.text('+4.45 ZEC'), findsOneWidget);
+    expect(find.text('Redeemed a gift card'), findsNothing);
+  });
+
+  testWidgets(
+    'recent activity keeps claim metadata when zero-time wallet history arrives',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final submittedAt = DateTime.utc(2026, 9, 7, 12, 16);
+      final record = PaymentLinkReceivedRecord(
+        network: 'main',
+        address: 'home-continuity-card',
+        amountZatoshi: BigInt.from(445000000),
+        createdAt: submittedAt,
+        artworkId: 'ruby',
+        status: PaymentLinkReceivedStatus.receiving,
+        claimLink: null,
+        destinationAccountUuid: 'account-1',
+        claimTxids: 'home-claim-txid',
+        updatedAt: submittedAt.add(const Duration(minutes: 3)),
+        claimSubmittedAt: submittedAt,
+        claimDestinationPool: 'ironwood',
+      );
+      final index = GiftCardActivityIndex.forAccount(
+        accountUuid: 'account-1',
+        createdRecords: const [],
+        receivedRecords: [record],
+      );
+      final syncNotifier = FakeSyncNotifier(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+        ).copyWith(recentTransactions: [_tx(1)]),
+      );
+      rust_sync.TransactionInfo receive({required BigInt height}) {
+        return rust_sync.TransactionInfo(
+          txidHex: 'home-claim-txid',
+          minedHeight: height,
+          expiredUnmined: false,
+          accountBalanceDelta: 445000000,
+          fee: BigInt.zero,
+          blockTime: height == BigInt.zero
+              ? BigInt.zero
+              : BigInt.from(1800000100),
+          isTransparent: false,
+          txKind: height == BigInt.zero ? 'receiving' : 'received',
+          displayAmount: BigInt.from(445000000),
+          displayPool: 'ironwood',
+          createdTime: BigInt.zero,
+        );
+      }
+
+      Future<ActivityFeedRow> render(
+        List<rust_sync.TransactionInfo> transactions,
+      ) async {
+        syncNotifier.setSyncState(
+          _syncedState(orchardBalance: BigInt.from(100000000)).copyWith(
+            recentTransactions: transactions.isEmpty
+                ? [_tx(1)]
+                : [_tx(1), ...transactions],
+          ),
+        );
+        await tester.pump();
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+          if (find
+              .byKey(const ValueKey('gift-card:home-continuity-card'))
+              .evaluate()
+              .isNotEmpty) {
+            break;
+          }
+        }
+        final rows = tester
+            .widgetList<ActivityFeedRow>(find.byType(ActivityFeedRow))
+            .where((row) => row.row.amountText == '+4.45 ZEC')
+            .toList();
+        expect(rows, hasLength(1));
+        final renderedRows = tester.widgetList<ActivityFeedRow>(
+          find.byType(ActivityFeedRow),
+        );
+        final cardIndex = renderedRows.toList().indexWhere(
+          (row) => row.row.stableId == 'gift-card:home-continuity-card',
+        );
+        final normalReceiveIndex = renderedRows.toList().indexWhere(
+          (row) => row.row.stableId == 'tx:tx-1:received',
+        );
+        expect(cardIndex, greaterThan(normalReceiveIndex));
+        return rows.single;
+      }
+
+      await tester.pumpWidget(
+        _app(
+          syncNotifier.initialState!,
+          syncNotifier: syncNotifier,
+          giftCardActivityIndex: index,
+        ),
+      );
+      await tester.pump();
+      final placeholder = await render(const []);
+      final actualUnmined = await render([receive(height: BigInt.zero)]);
+      final actualMined = await render([receive(height: BigInt.from(2000000))]);
+
+      for (final row in [placeholder, actualUnmined, actualMined]) {
+        expect(row.row.stableId, 'gift-card:home-continuity-card');
+        expect(row.row.timestampText, isNot('--'));
+        expect(row.row.subtitle, 'Ironwood');
+        expect(row.row.amountText, '+4.45 ZEC');
+      }
+      expect(actualUnmined.row.timestampText, placeholder.row.timestampText);
+      expect(actualMined.row.timestampText, placeholder.row.timestampText);
+    },
+  );
+
+  testWidgets('recent activity labels Gift Card transactions', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)).copyWith(
+          recentTransactions: [
+            _receivedZecTx(
+              txidHex: 'gift-redeemed',
+              zatoshi: BigInt.from(200000000),
+            ),
+            _sentZecTx(txidHex: 'gift-created'),
+          ],
+        ),
+        giftCardActivityIndex: GiftCardActivityIndex(
+          createdTxids: const {'gift-created'},
+          redeemedTxids: const {'gift-redeemed'},
+          createdMetadataByTxid: {
+            'gift-created': GiftCardActivityMetadata(
+              claimFeeReserveZatoshi: BigInt.from(10000),
+              kind: GiftCardActivityKind.created,
+              amountZatoshi: BigInt.from(50000000),
+              artworkId: 'ruby',
+              message: 'Happy birthday!',
+            ),
+          },
+          redeemedMetadataByTxid: {
+            'gift-redeemed': GiftCardActivityMetadata(
+              kind: GiftCardActivityKind.redeemed,
+              amountZatoshi: BigInt.from(30000000),
+              artworkId: 'crystal',
+              message: null,
+            ),
+          },
+        ),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+      if (find.text('Creating a card...').evaluate().isNotEmpty) break;
+    }
+
+    expect(find.text('Creating a card...'), findsOneWidget);
+    expect(find.text('Redeemed a gift card'), findsOneWidget);
+    expect(find.text('Sent'), findsNothing);
+    expect(find.text('Received'), findsNothing);
+    // The card amount, not the funding total the transaction carries.
+    expect(find.text('-0.5 ZEC'), findsOneWidget);
+    expect(find.text('+0.3 ZEC'), findsOneWidget);
+    expect(find.text('-0.1954 ZEC'), findsNothing);
+    expect(find.text('+2 ZEC'), findsNothing);
   });
 
   testWidgets('recent activity absorbs a Pay deposit transaction duplicate', (

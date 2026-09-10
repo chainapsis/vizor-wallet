@@ -11,6 +11,7 @@ add_executable(${BINARY_NAME}
   "my_application.cc"
   "ledger_ble_handler.cc"
   "ledger_bluez_transport.cc"
+  "single_instance.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 

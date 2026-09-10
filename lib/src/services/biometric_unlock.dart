@@ -4,42 +4,48 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// What the device offers for the escrow prompt; drives copy ("Face ID",
-/// "fingerprint", or generic "biometrics") and whether opt-in surfaces render.
-enum BiometricKind { face, fingerprint, none }
+/// "Touch ID", "fingerprint", or generic "biometrics") and whether opt-in surfaces render.
+enum BiometricKind { face, touchId, fingerprint, none }
 
 extension BiometricKindCopy on BiometricKind {
   String get inlineLabel => switch (this) {
     BiometricKind.face => 'Face ID',
+    BiometricKind.touchId => 'Touch ID',
     BiometricKind.fingerprint => 'fingerprint',
     BiometricKind.none => 'biometrics',
   };
 
   String get standaloneLabel => switch (this) {
     BiometricKind.face => 'Face ID',
+    BiometricKind.touchId => 'Touch ID',
     BiometricKind.fingerprint => 'Fingerprint',
     BiometricKind.none => 'Biometrics',
   };
 
   String get onboardingTitleSuffix => switch (this) {
     BiometricKind.face => 'Face ID',
+    BiometricKind.touchId => 'Touch ID',
     BiometricKind.fingerprint => 'your fingerprint',
     BiometricKind.none => 'biometrics',
   };
 
   String get unlockFeatureLabel => switch (this) {
     BiometricKind.face => 'Face ID unlock',
+    BiometricKind.touchId => 'Touch ID unlock',
     BiometricKind.fingerprint => 'Fingerprint unlock',
     BiometricKind.none => 'Biometric unlock',
   };
 
   String get inlineUnlockFeatureLabel => switch (this) {
     BiometricKind.face => 'Face ID unlock',
+    BiometricKind.touchId => 'Touch ID unlock',
     BiometricKind.fingerprint => 'fingerprint unlock',
     BiometricKind.none => 'biometric unlock',
   };
 
   String get changedMessage => switch (this) {
     BiometricKind.face => 'Face ID changed. Enter your passcode.',
+    BiometricKind.touchId => 'Touch ID changed. Enter your passcode.',
     BiometricKind.fingerprint => 'Fingerprint changed. Enter your passcode.',
     BiometricKind.none => 'Biometric unlock changed. Enter your passcode.',
   };
@@ -55,6 +61,21 @@ class BiometricAvailability {
     required this.enrolled,
     required this.kind,
   });
+
+  /// Decodes the native probe without conflating Apple Touch ID with Android
+  /// fingerprint authentication. The kind is independent of enrollment.
+  factory BiometricAvailability.fromPlatform(Map<String, Object?> raw) {
+    return BiometricAvailability(
+      supported: raw['supported'] == true,
+      enrolled: raw['enrolled'] == true,
+      kind: switch (raw['kind']) {
+        'face' => BiometricKind.face,
+        'touchId' => BiometricKind.touchId,
+        'fingerprint' => BiometricKind.fingerprint,
+        _ => BiometricKind.none,
+      },
+    );
+  }
 
   static const unavailable = BiometricAvailability(
     supported: false,
@@ -122,15 +143,7 @@ class BiometricUnlock {
         'availability',
       );
       if (raw == null) return BiometricAvailability.unavailable;
-      return BiometricAvailability(
-        supported: raw['supported'] == true,
-        enrolled: raw['enrolled'] == true,
-        kind: switch (raw['kind']) {
-          'face' => BiometricKind.face,
-          'fingerprint' => BiometricKind.fingerprint,
-          _ => BiometricKind.none,
-        },
-      );
+      return BiometricAvailability.fromPlatform(raw);
     } on PlatformException {
       return BiometricAvailability.unavailable;
     } on MissingPluginException {

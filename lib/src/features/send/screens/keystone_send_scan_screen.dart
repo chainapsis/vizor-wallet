@@ -8,6 +8,7 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
@@ -48,8 +49,11 @@ class KeystoneSendScanScreen extends ConsumerStatefulWidget {
       _KeystoneSendScanScreenState();
 }
 
-class _KeystoneSendScanScreenState
-    extends ConsumerState<KeystoneSendScanScreen> {
+// The device is showing the signed-transaction QR this screen's camera is
+// reading. A payment-request card over it would scrim a live scan, so the
+// screen holds the busy-surface latch for as long as it is mounted.
+class _KeystoneSendScanScreenState extends ConsumerState<KeystoneSendScanScreen>
+    with PaymentUriBusySurfaceHoldMixin {
   bool _decoding = false;
   String? _error;
 

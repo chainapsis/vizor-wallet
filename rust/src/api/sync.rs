@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::panic;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use flutter_rust_bridge::frb;
 use zeroize::Zeroizing;
@@ -13,6 +14,8 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
+static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -187,6 +190,67 @@ pub fn is_sync_cancel_requested() -> bool {
 #[frb(sync)]
 pub fn is_sync_running() -> bool {
     SYNC_RUNNING.load(Ordering::SeqCst)
+}
+
+/// Runs an isolated scan for one short-lived payment-link claim database.
+///
+/// Claim syncs do not use the main wallet's process-global running guard or
+/// desired mode. Different claim IDs can therefore scan independent databases
+/// concurrently with each other and with the main wallet.
+pub fn run_payment_link_claim_sync(
+    claim_id: String,
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    allow_resubmit: bool,
+) -> Result<(), String> {
+    if claim_id.trim().is_empty() {
+        return Err("Payment-link claim ID must not be empty".into());
+    }
+
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut active = PAYMENT_LINK_CLAIM_SYNCS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if active.contains_key(&claim_id) {
+            return Err(format!(
+                "Payment-link claim sync already running: {claim_id}"
+            ));
+        }
+        active.insert(claim_id.clone(), cancel.clone());
+    }
+
+    let result = catch(panic::AssertUnwindSafe(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let runtime = tokio::runtime::Runtime::new().map_err(|error| format!("tokio: {error}"))?;
+        runtime.block_on(sync_engine::run_payment_link_claim_sync(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            cancel,
+            allow_resubmit,
+        ))
+    }));
+
+    PAYMENT_LINK_CLAIM_SYNCS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&claim_id);
+
+    result
+}
+
+/// Cancels only the isolated scan associated with `claim_id`.
+#[frb(sync)]
+pub fn cancel_payment_link_claim_sync(claim_id: String) {
+    if let Some(cancel) = PAYMENT_LINK_CLAIM_SYNCS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&claim_id)
+    {
+        cancel.store(true, Ordering::Relaxed);
+    }
 }
 
 pub(crate) static SYNC_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =
@@ -433,9 +497,17 @@ pub struct BlockMetaInfo {
     pub orchard_actions_count: u32,
 }
 
+/// Flat address-validation result for the Dart side.
+///
+/// `wrong_network` marks the one case where `is_valid` is false but the input
+/// is still a real Zcash address: it decoded fine, and `address_type` carries
+/// the kind it decoded to, but its encoding belongs to a network other than
+/// the one this build talks to. For input that is not an address we can send
+/// to at all, `address_type` is `"invalid"` and `wrong_network` is false.
 pub struct AddressValidationResult {
     pub is_valid: bool,
     pub address_type: String,
+    pub wrong_network: bool,
 }
 
 // ======================== Panic Guard ========================
@@ -671,16 +743,38 @@ pub fn rewind_to_height(db_path: String, network: String, height: u64) -> Result
 
 // ======================== Address Validation ========================
 
-pub fn validate_address(address: String) -> Result<AddressValidationResult, String> {
-    catch(|| match wallet_sync::validate_address(&address) {
-        Ok(addr_type) => Ok(AddressValidationResult {
-            is_valid: true,
-            address_type: addr_type,
-        }),
-        Err(_) => Ok(AddressValidationResult {
-            is_valid: false,
-            address_type: "invalid".into(),
-        }),
+/// Validate a recipient address against the network this build talks to.
+///
+/// `network` is the usual `"main"` / `"test"` / `"regtest"` name; an unknown
+/// name is a programming error and comes back as an `Err`, not as an invalid
+/// address.
+pub fn validate_address(
+    address: String,
+    network: String,
+) -> Result<AddressValidationResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        match wallet_sync::validate_address(&address, network) {
+            Ok(wallet_sync::AddressValidation::Valid { address_type }) => {
+                Ok(AddressValidationResult {
+                    is_valid: true,
+                    address_type,
+                    wrong_network: false,
+                })
+            }
+            Ok(wallet_sync::AddressValidation::WrongNetwork { address_type }) => {
+                Ok(AddressValidationResult {
+                    is_valid: false,
+                    address_type,
+                    wrong_network: true,
+                })
+            }
+            Err(_) => Ok(AddressValidationResult {
+                is_valid: false,
+                address_type: "invalid".into(),
+                wrong_network: false,
+            }),
+        }
     })
 }
 
@@ -698,6 +792,8 @@ pub struct ExecuteProposalResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// Server rejection is distinct from a missing response, but is not finality.
+    pub broadcast_failure_kind: Option<String>,
 }
 
 pub struct IronwoodMigrationResult {
@@ -1108,6 +1204,7 @@ pub fn execute_proposal(
             broadcasted_count: r.broadcasted_count,
             total_count: r.total_count,
             message: r.message,
+            broadcast_failure_kind: r.broadcast_failure_kind,
         })
     })
 }
@@ -1148,6 +1245,7 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
             broadcasted_count: r.broadcasted_count,
             total_count: r.total_count,
             message: r.message,
+            broadcast_failure_kind: r.broadcast_failure_kind,
         })
     })
 }
@@ -2725,6 +2823,19 @@ pub async fn store_and_broadcast_pczts_with_keystone_signatures_for_proposal(
     })
 }
 
+/// Computes the stable transaction ID before a finalized PCZT crosses the
+/// irreversible broadcast boundary.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_pczt_txid(pczt_bytes: Vec<u8>) -> Result<String, String> {
+    catch(|| wallet_sync::txid_from_io_finalized_pczt(&pczt_bytes).map(|txid| txid.to_string()))
+}
+
+/// Returns the expiry height committed to by an IO-finalized PCZT.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_pczt_expiry_height(pczt_bytes: Vec<u8>) -> Result<u32, String> {
+    catch(|| wallet_sync::expiry_height_from_io_finalized_pczt(&pczt_bytes))
+}
+
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
 /// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
 /// Returns the txid.
@@ -2760,5 +2871,71 @@ pub async fn extract_and_broadcast_pczt(
         txid: result.txid,
         status: result.status,
         message: result.message,
+    })
+}
+
+#[cfg(test)]
+mod validate_address_tests {
+    //! The FRB boundary contract every Dart consumer of `wrongNetwork` relies
+    //! on. Needs no DB or network.
+    use super::validate_address;
+
+    const MAINNET_UA: &str = "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfg\
+                              ram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3ne\
+                              m8wwyen732wemtxcg6lxr4n2agm437m2";
+
+    #[test]
+    fn valid_on_its_own_network() {
+        let result = validate_address(MAINNET_UA.into(), "main".into()).unwrap();
+        assert!(result.is_valid);
+        assert!(!result.wrong_network);
+        assert_eq!(result.address_type, "unified");
+    }
+
+    #[test]
+    fn well_formed_but_for_another_network_is_wrong_network_with_its_type() {
+        let result = validate_address(MAINNET_UA.into(), "test".into()).unwrap();
+        assert!(!result.is_valid);
+        assert!(result.wrong_network);
+        assert_eq!(result.address_type, "unified");
+    }
+
+    #[test]
+    fn garbage_is_invalid_not_wrong_network() {
+        let result = validate_address("not-an-address".into(), "main".into()).unwrap();
+        assert!(!result.is_valid);
+        assert!(!result.wrong_network);
+        assert_eq!(result.address_type, "invalid");
+    }
+
+    #[test]
+    fn unknown_network_name_is_a_programming_error() {
+        assert!(validate_address(MAINNET_UA.into(), "moonnet".into()).is_err());
+    }
+}
+
+/// Positive, scanned evidence for a Gift Card's shielded inputs. This reads
+/// only the claim database; it never submits or retransmits a transaction.
+pub struct PaymentLinkSpendEvidence {
+    pub all_funds_spent_elsewhere: bool,
+    pub conflicted_txids: Vec<String>,
+    pub local_claim_txids: Vec<String>,
+    pub verified_height: u64,
+}
+
+pub fn get_payment_link_spend_evidence(
+    db_path: String,
+    account_uuid: String,
+    claim_txids: String,
+) -> Result<PaymentLinkSpendEvidence, String> {
+    catch(|| {
+        let evidence =
+            wallet_sync::payment_link_spend_evidence(&db_path, &account_uuid, &claim_txids)?;
+        Ok(PaymentLinkSpendEvidence {
+            all_funds_spent_elsewhere: evidence.all_funds_spent_elsewhere,
+            conflicted_txids: evidence.conflicted_txids,
+            local_claim_txids: evidence.local_claim_txids,
+            verified_height: evidence.verified_height,
+        })
     })
 }

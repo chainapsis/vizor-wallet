@@ -122,6 +122,31 @@ Untagged tests may run in either lane and must be lane-agnostic:
   `fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile`.
   Only `lib/main.dart` asserts the match.
 
+## Deep-link Host (VIZOR_DEEPLINK_BASE_URL)
+
+The HTTPS origin Vizor claims for incoming links has **one** knob on
+Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
+`https://link.vizor.cash`).
+
+- Dart is the source of truth: `VizorDeepLink` reads the define through
+  `String.fromEnvironment`.
+- Gradle derives its value from the same place. Flutter forwards every
+  dart-define as `-Pdart-defines=<base64("KEY=VALUE")>,...`, and
+  `android/app/build.gradle.kts` decodes that property to fill the
+  `vizorDeeplinkHost` manifest placeholder and `BuildConfig
+  .VIZOR_DEEPLINK_HOST`. There is deliberately no separate Gradle
+  property or environment variable — a second knob could disagree with
+  the compiled-in Dart origin and silently break verified app links.
+  Invoking Gradle directly (no dart-defines) falls back to the default.
+- iOS is the exception: it keeps `VIZOR_DEEPLINK_HOST` in the Flutter
+  xcconfigs (`ios/Flutter/{Debug,Profile,Release}.xcconfig`), which feed
+  `Info.plist` and `Runner.entitlements`. Change the host there too.
+- The Android intent-filter claims the host with no path constraint, so
+  the bare origin (empty path on Android), `/`, and
+  `/payment-links/open` all open the app. Path filtering belongs to
+  Dart's `classifyIncomingLink`, which drops unknown paths on the origin
+  silently.
+
 ## Editing Figma
 
 When the user explicitly asks you to modify a Figma file or design, read
@@ -894,11 +919,13 @@ edge in `MobileBottomSafeArea`
 - Mobile (iOS simulator) regtest E2E:
   - One-shot runner: `./scripts/e2e/flutter-ios-regtest-mobile-full.sh`; per-scenario runners are `scripts/e2e/flutter-ios-regtest-mobile-*.sh`. Same heaviness rule as desktop: do not run unless explicitly asked.
   - Tests live in `integration_test/regtest_mobile_*_test.dart` and share `integration_test/support/mobile_regtest_flow.dart` (pump/tap helpers, regtest-guarded cleanup, mobile flow primitives). Desktop regtest tests keep their per-file helpers; do not merge them.
-  - Mobile runs need THREE defines: `VIZOR_FORM_FACTOR=mobile`, `ZCASH_DEFAULT_NETWORK=regtest`, `ZCASH_E2E_LIGHTWALLETD_URL` — `run_mobile_e2e` in `scripts/e2e/lib-mobile.sh` injects them.
+  - Mobile runs need THREE defines: `VIZOR_FORM_FACTOR=mobile`, `ZCASH_DEFAULT_NETWORK=regtest`, `ZCASH_E2E_LIGHTWALLETD_URL` — `run_mobile_e2e` in `scripts/e2e/lib-mobile.sh` injects them. Gift Card scenarios need a fourth, `VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true` (payment links stay gated off without it), plus `VIZOR_DEEPLINK_BASE_URL`; the runner passes both to `run_mobile_e2e` as extra defines rather than `run_mobile_e2e` injecting them.
   - Device selection: `SIMULATOR_UDID` env wins; otherwise the single booted simulator. The runner refuses to pick among multiple booted sims.
-  - Each `flutter test integration_test` invocation reinstalls the app: the wallet DB dies with the container while the iOS Keychain persists, so in-test `cleanupE2eWalletState()` (deleteAll + db files, regtest-guarded) runs at test start AND teardown. Cross-invocation wallet reuse is impossible by design.
+  - Each `flutter test integration_test` invocation reinstalls the app: the wallet DB dies with the container while the iOS Keychain persists, so in-test `cleanupE2eWalletState()` (deleteAll + db files, regtest-guarded) runs at test start AND teardown. Cross-invocation wallet reuse is impossible by design. Gift Card scenarios pair it with `cleanupMobileE2ePaymentLinkClaimWallets()`, the regtest-guarded claim-wallet sweep — claim wallets from every network share one support directory, so the sweep is scoped to regtest names. Scenarios that leave the pasteboard populated clear it in teardown too; the simulator pasteboard outlives the app container.
   - The simulator shares the host loopback: `127.0.0.1` URLs, the in-test lightwalletd proxy, and the python E2E driver all work unchanged. Android emulators would need `10.0.2.2` and are out of scope.
   - Desktop scenarios without mobile counterparts (feature gaps, add when the features land): custom-endpoint privacy (no mobile endpoint settings UI), shield-transparent ×2 (no mobile transparent balance / shield UI), mempool during-sync / expiry variants.
+  - Payment-request round trip and payment-URI locked-send: desktop runners only. The mobile receive pane has its own request sheet, so this is a harness gap rather than a feature gap.
+  - Gift Card restart recovery and reorg retry: desktop runners only. The Gift Card round trip has a mobile counterpart driving the **Redeem a card → Paste card link** path; mobile claiming over a universal link still needs a publicly reachable HTTPS origin — see `scripts/e2e/README.md`. The payment-URI send also has a mobile counterpart, which instead pushes an `onUris` call over the `com.zcash.wallet/payment_uri` MethodChannel to raise the payment-request card.
 - Zcash regtest Rust integration tests:
   - One-shot runner from repo root: `./run-regtest-rust-tests.sh`
   - The runner always starts by tearing down any existing regtest containers and resetting `.regtest/`, so each run starts from the same clean chain/wallet state.

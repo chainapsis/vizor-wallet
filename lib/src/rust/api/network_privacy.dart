@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import '../network_privacy.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply_headers`, `binary_search_birthday_height`, `block_at_height`, `collect_body`, `correct_estimated_height`, `divide_round_nearest`, `estimate_mainnet_birthday_height`, `interpolate_height`, `is_mainnet`, `mainnet_anchor_segment`, `network_http_response`, `timed_birthday_request`, `with_api_response_body_timeout`, `with_tor_http_request_cancellation`, `with_tor_http_request_timeout`, `write_body_to_file`
+// These functions are ignored because they are not marked as `pub`: `apply_headers`, `binary_search_birthday_height`, `block_at_height`, `collect_body`, `correct_estimated_height`, `divide_round_nearest`, `estimate_mainnet_birthday_height`, `interpolate_height`, `is_mainnet`, `mainnet_anchor_segment`, `network_http_response`, `normalize_tor_http_error`, `timed_birthday_request`, `with_api_response_body_timeout`, `with_tor_http_request_cancellation`, `with_tor_http_request_timeout`, `write_body_to_file`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BirthdayAnchor`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `eq`, `fmt`
 
@@ -69,6 +69,10 @@ Future<void> stopTorUpdateRelay() =>
 /// Makes a GET request on a fresh Tor circuit. Dart calls this only after its
 /// process-wide route check has selected Tor; direct requests stay in Dart so
 /// existing test injection and platform behaviour remain unchanged.
+///
+/// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
+/// Tor is still bootstrapping waits for the route first, under the bootstrap's
+/// own deadline, and the caller's cancellation covers that wait.
 Future<NetworkHttpResponse> torHttpGet({
   required String url,
   required List<NetworkHttpHeader> headers,
@@ -83,6 +87,10 @@ Future<NetworkHttpResponse> torHttpGet({
 
 /// Makes a POST request on a fresh Tor circuit. Every app-owned HTTP call is
 /// isolated from wallet gRPC and from other HTTP destinations.
+///
+/// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
+/// Tor is still bootstrapping waits for the route first, under the bootstrap's
+/// own deadline, and the caller's cancellation covers that wait.
 Future<NetworkHttpResponse> torHttpPost({
   required String url,
   required List<NetworkHttpHeader> headers,

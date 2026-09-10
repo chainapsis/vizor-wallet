@@ -105,6 +105,60 @@ void main() {
     expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
 
+  test(
+    'payment-link secrets stay encrypted across password rotation',
+    () async {
+      const recoveryPayload =
+          '{"link":"https://example.test/payment-links/open#v1=secret-mnemonic-payload"}';
+      const receivedPayload =
+          '{"claimLink":"https://example.test/payment-links/open#v1=received-secret-payload"}';
+      await store.configurePassword(_oldPassword);
+      await store.writeSecretString(
+        kPaymentLinkRecoveryStorageKey,
+        recoveryPayload,
+      );
+      await store.writeSecretString(
+        kPaymentLinkReceivedStorageKey,
+        receivedPayload,
+      );
+
+      final storedBeforeRotation = await store.readPlain(
+        kPaymentLinkRecoveryStorageKey,
+      );
+      expect(storedBeforeRotation, isNot(contains('secret-mnemonic-payload')));
+      final receivedBeforeRotation = await store.readPlain(
+        kPaymentLinkReceivedStorageKey,
+      );
+      expect(
+        receivedBeforeRotation,
+        isNot(contains('received-secret-payload')),
+      );
+
+      final didChange = await store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      );
+
+      expect(didChange, isTrue);
+      store.clearSessionPassword();
+      expect(await store.verifyPassword(_newPassword), isTrue);
+      expect(
+        await store.readSecretStringWithOptions(
+          kPaymentLinkRecoveryStorageKey,
+          requireUnlockedSession: true,
+        ),
+        recoveryPayload,
+      );
+      expect(
+        await store.readSecretStringWithOptions(
+          kPaymentLinkReceivedStorageKey,
+          requireUnlockedSession: true,
+        ),
+        receivedPayload,
+      );
+    },
+  );
+
   test('readAccountMnemonicBytes returns mutable mnemonic bytes', () async {
     await store.configurePassword(_oldPassword);
     await store.writeAccountMnemonic(_accountUuid, _mnemonic);

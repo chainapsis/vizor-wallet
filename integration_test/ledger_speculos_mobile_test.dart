@@ -890,7 +890,7 @@ Future<void> _runMobileSwapScenario(
         paySelectedAssetStoreProvider.overrideWithValue(persistenceStore),
         swapZecStagingAddressServiceProvider.overrideWithValue(
           SwapZecStagingAddressService(
-            loadCurrentShieldedAddress: ({required accountUuid}) async =>
+            reserveFreshOrchardAddress: ({required accountUuid}) async =>
                 'u1ledgerrefundaddress',
           ),
         ),
@@ -907,7 +907,7 @@ Future<void> _runMobileSwapScenario(
           (_) async => 'inert-no-failover',
         ),
         rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-          (_) async => BigInt.zero,
+          (_, _) async => BigInt.zero,
         ),
       ],
     ),
@@ -1725,6 +1725,9 @@ class _TrackingLedgerSignedOperationService
     lastOperationId = operationId;
     await delegate.acknowledge(operationId);
   }
+
+  @override
+  Future<void> discard(String operationId) => delegate.discard(operationId);
 }
 
 class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {

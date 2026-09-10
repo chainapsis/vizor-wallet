@@ -1,21 +1,42 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
+import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+
+/// A price the test can move after the request was created.
+class _PriceNotifier extends Notifier<double?> {
+  @override
+  double? build() => 70;
+
+  void set(double? value) => state = value;
+}
+
+final _priceProvider = NotifierProvider<_PriceNotifier, double?>(
+  _PriceNotifier.new,
+);
 
 void main() {
   testWidgets('shows shielded renew button for software accounts', (
@@ -543,6 +564,53 @@ void main() {
     expect(find.text('activity route'), findsOneWidget);
   });
 
+  testWidgets('switching accounts closes a request drafted for the previous '
+      'one', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final bootstrap = _twoAccountBootstrap;
+    await tester.pumpWidget(
+      _receiveHarness(
+        bootstrap: bootstrap,
+        extraOverrides: [
+          accountProvider.overrideWith(
+            () => _FakeAccountNotifier(bootstrap.initialAccountState, {
+              'account-1': _accountOneAddress,
+              'account-2': _accountTwoAddress,
+            }),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('receive_request_modal')), findsOneWidget);
+
+    // The modal covers only the trailing pane; the sidebar's account
+    // selector is still reachable behind it.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ReceiveScreen)),
+      listen: false,
+    );
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('receive_request_modal')),
+      findsNothing,
+      reason:
+          'a request drafted for account 1 must not be handed out under '
+          'account 2',
+    );
+  });
+
   testWidgets('ignores stale shielded load failure after account switch', (
     tester,
   ) async {
@@ -591,7 +659,541 @@ void main() {
 
     expect(_findAddressRichText('u1accounttwo'), findsOneWidget);
   });
+
+  testWidgets('offers a request entry under copy without losing the error '
+      'slot', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _receiveHarness(receiveAddressService: _FailingReceiveAddressService.new),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final copy = find.byKey(
+      const ValueKey('receive_copy_shielded_address_button'),
+    );
+    final request = find.byKey(const ValueKey('receive_request_button'));
+    expect(request, findsOneWidget);
+    // Icon only: the label lives in the tooltip, not on the pill.
+    expect(find.text('Request ZEC'), findsNothing);
+    expect(
+      find.ancestor(of: request, matching: find.byType(AppTooltip)),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppTooltip>(
+            find.ancestor(of: request, matching: find.byType(AppTooltip)).first,
+          )
+          .message,
+      'Request ZEC',
+    );
+    expect(tester.getSize(request), const Size(60, 44));
+    expect(tester.getSize(copy), const Size(230, 44));
+    // Beside the copy pill on one row, not under it.
+    expect(
+      tester.getTopLeft(request).dy,
+      moreOrLessEquals(tester.getTopLeft(copy).dy, epsilon: 0.1),
+    );
+    expect(
+      tester.getTopLeft(request).dx - tester.getTopRight(copy).dx,
+      moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
+    );
+
+    // The error slot still sits below the action row.
+    final error = find.textContaining('shielded address is unavailable');
+    expect(error, findsOneWidget);
+    expect(
+      tester.getTopLeft(error).dy,
+      greaterThan(tester.getBottomLeft(request).dy),
+    );
+  });
+
+  testWidgets('opens the request modal on the selected pool address', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('receive_request_modal')), findsOneWidget);
+    expect(find.byKey(const ValueKey('request_modal_title')), findsOneWidget);
+    // Step one composes the request, so there is no QR on it yet.
+    expect(find.byType(RequestQrSurface), findsNothing);
+    expect(_button(tester, 'request_next_button').onPressed, isNull);
+    // Shielded requests can carry a message.
+    expect(
+      find.byKey(const ValueKey('request_add_message_card')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('request_modal_close')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('receive_request_modal')), findsNothing);
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+
+    expect(_requestQrData(tester), startsWith('zcash:$_transparentAddress'));
+    expect(
+      find.byKey(const ValueKey('request_add_message_card')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('closing the request message collapses it and drops the text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('request_add_message_card')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_message_field')),
+      'Table 4',
+    );
+    await tester.pump();
+
+    // The control is labelled "Close message", so it has to close it.
+    final close = find.bySemanticsLabel('Close message');
+    expect(close, findsOneWidget);
+    await tester.tap(close);
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('request_message_field')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('request_add_message_card')),
+      findsOneWidget,
+    );
+
+    // And the message is gone from the request, not just from the editor.
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+  });
+
+  testWidgets('a message character a memo cannot carry leaves the field too', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('request_add_message_card')));
+    await tester.pump();
+    // U+202E cannot travel in a ZIP-321 memo, so the draft drops it. The
+    // field has to say so: a link that differs from what is on screen is a
+    // silent, unrecoverable edit.
+    await tester.enterText(
+      find.byKey(const ValueKey('request_message_field')),
+      'Table\u202E 4',
+    );
+    await tester.pump();
+
+    expect(_requestMessageFieldText(tester), 'Table 4');
+    expect(_text(tester, 'request_message_counter'), '7/512');
+
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+    expect(
+      _requestQrData(tester),
+      'zcash:$_shieldedAddress?amount=0.5&memo=VGFibGUgNA',
+    );
+  });
+
+  testWidgets('the request steps carry the composed amount both ways', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _receiveHarness(
+        extraOverrides: [zecLiveUsdUnitPriceProvider.overrideWithValue(70)],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+    expect(find.byKey(const ValueKey('request_amount_field')), findsNothing);
+
+    // Back returns to the form with the amount still in it.
+    await tester.tap(find.byKey(const ValueKey('request_modal_back')));
+    await tester.pump();
+
+    expect(find.byType(RequestQrSurface), findsNothing);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('request_amount_conversion_text')),
+          )
+          .data,
+      r'$ 35.00',
+    );
+    expect(_button(tester, 'request_next_button').onPressed, isNotNull);
+  });
+
+  testWidgets('a USD request keeps the ZEC it was created with when the price '
+      'moves', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add(
+            (call.arguments as Map<Object?, Object?>)['text']! as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _receiveHarness(
+        extraOverrides: [
+          zecLiveUsdUnitPriceProvider.overrideWith(
+            (ref) => ref.watch(_priceProvider),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('request_amount_mode_toggle')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '35',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+
+    // $35 at $70/ZEC.
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+
+    // The market moves while the QR is on screen: the artefact the user
+    // confirmed must not change under them.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const ValueKey('receive_request_modal'))),
+    );
+    container.read(_priceProvider.notifier).set(35);
+    await tester.pump();
+    await tester.pump();
+
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+    // Copy hands out the same snapshot the QR shows.
+    await tester.tap(find.byKey(const ValueKey('request_copy_link_button')));
+    await tester.pump();
+    expect(copied, ['zcash:$_shieldedAddress?amount=0.5']);
+
+    // Back on the form the draft is live again, and the next Next takes a
+    // fresh snapshot at the new price.
+    await tester.tap(find.byKey(const ValueKey('request_modal_back')));
+    await tester.pump();
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('request_amount_conversion_text')),
+          )
+          .data,
+      '1 ZEC',
+    );
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=1');
+  });
+
+  testWidgets('turns a typed amount into a live request link and copies it', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add(
+            (call.arguments as Map<Object?, Object?>)['text']! as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _receiveHarness(
+        extraOverrides: [zecLiveUsdUnitPriceProvider.overrideWithValue(70)],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('request_amount_field')),
+      '0.5',
+    );
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('request_amount_conversion_text')),
+          )
+          .data,
+      r'$ 35.00',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('request_next_button')));
+    await tester.pump();
+
+    expect(_requestQrData(tester), 'zcash:$_shieldedAddress?amount=0.5');
+
+    await tester.tap(find.byKey(const ValueKey('request_copy_link_button')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(copied, ['zcash:$_shieldedAddress?amount=0.5']);
+    expect(find.text('Request link copied'), findsOneWidget);
+  });
+
+  testWidgets('writes the request QR where the save dialog pointed it', (
+    tester,
+  ) async {
+    // Synchronous file APIs throughout: a real async I/O future created
+    // inside the test zone never completes outside runAsync.
+    final directory = Directory.systemTemp.createTempSync('vizor-request');
+    addTearDown(() {
+      if (directory.existsSync()) directory.deleteSync(recursive: true);
+    });
+    final target =
+        '${directory.path}${Platform.pathSeparator}picked-request.png';
+    final suggested = <String>[];
+
+    await _saveRequestQr(
+      tester,
+      picker: ({required String suggestedName}) async {
+        suggested.add(suggestedName);
+        return target;
+      },
+    );
+
+    expect(suggested, ['vizor-request-0.5.png']);
+    final saved = File(target);
+    expect(saved.existsSync(), isTrue);
+    expect(saved.readAsBytesSync().take(4), [
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+    ], reason: 'the saved file is a PNG');
+    expect(
+      find.textContaining('QR image saved to ${_folderName(directory.path)}'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('says nothing when the save dialog is cancelled', (tester) async {
+    final directory = Directory.systemTemp.createTempSync('vizor-request');
+    addTearDown(() {
+      if (directory.existsSync()) directory.deleteSync(recursive: true);
+    });
+
+    await _saveRequestQr(
+      tester,
+      picker: ({required String suggestedName}) async => null,
+    );
+
+    expect(directory.listSync(), isEmpty);
+    expect(find.textContaining('QR image saved to'), findsNothing);
+    expect(find.textContaining("We couldn't save the QR image"), findsNothing);
+  });
+
+  testWidgets('reports a failing save dialog without the raw exception', (
+    tester,
+  ) async {
+    await _saveRequestQr(
+      tester,
+      picker: ({required String suggestedName}) async =>
+          throw StateError('no panel'),
+    );
+
+    final toast = tester.widget<AppToast>(find.byType(AppToast));
+    expect(
+      toast.message,
+      "We couldn't save the QR image. Try another folder, or copy the request "
+      'link instead.',
+    );
+    // The diagnostic belongs in the log, not on a two-line toast.
+    expect(toast.message, isNot(contains('no panel')));
+    expect(toast.message, isNot(contains('StateError')));
+    // A failure must not arrive under the success check.
+    expect(toast.tone, AppToastTone.destructive);
+    expect(toast.iconName, AppIcons.cancel);
+    expect(find.textContaining('QR image saved to'), findsNothing);
+  });
 }
+
+/// Drives the request modal to its result step and taps "Save QR image" with
+/// [picker] standing in for the platform save dialog.
+Future<void> _saveRequestQr(
+  WidgetTester tester, {
+  required RequestQrSaveLocationPicker picker,
+}) async {
+  await tester.binding.setSurfaceSize(const Size(1512, 982));
+  addTearDown(() async {
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  await tester.pumpWidget(
+    _receiveHarness(
+      extraOverrides: [
+        zecLiveUsdUnitPriceProvider.overrideWithValue(70),
+        requestQrSaveLocationPickerProvider.overrideWithValue(picker),
+      ],
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+
+  await tester.tap(find.byKey(const ValueKey('receive_request_button')));
+  await tester.pump();
+  await tester.enterText(
+    find.byKey(const ValueKey('request_amount_field')),
+    '0.5',
+  );
+  await tester.pump();
+  await tester.tap(find.byKey(const ValueKey('request_next_button')));
+  await tester.pump();
+
+  await tester.runAsync(() async {
+    await tester.tap(find.byKey(const ValueKey('request_save_qr_button')));
+    await tester.pump();
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await tester.pump();
+  });
+  await tester.pump();
+}
+
+String _requestQrData(WidgetTester tester) {
+  return tester.widget<RequestQrSurface>(find.byType(RequestQrSurface)).data;
+}
+
+String _text(WidgetTester tester, String key) =>
+    tester.widget<Text>(find.byKey(ValueKey(key))).data!;
+
+/// What the message editor actually holds, not what the draft was given.
+String _requestMessageFieldText(WidgetTester tester) {
+  return tester
+      .widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('request_message_field')),
+          matching: find.byType(EditableText),
+        ),
+      )
+      .controller
+      .text;
+}
+
+AppButton _button(WidgetTester tester, String key) =>
+    tester.widget<AppButton>(find.byKey(ValueKey(key)));
+
+String _folderName(String path) =>
+    path.split(Platform.pathSeparator).where((s) => s.isNotEmpty).last;
 
 Finder _findAddressRichText(String fragment) {
   return find.byWidgetPredicate(
@@ -623,6 +1225,7 @@ Widget _receiveHarness({
   AppBootstrapState? bootstrap,
   ReceiveAddressService Function(Ref ref)? receiveAddressService,
   AppThemeData themeData = AppThemeData.light,
+  List<Override> extraOverrides = const [],
 }) {
   final effectiveBootstrap = bootstrap ?? _bootstrap;
   final router = GoRouter(
@@ -647,6 +1250,7 @@ Widget _receiveHarness({
       receiveAddressServiceProvider.overrideWith(
         receiveAddressService ?? _FakeReceiveAddressService.new,
       ),
+      ...extraOverrides,
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -792,6 +1396,18 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
   @override
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     return _shieldedAddress;
+  }
+}
+
+class _FailingReceiveAddressService extends _FakeReceiveAddressService {
+  _FailingReceiveAddressService(super.ref);
+
+  @override
+  Future<String> loadShieldedAddress({
+    required String accountUuid,
+    String? currentShieldedAddress,
+  }) async {
+    throw StateError('shielded address is unavailable');
   }
 }
 

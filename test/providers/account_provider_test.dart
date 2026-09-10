@@ -13,8 +13,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
@@ -29,6 +35,108 @@ void main() {
   setUpAll(() => RustLib.initMock(api: _rustApi));
   tearDownAll(RustLib.dispose);
   setUp(_rustApi.reset);
+
+  group('account switch locking', () {
+    late ProviderContainer container;
+    late AccountNotifier accounts;
+    late Directory supportDirectory;
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+
+    setUp(() async {
+      FlutterSecureStorage.setMockInitialValues({});
+      supportDirectory = await Directory.systemTemp.createTemp(
+        'vizor-switch-lock-',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            pathProvider,
+            (_) async => supportDirectory.path,
+          );
+      container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          appSecurityProvider.overrideWith(_SwitchTestSecurityNotifier.new),
+        ],
+      );
+      await container.read(accountProvider.future);
+      accounts = container.read(accountProvider.notifier);
+    });
+
+    tearDown(() async {
+      container.dispose();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+      await supportDirectory.delete(recursive: true);
+    });
+
+    test('an already locked wallet does not start an account switch', () async {
+      container.read(appSecurityProvider.notifier).lock();
+      await accounts.switchAccount('account-2');
+      expect(_rustApi.requestedAccounts, isEmpty);
+      expect(
+        container.read(accountProvider).value!.activeAccountUuid,
+        'account-1',
+      );
+      expect(
+        await const FlutterSecureStorage().read(key: 'zcash_active_account'),
+        isNull,
+      );
+    });
+
+    test('an unlocked switch resolves the selected account address', () async {
+      await accounts.switchAccount('account-2');
+      expect(
+        container.read(accountProvider).value!.activeAccountUuid,
+        'account-2',
+      );
+      expect(
+        container.read(accountProvider).value!.activeAddress,
+        'u1account-2-address',
+      );
+    });
+
+    for (final lookupFails in [false, true]) {
+      test(
+        'locking during lookup keeps the selected account without an address (failure: $lookupFails)',
+        () async {
+          _rustApi.lookupGate = Completer<String>();
+          final switching = accounts.switchAccount('account-2');
+          await _rustApi.lookupStarted.future;
+          container.read(appSecurityProvider.notifier).lock();
+          accounts.clearSensitiveStateForLock();
+          if (lookupFails) {
+            _rustApi.lookupGate!.completeError(
+              StateError('address lookup failed'),
+            );
+          } else {
+            _rustApi.lookupGate!.complete('u1account-2-address');
+          }
+          await switching;
+          final state = container.read(accountProvider).value!;
+          expect(container.read(appSecurityProvider).requiresUnlock, isTrue);
+          expect(state.activeAddress, isNull);
+          expect(state.activeAccountUuid, 'account-2');
+          expect(state.accounts, hasLength(2));
+          expect(
+            await const FlutterSecureStorage().read(
+              key: 'zcash_active_account',
+            ),
+            'account-2',
+          );
+          _rustApi.lookupGate = null;
+          (container.read(appSecurityProvider.notifier)
+                  as _SwitchTestSecurityNotifier)
+              .unlockForTest();
+          await accounts.restoreAfterUnlock();
+          expect(_rustApi.requestedAccounts, ['account-2', 'account-2']);
+          expect(
+            container.read(accountProvider).value!.activeAddress,
+            'u1account-2-address',
+          );
+        },
+      );
+    }
+  });
 
   test('wallet db cleanup paths include main db and voting sidecar files', () {
     const dbPath = '/tmp/zcash_wallet.db';
@@ -62,6 +170,143 @@ void main() {
       '.voting-shm',
       '.receive.redb',
     ]);
+  });
+
+  test(
+    'wallet reset cleanup removes only payment-link claim directories',
+    () async {
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-payment-link-reset',
+      );
+      addTearDown(() {
+        if (supportDirectory.existsSync()) {
+          supportDirectory.deleteSync(recursive: true);
+        }
+      });
+      final mainName = paymentLinkClaimWalletDirectoryNameFor(
+        network: 'main',
+        identityHash: List.filled(64, 'a').join(),
+      );
+      final regtestName = paymentLinkClaimWalletDirectoryNameFor(
+        network: 'regtest',
+        identityHash: List.filled(64, 'b').join(),
+      );
+      final mainClaimDirectory = Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}$mainName',
+      )..createSync();
+      final regtestClaimDirectory = Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}$regtestName',
+      )..createSync();
+      final unrelatedDirectory = Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}'
+        '${kPaymentLinkClaimWalletDirectoryPrefix}draft',
+      )..createSync();
+
+      await deletePaymentLinkClaimWalletDirectories(
+        resolveSupportDirectory: () async => supportDirectory,
+      );
+
+      expect(mainClaimDirectory.existsSync(), isFalse);
+      expect(regtestClaimDirectory.existsSync(), isFalse);
+      expect(unrelatedDirectory.existsSync(), isTrue);
+    },
+  );
+
+  test('claim cleanup filtered by network spares other networks', () async {
+    final supportDirectory = Directory.systemTemp.createTempSync(
+      'vizor-payment-link-reset-network',
+    );
+    addTearDown(() {
+      if (supportDirectory.existsSync()) {
+        supportDirectory.deleteSync(recursive: true);
+      }
+    });
+    final mainName = paymentLinkClaimWalletDirectoryNameFor(
+      network: 'main',
+      identityHash: List.filled(64, 'a').join(),
+    );
+    final regtestName = paymentLinkClaimWalletDirectoryNameFor(
+      network: 'regtest',
+      identityHash: List.filled(64, 'b').join(),
+    );
+    final mainClaimDirectory = Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}$mainName',
+    )..createSync();
+    final regtestClaimDirectory = Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}$regtestName',
+    )..createSync();
+
+    await deletePaymentLinkClaimWalletDirectories(
+      network: ZcashNetwork.regtest.name,
+      resolveSupportDirectory: () async => supportDirectory,
+    );
+
+    expect(regtestClaimDirectory.existsSync(), isFalse);
+    expect(mainClaimDirectory.existsSync(), isTrue);
+  });
+
+  test('wallet reset surfaces payment-link claim cleanup failure', () async {
+    await expectLater(
+      clearPaymentLinkClaimWalletsForReset(
+        deleteDirectories: () async {
+          throw StateError('claim cleanup failed');
+        },
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'claim cleanup failed',
+        ),
+      ),
+    );
+  });
+
+  test('wallet reset attempts every matching claim directory', () async {
+    final supportDirectory = Directory.systemTemp.createTempSync(
+      'vizor-payment-link-reset-failures',
+    );
+    addTearDown(() {
+      if (supportDirectory.existsSync()) {
+        supportDirectory.deleteSync(recursive: true);
+      }
+    });
+    final firstName = paymentLinkClaimWalletDirectoryNameFor(
+      network: 'main',
+      identityHash: List.filled(64, 'a').join(),
+    );
+    final secondName = paymentLinkClaimWalletDirectoryNameFor(
+      network: 'main',
+      identityHash: List.filled(64, 'b').join(),
+    );
+    Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}$firstName',
+    ).createSync();
+    Directory(
+      '${supportDirectory.path}${Platform.pathSeparator}$secondName',
+    ).createSync();
+    final attempted = <String>[];
+
+    await expectLater(
+      deletePaymentLinkClaimWalletDirectories(
+        resolveSupportDirectory: () async => supportDirectory,
+        deleteDirectory: (directory) async {
+          final name = directory.path.split(Platform.pathSeparator).last;
+          attempted.add(name);
+          if (name == firstName) throw StateError('first delete failed');
+          await directory.delete(recursive: true);
+        },
+      ),
+      throwsStateError,
+    );
+
+    expect(attempted, containsAll([firstName, secondName]));
+    expect(
+      Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}$secondName',
+      ).existsSync(),
+      isFalse,
+    );
   });
 
   test(
@@ -615,6 +860,11 @@ void main() {
   });
 
   test(
+    'a redeemed Gift Card allows account deletion with recovery still retained',
+    () => _expectAccountDeletionDrainsLiveShareTracking(redeemedCard: true),
+  );
+
+  test(
     'account deletion drains live share tracking before the wallet mutation',
     () => _expectAccountDeletionDrainsLiveShareTracking(),
   );
@@ -677,6 +927,320 @@ void main() {
     );
     expect(shareTracking.isQuiesced('account-1'), isFalse);
     expect(restoreRequests, 2);
+  });
+
+  test(
+    'wallet reset drains Gift Card claims before resolving the DB',
+    () async {
+      final lifecycle = PaymentLinkClaimLifecycleRegistry();
+      final drainStarted = Completer<void>();
+      final drainGate = Completer<void>();
+      var resumeCalls = 0;
+      lifecycle.register(
+        owner: Object(),
+        quiesceAndDrain: () async {
+          drainStarted.complete();
+          await drainGate.future;
+        },
+        resume: () => resumeCalls++,
+      );
+      final pathRequested = Completer<void>();
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (call) async {
+            if (!pathRequested.isCompleted) pathRequested.complete();
+            throw PlatformException(code: 'db-path-unavailable');
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null);
+      });
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkClaimLifecycleRegistryProvider.overrideWithValue(
+            lifecycle,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      final reset = container.read(accountProvider.notifier).resetWallet();
+      await drainStarted.future;
+
+      expect(pathRequested.isCompleted, isFalse);
+      drainGate.complete();
+      await expectLater(reset, throwsA(isA<PlatformException>()));
+      expect(pathRequested.isCompleted, isTrue);
+      expect(resumeCalls, 1);
+    },
+  );
+
+  test('account removal drains Gift Card claims before counting the in-flight '
+      'ones', () async {
+    final receivedStorage = _AccountTestPaymentLinkReceivedStorage();
+    final receivedStore = PaymentLinkReceivedStore(receivedStorage);
+    final link = VizorPaymentLink(
+      network: 'main',
+      address: 'u1accountremovaldrainpaymentlink',
+      amountZatoshi: BigInt.from(100000),
+      mnemonic: List.filled(24, 'abandon').join(' '),
+      birthdayHeight: 3_456_789,
+      label: 'Payment link',
+      createdAt: DateTime.utc(2026, 9, 3),
+    );
+    await receivedStore.saveReady(link);
+
+    // A claim into account-2 that was already submitting when the deletion
+    // started: it finishes while the drain waits, so the record turns
+    // `receiving` only after the count would have read zero.
+    final lifecycle = PaymentLinkClaimLifecycleRegistry();
+    var resumeCalls = 0;
+    lifecycle.register(
+      owner: Object(),
+      quiesceAndDrain: () async {
+        await receivedStore.markReceiving(
+          claimSubmittedAt: DateTime.utc(2026, 8, 28),
+          address: link.address,
+          destinationAccountUuid: 'account-2',
+          claimTxids: 'claim-txid',
+        );
+      },
+      resume: () => resumeCalls++,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
+        paymentLinkClaimLifecycleRegistryProvider.overrideWithValue(lifecycle),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    await expectLater(
+      container.read(accountProvider.notifier).removeAccount('account-2'),
+      throwsA(
+        isA<PaymentLinkInFlightClaimsException>().having(
+          (error) => error.count,
+          'count',
+          1,
+        ),
+      ),
+    );
+    expect(container.read(accountProvider).value!.accounts, hasLength(2));
+    expect(
+      _rustApi.deletedAccountUuids,
+      isEmpty,
+      reason: 'the account a finished claim paid into must not be deleted',
+    );
+    expect(resumeCalls, 1);
+  });
+
+  test(
+    'account removal is rejected while it owns an unshared Gift Card',
+    () async {
+      final recoveryStorage = _AccountTestPaymentLinkRecoveryStorage();
+      final recoveryStore = PaymentLinkRecoveryStore(recoveryStorage);
+      final link = VizorPaymentLink(
+        network: 'main',
+        address: 'u1accountremovalpaymentlink',
+        amountZatoshi: BigInt.from(100000),
+        mnemonic: List.filled(24, 'abandon').join(' '),
+        birthdayHeight: 3_456_789,
+        label: 'Payment link',
+        createdAt: DateTime.utc(2026, 8, 7),
+      );
+      await recoveryStore.saveDraft(
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        link: link,
+        sourceAccountUuid: 'account-2',
+      );
+      await recoveryStore.markFunded(
+        address: link.address,
+        fundingTxids: 'funding-txid',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container.read(accountProvider.notifier).removeAccount('account-2'),
+        throwsA(
+          isA<PaymentLinkUnsharedGiftCardsException>()
+              .having((error) => error.count, 'count', 1)
+              .having(
+                (error) => error.sourceAccountUuid,
+                'sourceAccountUuid',
+                'account-2',
+              ),
+        ),
+      );
+      expect(container.read(accountProvider).value!.accounts, hasLength(2));
+    },
+  );
+
+  test('account removal is rejected while it receives a Gift Card', () async {
+    final receivedStorage = _AccountTestPaymentLinkReceivedStorage();
+    final receivedStore = PaymentLinkReceivedStore(receivedStorage);
+    final link = VizorPaymentLink(
+      network: 'main',
+      address: 'u1accountremovalreceivedpaymentlink',
+      amountZatoshi: BigInt.from(100000),
+      mnemonic: List.filled(24, 'abandon').join(' '),
+      birthdayHeight: 3_456_789,
+      label: 'Payment link',
+      createdAt: DateTime.utc(2026, 9, 1),
+    );
+    await receivedStore.saveReady(link);
+    await receivedStore.markReceiving(
+      claimSubmittedAt: DateTime.utc(2026, 8, 28),
+      address: link.address,
+      destinationAccountUuid: 'account-2',
+      claimTxids: 'claim-txid',
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(accountProvider.future);
+
+    await expectLater(
+      container.read(accountProvider.notifier).removeAccount('account-2'),
+      throwsA(
+        isA<PaymentLinkInFlightClaimsException>()
+            .having((error) => error.count, 'count', 1)
+            .having(
+              (error) => error.destinationAccountUuid,
+              'destinationAccountUuid',
+              'account-2',
+            ),
+      ),
+    );
+    expect(container.read(accountProvider).value!.accounts, hasLength(2));
+  });
+
+  test(
+    'wallet reset is rejected while a Gift Card is being received',
+    () async {
+      final receivedStorage = _AccountTestPaymentLinkReceivedStorage();
+      final receivedStore = PaymentLinkReceivedStore(receivedStorage);
+      final link = VizorPaymentLink(
+        network: 'main',
+        address: 'u1walletresetreceivedpaymentlink',
+        amountZatoshi: BigInt.from(100000),
+        mnemonic: List.filled(24, 'abandon').join(' '),
+        birthdayHeight: 3_456_789,
+        label: 'Payment link',
+        createdAt: DateTime.utc(2026, 9, 3),
+      );
+      await receivedStore.saveReady(link);
+      await receivedStore.markReceiving(
+        claimSubmittedAt: DateTime.utc(2026, 8, 28),
+        address: link.address,
+        destinationAccountUuid: 'account-2',
+        claimTxids: 'claim-txid',
+      );
+
+      final lifecycle = PaymentLinkClaimLifecycleRegistry();
+      var resumeCalls = 0;
+      lifecycle.register(
+        owner: Object(),
+        quiesceAndDrain: () async {},
+        resume: () => resumeCalls++,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
+          paymentLinkClaimLifecycleRegistryProvider.overrideWithValue(
+            lifecycle,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container.read(accountProvider.notifier).resetWallet(),
+        throwsA(
+          isA<WalletResetInFlightGiftCardClaimsException>().having(
+            (error) => error.count,
+            'count',
+            1,
+          ),
+        ),
+      );
+      // The refusal lands before anything is resolved or deleted, and the claim
+      // lifecycle is handed back so the claim can finish.
+      expect(container.read(accountProvider).value!.accounts, hasLength(2));
+      expect(_rustApi.deletedAccountUuids, isEmpty);
+      expect(resumeCalls, 1);
+    },
+  );
+
+  test('a locked wallet resets despite an in-flight Gift Card claim', () async {
+    // A claim cannot advance while locked, so refusing here would never lift
+    // and would trap a user whose only way back in is this reset. The DB path
+    // is the very next step after the skipped check, so its failure is the
+    // proof that the claim check did not stop the reset.
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, (call) async {
+          throw PlatformException(code: 'db-path-unavailable');
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+    });
+
+    final receivedStorage = _AccountTestPaymentLinkReceivedStorage();
+    final receivedStore = PaymentLinkReceivedStore(receivedStorage);
+    final link = VizorPaymentLink(
+      network: 'main',
+      address: 'u1lockedwalletresetpaymentlink',
+      amountZatoshi: BigInt.from(100000),
+      mnemonic: List.filled(24, 'abandon').join(' '),
+      birthdayHeight: 3_456_789,
+      label: 'Payment link',
+      createdAt: DateTime.utc(2026, 9, 3),
+    );
+    await receivedStore.saveReady(link);
+    await receivedStore.markReceiving(
+      claimSubmittedAt: DateTime.utc(2026, 8, 28),
+      address: link.address,
+      destinationAccountUuid: 'account-2',
+      claimTxids: 'claim-txid',
+    );
+
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrapWithAccounts(isUnlocked: false),
+        ),
+        paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(accountProvider.future);
+
+    await expectLater(
+      container.read(accountProvider.notifier).resetWallet(),
+      throwsA(isA<PlatformException>()),
+    );
   });
 
   test(
@@ -784,13 +1348,27 @@ class _FailingAccountsWriteStorage extends TestFlutterSecureStoragePlatform {
   }
 }
 
+class _SwitchTestSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+
+  void unlockForTest() => state = state.copyWith(isUnlocked: true);
+}
+
 class _AccountMutationRustApiFake implements RustLibApi {
   final deletedAccountUuids = <String>[];
   final importedHardwareKinds = <String>[];
+  final requestedAccounts = <String>[];
+  var lookupStarted = Completer<void>();
+  Completer<String>? lookupGate;
 
   void reset() {
     deletedAccountUuids.clear();
     importedHardwareKinds.clear();
+    requestedAccounts.clear();
+    lookupStarted = Completer<void>();
+    lookupGate = null;
   }
 
   @override
@@ -810,6 +1388,17 @@ class _AccountMutationRustApiFake implements RustLibApi {
       accountUuid: 'imported-$zip32Index',
       unifiedAddress: 'u1imported$zip32Index',
     );
+  }
+
+  @override
+  Future<String> crateApiWalletGetUnifiedAddress({
+    required String dbPath,
+    required String network,
+    String? accountUuid,
+  }) async {
+    requestedAccounts.add(accountUuid!);
+    if (!lookupStarted.isCompleted) lookupStarted.complete();
+    return lookupGate?.future ?? Future.value('u1$accountUuid-address');
   }
 
   @override
@@ -838,7 +1427,9 @@ class _AccountMutationRustApiFake implements RustLibApi {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Future<void> _expectAccountDeletionDrainsLiveShareTracking() async {
+Future<void> _expectAccountDeletionDrainsLiveShareTracking({
+  bool redeemedCard = false,
+}) async {
   FlutterSecureStorage.setMockInitialValues({});
   final supportDirectory = Directory.systemTemp.createTempSync(
     'vizor-account-share-drain',
@@ -879,10 +1470,37 @@ Future<void> _expectAccountDeletionDrainsLiveShareTracking() async {
     isTrue,
   );
 
+  final receivedStore = PaymentLinkReceivedStore(
+    _AccountTestPaymentLinkReceivedStorage(),
+  );
+  if (redeemedCard) {
+    final link = VizorPaymentLink(
+      network: 'main',
+      address: 'u1redeemed-account',
+      amountZatoshi: BigInt.from(100000),
+      mnemonic: List.filled(24, 'abandon').join(' '),
+      birthdayHeight: 3456789,
+      label: 'Payment link',
+      createdAt: DateTime.utc(2026, 9, 7),
+    );
+    await receivedStore.saveReady(link);
+    await receivedStore.markClaimStarted(
+      address: link.address,
+      destinationAccountUuid: 'account-2',
+    );
+    await receivedStore.markReceiving(
+      address: link.address,
+      destinationAccountUuid: 'account-2',
+      claimTxids: 'claim-tx',
+    );
+    await receivedStore.markReceived(address: link.address);
+    expect((await receivedStore.load()).single.needsClaimRecovery, isTrue);
+  }
   final container = ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
       votingShareTrackingRegistryProvider.overrideWithValue(shareTracking),
+      paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
     ],
   );
   addTearDown(container.dispose);
@@ -902,7 +1520,35 @@ Future<void> _expectAccountDeletionDrainsLiveShareTracking() async {
   expect(shareTracking.isQuiesced('account-2'), isFalse);
 }
 
-AppBootstrapState _bootstrapWithAccounts() {
+class _AccountTestPaymentLinkRecoveryStorage
+    implements PaymentLinkRecoveryStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async => value = null;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String nextValue) async => value = nextValue;
+}
+
+class _AccountTestPaymentLinkReceivedStorage
+    implements PaymentLinkReceivedStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async => value = null;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String nextValue) async => value = nextValue;
+}
+
+AppBootstrapState _bootstrapWithAccounts({bool isUnlocked = true}) {
   const accountState = AccountState(
     accounts: [
       AccountInfo(uuid: 'account-1', name: 'Primary', order: 0),
@@ -919,7 +1565,7 @@ AppBootstrapState _bootstrapWithAccounts() {
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,
-    isUnlocked: true,
+    isUnlocked: isUnlocked,
     passwordRotationRecoveryFailed: false,
   );
 }

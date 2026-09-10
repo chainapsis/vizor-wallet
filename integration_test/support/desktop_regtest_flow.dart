@@ -9,6 +9,8 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
+import 'package:zcash_wallet/src/rust/api/network_privacy.dart'
+    as rust_network_privacy;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
@@ -362,6 +364,10 @@ Future<void> cleanupDesktopRegtestWallet() async {
   }
 
   await stopRustWorkForCleanup();
+  await rust_network_privacy.configureNetworkPrivacy(
+    enabled: false,
+    torDirectory: '',
+  );
   final storage = AppSecureStore.instance;
   final dbName = await getWalletDbName();
   await storage.deleteAll();
@@ -388,6 +394,21 @@ Future<void> cleanupDesktopRegtestWallet() async {
     final file = File('${supportDir.path}${Platform.pathSeparator}$name');
     if (file.existsSync()) file.deleteSync();
   }
+}
+
+/// Regtest-guarded Gift Card claim-wallet sweep. Claim wallets from every
+/// network share one support directory, so the sweep is scoped to regtest
+/// names; a developer's unfinished mainnet claim keeps its retained DB.
+Future<void> cleanupRegtestPaymentLinkClaimWallets() async {
+  if (kZcashDefaultNetworkName != ZcashNetwork.regtest.name) {
+    throw StateError(
+      'Refusing to delete Gift Card claim wallets without '
+      'ZCASH_DEFAULT_NETWORK=regtest.',
+    );
+  }
+  await deletePaymentLinkClaimWalletDirectories(
+    network: ZcashNetwork.regtest.name,
+  );
 }
 
 Future<void> stopRustWorkForCleanup() async {
@@ -435,10 +456,15 @@ Future<void> tapAppWidget(WidgetTester tester, Key key) async {
 }
 
 Future<void> enterAppText(WidgetTester tester, Key key, String text) async {
-  final editable = find.descendant(
-    of: find.byKey(key),
-    matching: find.byType(EditableText),
+  final keyedWidget = find.byKey(key);
+  await pumpUntil(
+    tester,
+    () => tester.any(keyedWidget),
+    description: '$key input widget',
   );
+  final editable = tester.widget(keyedWidget) is EditableText
+      ? keyedWidget
+      : find.descendant(of: keyedWidget, matching: find.byType(EditableText));
   await pumpUntil(
     tester,
     () => tester.any(editable),

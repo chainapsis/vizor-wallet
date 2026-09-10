@@ -38,6 +38,15 @@ void main() {
     expect(find.text('Unknown shielded address'), findsNothing);
     expect(find.text('Close'), findsOneWidget);
   });
+
+  testWidgets('O / 0 showcase shows Copy as the primary CTA', (tester) async {
+    await _pumpUseCase(tester, buildVerifyAddressActionFooterUseCase);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(kAddressViewerShowcaseAddress), findsOneWidget);
+    expect(find.text('Copy'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {

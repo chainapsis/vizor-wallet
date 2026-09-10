@@ -52,6 +52,8 @@ class SendReviewInfoSection extends StatelessWidget {
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
+    this.isPaymentRequest = false,
+    this.requestedAmountText,
     this.connectorIconName = AppIcons.arrowDown,
     this.recipientStruckThrough = false,
     this.recipientRow,
@@ -76,6 +78,19 @@ class SendReviewInfoSection extends StatelessWidget {
 
   /// Optional fiat sub-label under the amount; hidden when null.
   final String? fiatText;
+
+  /// This send answers a ZIP-321 payment request.
+  ///
+  /// It only retitles the recipient row to "Requested by". The value stays
+  /// the verified recipient the ordinary "To" row shows (contact name, own
+  /// account, or truncated address). The link's own `label=` is unverified
+  /// text and is never rendered on the review — the payment request card is
+  /// the one surface that shows it.
+  final bool isPaymentRequest;
+
+  /// Preformatted amount the request asked for ("0.5 ZEC"), shown as a muted
+  /// line under the amount when the user changed it before reviewing.
+  final String? requestedAmountText;
 
   /// Connector between the Amount and To rows — arrow-down on review /
   /// in-progress / completed, uturn-up on failed.
@@ -129,6 +144,17 @@ class SendReviewInfoSection extends StatelessWidget {
             leading: const ReviewZecCoinImage(),
             bottomLeftText: fiatText,
           ),
+          if (requestedAmountText != null)
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.xl),
+              child: Text(
+                'Requested $requestedAmountText',
+                key: const ValueKey('send_review_requested_amount'),
+                style: AppTypography.bodySmall.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+            ),
           ReviewConnectorIcon(iconName: connectorIconName),
           recipientRow ?? _recipientRow(context),
         ],
@@ -137,9 +163,17 @@ class SendReviewInfoSection extends StatelessWidget {
   }
 
   Widget _recipientRow(BuildContext context) {
+    // A request only changes what the row is called. The value stays the
+    // recipient the wallet resolved, so an unverified link label can never
+    // stand in for the identity the user is consenting to pay.
+    final rowLabel = isPaymentRequest ? 'Requested by' : 'To';
+    final rowKey = isPaymentRequest
+        ? const ValueKey('send_review_requested_by')
+        : null;
     return switch (recipient) {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
-        label: 'To',
+        key: rowKey,
+        label: rowLabel,
         value: truncatedAddress(address),
         leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
         struckThrough: recipientStruckThrough,
@@ -159,7 +193,8 @@ class SendReviewInfoSection extends StatelessWidget {
         :final address,
       ) =>
         ReviewInfoRow(
-          label: 'To',
+          key: rowKey,
+          label: rowLabel,
           value: name,
           leading: AppProfilePicture(
             profilePictureId: profilePictureId,
@@ -243,6 +278,14 @@ class SendReviewContentColumn extends StatelessWidget {
 /// Collapsed, it is a single `ReviewListRow` whose pill holds the truncated
 /// memo and the expand glyph. Expanded, the pill swaps to a "Collapse"
 /// affordance and the full memo renders underneath the row.
+/// Drawn in the memo's value slot when the memo would render as nothing.
+///
+/// A memo made entirely of whitespace is still a memo — it is what the
+/// payment carries and what the recipient decrypts — so the row stays and says
+/// so, instead of a blank value the payer would take for an empty one. The
+/// payment-request card uses the same words for the same memo.
+const kWhitespaceOnlyMemoPlaceholder = 'Whitespace only';
+
 class ReviewMemoRows extends StatelessWidget {
   const ReviewMemoRows({
     required this.memoText,
@@ -251,7 +294,10 @@ class ReviewMemoRows extends StatelessWidget {
     super.key,
   });
 
-  /// Full memo text; the collapsed row truncates it to one line.
+  /// Full memo text; the collapsed row truncates it to one line. Non-empty:
+  /// a memo made only of whitespace is shown as
+  /// [kWhitespaceOnlyMemoPlaceholder], muted, because it is the screen
+  /// describing the memo rather than the memo's own words.
   final String memoText;
 
   final bool expanded;
@@ -261,10 +307,16 @@ class ReviewMemoRows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
+    final placeholder = memoText.trim().isEmpty
+        ? kWhitespaceOnlyMemoPlaceholder
+        : null;
+    final valueColor = placeholder == null ? null : colors.text.muted;
     if (!expanded) {
       return ReviewListRow(
         label: 'Message',
-        value: memoText,
+        value: placeholder ?? memoText,
+        valueColor: valueColor,
         trailingIconName: AppIcons.expand,
         onPressed: onToggle,
       );
@@ -282,9 +334,9 @@ class ReviewMemoRows extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            memoText,
+            placeholder ?? memoText,
             style: AppTypography.bodyMediumStrong.copyWith(
-              color: context.colors.text.accent,
+              color: valueColor ?? colors.text.accent,
             ),
           ),
         ),

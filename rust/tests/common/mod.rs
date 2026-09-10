@@ -53,7 +53,7 @@ pub fn run_script(name: &str, args: &[&str]) -> String {
 }
 
 pub fn ensure_regtest_up() {
-    if wallet_api::get_latest_block_height(LIGHTWALLETD_URL.into())
+    if wallet_api::get_latest_block_height(LIGHTWALLETD_URL.into(), "regtest".into())
         .map(|height| height > 0)
         .unwrap_or(false)
     {
@@ -72,7 +72,7 @@ pub fn fund_wallet(unified_address: &str, amount_zec: &str) -> String {
 }
 
 pub fn current_tip_height() -> u64 {
-    wallet_api::get_latest_block_height(LIGHTWALLETD_URL.into())
+    wallet_api::get_latest_block_height(LIGHTWALLETD_URL.into(), "regtest".into())
         .expect("failed to fetch regtest chain tip")
 }
 

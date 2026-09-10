@@ -91,7 +91,7 @@ class _LedgerTransferPreviewState extends State<LedgerTransferPreview> {
                   loadWalletDbPath: () async => '/preview/not-a-wallet',
                   validateAddress: _validateAddress,
                   estimateFee: _estimateFee,
-                  openScanner: (_) async => null,
+                  openScanner: (_, {required networkName}) async => null,
                   onReview: _openReview,
                 )
               : SendScreen(prefill: _prefill, onReview: _openReview),
@@ -235,9 +235,11 @@ class _LedgerTransferPreviewState extends State<LedgerTransferPreview> {
 
 Future<rust_sync.AddressValidationResult> _validateAddress({
   required String address,
+  required String network,
 }) async => rust_sync.AddressValidationResult(
   isValid: address.startsWith('u1'),
   addressType: address.startsWith('u1') ? 'unified' : 'invalid',
+  wrongNetwork: false,
 );
 
 Future<BigInt> _estimateFee({

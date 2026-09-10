@@ -210,11 +210,15 @@ class ZecHomeMarketDataState {
     this.displayData,
     this.liveData,
     this.fetchedAt,
+    this.isLoading = false,
   });
 
   final ZecMarketData? displayData;
   final ZecMarketData? liveData;
   final DateTime? fetchedAt;
+
+  /// The initial cache/network lookup has not completed yet.
+  final bool isLoading;
 
   bool isFreshAt(DateTime now) {
     final timestamp = fetchedAt;
@@ -308,6 +312,12 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
         );
       } else if (state.displayData != null && !state.isFreshAt(now())) {
         clearMarketData();
+      } else if (state.isLoading) {
+        state = ZecHomeMarketDataState(
+          displayData: state.displayData,
+          liveData: state.liveData,
+          fetchedAt: state.fetchedAt,
+        );
       }
       _refreshTimer = Timer(refreshInterval, () => unawaited(tick()));
     }
@@ -320,6 +330,7 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
           state = ZecHomeMarketDataState(
             displayData: cached.data,
             fetchedAt: cached.fetchedAt,
+            isLoading: true,
           );
           scheduleExpiry(cached.fetchedAt);
         }
@@ -332,7 +343,7 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
     scheduleMicrotask(() {
       if (epoch == _epoch) unawaited(initialize());
     });
-    return const ZecHomeMarketDataState();
+    return const ZecHomeMarketDataState(isLoading: true);
   }
 }
 

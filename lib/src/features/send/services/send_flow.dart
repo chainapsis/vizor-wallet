@@ -14,7 +14,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/zcash/zip321_payment_request.dart'
+    show stripUnsupportedZip321MemoText;
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -23,6 +26,38 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import 'sapling_params.dart';
+
+/// Longest requester label the review screens will render.
+///
+/// The label comes straight out of a `zcash:` link's `label` parameter, so it
+/// is attacker-controlled. Sanitising is what keeps it a short, single-line
+/// piece of quoted text instead of something that can restyle a review screen.
+const int kPaymentRequestLabelMaxLength = 64;
+
+/// One-line, length-clamped version of an untrusted requester label, or null
+/// when there is nothing left to show.
+///
+/// Drops the code points a ZIP-321 memo may not carry first — bidi overrides
+/// and C0/C1 controls, which `RegExp(r'\s+')` does not match and which the
+/// clamp would otherwise spend on invisible characters — so one rule covers
+/// every untrusted ZIP-321 string the wallet renders. Then collapses every run
+/// of whitespace (newlines included) to a single space so the label cannot
+/// grow the row it sits in, and clamps the length.
+///
+/// The clamp counts grapheme clusters, not UTF-16 code units. `substring`
+/// would cut between a surrogate pair or off a combining mark \u2014 40 emoji is
+/// 80 code units, so index 63 lands mid-pair \u2014 and the row would render a
+/// replacement glyph before the ellipsis. It also makes the limit mean what
+/// it reads as: 64 characters the way the payer counts them.
+String? sanitisePaymentRequestLabel(String? raw) {
+  final stripped = raw == null ? null : stripUnsupportedZip321MemoText(raw);
+  final collapsed = stripped?.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (collapsed == null || collapsed.isEmpty) return null;
+  final graphemes = collapsed.characters;
+  if (graphemes.length <= kPaymentRequestLabelMaxLength) return collapsed;
+  final kept = graphemes.take(kPaymentRequestLabelMaxLength - 1).string;
+  return '$kept\u2026';
+}
 
 /// Route-extra payload for the review/status legs of the send flow.
 enum SendFlowKind { send, donation }
@@ -38,6 +73,9 @@ class SendReviewArgs {
     required this.feeZatoshi,
     required this.needsSaplingParams,
     this.memo,
+    this.isPaymentRequest = false,
+    this.requestedBy,
+    this.requestedAmountZatoshi,
     this.flowKind = SendFlowKind.send,
   });
 
@@ -52,7 +90,28 @@ class SendReviewArgs {
   final String? memo;
   final SendFlowKind flowKind;
 
+  /// This send answers a ZIP-321 payment request rather than being composed
+  /// from scratch. Only the review framing reads it — the proposal, the
+  /// broadcast and the receipt are identical either way.
+  final bool isPaymentRequest;
+
+  /// Sanitised requester label from the request, when it carried one.
+  final String? requestedBy;
+
+  /// The amount the request asked for, when it named one.
+  ///
+  /// Kept alongside [amountZatoshi] rather than replacing it so the review can
+  /// say what was requested when the user edited the amount before confirming.
+  final BigInt? requestedAmountZatoshi;
+
   bool get isShielded => addressType == 'unified' || addressType == 'sapling';
+
+  /// The requested amount, but only when it differs from what is being sent.
+  BigInt? get differingRequestedAmountZatoshi {
+    final requested = requestedAmountZatoshi;
+    if (requested == null || requested == amountZatoshi) return null;
+    return requested;
+  }
 }
 
 /// Hardware-wallet handoff payload: the phone-side proof PCZT plus the compact
@@ -117,6 +176,100 @@ class SendStatusRoutePayloadNotifier extends Notifier<Object?> {
 final sendStatusRoutePayloadProvider =
     NotifierProvider<SendStatusRoutePayloadNotifier, Object?>(
       SendStatusRoutePayloadNotifier.new,
+    );
+
+/// Whether the send shown on `/send/status` has reached a terminal phase —
+/// succeeded or failed — so nothing is lost by leaving that screen.
+///
+/// The status screens keep owning their own presentation phase; this publishes
+/// only the "safe to leave" bit, which surfaces outside the send flow need.
+/// `decidePaymentUriDrain` reads it as `sendIsInFlight` and holds a `zcash:`
+/// link that arrives mid-broadcast until the receipt is on screen — the card's
+/// Review and Edit unmount the status screen, which aborts the outcome after
+/// the transaction has already gone out.
+///
+/// False is also what a session that has never sent reads, so the drain pairs
+/// it with the `/send/status` location rather than trusting it alone.
+///
+/// A pending-broadcast outcome is deliberately NOT terminal: both status
+/// screens still render it as in progress.
+class SendStatusTerminalNotifier extends Notifier<bool> {
+  var _disposed = false;
+  var _revision = 0;
+
+  @override
+  bool build() {
+    ref.onDispose(() => _disposed = true);
+    return false;
+  }
+
+  /// The send finished (succeeded or failed).
+  void markTerminal() {
+    if (_disposed) return;
+    _revision++;
+    state = true;
+  }
+
+  /// A broadcast is starting: nothing is safe to leave yet.
+  void reset() {
+    if (_disposed) return;
+    _revision++;
+    state = false;
+  }
+
+  /// Releases the flag once the current lifecycle call has returned. The status
+  /// screens call this from `dispose`, where Riverpod forbids a synchronous
+  /// provider write; the revision guard stops a departing screen from clearing
+  /// a newer one's flag. A microtask rather than a timer, so it cannot outlive
+  /// a widget test's tree.
+  ///
+  /// A receipt left before its send went terminal — a pending broadcast the
+  /// user walked away from — publishes terminal first. The payment-URI drain
+  /// parks a `zcash:` link behind a running send and re-runs only on this
+  /// flag's false → true edge; once the receipt is gone the route no longer
+  /// blocks delivery, and a false → false release would leave the link parked
+  /// until some unrelated wallet event happened to run the drain.
+  ///
+  /// [afterRelease] is the departing receipt's in-flight proposal release
+  /// (`discardSendProposal`'s result); terminal is published once it lands, so
+  /// the drain it triggers never pre-checks a parked request against inputs a
+  /// dead send still holds. A release Rust did not confirm gets one more try
+  /// through [retryRelease] after [debugUnconfirmedReleaseGrace], then the
+  /// edge is published regardless: the card can re-check a shortfall, a
+  /// silently expiring park cannot.
+  void resetAfterNavigation({
+    Future<bool>? afterRelease,
+    Future<bool> Function()? retryRelease,
+  }) {
+    final retainedRevision = _revision;
+    void finish() {
+      if (_disposed || _revision != retainedRevision) return;
+      if (!state) markTerminal();
+      reset();
+    }
+
+    if (afterRelease == null) {
+      scheduleMicrotask(finish);
+      return;
+    }
+    unawaited(() async {
+      var released = false;
+      try {
+        released = await afterRelease;
+      } catch (_) {}
+      if (!released) {
+        await Future<void>.delayed(debugUnconfirmedReleaseGrace);
+        if (_disposed || _revision != retainedRevision) return;
+        if (retryRelease != null) await retryRelease();
+      }
+      finish();
+    }());
+  }
+}
+
+final sendStatusTerminalProvider =
+    NotifierProvider<SendStatusTerminalNotifier, bool>(
+      SendStatusTerminalNotifier.new,
     );
 
 class SendStatusRoutePayloadObserver extends NavigatorObserver {
@@ -212,27 +365,66 @@ Future<SendReviewArgs> proposeSendTransfer({
   required String addressType,
   required BigInt amountZatoshi,
   String? memo,
+  bool isPaymentRequest = false,
+  String? requestedBy,
+  BigInt? requestedAmountZatoshi,
+  SendFlowKind flowKind = SendFlowKind.send,
+  Future<String> Function() loadDbPath = getWalletDbPath,
+}) => proposeSendTransferWith(
+  syncNotifier: ref.read(syncProvider.notifier),
+  readEndpoint: () => ref.read(rpcEndpointProvider),
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  address: address,
+  addressType: addressType,
+  amountZatoshi: amountZatoshi,
+  memo: memo,
+  isPaymentRequest: isPaymentRequest,
+  requestedBy: requestedBy,
+  requestedAmountZatoshi: requestedAmountZatoshi,
+  flowKind: flowKind,
+  loadDbPath: loadDbPath,
+);
+
+/// [proposeSendTransfer] with its two provider reads passed in.
+///
+/// `WidgetRef` and `Ref` share no common type, and the payment-request
+/// pre-check runs from a `Notifier` rather than a widget. Naming the two
+/// dependencies is what lets both callers reach the same proposal code.
+/// [readEndpoint] stays lazy on purpose: the authoritative-spendable wait below
+/// can outlast an endpoint failover, and the proposal must use the endpoint in
+/// effect when it is actually made.
+Future<SendReviewArgs> proposeSendTransferWith({
+  required SyncNotifier syncNotifier,
+  required RpcEndpointConfig Function() readEndpoint,
+  required String accountUuid,
+  required String sendFlowId,
+  required String address,
+  required String addressType,
+  required BigInt amountZatoshi,
+  String? memo,
+  bool isPaymentRequest = false,
+  String? requestedBy,
+  BigInt? requestedAmountZatoshi,
   SendFlowKind flowKind = SendFlowKind.send,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
-  final proposal = await ref
-      .read(syncProvider.notifier)
-      .runWithAuthoritativeSpendable(
+  final proposal = await syncNotifier.runWithAuthoritativeSpendable(
+    accountUuid: accountUuid,
+    operation: () async {
+      final dbPath = await loadDbPath();
+      final endpoint = readEndpoint();
+      return rust_sync.proposeSend(
+        dbPath: dbPath,
+        network: endpoint.networkName,
         accountUuid: accountUuid,
-        operation: () async {
-          final dbPath = await loadDbPath();
-          final endpoint = ref.read(rpcEndpointProvider);
-          return rust_sync.proposeSend(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            sendFlowId: sendFlowId,
-            toAddress: address,
-            amountZatoshi: amountZatoshi,
-            memo: (memo != null && memo.isNotEmpty) ? memo : null,
-          );
-        },
+        sendFlowId: sendFlowId,
+        toAddress: address,
+        amountZatoshi: amountZatoshi,
+        memo: (memo != null && memo.isNotEmpty) ? memo : null,
       );
+    },
+  );
   return SendReviewArgs(
     proposalId: proposal.proposalId,
     sendFlowId: sendFlowId,
@@ -243,12 +435,24 @@ Future<SendReviewArgs> proposeSendTransfer({
     feeZatoshi: proposal.feeZatoshi,
     memo: (memo != null && memo.isNotEmpty) ? memo : null,
     needsSaplingParams: proposal.needsSaplingParams,
+    isPaymentRequest: isPaymentRequest,
+    requestedBy: sanitisePaymentRequestLabel(requestedBy),
+    requestedAmountZatoshi: requestedAmountZatoshi,
     flowKind: flowKind,
   );
 }
 
+/// Pause before the one retry an unconfirmed proposal release gets; tests
+/// shorten it.
+Duration debugUnconfirmedReleaseGrace = const Duration(seconds: 3);
+
 /// Idempotent proposal release for every non-consuming exit path.
-Future<void> discardSendProposal({
+///
+/// Returns whether Rust confirmed the release. Never throws: a release that
+/// still fails after its retries is logged and left to height-based expiry,
+/// and the caller that needs to know (the terminal flag's departure edge) reads
+/// the result instead of catching.
+Future<bool> discardSendProposal({
   required BigInt proposalId,
   required String sendFlowId,
   required String logContext,
@@ -261,7 +465,7 @@ Future<void> discardSendProposal({
         sendFlowId: sendFlowId,
       );
       log('$logContext: released proposal $proposalId');
-      return;
+      return true;
     } catch (e) {
       lastError = e;
       log('$logContext: discardProposal cleanup attempt $attempt failed: $e');
@@ -273,6 +477,7 @@ Future<void> discardSendProposal({
   // Rust keeps the owner token when unlock fails, so another idempotent
   // cleanup call can retry while height-based expiry remains the fallback.
   log('$logContext: proposal cleanup remains pending: $lastError');
+  return false;
 }
 
 Future<void> retainSendProposalLockUntilExpiry({
@@ -291,10 +496,42 @@ Future<void> retainSendProposalLockUntilExpiry({
   }
 }
 
+/// Shown wherever a recipient address is well-formed but belongs to another
+/// Zcash network — a `utest1…` pasted into a mainnet wallet, say.
+///
+/// It has its own sentence because "Invalid address" reads as a typo, and this
+/// is not one: the address is real, it just is not payable from this build.
+/// Before validation was network-aware the wallet accepted these and only
+/// refused them at proposal time, as an opaque "Bad address: IncorrectNetwork".
+const kWrongNetworkAddressMessage =
+    'This address is for a different Zcash network';
+
+/// Propose-time failures as the payment-request card states them.
+///
+/// The card is a pre-send consent surface: nothing has been broadcast, it
+/// holds an unconsumed proposal, and offers Check again or Edit.
+/// [friendlyProposeSendError] is written for a screen that actually
+/// sent, so its wording ("Send failed", "Some parts of this transaction were
+/// sent") would assert an event that never happened here.
+///
+/// Follows the card's status-line convention: one line, no trailing period.
+String friendlyPaymentRequestCheckError(String raw) {
+  final lower = raw.toLowerCase();
+  if (lower.contains('grpc connect failed') ||
+      lower.contains('connection refused') ||
+      lower.contains('dns error') ||
+      lower.contains('tls error')) {
+    return "Couldn't reach the network — check your connection and try again";
+  }
+  return "Couldn't check this request — try again or edit the details";
+}
+
 String friendlyProposeSendError(String raw) {
   final lower = raw.toLowerCase();
   if (lower.contains('wallet sync is still finishing') ||
-      lower.contains('wallet sync failed before balance refresh')) {
+      lower.contains('wallet sync failed before balance refresh') ||
+      // Rust's own wording when the wallet has no scanned tip yet.
+      lower.contains('wallet must sync')) {
     return 'Finishing wallet sync. Try again shortly.';
   }
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
@@ -477,14 +714,15 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           logContext: 'SendBroadcast(ledger-abort)',
         );
       } else {
-        await discardSendProposal(
+        // A release Rust never confirmed leaves the proposal for the receipt
+        // to release; only a confirmed one counts as consumed.
+        proposalConsumed = await discardSendProposal(
           proposalId: args.proposalId,
           sendFlowId: args.sendFlowId,
           logContext: 'SendBroadcast(abort)',
         );
       }
       proposalReleased = true;
-      proposalConsumed = true;
     }
     return true;
   }
@@ -513,14 +751,15 @@ Future<SendBroadcastOutcome> runSendBroadcast({
                 logContext: 'SendBroadcast(ledger-params-declined)',
               );
             } else {
-              await discardSendProposal(
+              // A release Rust never confirmed leaves the proposal for the receipt
+              // to release; only a confirmed one counts as consumed.
+              proposalConsumed = await discardSendProposal(
                 proposalId: args.proposalId,
                 sendFlowId: args.sendFlowId,
                 logContext: 'SendBroadcast(params-declined)',
               );
             }
             proposalReleased = true;
-            proposalConsumed = true;
           }
           return SendBroadcastOutcome(
             phase: SendBroadcastPhase.failed,
@@ -799,13 +1038,12 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     final message = friendlyBroadcastError(e.toString());
     if (await abortRequested()) return aborted();
     if (!proposalReleased) {
-      await discardSendProposal(
+      proposalConsumed = await discardSendProposal(
         proposalId: args.proposalId,
         sendFlowId: args.sendFlowId,
         logContext: 'SendBroadcast(pre-broadcast-failure)',
       );
       proposalReleased = true;
-      proposalConsumed = true;
     }
     return SendBroadcastOutcome(
       phase: SendBroadcastPhase.failed,

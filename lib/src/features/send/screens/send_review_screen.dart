@@ -20,6 +20,8 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/payment_uri_busy_surface_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
@@ -86,7 +88,9 @@ class SendReviewScreen extends ConsumerStatefulWidget {
 }
 
 class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
-  bool _discardScheduled = false;
+  late final PaymentUriBusySurfaceNotifier _paymentUriBusySurface;
+  bool _holdsPaymentUriBusySurface = false;
+  Future<void>? _discardFuture;
   bool _handoffToHardware = false;
   bool _showSaplingParamsPrompt = false;
   bool _messageExpanded = false;
@@ -120,8 +124,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     _cancelLedgerOperation = ref.read(ledgerOperationCancellerProvider);
     _ledgerOperationId =
         'send:${widget.args.proposalAccountUuid}:${widget.args.sendFlowId}';
+    _paymentUriBusySurface = ref.read(paymentUriBusySurfaceProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (!_holdsPaymentUriBusySurface) {
+        _paymentUriBusySurface.acquire();
+        _holdsPaymentUriBusySurface = true;
+      }
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
     });
   }
@@ -141,22 +150,31 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         !hasUncheckpointedLedgerSignature) {
       unawaited(_cancelLedgerOperation());
     }
-    if (!_handoffToHardware && !hasUncheckpointedLedgerSignature) {
-      _scheduleDiscard();
-    }
+    final discard = _handoffToHardware || hasUncheckpointedLedgerSignature
+        ? null
+        : _scheduleDiscard();
+    _releasePaymentUriBusySurface(after: discard);
     super.dispose();
   }
 
-  void _scheduleDiscard() {
-    if (_discardScheduled) return;
-    _discardScheduled = true;
-    unawaited(
-      discardSendProposal(
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
-        logContext: 'SendReview',
-      ),
+  Future<void> _scheduleDiscard() {
+    return _discardFuture ??= discardSendProposal(
+      proposalId: widget.args.proposalId,
+      sendFlowId: widget.args.sendFlowId,
+      logContext: 'SendReview',
     );
+  }
+
+  void _releasePaymentUriBusySurface({Future<void>? after}) {
+    if (!_holdsPaymentUriBusySurface) return;
+    _holdsPaymentUriBusySurface = false;
+    if (after == null) {
+      _paymentUriBusySurface.releaseAfterNavigation();
+      return;
+    }
+    // The route is already gone, but Rust may still hold the selected inputs.
+    // Do not re-drain the parked request until that release has completed.
+    unawaited(after.whenComplete(_paymentUriBusySurface.release));
   }
 
   String _formatAmount(BigInt zatoshi) {
@@ -187,6 +205,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     }
 
     ref.read(sendStatusRoutePayloadProvider.notifier).retain(widget.args);
+    _releasePaymentUriBusySurface();
     await context.push(
       sendStatusRouteLocation(widget.args.sendFlowId),
       extra: widget.args,
@@ -585,7 +604,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       return;
     }
     _ledgerAttemptGeneration++;
-    _scheduleDiscard();
+    unawaited(_scheduleDiscard());
     ref.read(sendStatusRoutePayloadProvider.notifier).clear();
     if (!mounted) return;
     context.go(
@@ -614,7 +633,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   void _handleCancel() {
-    _scheduleDiscard();
+    unawaited(_scheduleDiscard());
     ref.read(sendStatusRoutePayloadProvider.notifier).clear();
     if (!mounted) return;
     context.go(
@@ -623,7 +642,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   void _handleDonationBack() {
-    _scheduleDiscard();
+    unawaited(_scheduleDiscard());
     if (!mounted) return;
     if (context.canPop()) {
       context.pop();
@@ -684,7 +703,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       if (widget.args.needsSaplingParams && !saplingParams.complete) {
         final confirmed = await _showDownloadPrompt();
         if (!confirmed) {
-          _scheduleDiscard();
+          unawaited(_scheduleDiscard());
           if (!mounted) return;
           setState(() {
             _keystonePhase = KeystoneSigningModalPhase.failed;
@@ -782,7 +801,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       });
     } catch (e, st) {
       log('SendReview._prepareKeystonePczt: ERROR: $e\n$st');
-      _scheduleDiscard();
+      unawaited(_scheduleDiscard());
       if (!mounted) return;
       setState(() {
         _keystonePhase = KeystoneSigningModalPhase.failed;
@@ -806,7 +825,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _cancelKeystoneSigning() async {
-    _scheduleDiscard();
+    unawaited(_scheduleDiscard());
     ref.read(sendStatusRoutePayloadProvider.notifier).clear();
     if (!mounted) return;
     context.go(
@@ -862,6 +881,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (!mounted) return;
 
     _handoffToHardware = true;
+    _releasePaymentUriBusySurface();
     final statusArgs = KeystoneBroadcastArgs(
       reviewArgs: widget.args,
       pcztWithProofs: _keystonePcztsWithProofs,
@@ -895,7 +915,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = widget.args.memo;
-    final hasMemo = memo != null && memo.trim().isNotEmpty;
+    // Present means non-empty, not non-blank: an edited request whose memo is
+    // only whitespace still sends that memo, so the row has to say so rather
+    // than omit a memo the transaction carries.
+    final hasMemo = memo != null && memo.isNotEmpty;
+    final requestedAmountZatoshi = widget.args.differingRequestedAmountZatoshi;
 
     return AppDesktopShell(
       sidebar: AppMainSidebar(
@@ -938,6 +962,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                       onConfirm: () => unawaited(_handleSend()),
                     )
                   : SendReviewContentView(
+                      isPaymentRequest: widget.args.isPaymentRequest,
+                      requestedAmountText: requestedAmountZatoshi == null
+                          ? null
+                          : _formatAmount(requestedAmountZatoshi),
                       amountText: _formatAmount(widget.args.amountZatoshi),
                       fiatText: fiatTextForZatoshi(
                         widget.args.amountZatoshi,
@@ -973,32 +1001,37 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 isShieldedAddress: widget.args.isShielded,
                 onClose: () => setState(() => _showVerifyAddress = false),
               ),
+            // The review's outer hold protects its proposal inputs. This
+            // nested hold protects the live QR as well, so the latch cannot
+            // briefly open while signing subtrees change.
             if (keystonePhase != null)
-              AppPaneModalOverlay(
-                onDismiss: () => unawaited(_cancelKeystoneSigning()),
-                child: KeystoneSigningModal(
-                  phase: keystonePhase,
-                  urParts: _keystoneUrParts,
-                  error: _keystoneError,
-                  title: 'Confirm with Keystone',
-                  subtitle: _keystoneUrPartsByRound.length == 2
-                      ? 'Transaction ${_keystoneRound + 1} of 2'
-                      : 'Scan with your Keystone',
-                  instruction:
-                      _keystoneError ??
-                      (_keystonePcztsWithProofs.isEmpty
-                          ? 'Scan now. Signature import unlocks after proofs are ready.'
-                          : 'After you scanned, click Get signature.'),
-                  primaryLabel: _keystonePcztsWithProofs.isEmpty
-                      ? 'Preparing'
-                      : 'Get signature',
-                  onPrimary:
-                      keystonePhase == KeystoneSigningModalPhase.ready &&
-                          _keystonePcztsWithProofs.isNotEmpty
-                      ? () => unawaited(_getKeystoneSignature())
-                      : null,
-                  secondaryLabel: 'Cancel',
-                  onSecondary: () => unawaited(_cancelKeystoneSigning()),
+              PaymentUriBusySurfaceHold(
+                child: AppPaneModalOverlay(
+                  onDismiss: () => unawaited(_cancelKeystoneSigning()),
+                  child: KeystoneSigningModal(
+                    phase: keystonePhase,
+                    urParts: _keystoneUrParts,
+                    error: _keystoneError,
+                    title: 'Confirm with Keystone',
+                    subtitle: _keystoneUrPartsByRound.length == 2
+                        ? 'Transaction ${_keystoneRound + 1} of 2'
+                        : 'Scan with your Keystone',
+                    instruction:
+                        _keystoneError ??
+                        (_keystonePcztsWithProofs.isEmpty
+                            ? 'Scan now. Signature import unlocks after proofs are ready.'
+                            : 'After you scanned, click Get signature.'),
+                    primaryLabel: _keystonePcztsWithProofs.isEmpty
+                        ? 'Preparing'
+                        : 'Get signature',
+                    onPrimary:
+                        keystonePhase == KeystoneSigningModalPhase.ready &&
+                            _keystonePcztsWithProofs.isNotEmpty
+                        ? () => unawaited(_getKeystoneSignature())
+                        : null,
+                    secondaryLabel: 'Cancel',
+                    onSecondary: () => unawaited(_cancelKeystoneSigning()),
+                  ),
                 ),
               ),
             if (_ledgerPhase case final ledgerPhase?)

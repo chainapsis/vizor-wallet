@@ -8477,7 +8477,7 @@ void main() {
         depositSender: depositSender,
         sessionStore: sessionStore,
         failoverChainNameGetter: (url) async => 'main',
-        failoverHeightGetter: (url) async =>
+        failoverHeightGetter: (url, _) async =>
             url == fallback.normalizedLightwalletdUrl
             ? BigInt.from(100)
             : BigInt.from(100),
@@ -9321,7 +9321,7 @@ void main() {
           hardwareSigningService: hardwareSigningService,
           sessionStore: sessionStore,
           failoverChainNameGetter: (_) async => 'main',
-          failoverHeightGetter: (_) async => BigInt.from(100),
+          failoverHeightGetter: (_, _) async => BigInt.from(100),
         ),
       );
       await tester.pumpAndSettle();
@@ -9643,7 +9643,7 @@ Widget _routerHarness(
         failoverChainNameGetter ?? (_) async => 'inert-no-failover',
       ),
       rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-        failoverHeightGetter ?? (_) async => BigInt.zero,
+        failoverHeightGetter ?? (_, _) async => BigInt.zero,
       ),
     ],
     child: MaterialApp.router(

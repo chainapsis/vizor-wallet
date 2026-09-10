@@ -81,6 +81,7 @@ void main() {
 
       final baselineHeight = await rust_wallet.getLatestBlockHeight(
         lightwalletdUrl: _realLightwalletdUrl,
+        network: 'regtest',
       );
       proxy.setSlowHeight(baselineHeight.toInt() + 1);
       await _pumpFor(tester, const Duration(seconds: 4));

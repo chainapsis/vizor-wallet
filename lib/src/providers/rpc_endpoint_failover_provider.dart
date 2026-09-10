@@ -8,7 +8,7 @@ import 'rpc_endpoint_provider.dart';
 typedef RpcEndpointChainNameGetter =
     Future<String> Function(String lightwalletdUrl);
 typedef RpcEndpointLatestBlockHeightGetter =
-    Future<BigInt> Function(String lightwalletdUrl);
+    Future<BigInt> Function(String lightwalletdUrl, String network);
 
 enum RpcEndpointFailoverEventKind { switchedToFallback, switchedToPrimary }
 
@@ -163,7 +163,10 @@ Future<RpcEndpointHealth> checkRpcEndpointHealth({
       'Endpoint is for $chainName, but this wallet uses ${endpoint.networkName}.',
     );
   }
-  final height = await getLatestBlockHeight(endpoint.normalizedLightwalletdUrl);
+  final height = await getLatestBlockHeight(
+    endpoint.normalizedLightwalletdUrl,
+    endpoint.networkName,
+  );
   return RpcEndpointHealth(chainName: chainName, height: height);
 }
 
@@ -219,8 +222,9 @@ final rpcEndpointFailoverChainNameGetterProvider =
 final rpcEndpointFailoverLatestBlockHeightGetterProvider =
     Provider<RpcEndpointLatestBlockHeightGetter>(
       (_) =>
-          (lightwalletdUrl) => rust_wallet.getLatestBlockHeight(
+          (lightwalletdUrl, network) => rust_wallet.getLatestBlockHeight(
             lightwalletdUrl: lightwalletdUrl,
+            network: network,
           ),
     );
 
@@ -252,6 +256,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     try {
       final height = await getLatestBlockHeight(
         endpoint.normalizedLightwalletdUrl,
+        endpoint.networkName,
       );
       _recordEndpointSuccess(endpoint);
       final slowFallback = await _maybeSwitchFromSlowHeight(
@@ -274,6 +279,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       try {
         final fallbackHeight = await getLatestBlockHeight(
           fallbackEndpoint.normalizedLightwalletdUrl,
+          fallbackEndpoint.networkName,
         );
         _recordEndpointSuccess(fallbackEndpoint);
         _resetHeightWindow(fallbackEndpoint, fallbackHeight);

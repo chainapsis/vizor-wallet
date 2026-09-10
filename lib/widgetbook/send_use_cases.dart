@@ -542,16 +542,19 @@ const _mobileSendContacts = [
 
 Future<rust_sync.AddressValidationResult> _widgetbookValidateAddress({
   required String address,
+  required String network,
 }) async {
   if (address.startsWith('t1')) {
     return const rust_sync.AddressValidationResult(
       isValid: true,
       addressType: 'transparent',
+      wrongNetwork: false,
     );
   }
   return const rust_sync.AddressValidationResult(
     isValid: true,
     addressType: 'unified',
+    wrongNetwork: false,
   );
 }
 

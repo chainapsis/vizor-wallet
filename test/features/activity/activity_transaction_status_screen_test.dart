@@ -1,7 +1,12 @@
+import 'package:flutter/services.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:flutter/material.dart' show MaterialApp, ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -9,6 +14,8 @@ import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
+import 'package:zcash_wallet/src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -36,6 +43,227 @@ const _transparentSenderAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 final _blockTime = BigInt.from(1764150000);
 
 void main() {
+  testWidgets('pending claim transaction ID opens the broadcast hash', (
+    tester,
+  ) async {
+    const displayTxid =
+        '012c6894d79c62d7f49659bf2405b6b67fda282aa89127539d77de76523be0d6';
+    final protocolTxid = paymentLinkBroadcastTxidsToProtocolOrder(displayTxid);
+    final launched = <String>[];
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'launch') {
+        launched.add((call.arguments as Map)['url'] as String);
+      }
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: protocolTxid,
+        txKind: 'receiving',
+        initialTransaction: _transaction(
+          txidHex: protocolTxid,
+          txKind: 'receiving',
+          minedHeight: BigInt.zero,
+        ),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.redeemed,
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'ruby',
+          message: null,
+          isClaimInFlight: true,
+        ),
+      ),
+    );
+    await tester.tap(find.text(truncatedTxid(protocolTxid)));
+    await tester.pump();
+    expect(launched, hasLength(1));
+    expect(Uri.parse(launched.single).path, '/tx/$displayTxid');
+  });
+
+  for (final settings in [(false, false), (true, true)]) {
+    testWidgets('hides saved fiat for disabled pricing or privacy $settings', (
+      tester,
+    ) async {
+      await _pumpScreen(
+        tester,
+        pricingEnabled: settings.$1,
+        privacyEnabled: settings.$2,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'received',
+          initialTransaction: _transaction(txKind: 'received'),
+          giftCard: GiftCardActivityMetadata(
+            kind: GiftCardActivityKind.redeemed,
+            amountZatoshi: BigInt.from(445000000),
+            artworkId: 'ruby',
+            message: null,
+            fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 142.23),
+          ),
+        ),
+      );
+      expect(find.text(r'$142.23'), findsNothing);
+    });
+  }
+
+  testWidgets(
+    'an expired claim leg stays pending while the card is receiving',
+    (tester) async {
+      await _pumpScreen(
+        tester,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'receiving',
+          initialTransaction: _transaction(
+            txKind: 'receiving',
+            minedHeight: BigInt.zero,
+            expiredUnmined: true,
+          ),
+          giftCard: GiftCardActivityMetadata(
+            kind: GiftCardActivityKind.redeemed,
+            amountZatoshi: BigInt.from(100000),
+            artworkId: 'ruby',
+            message: null,
+            isClaimInFlight: true,
+          ),
+        ),
+      );
+      final view = tester.widget<GiftCardActivityDetailView>(
+        find.byType(GiftCardActivityDetailView),
+      );
+      expect(view.isInFlight, isTrue);
+      expect(view.isFailed, isFalse);
+      expect(find.text('In progress'), findsOneWidget);
+      expect(find.text('Failed'), findsNothing);
+      expect(find.text('Refunded'), findsNothing);
+    },
+  );
+
+  testWidgets('renders created Gift Card activity metadata', (tester) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+        ),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'ruby',
+          message: 'Happy birthday!',
+          fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 142.23),
+          claimFeeReserveZatoshi: BigInt.from(20000),
+        ),
+      ),
+    );
+
+    expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
+    expect(find.text('Created a gift card'), findsOneWidget);
+    expect(find.text('Happy birthday!'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('0.001'), findsOneWidget);
+    expect(find.text('120'), findsNothing);
+    expect(find.text('Card fee'), findsOneWidget);
+    expect(find.text('0.0003 ZEC'), findsOneWidget);
+    expect(find.text(r'$142.23'), findsOneWidget);
+  });
+
+  testWidgets('renders redeemed Gift Card activity metadata', (tester) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'received',
+        initialTransaction: _transaction(txKind: 'received'),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.redeemed,
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'crystal',
+          message: null,
+        ),
+      ),
+    );
+
+    expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
+    expect(find.text('Redeemed a gift card'), findsOneWidget);
+    expect(find.text('Message'), findsNothing);
+  });
+
+  testWidgets('resolves Gift Card metadata the tapped row could not carry', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+        ),
+      ),
+      giftCardActivityIndex: GiftCardActivityIndex(
+        createdTxids: {_txidHex},
+        createdMetadataByTxid: {
+          _txidHex: GiftCardActivityMetadata(
+            claimFeeReserveZatoshi: BigInt.from(10000),
+            kind: GiftCardActivityKind.created,
+            amountZatoshi: BigInt.from(100000),
+            artworkId: 'ruby',
+            message: 'Happy birthday!',
+          ),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
+    expect(find.text('Created a gift card'), findsOneWidget);
+    expect(find.text('Happy birthday!'), findsOneWidget);
+  });
+
+  testWidgets('drops passed-in Gift Card metadata after an account switch', (
+    tester,
+  ) async {
+    final accountNotifier = _SwitchableAccountNotifier();
+    await _pumpScreen(
+      tester,
+      accountNotifier: accountNotifier,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+        ),
+        giftCard: GiftCardActivityMetadata(
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'ruby',
+          message: 'Happy birthday!',
+        ),
+      ),
+    );
+
+    expect(find.byType(GiftCardActivityDetailView), findsOneWidget);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(GiftCardActivityDetailView), findsNothing);
+    expect(find.text('Created a gift card'), findsNothing);
+    expect(find.text('Happy birthday!'), findsNothing);
+  });
+
   testWidgets('renders the redesigned receipt for a confirmed receive', (
     tester,
   ) async {
@@ -627,13 +855,14 @@ void main() {
 }
 
 rust_sync.TransactionInfo _transaction({
+  String txidHex = _txidHex,
   required String txKind,
   BigInt? minedHeight,
   bool expiredUnmined = false,
   BigInt? fee,
 }) {
   return rust_sync.TransactionInfo(
-    txidHex: _txidHex,
+    txidHex: txidHex,
     minedHeight: minedHeight ?? BigInt.from(2500000),
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
@@ -695,6 +924,10 @@ Future<void> _pumpScreen(
   required ActivityTransactionStatusArgs args,
   List<AddressBookContact> contacts = const [],
   Map<String, AccountInfo> ownAccounts = const {},
+  GiftCardActivityIndex? giftCardActivityIndex,
+  AccountNotifier? accountNotifier,
+  bool pricingEnabled = true,
+  bool privacyEnabled = false,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1512, 982));
   addTearDown(() async {
@@ -718,7 +951,11 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
+        privacyModeProvider.overrideWith(() => _FixedPrivacy(privacyEnabled)),
         appBootstrapProvider.overrideWithValue(_bootstrap),
+        if (accountNotifier != null)
+          accountProvider.overrideWith(() => accountNotifier),
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             SyncState(
@@ -732,6 +969,10 @@ Future<void> _pumpScreen(
           _FakeAddressBookRepository(contacts),
         ),
         ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+        if (giftCardActivityIndex != null)
+          giftCardActivityIndexProvider.overrideWith(
+            (ref, accountUuid) async => giftCardActivityIndex,
+          ),
       ],
       child: MaterialApp.router(
         routerConfig: router,
@@ -760,6 +1001,23 @@ final _bootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+class _SwitchableAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [
+      AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0),
+      AccountInfo(uuid: 'account-2', name: 'Account 2', order: 1),
+    ],
+    activeAccountUuid: 'account-1',
+  );
+
+  void setActiveAccount(String uuid) {
+    state = AsyncData(
+      state.requireValue.copyWith(activeAccountUuid: uuid, activeAddress: null),
+    );
+  }
+}
+
 class _FakeAddressBookRepository implements AddressBookRepository {
   _FakeAddressBookRepository([this._contacts = const []]);
 
@@ -770,4 +1028,11 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 
   @override
   Future<void> saveContacts(List<AddressBookContact> contacts) async {}
+}
+
+class _FixedPrivacy extends PrivacyModeNotifier {
+  _FixedPrivacy(this.enabled);
+  final bool enabled;
+  @override
+  bool build() => enabled;
 }
