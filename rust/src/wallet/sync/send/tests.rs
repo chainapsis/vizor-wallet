@@ -3193,7 +3193,7 @@ fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
     }
 
     let shielding_threshold = Zatoshis::const_from_u64(SHIELDING_THRESHOLD_ZATOSHI);
-    let (proposal, selected_value) =
+    let (proposal, selected_value, _) =
         build_shielding_proposal(&mut db, network, account_id, shielding_threshold).unwrap();
     assert_eq!(u64::from(selected_value), 322_000_000);
 
@@ -3302,4 +3302,116 @@ fn execute_result_distinguishes_rejection_without_asserting_finality() {
         assert_eq!(result.broadcasted_count, 1);
         assert_eq!(result.total_count, 2);
     }
+}
+
+#[test]
+fn ledger_shielding_offers_the_largest_inputs_up_to_the_device_limit() {
+    use crate::wallet::keys::{hardware_style_ufvk, import_hardware_account, HardwareSignerKind};
+    use crate::wallet::ledger::serializer::MAX_TRANSPARENT_INPUTS;
+    use zip32::fingerprint::SeedFingerprint;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let mnemonic = crate::wallet::keys::generate_mnemonic();
+    let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+    let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+        .unwrap()
+        .to_bytes();
+    let birthday = 2_500_000u32;
+    let (account_uuid, _) = import_hardware_account(
+        db_path,
+        network,
+        "Ledger",
+        &hardware_style_ufvk(&seed, zip32::AccountId::ZERO),
+        &seed_fingerprint,
+        0,
+        Some(u64::from(birthday)),
+        HardwareSignerKind::Ledger,
+    )
+    .unwrap();
+    let account_id = parse_account_uuid(&account_uuid).unwrap();
+
+    let total_inputs = MAX_TRANSPARENT_INPUTS + 8;
+    {
+        let mut db = open_wallet_db(db_path, network).unwrap();
+        let tip = BlockHeight::from_u32(birthday + 100);
+        db.update_chain_tip(tip).unwrap();
+        {
+            type CheckpointError = WalletError<
+                (),
+                commitment_tree::Error,
+                (),
+                <ConservativeZip317FeeRule as FeeRule>::Error,
+                (),
+                ReceivedNoteId,
+            >;
+            let result: Result<_, CheckpointError> =
+                db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+            assert!(result.unwrap());
+            let result: Result<_, CheckpointError> =
+                db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+            assert!(result.unwrap());
+            let result: Result<_, CheckpointError> =
+                db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+            result.unwrap();
+        }
+        let ua = db
+            .get_last_generated_address_matching(
+                account_id,
+                zcash_keys::keys::UnifiedAddressRequest::AllAvailableKeys,
+            )
+            .unwrap()
+            .unwrap();
+        let taddr = *ua.transparent().unwrap();
+        for i in 0..total_inputs as u32 {
+            let mut txid = [0u8; 32];
+            txid[..4].copy_from_slice(&i.to_le_bytes());
+            txid[4..8].copy_from_slice(&0xfeed_beefu32.to_le_bytes());
+            let outpoint = OutPoint::new(txid, 0);
+            let value = Zatoshis::const_from_u64(1_000_000 + u64::from(i) * 10_000);
+            let txout = TxOut::new(value, taddr.script().into());
+            let utxo =
+                WalletTransparentOutput::from_parts(outpoint, txout, Some(tip), None, None, None)
+                    .unwrap();
+            db.put_received_transparent_utxo(&utxo).unwrap();
+        }
+
+        let shielding_threshold = Zatoshis::const_from_u64(SHIELDING_THRESHOLD_ZATOSHI);
+        let (proposal, _, skipped) =
+            build_shielding_proposal(&mut db, network, account_id, shielding_threshold).unwrap();
+        let inputs: Vec<u64> = proposal
+            .steps()
+            .iter()
+            .flat_map(|step| step.transparent_inputs().iter())
+            .map(|input| u64::from(input.value()))
+            .collect();
+        assert_eq!(inputs.len(), MAX_TRANSPARENT_INPUTS);
+        assert_eq!(skipped, 8);
+        // The eight smallest UTXOs (values 1_000_000..1_070_000) wait for the next round.
+        assert!(inputs.iter().all(|value| *value >= 1_000_000 + 8 * 10_000));
+
+        let again = build_shielding_proposal(&mut db, network, account_id, shielding_threshold)
+            .unwrap()
+            .0;
+        assert_eq!(
+            again
+                .steps()
+                .iter()
+                .flat_map(|step| step.transparent_inputs().iter())
+                .map(|input| u64::from(input.value()))
+                .collect::<Vec<_>>(),
+            inputs,
+            "the selection must be deterministic so the quote and the signed transaction agree",
+        );
+    }
+
+    let status = get_shield_transparent_status(db_path, network, &account_uuid).unwrap();
+    assert!(status.can_shield, "{}", status.reason);
+    assert_eq!(status.transparent_input_count as usize, total_inputs);
+    assert_eq!(
+        status.ledger_input_limit,
+        Some(MAX_TRANSPARENT_INPUTS as u32)
+    );
 }

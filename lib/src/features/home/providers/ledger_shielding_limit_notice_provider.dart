@@ -19,9 +19,10 @@ final ledgerShieldStatusReaderProvider = Provider<LedgerShieldStatusReader>(
   (_) => rust_sync.getShieldTransparentStatus,
 );
 
-/// Explains a Ledger account's missing shield action when the only blocker is
-/// the device's transparent-input limit. Null whenever shielding is allowed,
-/// the active account is not a Ledger, or the block has another cause.
+/// Tells a Ledger account that one shielding round cannot take every
+/// transparent input: the device limit leaves the rest for another round.
+/// Null when the active account is not a Ledger, cannot shield right now,
+/// holds no transparent balance, or fits within the limit.
 final ledgerShieldingLimitNoticeProvider = FutureProvider.autoDispose<String?>((
   ref,
 ) async {
@@ -45,7 +46,7 @@ final ledgerShieldingLimitNoticeProvider = FutureProvider.autoDispose<String?>((
     ),
   );
   if (sync.accountUuid != activeUuid ||
-      sync.canShield ||
+      !sync.canShield ||
       sync.transparent <= BigInt.zero) {
     return null;
   }

@@ -12,11 +12,11 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
-  test('explains a Ledger shield block caused by the input limit', () async {
+  test('explains that one Ledger round shields part of the inputs', () async {
     final reads = <String>[];
     final container = _container(
       ledger: true,
-      canShield: false,
+      canShield: true,
       status: _status(inputCount: 41, limit: 32),
       reads: reads,
     );
@@ -24,14 +24,14 @@ void main() {
 
     final notice = await _notice(container);
 
-    expect(notice, allOf(contains('up to 32'), contains('holds 41')));
+    expect(notice, allOf(contains('up to 32'), contains('32 of 41')));
     expect(reads, ['account-1']);
   });
 
   test('stays silent when the Ledger account is within the limit', () async {
     final container = _container(
       ledger: true,
-      canShield: false,
+      canShield: true,
       status: _status(inputCount: 3, limit: 32),
     );
     addTearDown(container.dispose);
@@ -40,26 +40,26 @@ void main() {
   });
 
   test(
-    'does not read the status for software accounts or when shielding is allowed',
+    'does not read the status for software accounts or while shielding is unavailable',
     () async {
       final reads = <String>[];
       final software = _container(
         ledger: false,
-        canShield: false,
+        canShield: true,
         status: _status(inputCount: 41, limit: 32),
         reads: reads,
       );
       addTearDown(software.dispose);
       expect(await _notice(software), isNull);
 
-      final allowed = _container(
+      final unavailable = _container(
         ledger: true,
-        canShield: true,
+        canShield: false,
         status: _status(inputCount: 41, limit: 32),
         reads: reads,
       );
-      addTearDown(allowed.dispose);
-      expect(await _notice(allowed), isNull);
+      addTearDown(unavailable.dispose);
+      expect(await _notice(unavailable), isNull);
       expect(reads, isEmpty);
     },
   );
@@ -77,7 +77,7 @@ rust_sync.ShieldTransparentStatus _status({
   required int limit,
 }) {
   return rust_sync.ShieldTransparentStatus(
-    canShield: inputCount <= limit,
+    canShield: true,
     feeZatoshi: BigInt.from(10_000),
     shieldedZatoshi: BigInt.from(90_000),
     reason: '',
