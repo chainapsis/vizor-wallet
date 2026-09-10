@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/account_models.dart';
@@ -123,6 +124,7 @@ final ledgerAppReadinessServiceProvider = Provider<LedgerAppReadinessService>((
   return LedgerAppReadinessService(
     device: ref.watch(ledgerAppReadinessDeviceProvider),
     onState: ref.read(ledgerAppReadinessStateProvider.notifier).update,
+    platform: ref.watch(ledgerTargetPlatformProvider),
   );
 });
 
@@ -133,6 +135,7 @@ final ledgerAppReadinessServiceForTransportProvider =
           ledgerAppReadinessDeviceForTransportProvider(transport),
         ),
         onState: ref.read(ledgerAppReadinessStateProvider.notifier).update,
+        platform: ref.watch(ledgerTargetPlatformProvider),
       ),
     );
 
@@ -140,11 +143,14 @@ class LedgerAppReadinessService {
   const LedgerAppReadinessService({
     required LedgerAppReadinessDevice device,
     required void Function(LedgerAppReadinessState state) onState,
+    TargetPlatform? platform,
   }) : _device = device,
-       _onState = onState;
+       _onState = onState,
+       _platform = platform;
 
   final LedgerAppReadinessDevice _device;
   final void Function(LedgerAppReadinessState state) _onState;
+  final TargetPlatform? _platform;
 
   Future<String> ensureReady() async {
     _onState(
@@ -242,9 +248,14 @@ class LedgerAppReadinessService {
         (raw.contains('permission denied') ||
             raw.contains('access is denied') ||
             raw.contains('access denied'))) {
-      return const LedgerAppReadinessException(
+      // Linux hidraw nodes stay root-only until a udev rule grants access.
+      final linux =
+          (_platform ?? defaultTargetPlatform) == TargetPlatform.linux;
+      return LedgerAppReadinessException(
         LedgerAppReadinessFailure.unavailable,
-        'Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.',
+        linux
+            ? "Vizor cannot access your Ledger over USB. Install Ledger's udev rules for Linux (github.com/LedgerHQ/udev-rules), then reconnect your Ledger and try again."
+            : 'Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.',
       );
     }
     if (raw.contains('rejected') ||

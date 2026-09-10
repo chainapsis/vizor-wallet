@@ -131,26 +131,22 @@ class Handler : public std::enable_shared_from_this<Handler> {
     if (transport_) transport_->Wake();
   }
 
-  void Run(Action action, FlMethodCall* call, bool drain = false) {
+  bool Run(Action action, FlMethodCall* call, bool drain = false) {
     if (!transport_) {
       Reply(call, nullptr, Error("unavailable", "Linux system D-Bus is unavailable. Check the Bluetooth service and try again."));
-      return;
+      return false;
     }
     const auto operation = gate_.Begin();
     if (!operation) {
       Reply(call, nullptr, Error("unavailable", "Wait for the previous Ledger Bluetooth request to finish, then try again."));
-      return;
+      return false;
     }
     g_clear_object(&cancel_);
     cancel_ = g_cancellable_new();
     auto* cancel = G_CANCELLABLE(g_object_ref(cancel_));
     if (call) g_object_ref(call);
-    timeout_ = g_timeout_add_seconds(300, [](gpointer data) -> gboolean {
-      auto* self = static_cast<Handler*>(data);
-      self->timeout_ = 0;
-      self->Cancel();
-      return G_SOURCE_REMOVE;
-    }, this);
+    // No handler-level watchdog: every transport wait has its own deadline,
+    // and a cap here would report a slow device review as a cancellation.
     const auto self = shared_from_this();
     auto work = [self, action = std::move(action), call, cancel, operation = *operation, drain] {
       FlValue* result = nullptr;
@@ -170,8 +166,6 @@ class Handler : public std::enable_shared_from_this<Handler> {
       g_object_unref(cancel);
       Post([self, call, result, operation, error, cleanup_error, drain] {
         Value value(result);
-        if (self->timeout_) g_source_remove(self->timeout_);
-        self->timeout_ = 0;
         const bool active = self->gate_.IsActive(operation);
         self->gate_.Finish(operation);
         if (!self->closed_) {
@@ -196,8 +190,6 @@ class Handler : public std::enable_shared_from_this<Handler> {
     try {
       std::thread(std::move(work)).detach();
     } catch (const std::system_error&) {
-      g_source_remove(timeout_);
-      timeout_ = 0;
       gate_.Finish(*operation);
       g_object_unref(cancel);
       const Error error("unavailable", "Linux could not start the Ledger Bluetooth request. Try again.");
@@ -208,7 +200,9 @@ class Handler : public std::enable_shared_from_this<Handler> {
         g_object_unref(waiter);
       }
       disconnect_waiters_.clear();
+      return false;
     }
+    return true;
   }
 
   void Emit(FlValue* value) {
@@ -247,7 +241,7 @@ class Handler : public std::enable_shared_from_this<Handler> {
         return;
       }
       ledger_bluez::Variant objects(g_variant_get_child_value(reply.get(), 0));
-      const auto devices = ledger_bluez::Transport::Devices(objects.get());
+      const auto devices = ledger_bluez::Transport::Devices(objects.get(), true);
       Value event(fl_value_new_map());
       Value list(fl_value_new_list());
       for (const auto& device : devices) {
@@ -296,8 +290,8 @@ class Handler : public std::enable_shared_from_this<Handler> {
         Run([self](GCancellable* cancel) { self->transport_->ReadyAdapter(cancel); return fl_value_new_bool(true); }, call);
       } else if (name == "startDiscovery") {
         if (scanning_) { Reply(call, nullptr); return; }
-        const auto generation = ++scan_generation_;
-        Run([self, generation](GCancellable* cancel) {
+        const auto generation = scan_generation_ + 1;
+        const bool started = Run([self, generation](GCancellable* cancel) {
           const auto adapter = self->transport_->ReadyAdapter(cancel);
           self->transport_->StartDiscovery(adapter, cancel);
           Post([self, adapter, generation] {
@@ -317,6 +311,8 @@ class Handler : public std::enable_shared_from_this<Handler> {
           });
           return fl_value_new_null();
         }, call);
+        // Only a request that owns the gate may retire the previous scan.
+        if (started) scan_generation_ = generation;
       } else if (name == "stopDiscovery") {
         StopDiscovery(call);
       } else if (name == "cancelSigning") {
@@ -390,7 +386,6 @@ class Handler : public std::enable_shared_from_this<Handler> {
   bool scanning_ = false;
   bool poll_in_flight_ = false;
   uint64_t scan_generation_ = 0;
-  guint timeout_ = 0;
   guint scan_timer_ = 0;
   guint scan_end_ = 0;
   std::string adapter_;

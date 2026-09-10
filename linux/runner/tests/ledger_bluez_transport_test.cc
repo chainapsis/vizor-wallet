@@ -50,6 +50,8 @@ struct FakeBluez {
   bool hold_mtu = false;
   bool disconnect_on_write = false;
   bool hold_start = false, discovering = false;
+  bool nearby = true;
+  std::string fail_start, fail_pair, fail_connect;
   GCancellable* cancel_start = nullptr;
   GDBusMethodInvocation* pending_start = nullptr;
   int pairs = 0, connects = 0, disconnects = 0, writes = 0;
@@ -144,6 +146,10 @@ struct FakeBluez {
         if (info->properties) for (auto** property = info->properties; *property; ++property) {
           g_variant_builder_add(&properties, "{sv}", (*property)->name, Property(nullptr, nullptr, entry.first, entry.second, (*property)->name, nullptr, &self));
         }
+        if (std::string(entry.second) == "org.bluez.Device1" && self.nearby) {
+          // BlueZ exposes RSSI only for devices the current discovery has seen.
+          g_variant_builder_add(&properties, "{sv}", "RSSI", g_variant_new_int16(-60));
+        }
         g_variant_builder_add(&interfaces, "{sa{sv}}", entry.second, &properties);
         g_variant_builder_add(&objects, "{oa{sa{sv}}}", entry.first, &interfaces);
       }
@@ -151,6 +157,10 @@ struct FakeBluez {
       return;
     }
     if (name == "StartDiscovery") {
+      if (!self.fail_start.empty()) {
+        g_dbus_method_invocation_return_dbus_error(invocation, self.fail_start.c_str(), "boom");
+        return;
+      }
       self.discovering = true;
       if (self.hold_start) {
         self.pending_start = G_DBUS_METHOD_INVOCATION(g_object_ref(invocation));
@@ -170,9 +180,19 @@ struct FakeBluez {
         g_dbus_method_invocation_return_dbus_error(invocation, "org.bluez.Error.AuthenticationRejected", "Pairing rejected");
         return;
       }
+      if (!self.fail_pair.empty()) {
+        self.paired = self.fail_pair == "org.bluez.Error.AlreadyExists";
+        g_dbus_method_invocation_return_dbus_error(invocation, self.fail_pair.c_str(), "Pair failed");
+        return;
+      }
       self.paired = true;
     } else if (name == "Connect") {
       ++self.connects;
+      if (!self.fail_connect.empty()) {
+        self.connected = self.fail_connect == "org.bluez.Error.AlreadyConnected";
+        g_dbus_method_invocation_return_dbus_error(invocation, self.fail_connect.c_str(), "Connect failed");
+        return;
+      }
       self.connected = true;
     } else if (name == "Disconnect") {
       ++self.disconnects;
@@ -234,6 +254,12 @@ void Fails(const char* code, Action action) {
   }
   throw std::runtime_error(std::string("Expected failure: ") + code);
 }
+
+template <typename Action>
+Error Catch(Action action) {
+  try { Run(action); } catch (const Error& error) { return error; }
+  throw std::runtime_error("Expected a failure");
+}
 }  // namespace
 
 int main() {
@@ -244,8 +270,18 @@ int main() {
     fake.powered = false;
     Fails("bluetooth_off", [&] { transport.ReadyAdapter(nullptr); });
     fake.powered = true;
-    auto devices = Run([&] { return ledger_bluez::Transport::Devices(transport.Objects(nullptr).get()); });
-    Require(devices.size() == 1 && devices[0].model == "Ledger Stax", "UUID discovery");
+    const auto devices = [&](bool nearby) {
+      return Run([&] { return ledger_bluez::Transport::Devices(transport.Objects(nullptr).get(), nearby); });
+    };
+    Require(devices(true).size() == 1 && devices(true)[0].model == "Ledger Stax", "UUID discovery");
+    fake.nearby = false;
+    Require(devices(true).empty(), "bonded device out of range is not offered");
+    Require(devices(false).size() == 1, "known device stays connectable without discovery");
+    fake.fail_start = "org.bluez.Error.Failed";
+    const auto start_failure = Catch([&] { transport.StartDiscovery(kAdapter, nullptr); });
+    Require(start_failure.code == "unavailable" && std::string(start_failure.what()) == "Linux Bluetooth: boom",
+        "remote error text is stripped of its D-Bus prefix");
+    fake.fail_start.clear();
     Run([&] { transport.StartDiscovery(kAdapter, nullptr); transport.StopDiscovery(kAdapter); });
     fake.hold_start = true;
     g_autoptr(GCancellable) scan_cancel = g_cancellable_new();
@@ -286,6 +322,28 @@ int main() {
     Require(Run([&] { return transport.Exchange({1, 2, 3}, nullptr); }) == fake.response, "reconnect after cancel");
     fake.disconnect_on_write = true;
     Fails("disconnected", [&] { transport.Exchange({1, 2, 3}, nullptr); });
+    Run([&] { transport.Disconnect(); });
+    fake.disconnect_on_write = false;
+    fake.paired = false;
+    fake.fail_pair = "org.bluez.Error.ConnectionAttemptFailed";
+    Fails("disconnected", [&] { transport.Connect(kDevice, nullptr); });
+    Run([&] { transport.Disconnect(); });
+    fake.fail_pair = "org.bluez.Error.AlreadyExists";
+    Run([&] { transport.Connect(kDevice, nullptr); });
+    Require(fake.paired, "a bond completed elsewhere is accepted");
+    fake.fail_pair.clear();
+    Run([&] { transport.Disconnect(); });
+    fake.fail_connect = "org.bluez.Error.Failed";
+    const auto connect_failure = Catch([&] { transport.Connect(kDevice, nullptr); });
+    Require(connect_failure.code == "disconnected" &&
+            std::string(connect_failure.what()).find("GDBus") == std::string::npos,
+        "unreachable peer is reported as disconnected");
+    Run([&] { transport.Disconnect(); });
+    fake.fail_connect = "org.bluez.Error.AlreadyConnected";
+    Run([&] { transport.Connect(kDevice, nullptr); });
+    Require(Run([&] { return transport.Exchange({1, 2, 3}, nullptr); }) == fake.response,
+        "already connected peer completes initialization");
+    fake.fail_connect.clear();
     Run([&] { transport.Disconnect(); });
     transport.Close();
     std::cout << "Linux BlueZ transport tests passed\n";

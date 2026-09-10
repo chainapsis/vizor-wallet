@@ -205,6 +205,36 @@ void main() {
     );
   }
 
+  test('Linux USB HID permission failure points to the udev rules', () async {
+    final service = LedgerAppReadinessService(
+      device: _ErrorDevice(
+        StateError(
+          "Open Ledger HID device: hidapi error: Failed to open a device with "
+          "path '/dev/hidraw3': Permission denied",
+        ),
+      ),
+      onState: (_) {},
+      platform: TargetPlatform.linux,
+    );
+
+    await expectLater(
+      service.ensureReady(),
+      throwsA(
+        isA<LedgerAppReadinessException>()
+            .having(
+              (error) => error.failure,
+              'failure',
+              LedgerAppReadinessFailure.unavailable,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              allOf(contains('udev'), isNot(contains('rejected'))),
+            ),
+      ),
+    );
+  });
+
   test('missing Ledger is classified as a disconnected device', () async {
     final states = <LedgerAppReadinessState>[];
     final service = LedgerAppReadinessService(

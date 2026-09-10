@@ -40,7 +40,7 @@ class Transport {
   void Close();
   void Wake();
   Variant Objects(GCancellable* cancel);
-  static std::vector<Device> Devices(GVariant* objects);
+  static std::vector<Device> Devices(GVariant* objects, bool nearby);
   std::string ReadyAdapter(GCancellable* cancel);
   void StartDiscovery(const std::string& adapter, GCancellable* cancel);
   void StopDiscovery(const std::string& adapter);

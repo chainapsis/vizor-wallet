@@ -44,32 +44,63 @@ const ledger_ble::ServiceSpec* Profile(GVariant* properties) {
   return nullptr;
 }
 
-Error BusError(GError* error) {
+constexpr const char* kUnreachable =
+    "Linux could not reach your Ledger. Keep it nearby and unlocked, then try again.";
+
+// A D-Bus failure keeps BlueZ's error name so callers can special-case it.
+struct BusFailure : Error {
+  BusFailure(std::string remote_name, bool local_timeout, std::string code, const std::string& message)
+      : Error(std::move(code), message), remote(std::move(remote_name)), timed_out(local_timeout) {}
+  std::string remote;
+  bool timed_out;
+};
+
+BusFailure BusError(GError* error) {
   g_autofree gchar* remote = g_dbus_error_get_remote_error(error);
   const std::string name = remote ? remote : "";
+  const bool timed_out = g_error_matches(error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT);
+  // GLib prefixes remote messages with "GDBus.Error:<name>:"; keep only the text.
+  g_dbus_error_strip_remote_error(error);
+  const auto failure = [&](const char* code, const std::string& message) {
+    return BusFailure(name, timed_out, code, message);
+  };
   if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
-    return Error("cancelled", "The Ledger Bluetooth request was cancelled.");
+    return failure("cancelled", "The Ledger Bluetooth request was cancelled.");
+  }
+  if (timed_out) {
+    return failure("unavailable", "Linux Bluetooth did not respond in time. Try again.");
   }
   if (name.find("Authentication") != std::string::npos) {
-    return Error("pairing_rejected", "Ledger Bluetooth pairing was not completed. Confirm the matching code in Linux Bluetooth settings and on your Ledger, then try again.");
+    return failure("pairing_rejected", "Ledger Bluetooth pairing was not completed. Confirm the matching code in Linux Bluetooth settings and on your Ledger, then try again.");
   }
   if (name.find("NotAuthorized") != std::string::npos ||
       name.find("AccessDenied") != std::string::npos ||
       name.find("NotPermitted") != std::string::npos) {
-    return Error("permission_denied", "Linux denied Bluetooth access. Check Bluetooth permissions and Ledger pairing in system settings.");
+    return failure("permission_denied", "Linux denied Bluetooth access. Check Bluetooth permissions and Ledger pairing in system settings.");
   }
   if (name.find("NotConnected") != std::string::npos ||
       name.find("UnknownObject") != std::string::npos) {
-    return Error("disconnected", "The Ledger disconnected. Keep it nearby and unlocked, then reconnect.");
+    return failure("disconnected", "The Ledger disconnected. Keep it nearby and unlocked, then reconnect.");
+  }
+  if (name.find("ConnectionAttemptFailed") != std::string::npos) {
+    return failure("disconnected", kUnreachable);
   }
   if (name.find("NotReady") != std::string::npos) {
-    return Error("bluetooth_off", "Turn on Bluetooth in Linux system settings, then try again.");
+    return failure("bluetooth_off", "Turn on Bluetooth in Linux system settings, then try again.");
   }
   if (name.find("ServiceUnknown") != std::string::npos ||
       name.find("NameHasNoOwner") != std::string::npos) {
-    return Error("unavailable", "Linux Bluetooth is unavailable. Check that BlueZ is running and a Bluetooth LE adapter is connected.");
+    return failure("unavailable", "Linux Bluetooth is unavailable. Check that BlueZ is running and a Bluetooth LE adapter is connected.");
   }
-  return Error("unavailable", "Linux Bluetooth: " + std::string(error->message));
+  if (name.find("InProgress") != std::string::npos) {
+    return failure("unavailable", "Linux Bluetooth is still finishing an earlier request. Wait a moment, then try again.");
+  }
+  return failure("unavailable", "Linux Bluetooth: " + std::string(error->message));
+}
+
+// A generic BlueZ failure while reaching the peer means it is off or out of range.
+Error Unreachable(const Error& error) {
+  return error.code == "unavailable" ? Error("disconnected", kUnreachable) : error;
 }
 }  // namespace
 
@@ -131,7 +162,7 @@ Variant Transport::Properties(const std::string& path, const char* interface,
   return Variant(g_variant_get_child_value(result.get(), 0));
 }
 
-std::vector<Device> Transport::Devices(GVariant* objects) {
+std::vector<Device> Transport::Devices(GVariant* objects, bool nearby) {
   std::vector<Device> devices;
   GVariantIter iter;
   g_variant_iter_init(&iter, objects);
@@ -143,6 +174,12 @@ std::vector<Device> Transport::Devices(GVariant* objects) {
     if (!properties) continue;
     const auto* profile = Profile(properties.get());
     if (!profile) continue;
+    if (nearby) {
+      // BlueZ keeps bonded devices even when they are off. RSSI exists only
+      // while the current discovery has seen the device.
+      Variant rssi(g_variant_lookup_value(properties.get(), "RSSI", G_VARIANT_TYPE_INT16));
+      if (!rssi && !Boolean(properties.get(), "Connected")) continue;
+    }
     auto name = String(properties.get(), "Alias");
     if (name.empty()) name = profile->model;
     devices.push_back({path, name, profile->model});
@@ -205,7 +242,7 @@ void Transport::Connect(const std::string& id, GCancellable* cancel) {
   };
   stage("starting");
   Disconnect();
-  const auto devices = Devices(Objects(cancel).get());
+  const auto devices = Devices(Objects(cancel).get(), false);
   if (std::none_of(devices.begin(), devices.end(), [&](const auto& device) { return device.id == id; })) {
     throw Error("disconnected", "Select a nearby Ledger from the Bluetooth device list again.");
   }
@@ -221,14 +258,28 @@ void Transport::Connect(const std::string& id, GCancellable* cancel) {
   if (!Boolean(properties.get(), "Paired")) {
     stage("pairing requested");
     pairing_ = true;
-    Call(id, kDevice, "Pair", nullptr, cancel, 120000);
+    try {
+      Call(id, kDevice, "Pair", nullptr, cancel, 120000);
+    } catch (const BusFailure& failure) {
+      // AlreadyExists means the bond completed elsewhere while this call ran.
+      if (failure.remote.find("AlreadyExists") == std::string::npos) {
+        if (failure.timed_out) {
+          throw Error("pairing_rejected", "Ledger Bluetooth pairing timed out. Confirm the matching code in Linux Bluetooth settings and on your Ledger, then try again.");
+        }
+        throw Unreachable(failure);
+      }
+    }
     pairing_ = false;
     stage("pairing completed");
   }
   properties = Properties(id, kDevice, cancel);
   if (!Boolean(properties.get(), "Connected")) {
     stage("connection requested");
-    Call(id, kDevice, "Connect", nullptr, cancel, 30000);
+    try {
+      Call(id, kDevice, "Connect", nullptr, cancel, 30000);
+    } catch (const BusFailure& failure) {
+      if (failure.remote.find("AlreadyConnected") == std::string::npos) throw Unreachable(failure);
+    }
     stage("connection call completed");
   }
   const auto deadline = std::chrono::steady_clock::now() + 20s;
