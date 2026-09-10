@@ -164,8 +164,11 @@ class MobileVotingStatusScreen extends StatelessWidget {
             activeStep: presentation.activeStep,
             activeStepProgress: presentation.activeStepProgress,
           ),
-      contentWrapper: (_, content) =>
-          MobileVotingScaffold(title: 'Submit vote', child: content),
+      contentWrapper: (_, content, exit) => MobileVotingScaffold(
+        title: 'Submit vote',
+        beforeLeave: exit.cancelLedgerSigning,
+        child: content,
+      ),
       keystoneStatusBuilder: (_, presentation) =>
           MobileKeystoneVotingSigningScreen(presentation: presentation),
     );
@@ -255,6 +258,7 @@ class MobileVotingScaffold extends StatelessWidget {
     this.horizontalPadding = 0,
     this.trailing,
     this.onBack,
+    this.beforeLeave,
   });
 
   final String title;
@@ -264,6 +268,24 @@ class MobileVotingScaffold extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onBack;
 
+  /// Runs before the default back action, for both the nav button and the
+  /// system back gesture, so an in-flight device request is cancelled rather
+  /// than abandoned behind the previous screen.
+  final Future<void> Function()? beforeLeave;
+
+  Future<void> _leave(BuildContext context) async {
+    final beforeLeave = this.beforeLeave;
+    if (beforeLeave != null) {
+      await beforeLeave();
+      if (!context.mounted) return;
+    }
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(fallbackPath);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final body = horizontalPadding == 0
@@ -272,30 +294,28 @@ class MobileVotingScaffold extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
             child: child,
           );
-    return Material(
-      color: context.colors.background.window,
-      child: SafeArea(
-        bottom: false,
-        child: MobileBottomSafeArea(
-          bottomPadding: AppSpacing.md,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              MobileTopNav.back(
-                title: title,
-                trailing: trailing,
-                onBack:
-                    onBack ??
-                    () {
-                      if (context.canPop()) {
-                        context.pop();
-                      } else {
-                        context.go(fallbackPath);
-                      }
-                    },
-              ),
-              Expanded(child: body),
-            ],
+    return PopScope<void>(
+      canPop: beforeLeave == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_leave(context));
+      },
+      child: Material(
+        color: context.colors.background.window,
+        child: SafeArea(
+          bottom: false,
+          child: MobileBottomSafeArea(
+            bottomPadding: AppSpacing.md,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MobileTopNav.back(
+                  title: title,
+                  trailing: trailing,
+                  onBack: onBack ?? () => unawaited(_leave(context)),
+                ),
+                Expanded(child: body),
+              ],
+            ),
           ),
         ),
       ),

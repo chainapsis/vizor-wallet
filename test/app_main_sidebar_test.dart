@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_pending_approval.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -667,6 +668,36 @@ void main() {
     await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
     await tester.pump();
 
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('settings'), findsOneWidget);
+  });
+
+  testWidgets('sidebar keeps the user on a pending Ledger request', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
+    await tester.pump();
+    final approvals = ProviderScope.containerOf(
+      tester.element(find.byType(AppMainSidebar)),
+    ).read(ledgerPendingApprovalProvider.notifier);
+    approvals.begin('send');
+
+    await tester.tap(find.text('Settings'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('home route'), findsOneWidget);
+    expect(find.text('settings'), findsNothing);
+    expect(find.text(kLedgerApprovalPendingMessage), findsOneWidget);
+
+    await tester.tap(find.text('Sign out'));
+    await tester.pump();
+    expect(find.text('home route'), findsOneWidget);
+
+    approvals.end('send');
+    await tester.pump(const Duration(seconds: 5));
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
 

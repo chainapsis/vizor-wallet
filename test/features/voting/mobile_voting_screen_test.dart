@@ -7,15 +7,78 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_poll_eligibility_provider.dart';
+import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 
 void main() {
+  testWidgets('voting scaffold cancels a device request before leaving', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.reset);
+    final events = <String>[];
+    var leaving = Completer<void>();
+    final router = GoRouter(
+      initialLocation: '/voting',
+      routes: [
+        GoRoute(
+          path: '/voting',
+          builder: (context, _) => TextButton(
+            onPressed: () => context.push('/voting/status'),
+            child: const Text('polls'),
+          ),
+        ),
+        GoRoute(
+          path: '/voting/status',
+          builder: (_, _) => MobileVotingScaffold(
+            title: 'Submit vote',
+            beforeLeave: () async {
+              events.add('cancel');
+              await leaving.future;
+            },
+            child: const Text('status'),
+          ),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp.router(
+        routerConfig: router,
+        builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+      ),
+    );
+
+    for (final useSystemBack in [false, true]) {
+      leaving = Completer<void>();
+      await tester.tap(find.text('polls'));
+      await tester.pumpAndSettle();
+      expect(find.text('status'), findsOneWidget);
+
+      if (useSystemBack) {
+        expect(await tester.binding.handlePopRoute(), isTrue);
+      } else {
+        await tester.tap(find.bySemanticsLabel('Back'));
+      }
+      await tester.pump();
+      expect(events, hasLength(useSystemBack ? 2 : 1));
+      expect(find.text('status'), findsOneWidget, reason: 'waits for cancel');
+
+      leaving.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('status'), findsNothing, reason: '$useSystemBack');
+      expect(find.text('polls'), findsOneWidget);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'only confirmed eligibility shows View, and refresh clears stale labels',
     (tester) async {

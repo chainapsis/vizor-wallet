@@ -18,6 +18,7 @@ import '../../providers/sync_provider.dart';
 import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
+import '../../features/ledger/ledger_pending_approval.dart';
 import '../../features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
@@ -139,6 +140,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     return true;
   }
 
+  bool _blockIfLedgerApprovalPending() {
+    if (ref.read(ledgerPendingApprovalProvider).isEmpty) return false;
+    showAppToast(context, kLedgerApprovalPendingMessage);
+    return true;
+  }
+
   void _navigateTo(String routePath) {
     if (widget.disabledRoutePaths.contains(routePath)) return;
     if (_matches(routePath)) {
@@ -147,6 +154,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       }
       return;
     }
+    if (_blockIfLedgerApprovalPending()) return;
     context.go(routePath);
   }
 
@@ -157,21 +165,25 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   void _openAddAccount() {
     _closeAccountMenu();
+    if (_blockIfLedgerApprovalPending()) return;
     context.go('/add-account');
   }
 
   void _openActivity() {
     if (_matchedLocation == '/activity') return;
+    if (_blockIfLedgerApprovalPending()) return;
     context.go('/activity');
   }
 
   void _openSettings() {
     if (_matchedLocation == '/settings') return;
+    if (_blockIfLedgerApprovalPending()) return;
     context.go('/settings');
   }
 
   Future<void> _openPay() async {
     if (_matches('/pay')) return;
+    if (_blockIfLedgerApprovalPending()) return;
 
     final accountUuid = ref
         .read(accountProvider)
@@ -378,6 +390,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   Future<void> _handleSignOut() async {
     if (_isSigningOut) return;
     if (_blockIfVotingSubmissionInProgress()) return;
+    if (_blockIfLedgerApprovalPending()) return;
     final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
     final securityNotifier = ref.read(appSecurityProvider.notifier);

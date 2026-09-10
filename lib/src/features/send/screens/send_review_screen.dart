@@ -28,6 +28,7 @@ import '../../keystone/services/keystone_batch_signing.dart';
 import '../../donation/widgets/donation_views.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../ledger/ledger_capability.dart';
+import '../../ledger/ledger_pending_approval.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/ledger_app_instructions.dart';
@@ -113,11 +114,15 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   int _ledgerRound = 0;
   late final String _ledgerOperationId;
   late final LedgerOperationCanceller _cancelLedgerOperation;
+  late final LedgerPendingApprovalHandle _ledgerApproval;
 
   @override
   void initState() {
     super.initState();
     _cancelLedgerOperation = ref.read(ledgerOperationCancellerProvider);
+    _ledgerApproval = LedgerPendingApprovalHandle(
+      ref.read(ledgerPendingApprovalProvider.notifier),
+    );
     _ledgerOperationId =
         'send:${widget.args.proposalAccountUuid}:${widget.args.sendFlowId}';
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -144,6 +149,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (!_handoffToHardware && !hasUncheckpointedLedgerSignature) {
       _scheduleDiscard();
     }
+    _ledgerApproval.release();
     super.dispose();
   }
 
@@ -478,22 +484,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     } catch (e, st) {
       log('SendReview._checkpointSignedLedgerOperation: ERROR: $e\n$st');
       if (!_isCurrentLedgerAttempt(generation)) return;
-      final terminal = isTerminalLedgerSignedOperationError(e);
       setState(() {
         _ledgerPhase = LedgerSigningModalPhase.failed;
-        _ledgerFailure = LedgerSigningFailurePresentation(
-          title: terminal
-              ? 'Signed transaction needs attention'
-              : 'Could not save signed transaction',
-          statusLabel: terminal ? 'Recovery required' : 'Signature preserved',
-          message: terminal
-              ? 'Vizor could not verify the saved transaction. Do not sign or send it again.'
-              : 'Your Ledger signature is preserved. Retry saving without approving another transaction.',
-          actionLabel: terminal ? null : 'Retry saving',
-        );
-        _ledgerRecoveryAction = terminal
-            ? null
-            : _LedgerSendRecoveryAction.retryCheckpoint;
+        _ledgerFailure = kLedgerCheckpointFailurePresentation;
+        _ledgerRecoveryAction = _LedgerSendRecoveryAction.retryCheckpoint;
       });
       return;
     }
@@ -533,6 +527,31 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       await _cancelLedgerOperation();
     } catch (e, st) {
       log('SendReview._dismissLedgerSigningModal: ERROR: $e\n$st');
+    }
+  }
+
+  /// Drops a signed transaction whose checkpoint keeps failing. Nothing was
+  /// broadcast, so the signature can be abandoned; a half-written checkpoint
+  /// is discarded so recovery cannot broadcast it later.
+  Future<void> _abandonUncheckpointedLedgerSignature() async {
+    if (_ledgerPhase != LedgerSigningModalPhase.failed ||
+        !_ledgerSigningComplete) {
+      return;
+    }
+    _ledgerAttemptGeneration++;
+    _ledgerSignedPczts.clear();
+    _ledgerRound = 0;
+    setState(() {
+      _ledgerPhase = null;
+      _ledgerFailure = null;
+      _ledgerRecoveryAction = null;
+    });
+    try {
+      await ref
+          .read(ledgerSignedOperationServiceProvider)
+          .discard(_ledgerOperationId);
+    } catch (e, st) {
+      log('SendReview._abandonUncheckpointedLedgerSignature: ERROR: $e\n$st');
     }
   }
 
@@ -884,6 +903,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final memo = widget.args.memo;
     final hasMemo = memo != null && memo.trim().isNotEmpty;
 
+    _ledgerApproval.update(_ledgerPhase);
+
     return AppDesktopShell(
       sidebar: AppMainSidebar(
         suppressActiveSelection: widget.args.flowKind == SendFlowKind.donation,
@@ -999,6 +1020,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                   failure: _ledgerFailure,
                   onCancel: !_ledgerSigningComplete
                       ? () => unawaited(_dismissLedgerSigningModal())
+                      : ledgerPhase == LedgerSigningModalPhase.failed
+                      ? () => unawaited(_abandonUncheckpointedLedgerSignature())
                       : null,
                   onFailureAction:
                       ledgerPhase == LedgerSigningModalPhase.failed &&

@@ -193,9 +193,6 @@ void main() {
 
     expect(find.text('Signature preserved'), findsOneWidget);
     expect(find.text('Retry saving'), findsOneWidget);
-    expect(await tester.binding.handlePopRoute(), isTrue);
-    await tester.pump();
-    expect(find.text('Retry saving'), findsOneWidget);
 
     await tester.tap(find.text('Retry saving'));
     await tester.pumpAndSettle();
@@ -203,6 +200,90 @@ void main() {
     expect(signCalls, 1);
     expect(operationService.checkpointCalls, 2);
     expect(result, isNotNull);
+  });
+
+  testWidgets('back is ignored while the signed transaction is being saved', (
+    tester,
+  ) async {
+    final operationService = _FakeOperationService()
+      ..checkpointGate = Completer<void>();
+    LedgerBroadcastArgs? result;
+
+    await tester.pumpWidget(
+      _app(
+        operationService: operationService,
+        signer: (_) async => const [4],
+        onResult: (value) => result = value,
+      ),
+    );
+    await tester.tap(find.text('Open signing'));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(operationService.checkpointCalls, 1);
+
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('mobile_ledger_signing_surface')),
+      findsOneWidget,
+    );
+    expect(result, isNull);
+    expect(operationService.discardedOperations, isEmpty);
+
+    operationService.checkpointGate!.complete();
+    await tester.pumpAndSettle();
+    expect(result, isNotNull);
+  });
+
+  testWidgets('a failed checkpoint can be abandoned from Cancel or back', (
+    tester,
+  ) async {
+    for (final useSystemBack in [false, true]) {
+      final operationService = _FakeOperationService(
+        failCheckpointAlways: true,
+      );
+      var signCalls = 0;
+      var cancelCalls = 0;
+      var discardCalls = 0;
+      LedgerBroadcastArgs? result;
+
+      await tester.pumpWidget(
+        _app(
+          operationService: operationService,
+          signer: (_) async {
+            signCalls++;
+            return const [4];
+          },
+          canceller: () async => cancelCalls++,
+          onDiscard: () async => discardCalls++,
+          onResult: (value) => result = value,
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pumpAndSettle();
+      expect(find.text('Signature preserved'), findsOneWidget);
+
+      if (useSystemBack) {
+        expect(await tester.binding.handlePopRoute(), isTrue);
+      } else {
+        await tester.tap(find.text('Cancel'));
+      }
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Open signing'),
+        findsOneWidget,
+        reason: '$useSystemBack',
+      );
+      expect(operationService.discardedOperations, [
+        'send:${_args.proposalAccountUuid}:${_args.sendFlowId}',
+      ]);
+      expect(cancelCalls, 0);
+      expect(discardCalls, 1);
+      expect(signCalls, 1);
+      expect(result, isNull);
+    }
   });
 
   testWidgets('Ledger TEX signs two rounds and checkpoints one batch', (
@@ -517,10 +598,17 @@ class _FakeOperationService
     implements
         LedgerSignedOperationService,
         LedgerSignedOperationBatchCheckpointService {
-  _FakeOperationService({this.events, this.failCheckpointOnce = false});
+  _FakeOperationService({
+    this.events,
+    this.failCheckpointOnce = false,
+    this.failCheckpointAlways = false,
+  });
 
   final List<String>? events;
   final bool failCheckpointOnce;
+  final bool failCheckpointAlways;
+  final discardedOperations = <String>[];
+  Completer<void>? checkpointGate;
   var checkpointCalls = 0;
   var batchCheckpointCalls = 0;
   List<List<int>>? batchProofs;
@@ -537,7 +625,9 @@ class _FakeOperationService
   }) async {
     checkpointCalls++;
     events?.add('checkpoint:$pcztWithProofsBytes:$pcztWithSignaturesBytes');
-    if (failCheckpointOnce && checkpointCalls == 1) {
+    final gate = checkpointGate;
+    if (gate != null) await gate.future;
+    if (failCheckpointAlways || (failCheckpointOnce && checkpointCalls == 1)) {
       throw StateError('temporary storage failure');
     }
   }
@@ -564,7 +654,9 @@ class _FakeOperationService
   Future<void> acknowledge(String operationId) async {}
 
   @override
-  Future<void> discard(String operationId) async {}
+  Future<void> discard(String operationId) async {
+    discardedOperations.add(operationId);
+  }
 
   @override
   Future<LedgerSignedOperationBroadcastResult> broadcast({

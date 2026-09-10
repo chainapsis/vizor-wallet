@@ -4390,6 +4390,76 @@ void main() {
     });
   }
 
+  testWidgets('Ledger voting hands the chrome a leave-time cancel', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(bundleCount: 1);
+    final rust = _VotingStatusRustApi(
+      recoveryApi,
+      bundleCount: 1,
+      eligibilityWeightZatoshi: BigInt.from(200),
+      setupWeightPerBundle: BigInt.from(100),
+    );
+    final signature = Completer<List<LedgerVotingSignature>>();
+    var cancelCalls = 0;
+    final exits = <VotingStatusExit>[];
+    final container = _statusContainer(
+      accountOverride: _LedgerAccountNotifier.new,
+      activeAccountUuid: () async => 'ledger-1',
+      accountIsHardware: true,
+      hardwareAccountUuids: const {'ledger-1'},
+      recoveryApi: recoveryApi,
+      rust: rust,
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+      overrides: [
+        ledgerVotingPcztSignerProvider.overrideWithValue(
+          (_, _) => signature.future,
+        ),
+        ledgerOperationCancellerProvider.overrideWithValue(() async {
+          cancelCalls++;
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    const ledgerKey = VotingSessionKey(
+      roundId: _roundId,
+      accountUuid: 'ledger-1',
+    );
+    container.read(votingDraftProvider(ledgerKey).notifier).setChoice(1, 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(
+          contentWrapper: (_, content, exit) {
+            exits.add(exit);
+            return content;
+          },
+        ),
+      ),
+    );
+    await _pumpUntilFound(
+      tester,
+      find.text('Waiting for your approval'),
+      attempts: 100,
+    );
+
+    expect(exits.last.cancelLedgerSigning, isNotNull);
+
+    await exits.last.cancelLedgerSigning!();
+    await tester.pump();
+
+    expect(cancelCalls, 1);
+    expect(find.text('Ledger voting approval was cancelled.'), findsOneWidget);
+    expect(exits.last.cancelLedgerSigning, isNull);
+  });
+
   testWidgets(
     'Ledger voting persists sequential bundles and ignores a late cancelled result',
     (tester) async {
@@ -4986,6 +5056,7 @@ Widget _statusHarness({
   List<int>? keystoneScanResult,
   String? initialLocation,
   bool withPlatformProgressBuilder = false,
+  VotingStatusContentWrapper? contentWrapper,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation ?? '/voting/poll/$_roundId/status',
@@ -4995,12 +5066,14 @@ Widget _statusHarness({
         builder: (_, state) {
           final roundId = state.pathParameters['roundId']!;
           final accountUuid = state.uri.queryParameters['account'];
-          if (withPlatformProgressBuilder) {
+          if (withPlatformProgressBuilder || contentWrapper != null) {
             return VotingStatusView(
               roundId: roundId,
               accountUuid: accountUuid,
-              submissionProgressBuilder: (_, _) =>
-                  const Text('platform submission progress'),
+              contentWrapper: contentWrapper,
+              submissionProgressBuilder: withPlatformProgressBuilder
+                  ? (_, _) => const Text('platform submission progress')
+                  : null,
             );
           }
           return VotingStatusScreen(roundId: roundId, accountUuid: accountUuid);

@@ -51,6 +51,17 @@ class LedgerSigningFailurePresentation {
   final bool canChangeConnection;
 }
 
+/// The device signed, but Vizor could not save the signed operation. Nothing
+/// was broadcast, so retrying the save never asks the device again and Cancel
+/// abandons the signature.
+const kLedgerCheckpointFailurePresentation = LedgerSigningFailurePresentation(
+  title: 'Could not save signed transaction',
+  statusLabel: 'Signature preserved',
+  message:
+      'Your Ledger signature is preserved. Retry saving without approving another transaction, or cancel to discard the signed transaction.',
+  actionLabel: 'Retry saving',
+);
+
 class LedgerSigningModal extends ConsumerStatefulWidget {
   const LedgerSigningModal({
     required this.phase,

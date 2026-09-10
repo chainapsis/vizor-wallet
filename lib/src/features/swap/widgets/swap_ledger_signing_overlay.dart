@@ -13,6 +13,7 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../ledger/ledger_capability.dart';
+import '../../ledger/ledger_pending_approval.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/ledger_app_instructions.dart';
@@ -75,6 +76,7 @@ class _SwapLedgerSigningOverlayState
   bool _operationCheckpointed = false;
   LedgerSignedOperationBroadcastResult? _pendingBroadcastResult;
   late final LedgerOperationCanceller _cancelLedgerOperation;
+  late final LedgerPendingApprovalHandle _ledgerApproval;
 
   bool get _isBroadcasting => _phase == LedgerSigningModalPhase.broadcasting;
 
@@ -87,6 +89,9 @@ class _SwapLedgerSigningOverlayState
   void initState() {
     super.initState();
     _cancelLedgerOperation = ref.read(ledgerOperationCancellerProvider);
+    _ledgerApproval = LedgerPendingApprovalHandle(
+      ref.read(ledgerPendingApprovalProvider.notifier),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_prepareAndSign());
     });
@@ -105,6 +110,7 @@ class _SwapLedgerSigningOverlayState
       completer.complete(false);
     }
     unawaited(_discardDraft());
+    _ledgerApproval.release();
     super.dispose();
   }
 
@@ -528,6 +534,7 @@ class _SwapLedgerSigningOverlayState
 
   @override
   Widget build(BuildContext context) {
+    _ledgerApproval.update(_phase);
     final canLeave = !_isBroadcasting;
     final legacyOrchardRecoveryUnavailable =
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;

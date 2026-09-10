@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/features/address_book/models/address_book_conta
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_pending_approval.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
@@ -1169,6 +1170,8 @@ void main() {
 
     expect(find.text('Could not save signed transaction'), findsOneWidget);
     expect(find.text('Retry saving'), findsOneWidget);
+    // Cancel now abandons the signature; retrying must still be the primary
+    // path and must not ask the device again.
     expect(
       find
           .descendant(
@@ -1176,7 +1179,7 @@ void main() {
             matching: find.text('Cancel'),
           )
           .hitTestable(),
-      findsNothing,
+      findsOneWidget,
     );
     expect(signerCalls, 1);
     expect(operationService.checkpoints, hasLength(1));
@@ -1212,13 +1215,14 @@ void main() {
     );
   });
 
-  testWidgets('Ledger checkpoint integrity failure blocks every retry', (
+  testWidgets('Ledger checkpoint failure can be abandoned without re-signing', (
     tester,
   ) async {
     final operationService = _FakeLedgerSignedOperationService()
-      ..failuresRemaining = 1
+      ..failuresRemaining = 2
       ..checkpointError = StateError(
-        'Ledger signed operation cannot be retried with different data',
+        'Ledger operation send:test-account:test-send-flow is already '
+        'checkpointed with different data',
       );
     var signerCalls = 0;
 
@@ -1242,27 +1246,70 @@ void main() {
     await tester.tap(find.text('Confirm with Ledger'));
     await _flushRealAsync(tester);
 
-    expect(find.text('Signed transaction needs attention'), findsOneWidget);
-    expect(find.text('Retry saving'), findsNothing);
-    expect(find.text('Try again'), findsNothing);
-    expect(
-      find
-          .descendant(
-            of: find.byType(LedgerSigningModal),
-            matching: find.text('Cancel'),
-          )
-          .hitTestable(),
-      findsNothing,
-    );
+    expect(find.text('Could not save signed transaction'), findsOneWidget);
+    expect(find.text('Signature preserved'), findsOneWidget);
+    expect(find.text('Retry saving'), findsOneWidget);
+    expect(find.text('Signed transaction needs attention'), findsNothing);
 
+    // Clicking outside or pressing Escape must not drop the signature.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.binding.handlePopRoute();
     await tester.pump();
+    expect(find.text('Could not save signed transaction'), findsOneWidget);
 
-    expect(find.text('Signed transaction needs attention'), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(LedgerSigningModal),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await _flushRealAsync(tester);
+
+    expect(find.byType(LedgerSigningModal), findsNothing);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
     expect(signerCalls, 1);
     expect(operationService.checkpoints, hasLength(1));
+    expect(operationService.discarded, ['send:test-account:test-send-flow']);
     expect(rustApi.discardCalls, isEmpty);
+
+    await tester.pumpWidget(const SizedBox());
+    expect(rustApi.discardCalls, hasLength(1));
+  });
+
+  testWidgets('sidebar navigation waits for a pending Ledger approval', (
+    tester,
+  ) async {
+    final signature = Completer<List<int>>();
+    var cancelCount = 0;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerSigner: (_) => signature.future,
+        ledgerCanceller: () async => cancelCount++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(find.byType(LedgerSigningModal), findsOneWidget);
+
+    await tester.tap(find.text('Settings'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(LedgerSigningModal), findsOneWidget);
+    expect(find.text(kLedgerApprovalPendingMessage), findsOneWidget);
+    expect(cancelCount, 0);
+
+    signature.complete(_fakeSignatureBytes);
+    await _flushRealAsync(tester);
   });
 
   testWidgets('Ledger saving state cannot be dismissed after signature', (
@@ -1899,8 +1946,12 @@ class _FakeLedgerSignedOperationService
   @override
   Future<void> acknowledge(String operationId) async {}
 
+  final discarded = <String>[];
+
   @override
-  Future<void> discard(String operationId) async {}
+  Future<void> discard(String operationId) async {
+    discarded.add(operationId);
+  }
 
   @override
   Future<LedgerSignedOperationBroadcastResult> broadcast({

@@ -29,8 +29,23 @@ import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
+/// What leaving the status screen must do first.
+@immutable
+class VotingStatusExit {
+  const VotingStatusExit({this.cancelLedgerSigning});
+
+  /// Set while the submission is waiting on a Ledger approval. Leaving must
+  /// cancel that request first, or the device keeps asking for an approval
+  /// nobody is waiting on.
+  final Future<void> Function()? cancelLedgerSigning;
+}
+
 typedef VotingStatusContentWrapper =
-    Widget Function(BuildContext context, Widget content);
+    Widget Function(
+      BuildContext context,
+      Widget content,
+      VotingStatusExit exit,
+    );
 typedef VotingSubmissionProgressBuilder =
     Widget Function(
       BuildContext context,
@@ -498,7 +513,15 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       },
     );
     if (usesPlatformScreen) return content;
-    return widget.contentWrapper?.call(context, content) ?? content;
+    final wrapper = widget.contentWrapper;
+    if (wrapper == null) return content;
+    final exit = VotingStatusExit(
+      cancelLedgerSigning:
+          job?.status == VotingSubmissionJobStatus.waitingForLedger
+          ? _cancelLedgerSigning
+          : null,
+    );
+    return wrapper(context, content, exit);
   }
 
   VotingSessionPhase _displayPhase(

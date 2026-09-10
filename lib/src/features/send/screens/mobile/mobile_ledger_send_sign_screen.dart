@@ -148,6 +148,11 @@ class _MobileLedgerSendSignScreenState
       _basePczts!.isNotEmpty &&
       _signedPczts.length == _basePczts!.length;
 
+  /// The device signed, but the signed operation could not be saved. Nothing
+  /// was broadcast, so the user may still leave and start over.
+  bool get _checkpointFailed =>
+      _signingComplete && _phase == LedgerSigningModalPhase.failed;
+
   void _startSigning() {
     if (_signingComplete) return;
     final generation = ++_attemptGeneration;
@@ -413,22 +418,10 @@ class _MobileLedgerSendSignScreenState
     } catch (error, stackTrace) {
       log('MobileLedgerSendSign._checkpoint: ERROR: $error\n$stackTrace');
       if (!_isCurrent(generation)) return;
-      final terminal = isTerminalLedgerSignedOperationError(error);
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _failure = LedgerSigningFailurePresentation(
-          title: terminal
-              ? 'Signed transaction needs attention'
-              : 'Could not save signed transaction',
-          statusLabel: terminal ? 'Recovery required' : 'Signature preserved',
-          message: terminal
-              ? 'Vizor could not verify the saved transaction. Do not sign or send it again.'
-              : 'Your Ledger signature is preserved. Retry saving without approving another transaction.',
-          actionLabel: terminal ? null : 'Retry saving',
-        );
-        _recoveryAction = terminal
-            ? null
-            : _LedgerSendRecoveryAction.retryCheckpoint;
+        _failure = kLedgerCheckpointFailurePresentation;
+        _recoveryAction = _LedgerSendRecoveryAction.retryCheckpoint;
       });
       return;
     }
@@ -473,12 +466,28 @@ class _MobileLedgerSendSignScreenState
   }
 
   Future<void> _cancelAndPop() async {
-    if (_signingComplete || _cancelled) return;
+    if (_cancelled || (_signingComplete && !_checkpointFailed)) return;
     _cancelled = true;
     _attemptGeneration++;
-    await _cancelOperationSafely();
+    if (_checkpointFailed) {
+      await _discardUncheckpointedSignature();
+    } else {
+      await _cancelOperationSafely();
+    }
     _scheduleDiscard('MobileLedgerSendSign(cancel)');
     if (mounted) context.pop();
+  }
+
+  /// A half-written checkpoint must not survive an abandoned signature, or
+  /// recovery would broadcast a transaction the user gave up on.
+  Future<void> _discardUncheckpointedSignature() async {
+    try {
+      await ref
+          .read(ledgerSignedOperationServiceProvider)
+          .discard(_operationId);
+    } catch (error, stackTrace) {
+      log('MobileLedgerSendSign.discard: ERROR: $error\n$stackTrace');
+    }
   }
 
   Future<void> _cancelOperationSafely() async {
@@ -508,7 +517,7 @@ class _MobileLedgerSendSignScreenState
 
   @override
   Widget build(BuildContext context) {
-    final canLeave = !_signingComplete;
+    final canLeave = !_signingComplete || _checkpointFailed;
     return MobileLedgerSigningSurface(
       key: const ValueKey('mobile_ledger_signing_surface'),
       title: 'Confirm transaction',

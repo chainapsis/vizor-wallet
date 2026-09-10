@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../../ledger/ledger_capability.dart';
+import '../../ledger/ledger_pending_approval.dart';
 import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_connection_recovery.dart';
 
@@ -61,6 +62,7 @@ class _LedgerShieldSigningOverlayState
   String? _operationId;
   bool _operationCheckpointed = false;
   late final LedgerOperationCanceller _cancelLedgerOperation;
+  late final LedgerPendingApprovalHandle _ledgerApproval;
 
   bool get _isBroadcasting => _phase == LedgerSigningModalPhase.broadcasting;
 
@@ -68,6 +70,9 @@ class _LedgerShieldSigningOverlayState
   void initState() {
     super.initState();
     _cancelLedgerOperation = ref.read(ledgerOperationCancellerProvider);
+    _ledgerApproval = LedgerPendingApprovalHandle(
+      ref.read(ledgerPendingApprovalProvider.notifier),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (!widget.mobile) {
@@ -89,6 +94,7 @@ class _LedgerShieldSigningOverlayState
     if (completer != null && !completer.isCompleted) {
       completer.complete(false);
     }
+    _ledgerApproval.release();
     super.dispose();
   }
 
@@ -469,6 +475,7 @@ class _LedgerShieldSigningOverlayState
 
   @override
   Widget build(BuildContext context) {
+    _ledgerApproval.update(_phase);
     final canLeave = !_isBroadcasting;
     final modal = LedgerSigningModal(
       pageLayout: widget.mobile,
