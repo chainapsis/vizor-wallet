@@ -14,8 +14,8 @@ pub(crate) use operations::{
     checkpoint as checkpoint_signed_operation,
     checkpoint_batch as checkpoint_signed_operation_batch,
     delete_for_account_with_tx as delete_signed_operations_for_account_with_tx,
-    discard_pending as discard_signed_operation,
-    list as list_signed_operations, SignedOperationMetadata,
+    discard_pending as discard_signed_operation, list as list_signed_operations,
+    SignedOperationMetadata,
 };
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -645,9 +645,7 @@ pub fn get_ufvk_with_device_model(account_index: u32) -> Result<(String, Option<
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-pub fn get_ufvk_with_device_model(
-    _account_index: u32,
-) -> Result<(String, Option<String>), String> {
+pub fn get_ufvk_with_device_model(_account_index: u32) -> Result<(String, Option<String>), String> {
     Err(unsupported_platform())
 }
 

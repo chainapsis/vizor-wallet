@@ -1019,15 +1019,17 @@ pub(crate) fn get_shield_transparent_status(
                 .then_some(crate::wallet::ledger::serializer::MAX_TRANSPARENT_INPUTS as u32);
             // The APDU serializer would reject the request much later, after
             // proofs; surface the limit here so the home card can explain it.
-            let over_limit = ledger_input_limit.is_some_and(|limit| transparent_input_count > limit);
+            let over_limit =
+                ledger_input_limit.is_some_and(|limit| transparent_input_count > limit);
             Ok(ShieldTransparentStatus {
                 can_shield: !over_limit,
                 fee_zatoshi: proposal_fee_zatoshi(&proposal),
                 shielded_zatoshi: proposal_shielded_zatoshi(&proposal),
                 reason: match ledger_input_limit {
-                    Some(limit) if over_limit => {
-                        ledger_selection::shielding_input_limit_reason(transparent_input_count, limit)
-                    }
+                    Some(limit) if over_limit => ledger_selection::shielding_input_limit_reason(
+                        transparent_input_count,
+                        limit,
+                    ),
                     _ => String::new(),
                 },
                 transparent_input_count,

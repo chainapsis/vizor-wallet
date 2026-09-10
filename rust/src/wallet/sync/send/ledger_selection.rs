@@ -98,7 +98,9 @@ pub(super) fn capacity_error(detail: impl std::fmt::Display) -> String {
 }
 
 pub(super) fn shielding_input_limit_reason(count: u32, limit: u32) -> String {
-    format!("Ledger can shield at most {limit} transparent inputs at once; this account has {count}.")
+    format!(
+        "Ledger can shield at most {limit} transparent inputs at once; this account has {count}."
+    )
 }
 
 fn action_count(
