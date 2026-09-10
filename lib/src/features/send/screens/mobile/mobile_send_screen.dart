@@ -719,7 +719,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // into `onPopInvokedWithResult` → [_handleBack] instead.
   bool get _routePopAllowed {
     if (_phase != _SendPhase.compose) return false;
-    if (_isConfirmingSend) return false;
+    if (_isConfirmingSend || _pendingCancellation != null) return false;
     if (!widget.useRouteSteps && _step != _SendStep.recipient) return false;
     // Without an enclosing route (bare widgetbook renders) there is no way to
     // tell whether a pop would go anywhere, so keep the framework default.
@@ -1971,6 +1971,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // ── Navigation ─────────────────────────────────────────────────────
 
   void _cancelSend() {
+    if (_isConfirmingSend || _pendingCancellation != null) return;
     if (widget.useRouteSteps) {
       context.go('/home');
       return;
@@ -1979,7 +1980,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleBack() {
-    if (_isConfirmingSend) return;
+    if (_isConfirmingSend || _pendingCancellation != null) return;
     switch (_phase) {
       case _SendPhase.failed:
         setState(() => _phase = _SendPhase.compose);
@@ -2200,7 +2201,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   children: [
                     MobileTopNav.back(
                       title: title,
-                      onBack: _isConfirmingSend ? null : _handleBack,
+                      onBack: _isConfirmingSend || _pendingCancellation != null
+                          ? null
+                          : _handleBack,
                     ),
                     Expanded(child: body),
                   ],
@@ -3267,7 +3270,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   key: const ValueKey('mobile_send_cancel'),
                   expand: true,
                   variant: AppButtonVariant.ghost,
-                  onPressed: _isConfirmingSend ? null : _cancelSend,
+                  onPressed: _isConfirmingSend || _pendingCancellation != null
+                      ? null
+                      : _cancelSend,
                   child: const Text('Cancel'),
                 ),
               ],

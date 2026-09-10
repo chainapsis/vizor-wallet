@@ -2262,6 +2262,81 @@ void main() {
     expect(_proposeCalls, 1);
   });
 
+  for (final refreshFailure in [false, true]) {
+    for (final systemBack in [false, true]) {
+      testWidgets('pending cancellation blocks exit until cleanup succeeds '
+          '(refreshFailure=$refreshFailure, systemBack=$systemBack)', (
+        tester,
+      ) async {
+        _proposeSendSucceeds = true;
+        final sync = _CancelRecoverySyncNotifier();
+        await tester.pumpWidget(_cancelRecoveryApp(sync));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        sync.publishLockedBalance();
+        _discardFails = !refreshFailure;
+        sync.refreshFails = refreshFailure;
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_send_keystone_cancel')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Could not finish cancellation. Try again.'),
+          findsOneWidget,
+        );
+        expect(find.bySemanticsLabel('Back'), findsNothing);
+        expect(
+          tester
+              .widget<AppButton>(
+                find.byKey(const ValueKey('mobile_send_cancel')),
+              )
+              .onPressed,
+          isNull,
+        );
+        final discardsBeforeRetry = _discardCalls;
+        final refreshesBeforeRetry = sync.refreshCalls;
+        if (systemBack) {
+          await tester.binding.handlePopRoute();
+        } else {
+          await tester.tap(find.byKey(const ValueKey('mobile_send_cancel')));
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('Review Send'), findsOneWidget);
+        expect(find.text('home'), findsNothing);
+        expect(_discardCalls, discardsBeforeRetry);
+        expect(sync.refreshCalls, refreshesBeforeRetry);
+
+        _discardFails = false;
+        sync.refreshFails = false;
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        expect(_discardCalls, discardsBeforeRetry + 1);
+        expect(sync.refreshCalls, refreshesBeforeRetry + 1);
+        expect(_proposeCalls, 1);
+        expect(find.text('Confirm with Keystone'), findsOneWidget);
+        expect(find.bySemanticsLabel('Back'), findsOneWidget);
+        expect(
+          tester
+              .widget<AppButton>(
+                find.byKey(const ValueKey('mobile_send_cancel')),
+              )
+              .onPressed,
+          isNotNull,
+        );
+        if (systemBack) {
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(find.text('Review Send'), findsNothing);
+        } else {
+          await tester.tap(find.byKey(const ValueKey('mobile_send_cancel')));
+          await tester.pumpAndSettle();
+          expect(find.text('home'), findsOneWidget);
+        }
+      });
+    }
+  }
+
   testWidgets('Keystone cancel requotes Max only after inputs are released', (
     tester,
   ) async {
