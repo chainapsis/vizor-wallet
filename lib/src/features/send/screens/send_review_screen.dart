@@ -564,10 +564,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final backTarget = AppBackResolver.resolve(context);
 
     return PopScope<Object?>(
-      canPop: keystonePhase == null && !_cancelling,
+      canPop: keystonePhase == null && !_cancelling && !_proposalAbandoned,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && keystonePhase != null) {
+        if (didPop) return;
+        if (keystonePhase != null) {
           unawaited(_cancelKeystoneSigning());
+        } else if (_proposalAbandoned) {
+          unawaited(_leaveReview(() => backTarget.navigate(context)));
         }
       },
       child: AppDesktopShell(

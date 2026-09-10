@@ -27,6 +27,7 @@ import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
@@ -37,7 +38,7 @@ import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
         sendStatusRoutePayloadProvider;
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
-import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart'
@@ -315,6 +316,120 @@ void main() {
     expect(statusExtras.single, isA<SendReviewArgs>());
     expect(rustApi.discardCalls, isEmpty);
   });
+
+  testWidgets(
+    'sidebar account switch during Keystone cancellation leaves review',
+    (tester) async {
+      final released = Completer<void>();
+      rustApi.discardCompleter = released;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(isHardware: true, secondAccount: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SendReviewScreen)),
+      );
+      await tester.tap(find.text('Confirm with Keystone'));
+      await _flushRealAsync(tester);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(KeystoneSigningModal),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('sidebar_accounts_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('sidebar_account_popover_row_account-b')),
+      );
+      await _flushRealAsync(tester);
+      await tester.pumpAndSettle();
+      expect(
+        container.read(accountProvider).value?.activeAccountUuid,
+        'account-b',
+      );
+      expect(find.text('home-route'), findsOneWidget);
+      expect(find.byType(SendReviewScreen), findsNothing);
+      released.complete();
+      await _flushRealAsync(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('home-route'), findsOneWidget);
+      expect(find.byType(SendReviewScreen), findsNothing);
+      expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(rustApi.proposedAccounts, isEmpty);
+    },
+  );
+
+  for (final refreshFailure in [false, true]) {
+    testWidgets('Back retries failed review cancellation and awaits cleanup '
+        '(refreshFailure=$refreshFailure)', (tester) async {
+      final syncNotifier = _FakeSyncNotifier();
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          syncNotifier: syncNotifier,
+          initialLocation: '/send',
+        ),
+      );
+      await tester.pumpAndSettle();
+      GoRouter.of(tester.element(find.text('send-route'))).push('/send/review');
+      await tester.pumpAndSettle();
+      if (refreshFailure) {
+        syncNotifier.refreshError = StateError('balance unavailable');
+      } else {
+        rustApi.discardError = StateError('database busy');
+      }
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.text('send-route'), findsNothing);
+      final discardsBeforeRetry = rustApi.discardCalls.length;
+      final refreshesBeforeRetry = syncNotifier.refreshedAccounts.length;
+      expect(discardsBeforeRetry, refreshFailure ? 1 : 3);
+
+      final released = Completer<void>();
+      final refreshed = Completer<void>();
+      rustApi.discardCompleter = released;
+      rustApi.discardError = null;
+      syncNotifier.refreshCompleter = refreshed;
+      syncNotifier.refreshError = null;
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(rustApi.discardCalls, hasLength(discardsBeforeRetry + 1));
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.text('send-route'), findsNothing);
+      expect(syncNotifier.refreshedAccounts, hasLength(refreshesBeforeRetry));
+
+      released.complete();
+      await tester.pumpAndSettle();
+      expect(
+        syncNotifier.refreshedAccounts,
+        hasLength(refreshesBeforeRetry + 1),
+      );
+      expect(find.text('send-route'), findsNothing);
+      expect(
+        tester
+            .widget<SendReviewContentView>(find.byType(SendReviewContentView))
+            .onConfirm,
+        isNull,
+      );
+
+      refreshed.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('send-route'), findsOneWidget);
+      expect(rustApi.discardCalls, hasLength(discardsBeforeRetry + 1));
+      expect(rustApi.proposedAccounts, isEmpty);
+    });
+  }
 
   testWidgets('cancel discards the proposal and returns to send', (
     tester,
@@ -1256,6 +1371,9 @@ List<Override> _harnessOverrides({
     addressBookRepository ?? _FakeAddressBookRepository(),
   ),
   syncProvider.overrideWith(() => syncNotifier ?? _FakeSyncNotifier()),
+  ironwoodMigrationCoordinatorProvider.overrideWith(
+    _FakeMigrationCoordinator.new,
+  ),
 ];
 
 /// Drives [router] — built from the app's own `/send/review` page builder — so
@@ -1278,11 +1396,13 @@ Widget _harness(
   Listenable? routerRefresh,
   _FakeSyncNotifier? syncNotifier,
   bool cancelScan = false,
+  String initialLocation = '/send/review',
 }) {
   final router = GoRouter(
-    initialLocation: '/send/review',
+    initialLocation: initialLocation,
     refreshListenable: routerRefresh,
     routes: [
+      GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send-route')),
       GoRoute(
         path: '/donation',
@@ -1338,7 +1458,10 @@ Widget _harness(
   );
 }
 
-AppBootstrapState _bootstrap({bool isHardware = false}) {
+AppBootstrapState _bootstrap({
+  bool isHardware = false,
+  bool secondAccount = false,
+}) {
   return AppBootstrapState(
     initialLocation: '/send/review',
     initialAccountState: AccountState(
@@ -1349,6 +1472,8 @@ AppBootstrapState _bootstrap({bool isHardware = false}) {
           order: 0,
           isHardware: isHardware,
         ),
+        if (secondAccount)
+          const AccountInfo(uuid: 'account-b', name: 'Account B', order: 1),
       ],
       activeAccountUuid: 'test-account',
       activeAddress: 'u1activeaddress',
@@ -1467,12 +1592,17 @@ class _FakePathProviderPlatform extends Fake
 
 class _FakeSyncNotifier extends SyncNotifier {
   Completer<void>? refreshCompleter;
+  Object? refreshError;
   final refreshedAccounts = <String>[];
+
+  @override
+  Future<void> refreshAfterAccountSwitch() async {}
 
   @override
   Future<void> refreshAfterProposalRelease(String accountUuid) async {
     refreshedAccounts.add(accountUuid);
     await refreshCompleter?.future;
+    if (refreshError != null) throw refreshError!;
   }
 
   @override
@@ -1490,8 +1620,15 @@ class _FakeSyncNotifier extends SyncNotifier {
   );
 }
 
+class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
+  @override
+  IronwoodMigrationCoordinatorState build() =>
+      const IronwoodMigrationCoordinatorState();
+}
+
 class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
+  final proposedAccounts = <String>[];
   int createPcztCalls = 0;
   final createdProposalIds = <BigInt>[];
   int prepareBatchCalls = 0;
@@ -1507,6 +1644,7 @@ class _RustApiFake implements RustLibApi {
 
   void reset() {
     discardCalls.clear();
+    proposedAccounts.clear();
     createPcztCalls = 0;
     createdProposalIds.clear();
     prepareBatchCalls = 0;
@@ -1530,11 +1668,14 @@ class _RustApiFake implements RustLibApi {
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
-  }) async => ProposalResult(
-    proposalId: BigInt.two,
-    feeZatoshi: BigInt.from(20000),
-    needsSaplingParams: false,
-  );
+  }) async {
+    proposedAccounts.add(accountUuid);
+    return ProposalResult(
+      proposalId: BigInt.two,
+      feeZatoshi: BigInt.from(20000),
+      needsSaplingParams: false,
+    );
+  }
 
   @override
   Future<void> crateApiSyncDiscardProposal({
