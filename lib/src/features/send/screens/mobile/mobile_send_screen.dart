@@ -24,6 +24,7 @@ import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../../core/widgets/mobile/mobile_spendable_balance_info_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/account_provider.dart';
@@ -2398,7 +2399,33 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
+          Semantics(
+            button: true,
+            label: 'Spendable balance info',
+            child: GestureDetector(
+              key: const ValueKey('mobile_send_spendable_info'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => unawaited(
+                showMobileSpendableBalanceInfoSheet(
+                  context,
+                  ledger:
+                      _activeHardwareSignerKind == HardwareSignerKind.ledger,
+                ),
+              ),
+              child: SizedBox(
+                width: 36,
+                height: 36,
+                child: Center(
+                  child: AppIcon(
+                    AppIcons.help,
+                    size: 20,
+                    color: colors.icon.muted,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xxs),
           Semantics(
             button: true,
             label: 'Use maximum spendable balance',

@@ -1702,6 +1702,64 @@ void main() {
     expect(find.text('Not enough ZEC'), findsOneWidget);
   });
 
+  testWidgets('the amount step explains the spendable balance in a sheet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_spendable_info')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Spendable balance'), findsOneWidget);
+    expect(
+      find.textContaining('6 for funds received from others'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('On a Ledger account'), findsNothing);
+
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.text('Spendable balance'), findsNothing);
+  });
+
+  testWidgets('the spendable balance sheet adds the Ledger ceiling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_spendable_info')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Spendable balance'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'On a Ledger account, Max is also limited to what the device can '
+        'sign in one transaction.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('the amount step Max action fills the estimated send amount', (
     tester,
   ) async {

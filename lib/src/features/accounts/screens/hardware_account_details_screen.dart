@@ -28,6 +28,7 @@ import '../../../providers/account_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../onboarding/ledger/ledger_desktop_ble_probe_dialog.dart';
+import '../../onboarding/ledger/ledger_setup_args.dart';
 
 const _contentWidth = 396.0;
 
@@ -245,6 +246,28 @@ class _HardwareAccountDetails extends ConsumerWidget {
             color: context.colors.text.secondary,
           ),
         ),
+        // Desktop reaches the same-wallet flow from the account row menu;
+        // mobile has no other entry once a Ledger wallet holds one account.
+        if (kAppFormFactor == AppFormFactor.mobile &&
+            account.hasLedgerWalletIdentity) ...[
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('hardware_account_details_add_ledger_account'),
+            variant: AppButtonVariant.secondary,
+            expand: true,
+            constrainContent: true,
+            leading: const AppIcon(AppIcons.addNew),
+            onPressed: () => context.push(
+              '/onboarding/ledger',
+              extra: LedgerConnectArgs(sourceAccountUuid: account.uuid),
+            ),
+            child: const Text(
+              'Add Ledger account',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ],
     );
   }

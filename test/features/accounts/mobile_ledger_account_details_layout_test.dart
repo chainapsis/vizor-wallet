@@ -7,11 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 const _account = AccountInfo(
@@ -61,6 +63,57 @@ void main() {
     expect(find.text('2147483647'), findsOneWidget);
     expect(find.text('2870000'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a verified Ledger account can add another index', (
+    tester,
+  ) async {
+    Object? routeExtra;
+    await _pumpRecovery(
+      tester,
+      loadBirthday: () async => null,
+      onLedgerConnect: (extra) => routeExtra = extra,
+    );
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(
+      const ValueKey('hardware_account_details_add_ledger_account'),
+    );
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(find.text('ledger-connect-route'), findsOneWidget);
+    expect(routeExtra, isA<LedgerConnectArgs>());
+    expect(
+      (routeExtra! as LedgerConnectArgs).sourceAccountUuid,
+      'layout-ledger',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an account without a wallet fingerprint cannot add an index', (
+    tester,
+  ) async {
+    await _pumpRecovery(
+      tester,
+      account: const AccountInfo(
+        uuid: 'layout-ledger',
+        name: 'Hardware',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        zip32AccountIndex: 0,
+      ),
+      loadBirthday: () async => null,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('hardware_account_details_add_ledger_account')),
+      findsNothing,
+    );
+    expect(find.text('Add Ledger account'), findsNothing);
   });
 
   testWidgets('missing recovery values have no copy actions or date query', (
@@ -180,11 +233,29 @@ Future<void> _pumpRecovery(
   WidgetTester tester, {
   required Future<int?> Function() loadBirthday,
   AccountInfo account = _account,
+  ValueChanged<Object?>? onLedgerConnect,
 }) async {
   tester.view.physicalSize = const Size(393, 852);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+  final router = GoRouter(
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (_, _) => const MobileHardwareAccountDetailsScreen(
+          accountUuid: 'layout-ledger',
+        ),
+      ),
+      GoRoute(
+        path: '/onboarding/ledger',
+        builder: (_, state) {
+          onLedgerConnect?.call(state.extra);
+          return const Text('ledger-connect-route');
+        },
+      ),
+    ],
+  );
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -193,12 +264,10 @@ Future<void> _pumpRecovery(
           (ref, height) => loadBirthday(),
         ),
       ],
-      child: MaterialApp(
+      child: MaterialApp.router(
+        routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
-        home: const MobileHardwareAccountDetailsScreen(
-          accountUuid: 'layout-ledger',
-        ),
       ),
     ),
   );

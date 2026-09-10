@@ -1277,6 +1277,36 @@ void main() {
       tooltip.richMessage?.toPlainText(),
       contains('6 for funds received from others'),
     );
+    expect(
+      tooltip.richMessage?.toPlainText(),
+      isNot(contains('On a Ledger account')),
+    );
+  });
+
+  testWidgets('explains the Ledger signing ceiling on Max', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness(bootstrap: _ledgerHardwareBootstrap));
+    await tester.pumpAndSettle();
+
+    final tooltip = tester.widget<Tooltip>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Tooltip &&
+            widget.richMessage?.toPlainText().contains(
+                  'Your spendable balance may be lower',
+                ) ==
+                true,
+      ),
+    );
+
+    expect(
+      tooltip.richMessage?.toPlainText(),
+      contains(
+        'On a Ledger account, Max is also limited to what the device can '
+        'sign in one transaction.',
+      ),
+    );
   });
 }
 

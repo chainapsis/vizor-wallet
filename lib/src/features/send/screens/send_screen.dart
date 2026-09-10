@@ -25,6 +25,7 @@ import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../../core/widgets/spendable_balance_copy.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -1437,6 +1438,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                 inlineSuffixStyle: amountAffixStyle,
                                 rightSlot: _SendMaxBalanceControl(
                                   spendableText: spendableText,
+                                  ledger:
+                                      widget.activeHardwareSignerKind ==
+                                      HardwareSignerKind.ledger,
                                   onMaxPressed: _isResolvingMax
                                       ? null
                                       : _activateMaxMode,
@@ -2100,17 +2104,12 @@ class _SendContactsLabelButtonState extends State<_SendContactsLabelButton> {
 class _SendMaxBalanceControl extends StatelessWidget {
   const _SendMaxBalanceControl({
     required this.spendableText,
+    required this.ledger,
     required this.onMaxPressed,
   });
 
-  static const _tooltipTitle =
-      'Your spendable balance may be lower than your total balance.';
-  static const _tooltipBody =
-      'Funds need confirmations before they can be spent: 3 for change from '
-      'your own wallet, 6 for funds received from others. Shielded notes also '
-      "need to be fully scanned. They'll become available shortly.";
-
   final String spendableText;
+  final bool ledger;
   final VoidCallback? onMaxPressed;
 
   @override
@@ -2142,11 +2141,13 @@ class _SendMaxBalanceControl extends StatelessWidget {
         AppTooltip(
           richMessage: TextSpan(
             children: [
-              TextSpan(
-                text: _tooltipTitle,
-                style: const TextStyle(fontWeight: FontWeight.bold),
+              const TextSpan(
+                text: kSpendableBalanceInfoTitle,
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              const TextSpan(text: '\n\n$_tooltipBody'),
+              const TextSpan(text: '\n\n$kSpendableBalanceInfoBody'),
+              if (ledger)
+                const TextSpan(text: '\n\n$kSpendableBalanceLedgerNote'),
             ],
           ),
           child: SizedBox(
