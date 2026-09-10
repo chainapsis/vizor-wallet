@@ -44,6 +44,29 @@ const ledger_ble::ServiceSpec* Profile(GVariant* properties) {
   return nullptr;
 }
 
+constexpr const char* kAgentManager = "org.bluez.AgentManager1";
+constexpr const char* kAgentPath = "/com/zcash/wallet/ledger/agent";
+constexpr const char* kAgentXml = R"xml(<node>
+<interface name='org.bluez.Agent1'>
+<method name='Release'/>
+<method name='RequestPinCode'><arg type='o' direction='in'/><arg type='s' direction='out'/></method>
+<method name='DisplayPinCode'><arg type='o' direction='in'/><arg type='s' direction='in'/></method>
+<method name='RequestPasskey'><arg type='o' direction='in'/><arg type='u' direction='out'/></method>
+<method name='DisplayPasskey'><arg type='o' direction='in'/><arg type='u' direction='in'/><arg type='q' direction='in'/></method>
+<method name='RequestConfirmation'><arg type='o' direction='in'/><arg type='u' direction='in'/></method>
+<method name='RequestAuthorization'><arg type='o' direction='in'/></method>
+<method name='AuthorizeService'><arg type='o' direction='in'/><arg type='s' direction='in'/></method>
+<method name='Cancel'/>
+</interface>
+</node>)xml";
+
+bool LedgerService(const char* uuid) {
+  for (const auto& profile : ledger_ble::kServices) {
+    if (g_ascii_strcasecmp(uuid, Narrow(profile.service).c_str()) == 0) return true;
+  }
+  return false;
+}
+
 constexpr const char* kUnreachable =
     "Linux could not reach your Ledger. Keep it nearby and unlocked, then try again.";
 
@@ -120,15 +143,102 @@ Transport::Transport(GDBusConnection* connection)
          GVariant* parameters, gpointer data) {
         static_cast<Transport*>(data)->Removed(parameters);
       }, this, nullptr);
+  RegisterAgent();
 }
 
-Transport::~Transport() { g_object_unref(bus_); }
+Transport::~Transport() {
+  if (agent_node_) g_dbus_node_info_unref(agent_node_);
+  g_object_unref(bus_);
+}
 
 void Transport::Close() {
   if (changed_id_) g_dbus_connection_signal_unsubscribe(bus_, changed_id_);
   if (removed_id_) g_dbus_connection_signal_unsubscribe(bus_, removed_id_);
   changed_id_ = removed_id_ = 0;
+  UnregisterAgent();
   Wake();
+}
+
+void Transport::RegisterAgent() {
+  g_autoptr(GError) error = nullptr;
+  agent_node_ = g_dbus_node_info_new_for_xml(kAgentXml, &error);
+  if (!agent_node_) {
+    g_warning("Ledger BLE agent: %s", error->message);
+    return;
+  }
+  static const GDBusInterfaceVTable table = {AgentMethod, nullptr, nullptr, {nullptr}};
+  agent_id_ = g_dbus_connection_register_object(bus_, kAgentPath, agent_node_->interfaces[0], &table, this, nullptr, &error);
+  if (!agent_id_) {
+    g_warning("Ledger BLE agent: %s", error->message);
+    return;
+  }
+  // Registration is best effort: without an agent manager the session's own
+  // Bluetooth agent (if any) answers instead, as before. The callback must not
+  // touch this object, which may be gone by the time BlueZ replies.
+  g_dbus_connection_call(bus_, "org.bluez", "/org/bluez", kAgentManager, "RegisterAgent",
+      g_variant_new("(os)", kAgentPath, "KeyboardDisplay"), nullptr, G_DBUS_CALL_FLAGS_NO_AUTO_START, 3000, nullptr,
+      [](GObject* source, GAsyncResult* result, gpointer) {
+        g_autoptr(GError) failure = nullptr;
+        Variant reply(g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &failure));
+        if (!reply) g_message("Ledger BLE agent: not registered (%s); the session agent handles pairing", failure->message);
+      }, nullptr);
+}
+
+void Transport::UnregisterAgent() {
+  if (!agent_id_) return;
+  g_dbus_connection_call(bus_, "org.bluez", "/org/bluez", kAgentManager, "UnregisterAgent",
+      g_variant_new("(o)", kAgentPath), nullptr, G_DBUS_CALL_FLAGS_NO_AUTO_START, 3000, nullptr, nullptr, nullptr);
+  g_dbus_connection_unregister_object(bus_, agent_id_);
+  agent_id_ = 0;
+}
+
+bool Transport::AgentAccepts(const std::string& device) {
+  std::lock_guard lock(mutex_);
+  return pairing_ && device_ == device;
+}
+
+void Transport::AgentMethod(GDBusConnection*, const gchar*, const gchar*, const gchar*,
+                            const gchar* method, GVariant* parameters,
+                            GDBusMethodInvocation* invocation, gpointer data) {
+  auto& self = *static_cast<Transport*>(data);
+  const std::string name(method);
+  const auto reject = [&](const char* message) {
+    g_dbus_method_invocation_return_dbus_error(invocation, "org.bluez.Error.Rejected", message);
+  };
+  if (name == "Release" || name == "Cancel" || name == "DisplayPinCode" || name == "DisplayPasskey") {
+    g_message("Ledger BLE agent: %s", method);
+    g_dbus_method_invocation_return_value(invocation, nullptr);
+    return;
+  }
+  if (name == "RequestConfirmation" || name == "RequestAuthorization") {
+    const char* device = nullptr;
+    g_variant_get_child(parameters, 0, "&o", &device);
+    // The Ledger shows the same code and asks for confirmation on its own
+    // screen, so the host side only needs to be sure this is that Ledger.
+    if (self.AgentAccepts(device)) {
+      g_message("Ledger BLE agent: %s accepted", method);
+      g_dbus_method_invocation_return_value(invocation, nullptr);
+    } else {
+      reject("Vizor only pairs the Ledger it is connecting.");
+    }
+    return;
+  }
+  if (name == "AuthorizeService") {
+    const char* device = nullptr;
+    const char* uuid = nullptr;
+    g_variant_get(parameters, "(&o&s)", &device, &uuid);
+    if (self.AgentAccepts(device) && LedgerService(uuid)) {
+      g_dbus_method_invocation_return_value(invocation, nullptr);
+    } else {
+      reject("Vizor only authorizes the Ledger service.");
+    }
+    return;
+  }
+  if (name == "RequestPinCode" || name == "RequestPasskey") {
+    reject("Ledger pairing does not use a PIN.");
+    return;
+  }
+  g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.DBus.Error.UnknownMethod", method);
 }
 
 void Transport::Wake() { changed_.notify_all(); }
