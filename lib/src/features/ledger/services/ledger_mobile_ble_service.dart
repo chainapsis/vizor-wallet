@@ -92,6 +92,9 @@ abstract interface class LedgerMobileBleService {
   Future<void> cancelSigning();
 }
 
+/// Method channel shared by every native Ledger Bluetooth runner.
+const kLedgerMobileMethodChannel = 'com.zcash.wallet/ledger_mobile';
+
 final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((_) {
   return MethodChannelLedgerMobileBleService();
 });
@@ -102,7 +105,7 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
   }) : _reviewBusyDelay =
            reviewBusyDelay ?? ((duration) => Future<void>.delayed(duration));
 
-  static const _methods = MethodChannel('com.zcash.wallet/ledger_mobile');
+  static const _methods = MethodChannel(kLedgerMobileMethodChannel);
   static const _events = EventChannel(
     'com.zcash.wallet/ledger_mobile/discovery',
   );

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <thread>
+#include <utility>
 
 namespace ledger_bluez {
 namespace {
@@ -147,6 +148,7 @@ Transport::Transport(GDBusConnection* connection)
 }
 
 Transport::~Transport() {
+  if (pairing_prompt_) g_object_unref(pairing_prompt_);
   if (agent_node_) g_dbus_node_info_unref(agent_node_);
   g_object_unref(bus_);
 }
@@ -155,6 +157,7 @@ void Transport::Close() {
   if (changed_id_) g_dbus_connection_signal_unsubscribe(bus_, changed_id_);
   if (removed_id_) g_dbus_connection_signal_unsubscribe(bus_, removed_id_);
   changed_id_ = removed_id_ = 0;
+  ResolvePairingPrompt(false, "org.bluez.Error.Canceled");
   UnregisterAgent();
   Wake();
 }
@@ -165,6 +168,32 @@ void Transport::SetPairingListener(std::function<void(const std::string& code)> 
 
 void Transport::NotifyPairing(const std::string& code) {
   if (pairing_listener_) pairing_listener_(code);
+}
+
+void Transport::HoldPairingPrompt(GDBusMethodInvocation* invocation) {
+  // The handler owns the invocation's reference until it is answered.
+  ResolvePairingPrompt(false, "org.bluez.Error.Canceled");
+  std::lock_guard lock(mutex_);
+  pairing_prompt_ = invocation;
+}
+
+void Transport::ResolvePairingPrompt(bool accept, const char* error_name) {
+  GDBusMethodInvocation* prompt = nullptr;
+  {
+    std::lock_guard lock(mutex_);
+    prompt = std::exchange(pairing_prompt_, nullptr);
+  }
+  if (!prompt) return;
+  if (accept) {
+    g_dbus_method_invocation_return_value(prompt, nullptr);
+  } else {
+    g_dbus_method_invocation_return_dbus_error(prompt, error_name, "Vizor did not confirm the pairing code.");
+  }
+}
+
+void Transport::ConfirmPairing(bool accept) {
+  g_message("Ledger BLE agent: pairing code %s", accept ? "confirmed" : "rejected");
+  ResolvePairingPrompt(accept);
 }
 
 void Transport::ExportAgent() {
@@ -219,29 +248,33 @@ void Transport::AgentMethod(GDBusConnection*, const gchar*, const gchar*, const 
   };
   if (name == "Release" || name == "Cancel" || name == "DisplayPinCode" || name == "DisplayPasskey") {
     g_message("Ledger BLE agent: %s", method);
-    if (name == "Cancel") self.NotifyPairing("");
+    if (name == "Cancel") {
+      self.ResolvePairingPrompt(false, "org.bluez.Error.Canceled");
+      self.NotifyPairing("");
+    }
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
   }
-  if (name == "RequestConfirmation" || name == "RequestAuthorization") {
+  if (name == "RequestConfirmation") {
     const char* device = nullptr;
-    g_variant_get_child(parameters, 0, "&o", &device);
-    // The host side confirms at once and hands the code to the UI: the user
-    // compares it with the Ledger's screen and gives the yes/no there, which
-    // is what protects the pairing against a device in the middle.
-    if (self.AgentAccepts(device)) {
-      if (name == "RequestConfirmation") {
-        guint32 passkey = 0;
-        g_variant_get_child(parameters, 1, "u", &passkey);
-        char code[16];
-        g_snprintf(code, sizeof code, "%06u", passkey);
-        self.NotifyPairing(code);
-      }
-      g_message("Ledger BLE agent: %s accepted", method);
-      g_dbus_method_invocation_return_value(invocation, nullptr);
-    } else {
+    guint32 passkey = 0;
+    g_variant_get(parameters, "(&ou)", &device, &passkey);
+    if (!self.AgentAccepts(device)) {
       reject("Vizor only pairs the Ledger it is connecting.");
+      return;
     }
+    // Numeric comparison only defeats a device in the middle when both sides
+    // condition their yes on the codes matching, so the host reply waits for
+    // the user's answer to the code shown in Vizor (ConfirmPairing).
+    char code[16];
+    g_snprintf(code, sizeof code, "%06u", passkey);
+    self.HoldPairingPrompt(invocation);
+    self.NotifyPairing(code);
+    return;
+  }
+  if (name == "RequestAuthorization") {
+    // Just Works: no code, no protection. A Ledger always offers a code.
+    reject("Ledger pairing requires a code to confirm.");
     return;
   }
   if (name == "AuthorizeService") {
@@ -397,6 +430,7 @@ void Transport::Connect(const std::string& id, GCancellable* cancel) {
       pair_failure = failure;
     }
     pairing_ = false;
+    ResolvePairingPrompt(false, "org.bluez.Error.Canceled");
     NotifyPairing("");
     // AlreadyExists means the bond completed elsewhere while this call ran.
     if (pair_failure && pair_failure->remote.find("AlreadyExists") == std::string::npos) {

@@ -64,6 +64,7 @@ struct FakeBluez {
   std::string agent_path, agent_sender, agent_capability;
   std::string agent_confirm_device = kDevice;
   std::string agent_service_uuid;  // when set, AuthorizeService instead of RequestConfirmation
+  bool agent_just_works = false;   // RequestAuthorization instead of RequestConfirmation
   int agent_answers = 0, agent_rejections = 0;
   int agent_registrations = 0, agent_duplicate_registrations = 0;
   std::string fail_start, fail_pair, fail_connect;
@@ -152,10 +153,11 @@ struct FakeBluez {
     const bool authorize = !agent_service_uuid.empty();
     auto* context = new std::pair<FakeBluez*, GDBusMethodInvocation*>(
         this, G_DBUS_METHOD_INVOCATION(g_object_ref(invocation)));
-    g_dbus_connection_call(server, agent_sender.c_str(), agent_path.c_str(), "org.bluez.Agent1",
-        authorize ? "AuthorizeService" : "RequestConfirmation",
-        authorize ? g_variant_new("(os)", agent_confirm_device.c_str(), agent_service_uuid.c_str())
-                  : g_variant_new("(ou)", agent_confirm_device.c_str(), 123456u),
+    const char* method = authorize ? "AuthorizeService" : agent_just_works ? "RequestAuthorization" : "RequestConfirmation";
+    GVariant* arguments = authorize ? g_variant_new("(os)", agent_confirm_device.c_str(), agent_service_uuid.c_str())
+        : agent_just_works ? g_variant_new("(o)", agent_confirm_device.c_str())
+        : g_variant_new("(ou)", agent_confirm_device.c_str(), 123456u);
+    g_dbus_connection_call(server, agent_sender.c_str(), agent_path.c_str(), "org.bluez.Agent1", method, arguments,
         nullptr, G_DBUS_CALL_FLAGS_NONE, 5000, nullptr,
         [](GObject* source, GAsyncResult* result, gpointer data) {
           std::unique_ptr<std::pair<FakeBluez*, GDBusMethodInvocation*>> context(

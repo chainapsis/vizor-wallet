@@ -467,29 +467,58 @@ void main() {
     );
   }
 
-  testWidgets('shows the Linux pairing code while connecting', (tester) async {
+  testWidgets('asks to compare the Linux pairing code before pairing', (
+    tester,
+  ) async {
+    // A pairing can surface during any connect the request makes.
     for (final phase in [
       LedgerSigningModalPhase.connecting,
+      LedgerSigningModalPhase.awaitingDevice,
       LedgerSigningModalPhase.reconnecting,
     ]) {
+      final answers = <bool>[];
       await tester.pumpWidget(
         _harness(
           platform: TargetPlatform.linux,
           phase: phase,
           pairingCode: '123456',
+          pairingAnswers: answers,
         ),
       );
       await tester.pump();
       expect(find.text('Confirm pairing on your Ledger'), findsOneWidget);
+      expect(find.text('123456'), findsOneWidget);
       expect(
-        find.text('Approve pairing on your Ledger only if it shows 123456.'),
+        find.text('Pair only if your Ledger shows the same code.'),
         findsOneWidget,
       );
+      expect(find.text('Codes differ'), findsOneWidget);
+      await tester.tap(find.text('Codes match'));
+      await tester.pump();
+      expect(answers, [true]);
+      expect(find.text('Approve pairing on your Ledger'), findsOneWidget);
+      expect(find.text('Codes match'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
     }
+    final rejected = <bool>[];
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.linux,
         phase: LedgerSigningModalPhase.awaitingDevice,
+        pairingCode: '654321',
+        pairingAnswers: rejected,
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Codes differ'));
+    await tester.pump();
+    expect(rejected, [false]);
+    await tester.pumpWidget(const SizedBox.shrink());
+    // Terminal phases never show a prompt.
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.linux,
+        phase: LedgerSigningModalPhase.readyToRetry,
         pairingCode: '123456',
       ),
     );
@@ -544,6 +573,7 @@ Widget _harness({
   AccountInfo? account,
   Future<void> Function(String)? reconnect,
   String? pairingCode,
+  List<bool>? pairingAnswers,
 }) {
   return ProviderScope(
     key: ValueKey(readiness.phase),
@@ -553,6 +583,10 @@ Widget _harness({
       if (pairingCode != null)
         ledgerPairingCodeProvider.overrideWith(
           (_) => Stream.value(pairingCode),
+        ),
+      if (pairingAnswers != null)
+        ledgerPairingAnswerProvider.overrideWithValue(
+          ({required accept}) async => pairingAnswers.add(accept),
         ),
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       ledgerAppReadinessStateProvider.overrideWith(

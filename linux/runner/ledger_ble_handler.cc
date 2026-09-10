@@ -343,6 +343,12 @@ class Handler : public std::enable_shared_from_this<Handler> {
         if (started) scan_generation_ = generation;
       } else if (name == "stopDiscovery") {
         StopDiscovery(call);
+      } else if (name == "confirmPairing") {
+        auto* accept = Field(args, "accept");
+        if (!accept || fl_value_get_type(accept) != FL_VALUE_TYPE_BOOL) throw Error("unavailable", "Ledger pairing answer is invalid.");
+        if (!transport_) throw Error("unavailable", "Linux system D-Bus is unavailable. Check the Bluetooth service and try again.");
+        transport_->ConfirmPairing(fl_value_get_bool(accept));
+        Reply(call, nullptr);
       } else if (name == "cancelSigning") {
         Cancel();
         Reply(call, nullptr);

@@ -36,7 +36,9 @@ struct Device {
 // each pairing it starts, so pairing works in sessions without a desktop
 // Bluetooth agent. BlueZ routes the pairings an application starts to that
 // application's agent; ours answers only for the Ledger being connected and
-// reports the code the user must compare with the Ledger's screen.
+// holds the reply until the user has compared the code with the Ledger's
+// screen, which is what makes the comparison protect against a device in
+// the middle.
 class Transport {
  public:
   explicit Transport(GDBusConnection* connection);
@@ -49,6 +51,9 @@ class Transport {
   // waits for confirmation, and an empty string once that prompt is over.
   // Set before any operation; called from the platform or worker thread.
   void SetPairingListener(std::function<void(const std::string& code)> listener);
+  // Answers the prompt reported to the listener: true when the Ledger shows
+  // the same code, false otherwise. Platform thread; no-op without a prompt.
+  void ConfirmPairing(bool accept);
   void Wake();
   Variant Objects(GCancellable* cancel);
   static std::vector<Device> Devices(GVariant* objects, bool nearby);
@@ -75,6 +80,8 @@ class Transport {
   void UnregisterAgent();
   bool AgentAccepts(const std::string& device);
   void NotifyPairing(const std::string& code);
+  void HoldPairingPrompt(GDBusMethodInvocation* invocation);
+  void ResolvePairingPrompt(bool accept, const char* error_name = "org.bluez.Error.Rejected");
   static void AgentMethod(GDBusConnection*, const gchar*, const gchar*, const gchar*,
                           const gchar* method, GVariant* parameters,
                           GDBusMethodInvocation* invocation, gpointer data);
@@ -90,6 +97,7 @@ class Transport {
   guint agent_id_ = 0;
   GDBusNodeInfo* agent_node_ = nullptr;
   std::function<void(const std::string&)> pairing_listener_;
+  GDBusMethodInvocation* pairing_prompt_ = nullptr;  // guarded by mutex_
   bool connected_ = false;
   bool awaiting_ = false;
   std::atomic<bool> pairing_{false};
