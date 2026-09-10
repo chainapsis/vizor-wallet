@@ -273,6 +273,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
       if (args.needsSaplingParams && !saplingParams.complete) {
         final confirmed = await _showDownloadPrompt();
+        if (!isCurrent()) return;
         if (!confirmed) {
           unawaited(_scheduleDiscard());
           if (!mounted) return;
@@ -408,6 +409,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       _reviewRecoveryFailed = false;
       _signingGeneration++;
     });
+    _resolveSaplingParamsDialog(false);
     final released = await _scheduleDiscard();
     if (!mounted) return;
     if (!released) {

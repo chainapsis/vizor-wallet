@@ -37,6 +37,7 @@ import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider;
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
+import 'package:zcash_wallet/src/features/send/widgets/sapling_params_prompt.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -430,6 +431,86 @@ void main() {
       expect(rustApi.proposedAccounts, isEmpty);
     });
   }
+
+  testWidgets('Keystone cancellation closes the stale Sapling params prompt', (
+    tester,
+  ) async {
+    final released = Completer<void>();
+    rustApi.discardCompleter = released;
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', needsSaplingParams: true),
+        bootstrap: _bootstrap(isHardware: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    final prompt = tester.widget<SaplingParamsPrompt>(
+      find.byType(SaplingParamsPrompt),
+    );
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byType(SaplingParamsPrompt), findsNothing);
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+    expect(rustApi.proposedAccounts, isEmpty);
+    expect(find.text('Cancelling…'), findsWidgets);
+
+    released.complete();
+    await _flushRealAsync(tester);
+    await tester.pumpAndSettle();
+    expect(rustApi.proposedAccounts, ['test-account']);
+    expect(find.text('Review send'), findsOneWidget);
+    expect(find.text('0.0002 ZEC'), findsOneWidget);
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+    // A delayed event from the removed prompt cannot start a download or
+    // release the refreshed proposal.
+    prompt.onCancel();
+    prompt.onDownload();
+    await tester.pumpAndSettle();
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    expect(rustApi.createdProposalIds, [BigInt.two]);
+    expect(find.text('Get signature'), findsOneWidget);
+  });
+
+  testWidgets('declining Sapling params still cancels the current proposal', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', needsSaplingParams: true),
+        bootstrap: _bootstrap(isHardware: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SaplingParamsPrompt),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(SaplingParamsPrompt), findsNothing);
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+    expect(rustApi.proposedAccounts, isEmpty);
+    expect(rustApi.createdProposalIds, isEmpty);
+    expect(
+      tester
+          .widget<KeystoneSigningModal>(find.byType(KeystoneSigningModal))
+          .phase,
+      KeystoneSigningModalPhase.failed,
+    );
+  });
 
   testWidgets('cancel discards the proposal and returns to send', (
     tester,
@@ -1524,6 +1605,7 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 
 SendReviewArgs _reviewArgs({
   required String addressType,
+  bool needsSaplingParams = false,
   String? memo,
   String address = _longAddress,
   BigInt? amountZatoshi,
@@ -1540,7 +1622,7 @@ SendReviewArgs _reviewArgs({
     addressType: addressType,
     amountZatoshi: amountZatoshi ?? BigInt.from(1512000000),
     feeZatoshi: BigInt.from(12000),
-    needsSaplingParams: false,
+    needsSaplingParams: needsSaplingParams,
     memo: memo,
     isPaymentRequest: isPaymentRequest,
     requestedBy: requestedBy,
