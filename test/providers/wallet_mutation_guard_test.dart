@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -10,6 +11,51 @@ import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry
 import 'package:zcash_wallet/src/providers/wallet_mutation_guard.dart';
 
 void main() {
+  testWidgets('Linux rejects another mutation before pausing sync', (
+    tester,
+  ) async {
+    final coordinator = LinuxKeyringCoordinator.testing();
+    addTearDown(coordinator.dispose);
+    final events = <String>[];
+    late WidgetRef capturedRef;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
+          accountProvider.overrideWith(_EmptyAccountNotifier.new),
+          syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+        ],
+        child: Consumer(
+          builder: (_, ref, _) {
+            capturedRef = ref;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    final release = Completer<void>();
+    final pending = coordinator.runMutation(() => release.future);
+    try {
+      await expectLater(
+        runWithSyncPausedForAccountMutation(capturedRef, () async {
+          events.add('unexpected mutation');
+        }),
+        throwsA(isA<LinuxWalletMutationBusyException>()),
+      );
+      expect(events, isEmpty);
+    } finally {
+      release.complete();
+      await pending;
+    }
+    await coordinator.runMutation(
+      () => runWithSyncPausedForAccountMutation(capturedRef, () async {
+        events.add('action');
+      }),
+    );
+    expect(events, ['pause', 'action', 'resume']);
+  });
+
   testWidgets('pauses stale sync work even when there are no accounts', (
     tester,
   ) async {

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/account_name_policy.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -111,7 +112,11 @@ class _CustomiseAccountScreenState
     }
   }
 
-  Future<void> _finishSetup() async {
+  Future<void> _finishSetup() => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(_finishSetupWithOwnership);
+
+  Future<void> _finishSetupWithOwnership() async {
     final args = widget.args;
     final router = GoRouter.of(context);
     final pendingPassword = args.pendingPassword;

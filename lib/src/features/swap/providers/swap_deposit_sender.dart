@@ -3,6 +3,8 @@ import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/storage/linux_keyring_coordinator.dart';
+import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -32,6 +34,7 @@ class RustSwapDepositSender implements SwapDepositSender {
   RustSwapDepositSender(this._ref);
 
   final Ref _ref;
+  int _depositRequestGeneration = 0;
 
   @override
   Future<BigInt> estimateZecDepositFee({
@@ -73,6 +76,15 @@ class RustSwapDepositSender implements SwapDepositSender {
     required String accountUuid,
     required SwapQuote quote,
   }) async {
+    final requestGeneration = ++_depositRequestGeneration;
+    final secretGuard = LinuxSecretOperationGuard(
+      store: _ref.read(linuxSecretOperationStoreProvider),
+      coordinator: _ref.read(linuxKeyringCoordinatorProvider),
+      isRequestCurrent: () =>
+          _ref.mounted && requestGeneration == _depositRequestGeneration,
+      readAccounts: () => _ref.read(accountProvider).value,
+      accountUuid: accountUuid,
+    );
     if (quote.sellAsset != SwapAsset.zec) {
       throw StateError('Only ZEC deposits can be sent by this wallet');
     }
@@ -94,6 +106,7 @@ class RustSwapDepositSender implements SwapDepositSender {
             accountUuid: accountUuid,
             operation: () async {
               final dbPath = await getWalletDbPath();
+              secretGuard.check();
               final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
               final proposal = await rust_sync.proposeSend(
                 dbPath: dbPath,
@@ -110,6 +123,7 @@ class RustSwapDepositSender implements SwapDepositSender {
       final dbPath = proposalContext.dbPath;
       final endpoint = proposalContext.endpoint;
       proposalId = proposal.proposalId;
+      secretGuard.check();
       log(
         'SwapDepositSender: proposal ready flow=$sendFlowId '
         'proposal=${proposal.proposalId} '
@@ -128,7 +142,7 @@ class RustSwapDepositSender implements SwapDepositSender {
         'proposal=${proposal.proposalId}',
       );
 
-      if (Platform.isMacOS) {
+      if (Platform.isMacOS && !secretGuard.enabled) {
         final password = _ref
             .read(appSecurityProvider.notifier)
             .requireSessionPasswordForNativeSecretUse();
@@ -143,12 +157,21 @@ class RustSwapDepositSender implements SwapDepositSender {
         final mnemonicBytes = await _ref
             .read(accountProvider.notifier)
             .getMnemonicBytesForAccount(accountUuid);
-        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-          throw StateError('Mnemonic not found for the active account');
-        }
-
         late final Future<rust_sync.ExecuteProposalResult> resultFuture;
         try {
+          secretGuard.check();
+          if (secretGuard.enabled) {
+            final deadline = quote.actionDeadline;
+            if (deadline != null &&
+                !DateTime.now().toUtc().isBefore(deadline)) {
+              throw StateError(
+                'Swap quote expired. Refresh the quote and try again.',
+              );
+            }
+          }
+          if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+            throw StateError('Mnemonic not found for the active account');
+          }
           resultFuture = rust_sync.executeProposal(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -157,16 +180,20 @@ class RustSwapDepositSender implements SwapDepositSender {
             mnemonicBytes: mnemonicBytes,
           );
         } finally {
-          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+          mnemonicBytes?.fillRange(0, mnemonicBytes.length, 0);
         }
         result = await resultFuture;
       }
       proposalConsumed = true;
 
-      try {
-        await _ref.read(syncProvider.notifier).refreshAfterSend();
-      } catch (e) {
-        log('SwapDepositSender: refreshAfterSend failed flow=$sendFlowId: $e');
+      if (!secretGuard.enabled || _ref.mounted) {
+        try {
+          await _ref.read(syncProvider.notifier).refreshAfterSend();
+        } catch (e) {
+          log(
+            'SwapDepositSender: refreshAfterSend failed flow=$sendFlowId: $e',
+          );
+        }
       }
 
       final txid = _firstTxid(result.txids);

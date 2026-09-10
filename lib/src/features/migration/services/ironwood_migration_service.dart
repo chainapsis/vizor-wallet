@@ -9,6 +9,7 @@ import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/storage/app_secure_store.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -625,6 +626,8 @@ class IronwoodMigrationService {
     IronwoodMigrationStatusesGetter? getStatuses,
     required this.getPrivatePlan,
     required this.secureStore,
+    LinuxKeyringCoordinator? keyringCoordinator,
+    bool Function()? isRequestCurrent,
     IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
     IronwoodMigrationEndpointGetter? getEndpoint,
     IronwoodMigrationPasswordGetter? getSessionPassword,
@@ -692,7 +695,10 @@ class IronwoodMigrationService {
     IronwoodMigrationKeystoneProofStatusGetter? getKeystoneProofStatus,
     IronwoodMigrationKeystoneRequestDiscarder? discardKeystoneMigrationRequest,
     IronwoodMigrationOperationRegistry? operationRegistry,
-  }) : backgroundCredentialStore =
+  }) : keyringCoordinator =
+           keyringCoordinator ?? LinuxKeyringCoordinator.instance,
+       isRequestCurrent = isRequestCurrent ?? (() => true),
+       backgroundCredentialStore =
            backgroundCredentialStore ??
            IronwoodMigrationBackgroundCredentialStore.instance,
        getEndpoint = getEndpoint ?? _missingEndpoint,
@@ -835,6 +841,8 @@ class IronwoodMigrationService {
   final IronwoodMigrationPrivatePlanGetter getPrivatePlan;
   final IronwoodMigrationImmediatePlanGetter getImmediatePlan;
   final AppSecureStore secureStore;
+  final LinuxKeyringCoordinator keyringCoordinator;
+  final bool Function() isRequestCurrent;
   final IronwoodMigrationBackgroundCredentialStore backgroundCredentialStore;
   final IronwoodMigrationEndpointGetter getEndpoint;
   final IronwoodMigrationPasswordGetter getSessionPassword;
@@ -1502,6 +1510,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
+    final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     final context = _MigrationCredentialContext(
@@ -1514,6 +1523,7 @@ class IronwoodMigrationService {
     if (isMacOS()) {
       return _runCredentialOperation(
         context: context,
+        secretGeneration: secretGeneration,
         mayCreateRun: true,
         operation: (credential) => startMacosSoftwareMigration(
           dbPath: dbPath,
@@ -1529,6 +1539,7 @@ class IronwoodMigrationService {
 
     final result = await _runCredentialOperation(
       context: context,
+      secretGeneration: secretGeneration,
       mayCreateRun: true,
       onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
       operation: (credential) async {
@@ -1539,6 +1550,7 @@ class IronwoodMigrationService {
 
         late final Future<rust_sync.IronwoodMigrationResult> resultFuture;
         try {
+          _checkLinuxSecretOperation(secretGeneration, context);
           resultFuture = startSoftwareMigration(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -1565,6 +1577,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
   }) async {
+    final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     final context = _MigrationCredentialContext(
@@ -1579,11 +1592,13 @@ class IronwoodMigrationService {
         network: context.network,
         accountUuid: context.accountUuid,
         operation: () async {
+          _checkLinuxSecretOperation(secretGeneration, context);
           final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
           if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
             throw Exception('Mnemonic not found for the migration account.');
           }
           try {
+            _checkLinuxSecretOperation(secretGeneration, context);
             return await startImmediateMigration(
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -1613,6 +1628,7 @@ class IronwoodMigrationService {
     bool prepareNextProof = true,
     int? walletOpenTipHeight,
   }) async {
+    final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     final context = _MigrationCredentialContext(
@@ -1626,6 +1642,7 @@ class IronwoodMigrationService {
     if (_usesNativeMigrationOutbox) {
       broadcastResult = await _runCredentialOperation(
         context: context,
+        secretGeneration: secretGeneration,
         mayCreateRun: false,
         prepareOutboxAfterOperation: false,
         onCurrentStatus: isHardwareAccount(accountUuid)
@@ -1643,6 +1660,7 @@ class IronwoodMigrationService {
     } else {
       broadcastResult = await _runCredentialOperation(
         context: context,
+        secretGeneration: secretGeneration,
         mayCreateRun: false,
         operation: (credential) => broadcastDueMigration(
           dbPath: dbPath,
@@ -1678,6 +1696,7 @@ class IronwoodMigrationService {
     if (isMacOS()) {
       return _runCredentialOperation(
         context: context,
+        secretGeneration: secretGeneration,
         mayCreateRun: true,
         operation: (credential) => startMacosSoftwareMigration(
           dbPath: dbPath,
@@ -1693,6 +1712,7 @@ class IronwoodMigrationService {
 
     return _runCredentialOperation(
       context: context,
+      secretGeneration: secretGeneration,
       mayCreateRun: true,
       operation: (credential) async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
@@ -1700,6 +1720,7 @@ class IronwoodMigrationService {
           throw Exception('Mnemonic not found for the migration account.');
         }
         try {
+          _checkLinuxSecretOperation(secretGeneration, context);
           return startSoftwareMigration(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -2213,16 +2234,21 @@ class IronwoodMigrationService {
   Future<T> _runCredentialOperation<T>({
     required _MigrationCredentialContext context,
     required bool mayCreateRun,
+    int? secretGeneration,
     required Future<T> Function(_MigrationCredential credential) operation,
     bool prepareOutboxAfterOperation = true,
     Future<void> Function(rust_sync.MigrationStatus status)? onCurrentStatus,
   }) async {
+    final generation = secretGeneration ?? secureStore.sessionGeneration;
     return operationRegistry.run(
       network: context.network,
       accountUuid: context.accountUuid,
       operation: () async {
         if (!isMobile()) {
-          return operation(await _legacyCredential(context));
+          _checkLinuxSecretOperation(generation, context);
+          final credential = await _legacyCredential(context);
+          _checkLinuxSecretOperation(generation, context);
+          return operation(credential);
         }
 
         return _serializeCredentialState(context, () async {
@@ -2544,6 +2570,23 @@ class IronwoodMigrationService {
       );
     } catch (_) {
       return context;
+    }
+  }
+
+  void _checkLinuxSecretOperation(
+    int generation,
+    _MigrationCredentialContext context,
+  ) {
+    if (!secureStore.enforcesSessionGeneration) return;
+    if (!isRequestCurrent() ||
+        keyringCoordinator.hasPendingMutation ||
+        !secureStore.isSessionGenerationCurrent(generation) ||
+        !secureStore.hasSessionPassword ||
+        operationRegistry.isRevoked(
+          network: context.network,
+          accountUuid: context.accountUuid,
+        )) {
+      throw const SecureStorageSessionChangedException();
     }
   }
 
@@ -2992,6 +3035,8 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
                   kAppFormFactor == AppFormFactor.desktop,
             ),
     secureStore: AppSecureStore.instance,
+    keyringCoordinator: ref.read(linuxKeyringCoordinatorProvider),
+    isRequestCurrent: () => ref.mounted,
     getEndpoint: () => ref.read(rpcEndpointFailoverProvider).current,
     getSessionPassword: () => ref
         .read(appSecurityProvider.notifier)

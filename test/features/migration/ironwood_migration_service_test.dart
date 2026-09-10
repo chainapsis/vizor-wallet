@@ -9,6 +9,7 @@ import 'package:flutter/services.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_operation_registry.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
@@ -1917,6 +1918,207 @@ void main() {
       expect(seenDbPath, '/tmp/wallet.db');
       expect(seenNetwork, 'test');
       expect(seenAccountUuid, 'account-1');
+    },
+  );
+
+  for (final flow in ['private', 'immediate', 'next proof']) {
+    for (final interruption in [
+      'lock and unlock',
+      'revocation',
+      'mutation',
+      'dispose',
+      'none',
+    ]) {
+      test(
+        'Linux $flow migration validates delayed mnemonic: $interruption',
+        () async {
+          final store = AppSecureStore.testing(
+            storage: const FlutterSecureStorage(),
+            enforceSessionGeneration: true,
+          )..setSessionPassword('test-password');
+          final coordinator = LinuxKeyringCoordinator.testing();
+          addTearDown(coordinator.dispose);
+          final registry = IronwoodMigrationOperationRegistry();
+          final started = Completer<void>();
+          final release = Completer<List<int>?>();
+          final bytes = Uint8List.fromList([1, 2, 3, 4]);
+          var requestCurrent = true;
+          var signCalls = 0;
+          final service = IronwoodMigrationService(
+            getWalletDbPath: () async => '/tmp/wallet.db',
+            getStatus:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                }) async => _migrationStatus(
+                  phase: 'ready_to_migrate',
+                  activeRunId: 'run-1',
+                ),
+            getPrivatePlan:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                }) async => null,
+            secureStore: store,
+            keyringCoordinator: coordinator,
+            operationRegistry: registry,
+            isRequestCurrent: () => requestCurrent,
+            getEndpoint: _testEndpoint,
+            getSessionPassword: () => 'test-password',
+            getMnemonicBytesForAccount: (_) {
+              started.complete();
+              return release.future;
+            },
+            isMacOS: () => false,
+            isMobile: () => false,
+            isIOS: () => false,
+            isAndroid: () => false,
+            broadcastDueMigration:
+                ({
+                  required dbPath,
+                  required lightwalletdUrl,
+                  required network,
+                  required accountUuid,
+                  required password,
+                  required saltBase64,
+                  int? walletOpenTipHeight,
+                }) async => _migrationResult(status: 'ready_to_migrate'),
+            startSoftwareMigration:
+                ({
+                  required dbPath,
+                  required lightwalletdUrl,
+                  required network,
+                  required accountUuid,
+                  required approvedSchedule,
+                  required mnemonicBytes,
+                  required password,
+                  required saltBase64,
+                }) async {
+                  signCalls++;
+                  return _migrationResult();
+                },
+            startImmediateMigration:
+                ({
+                  required dbPath,
+                  required lightwalletdUrl,
+                  required network,
+                  required accountUuid,
+                  required mnemonicBytes,
+                  required approvedTotalInputZatoshi,
+                  required approvedFeeZatoshi,
+                  required approvedMigratedZatoshi,
+                  required approvedInputNoteCount,
+                }) async {
+                  signCalls++;
+                  return _migrationResult();
+                },
+          );
+          final operation = switch (flow) {
+            'private' => service.startSoftwarePrivateMigration(
+              accountUuid: 'account-1',
+              approvedSchedule: const [],
+            ),
+            'immediate' => service.startSoftwareImmediateMigration(
+              accountUuid: 'account-1',
+              approvedPlan: rust_sync.OrchardMigrationImmediatePlan(
+                totalInputZatoshi: BigInt.from(100000),
+                feeZatoshi: BigInt.from(10000),
+                migratedZatoshi: BigInt.from(90000),
+                inputNoteCount: 1,
+              ),
+            ),
+            _ => service.continueSoftwarePrivateMigration(
+              accountUuid: 'account-1',
+            ),
+          };
+          final outcome = expectLater(
+            operation,
+            interruption == 'none'
+                ? completes
+                : throwsA(isA<SecureStorageSessionChangedException>()),
+          );
+          await started.future;
+          Completer<void>? mutationRelease;
+          Future<void>? mutation;
+          Future<IronwoodMigrationAccountRevocation>? revocation;
+          switch (interruption) {
+            case 'lock and unlock':
+              store.clearSessionPassword();
+              store.setSessionPassword('test-password');
+            case 'revocation':
+              revocation = registry.revokeAndWait(
+                network: 'test',
+                accountUuid: 'account-1',
+              );
+            case 'mutation':
+              mutationRelease = Completer<void>();
+              mutation = coordinator.runMutation(() => mutationRelease!.future);
+            case 'dispose':
+              requestCurrent = false;
+            case 'none':
+              break;
+          }
+          release.complete(bytes);
+          await outcome;
+          expect(signCalls, interruption == 'none' ? 1 : 0);
+          expect(bytes, everyElement(0));
+          (await revocation)?.rollback();
+          mutationRelease?.complete();
+          await mutation;
+        },
+      );
+    }
+  }
+
+  test(
+    'Linux migration does not advance with a delayed stale legacy credential',
+    () async {
+      final store = _DelayedMigrationSaltStore()
+        ..setSessionPassword('test-password');
+      var advanceCalls = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: store,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'test-password',
+        isMobile: () => false,
+        isIOS: () => false,
+        isAndroid: () => false,
+        broadcastDueMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+              int? walletOpenTipHeight,
+            }) async {
+              advanceCalls++;
+              return _migrationResult();
+            },
+      );
+      final operation = service.continueSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+      );
+      final outcome = expectLater(
+        operation,
+        throwsA(isA<SecureStorageSessionChangedException>()),
+      );
+      await store.started.future;
+      store.clearSessionPassword();
+      store.setSessionPassword('test-password');
+      store.release.complete('test-salt');
+      await outcome;
+      expect(advanceCalls, 0);
     },
   );
 
@@ -5547,4 +5749,24 @@ rust_sync.KeystoneSignedMigrationMessage _signedMigrationMessage() {
       ),
     ],
   );
+}
+
+class _DelayedMigrationSaltStore extends AppSecureStore {
+  _DelayedMigrationSaltStore()
+    : super.testing(
+        storage: const FlutterSecureStorage(),
+        enforceSessionGeneration: true,
+      );
+
+  final started = Completer<void>();
+  final release = Completer<String>();
+
+  @override
+  Future<String> getOrCreateIronwoodMigrationPendingTxSaltBase64({
+    required String network,
+    required String accountUuid,
+  }) {
+    started.complete();
+    return release.future;
+  }
 }

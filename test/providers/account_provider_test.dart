@@ -10,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -30,6 +32,62 @@ void main() {
   setUpAll(() => RustLib.initMock(api: _rustApi));
   tearDownAll(RustLib.dispose);
   setUp(_rustApi.reset);
+
+  test('Linux rejects account changes while another mutation waits', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final coordinator = LinuxKeyringCoordinator.testing();
+    addTearDown(coordinator.dispose);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    final account = container.read(accountProvider.notifier);
+    final release = Completer<void>();
+    final first = coordinator.runMutation(() => release.future);
+    try {
+      final changes = <Future<Object?> Function()>[
+        () => account.createAccount(),
+        () => account.createAccountFromMnemonic(mnemonic: 'unused fixture'),
+        () => account.importAccount(mnemonic: 'unused fixture'),
+        () => account.switchAccount('account-2'),
+        () => account.renameAccount('account-1', 'Changed'),
+        () => account.updateProfilePicture('account-1', 'unused'),
+        () => account.removeAccount('account-2'),
+        () => account.resetWallet(),
+        () => account.importKeystoneAccount(
+          name: 'Unused',
+          ufvk: '',
+          seedFingerprint: [],
+          zip32Index: 0,
+          birthdayHeight: 0,
+        ),
+        () => account.importLinkedWalletAccounts(
+          network: 'main',
+          accountsToImport: [],
+        ),
+      ];
+      for (final change in changes) {
+        await expectLater(
+          change(),
+          throwsA(isA<LinuxWalletMutationBusyException>()),
+        );
+      }
+      expect(
+        container.read(accountProvider).value!.activeAccountUuid,
+        'account-1',
+      );
+      expect(await AppSecureStore.instance.readPlain(kWalletDbNameKey), isNull);
+      expect(coordinator.hasPendingMutation, isTrue);
+    } finally {
+      release.complete();
+      await first;
+    }
+    expect(coordinator.hasPendingMutation, isFalse);
+  });
 
   group('account switch locking', () {
     late ProviderContainer container;

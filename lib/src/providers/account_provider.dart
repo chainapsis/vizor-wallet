@@ -14,6 +14,7 @@ import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
 import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
+import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/swap/providers/swap_activity_store.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
@@ -140,7 +141,12 @@ class LinkedWalletAccountsImportResult {
 }
 
 class AccountNotifier extends AsyncNotifier<AccountState> {
-  static final _storage = AppSecureStore.instance;
+  AccountNotifier() : _storage = AppSecureStore.instance;
+
+  @visibleForTesting
+  AccountNotifier.testing({required AppSecureStore store}) : _storage = store;
+
+  final AppSecureStore _storage;
 
   @override
   FutureOr<AccountState> build() {
@@ -152,7 +158,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   /// Create a new wallet with a fresh mnemonic. Returns the mnemonic.
-  Future<String> createAccount({String? name}) async {
+  Future<String> createAccount({String? name}) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(() => _createAccount(name: name));
+
+  Future<String> _createAccount({String? name}) async {
     try {
       final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
@@ -232,6 +242,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// account. The mnemonic is only stored after the user confirms the final
   /// CTA, so the wallet is not created just by visiting the reveal screen.
   Future<void> createAccountFromMnemonic({
+    required String mnemonic,
+    String? name,
+    String profilePictureId = kDefaultProfilePictureId,
+  }) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _createAccountFromMnemonic(
+          mnemonic: mnemonic,
+          name: name,
+          profilePictureId: profilePictureId,
+        ),
+      );
+
+  Future<void> _createAccountFromMnemonic({
     required String mnemonic,
     String? name,
     String profilePictureId = kDefaultProfilePictureId,
@@ -319,6 +343,26 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Import a wallet from mnemonic.
   Future<void> importAccount({
+    required String mnemonic,
+    String bip39Passphrase = '',
+    int? birthdayHeight,
+    String? name,
+    String profilePictureId = kDefaultProfilePictureId,
+    List<int> additionalAccountIndices = const [],
+  }) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _importAccount(
+          mnemonic: mnemonic,
+          bip39Passphrase: bip39Passphrase,
+          birthdayHeight: birthdayHeight,
+          name: name,
+          profilePictureId: profilePictureId,
+          additionalAccountIndices: additionalAccountIndices,
+        ),
+      );
+
+  Future<void> _importAccount({
     required String mnemonic,
     String bip39Passphrase = '',
     int? birthdayHeight,
@@ -486,9 +530,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   /// Switch active account.
-  Future<void> switchAccount(String uuid) async {
+  Future<void> switchAccount(String uuid) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(() => _switchAccount(uuid));
+
+  Future<void> _switchAccount(String uuid) async {
     if (ref.read(appSecurityProvider).requiresUnlock) return;
     final previousActiveUuid = state.value?.activeAccountUuid;
+    if (previousActiveUuid != uuid) {
+      _storage.invalidatePendingSecretOperations();
+    }
+    final sessionGeneration = _storage.sessionGeneration;
     if (previousActiveUuid != null && previousActiveUuid != uuid) {
       final guardedSubmission = ref
           .read(votingSubmissionGuardProvider.notifier)
@@ -500,45 +552,80 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     await _storage.writeString(_activeAccountKey, uuid);
 
     String? address;
-    try {
-      final dbPath = await _getDbPath();
-      final network = await _getNetwork();
-      address = await rust_wallet.getUnifiedAddress(
-        dbPath: dbPath,
-        network: network,
-        accountUuid: uuid,
-      );
-    } catch (e) {
-      log('switchAccount: failed to get address: $e');
+    if (!_storage.enforcesSessionGeneration ||
+        _hasCurrentUnlockedSession(sessionGeneration)) {
+      try {
+        final dbPath = await _getDbPath();
+        final network = await _getNetwork();
+        address = await rust_wallet.getUnifiedAddress(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: uuid,
+        );
+      } catch (e) {
+        log('switchAccount: failed to get address: $e');
+      }
     }
 
-    final prev = state.value ?? const AccountState();
-    state = AsyncData(
-      // The selection is already persisted. Keep it consistent for unlock,
-      // but discard the address if the wallet locked during the switch.
-      ref.read(appSecurityProvider).requiresUnlock
-          ? AccountState(accounts: prev.accounts, activeAccountUuid: uuid)
-          : prev.copyWith(activeAccountUuid: uuid, activeAddress: address),
-    );
+    if (_storage.enforcesSessionGeneration) {
+      if (!ref.mounted) return;
+      final current = state.value ?? const AccountState();
+      if (!current.accounts.any((account) => account.uuid == uuid)) return;
+      // The UUID write already succeeded. Keep that result while discarding
+      // address data resolved for an earlier unlock session.
+      state = AsyncData(
+        AccountState(
+          accounts: current.accounts,
+          activeAccountUuid: uuid,
+          activeAddress: _hasCurrentUnlockedSession(sessionGeneration)
+              ? address
+              : null,
+        ),
+      );
+    } else {
+      final prev = state.value ?? const AccountState();
+      state = AsyncData(
+        // Preserve main's lock guard on platforms without keyring waits.
+        ref.read(appSecurityProvider).requiresUnlock
+            ? AccountState(accounts: prev.accounts, activeAccountUuid: uuid)
+            : prev.copyWith(activeAccountUuid: uuid, activeAddress: address),
+      );
+    }
 
     log('switchAccount: switched to $uuid');
   }
 
   /// Rename an account.
-  Future<void> renameAccount(String uuid, String newName) async {
+  Future<void> renameAccount(String uuid, String newName) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(() => _renameAccount(uuid, newName));
+
+  Future<void> _renameAccount(String uuid, String newName) async {
     validateAccountName(newName);
     final normalizedName = normalizeAccountName(newName);
     final prev = state.value ?? const AccountState();
-    final updated = prev.accounts
-        .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
-        .toList();
+    AccountInfo rename(AccountInfo account) =>
+        account.uuid == uuid ? account.copyWith(name: normalizedName) : account;
+    final updated = prev.accounts.map(rename).toList();
     await _saveAccounts(updated);
-    state = AsyncData(prev.copyWith(accounts: updated));
+    if (_storage.enforcesSessionGeneration && !ref.mounted) return;
+    // A keyring wait can outlive a lock. Merge the saved metadata into the
+    // current account snapshot without restoring its old address or accounts.
+    final current = _storage.enforcesSessionGeneration
+        ? state.value ?? const AccountState()
+        : prev;
+    state = AsyncData(
+      current.copyWith(accounts: current.accounts.map(rename).toList()),
+    );
     log('renameAccount: $uuid → $normalizedName');
   }
 
   /// Update an account profile picture.
-  Future<void> updateProfilePicture(
+  Future<void> updateProfilePicture(String uuid, String profilePictureId) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(() => _updateProfilePicture(uuid, profilePictureId));
+
+  Future<void> _updateProfilePicture(
     String uuid,
     String profilePictureId,
   ) async {
@@ -554,15 +641,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     final prev = state.value ?? const AccountState();
-    final updated = prev.accounts
-        .map(
-          (a) => a.uuid == uuid
-              ? a.copyWith(profilePictureId: normalizedProfilePictureId)
-              : a,
-        )
-        .toList();
+    AccountInfo updatePicture(AccountInfo account) => account.uuid == uuid
+        ? account.copyWith(profilePictureId: normalizedProfilePictureId)
+        : account;
+    final updated = prev.accounts.map(updatePicture).toList();
     await _saveAccounts(updated);
-    state = AsyncData(prev.copyWith(accounts: updated));
+    if (_storage.enforcesSessionGeneration && !ref.mounted) return;
+    final current = _storage.enforcesSessionGeneration
+        ? state.value ?? const AccountState()
+        : prev;
+    state = AsyncData(
+      current.copyWith(accounts: current.accounts.map(updatePicture).toList()),
+    );
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
   }
 
@@ -574,13 +664,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// records or secure storage. Process-local voting state is then cleared
   /// before the wallet delete. Durable voting rows, hotkeys, and other
   /// account-scoped sidecars are cleared after the wallet account is deleted.
-  Future<void> removeAccount(String uuid) async {
+  Future<void> removeAccount(String uuid) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(() => _removeAccount(uuid));
+
+  Future<void> _removeAccount(String uuid) async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
     final prev = state.value ?? const AccountState();
     final targetIndex = prev.accounts.indexWhere((a) => a.uuid == uuid);
     if (targetIndex < 0) {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
+
+    _storage.invalidatePendingSecretOperations();
 
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
@@ -765,8 +861,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   ///
   /// Once the durable wallet data is gone, the Tor route is returned to Direct
   /// and its on-disk state is cleared too — see [clearTorPrivacyStateForReset].
-  Future<void> resetWallet() async {
+  Future<void> resetWallet() => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(() => _resetWallet());
+
+  Future<void> _resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
+    _storage.invalidatePendingSecretOperations();
 
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
@@ -1043,6 +1144,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<void> restoreAfterUnlock() async {
+    final sessionGeneration = _storage.sessionGeneration;
     final prev = state.value ?? const AccountState();
     final accountUuid = prev.activeAccountUuid;
     if (accountUuid == null) return;
@@ -1060,14 +1162,30 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('restoreAfterUnlock: failed to get address: $e');
     }
 
+    final AccountState current;
+    if (_storage.enforcesSessionGeneration) {
+      if (!_hasCurrentUnlockedSession(sessionGeneration)) return;
+      current = state.value ?? const AccountState();
+      if (current.activeAccountUuid != accountUuid ||
+          !current.accounts.any((account) => account.uuid == accountUuid)) {
+        return;
+      }
+    } else {
+      current = prev;
+    }
     state = AsyncData(
       AccountState(
-        accounts: prev.accounts,
-        activeAccountUuid: prev.activeAccountUuid,
+        accounts: current.accounts,
+        activeAccountUuid: current.activeAccountUuid,
         activeAddress: address,
       ),
     );
   }
+
+  bool _hasCurrentUnlockedSession(int generation) =>
+      ref.mounted &&
+      _storage.isSessionGenerationCurrent(generation) &&
+      _storage.hasSessionPassword;
 
   void updateActiveAddressForAccount(String accountUuid, String address) {
     final prev = state.value ?? const AccountState();
@@ -1084,6 +1202,26 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// accounts. That future seed-requiring migration risk is a product tradeoff
   /// we accept for Keystone-first onboarding.
   Future<void> importKeystoneAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
+  }) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _importKeystoneAccount(
+          name: name,
+          ufvk: ufvk,
+          seedFingerprint: seedFingerprint,
+          zip32Index: zip32Index,
+          birthdayHeight: birthdayHeight,
+          profilePictureId: profilePictureId,
+        ),
+      );
+
+  Future<void> _importKeystoneAccount({
     required String name,
     required String ufvk,
     required List<int> seedFingerprint,
@@ -1147,6 +1285,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<LinkedWalletAccountsImportResult> importLinkedWalletAccounts({
+    required String network,
+    required List<LinkedWalletAccountImport> accountsToImport,
+  }) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _importLinkedWalletAccounts(
+          network: network,
+          accountsToImport: accountsToImport,
+        ),
+      );
+
+  Future<LinkedWalletAccountsImportResult> _importLinkedWalletAccounts({
     required String network,
     required List<LinkedWalletAccountImport> accountsToImport,
   }) async {

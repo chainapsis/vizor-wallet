@@ -119,6 +119,8 @@ import 'src/providers/payment_uri_prefill_provider.dart';
 import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
+import 'src/core/storage/secure_storage_diagnostics.dart';
+import 'src/core/widgets/linux_keyring_gate.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
@@ -129,6 +131,7 @@ void log(String message) => debugPrint('[zcash] $message');
 
 Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SecureStorageDiagnostics.instance.initialize();
   log('runtime: initializing RustLib');
   await RustLib.init();
   log('runtime: applying network privacy policy');
@@ -229,7 +232,12 @@ class _BootstrappedZcashWalletAppState
 Future<void> runZcashWalletApp() async {
   log('runtime: starting');
   await initializeZcashWalletRuntime();
-  final app = await buildBootstrappedZcashWalletApp();
+  final Widget app;
+  if (Platform.isLinux) {
+    app = LinuxKeyringStartupHost(loadApp: buildBootstrappedZcashWalletApp);
+  } else {
+    app = await buildBootstrappedZcashWalletApp();
+  }
   log('runtime: launching app');
   runApp(app);
   if (isDesktopLayoutPlatform && Platform.isWindows) {
@@ -1226,43 +1234,45 @@ class ZcashWalletApp extends ConsumerWidget {
           // events over empty regions while descendant GestureDetectors
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
-          child: _LinuxUpdateNoticeListener(
-            child: _WindowsUpdateStartupCheck(
-              child: _WindowsUpdatePromptHost(
-                router: router,
-                child: _IncomingLinkHost(
+          child: LinuxKeyringGate(
+            child: _LinuxUpdateNoticeListener(
+              child: _WindowsUpdateStartupCheck(
+                child: _WindowsUpdatePromptHost(
                   router: router,
-                  child: _RpcEndpointFailoverToastListener(
-                    child: _DesktopOpaqueWindowBackground(
-                      child: IronwoodMigrationCoordinatorHost(
-                        child: IronwoodMigrationPrivacyLockHost(
-                          child: SyncKeepAwakeNativeHost(
-                            child: SyncKeepAwakePrivacyLockHost(
-                              child: SyncKeepAwakeInteractionListener(
-                                child: GestureDetector(
-                                  onTap: () {
-                                    // Leaf-only: skip when the primary focus is a
-                                    // `FocusScopeNode` rather than a concrete `FocusNode`.
-                                    // Unfocusing the scope itself strips the scope's
-                                    // "most-recently-focused child" memory, which leaves the
-                                    // next Tab with no deterministic starting point.
-                                    final primary =
-                                        FocusManager.instance.primaryFocus;
-                                    if (primary != null &&
-                                        primary is! FocusScopeNode) {
-                                      primary.unfocus();
-                                    }
-                                  },
-                                  behavior: HitTestBehavior.translucent,
-                                  // Innermost app-level layer: the payment
-                                  // request card sits directly over the
-                                  // router's content, under the privacy lock
-                                  // and the keep-awake hosts above it. The
-                                  // link intake that feeds it lives further
-                                  // up, in `_IncomingLinkHost`.
-                                  child: PaymentRequestHost(
-                                    router: router,
-                                    child: child!,
+                  child: _IncomingLinkHost(
+                    router: router,
+                    child: _RpcEndpointFailoverToastListener(
+                      child: _DesktopOpaqueWindowBackground(
+                        child: IronwoodMigrationCoordinatorHost(
+                          child: IronwoodMigrationPrivacyLockHost(
+                            child: SyncKeepAwakeNativeHost(
+                              child: SyncKeepAwakePrivacyLockHost(
+                                child: SyncKeepAwakeInteractionListener(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      // Leaf-only: skip when the primary focus is a
+                                      // `FocusScopeNode` rather than a concrete `FocusNode`.
+                                      // Unfocusing the scope itself strips the scope's
+                                      // "most-recently-focused child" memory, which leaves the
+                                      // next Tab with no deterministic starting point.
+                                      final primary =
+                                          FocusManager.instance.primaryFocus;
+                                      if (primary != null &&
+                                          primary is! FocusScopeNode) {
+                                        primary.unfocus();
+                                      }
+                                    },
+                                    behavior: HitTestBehavior.translucent,
+                                    // Innermost app-level layer: the payment
+                                    // request card sits directly over the
+                                    // router's content, under the privacy lock
+                                    // and the keep-awake hosts above it. The
+                                    // link intake that feeds it lives further
+                                    // up, in `_IncomingLinkHost`.
+                                    child: PaymentRequestHost(
+                                      router: router,
+                                      child: child!,
+                                    ),
                                   ),
                                 ),
                               ),
