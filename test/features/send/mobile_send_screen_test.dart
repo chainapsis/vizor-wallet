@@ -2454,6 +2454,39 @@ void main() {
     expect(find.text('Confirm with Keystone'), findsNothing);
   });
 
+  testWidgets('a Ledger account can send to a TEX address', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _enterAddress(tester, _texAddress);
+
+    expect(find.text('Ledger does not support TEX sends yet.'), findsNothing);
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(continueButton.onPressed, isNotNull);
+
+    await _toReviewStep(tester, address: _texAddress);
+
+    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+  });
+
   testWidgets('a transparent recipient hides the memo entry', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();

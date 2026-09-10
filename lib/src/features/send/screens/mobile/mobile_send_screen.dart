@@ -511,13 +511,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         .hardwareSignerKindForAccount(uuid);
   }
 
-  static const _ledgerTexUnsupportedText =
-      'Ledger does not support TEX sends yet.';
-
-  bool get _isLedgerTexRecipient =>
-      _addressType == 'tex' &&
-      _activeHardwareSignerKind == HardwareSignerKind.ledger;
-
   bool get _showRecipientContinue =>
       _addressController.text.trim().isNotEmpty || _addressFocus.hasFocus;
 
@@ -632,7 +625,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _continueToAmount() {
-    if (!_hasValidAddress || _isLedgerTexRecipient) return;
+    if (!_hasValidAddress) return;
     _addressFocus.unfocus();
     if (widget.useRouteSteps) {
       unawaited(
@@ -894,7 +887,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? _maxEstimatePreconditionError() {
     if (_activeAccountUuid == null) return 'Max amount unavailable';
     if (!_hasValidAddress) return 'Max amount unavailable';
-    if (_isLedgerTexRecipient) return _ledgerTexUnsupportedText;
     if (utf8.encode(_effectiveMemo).length > 512) {
       return 'Message is too long';
     }
@@ -2083,20 +2075,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAddressErrorSpace(BuildContext context) {
     final colors = context.colors;
-    final ledgerTex = _isLedgerTexRecipient;
-    final showError =
-        _addressType == 'invalid' || _addressType == 'error' || ledgerTex;
+    final showError = _addressType == 'invalid' || _addressType == 'error';
     // The reserved line shows the validation error, or — when the address is
     // valid and matches a saved contact / own account — the resolved name so
     // the user knows the pasted/typed address is the intended one.
     Widget? line;
     if (showError) {
       line = Text(
-        ledgerTex
-            ? _ledgerTexUnsupportedText
-            : (_addressType == 'invalid'
-                  ? 'Invalid address'
-                  : 'Address validation failed'),
+        _addressType == 'invalid'
+            ? 'Invalid address'
+            : 'Address validation failed',
         style: AppTypography.labelLarge.copyWith(
           color: colors.text.destructive,
         ),
@@ -2151,9 +2139,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         enabledBorderColor: useBackdropColors
             ? colors.border.subtleOpacity
             : null,
-        onPressed: _hasValidAddress && !_isLedgerTexRecipient
-            ? _continueToAmount
-            : null,
+        onPressed: _hasValidAddress ? _continueToAmount : null,
         child: Text(
           _addressController.text.trim().isEmpty
               ? 'Enter address to continue'
