@@ -1,4 +1,4 @@
-import 'voting_formatters.dart';
+import 'voting_eligibility_explanation.dart';
 
 String friendlyVotingErrorMessage(Object error) {
   return friendlyVotingErrorText(error.toString());
@@ -9,7 +9,11 @@ bool isVotingEligibilityErrorText(String text) {
   final lowerMessage = message.toLowerCase();
   return _noSpendableNotesPattern.firstMatch(message) != null ||
       _minimumVotingEligibilityPattern.firstMatch(message) != null ||
+      lowerMessage.contains('no eligible ironwood notes') ||
+      lowerMessage.contains('no eligible shielded funds') ||
       lowerMessage.startsWith('this account is not eligible for this ') ||
+      lowerMessage.startsWith('only ironwood notes this account held') ||
+      lowerMessage.startsWith('voting needs at least 0.125 zec') ||
       lowerMessage.startsWith(
         'voting requires at least one eligible shielded note bundle with 0.125 zec',
       ) ||
@@ -25,25 +29,20 @@ String friendlyVotingErrorText(String text) {
   final message = _normalizedVotingErrorText(text);
   final noSpendableNotes = _noSpendableNotesPattern.firstMatch(message);
   if (noSpendableNotes != null) {
-    final heightText = noSpendableNotes.group(1);
-    final snapshot = heightText == null
-        ? 'the voting round snapshot block'
-        : 'snapshot block ${formatBlockHeight(int.parse(heightText))}';
-    return 'This account is not eligible for this voting round. It had no eligible '
-        'shielded funds at $snapshot. Switch to an eligible account to vote.';
+    return VotingEligibilityExplanation(
+      reason: VotingEligibilityExclusionReason.noNotesAtSnapshot,
+      snapshotHeight: int.tryParse(noSpendableNotes.group(1) ?? ''),
+    ).combinedMessage;
   }
 
   final minimumVotingEligibility = _minimumVotingEligibilityPattern.firstMatch(
     message,
   );
   if (minimumVotingEligibility != null) {
-    final heightText = minimumVotingEligibility.group(1);
-    final snapshot = heightText == null
-        ? 'the voting round snapshot block'
-        : 'snapshot block ${formatBlockHeight(int.parse(heightText))}';
-    return 'Voting requires at least one eligible shielded note bundle with '
-        '0.125 ZEC '
-        'at $snapshot. Switch to an eligible account to vote.';
+    return VotingEligibilityExplanation(
+      reason: VotingEligibilityExclusionReason.belowMinimum,
+      snapshotHeight: int.tryParse(minimumVotingEligibility.group(1) ?? ''),
+    ).combinedMessage;
   }
 
   return message.isEmpty ? 'Voting session action failed.' : message;

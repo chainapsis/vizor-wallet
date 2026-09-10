@@ -748,7 +748,8 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-voting-ineligible-modal',
-    description: 'Mobile voting eligibility dialog matching Figma 8048:71300',
+    description:
+        'Variation B: structured sheet with snapshot date and exclusion reason',
     builder: buildMobileVotingIneligibleModalUseCase,
     desktop: false,
     mobile: true,
@@ -777,7 +778,8 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-voting-ineligible',
-    description: 'Mobile ineligible voting detail matching Figma 8048:35024',
+    description:
+        'Variation A: inline snapshot date and exclusion reason on the poll page',
     builder: buildMobileVotingIneligibleUseCase,
     desktop: false,
     mobile: true,
