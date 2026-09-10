@@ -44,7 +44,12 @@ int main() {
   FakeBluez fake;
   ledger_bluez::Transport transport(fake.client);
   std::vector<std::string> codes;
-  transport.SetPairingListener([&](const std::string& code) { codes.push_back(code); });
+  bool codes_match = true;
+  // The UI's answer: BlueZ only completes Pair once the host confirms the code.
+  transport.SetPairingListener([&](const std::string& code) {
+    codes.push_back(code);
+    if (!code.empty()) transport.ConfirmPairing(codes_match);
+  });
   try {
     Require(Run([&] { return transport.ReadyAdapter(nullptr); }) == kAdapter, "powered adapter");
     fake.powered = false;
@@ -105,6 +110,23 @@ int main() {
     Fails("pairing_rejected", [&] { transport.Connect(kDevice, nullptr); });
     Require(fake.agent_rejections == 2, "other services are not authorized");
     fake.agent_service_uuid.clear();
+    Run([&] { transport.Disconnect(); });
+    // The user says the Ledger shows a different code: the host rejects, so a
+    // device in the middle never gets a bond with the host.
+    codes.clear();
+    codes_match = false;
+    Fails("pairing_rejected", [&] { transport.Connect(kDevice, nullptr); });
+    Require(fake.agent_rejections == 3 && !fake.paired, "a mismatching code rejects the pairing");
+    Require(codes == std::vector<std::string>({"123456", ""}), "the code was shown before the rejection");
+    codes_match = true;
+    Run([&] { transport.Disconnect(); });
+    // Just Works offers no code to compare, so it is never a Ledger.
+    codes.clear();
+    fake.agent_just_works = true;
+    Fails("pairing_rejected", [&] { transport.Connect(kDevice, nullptr); });
+    Require(fake.agent_rejections == 4 && !fake.paired && codes == std::vector<std::string>({""}),
+        "a pairing without a code is rejected");
+    fake.agent_just_works = false;
     Run([&] { transport.Disconnect(); });
     Run([&] { transport.Connect(kDevice, nullptr); });
     auto app = Run([&] { return transport.CurrentApp(nullptr); });

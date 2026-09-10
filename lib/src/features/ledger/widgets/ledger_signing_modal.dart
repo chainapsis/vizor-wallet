@@ -109,6 +109,7 @@ class LedgerSigningModal extends ConsumerStatefulWidget {
 
 class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
   final _recovery = LedgerConnectionRecoveryController();
+  bool _pairingConfirmed = false;
   LedgerSigningModalPhase? get _recoveryPhase => switch (_recovery.phase) {
     LedgerConnectionRecoveryPhase.reconnecting =>
       LedgerSigningModalPhase.reconnecting,
@@ -295,14 +296,26 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
     final ready = phase == LedgerSigningModalPhase.readyToRetry;
     final cancelled = phase == LedgerSigningModalPhase.cancelled;
     // Linux pairs through Vizor's own agent, so the code to compare with the
-    // Ledger is shown here rather than in a system prompt.
-    final pairingCode =
-        phase == LedgerSigningModalPhase.connecting ||
-            phase == LedgerSigningModalPhase.reconnecting
+    // Ledger is shown here rather than in a system prompt. A pairing can
+    // surface during any connect this request makes, so every in-flight
+    // phase watches for it.
+    final pairingCode = !failed && !ready && !cancelled
         ? ref.watch(ledgerPairingCodeProvider).value
         : null;
+    // A confirmation belongs to one code: a new prompt asks again.
+    ref.listen<AsyncValue<String?>>(ledgerPairingCodeProvider, (
+      previous,
+      next,
+    ) {
+      if (_pairingConfirmed && next.value != previous?.value) {
+        setState(() => _pairingConfirmed = false);
+      }
+    });
+    final pairingPrompt = pairingCode != null && !_pairingConfirmed;
     final guidanceTitle = pairingCode != null
-        ? 'Confirm pairing on your Ledger'
+        ? _pairingConfirmed
+              ? 'Approve pairing on your Ledger'
+              : 'Confirm pairing on your Ledger'
         : approving
         ? opening
               ? 'Open the $appName app'
@@ -315,7 +328,9 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
     const reconnectMessage =
         'Keep your Ledger connected and unlocked. Reconnecting will not send a new signing request.';
     final guidanceMessage = pairingCode != null
-        ? 'Approve pairing on your Ledger only if it shows $pairingCode.'
+        ? _pairingConfirmed
+              ? 'Approve the pairing on your Ledger to continue.'
+              : 'Pair only if your Ledger shows the same code.'
         : showWaitingHint && reviewing
         ? 'No request on your Ledger? Make sure it’s unlocked and the $appName app is open.'
         : approving && !opening && !reviewing
@@ -333,9 +348,11 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
           ? 'Approval $roundNumber of $roundCount'
           : null,
       title: guidanceTitle,
-      detailLabel: failed && !needsReconnect && statusLabel != guidanceTitle
-          ? statusLabel
-          : null,
+      detailLabel:
+          pairingCode ??
+          (failed && !needsReconnect && statusLabel != guidanceTitle
+              ? statusLabel
+              : null),
       connectionPicker:
           failed &&
               failure!.canChangeConnection &&
@@ -349,32 +366,59 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
           ? _LedgerFailureConnectionPicker(account: account)
           : null,
       message: guidanceMessage,
-      busy: !failed && !ready && !cancelled && !opening && !reviewing,
-      attention: opening || reviewing,
+      busy:
+          pairingCode == null &&
+          !failed &&
+          !ready &&
+          !cancelled &&
+          !opening &&
+          !reviewing,
+      attention: pairingCode != null || opening || reviewing,
       destructive: destructive,
       complete: ready,
       reservedMessages: [reconnectMessage, widget.recoveryReadyMessage],
-      primaryLabel: ready
+      primaryLabel: pairingPrompt
+          ? 'Codes match'
+          : ready
           ? widget.recoveryActionLabel
           : cancelled
           ? 'Try again'
           : failed
           ? actionLabel
           : null,
-      onPrimary: settling
+      onPrimary: pairingPrompt
+          ? () => unawaited(_answerPairing(true))
+          : settling
           ? null
           : (ready || cancelled || failed)
           ? onFailureAction
           : null,
-      secondaryLabel: cancelled ? 'Back' : cancelLabel,
-      showSecondary: onCancel != null || settling,
-      onSecondary: settling ? null : onCancel,
+      secondaryLabel: pairingPrompt
+          ? 'Codes differ'
+          : cancelled
+          ? 'Back'
+          : cancelLabel,
+      showSecondary: pairingPrompt || onCancel != null || settling,
+      onSecondary: pairingPrompt
+          ? () => unawaited(_answerPairing(false))
+          : settling
+          ? null
+          : onCancel,
     );
     if (widget.pageLayout) return content;
     return AppModalCard(
       width: 360,
       child: SingleChildScrollView(child: content),
     );
+  }
+
+  Future<void> _answerPairing(bool accept) async {
+    if (accept) setState(() => _pairingConfirmed = true);
+    try {
+      await ref.read(ledgerPairingAnswerProvider)(accept: accept);
+    } catch (_) {
+      // The pending connect reports the outcome either way.
+    }
   }
 
   static AccountInfo? _ledgerAccount(WidgetRef ref, String? uuid) {

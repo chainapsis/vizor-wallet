@@ -116,6 +116,12 @@ FlValue* Commands(std::initializer_list<FlValue*> commands) {
   return args;
 }
 
+FlValue* BoolArgs(const char* key, bool value) {
+  auto* args = fl_value_new_map();
+  fl_value_set_string_take(args, key, fl_value_new_bool(value));
+  return args;
+}
+
 FlValue* DeviceArgs(const char* id) {
   auto* args = fl_value_new_map();
   fl_value_set_string_take(args, "deviceId", fl_value_new_string(id));
@@ -138,16 +144,24 @@ int main() {
     Require(ErrorCode(channels.Call("connect"), "connect without a device") == "disconnected", "missing device id");
     Require(fake.connects == 0, "no connection attempt without a device id");
     Success(channels.Wait(channels.Send(kConnection, "listen", nullptr)), "listen for connection events");
-    Success(channels.Call("connect", DeviceArgs(kDevice)), "connect");
+    // Pairing waits for Dart to confirm the code the agent pushed.
+    auto connecting = channels.Send(kMethods, "connect", DeviceArgs(kDevice));
+    for (int i = 0; i < 500 && channels.Events(kConnection).empty(); ++i) Pump(10ms);
+    {
+      const auto events = channels.Events(kConnection);
+      Require(events.size() == 1 && Str(events[0].get(), "type") == "pairing" && Str(events[0].get(), "code") == "123456",
+          "the pairing code reaches Dart");
+    }
+    Require(!connecting->done && fake.pairs == 1 && !fake.paired, "connect waits for the user's answer");
+    Success(channels.Call("confirmPairing", BoolArgs("accept", true)), "confirm the pairing code");
+    Success(channels.Wait(connecting), "connect");
     Require(fake.pairs == 1 && fake.connects == 1, "pair then connect");
     {
-      // Vizor's own agent confirmed the pairing, so Dart got the code to
-      // compare with the Ledger and then the end of the prompt.
       const auto events = channels.Events(kConnection);
-      Require(events.size() == 2, "two pairing events");
-      Require(Str(events[0].get(), "type") == "pairing" && Str(events[0].get(), "code") == "123456", "pairing code event");
-      Require(Str(events[1].get(), "type") == "pairing_ended", "pairing ended event");
+      Require(events.size() == 2 && Str(events[1].get(), "type") == "pairing_ended", "pairing ended event");
     }
+    Success(channels.Call("confirmPairing", BoolArgs("accept", false)), "an answer without a prompt is ignored");
+    Require(fake.connected, "a stray answer does not touch the connection");
     {
       const auto app = channels.Call("currentApp");
       auto* result = Success(app, "currentApp");

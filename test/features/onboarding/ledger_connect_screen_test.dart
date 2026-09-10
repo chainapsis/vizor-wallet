@@ -577,81 +577,97 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('Linux connection survives focus changes and shows the pairing code', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    final pending = Completer<void>();
-    final ble = _FakeLedgerBleService()..pendingConnection = pending.future;
-    final pairingCodes = StreamController<String?>.broadcast();
-    addTearDown(pairingCodes.close);
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.linux,
-        pairingCodes: pairingCodes.stream,
-        connector: (_) => Future.error(StateError('USB should not be used')),
-        importer:
-            ({
-              required name,
-              required account,
-              required birthdayHeight,
-              required profilePictureId,
-            }) async =>
-                throw StateError('This test must not import an account'),
-        bluetoothConnector: (index, device) async => LedgerDeviceAccount(
-          ufvk: 'linux-bluetooth-viewing-key',
-          seedFingerprint: const [4, 5, 6],
-          accountIndex: index,
-          appVersion: '3.9.3',
-          transport: LedgerConnectionTransport.bluetooth,
-          device: device,
+  testWidgets(
+    'Linux connection survives focus changes and shows the pairing code',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final pending = Completer<void>();
+      final ble = _FakeLedgerBleService()..pendingConnection = pending.future;
+      final pairingCodes = StreamController<String?>.broadcast();
+      addTearDown(pairingCodes.close);
+      final pairingAnswers = <bool>[];
+      await tester.pumpWidget(
+        _harness(
+          platform: TargetPlatform.linux,
+          pairingCodes: pairingCodes.stream,
+          pairingAnswers: pairingAnswers,
+          connector: (_) => Future.error(StateError('USB should not be used')),
+          importer:
+              ({
+                required name,
+                required account,
+                required birthdayHeight,
+                required profilePictureId,
+              }) async =>
+                  throw StateError('This test must not import an account'),
+          bluetoothConnector: (index, device) async => LedgerDeviceAccount(
+            ufvk: 'linux-bluetooth-viewing-key',
+            seedFingerprint: const [4, 5, 6],
+            accountIndex: index,
+            appVersion: '3.9.3',
+            transport: LedgerConnectionTransport.bluetooth,
+            device: device,
+          ),
+          bleService: ble,
         ),
-        bleService: ble,
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
-    );
-    await tester.pump();
-    expect(
-      find.text('Approve Bluetooth pairing on the device if prompted.'),
-      findsOneWidget,
-    );
-    // Vizor's own BlueZ agent confirms the host side, so the code to compare
-    // with the Ledger's screen has to be shown here.
-    pairingCodes.add('123456');
-    await tester.pump();
-    expect(find.text('Confirm pairing on your Ledger'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('ledger_desktop_ble_pairing_code')),
-      findsOneWidget,
-    );
-    expect(find.text('123456'), findsOneWidget);
-    expect(
-      find.text('Approve pairing on your Ledger only if it shows this code.'),
-      findsOneWidget,
-    );
-    pairingCodes.add(null);
-    await tester.pump();
-    expect(find.text('123456'), findsNothing);
-    final disconnects = ble.disconnectCalls;
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    await tester.pump();
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pump();
-    expect(ble.disconnectCalls, disconnects);
-    expect(find.text('Connecting to Ledger Flex'), findsOneWidget);
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
+      );
+      await tester.pump();
+      expect(
+        find.text('Approve Bluetooth pairing on the device if prompted.'),
+        findsOneWidget,
+      );
+      // Vizor's own BlueZ agent confirms the host side, so the code to compare
+      // with the Ledger's screen has to be shown here.
+      pairingCodes.add('123456');
+      await tester.pump();
+      expect(find.text('Confirm pairing on your Ledger'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('ledger_desktop_ble_pairing_code')),
+        findsOneWidget,
+      );
+      expect(find.text('123456'), findsOneWidget);
+      expect(
+        find.text('Pair only if your Ledger shows the same code.'),
+        findsOneWidget,
+      );
+      // The host side answers only after the user compared the codes.
+      expect(pairingAnswers, isEmpty);
+      await tester.tap(
+        find.byKey(const ValueKey('ledger_desktop_ble_pairing_match')),
+      );
+      await tester.pump();
+      expect(pairingAnswers, [true]);
+      expect(find.text('Approve pairing on your Ledger'), findsOneWidget);
+      expect(find.text('123456'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('ledger_desktop_ble_pairing_match')),
+        findsNothing,
+      );
+      pairingCodes.add(null);
+      await tester.pump();
+      expect(find.text('123456'), findsNothing);
+      final disconnects = ble.disconnectCalls;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(ble.disconnectCalls, disconnects);
+      expect(find.text('Connecting to Ledger Flex'), findsOneWidget);
 
-    pending.complete();
-    await tester.pumpAndSettle();
-    expect(find.text('Ledger Flex is ready'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      pending.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Ledger Flex is ready'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final platform in [
     TargetPlatform.macOS,
@@ -961,6 +977,7 @@ Widget _harness({
   LedgerAppReadinessState readiness = const LedgerAppReadinessState.idle(),
   LedgerMobileBleService? bleService,
   Stream<String?>? pairingCodes,
+  List<bool>? pairingAnswers,
 }) {
   final router = GoRouter(
     initialLocation: '/onboarding/ledger',
@@ -1013,6 +1030,10 @@ Widget _harness({
         ledgerMobileBleServiceProvider.overrideWithValue(bleService),
       if (pairingCodes != null)
         ledgerPairingCodeProvider.overrideWith((_) => pairingCodes),
+      if (pairingAnswers != null)
+        ledgerPairingAnswerProvider.overrideWithValue(
+          ({required accept}) async => pairingAnswers.add(accept),
+        ),
       ledgerAppReadinessStateProvider.overrideWith(
         () => _FakeReadinessController(readiness),
       ),

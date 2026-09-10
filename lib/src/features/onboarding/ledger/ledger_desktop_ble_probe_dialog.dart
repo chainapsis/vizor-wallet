@@ -133,6 +133,7 @@ class _LedgerDesktopBleConnectDialogState
   LedgerBleDevice? _connectedDevice;
   LedgerDeviceAccount? _account;
   String? _error;
+  bool _pairingConfirmed = false;
   var _generation = 0;
 
   bool get _busy =>
@@ -219,6 +220,7 @@ class _LedgerDesktopBleConnectDialogState
       _phase = _ProbePhase.connecting;
       _connectedDevice = device;
       _error = null;
+      _pairingConfirmed = false;
     });
     try {
       await _stopDiscovery();
@@ -251,6 +253,15 @@ class _LedgerDesktopBleConnectDialogState
       _ => 'Vizor could not connect to this Ledger over Bluetooth. Try again.',
     };
     _fail(message);
+  }
+
+  Future<void> _answerPairing(LedgerPairingAnswer answer, bool accept) async {
+    if (accept) setState(() => _pairingConfirmed = true);
+    try {
+      await answer(accept: accept);
+    } catch (_) {
+      // The pending connect reports the outcome either way.
+    }
   }
 
   void _fail(String message) {
@@ -294,6 +305,7 @@ class _LedgerDesktopBleConnectDialogState
                   pairingCode: _phase == _ProbePhase.connecting
                       ? ref.watch(ledgerPairingCodeProvider).value
                       : null,
+                  answerPairing: ref.read(ledgerPairingAnswerProvider),
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -352,7 +364,11 @@ class _LedgerDesktopBleConnectDialogState
     );
   }
 
-  Widget _buildBody(BuildContext context, {String? pairingCode}) {
+  Widget _buildBody(
+    BuildContext context, {
+    String? pairingCode,
+    LedgerPairingAnswer? answerPairing,
+  }) {
     if (_phase == _ProbePhase.devices) {
       return ConstrainedBox(
         constraints: BoxConstraints(
@@ -392,11 +408,18 @@ class _LedgerDesktopBleConnectDialogState
         'Scanning for Ledger devices',
         'This can take a few seconds.',
       ),
-      _ProbePhase.connecting when pairingCode != null => (
-        AppIcons.ledger,
-        'Confirm pairing on your Ledger',
-        'Approve pairing on your Ledger only if it shows this code.',
-      ),
+      _ProbePhase.connecting when pairingCode != null =>
+        _pairingConfirmed
+            ? (
+                AppIcons.ledger,
+                'Approve pairing on your Ledger',
+                'Approve the pairing on your Ledger to finish connecting.',
+              )
+            : (
+                AppIcons.ledger,
+                'Confirm pairing on your Ledger',
+                'Pair only if your Ledger shows the same code.',
+              ),
       _ProbePhase.connecting => (
         AppIcons.loader,
         'Connecting to ${_connectedDevice?.name ?? 'Ledger'}',
@@ -460,6 +483,37 @@ class _LedgerDesktopBleConnectDialogState
               color: context.colors.text.secondary,
             ),
           ),
+          if (pairingCode != null && !_pairingConfirmed) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    key: const ValueKey('ledger_desktop_ble_pairing_mismatch'),
+                    expand: true,
+                    constrainContent: true,
+                    variant: AppButtonVariant.ghost,
+                    onPressed: answerPairing == null
+                        ? null
+                        : () => unawaited(_answerPairing(answerPairing, false)),
+                    child: const Text('Codes differ'),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: AppButton(
+                    key: const ValueKey('ledger_desktop_ble_pairing_match'),
+                    expand: true,
+                    constrainContent: true,
+                    onPressed: answerPairing == null
+                        ? null
+                        : () => unawaited(_answerPairing(answerPairing, true)),
+                    child: const Text('Codes match'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
