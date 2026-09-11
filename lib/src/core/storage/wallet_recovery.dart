@@ -248,27 +248,34 @@ class WalletRecoverySession {
       final stored = await _store.readString('zcash_accounts');
       if (stored != null) {
         try {
-          for (final item in jsonDecode(stored) as List<dynamic>) {
-            final value = Map<String, dynamic>.from(item as Map);
-            if (value['uuid'] case final String uuid) {
-              storedByUuid[uuid] = value;
+          final decoded = jsonDecode(stored);
+          if (decoded is List) {
+            for (final item in decoded) {
+              if (item is Map<String, dynamic> && item['uuid'] is String) {
+                storedByUuid[item['uuid'] as String] = item;
+              }
             }
           }
         } on FormatException {
           // Account presentation metadata can be reconstructed from the DB.
-        } on TypeError {
-          // Retain the original until the verified replacement is committed.
         }
       }
       final accounts = current.indexed.map((entry) {
         final (index, account) = entry;
+        final storedAccount = storedByUuid[account.uuid];
         return AccountInfo.fromJson({
-          ...?storedByUuid[account.uuid],
           'uuid': account.uuid,
-          'name': storedByUuid[account.uuid]?['name'] ?? account.name,
+          'name': storedAccount?['name'] is String
+              ? storedAccount!['name']
+              : account.name,
           'order': index,
           'isHardware': account.isHardware,
           'isSeedAnchor': account.isSeedAnchor,
+          'profilePictureId': storedAccount?['profilePictureId'] is String
+              ? storedAccount!['profilePictureId']
+              : null,
+          'walletLinkSourceAccountUuid':
+              storedAccount?['walletLinkSourceAccountUuid'],
         });
       }).toList();
       final active = await _store.readString('zcash_active_account');
@@ -282,8 +289,16 @@ class WalletRecoverySession {
       // A crash during credential or metadata writes must return to recovery,
       // including when an otherwise valid old pointer is still present.
       await _store.writePlain(kWalletRecoveryPendingKey, candidate.fileName);
+      if (await _store.readPlain(kWalletRecoveryPendingKey) !=
+          candidate.fileName) {
+        throw StateError('Wallet recovery could not be started. Try again.');
+      }
       if (!passwordConfigured) {
         await _store.configurePassword(newPassword!);
+        if (!await _store.verifyPasswordOnly(newPassword)) {
+          _store.clearSessionPassword();
+          throw StateError('The recovered wallet password could not be saved.');
+        }
         _authenticated = true;
       }
       for (final entry in _softwareSecrets.entries) {
@@ -317,6 +332,9 @@ class WalletRecoverySession {
         );
       }
       await _store.delete(kWalletRecoveryPendingKey);
+      if (await _store.readPlain(kWalletRecoveryPendingKey) != null) {
+        throw StateError('Wallet recovery could not be completed. Try again.');
+      }
       // Re-enter through the ordinary unlock flow after bootstrap reload.
       _store.clearSessionPassword();
     } finally {

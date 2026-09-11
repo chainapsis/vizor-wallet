@@ -1,5 +1,6 @@
 // Real Rust, SQLite and encryption; only OS storage, sync and support paths
 // are isolated. Run through scripts/test-wallet-setup.sh.
+import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
@@ -24,6 +25,7 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args
 import 'package:zcash_wallet/src/features/onboarding/wallet_recovery_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -228,7 +230,10 @@ void runWalletSetupNativeTests({required bool mobile}) {
       final restart = await loadAppBootstrap();
       expect(restart.initialLocation, '/welcome');
       final resumed = ProviderContainer(
-        overrides: [appBootstrapProvider.overrideWithValue(restart)],
+        overrides: [
+          appBootstrapProvider.overrideWithValue(restart),
+          syncProvider.overrideWith(_NoSync.new),
+        ],
       );
       addTearDown(resumed.dispose);
       await resumed.read(accountProvider.future);
@@ -240,6 +245,134 @@ void runWalletSetupNativeTests({required bool mobile}) {
       expect(await store.verifyPasswordOnly(password), isTrue);
     },
   );
+
+  test(
+    'allocated DB locator without a file resumes setup in a fresh session',
+    () async {
+      final birthday = Completer<BigInt>();
+      final birthdayRequested = Completer<void>();
+      final ref = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          syncProvider.overrideWith(_NoSync.new),
+          rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue((
+            _,
+            _,
+          ) {
+            birthdayRequested.complete();
+            return birthday.future;
+          }),
+        ],
+      );
+      addTearDown(ref.dispose);
+      await ref.read(accountProvider.future);
+      final security = ref.read(appSecurityProvider.notifier);
+      await security.preparePasswordSetup(password);
+      final interrupted = ref
+          .read(accountProvider.notifier)
+          .createAccountFromMnemonic(mnemonic: _phrase);
+      await birthdayRequested.future.timeout(const Duration(seconds: 5));
+      expect(await readWalletDbName(), isNotNull);
+      final path = await getWalletDbPath();
+      expect(await File(path).exists(), isFalse);
+      ref.dispose();
+      store.clearSessionPassword();
+      final interruptedExpectation = expectLater(
+        interrupted,
+        throwsA(anything),
+      );
+      birthday.completeError(StateError('setup interrupted'));
+      await interruptedExpectation;
+
+      final restart = await loadAppBootstrap();
+      expect(restart.initialLocation, '/welcome');
+      final resumed = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(restart),
+          syncProvider.overrideWith(_NoSync.new),
+          rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
+            (_, _) async => BigInt.from(2000000),
+          ),
+        ],
+      );
+      addTearDown(resumed.dispose);
+      await resumed.read(accountProvider.future);
+      final resumedSecurity = resumed.read(appSecurityProvider.notifier);
+      await resumedSecurity.preparePasswordSetup(password);
+      await resumed
+          .read(accountProvider.notifier)
+          .createAccountFromMnemonic(
+            mnemonic: _phrase,
+            name: 'Resumed fixture',
+          );
+      await resumedSecurity.commitPasswordSetup();
+      expect(await getWalletDbPath(), path);
+      expect(await File(path).exists(), isTrue);
+      expect(storage[kWalletRecoveryPendingKey], isNull);
+      expect(await store.verifyPasswordOnly(password), isTrue);
+      expect(resumed.read(accountProvider).value!.accounts, hasLength(1));
+    },
+  );
+
+  test(
+    'password configuration interruption preserves the marker and resumes',
+    () async {
+      final ref = await container();
+      final security = ref.read(appSecurityProvider.notifier);
+      storage.failWriteKey = _verifier;
+      await expectLater(
+        security.preparePasswordSetup(password),
+        throwsA(isA<SecureStorageUnavailableException>()),
+      );
+      expect(storage[kWalletRecoveryPendingKey], kWalletSetupPendingValue);
+      expect(storage[_verifierSalt], isNotNull);
+      expect(storage[_verifier], isNull);
+      store.clearSessionPassword();
+
+      final restart = await loadAppBootstrap();
+      expect(restart.initialLocation, '/welcome');
+      final resumed = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(restart),
+          syncProvider.overrideWith(_NoSync.new),
+        ],
+      );
+      addTearDown(resumed.dispose);
+      await resumed.read(accountProvider.future);
+      final resumedSecurity = resumed.read(appSecurityProvider.notifier);
+      await resumedSecurity.preparePasswordSetup(password);
+      await importAccount(resumed, true);
+      await resumedSecurity.commitPasswordSetup();
+      expect(storage[kWalletRecoveryPendingKey], isNull);
+      expect(await store.verifyPasswordOnly(password), isTrue);
+    },
+  );
+
+  test('a silently dropped setup marker blocks password preparation', () async {
+    final ref = await container();
+    final security = ref.read(appSecurityProvider.notifier);
+    storage.dropWritePrefix = kWalletRecoveryPendingKey;
+    await expectLater(
+      security.preparePasswordSetup(password),
+      throwsStateError,
+    );
+    expect(storage[kWalletRecoveryPendingKey], isNull);
+    expect(storage[_verifier], isNull);
+    expect(storage[_verifierSalt], isNull);
+  });
+
+  test('a rejected setup marker blocks password preparation', () async {
+    final ref = await container();
+    final security = ref.read(appSecurityProvider.notifier);
+    storage.failWriteKey = kWalletRecoveryPendingKey;
+    await expectLater(
+      security.preparePasswordSetup(password),
+      throwsA(isA<SecureStorageUnavailableException>()),
+    );
+    expect(storage[kWalletRecoveryPendingKey], isNull);
+    expect(storage[_verifier], isNull);
+    expect(storage[_verifierSalt], isNull);
+  });
 
   test(
     'empty initialized setup DB stays reusable after invalid hardware input',
@@ -435,6 +568,7 @@ class _NoSync extends SyncNotifier {
 class _FaultStorage extends MapBase<String, String> {
   final data = <String, String>{};
   String? failWritePrefix;
+  String? failWriteKey;
   String? dropWritePrefix;
   bool failReads = false;
   @override
@@ -447,6 +581,10 @@ class _FaultStorage extends MapBase<String, String> {
 
   @override
   void operator []=(String key, String value) {
+    if (failWriteKey == key) {
+      failWriteKey = null;
+      throw PlatformException(code: 'fixture_storage_write_failure');
+    }
     if (failWritePrefix != null && key.startsWith(failWritePrefix!)) {
       failWritePrefix = null;
       throw PlatformException(code: 'fixture_storage_write_failure');

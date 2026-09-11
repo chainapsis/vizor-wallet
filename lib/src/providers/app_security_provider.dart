@@ -194,23 +194,21 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     if (error != null) {
       throw ArgumentError(error);
     }
-    // Persist the verifier and open the secure-storage session before account
-    // creation/import writes the encrypted mnemonic. Publishing provider state
-    // is still delayed until commit so the router never sees half-completed
-    // onboarding.
-    await _store.configurePassword(password);
-    try {
-      // Establish recovery before the first native DB mutation. A later
-      // keyring failure must not prevent recording the incomplete setup.
-      await _store.writePlain(
-        kWalletRecoveryPendingKey,
-        kWalletSetupPendingValue,
-      );
-    } catch (_) {
-      // The caller has not started account creation yet.
-      await _store.clearPasswordConfiguration();
-      rethrow;
+    // Establish recovery before the verifier, session, or native account
+    // creation/import can write anything. Read back the marker so a rejected
+    // or silently dropped write never leaves a verifier without recovery
+    // evidence.
+    await _store.writePlain(
+      kWalletRecoveryPendingKey,
+      kWalletSetupPendingValue,
+    );
+    if (await _store.readPlain(kWalletRecoveryPendingKey) !=
+        kWalletSetupPendingValue) {
+      // No verifier has been written, and a partial credential write below
+      // remains recoverable.
+      throw StateError('Wallet setup recovery marker could not be saved.');
     }
+    await _store.configurePassword(password);
     _isPasswordSetupPrepared = true;
     _passwordSetupSessionGeneration = _store.sessionGeneration;
     if (_store.enforcesSessionGeneration &&

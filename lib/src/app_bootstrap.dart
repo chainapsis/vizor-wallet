@@ -278,7 +278,15 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     );
     var isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
-    final storedAccounts = await _readStoredAccounts(storage);
+    var storedAccounts = <AccountInfo>[];
+    var hasDamagedAccountMetadata = false;
+    try {
+      storedAccounts = await _readStoredAccounts(storage);
+    } on FormatException {
+      hasDamagedAccountMetadata = true;
+    } on TypeError {
+      hasDamagedAccountMetadata = true;
+    }
     final storedActiveUuid = await storage.readString(_activeAccountKey);
     final dbName = await storage.readPlain(kWalletDbNameKey);
     final support = await getWalletSupportDirectory();
@@ -295,16 +303,20 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     var canResumeEmptySetup = false;
     if (!hasExistingDb ||
         !isPasswordConfigured ||
+        hasDamagedAccountMetadata ||
         interruptedRecovery != null) {
       final candidates = await findWalletRecoveryCandidates(network: network);
       canResumeEmptySetup =
           interruptedRecovery == kWalletSetupPendingValue &&
-          (dbName == null ? candidates.isEmpty : hasExistingDb) &&
+          !hasDamagedAccountMetadata &&
+          (dbName == null
+              ? candidates.isEmpty
+              : dbPath != null && (hasExistingDb || candidates.isEmpty)) &&
           storedAccounts.isEmpty &&
           storedActiveUuid == null &&
           candidates.every((candidate) => candidate.isEmptyDatabase);
       if (canResumeEmptySetup) {
-        // No native account exists yet. Keep the unused file and credentials;
+        // No native account exists yet. Keep the locator and credentials;
         // explicit setup may safely resume after another password entry.
         isPasswordConfigured = false;
       }
@@ -312,6 +324,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
           candidates.isNotEmpty ||
           dbName != null ||
           storedAccounts.isNotEmpty ||
+          hasDamagedAccountMetadata ||
           storedActiveUuid != null ||
           isPasswordConfigured ||
           interruptedRecovery != null;

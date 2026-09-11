@@ -100,7 +100,9 @@ void main() {
     const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
     setUp(() async {
-      FlutterSecureStorage.setMockInitialValues({});
+      FlutterSecureStorage.setMockInitialValues({
+        kWalletDbNameKey: 'zcash_wallet_test.db',
+      });
       supportDirectory = await Directory.systemTemp.createTemp(
         'vizor-switch-lock-',
       );
@@ -696,7 +698,9 @@ void main() {
   });
 
   test('note cleanup still runs when Home cache persistence fails', () async {
-    FlutterSecureStorage.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({
+      kWalletDbNameKey: 'zcash_wallet_test.db',
+    });
     final supportDirectory = Directory.systemTemp.createTempSync(
       'vizor-account-removal',
     );
