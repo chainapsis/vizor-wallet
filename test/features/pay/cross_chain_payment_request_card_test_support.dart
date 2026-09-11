@@ -362,6 +362,52 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
     await _capture(tester, isMobile: isMobile, state: 'unsupported');
   });
 
+  testWidgets(
+    'unresolved token skeletons become payment details after loading',
+    (tester) async {
+      await pump(
+        tester,
+        isLoading: true,
+        resolution: const PaymentRequestResolution(),
+      );
+      expect(
+        find.byKey(const ValueKey('payment_request_icon_skeleton')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('payment_request_token_skeleton')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('payment_request_amount_skeleton')),
+        findsOneWidget,
+      );
+      expect(find.text('Base'), findsOneWidget);
+      expect(find.text(truncatedAddress(_recipient)), findsOneWidget);
+      expect(find.text('Amount unavailable'), findsNothing);
+      expect(_primary(tester).onPressed, isNull);
+      await _capture(tester, isMobile: isMobile, state: 'loading-skeleton');
+      await pump(tester);
+      expect(
+        find.byKey(const ValueKey('payment_request_icon_skeleton')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('payment_request_token_skeleton')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('payment_request_amount_skeleton')),
+        findsNothing,
+      );
+      expect(find.text('25'), findsOneWidget);
+      expect(find.text('USDC'), findsOneWidget);
+      expect(_primary(tester).onPressed, isNotNull);
+      expect(tester.takeException(), isNull);
+      await _capture(tester, isMobile: isMobile, state: 'loaded-skeleton');
+    },
+  );
+
   testWidgets('loading preserves request details and blocks continuing', (
     tester,
   ) async {

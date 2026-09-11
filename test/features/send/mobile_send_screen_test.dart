@@ -835,6 +835,70 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
+  testWidgets('rejected clipboard request remains editable and retries', (
+    tester,
+  ) async {
+    const raw = 'bitcoin:malformed?amount=oops';
+    final parsed = <String>[];
+    await tester.pumpWidget(
+      _app(
+        paymentParser: (value) async {
+          parsed.add(value);
+          if (value == raw) throw const CrossChainPaymentParseException();
+          return CrossChainPaymentRequest(
+            id: 'corrected',
+            rawUri: value,
+            address: 'bc1qinvoice',
+            isEvm: false,
+            chain: 'btc',
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => call.method == 'Clipboard.getData'
+          ? <String, dynamic>{'text': raw}
+          : null,
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final field = find.byKey(const ValueKey('mobile_send_address_field'));
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    final actions = find.byKey(
+      const ValueKey('mobile_send_address_action_slot'),
+    );
+    await tester.tap(
+      find.descendant(of: actions, matching: find.text('Paste')),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+    );
+    expect(find.text(raw), findsOneWidget);
+    expect(parsed, [raw]);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    const corrected = 'bitcoin:bc1qinvoice?amount=0.1';
+    await tester.enterText(
+      find.descendant(of: field, matching: find.byType(EditableText)),
+      corrected,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(of: actions, matching: find.text('Review')),
+    );
+    await tester.pumpAndSettle();
+    expect(parsed, [raw, corrected]);
+    expect(container.read(paymentUriPrefillProvider)!.id, 'corrected');
+    expect(tester.takeException(), isNull);
+  });
+
   for (final change in ['none', 'edit', 'leave', 'paste-edit']) {
     testWidgets(
       'Send request intake respects input lifetime (change: $change)',

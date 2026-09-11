@@ -156,6 +156,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   void _handleAddressChanged(String value) {
     _paymentRequestGeneration++;
     if (isPaymentRequestUri(value)) {
+      _cancelReviewForPaymentRequest();
       setState(() => _paymentRequestText = value);
       return;
     }
@@ -163,7 +164,13 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     ref.read(swapStateProvider.notifier).updateDestination(value);
   }
 
+  void _cancelReviewForPaymentRequest() {
+    _reviewRequestGeneration++;
+    ref.read(swapStateProvider.notifier).cancelReviewQuote();
+  }
+
   Future<void> _reviewInputPaymentRequest(String raw) async {
+    _cancelReviewForPaymentRequest();
     final generation = ++_paymentRequestGeneration;
     final reviewGeneration = _reviewRequestGeneration;
     final step = _wizardStep;

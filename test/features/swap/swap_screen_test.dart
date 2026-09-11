@@ -76,6 +76,55 @@ import 'support/swap_activity_fixture_intents.dart';
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
+  testWidgets('Pay request paste cancels the previous recipient quote', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final provider = _DelayedQuoteSwapProvider();
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        swapProvider: provider,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    final field = find.byKey(const ValueKey('pay_recipient_search_field'));
+    const destination = '0x52908400098527886e0f7030069857d2e4169ee7';
+    await tester.enterText(field, destination);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pump();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+    );
+    expect(container.read(swapStateProvider).quoteLoading, isTrue);
+    const raw = 'bitcoin:bc1qinvoice?amount=0.1';
+    await tester.enterText(field, raw);
+    await tester.pump();
+    provider.completeQuote();
+    await tester.pumpAndSettle();
+    expect(find.text(raw), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('review_pasted_payment_request')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('pay_review_step')), findsNothing);
+    final state = container.read(swapStateProvider);
+    expect(state.quoteLoading, isFalse);
+    expect(state.reviewVisible, isFalse);
+    expect(state.destinationText, destination);
+    expect(state.receiveAmountText, '25');
+    expect(tester.takeException(), isNull);
+  });
+
   for (final leaveStep in [false, true]) {
     testWidgets(
       'Pay discards a pending request after input or step changes (leaveStep: $leaveStep)',

@@ -390,6 +390,10 @@ class _CrossChainPaymentRequestCardState
     final request = widget.request;
     final resolution = widget.resolution;
     final asset = resolution.asset;
+    final loadingAsset =
+        widget.isLoading && asset == null && request.unsupportedReason == null;
+    final loadingAmount =
+        loadingAsset && request.amount != null && !resolution.needsNetwork;
     final hasNetworkPicker =
         request.needsNetwork && request.unsupportedReason == null;
     final value = hasAmount
@@ -406,16 +410,28 @@ class _CrossChainPaymentRequestCardState
                 ? AppTypography.headlineLarge
                 : AppTypography.bodyMediumStrong)
             .copyWith(color: context.colors.text.accent);
-    final amount = Text(
-      value,
-      key: const ValueKey('cross_chain_payment_request_amount'),
-      softWrap: true,
-      style: amountStyle,
-    );
+    final amount = loadingAmount
+        ? const _RequestSkeleton(
+            key: ValueKey('payment_request_amount_skeleton'),
+            width: 112,
+            height: 28,
+          )
+        : Text(
+            value,
+            key: const ValueKey('cross_chain_payment_request_amount'),
+            softWrap: true,
+            style: amountStyle,
+          );
     final identity = Wrap(
       spacing: AppSpacing.xs,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        if (loadingAsset)
+          const _RequestSkeleton(
+            key: ValueKey('payment_request_token_skeleton'),
+            width: 48,
+            height: 14,
+          ),
         if (asset != null)
           Text(
             asset.symbol,
@@ -444,14 +460,21 @@ class _CrossChainPaymentRequestCardState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         amount,
-        if (asset != null || !hasNetworkPicker) ...[
+        if (asset != null || loadingAsset || !hasNetworkPicker) ...[
           const SizedBox(height: AppSpacing.xxs),
           identity,
         ],
       ],
     );
     const iconSize = 48.0;
-    final icon = asset == null
+    final icon = loadingAsset
+        ? const _RequestSkeleton(
+            key: ValueKey('payment_request_icon_skeleton'),
+            width: iconSize,
+            height: iconSize,
+            circular: true,
+          )
+        : asset == null
         ? null
         : ExcludeSemantics(
             child: SwapAssetIcon(
@@ -717,5 +740,38 @@ class _Detail extends StatelessWidget {
       const SizedBox(height: AppSpacing.xxs),
       child,
     ],
+  );
+}
+
+/// Static placeholders keep the unresolved layout visible without adding motion.
+class _RequestSkeleton extends StatelessWidget {
+  const _RequestSkeleton({
+    required this.width,
+    required this.height,
+    this.circular = false,
+    super.key,
+  });
+
+  final double width;
+  final double height;
+  final bool circular;
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            context.colors.background.neutralSubtleOpacity,
+            context.colors.background.overlay,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(
+          circular ? AppRadii.full : AppRadii.small,
+        ),
+      ),
+    ),
   );
 }

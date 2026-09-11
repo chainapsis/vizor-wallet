@@ -904,15 +904,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final pasted = data?.text?.trim() ?? '';
     if (pasted.isEmpty || !mounted || sequence != _addressSeq) return;
-    if (isPaymentRequestUri(pasted)) {
-      await _reviewInputPaymentRequest(pasted);
-      return;
-    }
     _addressController.value = TextEditingValue(
       text: pasted,
       selection: TextSelection.collapsed(offset: pasted.length),
     );
     _handleAddressChanged();
+    if (isPaymentRequestUri(pasted)) {
+      await _reviewInputPaymentRequest(pasted);
+    }
   }
 
   void _clearAddress() {
