@@ -47,9 +47,18 @@ enum _PayModalSurface {
 enum _PayWizardStep { amount, recipient, review }
 
 class PayScreen extends ConsumerStatefulWidget {
-  const PayScreen({this.preservePreparedComposer = false, super.key});
+  const PayScreen({
+    this.preservePreparedComposer = false,
+    this.paymentRequestId,
+    this.showPreparedReview = false,
+    this.reviewAfterAmount = false,
+    super.key,
+  });
 
   final bool preservePreparedComposer;
+  final String? paymentRequestId;
+  final bool showPreparedReview;
+  final bool reviewAfterAmount;
 
   @override
   ConsumerState<PayScreen> createState() => _PayScreenState();
@@ -64,6 +73,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   var _wizardStep = _PayWizardStep.amount;
   var _startingIntent = false;
   var _reviewRequestGeneration = 0;
+  var _reviewAfterAmount = false;
   Timer? _expiryTimer;
   DateTime? _expiryDeadline;
   Duration? _expiryRemaining;
@@ -75,13 +85,25 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     _amountController = TextEditingController();
     _amountFocusNode = FocusNode(debugLabel: 'PayWizardAmount');
     _recipientController = TextEditingController();
+    _reviewAfterAmount =
+        widget.preservePreparedComposer &&
+        widget.paymentRequestId != null &&
+        widget.reviewAfterAmount;
+    final initial = ref.read(swapStateProvider);
+    if (widget.preservePreparedComposer &&
+        widget.showPreparedReview &&
+        initial.payMode &&
+        initial.reviewVisible &&
+        initial.reviewQuote != null &&
+        initial.reviewAddressPlan != null) {
+      _wizardStep = _PayWizardStep.review;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final preparedState = ref.read(swapStateProvider);
       if (!widget.preservePreparedComposer || !preparedState.payMode) {
         ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
       }
-      setState(() => _wizardStep = _PayWizardStep.amount);
     });
   }
 
@@ -146,6 +168,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   }
 
   Future<void> _openReview() async {
+    if (ref.read(swapStateProvider).quoteLoading) return;
     final requestGeneration = ++_reviewRequestGeneration;
     final originStep = _wizardStep;
     final notifier = ref.read(swapStateProvider.notifier);
@@ -159,7 +182,10 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     if (next.reviewVisible &&
         next.reviewQuote != null &&
         next.reviewAddressPlan != null) {
-      setState(() => _wizardStep = _PayWizardStep.review);
+      setState(() {
+        _reviewAfterAmount = false;
+        _wizardStep = _PayWizardStep.review;
+      });
     }
   }
 
@@ -352,7 +378,14 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     final actions = switch (_wizardStep) {
       _PayWizardStep.amount => PayAmountAction(
         state: swapState,
-        onContinue: () => _goToStep(_PayWizardStep.recipient),
+        onContinue: () {
+          _amountFocusNode.unfocus();
+          if (_reviewAfterAmount && swapState.canReviewQuote) {
+            unawaited(_openReview());
+          } else {
+            _goToStep(_PayWizardStep.recipient);
+          }
+        },
       ),
       _PayWizardStep.recipient =>
         recipientActions.visible ? recipientActions : null,

@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -107,7 +108,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        container.read(paymentUriPrefillProvider)?.address,
+        (container.read(paymentUriPrefillProvider) as SendPrefillArgs?)
+            ?.address,
         'u1parked',
         reason: 'the link stays parked for the unlock flow to claim',
       );
@@ -120,7 +122,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        container.read(paymentUriPrefillProvider)?.address,
+        (container.read(paymentUriPrefillProvider) as SendPrefillArgs?)
+            ?.address,
         'u1parked',
         reason: 'a route change alone must not be mistaken for a claim',
       );
@@ -132,7 +135,10 @@ void main() {
       expect(claim.notice, isNull);
       container
           .read(paymentRequestFlowProvider.notifier)
-          .present(claim.prefill!, source: PaymentRequestSource.link);
+          .present(
+            claim.prefill! as SendPrefillArgs,
+            source: PaymentRequestSource.link,
+          );
       await tester.pumpAndSettle();
 
       expect(container.read(paymentUriPrefillProvider), isNull);

@@ -273,6 +273,63 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
+  bool get paymentRequestAssetsReady => _hasResolvedSupportedAssets;
+
+  Future<void> refreshPaymentRequestAssets() =>
+      _loadSupportedExternalAssets(forceRefreshPrices: true);
+
+  /// Applies the reviewed request atomically. There is no remembered-asset or
+  /// symbol fallback for a payment to a specific asset on a specific chain.
+  bool preparePayPaymentRequest({
+    required SwapAsset asset,
+    required String destination,
+    required String? amountText,
+    required String expectedAccountUuid,
+  }) {
+    if (!_isAccountActive(expectedAccountUuid) ||
+        !_hasResolvedSupportedAssets ||
+        state.pricingLoading ||
+        state.supportedAssetsError != null ||
+        asset.assetId == null) {
+      return false;
+    }
+    final matches = state.supportedExternalAssets.where(
+      (candidate) =>
+          candidate.assetId == asset.assetId &&
+          candidate.chainTicker == asset.chainTicker,
+    );
+    if (matches.length != 1) return false;
+    _clearReviewState();
+    _payEntryGeneration++;
+    _payRetryAsset = null;
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        state.copyWith(
+          direction: SwapDirection.zecToExternal,
+          quoteMode: SwapQuoteMode.exactOutput,
+          externalAsset: matches.single,
+          paymentRequestAssetId: asset.assetId,
+          amountText: '',
+          receiveAmountText: amountText ?? '',
+          amountInputMode: SwapAmountInputMode.token,
+          receiveAmountInputMode: SwapAmountInputMode.token,
+          amountFiatText: '',
+          receiveFiatText: '',
+          destinationText: destination,
+          clearUserExternalContactId: true,
+          reviewVisible: false,
+          depositTxHashText: '',
+          payMode: true,
+          clearReview: true,
+          clearQuoteError: true,
+          clearStatusError: true,
+          clearMaxAmountError: true,
+        ),
+      ),
+    );
+    return true;
+  }
+
   bool preparePayFromShieldedZec({
     SwapAsset? preferredAsset,
     String? expectedAccountUuid,
@@ -298,6 +355,7 @@ class SwapNotifier extends Notifier<SwapState> {
     state = swapStateWithDerivedFiatTexts(
       swapStateWithIndicativeCounterpart(
         state.copyWith(
+          clearPaymentRequest: true,
           direction: SwapDirection.zecToExternal,
           quoteMode: SwapQuoteMode.exactOutput,
           amountText: '',
@@ -351,6 +409,7 @@ class SwapNotifier extends Notifier<SwapState> {
     state = swapStateWithDerivedFiatTexts(
       swapStateWithIndicativeCounterpart(
         state.copyWith(
+          clearPaymentRequest: true,
           direction: SwapDirection.zecToExternal,
           externalAsset: defaultSwapAsset,
           quoteMode: SwapQuoteMode.exactInput,
@@ -427,6 +486,7 @@ class SwapNotifier extends Notifier<SwapState> {
       swapStateWithIndicativeCounterpart(
         swapStateWithTokenAmountsForFiatModes(
           state.copyWith(
+            clearPaymentRequest: true,
             externalAsset: supportedAsset,
             reviewVisible: false,
             destinationText: chainChanged ? '' : null,
@@ -468,6 +528,7 @@ class SwapNotifier extends Notifier<SwapState> {
       swapStateWithIndicativeCounterpart(
         swapStateWithTokenAmountsForFiatModes(
           state.copyWith(
+            clearPaymentRequest: true,
             externalAsset: supportedAsset,
             reviewVisible: false,
             destinationText: clearDestinationOnChainChange && chainChanged
@@ -618,7 +679,13 @@ class SwapNotifier extends Notifier<SwapState> {
         for (final asset in liveAssets)
           if (asset != SwapAsset.zec) asset,
       ];
-      if (supported.isEmpty) return;
+      if (supported.isEmpty) {
+        state = state.copyWith(
+          supportedExternalAssets: const [],
+          clearReview: true,
+        );
+        return;
+      }
       final retryAsset = state.payMode ? _payRetryAsset : null;
       final supportedRetryAsset = retryAsset == null
           ? null
@@ -628,12 +695,20 @@ class SwapNotifier extends Notifier<SwapState> {
           : state.externalAsset;
       final retryUnsupported =
           retryAsset != null && supportedRetryAsset == null;
-      final selected = retryUnsupported
+      final requestAssetId = state.paymentRequestAssetId;
+      final requestMatches = supported.where(
+        (asset) => asset.assetId == requestAssetId,
+      );
+      final selected = requestAssetId != null
+          ? (requestMatches.length == 1
+                ? requestMatches.single
+                : state.externalAsset)
+          : retryUnsupported
           ? retryAsset
           : supportedRetryAsset ??
                 _supportedAssetFor(rememberedAsset, supported) ??
                 supported.first;
-      if (state.payMode) {
+      if (state.payMode && requestAssetId == null) {
         ref.read(paySelectedAssetProvider.notifier).select(selected);
         if (supportedRetryAsset != null && selected != rememberedAsset) {
           unawaited(_persistPaySelectedAsset(selected));
@@ -1062,6 +1137,7 @@ class SwapNotifier extends Notifier<SwapState> {
 
     _quoteGeneration++;
     state = state.copyWith(
+      clearPaymentRequest: true,
       direction: direction,
       externalAsset: selectedExternalAsset,
       quoteMode: retryingPay
@@ -1677,6 +1753,7 @@ class SwapNotifier extends Notifier<SwapState> {
     _payAssetRestoreAccountUuid = null;
     _payAssetRestoreFuture = null;
     state = state.copyWith(
+      clearPaymentRequest: true,
       amountText: '',
       receiveAmountText: '',
       quoteMode: _inputQuoteModeForDirection(state.direction),
@@ -1976,7 +2053,8 @@ class SwapNotifier extends Notifier<SwapState> {
       // A retry is pinned to the intent's original payout rail. Ignore a
       // slower restore of the ordinary Pay preference so it cannot overwrite
       // the prepared retry after navigation.
-      if (state.payMode && _payRetryAsset != null) {
+      if (state.payMode &&
+          (_payRetryAsset != null || state.paymentRequestAssetId != null)) {
         if (loadSucceeded) {
           _restoredPayAssetAccountUuid = accountUuid;
         }
@@ -2148,6 +2226,9 @@ SwapAsset? _supportedAssetFor(SwapAsset asset, List<SwapAsset> supported) {
   for (final candidate in supported) {
     if (candidate == asset) return candidate;
   }
+  // A persisted or requested token ID must not become a same-symbol token.
+  // Static selections without an ID still resolve against the live list.
+  if (asset.assetId != null) return null;
   for (final candidate in supported) {
     if (candidate.hasSameMarketAs(asset)) return candidate;
   }
