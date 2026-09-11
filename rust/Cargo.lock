@@ -1677,6 +1677,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "eip681"
+version = "0.1.0"
+source = "git+https://github.com/zcash/librustzcash?rev=330e4c0aa9e25199acdb93a56bf70126d0d3f2b9#330e4c0aa9e25199acdb93a56bf70126d0d3f2b9"
+dependencies = [
+ "base64 0.22.1",
+ "ens-normalize-rs",
+ "hex",
+ "nom",
+ "percent-encoding",
+ "primitive-types",
+ "sha3",
+ "snafu",
+]
+
+[[package]]
 name = "either"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1712,6 +1727,25 @@ name = "embedded-io"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
+
+[[package]]
+name = "ens-normalize-rs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0712f972f7320be5977fb2f4be0312ab3e5b1e8906cb9b3ee5f988ef4dc9590f"
+dependencies = [
+ "anyhow",
+ "itertools 0.13.0",
+ "lazy_static",
+ "regex",
+ "serde",
+ "serde-aux",
+ "serde_json",
+ "serde_plain",
+ "serde_with",
+ "thiserror 2.0.20",
+ "unicode-normalization",
+]
 
 [[package]]
 name = "enum-ordinalize"
@@ -1882,6 +1916,15 @@ name = "find-msvc-tools"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
+
+[[package]]
+name = "fixed-hash"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "835c052cb0c08c1acf6ffd71c022172e18723949c8282f2b9f27efbc51e64534"
+dependencies = [
+ "static_assertions",
+]
 
 [[package]]
 name = "fixedbitset"
@@ -3606,6 +3649,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "payment_uri"
+version = "0.1.0"
+source = "git+https://github.com/zcash/librustzcash?rev=330e4c0aa9e25199acdb93a56bf70126d0d3f2b9#330e4c0aa9e25199acdb93a56bf70126d0d3f2b9"
+dependencies = [
+ "bech32",
+ "bs58",
+ "eip681",
+ "percent-encoding",
+ "serde_json",
+]
+
+[[package]]
 name = "pbkdf2"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3975,6 +4030,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "353e1ca18966c16d9deb1c69278edbc5f194139612772bd9537af60ac231e1e6"
 dependencies = [
  "elliptic-curve",
+]
+
+[[package]]
+name = "primitive-types"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b34d9fd68ae0b74a41b21c03c2f62847aa0ffea044eee893b4c140b37e244e2"
+dependencies = [
+ "fixed-hash",
+ "uint",
 ]
 
 [[package]]
@@ -4513,6 +4578,7 @@ dependencies = [
  "log",
  "minicbor",
  "nonempty",
+ "payment_uri",
  "pbkdf2",
  "prost 0.13.5",
  "prost 0.14.4",
@@ -4820,6 +4886,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-aux"
+version = "4.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "207f67b28fe90fb596503a9bf0bf1ea5e831e21307658e177c5dfcdfc3ab8a0a"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde-value",
+ "serde_json",
+]
+
+[[package]]
 name = "serde-value"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4880,6 +4958,15 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_plain"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce1fc6db65a611022b23a0dec6975d63fb80a302cb3388835ff02c097258d50"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -5114,6 +5201,27 @@ name = "smallvec"
 version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
+
+[[package]]
+name = "snafu"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e84b3f4eacbf3a1ce05eac6763b4d629d60cbc94d632e4092c54ade71f1e1a2"
+dependencies = [
+ "snafu-derive",
+]
+
+[[package]]
+name = "snafu-derive"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
+dependencies = [
+ "heck 0.4.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "socket2"
@@ -6880,6 +6988,18 @@ name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+
+[[package]]
+name = "uint"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76f64bba2c53b04fcab63c01a7d7427eadc821e3bc48c34dc9ba29c501164b52"
+dependencies = [
+ "byteorder",
+ "crunchy",
+ "hex",
+ "static_assertions",
+]
 
 [[package]]
 name = "uncased"

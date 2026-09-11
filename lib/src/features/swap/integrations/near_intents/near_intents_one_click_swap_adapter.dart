@@ -846,6 +846,7 @@ class NearIntentsOneClickSwapAdapter
           return token;
         }
       }
+      return null;
     }
 
     final preferredBlockchain = asset.preferredBlockchain;
@@ -927,6 +928,7 @@ class NearIntentsOneClickSwapAdapter
       symbol: token.symbol,
       blockchain: token.blockchain,
       decimals: token.decimals,
+      contractAddress: token.contractAddress,
     );
   }
 
