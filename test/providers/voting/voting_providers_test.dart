@@ -5520,6 +5520,192 @@ void main() {
     },
   );
 
+  test(
+    'the ballot counters survive a run that owes less than the round',
+    () async {
+      // `RoundWorkTallyView` measures one run against what *that run* started
+      // owing, and a round is driven by more than one run — the delegation drive
+      // casts votes too. The run report's tally is this run's end state, not the
+      // round's, so taking it verbatim collapsed "1 of 2" back to nothing.
+      final rust = FakeVotingRustApi(bundleCount: 1);
+      const step = rust_wire.NextStepView(
+        kind: rust_wire.NextStepKind.castVote,
+        bundleIndex: 0,
+        proposalId: 7,
+        choice: 1,
+        shareIndex: 0,
+      );
+      rust_wire.RoundPlanView planWith(List<rust_wire.NextStepView> steps) =>
+          apiRoundPlan(
+            roundId: kRoundId,
+            pendingRecovery: steps.isNotEmpty,
+            nextSteps: steps,
+            openProposals: Uint32List(0),
+            allDecided: true,
+            completedVoteArtifact: steps.isEmpty,
+          );
+      rust.scriptedRoundRuns.add([
+        roundRunProgress(
+          kind: rust_wire.RoundDriveEventKind.planRefreshed,
+          plan: planWith(const [step]),
+          tally: const rust_wire.RoundWorkTallyView(
+            completedProposals: 0,
+            totalProposals: 2,
+            remainingObligations: 2,
+          ),
+        ),
+        roundRunProgress(
+          kind: rust_wire.RoundDriveEventKind.stepSelected,
+          step: step,
+        ),
+        roundRunProgress(
+          kind: rust_wire.RoundDriveEventKind.stepFinished,
+          step: step,
+          disposition: rust_wire.RoundStepDispositionView.advanced,
+        ),
+        roundRunProgress(
+          kind: rust_wire.RoundDriveEventKind.planRefreshed,
+          plan: planWith(const []),
+          tally: const rust_wire.RoundWorkTallyView(
+            completedProposals: 1,
+            totalProposals: 2,
+            remainingObligations: 1,
+          ),
+        ),
+        // A report whose tally owes nothing, as a run that inherited finished
+        // work reports it.
+        roundRunReport(plan: planWith(const [])),
+      ]);
+
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              VotingDraftVote(proposalId: 7, choice: 1, numOptions: 2),
+            ],
+          );
+
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+      expect(state.voteSubmissionTotalCount, 2);
+      expect(state.voteSubmissionCompletedCount, 1);
+    },
+  );
+
+  test(
+    'a re-dispatched step does not rewind a vote it already proved',
+    () async {
+      // The driver re-dispatches a step after an `AwaitingRepoll`, so a vote
+      // that already reached share-payload building can be told it is starting
+      // its proof again. Letting that through ran the ring and the "N of M
+      // ready" counter backwards.
+      final rust = FakeVotingRustApi(bundleCount: 1);
+      const step = rust_wire.NextStepView(
+        kind: rust_wire.NextStepKind.castVote,
+        bundleIndex: 0,
+        proposalId: 7,
+        choice: 1,
+        shareIndex: 0,
+      );
+      rust_wire.RoundStepProgressView commit(
+        rust_wire.VoteCommitStageKind stage, {
+        double? proofProgress,
+      }) => rust_wire.RoundStepProgressView(
+        kind: rust_wire.RoundStepProgressKind.voteCommit,
+        step: step,
+        bundleIndex: 0,
+        proposalId: 7,
+        voteCommitStage: stage,
+        proofProgress: proofProgress,
+        voteKeys: const [],
+      );
+      rust_wire.RoundPlanView planWith(List<rust_wire.NextStepView> steps) =>
+          apiRoundPlan(
+            roundId: kRoundId,
+            pendingRecovery: steps.isNotEmpty,
+            nextSteps: steps,
+            openProposals: Uint32List(0),
+            allDecided: true,
+            completedVoteArtifact: steps.isEmpty,
+          );
+      rust.scriptedRoundRuns.add([
+        roundRunProgress(
+          kind: rust_wire.RoundDriveEventKind.planRefreshed,
+          plan: planWith(const [step]),
+        ),
+        roundRunProgress(
+          kind: rust_wire.RoundDriveEventKind.stepSelected,
+          step: step,
+        ),
+        roundRunProgress(
+          kind: rust_wire.RoundDriveEventKind.stepProgress,
+          step: step,
+          progress: commit(rust_wire.VoteCommitStageKind.sharePayloadsBuilding),
+        ),
+        roundRunProgress(
+          kind: rust_wire.RoundDriveEventKind.stepProgress,
+          step: step,
+          progress: commit(
+            rust_wire.VoteCommitStageKind.proofStarting,
+            proofProgress: 0,
+          ),
+        ),
+        roundRunReport(plan: planWith(const [step])),
+      ]);
+
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+      final observed = <VotingSessionState>[];
+      final subscription = container.listen(votingSessionProvider(kRoundId), (
+        previous,
+        next,
+      ) {
+        final value = next.value;
+        if (value != null) observed.add(value);
+      });
+      addTearDown(subscription.close);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              VotingDraftVote(proposalId: 7, choice: 1, numOptions: 2),
+            ],
+          );
+
+      const key = VotingVoteKey(bundleIndex: 0, proposalId: 7);
+      final phases = observed
+          .map((state) => state.voteProgress[key]?.phase)
+          .whereType<VotingProgressPhase>()
+          .toList();
+      expect(phases, isNotEmpty);
+      expect(
+        phases.contains(VotingProgressPhase.buildingSharePayloads),
+        isTrue,
+        reason: 'the first event has to be projected before it can be held',
+      );
+      expect(
+        phases.any(
+          (phase) =>
+              phase == VotingProgressPhase.buildingProof ||
+              phase == VotingProgressPhase.selectingNotes,
+        ),
+        isFalse,
+        reason:
+            'a repoll must not rewind a vote that already built its payloads',
+      );
+      expect(
+        observed.last.voteProgress[key]?.proofProgress,
+        1,
+        reason: 'the proof fraction is held too',
+      );
+    },
+  );
+
   test('an atomic batch advances the bar with the questions', () async {
     // One `AdvanceVoteBatch` step carries every proposal in the unit, so the
     // bar cannot be counted in steps. Worse, a run that starts from a plan of

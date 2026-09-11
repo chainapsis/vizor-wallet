@@ -401,7 +401,7 @@ class _VotingSubmissionSteps extends StatelessWidget {
   final double? activeStepProgress;
 
   static const _labels = <VotingSubmissionProgressStep, String>{
-    VotingSubmissionProgressStep.delegating: 'Delegating voting authority',
+    VotingSubmissionProgressStep.provingAuthority: 'Proving voting authority',
     VotingSubmissionProgressStep.castingVotes:
         'Casting votes and submitting shares',
     VotingSubmissionProgressStep.finalizing: 'Finalizing submission',

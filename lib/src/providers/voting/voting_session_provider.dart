@@ -9,6 +9,7 @@ import '../../services/voting/voting_rust_exception.dart';
 import '../../services/voting/voting_retry.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
+import '../../features/voting/voting_progress_presentation.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/api/voting_session.dart' as rust_session;
@@ -709,7 +710,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           ? ((state.value?.phase == VotingSessionPhase.castingVotes)
                 ? VotingSessionPhase.castingVotes
                 : VotingSessionPhase.delegated)
-          : VotingSessionPhase.readyToDelegate;
+          // Same reason as the guard above, for the other outcome: the run
+          // can cast votes while a sibling bundle still owes a signature, and
+          // announcing `readyToDelegate` then sent the step list back to the
+          // delegation row mid-ballot.
+          : _phaseWithoutBallotRegression(VotingSessionPhase.readyToDelegate);
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
@@ -1100,8 +1105,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // tally instead.
       var totalBundleTasks = 0;
       var completedBundleTasks = 0;
-      rust_wire.RoundWorkTallyView? tally;
+      // Seeded from what the round already published. The delegation drive is
+      // a whole-round run that may have cast votes and reported a real tally
+      // before this one started, and restarting from nothing made "N of 37"
+      // collapse to nothing and climb again.
+      final carried = state.value ?? current;
+      rust_wire.RoundWorkTallyView? tally = carried.voteSubmissionTotalCount > 0
+          ? rust_wire.RoundWorkTallyView(
+              completedProposals: carried.voteSubmissionCompletedCount,
+              totalProposals: carried.voteSubmissionTotalCount,
+              remainingObligations: 0,
+            )
+          : null;
       final allVoteKeys = <VotingVoteKey>{};
+      // An `advanceVoteBatch` step names only its first member's proposal, so
+      // the batch's other members are learned from the progress events it
+      // emits. Accumulating them here — the way the delegation run already
+      // does — keeps every member of a batch advancing together instead of
+      // stalling behind the one the step is named after.
+      final stepVoteKeys = <VotingVoteKey, Set<VotingVoteKey>>{};
 
       void publishState({
         int? currentBundleIndex,
@@ -1188,10 +1210,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               phase: VotingSessionPhase.castingVotes,
               roundPlan: roundPlan,
               voteProgress: progress,
-              voteSubmissionCompletedCount: 0,
-              // The run's first plan-refresh carries the tally that fills this
-              // in; until then the label has nothing to count.
-              voteSubmissionTotalCount: 0,
+              // The counters are left alone: whatever the round already
+              // published is still true, and this run's first plan refresh
+              // merges its own tally into it.
               clearCurrentBundleIndex: true,
               clearCurrentVoteKey: true,
             ),
@@ -1218,7 +1239,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               // The tally is exact where counting steps is not: an atomic
               // batch projects to one step carrying only its first proposal's
               // id, so six proposals would read as one question here.
-              tally = event.tally ?? tally;
+              tally = _mergeTally(tally, event.tally);
               final remaining = plan.nextSteps.where(_isVoteStep).toList();
               completedBundleTasks = totalBundleTasks - remaining.length;
               publishState();
@@ -1227,6 +1248,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             final step = event.step;
             if (step == null || !_isVoteStep(step)) return;
             final key = _voteKeyForStep(step);
+            final keys = stepVoteKeys.putIfAbsent(key, () => {key});
             switch (event.kind) {
               case rust_wire.RoundDriveEventKind.stepSelected:
                 publishState(
@@ -1237,22 +1259,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               case rust_wire.RoundDriveEventKind.stepProgress:
                 final update = event.progress;
                 if (update == null) return;
-                _applyVoteProgress(update, step, {key}, progress);
+                _applyVoteProgress(update, step, keys, progress);
                 publishState(
                   currentBundleIndex: step.bundleIndex,
                   currentVoteKey: key,
-                  inFlightKeys: [key],
+                  inFlightKeys: keys.toList(growable: false),
                 );
               case rust_wire.RoundDriveEventKind.stepFinished:
                 if (event.disposition ==
-                        rust_wire.RoundStepDispositionView.advanced &&
-                    progress[key]?.phase != VotingProgressPhase.completed) {
-                  progress[key] = VotingSessionProgress(
-                    phase: VotingProgressPhase.completed,
-                    bundleIndex: key.bundleIndex,
-                    proposalId: key.proposalId,
-                    proofProgress: 1,
-                  );
+                    rust_wire.RoundStepDispositionView.advanced) {
+                  for (final voteKey in keys) {
+                    _storeProgress(
+                      progress,
+                      voteKey,
+                      VotingSessionProgress(
+                        phase: VotingProgressPhase.completed,
+                        bundleIndex: voteKey.bundleIndex,
+                        proposalId: voteKey.proposalId,
+                        proofProgress: 1,
+                      ),
+                    );
+                  }
                 }
                 _logVoteTiming(
                   'step ${step.kind.name} bundle=${step.bundleIndex} '
@@ -1280,18 +1307,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             proposalId: failure.proposalId,
           );
           final item = progress[key];
-          progress[key] = VotingSessionProgress(
-            phase: VotingProgressPhase.failed,
-            bundleIndex: key.bundleIndex,
-            proposalId: key.proposalId,
-            proofProgress: item?.proofProgress,
-            message: failure.error.toString(),
+          _storeProgress(
+            progress,
+            key,
+            VotingSessionProgress(
+              phase: VotingProgressPhase.failed,
+              bundleIndex: key.bundleIndex,
+              proposalId: key.proposalId,
+              proofProgress: item?.proofProgress,
+              message: failure.error.toString(),
+            ),
           );
         }
         roundPlan = report.plan ?? roundPlan;
         // The driver refreshes plan and tally after its final dispatch, so the
-        // report's tally is the authoritative end state, not the last event's.
-        tally = report.tally;
+        // report's tally is this run's authoritative end state — but it is
+        // still only this run's, so it merges rather than replaces.
+        tally = _mergeTally(tally, report.tally);
         publishState();
         if (failures.isNotEmpty) throw _VoteBundleBatchException(failures);
       } on _StaleVotingSessionAction {
@@ -1300,12 +1332,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         for (final key in allVoteKeys) {
           final item = progress[key];
           if (item != null && item.phase != VotingProgressPhase.completed) {
-            progress[key] = VotingSessionProgress(
-              phase: VotingProgressPhase.failed,
-              bundleIndex: key.bundleIndex,
-              proposalId: key.proposalId,
-              proofProgress: item.proofProgress,
-              message: item.message,
+            _storeProgress(
+              progress,
+              key,
+              VotingSessionProgress(
+                phase: VotingProgressPhase.failed,
+                bundleIndex: key.bundleIndex,
+                proposalId: key.proposalId,
+                proofProgress: item.proofProgress,
+                message: item.message,
+              ),
             );
           }
         }
@@ -1346,7 +1382,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
-          phase: _phaseForPlans(refreshedRoundPlan),
+          phase: _phaseWithoutBallotRegression(
+            _phaseForPlans(refreshedRoundPlan),
+          ),
           roundPlan: refreshedRoundPlan,
           voteProgress: progress,
           voteSubmissionCompletedCount: tally?.completedProposals ?? 0,
@@ -1416,13 +1454,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           proposalId: proposalId,
         );
         stepKeys.add(key);
-        progress[key] = VotingSessionProgress(
-          phase: _voteStagePhase(stage),
-          bundleIndex: bundleIndex,
-          proposalId: proposalId,
-          proofProgress: _monotonicProofProgress(
-            progress[key]?.proofProgress,
-            update.proofProgress ??
+        _storeProgress(
+          progress,
+          key,
+          VotingSessionProgress(
+            phase: _voteStagePhase(stage),
+            bundleIndex: bundleIndex,
+            proposalId: proposalId,
+            proofProgress:
+                update.proofProgress ??
                 switch (stage) {
                   rust_wire.VoteCommitStageKind.proofStarting => 0.0,
                   rust_wire.VoteCommitStageKind.sharePayloadsBuilding ||
@@ -1438,11 +1478,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             proposalId: voteKey.proposalId,
           );
           stepKeys.add(key);
-          progress[key] = VotingSessionProgress(
-            phase: VotingProgressPhase.submitting,
-            bundleIndex: key.bundleIndex,
-            proposalId: key.proposalId,
-            proofProgress: 1,
+          _storeProgress(
+            progress,
+            key,
+            VotingSessionProgress(
+              phase: VotingProgressPhase.submitting,
+              bundleIndex: key.bundleIndex,
+              proposalId: key.proposalId,
+              proofProgress: 1,
+            ),
           );
         }
       case rust_wire.RoundStepProgressKind.chainOutcome:
@@ -1453,16 +1497,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         for (final key in stepKeys.where(
           (key) => key.bundleIndex == step.bundleIndex,
         )) {
-          progress[key] = VotingSessionProgress(
-            phase: confirmed
-                ? VotingProgressPhase.confirmed
-                : VotingProgressPhase.submitted,
-            bundleIndex: key.bundleIndex,
-            proposalId: key.proposalId,
-            proofProgress: 1,
-            message:
-                chainOutcome.transactionHash ??
-                chainOutcome.candidateTransactionHash,
+          _storeProgress(
+            progress,
+            key,
+            VotingSessionProgress(
+              phase: confirmed
+                  ? VotingProgressPhase.confirmed
+                  : VotingProgressPhase.submitted,
+              bundleIndex: key.bundleIndex,
+              proposalId: key.proposalId,
+              proofProgress: 1,
+              message:
+                  chainOutcome.transactionHash ??
+                  chainOutcome.candidateTransactionHash,
+            ),
           );
         }
       case rust_wire.RoundStepProgressKind.shareOutcome:
@@ -1473,11 +1521,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           proposalId: delivery.vote.proposalId,
         );
         stepKeys.add(key);
-        progress[key] = VotingSessionProgress(
-          phase: VotingProgressPhase.completed,
-          bundleIndex: key.bundleIndex,
-          proposalId: key.proposalId,
-          proofProgress: 1,
+        _storeProgress(
+          progress,
+          key,
+          VotingSessionProgress(
+            phase: VotingProgressPhase.completed,
+            bundleIndex: key.bundleIndex,
+            proposalId: key.proposalId,
+            proofProgress: 1,
+          ),
         );
       case rust_wire.RoundStepProgressKind.selected ||
           rust_wire.RoundStepProgressKind.delegation ||
@@ -1612,7 +1664,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final completed = <int>{};
     var castingVotes = false;
     var roundPlan = fallbackState.roundPlan;
-    rust_wire.RoundWorkTallyView? tally;
+    rust_wire.RoundWorkTallyView? tally =
+        fallbackState.voteSubmissionTotalCount > 0
+        ? rust_wire.RoundWorkTallyView(
+            completedProposals: fallbackState.voteSubmissionCompletedCount,
+            totalProposals: fallbackState.voteSubmissionTotalCount,
+            remainingObligations: 0,
+          )
+        : null;
     final voteProgress = Map<VotingVoteKey, VotingSessionProgress>.of(
       fallbackState.voteProgress,
     );
@@ -1635,8 +1694,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentVoteKey: currentKey == null,
           voteSubmissionCompletedCount: finished,
           voteSubmissionTotalCount: total,
+          // A refresh that reports no baseline has not learned this run's
+          // obligations yet. Leaving the counters alone is right; clearing
+          // them dropped the ring back to nothing mid-ballot.
           voteSubmissionProgress: total > 0 ? finished / total : null,
-          clearVoteSubmissionProgress: total == 0,
         ),
       );
     }
@@ -1644,7 +1705,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     void publishProgress(VotingSessionProgress update) {
       final bundleIndex = update.bundleIndex;
       if (bundleIndex == null) return;
-      progress[bundleIndex] = update;
+      _storeProgress(progress, bundleIndex, update);
       _setStateForContext(
         context,
         (state.value ?? fallbackState).copyWith(
@@ -1673,7 +1734,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         // shares in the same run, before castVotes() is ever called.
         if (event.kind == rust_wire.RoundDriveEventKind.planRefreshed) {
           roundPlan = event.plan ?? roundPlan;
-          tally = event.tally ?? tally;
+          tally = _mergeTally(tally, event.tally);
           if (castingVotes) publishVotes();
           return;
         }
@@ -1694,11 +1755,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               if (event.disposition ==
                   rust_wire.RoundStepDispositionView.advanced) {
                 for (final voteKey in keys) {
-                  voteProgress[voteKey] = VotingSessionProgress(
-                    phase: VotingProgressPhase.completed,
-                    bundleIndex: voteKey.bundleIndex,
-                    proposalId: voteKey.proposalId,
-                    proofProgress: 1,
+                  _storeProgress(
+                    voteProgress,
+                    voteKey,
+                    VotingSessionProgress(
+                      phase: VotingProgressPhase.completed,
+                      bundleIndex: voteKey.bundleIndex,
+                      proposalId: voteKey.proposalId,
+                      proofProgress: 1,
+                    ),
                   );
                 }
               }
@@ -1757,7 +1822,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     if (castingVotes) {
       roundPlan = report.plan ?? roundPlan;
-      tally = report.tally;
+      tally = _mergeTally(tally, report.tally);
       publishVotes();
     }
 
@@ -1955,6 +2020,53 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             totalBundleTasks)
         .clamp(0.0, 1.0)
         .toDouble();
+  }
+
+  /// Stores an update for [key], holding the furthest point it has reached.
+  ///
+  /// The round driver re-dispatches a step after a repoll, so a bundle or vote
+  /// that already reached `payloadReady` can be told it is selecting notes
+  /// again. That is the driver retrying, not the voter losing ground, and
+  /// letting it through made the "N of M proved" counters and the progress
+  /// rings run backwards.
+  ///
+  /// `failed` is the one phase allowed to move a key backwards: a failure is
+  /// what the UI has to show. A later event still recovers the key, because
+  /// `failed` ranks below every working phase.
+  void _storeProgress<K>(
+    Map<K, VotingSessionProgress> progress,
+    K key,
+    VotingSessionProgress next,
+  ) {
+    progress[key] = _monotonicProgress(progress[key], next);
+  }
+
+  VotingSessionProgress _monotonicProgress(
+    VotingSessionProgress? previous,
+    VotingSessionProgress next,
+  ) {
+    if (previous == null) return next;
+    final failed = next.phase == VotingProgressPhase.failed;
+    // A key that recovers from a failure must not carry its failure text
+    // forward; anything else keeps the last thing it had to say, so a
+    // transaction hash survives the events that follow it.
+    final recovering = previous.phase == VotingProgressPhase.failed && !failed;
+    final message = next.message ?? (recovering ? null : previous.message);
+    final advances =
+        failed ||
+        voteProgressPhaseRank(next.phase) >=
+            voteProgressPhaseRank(previous.phase);
+    final held = advances ? next : previous;
+    return VotingSessionProgress(
+      phase: held.phase,
+      bundleIndex: next.bundleIndex ?? previous.bundleIndex,
+      proposalId: next.proposalId ?? previous.proposalId,
+      // A failure reports what it actually got to; everything else holds.
+      proofProgress: failed
+          ? next.proofProgress
+          : _monotonicProofProgress(previous.proofProgress, next.proofProgress),
+      message: message,
+    );
   }
 
   double? _monotonicProofProgress(double? previous, double? next) {
@@ -2272,7 +2384,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _setStateForContext(
       context,
       (state.value ?? fallback).copyWith(
-        phase: _phaseForPlans(roundPlan),
+        phase: _phaseWithoutBallotRegression(_phaseForPlans(roundPlan)),
         roundPlan: roundPlan,
       ),
     );
@@ -2490,7 +2602,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           _setStateForContext(
             context,
             (state.value ?? current).copyWith(
-              phase: _phaseForPlans(roundPlan),
+              phase: _phaseWithoutBallotRegression(_phaseForPlans(roundPlan)),
               roundPlan: roundPlan,
             ),
           );
@@ -3552,6 +3664,68 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'reason=$reason error=$e',
       );
     }
+  }
+
+  /// Whether this phase means the round is at or past the ballot.
+  static bool _isBallotPhase(VotingSessionPhase phase) {
+    return phase == VotingSessionPhase.castingVotes ||
+        phase == VotingSessionPhase.submittingShares;
+  }
+
+  /// A phase to publish that cannot drag the submission back before the
+  /// ballot.
+  ///
+  /// The step list the voter watches is derived from this field, and several
+  /// writers legitimately report a pre-vote phase while a vote is already in
+  /// flight — a sibling bundle that still owes a delegation signature, a plan
+  /// refresh whose primary action is `delegate`, background share tracking
+  /// finishing. Publishing those moved the active step backwards mid-vote.
+  ///
+  /// Terminal and interactive phases still get through: an error has to be
+  /// shown, `done` is the end of the round, and Keystone signing drives the QR
+  /// panel.
+  VotingSessionPhase _phaseWithoutBallotRegression(VotingSessionPhase next) {
+    final current = state.value?.phase;
+    if (current == null || !_isBallotPhase(current)) return next;
+    if (_isBallotPhase(next) ||
+        next == VotingSessionPhase.done ||
+        next == VotingSessionPhase.error ||
+        next == VotingSessionPhase.keystoneSigning) {
+      return next;
+    }
+    return current;
+  }
+
+  /// Folds a run-scoped tally into what the round has already shown.
+  ///
+  /// `RoundWorkTallyView` measures one run against what *that run* started
+  /// owing. A round is often driven by two runs — the delegation drive casts
+  /// votes too — so the second run owes less than the first and would shrink
+  /// the denominator the voter is reading. The crate also recomputes the
+  /// finished count from scratch on each refresh, so it can fall mid-run.
+  /// Neither is progress the voter lost.
+  static rust_wire.RoundWorkTallyView _mergeTally(
+    rust_wire.RoundWorkTallyView? previous,
+    rust_wire.RoundWorkTallyView? next,
+  ) {
+    if (next == null) {
+      return previous ??
+          const rust_wire.RoundWorkTallyView(
+            completedProposals: 0,
+            totalProposals: 0,
+            remainingObligations: 0,
+          );
+    }
+    if (previous == null) return next;
+    return rust_wire.RoundWorkTallyView(
+      completedProposals: next.completedProposals > previous.completedProposals
+          ? next.completedProposals
+          : previous.completedProposals,
+      totalProposals: next.totalProposals > previous.totalProposals
+          ? next.totalProposals
+          : previous.totalProposals,
+      remainingObligations: next.remainingObligations,
+    );
   }
 
   static VotingSessionPhase _phaseForPlans(rust_wire.RoundPlanView? roundPlan) {
