@@ -8398,6 +8398,8 @@ impl SseDecode for zcash_voting::wire::ChainDiagnosticKindView {
             5 => zcash_voting::wire::ChainDiagnosticKindView::ReconciliationPending,
             6 => zcash_voting::wire::ChainDiagnosticKindView::InvalidProtocolResponse,
             7 => zcash_voting::wire::ChainDiagnosticKindView::StorageFailure,
+            8 => zcash_voting::wire::ChainDiagnosticKindView::EndpointUnsupported,
+            9 => zcash_voting::wire::ChainDiagnosticKindView::RouteAnswerReplaced,
             _ => unreachable!("Invalid variant for ChainDiagnosticKindView: {}", inner),
         };
     }
@@ -11136,10 +11138,11 @@ impl SseDecode for zcash_voting::wire::RoundStepProgressKind {
             1 => zcash_voting::wire::RoundStepProgressKind::Delegation,
             2 => zcash_voting::wire::RoundStepProgressKind::TreeSynced,
             3 => zcash_voting::wire::RoundStepProgressKind::VoteCommit,
-            4 => zcash_voting::wire::RoundStepProgressKind::HelperPlansPrepared,
-            5 => zcash_voting::wire::RoundStepProgressKind::ChainOutcome,
-            6 => zcash_voting::wire::RoundStepProgressKind::ShareOutcome,
-            7 => zcash_voting::wire::RoundStepProgressKind::ShareConfirmed,
+            4 => zcash_voting::wire::RoundStepProgressKind::DelegateAndVoteBatchPersisted,
+            5 => zcash_voting::wire::RoundStepProgressKind::HelperPlansPrepared,
+            6 => zcash_voting::wire::RoundStepProgressKind::ChainOutcome,
+            7 => zcash_voting::wire::RoundStepProgressKind::ShareOutcome,
+            8 => zcash_voting::wire::RoundStepProgressKind::ShareConfirmed,
             _ => unreachable!("Invalid variant for RoundStepProgressKind: {}", inner),
         };
     }
@@ -13181,6 +13184,8 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::ChainDiagn
             zcash_voting::wire::ChainDiagnosticKindView::ReconciliationPending => 5.into_dart(),
             zcash_voting::wire::ChainDiagnosticKindView::InvalidProtocolResponse => 6.into_dart(),
             zcash_voting::wire::ChainDiagnosticKindView::StorageFailure => 7.into_dart(),
+            zcash_voting::wire::ChainDiagnosticKindView::EndpointUnsupported => 8.into_dart(),
+            zcash_voting::wire::ChainDiagnosticKindView::RouteAnswerReplaced => 9.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -15123,10 +15128,13 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::RoundStepP
             zcash_voting::wire::RoundStepProgressKind::Delegation => 1.into_dart(),
             zcash_voting::wire::RoundStepProgressKind::TreeSynced => 2.into_dart(),
             zcash_voting::wire::RoundStepProgressKind::VoteCommit => 3.into_dart(),
-            zcash_voting::wire::RoundStepProgressKind::HelperPlansPrepared => 4.into_dart(),
-            zcash_voting::wire::RoundStepProgressKind::ChainOutcome => 5.into_dart(),
-            zcash_voting::wire::RoundStepProgressKind::ShareOutcome => 6.into_dart(),
-            zcash_voting::wire::RoundStepProgressKind::ShareConfirmed => 7.into_dart(),
+            zcash_voting::wire::RoundStepProgressKind::DelegateAndVoteBatchPersisted => {
+                4.into_dart()
+            }
+            zcash_voting::wire::RoundStepProgressKind::HelperPlansPrepared => 5.into_dart(),
+            zcash_voting::wire::RoundStepProgressKind::ChainOutcome => 6.into_dart(),
+            zcash_voting::wire::RoundStepProgressKind::ShareOutcome => 7.into_dart(),
+            zcash_voting::wire::RoundStepProgressKind::ShareConfirmed => 8.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -16858,6 +16866,8 @@ impl SseEncode for zcash_voting::wire::ChainDiagnosticKindView {
                 zcash_voting::wire::ChainDiagnosticKindView::ReconciliationPending => 5,
                 zcash_voting::wire::ChainDiagnosticKindView::InvalidProtocolResponse => 6,
                 zcash_voting::wire::ChainDiagnosticKindView::StorageFailure => 7,
+                zcash_voting::wire::ChainDiagnosticKindView::EndpointUnsupported => 8,
+                zcash_voting::wire::ChainDiagnosticKindView::RouteAnswerReplaced => 9,
                 _ => {
                     unimplemented!("");
                 }
@@ -18983,10 +18993,11 @@ impl SseEncode for zcash_voting::wire::RoundStepProgressKind {
                 zcash_voting::wire::RoundStepProgressKind::Delegation => 1,
                 zcash_voting::wire::RoundStepProgressKind::TreeSynced => 2,
                 zcash_voting::wire::RoundStepProgressKind::VoteCommit => 3,
-                zcash_voting::wire::RoundStepProgressKind::HelperPlansPrepared => 4,
-                zcash_voting::wire::RoundStepProgressKind::ChainOutcome => 5,
-                zcash_voting::wire::RoundStepProgressKind::ShareOutcome => 6,
-                zcash_voting::wire::RoundStepProgressKind::ShareConfirmed => 7,
+                zcash_voting::wire::RoundStepProgressKind::DelegateAndVoteBatchPersisted => 4,
+                zcash_voting::wire::RoundStepProgressKind::HelperPlansPrepared => 5,
+                zcash_voting::wire::RoundStepProgressKind::ChainOutcome => 6,
+                zcash_voting::wire::RoundStepProgressKind::ShareOutcome => 7,
+                zcash_voting::wire::RoundStepProgressKind::ShareConfirmed => 8,
                 _ => {
                     unimplemented!("");
                 }

@@ -10,15 +10,15 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flutter_rust_bridge = "=2.11.1"
 
 zcash_script = "0.4.3"
-voting-crypto-deps = { version = "=0.2.2" }
-sapling-crypto = { package = "zakura-sapling-crypto", version = "=1.0.0", default-features = false, features = ["circuit"] }
+voting-crypto-deps = { version = "=0.2.3" }
+sapling-crypto = { package = "zakura-sapling-crypto", version = "=1.2.0", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
-pasta_curves = { package = "zakura-pasta-curves", version = "=1.0.0" }
+pasta_curves = { package = "zakura-pasta-curves", version = "=1.2.0" }
 ff = "0.14"
 # Required by no-op Sapling prover trait impls
-jubjub = { package = "zakura-jubjub", version = "=1.0.0" }
-bls12_381 = { package = "zakura-bls12-381", version = "=1.0.0" }
+jubjub = { package = "zakura-jubjub", version = "=1.2.0" }
+bls12_381 = { package = "zakura-bls12-381", version = "=1.2.0" }
 rand_core = "0.6"
 
 # Key generation
@@ -81,14 +81,14 @@ url = "2.5.8"
 # `use orchard` / `use zcash_client_backend` keep working.
 [dependencies.zcash_primitives]
 package = "zakura-primitives"
-version = "=1.0.0"
+version = "=1.2.0"
 
 [dependencies.zcash_address]
 version = "0.13.0"
 
 [dependencies.zcash_keys]
 package = "zakura-keys"
-version = "=1.0.0"
+version = "=1.2.0"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
@@ -100,7 +100,7 @@ version = "0.10.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc4"
+version = "=0.1.0-rc5"
 features = [
     "orchard",
     "transparent-inputs",
@@ -113,7 +113,7 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc4"
+version = "=0.1.0-rc5"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
@@ -121,16 +121,16 @@ version = "=4.0.0"
 
 [dependencies.orchard]
 package = "zakura-orchard"
-version = "=1.0.0"
+version = "=1.2.0"
 
 [dependencies.zcash_proofs]
 package = "zakura-proofs"
-version = "=1.0.0"
+version = "=1.2.0"
 features = ["local-prover"]
 
 [dependencies.pczt]
 package = "zakura-pczt"
-version = "=0.1.0-rc2"
+version = "=0.1.0-rc3"
 features = [
     "orchard",
     "io-finalizer",
@@ -173,15 +173,17 @@ version = "=4.0.0"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.6.0"
+version = "=0.6.1"
 default-features = false
 features = ["zakura"]
 
 [patch.crates-io]
-# Combine durable Keystone setup with the feature branch's voting observability.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "98785d2b544b3f39e9b525e3a87421dcfa67d172" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "98785d2b544b3f39e9b525e3a87421dcfa67d172" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "98785d2b544b3f39e9b525e3a87421dcfa67d172" }
+# Pinned to the tip of PR #324 (perf/shared-delivery-preparation), which shares
+# round audits across helper delivery. Includes #321 (immediate-share dispatch)
+# and #322, both merged upstream.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "79ed9833188e05081547eb9b03650c6f0dd7b85f" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "79ed9833188e05081547eb9b03650c6f0dd7b85f" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "79ed9833188e05081547eb9b03650c6f0dd7b85f" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }

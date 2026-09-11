@@ -289,12 +289,16 @@ pub async fn warm_pir_proof_cache(
             .map_err(|_| internal("selected note count does not fit in u32"))?;
         let bundle_policy = zcash_voting::recoverable_bundle_policy_v1();
         let result = fleet.with_failover(|session| {
-            zcash_voting::precompute::precompute_pir_proofs(
-                &voting_db,
-                &notes,
-                bundle_policy,
-                network,
-                session,
+            observability::report(
+                "warm_pir_proof_cache",
+                zcash_voting::precompute::precompute_pir_proofs_with_report(
+                    &voting_db,
+                    &notes,
+                    bundle_policy,
+                    network,
+                    session,
+                    observability::options(),
+                ),
             )
         })?;
         Ok(PirCacheWarmupOutcome {

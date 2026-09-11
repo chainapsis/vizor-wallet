@@ -13,6 +13,7 @@
 //! definite pre-dispatch failure the SDK may retry elsewhere.
 
 use std::future::Future;
+use zcash_voting::{HttpObservationContext, HttpObservationPhase};
 
 use bytes::Bytes;
 use http::{Method, Uri};
@@ -62,8 +63,14 @@ impl VizorRoute {
             builder
         };
         let max_response_bytes = request.max_response_bytes;
+        let body_observations = HttpObservationContext::capture();
         let collect = move |mut body: hyper::body::Incoming| async move {
-            collect_body_with_limit(&mut body, max_response_bytes).await
+            body_observations
+                .observe(
+                    HttpObservationPhase::TorBody,
+                    collect_body_with_limit(&mut body, max_response_bytes),
+                )
+                .await
         };
         // Retries are the SDK's decision, not the transport's: ask arti for none.
         let response = match request.method {
@@ -111,18 +118,39 @@ impl RouteHttp for VizorRoute {
             // fallback. A bootstrap in flight is waited out, but only inside
             // this request's own budget; nothing has been dispatched yet, so
             // running out is a definite pre-dispatch failure.
-            let route = tokio::time::timeout(
-                request.timeout,
-                network_privacy::tor_client_for_route(true, || false),
-            )
-            .await
-            .map_err(|_| {
-                RouteError::before_dispatch("network route was not ready before request dispatch")
-            })?
-            .map_err(RouteError::before_dispatch)?;
+            let observations = HttpObservationContext::capture();
+            let route = observations
+                .observe(
+                    HttpObservationPhase::RouteSelection,
+                    tokio::time::timeout(
+                        request.timeout,
+                        network_privacy::tor_client_for_route(true, || false),
+                    ),
+                )
+                .await
+                .map_err(|_| {
+                    RouteError::before_dispatch(
+                        "network route was not ready before request dispatch",
+                    )
+                })?
+                .map_err(RouteError::before_dispatch)?;
             match route {
-                Some(tor) => self.over_tor(&tor, request, on_dispatch).await,
-                None => self.direct.execute(request, on_dispatch).await,
+                Some(tor) => {
+                    observations
+                        .observe(
+                            HttpObservationPhase::TorRequest,
+                            self.over_tor(&tor, request, on_dispatch),
+                        )
+                        .await
+                }
+                None => {
+                    observations
+                        .observe(
+                            HttpObservationPhase::DirectRequest,
+                            self.direct.execute(request, on_dispatch),
+                        )
+                        .await
+                }
             }
         })
     }
