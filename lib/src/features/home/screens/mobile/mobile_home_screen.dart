@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../../../../providers/app_security_provider.dart';
+import '../../../../providers/voting/voting_participation_provider.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +24,10 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/voting/voting_home_entry_provider.dart';
+import '../../../../providers/voting/voting_home_cache_provider.dart';
+import '../../../../providers/voting/voting_config_source_provider.dart';
+import '../../../../providers/migration_send_gate_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
@@ -31,6 +37,7 @@ import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
+import '../../../activity/gift_card_activity_index.dart';
 import '../../../activity/activity_row_mapper.dart';
 import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
@@ -816,8 +823,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   Future<void> _openTransactionStatus(
     BuildContext context,
     WidgetRef ref,
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
 
@@ -851,6 +859,36 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
+        giftCard: giftCard,
+      ),
+    );
+  }
+
+  ActivityEntry _transactionEntry(
+    BuildContext context,
+    WidgetRef ref,
+    rust_sync.TransactionInfo transaction,
+    GiftCardActivityMetadata? giftCard, {
+    required bool privacyModeEnabled,
+  }) {
+    return ActivityEntry(
+      timestamp:
+          giftCard?.activityTimestamp ??
+          transactionActivityTimestamp(transaction),
+      row: buildTransactionActivityRow(
+        context: context,
+        transaction: transaction,
+        giftCardKind: giftCard?.kind,
+        giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
+        giftCardStableId: giftCard?.stableId,
+        giftCardActivityTimestamp: giftCard?.activityTimestamp,
+        giftCardDisplayPool: giftCard?.displayPool,
+        privacyModeEnabled: privacyModeEnabled,
+        dateOnlyTimestamp: true,
+        onTap: () => unawaited(
+          _openTransactionStatus(context, ref, transaction, giftCard: giftCard),
+        ),
       ),
     );
   }
@@ -969,8 +1007,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
-    final sendDisabled =
-        migrationInProgress && sync.ironwoodBalance <= BigInt.zero;
+    // Same predicate as before, now owned by `migrationSendGateProvider` so
+    // the payment-URI drain in `app.dart` cannot drift away from what this
+    // button does.
+    final sendDisabled = ref.watch(migrationSendGateProvider);
     final shieldedBalance = migrationRequired
         ? sync.orchardBalance + sync.orchardPendingBalance
         : sync.saplingBalance +
@@ -1009,6 +1049,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     );
 
     final uuid = activeAccountUuid;
+    final giftCardActivityIndex = uuid == null
+        ? GiftCardActivityIndex.empty
+        : ref.watch(giftCardActivityIndexProvider(uuid)).value ??
+              GiftCardActivityIndex.empty;
     final swapItems = uuid == null
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(uuid)).value ??
@@ -1021,17 +1065,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           );
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
     final entries = <ActivityEntry>[
-      for (final tx in sync.recentTransactions)
+      for (final tx in giftCardActivityIndex.withPendingClaims(
+        sync.recentTransactions,
+      ))
         if (!absorption.absorbs(tx))
-          ActivityEntry(
-            timestamp: transactionActivityTimestamp(tx),
-            row: buildTransactionActivityRow(
-              context: context,
-              transaction: tx,
-              privacyModeEnabled: privacyModeEnabled,
-              dateOnlyTimestamp: true,
-              onTap: () => unawaited(_openTransactionStatus(context, ref, tx)),
-            ),
+          _transactionEntry(
+            context,
+            ref,
+            tx,
+            giftCardActivityIndex.metadataFor(tx),
+            privacyModeEnabled: privacyModeEnabled,
           ),
       for (final item in swapItems)
         ActivityEntry(
@@ -1182,8 +1225,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-            const SizedBox(height: AppSpacing.s),
-            _MobileVotingEntryCard(onTap: () => context.push('/voting')),
+            const _MobileVotingEntry(),
             if (widget.ironwoodMigrationCta.visible) ...[
               const SizedBox(height: AppSpacing.s),
               MobileIronwoodMigrationBanner(
@@ -1238,6 +1280,134 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   }
 }
 
+/// Route/lifecycle triggers check for voting changes; the minute timer only
+/// reevaluates cached deadlines. Participation retries require an event such
+/// as Home reentry, foregrounding, or sync completion.
+class _MobileVotingEntry extends ConsumerStatefulWidget {
+  const _MobileVotingEntry();
+
+  @override
+  ConsumerState<_MobileVotingEntry> createState() => _MobileVotingEntryState();
+}
+
+class _MobileVotingEntryState extends ConsumerState<_MobileVotingEntry> {
+  late final AppLifecycleListener _lifecycle;
+  Timer? _timer;
+  bool _foreground = true;
+  bool _homeCurrent = false;
+  int _participationEpoch = 0;
+  GoRouter? _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) {
+        _foreground = state == AppLifecycleState.resumed;
+        if (!_foreground) _participationEpoch++;
+        if (_foreground) _refresh();
+      },
+    );
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted && _foreground && _homeCurrent) {
+        ref.invalidate(votingHomeEntryVisibleProvider);
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (!identical(_router, router)) {
+      _router?.routerDelegate.removeListener(_routeChanged);
+      _router = router;
+      router.routerDelegate.addListener(_routeChanged);
+    }
+    _routeChanged();
+  }
+
+  void _routeChanged() {
+    final current =
+        _router?.routerDelegate.currentConfiguration.uri.path == '/home';
+    if (current && !_homeCurrent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    }
+    if (!current && _homeCurrent) _participationEpoch++;
+    _homeCurrent = current;
+  }
+
+  void _refresh() {
+    if (!mounted || !_foreground || !_homeCurrent) return;
+    ref.invalidate(votingHomeEntryVisibleProvider);
+    unawaited(
+      ref
+          .read(votingHomeRefreshActionProvider)()
+          .then((_) => _checkParticipation()),
+    );
+  }
+
+  Future<void> _checkParticipation() async {
+    if (!mounted || !_foreground || !_homeCurrent) return;
+    final epoch = _participationEpoch;
+    await ref
+        .read(votingParticipationProvider)
+        .checkHomeCandidates(
+          isHomeCurrent: () =>
+              mounted &&
+              _foreground &&
+              _homeCurrent &&
+              epoch == _participationEpoch,
+        );
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _router?.routerDelegate.removeListener(_routeChanged);
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(votingConfigSourceProvider.select((s) => s.value?.sourceUrl), (
+      _,
+      _,
+    ) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    });
+    ref.listen(rpcEndpointProvider.select((s) => s.networkName), (_, _) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    });
+    void schedule() => WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _checkParticipation(),
+    );
+    ref.listen(votingHomeCacheProvider, (_, _) => schedule());
+    ref.listen(
+      accountProvider.select((s) => s.value?.activeAccountUuid),
+      (_, _) => schedule(),
+    );
+    ref.listen(
+      appSecurityProvider.select((s) => s.requiresUnlock),
+      (_, _) => schedule(),
+    );
+    ref.listen(
+      syncProvider.select(
+        (s) => (s.value?.isSyncing, s.value?.lastSyncCompletedAt),
+      ),
+      (_, _) => schedule(),
+    );
+    if (!ref.watch(votingHomeEntryVisibleProvider)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.s),
+      child: _MobileVotingEntryCard(onTap: () => context.push('/voting')),
+    );
+  }
+}
+
 class _MobileVotingEntryCard extends StatelessWidget {
   const _MobileVotingEntryCard({required this.onTap});
 
@@ -1272,11 +1442,7 @@ class _MobileVotingEntryCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppIcon(
-                  AppIcons.vote,
-                  size: 20,
-                  color: colors.icon.accent,
-                ),
+                AppIcon(AppIcons.vote, size: 20, color: colors.icon.accent),
                 const SizedBox(width: AppSpacing.s),
                 Expanded(
                   child: Column(

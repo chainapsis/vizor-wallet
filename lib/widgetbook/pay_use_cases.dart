@@ -35,6 +35,20 @@ Widget buildPayAmountUseCase(BuildContext context) {
   return const _PayDesktopFrame(child: _PayAmountPreview());
 }
 
+Widget buildPayAmountEmptyUnfocusedUseCase(BuildContext context) {
+  return const _PayDesktopFrame(child: _PayAmountPreview(focused: false));
+}
+
+Widget buildPayAmountValueFocusedUseCase(BuildContext context) {
+  return const _PayDesktopFrame(child: _PayAmountPreview(initialAmount: '25'));
+}
+
+Widget buildPayAmountValueUnfocusedUseCase(BuildContext context) {
+  return const _PayDesktopFrame(
+    child: _PayAmountPreview(initialAmount: '25', focused: false),
+  );
+}
+
 Widget buildPayRecipientUseCase(BuildContext context) {
   return const _PayDesktopFrame(child: _PayRecipientPreview());
 }
@@ -102,7 +116,10 @@ class _PayDesktopFrame extends StatelessWidget {
 }
 
 class _PayAmountPreview extends StatefulWidget {
-  const _PayAmountPreview();
+  const _PayAmountPreview({this.initialAmount = '', this.focused = true});
+
+  final String initialAmount;
+  final bool focused;
 
   @override
   State<_PayAmountPreview> createState() => _PayAmountPreviewState();
@@ -111,24 +128,28 @@ class _PayAmountPreview extends StatefulWidget {
 class _PayAmountPreviewState extends State<_PayAmountPreview> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
-  var _state = const SwapState(
-    direction: SwapDirection.zecToExternal,
-    quoteMode: SwapQuoteMode.exactOutput,
-    amountText: '',
-    receiveAmountText: '',
-    receiveFiatText: '',
-    destinationText: '',
-    externalAsset: SwapAsset.usdc,
-    reviewVisible: false,
-    intents: [],
-    payMode: true,
-  );
+  late SwapState _state;
 
   @override
   void initState() {
     super.initState();
+    _state = SwapState(
+      direction: SwapDirection.zecToExternal,
+      quoteMode: SwapQuoteMode.exactOutput,
+      amountText: '',
+      receiveAmountText: widget.initialAmount,
+      receiveFiatText: '',
+      destinationText: '',
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: const [],
+      payMode: true,
+    );
     _controller = TextEditingController(text: _state.receiveAmountText);
-    _focusNode = FocusNode(debugLabel: 'WidgetbookPayAmount');
+    _focusNode = FocusNode(
+      debugLabel: 'WidgetbookPayAmount',
+      canRequestFocus: widget.focused,
+    );
   }
 
   @override

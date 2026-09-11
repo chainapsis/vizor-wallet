@@ -16,7 +16,10 @@ use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{compact_tx_streamer_client::CompactTxStreamerClient, BlockId, ChainSpec, Empty},
 };
-use zcash_client_backend::tor::http::{HttpError, TimeoutPhase};
+use zcash_client_backend::tor::{
+    http::{HttpError, TimeoutPhase},
+    Error as TorError,
+};
 
 pub use crate::network_privacy::NetworkPrivacyStatus;
 
@@ -327,13 +330,10 @@ pub async fn tor_http_download(
     network_http_response(response.map(|_| Vec::new()))
 }
 
-async fn with_tor_http_request_timeout<T, E>(
+async fn with_tor_http_request_timeout<T>(
     timeout_milliseconds: Option<u64>,
-    future: impl std::future::Future<Output = Result<T, E>>,
-) -> Result<T, String>
-where
-    E: std::fmt::Display,
-{
+    future: impl std::future::Future<Output = Result<T, TorError>>,
+) -> Result<T, String> {
     let result = match timeout_milliseconds {
         Some(0) => return Err("Tor HTTP request timeout must be positive".to_string()),
         Some(timeout_milliseconds) => {
@@ -345,7 +345,18 @@ where
         }
         None => future.await,
     };
-    result.map_err(|error| error.to_string())
+    result.map_err(normalize_tor_http_error)
+}
+
+/// Gives Arti's phase-specific HTTP timeouts the stable marker consumed by
+/// Dart, without relying on Arti's human-readable error wording across FFI.
+fn normalize_tor_http_error(error: TorError) -> String {
+    match &error {
+        TorError::Http(HttpError::Timeout(phase)) => {
+            format!("{TOR_HTTP_REQUEST_TIMEOUT_ERROR} while {phase}")
+        }
+        _ => error.to_string(),
+    }
 }
 
 fn apply_headers(
@@ -714,9 +725,10 @@ mod tests {
 
     use super::{
         correct_estimated_height, interpolate_height, mainnet_anchor_segment,
-        tor_http_begin_request, tor_http_cancel_request, with_api_response_body_timeout,
-        with_tor_http_request_cancellation, with_tor_http_request_timeout, BirthdayAnchor,
-        MAINNET_BIRTHDAY_ANCHORS,
+        normalize_tor_http_error, tor_http_begin_request, tor_http_cancel_request,
+        with_api_response_body_timeout, with_tor_http_request_cancellation,
+        with_tor_http_request_timeout, BirthdayAnchor, MAINNET_BIRTHDAY_ANCHORS,
+        TOR_HTTP_REQUEST_TIMEOUT_ERROR,
     };
 
     #[test]
@@ -793,6 +805,26 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn arti_http_timeout_phases_receive_the_stable_timeout_marker() {
+        for phase in [
+            TimeoutPhase::Connect,
+            TimeoutPhase::Request,
+            TimeoutPhase::ResponseBody,
+        ] {
+            let error = normalize_tor_http_error(Error::Http(HttpError::Timeout(phase)));
+            assert!(
+                error.starts_with(TOR_HTTP_REQUEST_TIMEOUT_ERROR),
+                "unrecognized timeout: {error}"
+            );
+        }
+
+        assert_eq!(
+            normalize_tor_http_error(Error::Http(HttpError::NonHttpUrl)),
+            "HTTP-over-Tor error: Only HTTP or HTTPS URLs are supported"
+        );
+    }
+
     #[tokio::test]
     async fn whole_http_deadline_drops_the_in_flight_tor_request() {
         struct DropSignal(Arc<AtomicBool>);
@@ -807,7 +839,7 @@ mod tests {
         let request_drop = Arc::clone(&dropped);
         let result = with_tor_http_request_timeout(Some(1), async move {
             let _drop_signal = DropSignal(request_drop);
-            std::future::pending::<Result<(), &'static str>>().await
+            std::future::pending::<Result<(), Error>>().await
         })
         .await;
 

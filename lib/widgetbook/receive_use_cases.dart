@@ -44,6 +44,16 @@ Widget buildReceiveDesktopTransparentModalUseCase(BuildContext context) {
   );
 }
 
+/// Receive with the "Request ZEC" entry under the copy button.
+///
+/// Entry mock only — the live screen is untouched, so this is the one place
+/// the second CTA and its re-tuned coordinates can be reviewed.
+Widget buildReceiveDesktopRequestEntryUseCase(BuildContext context) {
+  return const _ReceiveDesktopHarness(
+    state: ReceiveDesktopPreviewState.shieldedRequestEntry,
+  );
+}
+
 Widget buildReceiveMobileShieldedUseCase(BuildContext context) {
   return const _ReceiveMobileHarness(type: ReceiveAddressType.shielded);
 }

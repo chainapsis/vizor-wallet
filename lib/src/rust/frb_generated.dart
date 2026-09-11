@@ -551,8 +551,49 @@ abstract class RustLibApi extends BaseApi {
     required String roundId,
   });
 
+  void crateApiSyncCancelPaymentLinkClaimSync({required String claimId});
+
+  Future<void> crateApiSyncRunPaymentLinkClaimSync({
+    required String claimId,
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required bool allowResubmit,
+  });
+
+  Future<PaymentLinkSpendEvidence> crateApiSyncGetPaymentLinkSpendEvidence({
+    required String dbPath,
+    required String accountUuid,
+    required String claimTxids,
+  });
+
+  int crateApiSyncGetPcztExpiryHeight({required List<int> pcztBytes});
+
+  String crateApiSyncGetPcztTxid({required List<int> pcztBytes});
+
+  Future<GeneratedSoftwareAccount> crateApiWalletGenerateSoftwareAccount({
+    required String network,
+  });
+
+  Future<void> crateApiVotingConfigureRegtestVotingParticipation({
+    required String chainId,
+    required String validatorHash,
+  });
+
+  Future<String> crateApiVotingPrepareVotingParticipation({
+    required ApiVotingRoundContext ctx,
+  });
+
+  Future<String> crateApiVotingEvaluateVotingParticipation({
+    required ApiVotingRoundContext ctx,
+    required String fingerprint,
+    required String evidence,
+    required PlatformInt64 nowSeconds,
+  });
+
   Future<BigInt> crateApiWalletGetLatestBlockHeight({
     required String lightwalletdUrl,
+    required String network,
   });
 
   Future<String> crateApiWalletGetLightwalletdChainName({
@@ -1143,6 +1184,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   });
 
   bool crateApiWalletValidateMnemonic({required String mnemonic});
@@ -4333,14 +4375,328 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  void crateApiSyncCancelPaymentLinkClaimSync({required String claimId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(claimId, serializer);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 182,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSyncCancelPaymentLinkClaimSyncConstMeta,
+        argValues: [claimId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncCancelPaymentLinkClaimSyncConstMeta =>
+      const TaskConstMeta(
+        debugName: "cancel_payment_link_claim_sync",
+        argNames: ["claimId"],
+      );
+
+  @override
+  Future<void> crateApiSyncRunPaymentLinkClaimSync({
+    required String claimId,
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required bool allowResubmit,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(claimId, serializer);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_bool(allowResubmit, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 183,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncRunPaymentLinkClaimSyncConstMeta,
+        argValues: [claimId, dbPath, lightwalletdUrl, network, allowResubmit],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncRunPaymentLinkClaimSyncConstMeta =>
+      const TaskConstMeta(
+        debugName: "run_payment_link_claim_sync",
+        argNames: [
+          "claimId",
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "allowResubmit",
+        ],
+      );
+
+  @override
+  Future<PaymentLinkSpendEvidence> crateApiSyncGetPaymentLinkSpendEvidence({
+    required String dbPath,
+    required String accountUuid,
+    required String claimTxids,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(claimTxids, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 184,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_payment_link_spend_evidence,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncGetPaymentLinkSpendEvidenceConstMeta,
+        argValues: [dbPath, accountUuid, claimTxids],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncGetPaymentLinkSpendEvidenceConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_payment_link_spend_evidence",
+        argNames: ["dbPath", "accountUuid", "claimTxids"],
+      );
+
+  @override
+  int crateApiSyncGetPcztExpiryHeight({required List<int> pcztBytes}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 185,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_32,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncGetPcztExpiryHeightConstMeta,
+        argValues: [pcztBytes],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncGetPcztExpiryHeightConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_pczt_expiry_height",
+        argNames: ["pcztBytes"],
+      );
+
+  @override
+  String crateApiSyncGetPcztTxid({required List<int> pcztBytes}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 186,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncGetPcztTxidConstMeta,
+        argValues: [pcztBytes],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncGetPcztTxidConstMeta =>
+      const TaskConstMeta(debugName: "get_pczt_txid", argNames: ["pcztBytes"]);
+
+  @override
+  Future<GeneratedSoftwareAccount> crateApiWalletGenerateSoftwareAccount({
+    required String network,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(network, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 187,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_generated_software_account,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiWalletGenerateSoftwareAccountConstMeta,
+        argValues: [network],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiWalletGenerateSoftwareAccountConstMeta =>
+      const TaskConstMeta(
+        debugName: "generate_software_account",
+        argNames: ["network"],
+      );
+
+  @override
+  Future<void> crateApiVotingConfigureRegtestVotingParticipation({
+    required String chainId,
+    required String validatorHash,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(chainId, serializer);
+          sse_encode_String(validatorHash, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 188,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVotingConfigureRegtestVotingParticipationConstMeta,
+        argValues: [chainId, validatorHash],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiVotingConfigureRegtestVotingParticipationConstMeta =>
+      const TaskConstMeta(
+        debugName: "configure_regtest_voting_participation",
+        argNames: ["chainId", "validatorHash"],
+      );
+
+  @override
+  Future<String> crateApiVotingPrepareVotingParticipation({
+    required ApiVotingRoundContext ctx,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_api_voting_round_context(ctx, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 189,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVotingPrepareVotingParticipationConstMeta,
+        argValues: [ctx],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVotingPrepareVotingParticipationConstMeta =>
+      const TaskConstMeta(
+        debugName: "prepare_voting_participation",
+        argNames: ["ctx"],
+      );
+
+  @override
+  Future<String> crateApiVotingEvaluateVotingParticipation({
+    required ApiVotingRoundContext ctx,
+    required String fingerprint,
+    required String evidence,
+    required PlatformInt64 nowSeconds,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_api_voting_round_context(ctx, serializer);
+          sse_encode_String(fingerprint, serializer);
+          sse_encode_String(evidence, serializer);
+          sse_encode_i_64(nowSeconds, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 190,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVotingEvaluateVotingParticipationConstMeta,
+        argValues: [ctx, fingerprint, evidence, nowSeconds],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVotingEvaluateVotingParticipationConstMeta =>
+      const TaskConstMeta(
+        debugName: "evaluate_voting_participation",
+        argNames: ["ctx", "fingerprint", "evidence", "nowSeconds"],
+      );
+
+  @override
   Future<BigInt> crateApiWalletGetLatestBlockHeight({
     required String lightwalletdUrl,
+    required String network,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4353,7 +4709,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiWalletGetLatestBlockHeightConstMeta,
-        argValues: [lightwalletdUrl],
+        argValues: [lightwalletdUrl, network],
         apiImpl: this,
       ),
     );
@@ -4362,7 +4718,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiWalletGetLatestBlockHeightConstMeta =>
       const TaskConstMeta(
         debugName: "get_latest_block_height",
-        argNames: ["lightwalletdUrl"],
+        argNames: ["lightwalletdUrl", "network"],
       );
 
   @override
@@ -8287,12 +8643,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(address, serializer);
+          sse_encode_String(network, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8305,14 +8663,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncValidateAddressConstMeta,
-        argValues: [address],
+        argValues: [address, network],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiSyncValidateAddressConstMeta =>
-      const TaskConstMeta(debugName: "validate_address", argNames: ["address"]);
+      const TaskConstMeta(
+        debugName: "validate_address",
+        argNames: ["address", "network"],
+      );
 
   @override
   bool crateApiWalletValidateMnemonic({required String mnemonic}) {
@@ -8717,14 +9078,93 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  AddressValidationResult dco_decode_address_validation_result(dynamic raw) {
+  PaymentLinkSpendEvidence dco_decode_payment_link_spend_evidence(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return PaymentLinkSpendEvidence(
+      allFundsSpentElsewhere: dco_decode_bool(arr[0]),
+      conflictedTxids: dco_decode_list_String(arr[1]),
+      localClaimTxids: dco_decode_list_String(arr[2]),
+      verifiedHeight: dco_decode_u_64(arr[3]),
+    );
+  }
+
+  @protected
+  PaymentLinkSpendEvidence sse_decode_payment_link_spend_evidence(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_allFundsSpentElsewhere = sse_decode_bool(deserializer);
+    var var_conflictedTxids = sse_decode_list_String(deserializer);
+    var var_localClaimTxids = sse_decode_list_String(deserializer);
+    var var_verifiedHeight = sse_decode_u_64(deserializer);
+    return PaymentLinkSpendEvidence(
+      allFundsSpentElsewhere: var_allFundsSpentElsewhere,
+      conflictedTxids: var_conflictedTxids,
+      localClaimTxids: var_localClaimTxids,
+      verifiedHeight: var_verifiedHeight,
+    );
+  }
+
+  @protected
+  void sse_encode_payment_link_spend_evidence(
+    PaymentLinkSpendEvidence self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.allFundsSpentElsewhere, serializer);
+    sse_encode_list_String(self.conflictedTxids, serializer);
+    sse_encode_list_String(self.localClaimTxids, serializer);
+    sse_encode_u_64(self.verifiedHeight, serializer);
+  }
+
+  @protected
+  GeneratedSoftwareAccount dco_decode_generated_software_account(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 2)
       throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return GeneratedSoftwareAccount(
+      mnemonic: dco_decode_String(arr[0]),
+      unifiedAddress: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  GeneratedSoftwareAccount sse_decode_generated_software_account(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_mnemonic = sse_decode_String(deserializer);
+    var var_unifiedAddress = sse_decode_String(deserializer);
+    return GeneratedSoftwareAccount(
+      mnemonic: var_mnemonic,
+      unifiedAddress: var_unifiedAddress,
+    );
+  }
+
+  @protected
+  void sse_encode_generated_software_account(
+    GeneratedSoftwareAccount self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.mnemonic, serializer);
+    sse_encode_String(self.unifiedAddress, serializer);
+  }
+
+  @protected
+  AddressValidationResult dco_decode_address_validation_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return AddressValidationResult(
       isValid: dco_decode_bool(arr[0]),
       addressType: dco_decode_String(arr[1]),
+      wrongNetwork: dco_decode_bool(arr[2]),
     );
   }
 
@@ -9689,14 +10129,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ExecuteProposalResult dco_decode_execute_proposal_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return ExecuteProposalResult(
       txids: dco_decode_String(arr[0]),
       status: dco_decode_String(arr[1]),
       broadcastedCount: dco_decode_u_32(arr[2]),
       totalCount: dco_decode_u_32(arr[3]),
       message: dco_decode_opt_String(arr[4]),
+      broadcastFailureKind: dco_decode_opt_String(arr[5]),
     );
   }
 
@@ -12254,9 +12695,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_isValid = sse_decode_bool(deserializer);
     var var_addressType = sse_decode_String(deserializer);
+    var var_wrongNetwork = sse_decode_bool(deserializer);
     return AddressValidationResult(
       isValid: var_isValid,
       addressType: var_addressType,
+      wrongNetwork: var_wrongNetwork,
     );
   }
 
@@ -13429,12 +13872,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_broadcastedCount = sse_decode_u_32(deserializer);
     var var_totalCount = sse_decode_u_32(deserializer);
     var var_message = sse_decode_opt_String(deserializer);
+    var var_broadcastFailureKind = sse_decode_opt_String(deserializer);
     return ExecuteProposalResult(
       txids: var_txids,
       status: var_status,
       broadcastedCount: var_broadcastedCount,
       totalCount: var_totalCount,
       message: var_message,
+      broadcastFailureKind: var_broadcastFailureKind,
     );
   }
 
@@ -16944,6 +17389,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bool(self.isValid, serializer);
     sse_encode_String(self.addressType, serializer);
+    sse_encode_bool(self.wrongNetwork, serializer);
   }
 
   @protected
@@ -17930,6 +18376,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.broadcastedCount, serializer);
     sse_encode_u_32(self.totalCount, serializer);
     sse_encode_opt_String(self.message, serializer);
+    sse_encode_opt_String(self.broadcastFailureKind, serializer);
   }
 
   @protected

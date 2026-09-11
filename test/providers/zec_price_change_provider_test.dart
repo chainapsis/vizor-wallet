@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/core/network/network_http_client.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 class _FakeSource implements ZecMarketDataSource {
@@ -56,6 +57,15 @@ class _FakeCache implements ZecMarketDataCache {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('CoinGecko source uses a 20 second request timeout by default', () {
+    final networkClient = NetworkHttpClient(torDesired: () => false);
+    addTearDown(() => networkClient.close(force: true));
+
+    final source = CoinGeckoZecMarketDataSource(networkClient: networkClient);
+
+    expect(source.timeout, const Duration(seconds: 20));
+  });
 
   group('parseZecMarketData', () {
     test('reads ZEC price and 24h change from a CoinGecko response', () {
@@ -224,11 +234,25 @@ void main() {
       final sub = container.listen(zecHomeMarketDataProvider, (_, _) {});
 
       expect(sub.read(), isNull);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isTrue);
       await Future<void>.delayed(Duration.zero);
       expect(sub.read()?.usdPrice, 33.45);
       expect(container.read(zecHomeUsdUnitPriceProvider), 33.45);
       expect(container.read(zecPriceChange24hPctProvider), -0.26);
       expect(source.fetchCount, 1);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isFalse);
+    });
+
+    test('first price failure ends loading with no invented value', () async {
+      final source = _CompleterSource();
+      final container = makeContainer(swapEnabled: true, source: source);
+      final sub = container.listen(zecHomeMarketDataStateProvider, (_, _) {});
+      expect(sub.read().isLoading, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      source.completer.complete(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(sub.read().isLoading, isFalse);
+      expect(sub.read().displayData, isNull);
     });
 
     test('shows a fresh cache before replacing it with network data', () async {
@@ -362,10 +386,12 @@ void main() {
 
       await Future<void>.delayed(const Duration(milliseconds: 30));
       expect(sub.read(), isNull);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isTrue);
 
       source.completer.complete(null);
       await Future<void>.delayed(Duration.zero);
       expect(sub.read(), isNull);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isFalse);
     });
 
     test('removes the last value after its one-hour TTL expires', () async {

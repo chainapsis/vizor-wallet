@@ -257,6 +257,20 @@ fn software_account_ufvk(
     )
 }
 
+/// Derive the default shielded Unified Address for a software account without
+/// importing it into the wallet database.
+pub fn derive_software_address(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<String, String> {
+    let ufvk = software_account_ufvk(network, seed, account_index)?;
+    let (ua, _di) = ufvk
+        .default_address(shielded_address_request())
+        .map_err(|e| format!("Failed to derive address: {e}"))?;
+    Ok(ua.encode(&network))
+}
+
 /// Return the transparent receiver at `m/44'/coin_type'/account'/0/0`.
 pub fn software_account_first_external_transparent_address(
     network: WalletNetwork,
@@ -1246,6 +1260,21 @@ mod tests {
     }
 
     #[test]
+    fn software_address_derivation_is_deterministic_and_network_scoped() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let seed = mnemonic_to_seed(phrase).unwrap();
+
+        let main = derive_software_address(WalletNetwork::Main, &seed, 0).unwrap();
+        let main_again = derive_software_address(WalletNetwork::Main, &seed, 0).unwrap();
+        let test = derive_software_address(WalletNetwork::Test, &seed, 0).unwrap();
+
+        assert_eq!(main, main_again);
+        assert!(main.starts_with("u1"));
+        assert!(test.starts_with("utest1"));
+        assert_ne!(main, test);
+    }
+
+    #[test]
     fn test_mnemonic_to_seed_with_passphrase_matches_bip39_vector() {
         let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let seed = mnemonic_to_seed_with_passphrase(phrase, "TREZOR").unwrap();
@@ -1571,6 +1600,49 @@ mod tests {
                 .find(|account| account.uuid == uuid)
                 .unwrap()
                 .unified_address
+        );
+    }
+
+    #[test]
+    fn test_reserved_orchard_addresses_are_distinct_without_becoming_current() {
+        use zcash_keys::address::Address;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let (uuid, current_address) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+        let reserve_address = || {
+            crate::wallet::sync::get_next_available_address(
+                db_path_str,
+                WalletNetwork::Main,
+                &uuid,
+                crate::wallet::sync::AddressRequestKind::Orchard,
+            )
+            .unwrap()
+        };
+        let first = reserve_address();
+        let second = reserve_address();
+
+        assert_ne!(first, second);
+        for encoded in [first, second] {
+            let address = Address::decode(&WalletNetwork::Main, &encoded).unwrap();
+            let Address::Unified(address) = address else {
+                panic!("expected a Unified Address");
+            };
+            assert!(address.has_orchard());
+            assert!(!address.has_sapling());
+            assert!(!address.has_transparent());
+        }
+        assert_eq!(
+            get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap(),
+            current_address
         );
     }
 

@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/storage/app_secure_store.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
+import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -59,7 +62,15 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
   String logContext = 'TransparentShielding',
 }) async {
   RpcEndpointConfig? attemptedEndpoint;
+  LinuxSecretOperationGuard? secretGuard;
   try {
+    secretGuard = LinuxSecretOperationGuard(
+      store: ref.read(linuxSecretOperationStoreProvider),
+      coordinator: ref.read(linuxKeyringCoordinatorProvider),
+      isRequestCurrent: () => ref.context.mounted,
+      readAccounts: () => ref.read(accountProvider).value,
+      accountUuid: accountUuid,
+    );
     final sync = (ref.read(syncProvider).value ?? SyncState()).scopedToAccount(
       accountUuid,
     );
@@ -68,13 +79,14 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
     }
 
     final dbPath = await getWalletDbPath();
+    secretGuard.check();
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
     attemptedEndpoint = endpoint;
 
     late final rust_sync.ShieldTransparentResult result;
     late final Future<rust_sync.ShieldTransparentResult> resultFuture;
 
-    if (Platform.isMacOS) {
+    if (Platform.isMacOS && !secretGuard.enabled) {
       final password = ref
           .read(appSecurityProvider.notifier)
           .requireSessionPasswordForNativeSecretUse();
@@ -90,11 +102,11 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
       final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
         accountUuid,
       );
-      if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-        throw Exception('Mnemonic not found for the active account.');
-      }
-
       try {
+        secretGuard.check();
+        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+          throw Exception('Mnemonic not found for the active account.');
+        }
         resultFuture = rust_sync.shieldTransparentBalance(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -103,11 +115,12 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
           mnemonicBytes: mnemonicBytes,
         );
       } finally {
-        mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+        mnemonicBytes?.fillRange(0, mnemonicBytes.length, 0);
       }
     }
 
     result = await resultFuture;
+    if (secretGuard.enabled && !ref.context.mounted) return result;
     log(
       '$logContext: shielded transparent balance txids=${result.txids} '
       'status=${result.status} '
@@ -141,6 +154,10 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
     return result;
   } catch (e, st) {
     log('$logContext: shield transparent balance failed: $e\n$st');
+    if (e is SecureStorageSessionChangedException ||
+        (secretGuard?.enabled == true && !ref.context.mounted)) {
+      rethrow;
+    }
     final switched = await ref
         .read(rpcEndpointFailoverProvider.notifier)
         .switchToFallbackFor(

@@ -176,7 +176,7 @@ class RustTorHttpBridge implements TorHttpBridge {
     try {
       return networkHttpResponseFromRust(await send(requestId));
     } catch (error, stackTrace) {
-      if (timeout != null && error.toString().contains(_requestTimeoutError)) {
+      if (error.toString().contains(_requestTimeoutError)) {
         throw TimeoutException(_requestTimeoutError, timeout);
       }
       Error.throwWithStackTrace(error, stackTrace);
@@ -280,9 +280,10 @@ class NetworkHttpClient {
     Future<void>? cancelSignal,
   }) {
     _requirePositiveTimeout(timeout);
+    final normalizedMethod = method.toUpperCase();
     return _torDesired()
-        ? _requestViaTorWithRedirects(
-            method.toUpperCase(),
+        ? _requestViaTorWithTimeoutRetry(
+            normalizedMethod,
             uri,
             headers: headers,
             bodyBytes: bodyBytes,
@@ -291,7 +292,7 @@ class NetworkHttpClient {
           )
         : _runDirectRequest(
             () => _requestDirect(
-              method.toUpperCase(),
+              normalizedMethod,
               uri,
               headers: headers,
               bodyBytes: bodyBytes,
@@ -299,6 +300,38 @@ class NetworkHttpClient {
               cancelSignal: cancelSignal,
             ),
           );
+  }
+
+  Future<NetworkHttpResponse> _requestViaTorWithTimeoutRetry(
+    String method,
+    Uri uri, {
+    required Map<String, String> headers,
+    required List<int> bodyBytes,
+    required Duration? timeout,
+    required Future<void>? cancelSignal,
+  }) async {
+    try {
+      return await _requestViaTorWithRedirects(
+        method,
+        uri,
+        headers: headers,
+        bodyBytes: bodyBytes,
+        timeout: timeout,
+        cancelSignal: cancelSignal,
+      );
+    } on TimeoutException {
+      if (method != 'GET') rethrow;
+      // Each bridge GET resolves another isolated Tor client. Restarting the
+      // redirect chain therefore avoids the circuit that timed out.
+      return _requestViaTorWithRedirects(
+        method,
+        uri,
+        headers: headers,
+        bodyBytes: bodyBytes,
+        timeout: timeout,
+        cancelSignal: cancelSignal,
+      );
+    }
   }
 
   /// Streams a GET response to [destination] without retaining the response

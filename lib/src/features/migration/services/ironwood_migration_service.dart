@@ -9,6 +9,7 @@ import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/storage/app_secure_store.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -625,6 +626,8 @@ class IronwoodMigrationService {
     IronwoodMigrationStatusesGetter? getStatuses,
     required this.getPrivatePlan,
     required this.secureStore,
+    LinuxKeyringCoordinator? keyringCoordinator,
+    bool Function()? isRequestCurrent,
     IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
     IronwoodMigrationEndpointGetter? getEndpoint,
     IronwoodMigrationPasswordGetter? getSessionPassword,
@@ -692,7 +695,10 @@ class IronwoodMigrationService {
     IronwoodMigrationKeystoneProofStatusGetter? getKeystoneProofStatus,
     IronwoodMigrationKeystoneRequestDiscarder? discardKeystoneMigrationRequest,
     IronwoodMigrationOperationRegistry? operationRegistry,
-  }) : backgroundCredentialStore =
+  }) : keyringCoordinator =
+           keyringCoordinator ?? LinuxKeyringCoordinator.instance,
+       isRequestCurrent = isRequestCurrent ?? (() => true),
+       backgroundCredentialStore =
            backgroundCredentialStore ??
            IronwoodMigrationBackgroundCredentialStore.instance,
        getEndpoint = getEndpoint ?? _missingEndpoint,
@@ -835,6 +841,8 @@ class IronwoodMigrationService {
   final IronwoodMigrationPrivatePlanGetter getPrivatePlan;
   final IronwoodMigrationImmediatePlanGetter getImmediatePlan;
   final AppSecureStore secureStore;
+  final LinuxKeyringCoordinator keyringCoordinator;
+  final bool Function() isRequestCurrent;
   final IronwoodMigrationBackgroundCredentialStore backgroundCredentialStore;
   final IronwoodMigrationEndpointGetter getEndpoint;
   final IronwoodMigrationPasswordGetter getSessionPassword;
@@ -1144,126 +1152,129 @@ class IronwoodMigrationService {
           accountUuid: accountUuid,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         );
-        await _serializeCredentialState(context, () async {
-          var quiesceAttempted = false;
-          var mayResumeBackgroundWork = true;
-          try {
-            // Native may already have acquired its mutation lease even if the
-            // MethodChannel reply is lost, so every attempt gets a matching
-            // best-effort resume.
-            if (_usesNativeMigrationLifecycle) {
-              quiesceAttempted = true;
-              await quiesceBackgroundMigration();
-            }
-            final currentStatus = await _getStatusForContext(context);
-            if (currentStatus.activeRunId == null) {
-              // This is a cleanup retry after the durable run became
-              // terminal. Revoke the stale native batch before retrying
-              // idempotent Rust cleanup, so a cleanup error can never resume
-              // abandoned work.
+        await IronwoodMigrationBackgroundLifecycle.runWithQuiescenceLease(
+          'stop:${context.network}:${context.accountUuid}:$expectedRunId',
+          () => _serializeCredentialState(context, () async {
+            var quiesceAttempted = false;
+            var mayResumeBackgroundWork = true;
+            try {
+              // Native may already have acquired its mutation lease even if the
+              // MethodChannel reply is lost, so every attempt gets a matching
+              // best-effort resume.
               if (_usesNativeMigrationLifecycle) {
-                mayResumeBackgroundWork = false;
-                await revokeMigrationAccount(
+                quiesceAttempted = true;
+                await quiesceBackgroundMigration();
+              }
+              final currentStatus = await _getStatusForContext(context);
+              if (currentStatus.activeRunId == null) {
+                // This is a cleanup retry after the durable run became
+                // terminal. Revoke the stale native batch before retrying
+                // idempotent Rust cleanup, so a cleanup error can never resume
+                // abandoned work.
+                if (_usesNativeMigrationLifecycle) {
+                  mayResumeBackgroundWork = false;
+                  await revokeMigrationAccount(
+                    network: context.network,
+                    accountUuid: context.accountUuid,
+                  );
+                  mayResumeBackgroundWork = true;
+                }
+                await stopMigrationRun(
+                  dbPath: context.dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
                   network: context.network,
                   accountUuid: context.accountUuid,
+                  expectedRunId: expectedRunId,
+                  nativeAttemptedTxids: const [],
                 );
-                mayResumeBackgroundWork = true;
+                return;
               }
-              await stopMigrationRun(
-                dbPath: context.dbPath,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-                network: context.network,
-                accountUuid: context.accountUuid,
-                expectedRunId: expectedRunId,
-                nativeAttemptedTxids: const [],
-              );
-              return;
-            }
 
-            var nativeAttemptedTxids = const <String>[];
-            if (_usesNativeMigrationOutbox) {
-              final receipts = await _reconcileMigrationOutboxReceipts(
-                context: context,
-              );
-              if (receipts.unreconciledCount > 0) {
-                throw StateError(
-                  'Migration cannot stop until submitted transactions are '
-                  'reconciled.',
+              var nativeAttemptedTxids = const <String>[];
+              if (_usesNativeMigrationOutbox) {
+                final receipts = await _reconcileMigrationOutboxReceipts(
+                  context: context,
+                );
+                if (receipts.unreconciledCount > 0) {
+                  throw StateError(
+                    'Migration cannot stop until submitted transactions are '
+                    'reconciled.',
+                  );
+                }
+                nativeAttemptedTxids = await listMigrationOutboxAttemptedTxids(
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                  runId: expectedRunId,
                 );
               }
-              nativeAttemptedTxids = await listMigrationOutboxAttemptedTxids(
-                network: context.network,
-                accountUuid: context.accountUuid,
-                runId: expectedRunId,
-              );
-            }
-            if (currentStatus.activeRunId != expectedRunId) {
-              // A retry after the Rust transaction committed must still finish
-              // wallet-lock reconciliation, but a stale UI must never revoke
-              // the native credential/outbox belonging to a newer run.
-              await stopMigrationRun(
-                dbPath: context.dbPath,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-                network: context.network,
-                accountUuid: context.accountUuid,
-                expectedRunId: expectedRunId,
-                nativeAttemptedTxids: nativeAttemptedTxids,
-              );
-              return;
-            }
+              if (currentStatus.activeRunId != expectedRunId) {
+                // A retry after the Rust transaction committed must still finish
+                // wallet-lock reconciliation, but a stale UI must never revoke
+                // the native credential/outbox belonging to a newer run.
+                await stopMigrationRun(
+                  dbPath: context.dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                  expectedRunId: expectedRunId,
+                  nativeAttemptedTxids: nativeAttemptedTxids,
+                );
+                return;
+              }
 
-            try {
-              await stopMigrationRun(
-                dbPath: context.dbPath,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-                network: context.network,
-                accountUuid: context.accountUuid,
-                expectedRunId: expectedRunId,
-                nativeAttemptedTxids: nativeAttemptedTxids,
-              );
-            } catch (stopError, stopStackTrace) {
-              // A local FFI response can be lost after Rust committed. Re-read
-              // the durable projection before deciding whether native work may
-              // resume or still needs to be revoked.
               try {
-                final afterFailure = await _getStatusForContext(context);
-                if (afterFailure.activeRunId == expectedRunId ||
-                    afterFailure.activeRunId != null) {
+                await stopMigrationRun(
+                  dbPath: context.dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                  expectedRunId: expectedRunId,
+                  nativeAttemptedTxids: nativeAttemptedTxids,
+                );
+              } catch (stopError, stopStackTrace) {
+                // A local FFI response can be lost after Rust committed. Re-read
+                // the durable projection before deciding whether native work may
+                // resume or still needs to be revoked.
+                try {
+                  final afterFailure = await _getStatusForContext(context);
+                  if (afterFailure.activeRunId == expectedRunId ||
+                      afterFailure.activeRunId != null) {
+                    Error.throwWithStackTrace(stopError, stopStackTrace);
+                  }
+                } catch (statusError) {
+                  if (identical(statusError, stopError)) rethrow;
                   Error.throwWithStackTrace(stopError, stopStackTrace);
                 }
-              } catch (statusError) {
-                if (identical(statusError, stopError)) rethrow;
-                Error.throwWithStackTrace(stopError, stopStackTrace);
               }
-            }
 
-            if (_usesNativeMigrationLifecycle) {
-              try {
-                // Rust has already made the run terminal. If this reply is
-                // lost, leave native quiesced; a later idempotent stop retries
-                // only this cleanup and cannot submit the abandoned batch.
-                await revokeMigrationAccount(
-                  network: context.network,
-                  accountUuid: context.accountUuid,
-                );
-              } catch (error, stackTrace) {
-                mayResumeBackgroundWork = false;
-                Error.throwWithStackTrace(error, stackTrace);
+              if (_usesNativeMigrationLifecycle) {
+                try {
+                  // Rust has already made the run terminal. If this reply is
+                  // lost, leave native quiesced; a later idempotent stop retries
+                  // only this cleanup and cannot submit the abandoned batch.
+                  await revokeMigrationAccount(
+                    network: context.network,
+                    accountUuid: context.accountUuid,
+                  );
+                } catch (error, stackTrace) {
+                  mayResumeBackgroundWork = false;
+                  Error.throwWithStackTrace(error, stackTrace);
+                }
+              }
+            } finally {
+              if (quiesceAttempted && mayResumeBackgroundWork) {
+                try {
+                  await resumeBackgroundMigration();
+                } catch (error) {
+                  debugPrint(
+                    'Failed to resume Ironwood background work after stop: '
+                    '$error',
+                  );
+                }
               }
             }
-          } finally {
-            if (quiesceAttempted && mayResumeBackgroundWork) {
-              try {
-                await resumeBackgroundMigration();
-              } catch (error) {
-                debugPrint(
-                  'Failed to resume Ironwood background work after stop: '
-                  '$error',
-                );
-              }
-            }
-          }
-        });
+          }),
+        );
       },
     );
   }
@@ -1499,6 +1510,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
+    final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     final context = _MigrationCredentialContext(
@@ -1511,6 +1523,7 @@ class IronwoodMigrationService {
     if (isMacOS()) {
       return _runCredentialOperation(
         context: context,
+        secretGeneration: secretGeneration,
         mayCreateRun: true,
         operation: (credential) => startMacosSoftwareMigration(
           dbPath: dbPath,
@@ -1526,6 +1539,7 @@ class IronwoodMigrationService {
 
     final result = await _runCredentialOperation(
       context: context,
+      secretGeneration: secretGeneration,
       mayCreateRun: true,
       onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
       operation: (credential) async {
@@ -1536,6 +1550,7 @@ class IronwoodMigrationService {
 
         late final Future<rust_sync.IronwoodMigrationResult> resultFuture;
         try {
+          _checkLinuxSecretOperation(secretGeneration, context);
           resultFuture = startSoftwareMigration(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -1562,6 +1577,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
   }) async {
+    final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     final context = _MigrationCredentialContext(
@@ -1576,11 +1592,13 @@ class IronwoodMigrationService {
         network: context.network,
         accountUuid: context.accountUuid,
         operation: () async {
+          _checkLinuxSecretOperation(secretGeneration, context);
           final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
           if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
             throw Exception('Mnemonic not found for the migration account.');
           }
           try {
+            _checkLinuxSecretOperation(secretGeneration, context);
             return await startImmediateMigration(
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -1610,6 +1628,7 @@ class IronwoodMigrationService {
     bool prepareNextProof = true,
     int? walletOpenTipHeight,
   }) async {
+    final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     final context = _MigrationCredentialContext(
@@ -1623,6 +1642,7 @@ class IronwoodMigrationService {
     if (_usesNativeMigrationOutbox) {
       broadcastResult = await _runCredentialOperation(
         context: context,
+        secretGeneration: secretGeneration,
         mayCreateRun: false,
         prepareOutboxAfterOperation: false,
         onCurrentStatus: isHardwareAccount(accountUuid)
@@ -1640,6 +1660,7 @@ class IronwoodMigrationService {
     } else {
       broadcastResult = await _runCredentialOperation(
         context: context,
+        secretGeneration: secretGeneration,
         mayCreateRun: false,
         operation: (credential) => broadcastDueMigration(
           dbPath: dbPath,
@@ -1675,6 +1696,7 @@ class IronwoodMigrationService {
     if (isMacOS()) {
       return _runCredentialOperation(
         context: context,
+        secretGeneration: secretGeneration,
         mayCreateRun: true,
         operation: (credential) => startMacosSoftwareMigration(
           dbPath: dbPath,
@@ -1690,6 +1712,7 @@ class IronwoodMigrationService {
 
     return _runCredentialOperation(
       context: context,
+      secretGeneration: secretGeneration,
       mayCreateRun: true,
       operation: (credential) async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
@@ -1697,6 +1720,7 @@ class IronwoodMigrationService {
           throw Exception('Mnemonic not found for the migration account.');
         }
         try {
+          _checkLinuxSecretOperation(secretGeneration, context);
           return startSoftwareMigration(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -2210,16 +2234,21 @@ class IronwoodMigrationService {
   Future<T> _runCredentialOperation<T>({
     required _MigrationCredentialContext context,
     required bool mayCreateRun,
+    int? secretGeneration,
     required Future<T> Function(_MigrationCredential credential) operation,
     bool prepareOutboxAfterOperation = true,
     Future<void> Function(rust_sync.MigrationStatus status)? onCurrentStatus,
   }) async {
+    final generation = secretGeneration ?? secureStore.sessionGeneration;
     return operationRegistry.run(
       network: context.network,
       accountUuid: context.accountUuid,
       operation: () async {
         if (!isMobile()) {
-          return operation(await _legacyCredential(context));
+          _checkLinuxSecretOperation(generation, context);
+          final credential = await _legacyCredential(context);
+          _checkLinuxSecretOperation(generation, context);
+          return operation(credential);
         }
 
         return _serializeCredentialState(context, () async {
@@ -2541,6 +2570,23 @@ class IronwoodMigrationService {
       );
     } catch (_) {
       return context;
+    }
+  }
+
+  void _checkLinuxSecretOperation(
+    int generation,
+    _MigrationCredentialContext context,
+  ) {
+    if (!secureStore.enforcesSessionGeneration) return;
+    if (!isRequestCurrent() ||
+        keyringCoordinator.hasPendingMutation ||
+        !secureStore.isSessionGenerationCurrent(generation) ||
+        !secureStore.hasSessionPassword ||
+        operationRegistry.isRevoked(
+          network: context.network,
+          accountUuid: context.accountUuid,
+        )) {
+      throw const SecureStorageSessionChangedException();
     }
   }
 
@@ -2989,6 +3035,8 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
                   kAppFormFactor == AppFormFactor.desktop,
             ),
     secureStore: AppSecureStore.instance,
+    keyringCoordinator: ref.read(linuxKeyringCoordinatorProvider),
+    isRequestCurrent: () => ref.mounted,
     getEndpoint: () => ref.read(rpcEndpointFailoverProvider).current,
     getSessionPassword: () => ref
         .read(appSecurityProvider.notifier)

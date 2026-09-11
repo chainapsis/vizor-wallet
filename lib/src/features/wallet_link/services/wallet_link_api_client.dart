@@ -21,7 +21,7 @@ class WalletLinkApiClient {
     HttpClient? client,
     NetworkHttpClient? networkClient,
     Uri? baseUri,
-    this.timeout = const Duration(seconds: 12),
+    this.timeout = const Duration(seconds: 20),
   }) : _client = networkClient ?? NetworkHttpClient(directClient: client),
        _baseUri = baseUri ?? walletLinkBackendBaseUri();
 

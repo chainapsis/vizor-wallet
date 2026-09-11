@@ -2,25 +2,32 @@
 // flow (wallet DB path + Sapling params status).
 // ignore_for_file: depend_on_referenced_packages
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:zcash_wallet/app.dart'
+    show buildDesktopSendPage, buildDesktopSendReviewPage;
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
+import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
@@ -30,14 +37,15 @@ import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider;
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
+import 'package:zcash_wallet/src/features/send/widgets/sapling_params_prompt.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
-import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart'
     show KeystoneActionSig, KeystoneMsgSig, KeystoneSigResult;
 import 'package:zcash_wallet/src/rust/api/sync.dart'
-    show KeystoneBatchPczt, TexPcztPairResult;
+    show KeystoneBatchPczt, TexPcztPairResult, ProposalResult;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     show ZcashBatchMessageInput;
@@ -68,6 +76,20 @@ void main() {
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
   });
 
+  testWidgets('a whitespace-only memo keeps its Message row, with a '
+      'placeholder', (tester) async {
+    // An edited ZIP-321 request can carry a memo made only of whitespace, and
+    // the proposal sends it verbatim — so the review must not drop the row.
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(_reviewArgs(addressType: 'unified', memo: '   ')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Message'), findsOneWidget);
+    expect(find.text('Whitespace only'), findsOneWidget);
+  });
+
   testWidgets('renders the address-variant review layout', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
@@ -89,6 +111,115 @@ void main() {
     expect(find.text('0.00012 ZEC'), findsOneWidget);
     expect(find.text('Confirm & send'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
+  });
+
+  // The three-line args -> view threading at send_review_screen.dart:402-405.
+  // Without a screen-level test, dropping `requestedByLabel` or the
+  // `requestedAmountText` ternary leaves every unit, widget and regtest suite
+  // green while desktop payers lose the consent information the card promised.
+  testWidgets('renders a labelled request whose amount was edited', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(
+          addressType: 'unified',
+          isPaymentRequest: true,
+          requestedBy: 'Acme coffee',
+          requestedAmountZatoshi: BigInt.from(2000000000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Payment'), findsOneWidget);
+    expect(find.text('Review send'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('send_review_requested_by')),
+      findsOneWidget,
+    );
+    expect(find.text('Requested by'), findsOneWidget);
+    expect(
+      find.text('Acme coffee'),
+      findsNothing,
+      reason: "the link's own label never reaches the review",
+    );
+    expect(
+      find.byKey(const ValueKey('send_review_requested_amount')),
+      findsOneWidget,
+    );
+    expect(find.text('Requested 20.00 ZEC'), findsOneWidget);
+    expect(
+      find.text('15.12 ZEC'),
+      findsOneWidget,
+      reason: 'the edited amount is still what is being sent',
+    );
+  });
+
+  testWidgets('a request paid at the amount it asked for states it once', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(
+          addressType: 'unified',
+          isPaymentRequest: true,
+          requestedBy: 'Acme coffee',
+          requestedAmountZatoshi: BigInt.from(1512000000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review Payment'), findsOneWidget);
+    expect(find.text('Acme coffee'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('send_review_requested_amount')),
+      findsNothing,
+      reason: 'nothing differs, so there is nothing to restate',
+    );
+  });
+
+  // A labelled request paying someone the wallet already knows: the contact
+  // heads the row and the link's own name is nowhere on the screen.
+  testWidgets('a labelled request keeps the contact as the recipient', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(
+          addressType: 'unified',
+          isPaymentRequest: true,
+          requestedBy: 'Coinbase Support',
+        ),
+        addressBookRepository: _FakeAddressBookRepository([
+          _contact(
+            id: 'coffee',
+            label: 'Blue Door Coffee',
+            address: _longAddress,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final row = tester.widget<ReviewInfoRow>(
+      find.byKey(const ValueKey('send_review_requested_by')),
+    );
+    expect(row.label, 'Requested by');
+    expect(row.value, 'Blue Door Coffee');
+    expect(
+      find.descendant(
+        of: find.byType(SendReviewContentView),
+        matching: find.byType(AppProfilePicture),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Coinbase Support'), findsNothing);
+    expect(find.text('Label from link'), findsNothing);
   });
 
   testWidgets('donation review links back to Support Vizor', (tester) async {
@@ -187,6 +318,200 @@ void main() {
     expect(rustApi.discardCalls, isEmpty);
   });
 
+  testWidgets(
+    'sidebar account switch during Keystone cancellation leaves review',
+    (tester) async {
+      final released = Completer<void>();
+      rustApi.discardCompleter = released;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(isHardware: true, secondAccount: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SendReviewScreen)),
+      );
+      await tester.tap(find.text('Confirm with Keystone'));
+      await _flushRealAsync(tester);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(KeystoneSigningModal),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('sidebar_accounts_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('sidebar_account_popover_row_account-b')),
+      );
+      await _flushRealAsync(tester);
+      await tester.pumpAndSettle();
+      expect(
+        container.read(accountProvider).value?.activeAccountUuid,
+        'account-b',
+      );
+      expect(find.text('home-route'), findsOneWidget);
+      expect(find.byType(SendReviewScreen), findsNothing);
+      released.complete();
+      await _flushRealAsync(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('home-route'), findsOneWidget);
+      expect(find.byType(SendReviewScreen), findsNothing);
+      expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(rustApi.proposedAccounts, isEmpty);
+    },
+  );
+
+  for (final refreshFailure in [false, true]) {
+    testWidgets('Back retries failed review cancellation and awaits cleanup '
+        '(refreshFailure=$refreshFailure)', (tester) async {
+      final syncNotifier = _FakeSyncNotifier();
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          syncNotifier: syncNotifier,
+          initialLocation: '/send',
+        ),
+      );
+      await tester.pumpAndSettle();
+      GoRouter.of(tester.element(find.text('send-route'))).push('/send/review');
+      await tester.pumpAndSettle();
+      if (refreshFailure) {
+        syncNotifier.refreshError = StateError('balance unavailable');
+      } else {
+        rustApi.discardError = StateError('database busy');
+      }
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.text('send-route'), findsNothing);
+      final discardsBeforeRetry = rustApi.discardCalls.length;
+      final refreshesBeforeRetry = syncNotifier.refreshedAccounts.length;
+      expect(discardsBeforeRetry, refreshFailure ? 1 : 3);
+
+      final released = Completer<void>();
+      final refreshed = Completer<void>();
+      rustApi.discardCompleter = released;
+      rustApi.discardError = null;
+      syncNotifier.refreshCompleter = refreshed;
+      syncNotifier.refreshError = null;
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(rustApi.discardCalls, hasLength(discardsBeforeRetry + 1));
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.text('send-route'), findsNothing);
+      expect(syncNotifier.refreshedAccounts, hasLength(refreshesBeforeRetry));
+
+      released.complete();
+      await tester.pumpAndSettle();
+      expect(
+        syncNotifier.refreshedAccounts,
+        hasLength(refreshesBeforeRetry + 1),
+      );
+      expect(find.text('send-route'), findsNothing);
+      expect(
+        tester
+            .widget<SendReviewContentView>(find.byType(SendReviewContentView))
+            .onConfirm,
+        isNull,
+      );
+
+      refreshed.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('send-route'), findsOneWidget);
+      expect(rustApi.discardCalls, hasLength(discardsBeforeRetry + 1));
+      expect(rustApi.proposedAccounts, isEmpty);
+    });
+  }
+
+  testWidgets('Keystone cancellation closes the stale Sapling params prompt', (
+    tester,
+  ) async {
+    final released = Completer<void>();
+    rustApi.discardCompleter = released;
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', needsSaplingParams: true),
+        bootstrap: _bootstrap(isHardware: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    final prompt = tester.widget<SaplingParamsPrompt>(
+      find.byType(SaplingParamsPrompt),
+    );
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byType(SaplingParamsPrompt), findsNothing);
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+    expect(rustApi.proposedAccounts, isEmpty);
+    expect(find.text('Cancelling…'), findsWidgets);
+
+    released.complete();
+    await _flushRealAsync(tester);
+    await tester.pumpAndSettle();
+    expect(rustApi.proposedAccounts, ['test-account']);
+    expect(find.text('Review send'), findsOneWidget);
+    expect(find.text('0.0002 ZEC'), findsOneWidget);
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+    // A delayed event from the removed prompt cannot start a download or
+    // release the refreshed proposal.
+    prompt.onCancel();
+    prompt.onDownload();
+    await tester.pumpAndSettle();
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    expect(rustApi.createdProposalIds, [BigInt.two]);
+    expect(find.text('Get signature'), findsOneWidget);
+  });
+
+  testWidgets('declining Sapling params still cancels the current proposal', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', needsSaplingParams: true),
+        bootstrap: _bootstrap(isHardware: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SaplingParamsPrompt),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(SaplingParamsPrompt), findsNothing);
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+    expect(rustApi.proposedAccounts, isEmpty);
+    expect(rustApi.createdProposalIds, isEmpty);
+    expect(
+      tester
+          .widget<KeystoneSigningModal>(find.byType(KeystoneSigningModal))
+          .phase,
+      KeystoneSigningModalPhase.failed,
+    );
+  });
+
   testWidgets('cancel discards the proposal and returns to send', (
     tester,
   ) async {
@@ -215,7 +540,140 @@ void main() {
     expect(rustApi.discardCalls, hasLength(1));
   });
 
-  testWidgets('verify modal shows the full address grid for unknown address', (
+  testWidgets('cancel waits for refreshed balance before exposing Send', (
+    tester,
+  ) async {
+    final syncNotifier = _FakeSyncNotifier();
+    final refreshed = Completer<void>();
+    syncNotifier.refreshCompleter = refreshed;
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(_reviewArgs(addressType: 'unified'), syncNotifier: syncNotifier),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.discardCalls, hasLength(1));
+    expect(syncNotifier.refreshedAccounts, ['test-account']);
+    expect(find.text('send-route'), findsNothing);
+    expect(find.text('Cancelling…'), findsOneWidget);
+    expect(
+      tester
+          .widget<SendReviewContentView>(find.byType(SendReviewContentView))
+          .onConfirm,
+      isNull,
+    );
+
+    refreshed.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('send-route'), findsOneWidget);
+  });
+
+  testWidgets('failed cancellation stays on review and retries cleanup only', (
+    tester,
+  ) async {
+    rustApi.discardError = StateError('database busy');
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_harness(_reviewArgs(addressType: 'unified')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    expect(find.text('send-route'), findsNothing);
+    expect(find.text('Review send'), findsOneWidget);
+    expect(rustApi.discardCalls, hasLength(3));
+    expect(
+      tester
+          .widget<SendReviewContentView>(find.byType(SendReviewContentView))
+          .onConfirm,
+      isNull,
+    );
+
+    rustApi.discardError = null;
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(rustApi.discardCalls, hasLength(4));
+    expect(find.text('send-route'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a second request answered onto /send/review replaces the page and '
+    'discards the first proposal',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final first = _reviewArgs(addressType: 'unified');
+      final second = SendReviewArgs(
+        proposalId: BigInt.two,
+        sendFlowId: 'second-send-flow',
+        proposalAccountUuid: 'test-account',
+        address: _longAddress,
+        addressType: 'unified',
+        amountZatoshi: BigInt.from(2512000000),
+        feeZatoshi: BigInt.from(12000),
+        needsSaplingParams: false,
+      );
+      final router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+          GoRoute(path: '/send', pageBuilder: buildDesktopSendPage),
+          GoRoute(
+            path: '/send/review',
+            pageBuilder: buildDesktopSendReviewPage,
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_routerHarness(router));
+      await tester.pumpAndSettle();
+
+      router.go('/send/review', extra: first);
+      await tester.pumpAndSettle();
+      final firstPageKey =
+          (ModalRoute.of(
+                    tester.element(find.byType(SendReviewScreen)),
+                  )!.settings
+                  as Page<dynamic>)
+              .key;
+
+      // What the payment-request card's Review does when a review is already
+      // on screen: a `go` to the location the user is standing on.
+      router.go('/send/review', extra: second);
+      await tester.pumpAndSettle();
+
+      final secondPageKey =
+          (ModalRoute.of(
+                    tester.element(find.byType(SendReviewScreen)),
+                  )!.settings
+                  as Page<dynamic>)
+              .key;
+      // A shared page key would have updated the page in place, leaving the
+      // first proposal alive: `dispose` is the only thing that releases it.
+      expect(secondPageKey, isNot(firstPageKey));
+      expect(
+        rustApi.discardCalls,
+        contains((first.proposalId, first.sendFlowId)),
+      );
+      expect(
+        rustApi.discardCalls,
+        isNot(contains((second.proposalId, second.sendFlowId))),
+      );
+      expect(
+        tester
+            .widget<SendReviewScreen>(find.byType(SendReviewScreen))
+            .args
+            .sendFlowId,
+        second.sendFlowId,
+      );
+    },
+  );
+
+  testWidgets('verify modal shows the wrapping address for unknown address', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -434,6 +892,75 @@ void main() {
     expect(rustApi.prepareBatchCalls, 1);
     expect(rustApi.encodeBatchCalls, 1);
     expect(rustApi.encodeFullPcztCalls, 0);
+  });
+
+  testWidgets('review and Keystone signing hold the payment-URI busy latch', (
+    tester,
+  ) async {
+    // Review owns a proposal whose inputs must be released before another
+    // request can be checked. The nested modal adds its live-QR hold.
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(isHardware: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+
+    expect(find.byType(KeystoneSigningModal), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 2);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(KeystoneSigningModal),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await _flushRealAsync(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+    expect(find.text('Review send'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('send-route'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+  });
+
+  testWidgets('review keeps the latch held until proposal discard completes', (
+    tester,
+  ) async {
+    final discardCompleter = Completer<void>();
+    rustApi.discardCompleter = discardCompleter;
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_harness(_reviewArgs(addressType: 'unified')));
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('send-route'), findsNothing);
+    expect(find.text('Review send'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    discardCompleter.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('send-route'), findsOneWidget);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
   });
 
   testWidgets('Keystone signature limit fails before showing a QR', (
@@ -758,21 +1285,92 @@ void main() {
         matching: find.text('Cancel'),
       ),
     );
+    await _flushRealAsync(tester);
     await tester.pumpAndSettle();
 
-    expect(find.text('send-route'), findsOneWidget);
+    expect(find.text('send-route'), findsNothing);
+    expect(find.text('Review send'), findsOneWidget);
+    expect(find.byType(KeystoneSigningModal), findsNothing);
     expect(rustApi.discardCalls, hasLength(1));
     expect(rustApi.createPcztCalls, 0);
   });
 
   testWidgets(
-    'Keystone reject after PCZT creation releases the retained input lock',
+    'cancelling only signature scanning keeps the signing request live',
     (tester) async {
       await _setDesktopViewport(tester);
       await tester.pumpWidget(
         _harness(
           _reviewArgs(addressType: 'unified'),
           bootstrap: _bootstrap(isHardware: true),
+          cancelScan: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm with Keystone'));
+      await _flushRealAsync(tester);
+      await tester.tap(find.text('Get signature'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('keystone-scan-route'));
+      await tester.pumpAndSettle();
+      expect(find.byType(KeystoneSigningModal), findsOneWidget);
+      expect(find.text('Get signature'), findsOneWidget);
+      expect(rustApi.discardCalls, isEmpty);
+      expect(rustApi.createPcztCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'Keystone cancellation blocks late preparation until release finishes',
+    (tester) async {
+      final released = Completer<void>();
+      rustApi.discardCompleter = released;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(isHardware: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm with Keystone'));
+      await tester.pump();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(KeystoneSigningModal),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await _flushRealAsync(tester);
+      expect(find.text('send-route'), findsNothing);
+      expect(find.text('Cancelling…'), findsWidgets);
+      expect(rustApi.createPcztCalls, 0);
+      expect(rustApi.discardCalls, hasLength(1));
+      expect(
+        tester
+            .widget<KeystoneSigningModal>(find.byType(KeystoneSigningModal))
+            .onPrimary,
+        isNull,
+      );
+      released.complete();
+      await _flushRealAsync(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('send-route'), findsNothing);
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.byType(KeystoneSigningModal), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Keystone cancel then re-sign hands off the fresh proposal and fee',
+    (tester) async {
+      final statusExtras = <Object?>[];
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(isHardware: true),
+          statusExtras: statusExtras,
         ),
       );
       await tester.pumpAndSettle();
@@ -787,12 +1385,27 @@ void main() {
           matching: find.text('Cancel'),
         ),
       );
+      await _flushRealAsync(tester);
       await tester.pumpAndSettle();
 
-      expect(find.text('send-route'), findsOneWidget);
+      expect(find.text('send-route'), findsNothing);
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.byType(KeystoneSigningModal), findsNothing);
       // createPcztFromProposal consumes the replayable proposal but retains
       // its owner-scoped DB input lock until the hardware flow finishes.
       expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(find.text('0.0002 ZEC'), findsOneWidget);
+      await tester.tap(find.text('Confirm with Keystone'));
+      await _flushRealAsync(tester);
+      expect(rustApi.createdProposalIds, [BigInt.one, BigInt.two]);
+      expect(find.text('Get signature'), findsOneWidget);
+      await tester.tap(find.text('Get signature'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('keystone-scan-route'));
+      await tester.pumpAndSettle();
+      final handoff = statusExtras.last as KeystoneBroadcastArgs;
+      expect(handoff.reviewArgs.proposalId, BigInt.two);
+      expect(handoff.reviewArgs.feeZatoshi, BigInt.from(20000));
     },
   );
 }
@@ -824,6 +1437,37 @@ Future<void> _flushRealAsync(WidgetTester tester) async {
   }
 }
 
+/// Everything a `SendReviewScreen` needs from providers, shared by the fixed
+/// harness below and by the router harness that drives the real `/send/review`
+/// page builder.
+List<Override> _harnessOverrides({
+  AppBootstrapState? bootstrap,
+  AddressBookRepository? addressBookRepository,
+  _FakeSyncNotifier? syncNotifier,
+}) => [
+  appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap()),
+  zecMarketDataSourceProvider.overrideWithValue(const _FakeMarketDataSource()),
+  zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
+  addressBookRepositoryProvider.overrideWithValue(
+    addressBookRepository ?? _FakeAddressBookRepository(),
+  ),
+  syncProvider.overrideWith(() => syncNotifier ?? _FakeSyncNotifier()),
+  ironwoodMigrationCoordinatorProvider.overrideWith(
+    _FakeMigrationCoordinator.new,
+  ),
+];
+
+/// Drives [router] — built from the app's own `/send/review` page builder — so
+/// a test can navigate onto the route twice the way the payment-request card
+/// does.
+Widget _routerHarness(GoRouter router) => ProviderScope(
+  overrides: _harnessOverrides(),
+  child: MaterialApp.router(
+    routerConfig: router,
+    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+  ),
+);
+
 Widget _harness(
   SendReviewArgs args, {
   AppBootstrapState? bootstrap,
@@ -831,11 +1475,15 @@ Widget _harness(
   List<Object?>? statusExtras,
   List<Object?>? scanExtras,
   Listenable? routerRefresh,
+  _FakeSyncNotifier? syncNotifier,
+  bool cancelScan = false,
+  String initialLocation = '/send/review',
 }) {
   final router = GoRouter(
-    initialLocation: '/send/review',
+    initialLocation: initialLocation,
     refreshListenable: routerRefresh,
     routes: [
+      GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send-route')),
       GoRoute(
         path: '/donation',
@@ -850,7 +1498,9 @@ Widget _harness(
         builder: (context, state) {
           scanExtras?.add(state.extra);
           return GestureDetector(
-            onTap: () => context.pop(Uint8List.fromList(_fakeSignatureBytes)),
+            onTap: () => context.pop(
+              cancelScan ? null : Uint8List.fromList(_fakeSignatureBytes),
+            ),
             child: const Text('keystone-scan-route'),
           );
         },
@@ -877,17 +1527,11 @@ Widget _harness(
   );
 
   return ProviderScope(
-    overrides: [
-      appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap()),
-      zecMarketDataSourceProvider.overrideWithValue(
-        const _FakeMarketDataSource(),
-      ),
-      zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
-      addressBookRepositoryProvider.overrideWithValue(
-        addressBookRepository ?? _FakeAddressBookRepository(),
-      ),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
-    ],
+    overrides: _harnessOverrides(
+      bootstrap: bootstrap,
+      addressBookRepository: addressBookRepository,
+      syncNotifier: syncNotifier,
+    ),
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
@@ -895,7 +1539,10 @@ Widget _harness(
   );
 }
 
-AppBootstrapState _bootstrap({bool isHardware = false}) {
+AppBootstrapState _bootstrap({
+  bool isHardware = false,
+  bool secondAccount = false,
+}) {
   return AppBootstrapState(
     initialLocation: '/send/review',
     initialAccountState: AccountState(
@@ -906,6 +1553,8 @@ AppBootstrapState _bootstrap({bool isHardware = false}) {
           order: 0,
           isHardware: isHardware,
         ),
+        if (secondAccount)
+          const AccountInfo(uuid: 'account-b', name: 'Account B', order: 1),
       ],
       activeAccountUuid: 'test-account',
       activeAddress: 'u1activeaddress',
@@ -956,9 +1605,13 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 
 SendReviewArgs _reviewArgs({
   required String addressType,
+  bool needsSaplingParams = false,
   String? memo,
   String address = _longAddress,
   BigInt? amountZatoshi,
+  bool isPaymentRequest = false,
+  String? requestedBy,
+  BigInt? requestedAmountZatoshi,
   SendFlowKind flowKind = SendFlowKind.send,
 }) {
   return SendReviewArgs(
@@ -969,8 +1622,11 @@ SendReviewArgs _reviewArgs({
     addressType: addressType,
     amountZatoshi: amountZatoshi ?? BigInt.from(1512000000),
     feeZatoshi: BigInt.from(12000),
-    needsSaplingParams: false,
+    needsSaplingParams: needsSaplingParams,
     memo: memo,
+    isPaymentRequest: isPaymentRequest,
+    requestedBy: requestedBy,
+    requestedAmountZatoshi: requestedAmountZatoshi,
     flowKind: flowKind,
   );
 }
@@ -1017,6 +1673,26 @@ class _FakePathProviderPlatform extends Fake
 }
 
 class _FakeSyncNotifier extends SyncNotifier {
+  Completer<void>? refreshCompleter;
+  Object? refreshError;
+  final refreshedAccounts = <String>[];
+
+  @override
+  Future<void> refreshAfterAccountSwitch() async {}
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {
+    refreshedAccounts.add(accountUuid);
+    await refreshCompleter?.future;
+    if (refreshError != null) throw refreshError!;
+  }
+
+  @override
+  Future<T> runWithAuthoritativeSpendable<T>({
+    required String accountUuid,
+    required Future<T> Function() operation,
+  }) => operation();
+
   @override
   Future<SyncState> build() async => SyncState(
     accountUuid: 'test-account',
@@ -1026,29 +1702,61 @@ class _FakeSyncNotifier extends SyncNotifier {
   );
 }
 
+class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
+  @override
+  IronwoodMigrationCoordinatorState build() =>
+      const IronwoodMigrationCoordinatorState();
+}
+
 class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
+  final proposedAccounts = <String>[];
   int createPcztCalls = 0;
+  final createdProposalIds = <BigInt>[];
   int prepareBatchCalls = 0;
   int encodeBatchCalls = 0;
   int encodeFullPcztCalls = 0;
   int decodeBatchCalls = 0;
   int previousTransactionCount = 0;
   Object? prepareBatchError;
+  Completer<void>? discardCompleter;
+  Object? discardError;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
 
   void reset() {
     discardCalls.clear();
+    proposedAccounts.clear();
     createPcztCalls = 0;
+    createdProposalIds.clear();
     prepareBatchCalls = 0;
     encodeBatchCalls = 0;
     encodeFullPcztCalls = 0;
     decodeBatchCalls = 0;
     previousTransactionCount = 0;
     prepareBatchError = null;
+    discardCompleter = null;
+    discardError = null;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
+  }
+
+  @override
+  Future<ProposalResult> crateApiSyncProposeSend({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required String toAddress,
+    required BigInt amountZatoshi,
+    String? memo,
+  }) async {
+    proposedAccounts.add(accountUuid);
+    return ProposalResult(
+      proposalId: BigInt.two,
+      feeZatoshi: BigInt.from(20000),
+      needsSaplingParams: false,
+    );
   }
 
   @override
@@ -1057,6 +1765,8 @@ class _RustApiFake implements RustLibApi {
     required String sendFlowId,
   }) async {
     discardCalls.add((proposalId, sendFlowId));
+    await discardCompleter?.future;
+    if (discardError != null) throw discardError!;
   }
 
   @override
@@ -1106,6 +1816,7 @@ class _RustApiFake implements RustLibApi {
     required String sendFlowId,
   }) async {
     createPcztCalls++;
+    createdProposalIds.add(proposalId);
     return Uint8List.fromList([1, 2, 3]);
   }
 

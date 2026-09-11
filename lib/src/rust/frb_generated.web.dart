@@ -447,6 +447,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  GeneratedSoftwareAccount dco_decode_generated_software_account(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -967,6 +970,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   OrchardMigrationPrivatePlan dco_decode_orchard_migration_private_plan(
     dynamic raw,
   );
+
+  @protected
+  PaymentLinkSpendEvidence dco_decode_payment_link_spend_evidence(dynamic raw);
 
   @protected
   PirLayout dco_decode_pir_layout(dynamic raw);
@@ -1747,6 +1753,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
+  GeneratedSoftwareAccount sse_decode_generated_software_account(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
@@ -2399,6 +2410,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OrchardMigrationPrivatePlan sse_decode_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PaymentLinkSpendEvidence sse_decode_payment_link_spend_evidence(
     SseDeserializer deserializer,
   );
 
@@ -3365,6 +3381,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_generated_software_account(
+    GeneratedSoftwareAccount self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
@@ -4141,6 +4163,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_orchard_migration_private_plan(
     OrchardMigrationPrivatePlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_payment_link_spend_evidence(
+    PaymentLinkSpendEvidence self,
     SseSerializer serializer,
   );
 

@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/storage/linux_keyring_coordinator.dart';
+import '../../core/storage/linux_secret_operation_guard.dart';
 import '../../features/keystone/services/keystone_batch_signing.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
@@ -647,11 +649,25 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       String? softwareMnemonic;
+      LinuxSecretOperationGuard? secretGuard;
+      // Gated on `needsDelegation`, not `needsDelegationSigning`: the SDK
+      // round driver can need the seed to advance an in-flight delegation,
+      // which is why 17ca6f0b7 widened this. The guard follows the same
+      // condition as the secret it protects.
       if (!activeSession.isHardwareAccount && needsDelegation) {
+        secretGuard = LinuxSecretOperationGuard(
+          store: ref.read(linuxSecretOperationStoreProvider),
+          coordinator: ref.read(linuxKeyringCoordinatorProvider),
+          isRequestCurrent: () =>
+              _isCurrentJob(key: key, generation: generation),
+          readAccounts: () => ref.read(accountProvider).value,
+          accountUuid: key.accountUuid,
+        );
         final softwareSecret = await ref
             .read(accountProvider.notifier)
             .getSoftwareWalletSecretForAccount(key.accountUuid);
         if (!_isCurrentJob(key: key, generation: generation)) return;
+        secretGuard.check();
         softwareMnemonic = softwareSecret?.encodeForStorage();
         if (softwareMnemonic == null || softwareMnemonic.isEmpty) {
           _failJob(
@@ -685,6 +701,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           );
           return;
         }
+        secretGuard?.check();
         await sessionNotifier.delegatePendingBundles(
           mnemonic: softwareMnemonic,
         );

@@ -103,6 +103,7 @@ void main() {
 
       final validation = await rust_sync.validateAddress(
         address: _recipientAddress,
+        network: _network,
       );
       expect(validation.isValid, isTrue);
       expect(_recipientAddress, startsWith('uregtest1'));

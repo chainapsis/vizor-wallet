@@ -271,24 +271,48 @@ import UIKit
         }
         result(true)
       case "quiesce":
-        BackgroundMigrationManager.shared.quiesce {
-          outboxSuccess in
-          guard outboxSuccess else {
-            result(false)
-            return
-          }
-          if #available(iOS 26.0, *) {
-            BackgroundMigrationPreparationManager.shared.quiesce {
-              preparationSuccess in result(preparationSuccess)
+        guard let arguments = call.arguments as? [String: Any],
+          let leaseId = arguments["leaseId"] as? String, !leaseId.isEmpty
+        else {
+          result(FlutterError(code: "invalid_arguments", message: "Missing migration mutation lease.", details: nil))
+          return
+        }
+        let gate = BackgroundMigrationOutboxExecutionGate.shared
+        gate.pause(leaseId: leaseId)
+        DispatchQueue.global(qos: .utility).async {
+          // Includes runOutboxOnceNow, not just BGProcessingTask's queue.
+          gate.waitUntilIdle()
+          DispatchQueue.main.async {
+            BackgroundMigrationManager.shared.quiesce { outboxSuccess in
+              guard outboxSuccess else {
+                result(false)
+                return
+              }
+              if #available(iOS 26.0, *) {
+                BackgroundMigrationPreparationManager.shared.quiesce {
+                  preparationSuccess in result(preparationSuccess)
+                }
+              } else {
+                result(true)
+              }
             }
-          } else {
-            result(true)
           }
         }
       case "resume":
+        guard let arguments = call.arguments as? [String: Any],
+          let leaseId = arguments["leaseId"] as? String, !leaseId.isEmpty
+        else {
+          result(FlutterError(code: "invalid_arguments", message: "Missing migration mutation lease.", details: nil))
+          return
+        }
+        let gate = BackgroundMigrationOutboxExecutionGate.shared
+        guard gate.resume(leaseId: leaseId) else {
+          result(true)
+          return
+        }
         BackgroundMigrationManager.shared.resumeAfterFailedMutation {
           resumed in
-          if #available(iOS 26.0, *) {
+          if #available(iOS 26.0, *), !gate.isPaused {
             BackgroundMigrationPreparationManager.shared.resumeAfterMutation()
           }
           DispatchQueue.main.async { result(resumed) }
@@ -536,6 +560,23 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+
+    let incomingUriChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/payment_uri",
+      binaryMessenger: messenger
+    )
+    IncomingUriChannelBridge.shared.attach(channel: incomingUriChannel)
+    incomingUriChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "takePendingUris":
+        result(IncomingUriChannelBridge.shared.takePending())
+      case "ready":
+        IncomingUriChannelBridge.shared.markReady()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func completeOutboxArmWithBackgroundSchedule(
@@ -764,6 +805,113 @@ import UIKit
   }
 }
 
+/// Buffers trusted Vizor HTTPS links until the Dart isolate has installed its
+/// handler. Never logs the URL because a route may contain bearer material.
+final class IncomingUriChannelBridge {
+  static let shared = IncomingUriChannelBridge()
+  static let deeplinkHost =
+    (Bundle.main.object(forInfoDictionaryKey: "VizorDeeplinkHost") as? String)?
+    .lowercased() ?? "link.vizor.cash"
+  private static let paymentLinkPath = "/payment-links/open"
+  /// Sanity ceiling, set far above every link this app actually accepts.
+  ///
+  /// Dart owns the real size limits -- `VizorPaymentLink.maxEncodedLength` and
+  /// `kMaxPaymentUriLength`, both 16 KB -- and rejects an oversize link with a
+  /// message the user can read. Capping here at those same 16 KB dropped
+  /// exactly the links Dart had copy for, in silence, so the rejection never
+  /// rendered. Forward anything up to this bound and let Dart explain; the
+  /// bound exists only so a pathological multi-megabyte URL still cannot sit
+  /// in the queue.
+  private static let maxIncomingUriBytes = 64 * 1024
+  private static let maxPendingUris = 16
+  private init() {}
+
+  private var channel: FlutterMethodChannel?
+  private var pendingUris: [String] = []
+  private var dartReady = false
+
+  func attach(channel: FlutterMethodChannel) {
+    self.channel = channel
+    dartReady = false
+  }
+
+  func markReady() {
+    dartReady = true
+    flush()
+  }
+
+  func takePending() -> [String] {
+    let uris = pendingUris
+    pendingUris.removeAll()
+    return uris
+  }
+
+  func handle(urlContexts: Set<UIOpenURLContext>) {
+    handle(urls: urlContexts.map(\.url))
+  }
+
+  @discardableResult
+  func handle(userActivity: NSUserActivity) -> Bool {
+    guard
+      userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+      let url = userActivity.webpageURL
+    else {
+      return false
+    }
+    return handle(urls: [url])
+  }
+
+  func handles(_ url: URL) -> Bool {
+    // A ZIP-321 payment link is an opaque `zcash:` URL: no host to check, and
+    // the Dart side owns its parsing. Everything else must be one of the
+    // verified HTTPS routes on the deeplink host.
+    if url.scheme?.lowercased() == "zcash" {
+      return true
+    }
+    guard
+      url.scheme?.lowercased() == "https",
+      url.host?.lowercased() == Self.deeplinkHost,
+      url.user == nil,
+      url.port == nil
+    else {
+      return false
+    }
+    let isHome = (url.path.isEmpty || url.path == "/")
+      && url.query == nil
+      && url.fragment == nil
+    return isHome || url.path == Self.paymentLinkPath
+  }
+
+  @discardableResult
+  private func handle(urls: [URL]) -> Bool {
+    var handledDeeplink = false
+    for url in urls {
+      guard handles(url) else { continue }
+      handledDeeplink = true
+      let uri = url.absoluteString
+      guard
+        uri.utf8.count <= Self.maxIncomingUriBytes,
+        pendingUris.count < Self.maxPendingUris,
+        !pendingUris.contains(uri)
+      else {
+        continue
+      }
+      pendingUris.append(uri)
+    }
+    if handledDeeplink {
+      flush()
+    }
+    return handledDeeplink
+  }
+
+  private func flush() {
+    guard dartReady, let channel, !pendingUris.isEmpty else { return }
+    let uris = pendingUris
+    pendingUris.removeAll()
+    channel.invokeMethod("onUris", arguments: uris)
+  }
+}
+
 private enum SensitiveClipboardHandler {
   private static let plainTextType = "public.utf8-plain-text"
 
@@ -785,12 +933,13 @@ private enum SensitiveClipboardHandler {
       }
 
       let expirationSeconds = max(1, seconds(from: args["expirationSeconds"]) ?? 60)
+      var options: [UIPasteboard.OptionsKey: Any] = [.localOnly: true]
+      if (args["autoClear"] as? Bool) != false {
+        options[.expirationDate] = Date().addingTimeInterval(expirationSeconds)
+      }
       UIPasteboard.general.setItems(
         [[plainTextType: text]],
-        options: [
-          .expirationDate: Date().addingTimeInterval(expirationSeconds),
-          .localOnly: true,
-        ]
+        options: options
       )
       result(nil)
     default:

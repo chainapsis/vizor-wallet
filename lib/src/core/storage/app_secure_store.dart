@@ -19,6 +19,8 @@ import '../security/password_policy.dart';
 import '../security/software_wallet_secret.dart';
 import '../../rust/api/secret.dart' as rust_secret;
 import 'voting_hotkey_store.dart';
+import 'secure_storage_diagnostics.dart';
+import 'linux_keyring_coordinator.dart';
 
 const kWalletDbNameKey = 'zcash_wallet_db_name';
 const kThemeModeKey = 'zcash_theme_mode';
@@ -27,6 +29,12 @@ const kSyncKeepAwakeEnabledKey = 'zcash_sync_keep_awake_enabled';
 const kSyncKeepAwakePromptSeenKey = 'zcash_sync_keep_awake_prompt_seen';
 const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
+const kPaymentLinkRecoveryStorageKey = 'zcash_gift_card_recovery_v1';
+const kPaymentLinkReceivedStorageKey = 'zcash_gift_card_received_v1';
+
+/// Plain (locked-readable) count of Gift Card claims still in flight.
+const kPaymentLinkClaimsInFlightCountKey =
+    'zcash_gift_card_claims_in_flight_v1';
 const kZcashExplorerUrlKey = 'zcash_explorer_url';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
@@ -85,19 +93,38 @@ class SecureStorageUnavailableException implements Exception {
   String toString() => 'Secure storage unavailable during $operation: $cause';
 }
 
+class SecureStorageSessionChangedException implements Exception {
+  const SecureStorageSessionChangedException();
+
+  @override
+  String toString() => 'The wallet session changed. Try the operation again.';
+}
+
 class AppSecureStore {
   AppSecureStore._({
     FlutterSecureStorage? storage,
     FlutterSecureStorage? mnemonicStorage,
   }) : _storage = storage ?? _defaultStorage(),
-       _mnemonicStorage = mnemonicStorage ?? _defaultMnemonicStorage();
+       _mnemonicStorage = mnemonicStorage ?? _defaultMnemonicStorage(),
+       _diagnostics = SecureStorageDiagnostics.instance,
+       _keyringCoordinator = LinuxKeyringCoordinator.instance,
+       enforcesSessionGeneration =
+           !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
 
   @visibleForTesting
   AppSecureStore.testing({
     required FlutterSecureStorage storage,
     FlutterSecureStorage? mnemonicStorage,
+    SecureStorageDiagnostics? diagnostics,
+    LinuxKeyringCoordinator? keyringCoordinator,
+    bool? enforceSessionGeneration,
   }) : _storage = storage,
-       _mnemonicStorage = mnemonicStorage ?? storage;
+       _mnemonicStorage = mnemonicStorage ?? storage,
+       _diagnostics = diagnostics ?? SecureStorageDiagnostics.instance,
+       _keyringCoordinator = keyringCoordinator,
+       enforcesSessionGeneration =
+           enforceSessionGeneration ??
+           (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux);
 
   static final AppSecureStore instance = AppSecureStore._();
 
@@ -144,17 +171,40 @@ class AppSecureStore {
 
   final FlutterSecureStorage _storage;
   final FlutterSecureStorage _mnemonicStorage;
+  final SecureStorageDiagnostics _diagnostics;
+  final LinuxKeyringCoordinator? _keyringCoordinator;
   final _secretMutationLock = _AsyncLock();
+  final bool enforcesSessionGeneration;
+  int _sessionGeneration = 0;
 
   /// Shared across provider containers so creation outlives the initiating UI.
   late final votingHotkeys = VotingHotkeyStore(
     readHotkey: readVotingHotkey,
-    writeHotkey: _writeVotingHotkey,
+    writeHotkey: writeVotingHotkey,
     deleteHotkey: deleteVotingHotkey,
   );
   String? _sessionPassword;
 
   bool get hasSessionPassword => _sessionPassword != null;
+
+  /// Capture before awaiting credentials and check again before using them.
+  /// Linux keyring requests can remain pending while the wallet session changes.
+  int get sessionGeneration => _sessionGeneration;
+
+  bool isSessionGenerationCurrent(int generation) =>
+      !enforcesSessionGeneration || generation == _sessionGeneration;
+
+  /// Account switching and deletion invalidate earlier secret consumers before
+  /// their asynchronous work starts, while keeping the current wallet unlocked.
+  void invalidatePendingSecretOperations() {
+    if (enforcesSessionGeneration) _sessionGeneration++;
+  }
+
+  void _checkSessionGeneration(int generation) {
+    if (!isSessionGenerationCurrent(generation)) {
+      throw const SecureStorageSessionChangedException();
+    }
+  }
 
   String requireSessionPasswordForNativeSecretUse() {
     final password = _sessionPassword;
@@ -204,7 +254,9 @@ class AppSecureStore {
     String key, {
     bool requireUnlockedSession = false,
   }) {
+    final generation = sessionGeneration;
     return _secretMutationLock.run(() async {
+      _checkSessionGeneration(generation);
       if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final raw = await _runStorageOperation(
         'read secret "$key"',
@@ -214,6 +266,7 @@ class AppSecureStore {
         raw,
         key: key,
         requireUnlockedSession: requireUnlockedSession,
+        generation: generation,
       );
     });
   }
@@ -222,7 +275,9 @@ class AppSecureStore {
     String accountUuid, {
     bool requireUnlockedSession = false,
   }) {
+    final generation = sessionGeneration;
     return _secretMutationLock.run(() async {
+      _checkSessionGeneration(generation);
       if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final key = _accountMnemonicKey(accountUuid);
       final raw = await _runStorageOperation(
@@ -233,7 +288,9 @@ class AppSecureStore {
         raw,
         key: key,
         requireUnlockedSession: requireUnlockedSession,
+        generation: generation,
       );
+      _checkSessionGeneration(generation);
       return storedValue == null
           ? null
           : SoftwareWalletSecret.decode(storedValue).mnemonic;
@@ -244,7 +301,9 @@ class AppSecureStore {
     String accountUuid, {
     bool requireUnlockedSession = false,
   }) {
+    final generation = sessionGeneration;
     return _secretMutationLock.run(() async {
+      _checkSessionGeneration(generation);
       if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final key = _accountMnemonicKey(accountUuid);
       final raw = await _runStorageOperation(
@@ -255,7 +314,9 @@ class AppSecureStore {
         raw,
         key: key,
         requireUnlockedSession: requireUnlockedSession,
+        generation: generation,
       );
+      _checkSessionGeneration(generation);
       return storedValue == null
           ? null
           : SoftwareWalletSecret.decode(storedValue);
@@ -266,7 +327,9 @@ class AppSecureStore {
     String accountUuid, {
     bool requireUnlockedSession = false,
   }) {
+    final generation = sessionGeneration;
     return _secretMutationLock.run(() async {
+      _checkSessionGeneration(generation);
       if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final key = _accountMnemonicKey(accountUuid);
       final raw = await _runStorageOperation(
@@ -277,6 +340,7 @@ class AppSecureStore {
         raw,
         key: key,
         requireUnlockedSession: requireUnlockedSession,
+        generation: generation,
       );
     });
   }
@@ -290,10 +354,12 @@ class AppSecureStore {
     required String accountUuid,
     required String roundId,
   }) async {
+    final generation = sessionGeneration;
     final encoded = await readSecretStringWithOptions(
       votingHotkeyStorageKey(accountUuid: accountUuid, roundId: roundId),
       requireUnlockedSession: true,
     );
+    _checkSessionGeneration(generation);
     if (encoded == null || encoded.isEmpty) return null;
     return base64Decode(encoded);
   }
@@ -306,12 +372,14 @@ class AppSecureStore {
   }
 
   Future<void> writeSecretString(String key, String value) {
+    final generation = sessionGeneration;
     return _secretMutationLock.run(() async {
-      await _runStorageOperation(
-        'write secret "$key"',
-        () async =>
-            _storage.write(key: key, value: await _encryptSecretString(value)),
-      );
+      _checkSessionGeneration(generation);
+      final payload = await _encryptSecretString(value, generation);
+      await _runStorageOperation('write secret "$key"', () async {
+        _checkSessionGeneration(generation);
+        await _storage.write(key: key, value: payload);
+      });
     });
   }
 
@@ -320,23 +388,25 @@ class AppSecureStore {
     String mnemonic, {
     String bip39Passphrase = '',
   }) {
+    final generation = sessionGeneration;
     return _secretMutationLock.run(() async {
+      _checkSessionGeneration(generation);
       final storedValue = SoftwareWalletSecret(
         mnemonic: mnemonic,
         bip39Passphrase: bip39Passphrase,
       ).encodeForStorage();
-      await _runStorageOperation(
-        'write account mnemonic "$accountUuid"',
-        () async => _mnemonicStorage.write(
-          key: _accountMnemonicKey(accountUuid),
-          value: await _encryptSecretString(storedValue),
-        ),
-      );
+      final key = _accountMnemonicKey(accountUuid);
+      final payload = await _encryptSecretString(storedValue, generation);
+      _checkSessionGeneration(generation);
+      await _runStorageOperation('write account mnemonic "$accountUuid"', () {
+        _checkSessionGeneration(generation);
+        return _mnemonicStorage.write(key: key, value: payload);
+      });
     });
   }
 
   /// Stores a voting hotkey as an encrypted secret for an account and round.
-  Future<void> _writeVotingHotkey({
+  Future<void> writeVotingHotkey({
     required String accountUuid,
     required String roundId,
     required List<int> hotkey,
@@ -386,7 +456,9 @@ class AppSecureStore {
       });
       return;
     }
-    if (key.startsWith(_votingHotkeyKeyPrefix)) {
+    if (key.startsWith(_votingHotkeyKeyPrefix) ||
+        key == kPaymentLinkRecoveryStorageKey ||
+        key == kPaymentLinkReceivedStorageKey) {
       await _secretMutationLock.run(() async {
         await _runStorageOperation(
           'delete "$key"',
@@ -413,6 +485,7 @@ class AppSecureStore {
   }
 
   Future<void> deleteAll() {
+    if (enforcesSessionGeneration) clearSessionPassword();
     return _secretMutationLock.run(() async {
       await _runStorageOperation('delete all', _storage.deleteAll);
       if (!identical(_mnemonicStorage, _storage)) {
@@ -421,7 +494,7 @@ class AppSecureStore {
           _mnemonicStorage.deleteAll,
         );
       }
-      _sessionPassword = null;
+      clearSessionPassword();
     });
   }
 
@@ -465,6 +538,7 @@ class AppSecureStore {
   }
 
   Future<void> configurePassword(String password) async {
+    final generation = sessionGeneration;
     final error = validateRequiredWalletPassword(password);
     if (error != null) {
       throw ArgumentError(error);
@@ -472,22 +546,27 @@ class AppSecureStore {
     final salt = _randomBytes(16);
     final saltBase64 = base64Encode(salt);
     final verifier = await _derivePasswordVerifier(password, saltBase64);
+    _checkSessionGeneration(generation);
     await writePlain(_passwordVerifierSaltKey, saltBase64);
     await writePlain(_passwordVerifierKey, verifier);
-    setSessionPassword(password);
+    // Finish the durable writes even if the UI locks while native storage waits.
+    if (isSessionGenerationCurrent(generation)) setSessionPassword(password);
   }
 
   /// Rotates the wallet password and re-encrypts every app-managed secret.
   ///
-  /// Account mnemonics and voting hotkeys are both encrypted with the wallet
-  /// password, but they may live in different secure storage backends.
+  /// Account mnemonics, voting hotkeys, and payment-link recovery records are
+  /// encrypted with the wallet password, but they may live in different secure
+  /// storage backends.
   Future<bool> changePassword({
     required String currentPassword,
     required String newPassword,
   }) {
+    final generation = sessionGeneration;
     // Secret writes and password rotation share one lock so a mnemonic cannot
     // be encrypted with the old key after rotation has taken its key snapshot.
     return _secretMutationLock.run(() async {
+      _checkSessionGeneration(generation);
       final existingRecoveryRecord = await readPlain(
         _passwordRotationInProgressKey,
       );
@@ -509,6 +588,7 @@ class AppSecureStore {
       }
 
       final isCurrentPasswordValid = await verifyPasswordOnly(currentPassword);
+      _checkSessionGeneration(generation);
       if (!isCurrentPasswordValid) {
         return false;
       }
@@ -559,12 +639,12 @@ class AppSecureStore {
           ),
         );
       }
-      final votingHotkeyValues = await _runStorageOperation(
-        'read all voting hotkeys',
+      final appManagedSecretValues = await _runStorageOperation(
+        'read all app-managed secrets',
         _storage.readAll,
       );
-      for (final entry in votingHotkeyValues.entries) {
-        if (!entry.key.startsWith(_votingHotkeyKeyPrefix)) continue;
+      for (final entry in appManagedSecretValues.entries) {
+        if (!_isAppManagedGeneralSecretKey(entry.key)) continue;
 
         if (!_isEncryptedPayload(entry.value)) {
           throw StateError(
@@ -611,16 +691,23 @@ class AppSecureStore {
         oldVerifier: oldVerifier,
         entries: rollbackSecrets,
       );
+      _checkSessionGeneration(generation);
       await writePlain(_passwordRotationInProgressKey, rotation.serialize());
 
       try {
         await _writeRotatedPasswordState(rotation);
       } catch (error, stackTrace) {
-        await _rollbackPasswordRotation(rollbackSnapshot, currentPassword);
+        await _rollbackPasswordRotation(
+          rollbackSnapshot,
+          currentPassword,
+          generation,
+        );
         Error.throwWithStackTrace(error, stackTrace);
       }
 
-      setSessionPassword(newPassword);
+      if (isSessionGenerationCurrent(generation)) {
+        setSessionPassword(newPassword);
+      }
       await _deleteRotationRecordBestEffort();
 
       return true;
@@ -665,6 +752,7 @@ class AppSecureStore {
   }
 
   Future<void> clearPasswordConfiguration() {
+    if (enforcesSessionGeneration) clearSessionPassword();
     return _secretMutationLock.run(() async {
       await _runStorageOperation(
         'delete password verifier salt',
@@ -686,11 +774,14 @@ class AppSecureStore {
   /// storage session. Use this for in-app re-authentication prompts where the
   /// wallet is already unlocked and callers only need a fresh password check.
   Future<bool> verifyPasswordOnly(String password) async {
+    final generation = sessionGeneration;
     if (!isWalletPasswordValid(password)) {
       return false;
     }
     final encodedSalt = await readPlain(_passwordVerifierSaltKey);
+    _checkSessionGeneration(generation);
     final storedVerifier = await readPlain(_passwordVerifierKey);
+    _checkSessionGeneration(generation);
     if (encodedSalt == null ||
         encodedSalt.isEmpty ||
         storedVerifier == null ||
@@ -699,20 +790,31 @@ class AppSecureStore {
     }
 
     final derived = await _derivePasswordVerifier(password, encodedSalt);
+    _checkSessionGeneration(generation);
     return derived == storedVerifier;
   }
 
   Future<bool> verifyPassword(String password) async {
+    // Start a new unlock attempt before the first await. Even a later rejected
+    // attempt must prevent an older pending attempt from opening the session.
+    if (enforcesSessionGeneration) clearSessionPassword();
+    final generation = sessionGeneration;
     final isMatch = await verifyPasswordOnly(password);
+    _checkSessionGeneration(generation);
     if (isMatch) {
-      setSessionPassword(password);
+      // This request already owns the generation allocated above.
+      _sessionPassword = password;
       try {
         final migratedForRead = await migrateAccountMnemonicsAfterUnlock();
+        _checkSessionGeneration(generation);
         if (!migratedForRead) {
           clearSessionPassword();
           return false;
         }
+      } on SecureStorageSessionChangedException {
+        rethrow;
       } catch (error, stackTrace) {
+        _checkSessionGeneration(generation);
         clearSessionPassword();
         debugPrint(
           'AppSecureStore: failed to migrate account mnemonics after unlock: '
@@ -732,10 +834,12 @@ class AppSecureStore {
   }
 
   void setSessionPassword(String password) {
+    if (enforcesSessionGeneration) _sessionGeneration++;
     _sessionPassword = password;
   }
 
   void clearSessionPassword() {
+    if (enforcesSessionGeneration) _sessionGeneration++;
     _sessionPassword = null;
   }
 
@@ -744,7 +848,13 @@ class AppSecureStore {
     Future<T> Function() body,
   ) async {
     try {
-      return await body();
+      return await (_keyringCoordinator?.runStorageOperation(
+            () => _diagnostics.trace(operation, body),
+            isRead: operation.startsWith('read '),
+          ) ??
+          _diagnostics.trace(operation, body));
+    } on SecureStorageSessionChangedException {
+      rethrow;
     } on SecureStorageUnavailableException {
       rethrow;
     } on PlatformException catch (error, stackTrace) {
@@ -770,7 +880,9 @@ class AppSecureStore {
     String? raw, {
     required String key,
     required bool requireUnlockedSession,
+    required int generation,
   }) async {
+    _checkSessionGeneration(generation);
     if (requireUnlockedSession && !hasSessionPassword) {
       return null;
     }
@@ -783,15 +895,25 @@ class AppSecureStore {
       return null;
     }
 
-    final saltBase64 = await _getOrCreateSaltBase64();
-    return _decryptPayloadForKey(key, raw, _sessionPassword!, saltBase64);
+    final saltBase64 = await _getOrCreateSaltBase64(generation: generation);
+    _checkSessionGeneration(generation);
+    final secret = await _decryptPayloadForKey(
+      key,
+      raw,
+      _sessionPassword!,
+      saltBase64,
+    );
+    _checkSessionGeneration(generation);
+    return secret;
   }
 
   Future<Uint8List?> _decryptStoredSecretBytes(
     String? raw, {
     required String key,
     required bool requireUnlockedSession,
+    required int generation,
   }) async {
+    _checkSessionGeneration(generation);
     if (requireUnlockedSession && !hasSessionPassword) {
       return null;
     }
@@ -804,17 +926,36 @@ class AppSecureStore {
       return null;
     }
 
-    final saltBase64 = await _getOrCreateSaltBase64();
-    return _decryptPayloadBytesForKey(key, raw, _sessionPassword!, saltBase64);
+    final saltBase64 = await _getOrCreateSaltBase64(generation: generation);
+    _checkSessionGeneration(generation);
+    final secret = await _decryptPayloadBytesForKey(
+      key,
+      raw,
+      _sessionPassword!,
+      saltBase64,
+    );
+    if (!isSessionGenerationCurrent(generation)) {
+      _zeroizeList(secret);
+      throw const SecureStorageSessionChangedException();
+    }
+    return secret;
   }
 
-  Future<String> _encryptSecretString(String value) async {
+  Future<String> _encryptSecretString(String value, int generation) async {
+    _checkSessionGeneration(generation);
     final password = _sessionPassword;
     if (password == null) {
       throw StateError('Secret storage requires an unlocked session.');
     }
-    final saltBase64 = await _getOrCreateSaltBase64();
-    return _encryptStringWithPassword(value, password, saltBase64);
+    final saltBase64 = await _getOrCreateSaltBase64(generation: generation);
+    _checkSessionGeneration(generation);
+    final encrypted = await _encryptStringWithPassword(
+      value,
+      password,
+      saltBase64,
+    );
+    _checkSessionGeneration(generation);
+    return encrypted;
   }
 
   Future<String> _encryptStringWithPassword(
@@ -1008,6 +1149,7 @@ class AppSecureStore {
   Future<void> _rollbackPasswordRotation(
     _PasswordRotationRollbackSnapshot rollback,
     String currentPassword,
+    int generation,
   ) async {
     try {
       for (final entry in rollback.entries) {
@@ -1028,7 +1170,9 @@ class AppSecureStore {
       } else {
         await writePlain(_passwordVerifierKey, rollback.oldVerifier!);
       }
-      setSessionPassword(currentPassword);
+      if (isSessionGenerationCurrent(generation)) {
+        setSessionPassword(currentPassword);
+      }
       await _deleteRotationRecordBestEffort();
     } catch (rollbackError, rollbackStackTrace) {
       await _markRollbackFailedBestEffort();
@@ -1042,6 +1186,12 @@ class AppSecureStore {
     return key.startsWith(_accountMnemonicKeyPrefix)
         ? _mnemonicStorage
         : _storage;
+  }
+
+  bool _isAppManagedGeneralSecretKey(String key) {
+    return key.startsWith(_votingHotkeyKeyPrefix) ||
+        key == kPaymentLinkRecoveryStorageKey ||
+        key == kPaymentLinkReceivedStorageKey;
   }
 
   Future<void> _deleteRotationRecordBestEffort() async {
@@ -1069,8 +1219,9 @@ class AppSecureStore {
     }
   }
 
-  Future<String> _getOrCreateSaltBase64() async {
+  Future<String> _getOrCreateSaltBase64({int? generation}) async {
     final encoded = await readPlain(_secureStoreSaltKey);
+    if (generation != null) _checkSessionGeneration(generation);
     if (encoded != null && encoded.isNotEmpty) {
       return encoded;
     }
@@ -1078,6 +1229,7 @@ class AppSecureStore {
     final salt = _randomBytes(16);
     final generated = base64Encode(salt);
     await writePlain(_secureStoreSaltKey, generated);
+    if (generation != null) _checkSessionGeneration(generation);
     return generated;
   }
 

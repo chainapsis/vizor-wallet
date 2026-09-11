@@ -6999,6 +6999,12 @@ void main() {
       find.byKey(const ValueKey('swap_receive_amount_field')),
       '105.26',
     );
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_receive_amount_field')),
+      '105.267',
+    );
+    await tester.pump();
+    expect(_fieldText(tester, 'swap_receive_amount_field'), '105.26');
     await _enterDestinationText(
       tester,
       '0x52908400098527886e0f7030069857d2e4169ee7',
@@ -7822,7 +7828,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('review quote uses shielded unified address as ZEC recipient', (
+  testWidgets('review quote uses Orchard-only UA as ZEC recipient', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -8469,7 +8475,7 @@ void main() {
         depositSender: depositSender,
         sessionStore: sessionStore,
         failoverChainNameGetter: (url) async => 'main',
-        failoverHeightGetter: (url) async =>
+        failoverHeightGetter: (url, _) async =>
             url == fallback.normalizedLightwalletdUrl
             ? BigInt.from(100)
             : BigInt.from(100),
@@ -8834,6 +8840,96 @@ void main() {
     },
   );
 
+  testWidgets(
+    'hardware Pay cancel returns to an empty composer and requires a fresh quote',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final provider = _FakeSwapProvider();
+      final signing = _FakeSwapHardwareSigningService();
+      final router = GoRouter(
+        initialLocation: '/pay',
+        routes: [_payRoute(), _swapActivityRoute()],
+      );
+      await tester.pumpWidget(
+        _routerHarness(
+          router,
+          bootstrap: _hardwareBootstrap,
+          swapProvider: provider,
+          hardwareSigningService: signing,
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '25',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      const recipient = '0x52908400098527886e0f7030069857d2e4169ee7';
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        recipient,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('pay_confirm_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('swap_keystone_signing_overlay_surface'),
+          ),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/pay');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(PayScreen)),
+      );
+      final restored = container.read(swapStateProvider);
+      expect(restored.payMode, isTrue);
+      expect(restored.quoteMode, SwapQuoteMode.exactOutput);
+      expect(restored.receiveAmountText, isEmpty);
+      expect(restored.destinationText, isEmpty);
+      expect(restored.reviewQuote, isNull);
+      expect(restored.pendingKeystoneSigningIntent, isNull);
+      expect(
+        tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+        isEmpty,
+      );
+      final requests = provider.requests.length;
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '25',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        recipient,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(provider.requests, hasLength(requests + 1));
+      expect(provider.requests.last.mode, SwapQuoteMode.exactOutput);
+      expect(provider.requests.last.amount, 25);
+    },
+  );
+
   testWidgets('hardware ZEC auto signing cancel drops the pending intent', (
     tester,
   ) async {
@@ -8899,6 +8995,39 @@ void main() {
     expect(hardwareSigningService.discardedDrafts, [BigInt.one]);
     expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
     expect(find.text('Deposit ZEC'), findsNothing);
+    expect(
+      tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_amount_field')),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .controller
+          .text,
+      '',
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    final restored = container.read(swapStateProvider);
+    expect(restored.destinationText, isEmpty);
+    expect(restored.reviewQuote, isNull);
+    expect(restored.pendingKeystoneSigningIntent, isNull);
+    final requestsBeforeRetry = swapProvider.requests.length;
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.003',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    expect(swapProvider.requests, hasLength(requestsBeforeRetry + 1));
+    expect(container.read(swapStateProvider).reviewQuote, isNotNull);
   });
 
   testWidgets(
@@ -9145,7 +9274,7 @@ void main() {
           hardwareSigningService: hardwareSigningService,
           sessionStore: sessionStore,
           failoverChainNameGetter: (_) async => 'main',
-          failoverHeightGetter: (_) async => BigInt.from(100),
+          failoverHeightGetter: (_, _) async => BigInt.from(100),
         ),
       );
       await tester.pumpAndSettle();
@@ -9367,7 +9496,7 @@ Widget _routerHarness(
       SpendableBalanceFreshness.authoritative,
   Duration? statusPollInterval,
   Duration? priceRefreshInterval,
-  LoadShieldedAddress? loadShieldedAddress,
+  ReserveOrchardAddress? loadShieldedAddress,
   bool seedSwapActivityFixtures = true,
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
@@ -9411,20 +9540,13 @@ Widget _routerHarness(
       ),
       swapZecStagingAddressServiceProvider.overrideWith(
         (ref) => SwapZecStagingAddressService(
-          loadCurrentShieldedAddress:
-              loadShieldedAddress ??
-              ({required accountUuid}) {
-                return ref
-                    .read(receiveAddressServiceProvider)
-                    .loadShieldedAddress(accountUuid: accountUuid);
-              },
-          prepareFreshShieldedAddress:
+          reserveFreshOrchardAddress:
               loadShieldedAddress ??
               ({required accountUuid}) {
                 final receiveAddressService = ref.read(
                   receiveAddressServiceProvider,
                 );
-                return receiveAddressService.renewShieldedAddress(
+                return receiveAddressService.reserveOrchardAddress(
                   accountUuid: accountUuid,
                 );
               },
@@ -9462,7 +9584,7 @@ Widget _routerHarness(
         failoverChainNameGetter ?? (_) async => 'inert-no-failover',
       ),
       rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-        failoverHeightGetter ?? (_) async => BigInt.zero,
+        failoverHeightGetter ?? (_, _) async => BigInt.zero,
       ),
     ],
     child: MaterialApp.router(

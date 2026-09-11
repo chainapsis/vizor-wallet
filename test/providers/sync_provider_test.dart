@@ -148,6 +148,206 @@ void main() {
     expect(notifier.balanceReadCount, 1);
   });
 
+  test('proposal release rejects an unavailable balance instead of accepting '
+      'the locked snapshot', () async {
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_ExistingAccountNotifier.new),
+        syncProvider.overrideWith(
+          () => _BalanceRefreshTestSyncNotifier(() async => 'wallet.db'),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    await expectLater(
+      container
+          .read(syncProvider.notifier)
+          .refreshAfterProposalRelease(_accountUuid),
+      throwsStateError,
+    );
+  });
+
+  test(
+    'release for an inactive account never reads the active account balance',
+    () async {
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier = _BalanceRefreshTestSyncNotifier(
+              () async => 'wallet.db',
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      await notifier.refreshAfterProposalRelease(_otherAccountUuid);
+      expect(notifier.balanceReadCount, 0);
+    },
+  );
+
+  test(
+    'an ordinary queued refresh cannot hide an unavailable release balance',
+    () async {
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier = _BalanceRefreshTestSyncNotifier(
+              () async => 'wallet.db',
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      notifier.gateFirstBalanceRead();
+      final release = notifier.refreshAfterProposalRelease(_accountUuid);
+      final releaseExpectation = expectLater(release, throwsStateError);
+      await notifier.firstBalanceReadStarted;
+      final queued = notifier.refreshAfterUnlock();
+      final queuedExpectation = expectLater(queued, throwsStateError);
+      notifier.releaseFirstBalanceRead();
+      await Future.wait([releaseExpectation, queuedExpectation]);
+      expect(notifier.balanceReadCount, 2);
+    },
+  );
+
+  test(
+    'release queues a fresh balance read behind an older locked read',
+    () async {
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier = _BalanceRefreshTestSyncNotifier(
+              () async => 'wallet.db',
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      notifier.balance = _availableBalance(BigInt.zero);
+      notifier.gateFirstBalanceRead();
+      final stale = notifier.refreshAfterUnlock();
+      await notifier.firstBalanceReadStarted;
+      notifier.balance = _availableBalance(BigInt.from(160000));
+      final released = notifier.refreshAfterProposalRelease(_accountUuid);
+      notifier.releaseFirstBalanceRead();
+      await Future.wait([stale, released]);
+
+      expect(notifier.balanceReadCount, 2);
+      final state = container.read(syncProvider).requireValue;
+      expect(state.accountUuid, _accountUuid);
+      expect(state.spendableBalance, BigInt.from(160000));
+      expect(state.displaySpendableBalance, BigInt.from(160000));
+      expect(
+        state.displaySpendableFreshness,
+        SpendableBalanceFreshness.authoritative,
+      );
+    },
+  );
+
+  test(
+    'a successful ordinary trailing refresh releases the cancelled snapshot',
+    () async {
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier = _BalanceRefreshTestSyncNotifier(
+              () async => 'wallet.db',
+              initialState: SyncState(
+                accountUuid: _accountUuid,
+                hasAccountScopedData: true,
+                isSyncing: true,
+                spendableBalance: BigInt.zero,
+                displaySpendableBalance: BigInt.from(40),
+                displaySpendableFreshness:
+                    SpendableBalanceFreshness.lastCompletedSync,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      notifier.gateFirstBalanceRead();
+      final release = notifier.refreshAfterProposalRelease(_accountUuid);
+      await notifier.firstBalanceReadStarted;
+      // The release's first read was unavailable. A normal resume refresh
+      // queues behind it and obtains the authoritative post-unlock balance.
+      notifier.balance = _availableBalance(BigInt.from(160000));
+      final queued = notifier.refreshAfterUnlock();
+      notifier.releaseFirstBalanceRead();
+      await Future.wait([release, queued]);
+      expect(notifier.balanceReadCount, 2);
+      final state = container.read(syncProvider).requireValue;
+      expect(state.spendableBalance, BigInt.from(160000));
+      expect(state.displaySpendableBalance, BigInt.from(160000));
+      expect(
+        state.displaySpendableFreshness,
+        SpendableBalanceFreshness.authoritative,
+      );
+    },
+  );
+
+  test(
+    'an account switch during release refresh cannot publish the old balance',
+    () async {
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier = _BalanceRefreshTestSyncNotifier(
+              () async => 'wallet.db',
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      notifier.balance = _availableBalance(BigInt.from(160000));
+      notifier.gateFirstBalanceRead();
+      final released = notifier.refreshAfterProposalRelease(_accountUuid);
+      await notifier.firstBalanceReadStarted;
+      (container.read(accountProvider.notifier) as _ExistingAccountNotifier)
+          .activateForTest(_otherAccountUuid);
+      notifier.replaceState(
+        SyncState(
+          accountUuid: _otherAccountUuid,
+          spendableBalance: BigInt.from(90),
+        ),
+      );
+      notifier.releaseFirstBalanceRead();
+      await released;
+
+      final state = container.read(syncProvider).requireValue;
+      expect(state.accountUuid, _otherAccountUuid);
+      expect(state.spendableBalance, BigInt.from(90));
+    },
+  );
+
   test('in-flight progress exits quietly after notifier disposal', () async {
     final resolverStarted = Completer<void>();
     final dbPath = Completer<String>();
@@ -543,6 +743,9 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
   final List<rust_sync.TransactionInfo> history;
 
   var balanceReadCount = 0;
+  rust_sync.WalletBalance? balance;
+
+  void replaceState(SyncState next) => state = AsyncData(next);
 
   var _gateFirstBalanceRead = false;
   final _firstBalanceReadStarted = Completer<void>();
@@ -566,11 +769,12 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
     required String accountUuid,
   }) async {
     balanceReadCount++;
+    final result = balance ?? _unavailableBalance;
     if (_gateFirstBalanceRead && !_firstBalanceReadStarted.isCompleted) {
       _firstBalanceReadStarted.complete();
       await _firstBalanceReadReleased.future;
     }
-    return _unavailableBalance;
+    return result;
   }
 
   @override
@@ -622,12 +826,41 @@ const _accountUuid = 'account-1';
 const _otherAccountUuid = 'account-2';
 
 class _ExistingAccountNotifier extends AccountNotifier {
+  void activateForTest(String accountUuid) {
+    state = AsyncData(
+      state.requireValue.copyWith(activeAccountUuid: accountUuid),
+    );
+  }
+
   @override
   AccountState build() => const AccountState(
     accounts: [AccountInfo(uuid: _accountUuid, name: 'Account 1', order: 0)],
     activeAccountUuid: _accountUuid,
   );
 }
+
+rust_sync.WalletBalance _availableBalance(BigInt amount) =>
+    rust_sync.WalletBalance(
+      availability: rust_sync.WalletBalanceAvailability.available,
+      transparent: BigInt.zero,
+      sapling: BigInt.zero,
+      orchard: amount,
+      ironwood: BigInt.zero,
+      transparentLocked: BigInt.zero,
+      saplingLocked: BigInt.zero,
+      orchardLocked: BigInt.zero,
+      ironwoodLocked: BigInt.zero,
+      transparentPending: BigInt.zero,
+      saplingPending: BigInt.zero,
+      orchardPending: BigInt.zero,
+      ironwoodPending: BigInt.zero,
+      changePendingConfirmation: BigInt.zero,
+      valuePendingSpendability: BigInt.zero,
+      uneconomicValue: BigInt.zero,
+      spendable: amount,
+      locked: BigInt.zero,
+      total: amount,
+    );
 
 final _unavailableBalance = rust_sync.WalletBalance(
   availability: rust_sync.WalletBalanceAvailability.summaryUnavailable,

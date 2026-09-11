@@ -673,6 +673,34 @@ class ApiPirCacheWarmupResult {
           prunedCount == other.prunedCount;
 }
 
+/// Supplies the disposable local chain anchor for regtest integration tests.
+/// This does not change mainnet/testnet trust or verification rules.
+Future<void> configureRegtestVotingParticipation({
+  required String chainId,
+  required String validatorHash,
+}) => RustLib.instance.api.crateApiVotingConfigureRegtestVotingParticipation(
+  chainId: chainId,
+  validatorHash: validatorHash,
+);
+
+/// UFVK-only preparation for read-only participation discovery (also Keystone).
+Future<String> prepareVotingParticipation({
+  required ApiVotingRoundContext ctx,
+}) => RustLib.instance.api.crateApiVotingPrepareVotingParticipation(ctx: ctx);
+
+/// Verify consensus/storage evidence and evaluate the remaining snapshot notes.
+Future<String> evaluateVotingParticipation({
+  required ApiVotingRoundContext ctx,
+  required String fingerprint,
+  required String evidence,
+  required PlatformInt64 nowSeconds,
+}) => RustLib.instance.api.crateApiVotingEvaluateVotingParticipation(
+  ctx: ctx,
+  fingerprint: fingerprint,
+  evidence: evidence,
+  nowSeconds: nowSeconds,
+);
+
 /// Selected PIR endpoint plus a diagnostic for every endpoint probed.
 ///
 /// The full diagnostic set is part of the result, not debug output: the

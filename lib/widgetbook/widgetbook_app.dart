@@ -19,7 +19,12 @@ import 'icon_use_cases.dart';
 import 'keystone_use_cases.dart';
 import 'mobile_pay_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
+import 'payment_request_use_cases.dart';
+import 'request_amount_use_cases.dart';
 import 'pay_use_cases.dart';
+import 'payment_link_mobile_use_cases.dart';
+import 'payment_link_claim_outcome_use_cases.dart';
+import 'payment_link_use_cases.dart';
 import 'receive_use_cases.dart';
 import 'received_receipt_use_cases.dart';
 import 'review_components_use_cases.dart';
@@ -141,6 +146,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileUnlockBiometricBackdropUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Touch ID',
+                      builder: buildMobileUnlockTouchIdUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Fingerprint',
                       builder: buildMobileUnlockFingerprintUseCase,
                     ),
@@ -227,6 +236,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileFaceIdOptInUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Touch ID opt-in',
+                      builder: buildMobileTouchIdOptInUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Fingerprint opt-in',
                       builder: buildMobileFingerprintOptInUseCase,
                     ),
@@ -311,6 +324,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileHomeDefaultUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Gift Cards',
+                      builder: buildMobileHomeGiftCardsUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'No activity',
                       builder: buildMobileHomeNoActivityUseCase,
                     ),
@@ -329,6 +346,15 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Accounts modal',
                       builder: buildMobileHomeAccountsModalUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Gift Cards',
+                      builder: buildDesktopHomeGiftCardsUseCase,
                     ),
                   ],
                 ),
@@ -769,6 +795,46 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Transparent modal',
                       builder: buildReceiveDesktopTransparentModalUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Entry - Request ZEC button',
+                      builder: buildReceiveDesktopRequestEntryUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - empty',
+                      builder: buildRequestModalStepOneEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - amount',
+                      builder: buildRequestModalStepOneAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - price unavailable',
+                      builder: buildRequestModalStepOnePriceUnavailableUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - amount + message',
+                      builder: buildRequestModalStepOneMessageUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - transparent',
+                      builder: buildRequestModalStepOneTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 1 - amount error',
+                      builder: buildRequestModalStepOneAmountErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 2 - shielded',
+                      builder: buildRequestModalStepTwoShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 2 - transparent',
+                      builder: buildRequestModalStepTwoTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request modal - step 2 - 512-byte message',
+                      builder: buildRequestModalStepTwoDenseUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
@@ -789,6 +855,38 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Transparent sheet',
                       builder: buildReceiveMobileTransparentSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Entry - Request ZEC button',
+                      builder: buildRequestMobileEntryUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - empty',
+                      builder: buildRequestMobileComposeEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - amount (USD mode)',
+                      builder: buildRequestMobileComposeUsdUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - price unavailable',
+                      builder: buildRequestMobileComposePriceUnavailableUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - message added',
+                      builder: buildRequestMobileComposeMessageUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 1 - amount error',
+                      builder: buildRequestMobileComposeAmountErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 2 - shielded QR',
+                      builder: buildRequestMobileResultShieldedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Request step 2 - transparent QR',
+                      builder: buildRequestMobileResultTransparentUseCase,
                     ),
                   ],
                 ),
@@ -894,6 +992,331 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Submitted',
                       builder: buildMobilePaySubmittedUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
+              name: 'Gift Cards',
+              children: [
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Activity - Creating',
+                      builder: buildGiftCardCreatingActivityPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Created',
+                      builder: buildGiftCardCreatedActivityPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim transitions',
+                      builder: buildGiftCardClaimTransitionPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim broadcast',
+                      builder: buildGiftCardClaimBroadcastPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim 1 confirmation',
+                      builder: buildGiftCardClaimOneConfirmationPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim 5 confirmations',
+                      builder: buildGiftCardClaimFiveConfirmationsPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Activity - Claim complete',
+                      builder: buildGiftCardClaimCompletePreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Claim transitions',
+                      builder: buildGiftCardClaimDetailTransitionPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Creating',
+                      builder: buildGiftCardCreatingDetailPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Created',
+                      builder: buildGiftCardCreatedDetailPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Redeeming',
+                      builder: buildGiftCardRedeemingDetailPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Detail - Redeemed',
+                      builder: buildGiftCardRedeemedDetailPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Empty',
+                      builder: buildMobilePaymentLinkHomeEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Cards',
+                      builder: buildMobilePaymentLinkHomeCardsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount - Empty',
+                      builder: buildMobilePaymentLinkAmountEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount - Filled',
+                      builder: buildMobilePaymentLinkAmountFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount - Focused',
+                      builder: buildMobilePaymentLinkAmountFocusedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message - Empty',
+                      builder: buildMobilePaymentLinkMessageEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message - Filled',
+                      builder: buildMobilePaymentLinkMessageFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message - Focused',
+                      builder: buildMobilePaymentLinkMessageFocusedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review',
+                      builder: buildMobilePaymentLinkReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Ready - Celebrating',
+                      builder: buildMobilePaymentLinkReadyCelebratingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Ready - Shareable',
+                      builder: buildMobilePaymentLinkReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Share Gift Card',
+                      builder: buildMobilePaymentLinkShareQrUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Paste link',
+                      builder: buildMobilePaymentLinkRedeemPasteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Scan QR',
+                      builder: buildMobilePaymentLinkScanUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Wrong QR',
+                      builder: buildMobilePaymentLinkScanInvalidUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Camera denied',
+                      builder: buildMobilePaymentLinkScanDeniedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Long sync warning',
+                      builder:
+                          buildMobilePaymentLinkRedeemLongSyncWarningUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Checking',
+                      builder: buildMobilePaymentLinkRedeemLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeem - Invalid link',
+                      builder: buildMobilePaymentLinkRedeemInvalidUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received gift',
+                      builder: buildMobilePaymentLinkReceivedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Claim - Choose account',
+                      builder: buildMobilePaymentLinkClaimAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Claim - Many accounts',
+                      builder: buildMobilePaymentLinkClaimManyAccountsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received - Waiting for confirmations',
+                      builder: buildMobilePaymentLinkReceivedWaitingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Interactive simulator',
+                      builder: buildMobilePaymentLinkInteractiveUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Home',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Empty',
+                      builder: buildPaymentLinkEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'How it works',
+                      builder: buildPaymentLinkHelpUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Created list',
+                      builder: buildPaymentLinkCardsListUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Share QR code',
+                      builder: buildPaymentLinkShareQrUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received list — claim pending',
+                      builder: buildPaymentLinkCardsReceivingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received list — mined',
+                      builder: buildPaymentLinkCardsReceivedUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Create amount',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Empty',
+                      builder: buildPaymentLinkCreateEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Focused',
+                      builder: buildPaymentLinkCreateFocusedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'ZEC amount',
+                      builder: buildPaymentLinkCreateAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Waiting for sync',
+                      builder: buildPaymentLinkCreateSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Insufficient balance',
+                      builder: buildPaymentLinkCreateInsufficientUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fiat loading',
+                      builder: buildPaymentLinkCreateFiatLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Fiat resolved',
+                      builder: buildPaymentLinkCreateFiatUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Interactive simulator',
+                      builder: buildPaymentLinkInteractiveUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Create message and review',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Message empty',
+                      builder: buildPaymentLinkMessageEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message filled',
+                      builder: buildPaymentLinkMessageFilledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message interactive',
+                      builder: buildPaymentLinkMessageInteractiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message editor focused',
+                      builder: buildPaymentLinkMessageEditingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Message too large',
+                      builder: buildPaymentLinkMessageTooLargeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review',
+                      builder: buildPaymentLinkReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review message side',
+                      builder: buildPaymentLinkReviewMessageUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Ready and received',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Waiting for confirmations',
+                      builder: buildPaymentLinkReadyWaitingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Ready',
+                      builder: buildPaymentLinkReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received - Waiting for confirmations',
+                      builder: buildPaymentLinkReceivedWaitingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received gift',
+                      builder: buildPaymentLinkReceivedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Received gift with message',
+                      builder: buildPaymentLinkReceivedMessageUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Motion',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Interactive handoff',
+                      builder: buildPaymentLinkMotionHandoffUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Redeem',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Already claimed',
+                      builder: buildClaimedElsewhereUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Claim failed',
+                      builder: buildClaimFailedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Checking result',
+                      builder: buildClaimCheckingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Paste link',
+                      builder: buildPaymentLinkRedeemPasteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long sync warning',
+                      builder: buildPaymentLinkRedeemLongSyncWarningUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Loading',
+                      builder: buildPaymentLinkRedeemLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Invalid link',
+                      builder: buildPaymentLinkRedeemInvalidUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No available balance',
+                      builder: buildClaimNoBalanceUseCase,
                     ),
                   ],
                 ),
@@ -1148,6 +1571,14 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Contact',
                       builder: buildSendReviewContactUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Payment request, contact',
+                      builder: buildSendReviewPaymentRequestContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Payment request, address',
+                      builder: buildSendReviewPaymentRequestAddressUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
@@ -1181,6 +1612,182 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Known contact',
                       builder: buildVerifyAddressKnownContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'O / 0 showcase',
+                      builder: buildVerifyAddressActionFooterUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile O / 0 showcase',
+                      builder: buildMobileVerifyAddressActionFooterUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Payment request card',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Full',
+                      builder: buildPaymentRequestFullUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Minimal',
+                      builder: buildPaymentRequestMinimalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long values',
+                      builder: buildPaymentRequestLongValuesUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long values - message expanded',
+                      builder: buildPaymentRequestLongValuesExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Address expanded',
+                      builder: buildPaymentRequestAddressExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Checking',
+                      builder: buildPaymentRequestCheckingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - address',
+                      builder: buildPaymentRequestInvalidAddressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - not enough ZEC',
+                      builder: buildPaymentRequestInsufficientUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - syncing',
+                      builder: buildPaymentRequestSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - syncing stalled',
+                      builder: buildPaymentRequestSyncStalledUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - check failed',
+                      builder: buildPaymentRequestFailedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Replaced notice',
+                      builder: buildPaymentRequestReplacedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent recipient',
+                      builder: buildPaymentRequestTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Saved contact recipient',
+                      builder: buildPaymentRequestContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account recipient',
+                      builder: buildPaymentRequestOwnAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account, address expanded',
+                      builder: buildPaymentRequestOwnAccountExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Note without message',
+                      builder: buildPaymentRequestNoteOnlyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No amount',
+                      builder: buildPaymentRequestNoAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Text scale 1.5x',
+                      builder: buildPaymentRequestLargeTextUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'RTL mirror',
+                      builder: buildPaymentRequestRtlUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile payment request card',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Full',
+                      builder: buildMobilePaymentRequestFullUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Minimal',
+                      builder: buildMobilePaymentRequestMinimalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long values',
+                      builder: buildMobilePaymentRequestLongValuesUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long values - message expanded',
+                      builder:
+                          buildMobilePaymentRequestLongValuesExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Address expanded',
+                      builder: buildMobilePaymentRequestAddressExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Checking',
+                      builder: buildMobilePaymentRequestCheckingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - address',
+                      builder: buildMobilePaymentRequestInvalidAddressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - not enough ZEC',
+                      builder: buildMobilePaymentRequestInsufficientUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - syncing',
+                      builder: buildMobilePaymentRequestSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Error - check failed',
+                      builder: buildMobilePaymentRequestFailedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Replaced notice',
+                      builder: buildMobilePaymentRequestReplacedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Transparent recipient',
+                      builder: buildMobilePaymentRequestTransparentUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Saved contact recipient',
+                      builder: buildMobilePaymentRequestContactUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account recipient',
+                      builder: buildMobilePaymentRequestOwnAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Own account, address expanded',
+                      builder:
+                          buildMobilePaymentRequestOwnAccountExpandedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Note without message',
+                      builder: buildMobilePaymentRequestNoteOnlyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No amount',
+                      builder: buildMobilePaymentRequestNoAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Text scale 1.5x',
+                      builder: buildMobilePaymentRequestLargeTextUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'RTL mirror',
+                      builder: buildMobilePaymentRequestRtlUseCase,
                     ),
                   ],
                 ),
@@ -1366,6 +1973,19 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'In progress',
                       builder: buildReceivedReceiptInProgressUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Gift Card detail',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Created',
+                      builder: buildCreatedGiftCardActivityDetailUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Redeemed',
+                      builder: buildRedeemedGiftCardActivityDetailUseCase,
                     ),
                   ],
                 ),

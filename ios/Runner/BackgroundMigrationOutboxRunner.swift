@@ -31,7 +31,6 @@ struct BackgroundMigrationOutboxRunnerDependencies {
 }
 
 enum BackgroundMigrationOutboxRunner {
-  private static let runLock = NSLock()
 
   static func runOnce(
     store: BackgroundMigrationOutboxStore = .shared,
@@ -40,13 +39,14 @@ enum BackgroundMigrationOutboxRunner {
     requiresPreparationProofVerification: Bool = false,
     dependencies: BackgroundMigrationOutboxRunnerDependencies = .live
   ) -> BackgroundMigrationOutboxRunResult {
-    guard runLock.try() else {
+    let gate = BackgroundMigrationOutboxExecutionGate.shared
+    guard gate.tryBeginRun() else {
       return BackgroundMigrationOutboxRunResult(
         transport: .temporarilyUnavailable,
         proofReady: nil
       )
     }
-    defer { runLock.unlock() }
+    defer { gate.finishRun() }
 
     if cancellation.isCancelled {
       return BackgroundMigrationOutboxRunResult(

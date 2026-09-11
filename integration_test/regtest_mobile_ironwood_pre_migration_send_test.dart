@@ -111,6 +111,7 @@ void main() {
 
       final validation = await rust_sync.validateAddress(
         address: _recipientAddress,
+        network: mobileE2eNetwork,
       );
       expect(validation.isValid, isTrue);
       expect(_recipientAddress, startsWith('uregtest1'));

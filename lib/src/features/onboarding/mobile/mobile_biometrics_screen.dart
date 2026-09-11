@@ -1,8 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart' show Icon, Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/biometric_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
@@ -55,22 +52,13 @@ class _MobileBiometricsScreenState
     context.go('/home');
   }
 
-  static String _methodLabel(BiometricKind kind) {
-    return kind.inlineLabel;
-  }
-
-  static BiometricKind _fallbackKind() {
-    if (kIsWeb) return BiometricKind.none;
-    return Platform.isIOS ? BiometricKind.face : BiometricKind.fingerprint;
-  }
-
   Future<void> _enable() async {
     if (_enabling) return;
     setState(() => _enabling = true);
-    var method = _methodLabel(_fallbackKind());
+    var method = BiometricKind.none.inlineLabel;
     try {
       final state = await ref.read(biometricUnlockProvider.future);
-      method = _methodLabel(state.availability.kind);
+      method = state.availability.kind.inlineLabel;
       if (!state.availability.usable) {
         if (!mounted) return;
         setState(() => _enabling = false);
@@ -98,7 +86,7 @@ class _MobileBiometricsScreenState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final biometric = ref.watch(biometricUnlockProvider).value;
-    final kind = biometric?.availability.kind ?? _fallbackKind();
+    final kind = biometric?.availability.kind ?? BiometricKind.none;
 
     return MobileOnboardingStepScaffold(
       progress: 1,
@@ -116,10 +104,10 @@ class _MobileBiometricsScreenState
           AppButton(
             key: const ValueKey('mobile_biometrics_enable'),
             expand: true,
-            onPressed: _enabling ? null : () => unawaited(_enable()),
-            leading: kind == BiometricKind.face
-                ? const AppIcon(AppIcons.faceId)
-                : const Icon(Icons.fingerprint),
+            onPressed: _enabling || biometric == null
+                ? null
+                : () => unawaited(_enable()),
+            leading: BiometricIcon(kind: kind),
             child: Text(kind.enableLabel),
           ),
           const SizedBox(height: AppSpacing.s),
@@ -151,10 +139,15 @@ class _BiometricHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final assetName = kind == BiometricKind.fingerprint
+    if (kind == BiometricKind.none) {
+      return const SizedBox(height: _frameHeight);
+    }
+    final isFingerprint =
+        kind == BiometricKind.fingerprint || kind == BiometricKind.touchId;
+    final assetName = isFingerprint
         ? 'assets/illustrations/biometrics_fingerprint_knight.png'
         : 'assets/illustrations/biometrics_faceid_knight.png';
-    final imageHeight = kind == BiometricKind.fingerprint ? 262.0 : 300.0;
+    final imageHeight = isFingerprint ? 262.0 : 300.0;
     return SizedBox(
       height: _frameHeight,
       child: Center(

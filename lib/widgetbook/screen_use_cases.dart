@@ -5,14 +5,20 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/material.dart' show ThemeMode, MaterialApp, Material;
 import 'package:flutter/widgets.dart';
+import '../src/providers/voting/voting_home_entry_provider.dart';
+import '../src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:go_router/go_router.dart';
 
 import '../src/app_bootstrap.dart';
+import '../src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
+import '../src/features/address_book/providers/address_book_provider.dart';
+import '../src/features/send/widgets/send_recipient_resolver.dart';
+import '../src/features/payment_links/services/payment_link_received_store.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/config/swap_feature_config.dart';
 import '../src/core/layout/app_layout.dart';
@@ -23,11 +29,13 @@ import '../src/core/privacy/sensitive_privacy_overlay.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/app_button.dart';
 import '../src/features/accounts/screens/accounts_screen.dart';
 import '../src/features/about/screens/about_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
+import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
@@ -296,6 +304,19 @@ Widget buildMobileUnlockFingerprintUseCase(BuildContext context) {
         supported: true,
         enrolled: true,
         kind: BiometricKind.fingerprint,
+      ),
+      enabled: true,
+    ),
+  );
+}
+
+Widget buildMobileUnlockTouchIdUseCase(BuildContext context) {
+  return _buildMobileUnlockUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.touchId,
       ),
       enabled: true,
     ),
@@ -598,6 +619,19 @@ Widget buildMobileFingerprintOptInUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileTouchIdOptInUseCase(BuildContext context) {
+  return _buildMobileBiometricOptInUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.touchId,
+      ),
+      enabled: false,
+    ),
+  );
+}
+
 Widget buildMobileForgotPasscodeSheetUseCase(BuildContext context) {
   return _buildMobileUnlockModalUseCase(context, const ForgotPasscodeSheet());
 }
@@ -662,10 +696,50 @@ Widget buildSettingsMainUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(const NetworkPrivacyState.off());
 }
 
+/// Real mobile settings pinned to the top of the Account group.
+Widget buildMobileSettingsMainUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+      ),
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
+      ),
+    ],
+    child: const _MobilePreviewFrame(
+      constrainToDesignSize: false,
+      child: IgnorePointer(child: _MobileSettingsMainPreview()),
+    ),
+  );
+}
+
+class _MobileSettingsMainPreview extends StatelessWidget {
+  const _MobileSettingsMainPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppMobileShell(
+      body: const MobileSettingsScreen(),
+      tabBar: AppMobileTabBar(
+        items: _mobileHomeTabItems,
+        currentIndex: 3,
+        onSelect: (_) {},
+      ),
+    );
+  }
+}
+
 Widget buildSettingsSupportVizorUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(
     const NetworkPrivacyState.off(),
-    initialScrollOffset: 560,
+    initialScrollOffset: 820,
   );
 }
 
@@ -1155,9 +1229,13 @@ Widget buildMobileAccountsManyUseCase(BuildContext context) {
   return _buildMobileAccountsUseCase(_accountsManyState);
 }
 
-Widget buildMobileHomeDefaultUseCase(BuildContext context) {
+Widget buildMobileHomeDefaultUseCase(
+  BuildContext context, {
+  bool votingVisible = true,
+}) {
   return _buildMobileHomeUseCase(
     accountState: _accountsDesignState,
+    votingVisible: votingVisible,
     syncState: _homeSyncedState(
       orchardBalance: BigInt.from(14312000000),
       recentTransactions: [_homeTx(1), _homeTx(2)],
@@ -1165,8 +1243,30 @@ Widget buildMobileHomeDefaultUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileHomeGiftCardsUseCase(BuildContext context) {
+  final transactions = _previewGiftCardActivityTransactions();
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14312000000),
+      recentTransactions: transactions,
+    ),
+    giftCardActivityIndex: _previewGiftCardActivityIndex(),
+  );
+}
+
 Widget buildMobileActivityDefaultUseCase(BuildContext context) {
   final accountUuid = _accountsDesignState.activeAccountUuid;
+  final redeemedGiftCard = _giftCardActivityTx(
+    txidHex: 'preview-gift-card-redeemed',
+    kind: 'received',
+    seconds: 1800000011,
+  );
+  final createdGiftCard = _giftCardActivityTx(
+    txidHex: 'preview-gift-card-created',
+    kind: 'sent',
+    seconds: 1800000010,
+  );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -1180,20 +1280,66 @@ Widget buildMobileActivityDefaultUseCase(BuildContext context) {
           accountUuid,
           initialState: _homeSyncedState(
             orchardBalance: BigInt.from(14312000000),
-            recentTransactions: [_homeTx(1), _homeTx(2)],
+            recentTransactions: [redeemedGiftCard, createdGiftCard],
           ),
         ),
       ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => _previewGiftCardActivityIndex(),
+      ),
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
     ],
     child: _MobilePreviewFrame(
       child: MobileActivityScreen(
-        historyLoader: (_) async => [_homeTx(1), _homeTx(2), _homeTx(3)],
+        historyLoader: (_) async => [
+          redeemedGiftCard,
+          createdGiftCard,
+          _homeTx(3),
+        ],
       ),
     ),
+  );
+}
+
+List<rust_sync.TransactionInfo> _previewGiftCardActivityTransactions() {
+  return [
+    _giftCardActivityTx(
+      txidHex: 'preview-gift-card-redeemed',
+      kind: 'received',
+      seconds: 1800000011,
+    ),
+    _giftCardActivityTx(
+      txidHex: 'preview-gift-card-created',
+      kind: 'sent',
+      seconds: 1800000010,
+    ),
+  ];
+}
+
+GiftCardActivityIndex _previewGiftCardActivityIndex() {
+  return GiftCardActivityIndex(
+    createdTxids: const {'preview-gift-card-created'},
+    redeemedTxids: const {'preview-gift-card-redeemed'},
+    createdMetadataByTxid: {
+      'preview-gift-card-created': GiftCardActivityMetadata(
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        kind: GiftCardActivityKind.created,
+        amountZatoshi: BigInt.from(100000000),
+        artworkId: 'ruby',
+        message: 'Happy birthday!',
+      ),
+    },
+    redeemedMetadataByTxid: {
+      'preview-gift-card-redeemed': GiftCardActivityMetadata(
+        kind: GiftCardActivityKind.redeemed,
+        amountZatoshi: BigInt.from(100000000),
+        artworkId: 'crystal',
+        message: null,
+      ),
+    },
   );
 }
 
@@ -1321,6 +1467,18 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
       status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
     ),
     zecUsdPrice: 1200.12 / 143.23,
+  );
+}
+
+Widget buildDesktopHomeGiftCardsUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_323_000_000),
+      recentTransactions: _previewGiftCardActivityTransactions(),
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    giftCardActivityIndex: _previewGiftCardActivityIndex(),
   );
 }
 
@@ -2149,7 +2307,11 @@ Widget _buildUtilityUseCase(String initialLocation, AccountState accountState) {
   );
 }
 
+Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
+    buildMobileHomeDefaultUseCase(context, votingVisible: false);
+
 Widget _buildMobileHomeUseCase({
+  bool votingVisible = true,
   required AccountState accountState,
   required SyncState syncState,
   bool openAccountsSheet = false,
@@ -2164,6 +2326,7 @@ Widget _buildMobileHomeUseCase({
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
   bool constrainToPreviewFrame = true,
+  GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
 }) {
   final harness = _MobileHomeHarness(
@@ -2172,6 +2335,8 @@ Widget _buildMobileHomeUseCase({
   );
   return ProviderScope(
     overrides: [
+      votingHomeEntryVisibleProvider.overrideWithValue(votingVisible),
+      votingHomeRefreshActionProvider.overrideWithValue(() async {}),
       if (networkPrivacyState != null)
         networkPrivacyProvider.overrideWith(
           () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
@@ -2197,6 +2362,9 @@ Widget _buildMobileHomeUseCase({
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => giftCardActivityIndex,
+      ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
@@ -2219,6 +2387,7 @@ Widget _buildDesktopHomeUseCase({
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
   double zecUsdPrice = 1.20012,
+  GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
 }) {
   return ProviderScope(
@@ -2247,6 +2416,9 @@ Widget _buildDesktopHomeUseCase({
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => giftCardActivityIndex,
+      ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
@@ -3914,6 +4086,27 @@ rust_sync.TransactionInfo _homeTx(int index) {
   );
 }
 
+rust_sync.TransactionInfo _giftCardActivityTx({
+  required String txidHex,
+  required String kind,
+  required int seconds,
+}) {
+  final timestamp = BigInt.from(seconds);
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000),
+    expiredUnmined: false,
+    accountBalanceDelta: 0,
+    fee: BigInt.zero,
+    blockTime: timestamp,
+    isTransparent: false,
+    txKind: kind,
+    displayAmount: BigInt.from(3_110_000_000),
+    displayPool: 'shielded',
+    createdTime: timestamp,
+  );
+}
+
 rust_sync.MigrationStatus _previewMigrationStatus(
   String phase, {
   String? activeRunId,
@@ -4906,7 +5099,319 @@ class _PreviewReceiveAddressService implements ReceiveAddressService {
   }
 
   @override
+  Future<String> reserveOrchardAddress({required String accountUuid}) async {
+    return 'u1widgetbookaccountsreservedaddress';
+  }
+
+  @override
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     return 'u1widgetbookaccountsrenewedaddress';
+  }
+}
+
+Widget buildGiftCardClaimTransitionPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(confirmations: 0, interactive: true);
+
+Widget buildGiftCardClaimDetailTransitionPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(
+      confirmations: 0,
+      interactive: true,
+      detail: true,
+    );
+
+Widget buildGiftCardCreatingActivityPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(creating: true, confirmations: 0);
+Widget buildGiftCardCreatedActivityPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(creating: true, confirmations: 1);
+Widget buildGiftCardClaimBroadcastPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(confirmations: 0);
+Widget buildGiftCardClaimOneConfirmationPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(confirmations: 1);
+Widget buildGiftCardClaimFiveConfirmationsPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(confirmations: 5);
+Widget buildGiftCardClaimCompletePreview(BuildContext context) =>
+    const _GiftCardProgressPreview(confirmations: 6);
+Widget buildGiftCardCreatingDetailPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(
+      creating: true,
+      confirmations: 0,
+      detail: true,
+    );
+Widget buildGiftCardCreatedDetailPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(
+      creating: true,
+      confirmations: 1,
+      detail: true,
+    );
+Widget buildGiftCardRedeemingDetailPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(confirmations: 0, detail: true);
+Widget buildGiftCardRedeemedDetailPreview(BuildContext context) =>
+    const _GiftCardProgressPreview(confirmations: 1, detail: true);
+
+/// Uses the production Activity and receipt screens with an isolated wallet.
+/// A broadcast-only claim intentionally has no wallet transaction to render.
+class _GiftCardProgressPreview extends StatefulWidget {
+  const _GiftCardProgressPreview({
+    this.creating = false,
+    required this.confirmations,
+    this.detail = false,
+    this.interactive = false,
+  });
+  final bool interactive;
+  final bool creating;
+  final int confirmations;
+  final bool detail;
+
+  @override
+  State<_GiftCardProgressPreview> createState() =>
+      _GiftCardProgressPreviewState();
+}
+
+class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
+  late final GoRouter _router;
+  late rust_sync.TransactionInfo _transaction;
+  late List<rust_sync.TransactionInfo> _history;
+  late GiftCardActivityIndex _index;
+  late GiftCardActivityMetadata _metadata;
+  final _timestamp = DateTime.now().toUtc();
+  late int _stage;
+
+  static const _stages = [
+    'Broadcast',
+    'Detected',
+    '1 conf',
+    '5 conf',
+    '6 conf',
+  ];
+
+  void _updateFixture() {
+    final txid = widget.creating
+        ? List.filled(32, '12').join()
+        : List.generate(
+            32,
+            (index) => (31 - index).toRadixString(16).padLeft(2, '0'),
+          ).join();
+    final amount = BigInt.from(445000000);
+    final mined = _stage >= 2;
+    final seconds = BigInt.from(_timestamp.millisecondsSinceEpoch ~/ 1000);
+    _transaction = rust_sync.TransactionInfo(
+      txidHex: txid,
+      minedHeight: mined ? BigInt.from(100) : BigInt.zero,
+      expiredUnmined: false,
+      accountBalanceDelta: widget.creating ? -445010000 : 445000000,
+      fee: widget.creating || _stage == 4 ? BigInt.from(10000) : BigInt.zero,
+      blockTime: mined ? seconds + BigInt.from(75) : BigInt.zero,
+      isTransparent: false,
+      txKind: widget.creating
+          ? 'sent'
+          : mined
+          ? 'received'
+          : 'receiving',
+      displayAmount: amount,
+      displayPool: 'ironwood',
+      // Incoming mempool observations do not know the sender's creation time.
+      createdTime: widget.creating ? seconds : BigInt.zero,
+    );
+    _history = [
+      if (widget.creating || _stage > 0) _transaction,
+      if (widget.interactive)
+        rust_sync.TransactionInfo(
+          txidHex: List.filled(32, '56').join(),
+          minedHeight: BigInt.from(90),
+          expiredUnmined: false,
+          accountBalanceDelta: 100000000,
+          fee: BigInt.zero,
+          blockTime: seconds - BigInt.from(30),
+          isTransparent: false,
+          txKind: 'received',
+          displayAmount: BigInt.from(100000000),
+          displayPool: 'ironwood',
+          createdTime: BigInt.zero,
+        ),
+    ];
+    if (widget.creating) {
+      _metadata = GiftCardActivityMetadata(
+        kind: GiftCardActivityKind.created,
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        amountZatoshi: amount,
+        artworkId: 'ruby',
+        message: 'A little something for you.',
+        fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 142.23),
+      );
+      _index = GiftCardActivityIndex(
+        createdTxids: {txid},
+        createdMetadataByTxid: {txid: _metadata},
+      );
+    } else {
+      _index = GiftCardActivityIndex.forAccount(
+        accountUuid: _accountsDesignState.activeAccountUuid!,
+        createdRecords: const [],
+        receivedRecords: [
+          PaymentLinkReceivedRecord(
+            network: 'main',
+            address: 'preview-gift-card',
+            amountZatoshi: amount,
+            createdAt: _timestamp.subtract(const Duration(days: 1)),
+            artworkId: 'ruby',
+            message: 'A little something for you.',
+            fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 142.23),
+            status: mined
+                ? PaymentLinkReceivedStatus.received
+                : PaymentLinkReceivedStatus.receiving,
+            claimLink: null,
+            destinationAccountUuid: _accountsDesignState.activeAccountUuid,
+            claimTxids: txid,
+            claimSubmittedAt: _timestamp,
+            claimDestinationPool: 'ironwood',
+            updatedAt: _timestamp.add(Duration(seconds: _stage * 75)),
+          ),
+        ],
+      );
+      _metadata = _index.metadataFor(_transaction)!;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _stage = widget.confirmations == 0
+        ? 0
+        : widget.confirmations == 1
+        ? 2
+        : widget.confirmations == 5
+        ? 3
+        : 4;
+    _updateFixture();
+    final initialTransaction = _index
+        .withPendingClaims(_history)
+        .firstWhere((transaction) => _index.kindFor(transaction) != null);
+    final txid = initialTransaction.txidHex;
+    _router = GoRouter(
+      initialLocation: widget.detail ? '/activity/tx/$txid' : '/activity',
+      routes: [
+        GoRoute(
+          path: '/activity',
+          builder: (_, _) =>
+              MobileActivityScreen(historyLoader: (_) async => _history),
+        ),
+        GoRoute(
+          path: '/activity/tx/:txid',
+          builder: (_, state) {
+            final args = state.extra as MobileTransactionStatusArgs?;
+            return MobileTransactionStatusScreen(
+              args:
+                  args ??
+                  MobileTransactionStatusArgs(
+                    txidHex: txid,
+                    txKind: initialTransaction.txKind,
+                    initialTransaction: initialTransaction,
+                    giftCard: _metadata,
+                  ),
+              historyLoader: (_) async => _history,
+              detailLoader: (_, _) async => null,
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accountUuid = _accountsDesignState.activeAccountUuid;
+    return ProviderScope(
+      overrides: [
+        swapFeatureEnabledProvider.overrideWithValue(true),
+        appBootstrapProvider.overrideWithValue(
+          _homeBootstrap(_accountsDesignState),
+        ),
+        accountProvider.overrideWith(
+          () => _PreviewAccountNotifier(_accountsDesignState),
+        ),
+        syncProvider.overrideWith(
+          () => _GiftCardPreviewSyncNotifier(
+            accountUuid,
+            initialState: _homeSyncedState(
+              orchardBalance: BigInt.from(1000000000),
+              recentTransactions: _history,
+            ),
+          ),
+        ),
+        privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+        giftCardActivityIndexProvider.overrideWith((ref, _) async => _index),
+        swapActivityRowItemsProvider.overrideWith((ref, _) async => const []),
+        addressBookProvider.overrideWith(_GiftCardPreviewAddressBook.new),
+        ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+      ],
+      child: MaterialApp.router(
+        routerConfig: _router,
+        debugShowCheckedModeBanner: false,
+        builder: (context, child) => _MobilePreviewFrame(
+          child: Material(
+            color: context.colors.background.window,
+            child: Consumer(
+              builder: (context, ref, _) => Column(
+                children: [
+                  if (widget.interactive)
+                    Padding(
+                      padding: const EdgeInsets.all(AppSpacing.s),
+                      child: Wrap(
+                        spacing: AppSpacing.xxs,
+                        runSpacing: AppSpacing.xxs,
+                        children: [
+                          for (var stage = 0; stage < _stages.length; stage++)
+                            AppButton(
+                              key: ValueKey('gift_card_stage_$stage'),
+                              size: AppButtonSize.small,
+                              variant: stage == _stage
+                                  ? AppButtonVariant.primary
+                                  : AppButtonVariant.secondary,
+                              onPressed: () {
+                                setState(() {
+                                  _stage = stage;
+                                  _updateFixture();
+                                });
+                                ref.invalidate(
+                                  giftCardActivityIndexProvider(accountUuid!),
+                                );
+                                (ref.read(syncProvider.notifier)
+                                        as _GiftCardPreviewSyncNotifier)
+                                    .updateHistory(_history);
+                              },
+                              child: Text(_stages[stage]),
+                            ),
+                        ],
+                      ),
+                    ),
+                  Expanded(child: child!),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GiftCardPreviewAddressBook extends AddressBookNotifier {
+  @override
+  AddressBookState build() => const AddressBookState();
+}
+
+class _GiftCardPreviewSyncNotifier extends _PreviewSyncNotifier {
+  _GiftCardPreviewSyncNotifier(super.accountUuid, {super.initialState});
+
+  void updateHistory(List<rust_sync.TransactionInfo> transactions) {
+    final current = state.value;
+    if (current != null) {
+      state = AsyncData(current.copyWith(recentTransactions: transactions));
+    }
   }
 }

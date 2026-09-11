@@ -27,6 +27,7 @@ ACTIVATION_HEIGHT=500
 LWD_PORT="${E2E_IRONWOOD_LIGHTWALLETD_PORT:-19067}"
 PIR_PORT="${E2E_PIR_PORT:-13000}"
 VOTE_PORT="${E2E_VOTE_PORT:-1317}"
+VOTE_RPC_PORT="${E2E_VOTE_RPC_PORT:-26657}"
 GATEWAY_PORT="${E2E_VOTING_GATEWAY_PORT:-18080}"
 SLOW_HELPER_DELAY="${E2E_SLOW_HELPER_DELAY:-2.0}"
 SLOW_HELPER_MODE="${E2E_SLOW_HELPER_MODE:-0}"
@@ -172,6 +173,7 @@ PATH="$VOTE_SDK_DIR:$PATH" SVOTED_HOME="$VOTE_HOME" \
   SVOTE_ADMIN_DISABLE=true SVOTE_HELPER_EXPOSE_QUEUE_STATUS=true \
   bash "$VOTE_SDK_DIR/scripts/init.sh" >"$LOG_DIR/vote-init.log" 2>&1
 "$VOTE_SDK_DIR/svoted" start --home "$VOTE_HOME" \
+  --rpc.laddr "tcp://127.0.0.1:$VOTE_RPC_PORT" \
   --api.address "tcp://127.0.0.1:$VOTE_PORT" \
   >"$LOG_DIR/vote-server.log" 2>&1 &
 pids+=("$!")
@@ -244,10 +246,16 @@ EOF
   --config "$CONFIG_DIR/dynamic-voting-config.json" \
   --static-config "$CONFIG_DIR/static-voting-config.json"
 
-python3 "$ROOT_DIR/scripts/e2e/voting-regtest-gateway.py" \
+gateway_args=(--screenshot-dir "$LOG_DIR/screenshots")
+if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
+  gateway_args+=(--simulator "$FLUTTER_DEVICE" --enable-zcash-mining)
+fi
+IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" IRONWOOD_LIGHTWALLETD_PORT="$LWD_PORT" \
+python3 "$ROOT_DIR/scripts/e2e/voting-regtest-gateway.py" "${gateway_args[@]}" \
   --port "$GATEWAY_PORT" --config-dir "$CONFIG_DIR" \
   --pir-target "http://127.0.0.1:$PIR_PORT" \
   --vote-target "http://127.0.0.1:$VOTE_PORT" \
+  --rpc-target "http://127.0.0.1:$VOTE_RPC_PORT" \
   --slow-helper-delay "$SLOW_HELPER_DELAY" \
   >"$LOG_DIR/gateway.log" 2>&1 &
 pids+=("$!")
@@ -255,6 +263,11 @@ wait_http "http://127.0.0.1:$GATEWAY_PORT/health" "voting gateway"
 
 STATIC_SHA="$(shasum -a 256 "$CONFIG_DIR/static-voting-config.json" | awk '{print $1}')"
 STATIC_URL="https://config.vizor-vote.invalid/static-voting-config.json?checksum=sha256:$STATIC_SHA"
+
+# Anchor belongs to this freshly initialized local chain, not a public RPC.
+COMMIT_JSON="$(curl -fsS "http://127.0.0.1:$VOTE_RPC_PORT/commit")"
+CHAIN_ID="$(jq -r '.result.signed_header.header.chain_id' <<<"$COMMIT_JSON")"
+VALIDATOR_HASH="$(jq -r '.result.signed_header.header.validators_hash' <<<"$COMMIT_JSON")"
 
 echo "running real-proof Flutter voting E2E for round $ROUND_ID"
 cd "$ROOT_DIR"
@@ -264,16 +277,44 @@ flutter_test_command=(
 if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
   flutter_test_command+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
 fi
-"${flutter_test_command[@]}" \
+voting_defines=( \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT" \
   --dart-define=ZCASH_E2E_VOTING_GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT" \
   --dart-define=ZCASH_E2E_VOTING_STATIC_CONFIG_URL="$STATIC_URL" \
   --dart-define=ZCASH_E2E_VOTE_ROUND_ID="$ROUND_ID" \
+  --dart-define=ZCASH_E2E_VOTE_CHAIN_ID="$CHAIN_ID" \
+  --dart-define=ZCASH_E2E_VOTE_VALIDATOR_HASH="$VALIDATOR_HASH" \
+  --dart-define=ZCASH_E2E_VOTING_KEEP_APP_STATE="${E2E_VOTING_REINSTALL:-0}" \
   --dart-define=ZCASH_E2E_REUSE_MIGRATED_WALLET=true \
   --dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true \
   --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
+)
+"${flutter_test_command[@]}" "${voting_defines[@]}"
+
+if [[ "${E2E_VOTING_REINSTALL:-0}" == "1" ]]; then
+  [[ "$VIZOR_FORM_FACTOR" == "mobile" && "$FLUTTER_DEVICE" != "macos" ]] || exit 1
+  require_cmd xcrun
+  BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$ROOT_DIR/build/ios/iphonesimulator/Runner.app/Info.plist")"
+  # Flutter 3.41's integration runner already uninstalls in its finally block.
+  # Explicitly uninstall only when the runner leaves the app installed.
+  if APP_CONTAINER="$(xcrun simctl get_app_container "$FLUTTER_DEVICE" "$BUNDLE_ID" data 2>/dev/null)"; then
+    [[ -d "$APP_CONTAINER" ]] || exit 1
+    xcrun simctl terminate "$FLUTTER_DEVICE" "$BUNDLE_ID" >/dev/null 2>&1 || true
+    xcrun simctl uninstall "$FLUTTER_DEVICE" "$BUNDLE_ID"
+    echo "host uninstalled $BUNDLE_ID"
+  else
+    echo "Flutter integration runner already uninstalled $BUNDLE_ID"
+  fi
+  if xcrun simctl get_app_container "$FLUTTER_DEVICE" "$BUNDLE_ID" data >/dev/null 2>&1; then
+    echo "uninstall did not remove the application" >&2
+    exit 1
+  fi
+  echo "reinstalling and restoring the same wallet against round $ROUND_ID"
+  fvm flutter test integration_test/regtest_mobile_voting_reinstall_test.dart \
+    -d "$FLUTTER_DEVICE" --dart-define=VIZOR_FORM_FACTOR=mobile "${voting_defines[@]}"
+fi
 
 METRICS="$(curl -fsS "http://127.0.0.1:$GATEWAY_PORT/metrics")"
 if [[ "$SLOW_HELPER_MODE" == "1" ]]; then

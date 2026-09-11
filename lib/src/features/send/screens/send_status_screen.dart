@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../providers/sync_provider.dart';
 
 import '../../../core/config/zcash_explorer.dart';
 import '../../../core/formatting/address_display.dart';
@@ -31,11 +32,30 @@ import '../widgets/send_verify_address_overlay.dart';
 
 enum _SendStatusPhase { sending, pendingBroadcast, succeeded, failed }
 
+typedef SendStatusBroadcastRunner =
+    Future<SendBroadcastOutcome> Function({
+      required WidgetRef ref,
+      required SendReviewArgs args,
+      KeystoneBroadcastArgs? keystone,
+      required Future<bool> Function() confirmSaplingParamsDownload,
+      Future<bool> Function()? shouldAbort,
+    });
+
 class SendStatusScreen extends ConsumerStatefulWidget {
-  const SendStatusScreen({super.key, required this.args, this.keystone});
+  const SendStatusScreen({
+    super.key,
+    required this.args,
+    this.keystone,
+    this.broadcastRunner,
+  });
 
   final SendReviewArgs args;
   final KeystoneBroadcastArgs? keystone;
+
+  /// The software send's missing-mnemonic branch is `!Platform.isMacOS`, so a
+  /// macOS test host cannot reach it through the real runner.
+  @visibleForTesting
+  final SendStatusBroadcastRunner? broadcastRunner;
 
   @override
   ConsumerState<SendStatusScreen> createState() => _SendStatusScreenState();
@@ -44,7 +64,16 @@ class SendStatusScreen extends ConsumerStatefulWidget {
 class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   _SendStatusPhase _phase = _SendStatusPhase.sending;
   bool _proposalConsumed = false;
-  bool _discardScheduled = false;
+
+  /// The one release of this receipt's proposal, once something has claimed
+  /// it — the failed outcome or `dispose`. Handed to the terminal flag on the
+  /// way out so a departure mid-release does not publish "safe to leave"
+  /// before the inputs are actually free.
+  Future<bool>? _proposalRelease;
+
+  /// The running broadcast; a receipt left while still `sending` hands its
+  /// completion to the terminal flag instead of a release of its own.
+  Future<SendBroadcastOutcome>? _broadcast;
   String? _error;
   String? _statusMessage;
   String? _txid;
@@ -55,12 +84,18 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   bool _showVerifyAddress = false;
   Completer<bool>? _saplingParamsPromptCompleter;
 
+  /// Captured in [initState] so [dispose] can release the flag without reading
+  /// from `ref` after the element is gone.
+  late final SendStatusTerminalNotifier _sendStatusTerminal;
+  late final SyncNotifier _syncNotifier;
   bool get _suppressSidebarSelection =>
       widget.args.flowKind == SendFlowKind.donation;
 
   @override
   void initState() {
     super.initState();
+    _sendStatusTerminal = ref.read(sendStatusTerminalProvider.notifier);
+    _syncNotifier = ref.read(syncProvider.notifier);
     _proposalConsumed = widget.keystone != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -76,21 +111,45 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (promptCompleter != null && !promptCompleter.isCompleted) {
       promptCompleter.complete(false);
     }
-    if (_phase != _SendStatusPhase.sending) {
-      _scheduleDiscardIfNeeded();
+    // Unmounted before the post-frame broadcast ever started: nothing else
+    // owns the proposal, so release it here.
+    final broadcastOwnsProposal =
+        _phase == _SendStatusPhase.sending && _broadcast != null;
+    if (!broadcastOwnsProposal) {
+      unawaited(_discardProposalIfNeeded('SendStatus(dispose)'));
     }
+    _sendStatusTerminal.resetAfterNavigation(
+      // Left mid-broadcast: the runner's abort cleanup owns the proposal, so
+      // the edge waits for it.
+      afterRelease: broadcastOwnsProposal
+          ? _broadcast!.then((outcome) => outcome.proposalConsumed)
+          : _proposalRelease,
+      // Idempotent in Rust, so no gate on the (optimistic) consumed flag.
+      retryRelease: () => discardSendProposal(
+        syncNotifier: _syncNotifier,
+        accountUuid: widget.args.proposalAccountUuid,
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+        logContext: 'SendStatus(retry)',
+      ),
+    );
     super.dispose();
   }
 
-  void _scheduleDiscardIfNeeded() {
-    if (_proposalConsumed || _discardScheduled) return;
-    _discardScheduled = true;
-    unawaited(
-      discardSendProposal(
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
-        logContext: 'SendStatus(dispose)',
-      ),
+  /// Releases the proposal unless the broadcast already consumed it.
+  ///
+  /// Idempotent by claim rather than by retry: the first caller — the failed
+  /// outcome below or [dispose] — takes the discard and every later call is a
+  /// no-op, so a failure that releases the proposal on screen does not get a
+  /// second release when the receipt is finally left.
+  Future<bool> _discardProposalIfNeeded(String logContext) {
+    if (_proposalConsumed) return Future<bool>.value(true);
+    return _proposalRelease ??= discardSendProposal(
+      syncNotifier: _syncNotifier,
+      accountUuid: widget.args.proposalAccountUuid,
+      proposalId: widget.args.proposalId,
+      sendFlowId: widget.args.sendFlowId,
+      logContext: logContext,
     );
   }
 
@@ -160,13 +219,18 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   }
 
   Future<void> _startBroadcast() async {
-    final outcome = await runSendBroadcast(
+    // A broadcast is starting: nothing is safe to leave yet.
+    _sendStatusTerminal.reset();
+    final runner = widget.broadcastRunner ?? runSendBroadcast;
+    final broadcast = runner(
       ref: ref,
       args: widget.args,
       keystone: widget.keystone,
       confirmSaplingParamsDownload: _showSaplingParamsDialog,
       shouldAbort: () async => !mounted,
     );
+    _broadcast = broadcast;
+    final outcome = await broadcast;
     _proposalConsumed = outcome.proposalConsumed;
     if (outcome.phase == SendBroadcastPhase.aborted || !mounted) return;
     setState(() {
@@ -184,6 +248,27 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         _completedAt = DateTime.now();
       }
     });
+    if (_phase == _SendStatusPhase.succeeded ||
+        _phase == _SendStatusPhase.failed) {
+      if (_phase == _SendStatusPhase.failed) {
+        // A failed outcome does not always hand the proposal back: the
+        // software send's missing-mnemonic branch returns
+        // `proposalConsumed: false` without touching Rust's PROPOSAL_STORE,
+        // and until now the release waited for `dispose`. Marking the send
+        // terminal first lets `_IncomingLinkHost` drain a parked `zcash:`
+        // request against inputs this dead send still locks, which the
+        // request pre-check reads as insufficient funds. So: release, then
+        // publish "safe to leave".
+        final released = await _discardProposalIfNeeded('SendStatus(failed)');
+        // Leaving during the release means `dispose` already reset the flag;
+        // re-raising it here would strand it for the next screen.
+        if (!mounted) return;
+        // A release Rust never confirmed leaves the inputs held until expiry;
+        // the drain must keep waiting rather than pre-check against them.
+        if (!released) return;
+      }
+      _sendStatusTerminal.markTerminal();
+    }
   }
 
   Widget _buildKeystoneSubmittingScreen(BuildContext context) {
@@ -249,7 +334,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = widget.args.memo;
-    final hasMemo = memo != null && memo.trim().isNotEmpty;
+    // Present means non-empty, not non-blank: an edited request whose memo is
+    // only whitespace still sends that memo, so the row has to say so rather
+    // than omit a memo the transaction carries.
+    final hasMemo = memo != null && memo.isNotEmpty;
     final canOpenExplorer =
         (_phase == _SendStatusPhase.succeeded ||
             _phase == _SendStatusPhase.pendingBroadcast) &&

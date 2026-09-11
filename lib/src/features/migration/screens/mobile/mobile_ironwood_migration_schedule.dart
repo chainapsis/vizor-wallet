@@ -31,7 +31,7 @@ class MobileIronwoodMigrationPreparationScheduleScreen extends ConsumerWidget {
   }
 }
 
-class _MobileMigrationScheduleLoader extends ConsumerWidget {
+class _MobileMigrationScheduleLoader extends ConsumerStatefulWidget {
   const _MobileMigrationScheduleLoader({
     required this.previewStatus,
     required this.preparation,
@@ -41,8 +41,49 @@ class _MobileMigrationScheduleLoader extends ConsumerWidget {
   final bool preparation;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final preview = previewStatus;
+  ConsumerState<_MobileMigrationScheduleLoader> createState() =>
+      _MobileMigrationScheduleLoaderState();
+}
+
+class _MobileMigrationScheduleLoaderState
+    extends ConsumerState<_MobileMigrationScheduleLoader> {
+  bool _managing = false;
+
+  Future<void> _manage(
+    IronwoodMigrationStatusRequest request,
+    String runId,
+  ) async {
+    if (_managing) return;
+    setState(() => _managing = true);
+    final appTheme = AppTheme.of(context);
+    try {
+      final choice = await showDialog<_MobileMigrationManageChoice>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AppTheme(
+          data: appTheme,
+          child: _MobileMigrationManageDialog(request: request, runId: runId),
+        ),
+      );
+      if (!mounted || choice == null) return;
+      // A lock or account switch must not send a different wallet into Fast.
+      if (ref.read(ironwoodMigrationInputsProvider).statusRequest != request) {
+        return;
+      }
+      if (choice == _MobileMigrationManageChoice.fast) {
+        ref.invalidate(ironwoodMigrationImmediatePlanProvider);
+        context.go('/migration/fast/review');
+      } else {
+        context.go('/home');
+      }
+    } finally {
+      if (mounted) setState(() => _managing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = widget.previewStatus;
     final syncState = ref.watch(syncProvider).asData?.value;
     if (preview != null) {
       return _screen(
@@ -71,6 +112,7 @@ class _MobileMigrationScheduleLoader extends ConsumerWidget {
             return _screen(
               context,
               status: cached,
+              request: request,
               currentHeight: _mobileMigrationHeight(syncState),
               unavailable: cached == null,
               onRetry: () =>
@@ -80,6 +122,7 @@ class _MobileMigrationScheduleLoader extends ConsumerWidget {
           data: (status) => _screen(
             context,
             status: status,
+            request: request,
             currentHeight: _mobileMigrationHeight(syncState),
           ),
         );
@@ -89,9 +132,18 @@ class _MobileMigrationScheduleLoader extends ConsumerWidget {
     BuildContext context, {
     rust_sync.MigrationStatus? status,
     required int currentHeight,
+    IronwoodMigrationStatusRequest? request,
     bool unavailable = false,
     VoidCallback? onRetry,
   }) {
+    final canManage =
+        request != null &&
+        status?.activeRunId != null &&
+        status?.canAbandon == true &&
+        supportsPrivateMobileIronwoodMigration();
+    final VoidCallback? onManage = canManage && !_managing
+        ? () => _manage(request, status!.activeRunId!)
+        : null;
     void returnToStatus() {
       if (context.canPop()) {
         context.pop();
@@ -110,7 +162,7 @@ class _MobileMigrationScheduleLoader extends ConsumerWidget {
           child: Column(
             children: [
               MobileTopNav.back(
-                title: preparation
+                title: widget.preparation
                     ? 'Preparation Schedule'
                     : 'Migration Schedule',
                 titleStyle: AppTypography.headlineSmall.copyWith(
@@ -129,16 +181,18 @@ class _MobileMigrationScheduleLoader extends ConsumerWidget {
                           semanticLabel: 'Loading migration schedule',
                         ),
                       )
-                    : preparation
+                    : widget.preparation
                     ? _MobilePreparationScheduleContent(
                         status: status,
                         currentHeight: currentHeight,
                         onReturn: returnToStatus,
+                        onManage: onManage,
                       )
                     : _MobileMigrationScheduleContent(
                         status: status,
                         currentHeight: currentHeight,
                         onReturn: returnToStatus,
+                        onManage: onManage,
                       ),
               ),
             ],
@@ -154,11 +208,13 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
     required this.status,
     required this.currentHeight,
     required this.onReturn,
+    this.onManage,
   });
 
   final rust_sync.MigrationStatus status;
   final int currentHeight;
   final VoidCallback onReturn;
+  final VoidCallback? onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -246,6 +302,7 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
             secondaryLabel: 'Duration',
             secondaryValue: duration,
             onReturn: onReturn,
+            onManage: onManage,
           ),
         ],
       ),
@@ -356,11 +413,13 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
     required this.status,
     required this.currentHeight,
     required this.onReturn,
+    this.onManage,
   });
 
   final rust_sync.MigrationStatus status;
   final int currentHeight;
   final VoidCallback onReturn;
+  final VoidCallback? onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -431,6 +490,7 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
             secondaryLabel: 'Ready in',
             secondaryValue: duration,
             onReturn: onReturn,
+            onManage: onManage,
           ),
         ],
       ),
@@ -749,6 +809,7 @@ class _MobileMigrationScheduleFooter extends StatelessWidget {
     required this.secondaryLabel,
     required this.secondaryValue,
     required this.onReturn,
+    this.onManage,
   });
 
   final String primaryIcon;
@@ -758,6 +819,7 @@ class _MobileMigrationScheduleFooter extends StatelessWidget {
   final String secondaryLabel;
   final String secondaryValue;
   final VoidCallback onReturn;
+  final VoidCallback? onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -798,6 +860,16 @@ class _MobileMigrationScheduleFooter extends StatelessWidget {
                 ],
               ),
             ),
+            if (onManage != null) ...[
+              AppButton(
+                key: const ValueKey('mobile_ironwood_schedule_manage_button'),
+                variant: AppButtonVariant.ghost,
+                expand: true,
+                leading: const AppIcon(AppIcons.wrench, size: 20),
+                onPressed: onManage,
+                child: const Text('Manage'),
+              ),
+            ],
             const SizedBox(height: AppSpacing.s),
             SizedBox(
               width: double.infinity,

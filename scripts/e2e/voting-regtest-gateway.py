@@ -7,6 +7,7 @@ import argparse
 import http.client
 import json
 import mimetypes
+import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -69,6 +70,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
     config_dir: Path
     pir_target: tuple[str, int]
     vote_target: tuple[str, int]
+    rpc_target: tuple[str, int] | None = None
+    participation_requests = 0
+    simulator: str | None = None
+    screenshot_dir: Path | None = None
+    enable_zcash_mining = False
     slow_helper_delay: float
     metrics_lock = threading.Lock()
     slow_share_inflight = 0
@@ -85,16 +91,42 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self._dispatch()
 
     def log_message(self, fmt: str, *args: object) -> None:
+        # ABCI URLs contain governance identifiers; retain only aggregate counts.
+        if urlsplit(self.path).path in {"/commit", "/validators", "/abci_query"}:
+            return
         print(f"[voting-gateway] {self.address_string()} {fmt % args}", flush=True)
 
     def _dispatch(self) -> None:
         parsed = urlsplit(self.path)
+        if self.command == "POST" and parsed.path == "/mine-for-home-sync" and self.enable_zcash_mining:
+            read_request_body(self.rfile, self.headers)
+            scripts = Path(__file__).resolve().parents[1] / "ironwood-regtest"
+            subprocess.run([str(scripts / "mine.sh"), "20"], check=True, timeout=90, capture_output=True)
+            height = subprocess.check_output([str(scripts / "rpc.sh"), "getblockcount"], timeout=30)
+            self._json(200, {"height": int(height)})
+            return
+        if self.command == "GET" and parsed.path in {"/commit", "/validators", "/abci_query"} and self.rpc_target is not None:
+            with self.metrics_lock:
+                type(self).participation_requests += 1
+            self._proxy(self.rpc_target, self.path)
+            return
+        if self.command == "POST" and parsed.path == "/screenshot" and self.simulator and self.screenshot_dir:
+            body = json.loads(read_request_body(self.rfile, self.headers) or b"{}")
+            name = body.get("name")
+            if name not in {"before-vote", "completed-home", "restored-home", "restored-detail", "home-during-resync", "home-after-resync"}:
+                self._json(400, {"error": "unknown screenshot"})
+                return
+            self.screenshot_dir.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["xcrun", "simctl", "io", self.simulator, "screenshot", str(self.screenshot_dir / (name + ".png"))], check=True, timeout=30)
+            self._json(200, {"ok": True})
+            return
         if parsed.path == "/health":
             self._json(200, {"status": "ok"})
             return
         if parsed.path == "/metrics":
             with self.metrics_lock:
                 self._json(200, {
+                    "participation_requests": type(self).participation_requests,
                     "share_requests": type(self).share_requests,
                     "share_max_inflight": type(self).share_max_inflight,
                     "slow_share_requests": type(self).slow_share_requests,
@@ -219,6 +251,10 @@ def main() -> None:
     parser.add_argument("--config-dir", type=Path, required=True)
     parser.add_argument("--pir-target", type=parse_target, required=True)
     parser.add_argument("--vote-target", type=parse_target, required=True)
+    parser.add_argument("--simulator")
+    parser.add_argument("--enable-zcash-mining", action="store_true")
+    parser.add_argument("--screenshot-dir", type=Path)
+    parser.add_argument("--rpc-target", type=parse_target)
     parser.add_argument("--slow-helper-delay", type=float, default=0.0)
     args = parser.parse_args()
 
@@ -233,6 +269,10 @@ def main() -> None:
             "config_dir": config_dir,
             "pir_target": args.pir_target,
             "vote_target": args.vote_target,
+            "rpc_target": args.rpc_target,
+            "simulator": args.simulator,
+            "enable_zcash_mining": args.enable_zcash_mining,
+            "screenshot_dir": args.screenshot_dir,
             "slow_helper_delay": max(0.0, args.slow_helper_delay),
         },
     )

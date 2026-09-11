@@ -36,6 +36,9 @@ class RegtestLightwalletdProxy
   int? _slowHeight;
   int _sendTransactionFailuresRemaining = 0;
   int _failedSendTransactionCount = 0;
+  int sendTransactionCount = 0;
+  int droppedAcceptedResponseCount = 0;
+  bool _dropNextAcceptedSendResponse = false;
   bool _stallNextAddressUtxosAfterHeaders = false;
   Completer<void>? _addressUtxosStallRelease;
   int _addressUtxosStreamCallCount = 0;
@@ -83,6 +86,11 @@ class RegtestLightwalletdProxy
     }
     _sendTransactionFailuresRemaining = count;
     _log('primary proxy will fail next $count SendTransaction call(s)');
+  }
+
+  /// Forward the transaction first; only its successful response is lost.
+  void dropNextAcceptedSendResponse() {
+    _dropNextAcceptedSendResponse = true;
   }
 
   void stallNextAddressUtxosStreamAfterHeaders() {
@@ -192,7 +200,8 @@ class RegtestLightwalletdProxy
   Future<service.SendResponse> sendTransaction(
     grpc.ServiceCall call,
     service.RawTransaction request,
-  ) {
+  ) async {
+    sendTransactionCount += 1;
     _throwIfDown();
     if (_sendTransactionFailuresRemaining > 0) {
       _sendTransactionFailuresRemaining -= 1;
@@ -203,7 +212,13 @@ class RegtestLightwalletdProxy
       );
       throw grpc.GrpcError.unavailable('forced SendTransaction failure');
     }
-    return _client.sendTransaction(request);
+    final response = await _client.sendTransaction(request);
+    if (_dropNextAcceptedSendResponse && response.errorCode == 0) {
+      _dropNextAcceptedSendResponse = false;
+      droppedAcceptedResponseCount += 1;
+      throw grpc.GrpcError.unavailable('accepted transaction response lost');
+    }
+    return response;
   }
 
   @override

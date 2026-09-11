@@ -102,6 +102,127 @@ void main() {
     );
   });
 
+  test('Tor GET retries one timeout on a fresh bridge request', () async {
+    const timeout = Duration(seconds: 12);
+    final bridge = _RecordingTorBridge([
+      TimeoutException('Tor HTTP request timed out', timeout),
+      NetworkHttpResponse(
+        statusCode: 200,
+        bodyBytes: utf8.encode('second circuit'),
+      ),
+    ]);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
+    addTearDown(() => client.close());
+
+    final response = await client.request(
+      'GET',
+      Uri.parse('https://example.com/data'),
+      timeout: timeout,
+    );
+
+    expect(utf8.decode(response.bodyBytes), 'second circuit');
+    expect(bridge.requests, hasLength(2));
+    expect(bridge.timeouts, hasLength(2));
+    for (final attemptTimeout in bridge.timeouts) {
+      expect(
+        attemptTimeout!.inMilliseconds,
+        inInclusiveRange(11_900, timeout.inMilliseconds),
+      );
+    }
+  });
+
+  test('Tor GET stops after the second timeout', () async {
+    const timeout = Duration(seconds: 12);
+    final bridge = _RecordingTorBridge([
+      TimeoutException('first timeout', timeout),
+      TimeoutException('second timeout', timeout),
+    ]);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
+    addTearDown(() => client.close());
+
+    await expectLater(
+      client.request(
+        'GET',
+        Uri.parse('https://example.com/data'),
+        timeout: timeout,
+      ),
+      throwsA(isA<TimeoutException>()),
+    );
+    expect(bridge.requests, hasLength(2));
+  });
+
+  test('Tor POST does not retry a timeout', () async {
+    const timeout = Duration(seconds: 12);
+    final bridge = _RecordingTorBridge([
+      TimeoutException('Tor HTTP request timed out', timeout),
+    ]);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
+    addTearDown(() => client.close());
+
+    await expectLater(
+      client.request(
+        'POST',
+        Uri.parse('https://example.com/data'),
+        timeout: timeout,
+      ),
+      throwsA(isA<TimeoutException>()),
+    );
+    expect(bridge.requests, hasLength(1));
+  });
+
+  test('Tor GET does not retry an HTTP error response', () async {
+    final bridge = _RecordingTorBridge([
+      NetworkHttpResponse(
+        statusCode: HttpStatus.serviceUnavailable,
+        bodyBytes: Uint8List(0),
+      ),
+    ]);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
+    addTearDown(() => client.close());
+
+    final response = await client.request(
+      'GET',
+      Uri.parse('https://example.com/data'),
+    );
+
+    expect(response.statusCode, HttpStatus.serviceUnavailable);
+    expect(bridge.requests, hasLength(1));
+  });
+
+  test('Tor GET does not retry explicit cancellation', () async {
+    final bridge = _RecordingTorBridge([
+      const NetworkHttpRequestCancelledException(),
+    ]);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
+    addTearDown(() => client.close());
+
+    await expectLater(
+      client.request('GET', Uri.parse('https://example.com/data')),
+      throwsA(isA<NetworkHttpRequestCancelledException>()),
+    );
+    expect(bridge.requests, hasLength(1));
+  });
+
   test('unsupported methods are blocked while Tor is desired', () async {
     final client = NetworkHttpClient(
       torDesired: () => true,
@@ -223,6 +344,44 @@ void main() {
       expect(bridge.timeouts[1]!.inMilliseconds, lessThanOrEqualTo(110));
     },
   );
+
+  test('a timed-out redirected GET retries from the original URI', () async {
+    const timeout = Duration(seconds: 12);
+    final bridge = _RecordingTorBridge([
+      NetworkHttpResponse(
+        statusCode: HttpStatus.found,
+        bodyBytes: Uint8List(0),
+        headers: const {
+          HttpHeaders.locationHeader: ['/final'],
+        },
+      ),
+      TimeoutException('Tor HTTP request timed out', timeout),
+      NetworkHttpResponse(statusCode: 200, bodyBytes: utf8.encode('done')),
+    ]);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
+    addTearDown(() => client.close());
+
+    final response = await client.request(
+      'GET',
+      Uri.parse('https://example.com/start'),
+      timeout: timeout,
+    );
+
+    expect(utf8.decode(response.bodyBytes), 'done');
+    expect(bridge.requests.map((request) => request.url), [
+      'https://example.com/start',
+      'https://example.com/final',
+      'https://example.com/start',
+    ]);
+    expect(
+      bridge.timeouts.last!.inMilliseconds,
+      inInclusiveRange(11_900, timeout.inMilliseconds),
+    );
+  });
 
   test('cross-origin redirects strip credentials', () async {
     final bridge = _RecordingTorBridge([
@@ -508,7 +667,7 @@ class _StallingHttpClient implements HttpClient {
 class _RecordingTorBridge implements TorHttpBridge {
   _RecordingTorBridge(this.responses);
 
-  final List<NetworkHttpResponse> responses;
+  final List<Object> responses;
   final requests = <_RecordedRequest>[];
   final timeouts = <Duration?>[];
 
@@ -518,7 +677,7 @@ class _RecordingTorBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required String destinationPath,
   }) async {
-    final response = responses[requests.length];
+    final response = responses[requests.length] as NetworkHttpResponse;
     requests.add(
       _RecordedRequest(
         method: 'GET',
@@ -549,7 +708,7 @@ class _RecordingTorBridge implements TorHttpBridge {
         headers: Map.of(headers),
       ),
     );
-    return responses[requests.length - 1];
+    return _responseOrThrow(responses[requests.length - 1]);
   }
 
   @override
@@ -569,7 +728,12 @@ class _RecordingTorBridge implements TorHttpBridge {
         bodyBytes: List.of(bodyBytes),
       ),
     );
-    return responses[requests.length - 1];
+    return _responseOrThrow(responses[requests.length - 1]);
+  }
+
+  static NetworkHttpResponse _responseOrThrow(Object outcome) {
+    if (outcome is NetworkHttpResponse) return outcome;
+    throw outcome;
   }
 }
 

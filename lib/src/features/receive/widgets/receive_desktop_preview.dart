@@ -14,6 +14,12 @@ enum ReceiveDesktopPreviewState {
   transparent,
   shieldedModal,
   transparentModal,
+
+  /// Shielded receive with the "Request ZEC" entry beside the copy button,
+  /// which is where the live pane puts it. The plain [shielded] state keeps
+  /// the single-CTA row the pane had before the request flow landed, so the
+  /// two can still be compared.
+  shieldedRequestEntry,
 }
 
 class ReceiveDesktopPreview extends StatelessWidget {
@@ -25,7 +31,11 @@ class ReceiveDesktopPreview extends StatelessWidget {
 
   bool get _isShielded =>
       state == ReceiveDesktopPreviewState.shielded ||
-      state == ReceiveDesktopPreviewState.shieldedModal;
+      state == ReceiveDesktopPreviewState.shieldedModal ||
+      state == ReceiveDesktopPreviewState.shieldedRequestEntry;
+
+  bool get _showsRequestEntry =>
+      state == ReceiveDesktopPreviewState.shieldedRequestEntry;
 
   bool get _showsModal =>
       state == ReceiveDesktopPreviewState.shieldedModal ||
@@ -41,6 +51,7 @@ class ReceiveDesktopPreview extends StatelessWidget {
         isDark: isDark,
         isShielded: _isShielded,
         showsModal: _showsModal,
+        showsRequestEntry: _showsRequestEntry,
       ),
     );
   }
@@ -51,11 +62,13 @@ class _ReceiveWindow extends StatelessWidget {
     required this.isDark,
     required this.isShielded,
     required this.showsModal,
+    this.showsRequestEntry = false,
   });
 
   final bool isDark;
   final bool isShielded;
   final bool showsModal;
+  final bool showsRequestEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +107,7 @@ class _ReceiveWindow extends StatelessWidget {
                         child: _ReceiveTrailingPane(
                           isShielded: isShielded,
                           showsModal: showsModal,
+                          showsRequestEntry: showsRequestEntry,
                         ),
                       ),
                     ],
@@ -326,17 +340,24 @@ class _ReceiveTrailingPane extends StatelessWidget {
   const _ReceiveTrailingPane({
     required this.isShielded,
     required this.showsModal,
+    this.showsRequestEntry = false,
   });
 
   final bool isShielded;
   final bool showsModal;
+  final bool showsRequestEntry;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       clipBehavior: Clip.antiAlias,
       children: [
-        Positioned.fill(child: _ReceivePaneContent(isShielded: isShielded)),
+        Positioned.fill(
+          child: _ReceivePaneContent(
+            isShielded: isShielded,
+            showsRequestEntry: showsRequestEntry,
+          ),
+        ),
         if (showsModal)
           Positioned.fill(child: _ReceiveInfoOverlay(isShielded: isShielded)),
       ],
@@ -345,9 +366,13 @@ class _ReceiveTrailingPane extends StatelessWidget {
 }
 
 class _ReceivePaneContent extends StatelessWidget {
-  const _ReceivePaneContent({required this.isShielded});
+  const _ReceivePaneContent({
+    required this.isShielded,
+    this.showsRequestEntry = false,
+  });
 
   final bool isShielded;
+  final bool showsRequestEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -371,7 +396,10 @@ class _ReceivePaneContent extends StatelessWidget {
           top: 48,
           width: 420,
           height: 656,
-          child: _ReceiveContentArea(isShielded: isShielded),
+          child: _ReceiveContentArea(
+            isShielded: isShielded,
+            showsRequestEntry: showsRequestEntry,
+          ),
         ),
       ],
     );
@@ -379,9 +407,13 @@ class _ReceivePaneContent extends StatelessWidget {
 }
 
 class _ReceiveContentArea extends StatelessWidget {
-  const _ReceiveContentArea({required this.isShielded});
+  const _ReceiveContentArea({
+    required this.isShielded,
+    this.showsRequestEntry = false,
+  });
 
   final bool isShielded;
+  final bool showsRequestEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -418,13 +450,35 @@ class _ReceiveContentArea extends StatelessWidget {
             ],
           ),
         ),
-        Positioned(
-          left: 95,
-          top: 596,
-          width: 230,
-          height: 44,
-          child: _CopyAddressButton(isShielded: isShielded),
-        ),
+        if (showsRequestEntry)
+          // The request entry shares the copy pill's row as a compact icon
+          // button — the home card's "Pay" shape — so the pane keeps the
+          // single-button height.
+          Positioned(
+            left: (420 - (230 + AppSpacing.xs + 60)) / 2,
+            top: 596,
+            width: 230 + AppSpacing.xs + 60,
+            height: 44,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 230,
+                  height: 44,
+                  child: _CopyAddressButton(isShielded: isShielded),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                const SizedBox(width: 60, height: 44, child: _RequestButton()),
+              ],
+            ),
+          )
+        else
+          Positioned(
+            left: 95,
+            top: 596,
+            width: 230,
+            height: 44,
+            child: _CopyAddressButton(isShielded: isShielded),
+          ),
       ],
     );
   }
@@ -858,6 +912,27 @@ class _CopyAddressButton extends StatelessWidget {
   }
 }
 
+/// The request entry: a compact secondary pill beside the copy action.
+///
+/// Secondary rather than primary because copying the address is still what
+/// most visits to this screen are for; icon only because a second labelled
+/// pill under the copy button pushed the pane past its frame.
+class _RequestButton extends StatelessWidget {
+  const _RequestButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _FixedPillButton(
+      width: 60,
+      height: 44,
+      label: '',
+      iconName: AppIcons.qr,
+      iconSize: 20,
+      variant: _FixedPillButtonVariant.secondary,
+    );
+  }
+}
+
 enum _FixedPillButtonVariant { primary, secondary, ghost }
 
 class _FixedPillButton extends StatelessWidget {
@@ -866,13 +941,17 @@ class _FixedPillButton extends StatelessWidget {
     required this.height,
     required this.label,
     this.iconName,
+    this.iconSize = 20,
     this.variant = _FixedPillButtonVariant.primary,
   });
 
   final double width;
   final double height;
+
+  /// Empty for an icon-only pill.
   final String label;
   final String? iconName;
+  final double iconSize;
   final _FixedPillButtonVariant variant;
 
   @override
@@ -919,24 +998,27 @@ class _FixedPillButton extends StatelessWidget {
           width: width,
           height: height,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            padding: label.isEmpty
+                ? EdgeInsets.zero
+                : const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (iconName != null) ...[
-                  AppIcon(iconName!, size: 20, color: labelColor),
+                if (iconName != null)
+                  AppIcon(iconName!, size: iconSize, color: labelColor),
+                if (iconName != null && label.isNotEmpty)
                   const SizedBox(width: AppSpacing.xs),
-                ],
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: labelColor,
+                if (label.isNotEmpty)
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: labelColor,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -5,9 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/app_secure_store.dart';
 import '../../services/voting/voting_config_loader.dart';
-
-const _votingConfigSourceKey = 'zcash_voting_config_source_url';
-const _votingConfigSavedSourcesKey = 'zcash_voting_config_saved_sources';
+import '../../services/voting/voting_storage_keys.dart';
 
 /// User-saved static config source shown in voting settings.
 ///
@@ -127,27 +126,27 @@ class AppSecureStoreVotingConfigSourceStore implements VotingConfigSourceStore {
 
   @override
   Future<String?> readSourceUrl() {
-    return _store.readPlain(_votingConfigSourceKey);
+    return _store.readPlain(votingConfigSourceKey);
   }
 
   @override
   Future<void> writeSourceUrl(String sourceUrl) {
-    return _store.writePlain(_votingConfigSourceKey, sourceUrl);
+    return _store.writePlain(votingConfigSourceKey, sourceUrl);
   }
 
   @override
   Future<void> resetSourceUrl() {
-    return _store.delete(_votingConfigSourceKey);
+    return _store.delete(votingConfigSourceKey);
   }
 
   @override
   Future<String?> readSavedSourcesJson() {
-    return _store.readPlain(_votingConfigSavedSourcesKey);
+    return _store.readPlain(votingConfigSavedSourcesKey);
   }
 
   @override
   Future<void> writeSavedSourcesJson(String savedSourcesJson) {
-    return _store.writePlain(_votingConfigSavedSourcesKey, savedSourcesJson);
+    return _store.writePlain(votingConfigSavedSourcesKey, savedSourcesJson);
   }
 }
 
@@ -159,17 +158,29 @@ class AppSecureStoreVotingConfigSourceStore implements VotingConfigSourceStore {
 class VotingConfigSourceNotifier
     extends AsyncNotifier<VotingConfigSourceState> {
   @override
-  Future<VotingConfigSourceState> build() async {
+  Future<VotingConfigSourceState> build() => _load();
+
+  Future<VotingConfigSourceState> _load() async {
     final store = ref.read(votingConfigSourceStoreProvider);
     final stored = await store.readSourceUrl();
-    final savedSources = _decodeSavedSources(
-      await store.readSavedSourcesJson(),
-    );
+    final saved = await store.readSavedSourcesJson();
+    // Checked before the stored-source reset below: the harness pins the
+    // default source for this run only, and must not clear what the user
+    // actually saved.
     if (kStageVotingHarnessConfigEnabled) {
       return VotingConfigSourceState.defaultSource().copyWith(
-        savedSources: savedSources,
+        savedSources: _decodeSavedSources(saved),
       );
     }
+    final result = _stateFromStorage(stored, saved);
+    if (result.isDefault && stored != null && stored.trim().isNotEmpty) {
+      await store.resetSourceUrl();
+    }
+    return result;
+  }
+
+  VotingConfigSourceState _stateFromStorage(String? stored, String? saved) {
+    final savedSources = _decodeSavedSources(saved);
     final trimmed = stored?.trim();
     if (trimmed == null || trimmed.isEmpty) {
       return VotingConfigSourceState.defaultSource().copyWith(
@@ -179,7 +190,6 @@ class VotingConfigSourceNotifier
     try {
       parseStaticVotingConfigSource(trimmed);
     } on StaticVotingConfigSourceMalformed {
-      await store.resetSourceUrl();
       return VotingConfigSourceState.defaultSource().copyWith(
         savedSources: savedSources,
       );

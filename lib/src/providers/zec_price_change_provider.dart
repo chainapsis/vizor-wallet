@@ -115,7 +115,7 @@ class CoinGeckoZecMarketDataSource implements ZecMarketDataSource {
     HttpClient? client,
     NetworkHttpClient? networkClient,
     Uri? baseUri,
-    this.timeout = const Duration(seconds: 12),
+    this.timeout = const Duration(seconds: 20),
   }) : _client = networkClient ?? NetworkHttpClient(directClient: client),
        _baseUri = baseUri ?? Uri.parse(kVizorCoinGeckoPriceBaseUrl);
 
@@ -210,11 +210,15 @@ class ZecHomeMarketDataState {
     this.displayData,
     this.liveData,
     this.fetchedAt,
+    this.isLoading = false,
   });
 
   final ZecMarketData? displayData;
   final ZecMarketData? liveData;
   final DateTime? fetchedAt;
+
+  /// The initial lookup or a network price refresh is in progress.
+  final bool isLoading;
 
   bool isFreshAt(DateTime now) {
     final timestamp = fetchedAt;
@@ -258,10 +262,10 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
       _expiryTimer?.cancel();
     });
 
-    void clearMarketData() {
+    void clearMarketData({bool isLoading = false}) {
       _expiryTimer?.cancel();
       _expiryTimer = null;
-      state = const ZecHomeMarketDataState();
+      state = ZecHomeMarketDataState(isLoading: isLoading);
     }
 
     void scheduleExpiry(DateTime fetchedAt) {
@@ -271,13 +275,12 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
           .add(zecMarketDataCacheTtl)
           .difference(now().toUtc());
       if (remaining <= Duration.zero) {
-        clearMarketData();
+        clearMarketData(isLoading: state.isLoading);
         return;
       }
       _expiryTimer = Timer(remaining, () {
         if (epoch != _epoch || state.fetchedAt != fetchedAt) return;
-        _expiryTimer = null;
-        state = const ZecHomeMarketDataState();
+        clearMarketData(isLoading: state.isLoading);
       });
     }
 
@@ -293,6 +296,12 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
       if (state.displayData != null && !state.isFreshAt(now())) {
         clearMarketData();
       }
+      state = ZecHomeMarketDataState(
+        displayData: state.displayData,
+        liveData: state.liveData,
+        fetchedAt: state.fetchedAt,
+        isLoading: true,
+      );
       final data = await source.fetchMarketData();
       if (epoch != _epoch) return;
       if (data != null) {
@@ -308,6 +317,12 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
         );
       } else if (state.displayData != null && !state.isFreshAt(now())) {
         clearMarketData();
+      } else if (state.isLoading) {
+        state = ZecHomeMarketDataState(
+          displayData: state.displayData,
+          liveData: state.liveData,
+          fetchedAt: state.fetchedAt,
+        );
       }
       _refreshTimer = Timer(refreshInterval, () => unawaited(tick()));
     }
@@ -320,6 +335,7 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
           state = ZecHomeMarketDataState(
             displayData: cached.data,
             fetchedAt: cached.fetchedAt,
+            isLoading: true,
           );
           scheduleExpiry(cached.fetchedAt);
         }
@@ -332,7 +348,7 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
     scheduleMicrotask(() {
       if (epoch == _epoch) unawaited(initialize());
     });
-    return const ZecHomeMarketDataState();
+    return const ZecHomeMarketDataState(isLoading: true);
   }
 }
 

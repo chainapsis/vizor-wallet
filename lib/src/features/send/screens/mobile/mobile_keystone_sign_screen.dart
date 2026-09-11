@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../keystone/services/keystone_batch_signing.dart';
@@ -21,9 +23,14 @@ import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
 /// preparation and the result payload; the QR display and signed-PCZT scan are
 /// shared by every mobile Keystone signing surface.
 class MobileKeystoneSignScreen extends ConsumerStatefulWidget {
-  const MobileKeystoneSignScreen({required this.args, super.key});
+  const MobileKeystoneSignScreen({
+    required this.args,
+    this.loadWalletDbPath = getWalletDbPath,
+    super.key,
+  });
 
   final SendReviewArgs args;
+  final Future<String> Function() loadWalletDbPath;
 
   @override
   ConsumerState<MobileKeystoneSignScreen> createState() =>
@@ -61,9 +68,16 @@ class MobileKeystoneSigningRounds {
   );
 }
 
+// Held at the screen rather than inside the signing flow: the flow is keyed
+// per signing round, so a hold taken there would fall back to zero between
+// rounds and let a parked link through in the gap.
 class _MobileKeystoneSignScreenState
-    extends ConsumerState<MobileKeystoneSignScreen> {
+    extends ConsumerState<MobileKeystoneSignScreen>
+    with PaymentUriBusySurfaceHoldMixin {
   bool _proposalOwnershipTransferred = false;
+  bool _cancelRequested = false;
+  Future<Object?>? _proposalConsumption;
+  late final SyncNotifier _syncNotifier;
   late final MobileKeystoneSigningRounds _rounds;
   List<MobileKeystonePcztSigningPayload>? _payloads;
   List<KeystoneBatchSigningRequest?>? _batchRequests;
@@ -71,6 +85,7 @@ class _MobileKeystoneSignScreenState
   @override
   void initState() {
     super.initState();
+    _syncNotifier = ref.read(syncProvider.notifier);
     _rounds = MobileKeystoneSigningRounds(args: widget.args);
   }
 
@@ -79,6 +94,8 @@ class _MobileKeystoneSignScreenState
     if (!_proposalOwnershipTransferred) {
       unawaited(
         discardSendProposal(
+          syncNotifier: _syncNotifier,
+          accountUuid: widget.args.proposalAccountUuid,
           proposalId: widget.args.proposalId,
           sendFlowId: widget.args.sendFlowId,
           logContext: 'MobileKeystoneSign(dispose)',
@@ -90,35 +107,48 @@ class _MobileKeystoneSignScreenState
 
   @override
   Widget build(BuildContext context) {
-    return MobileKeystonePcztSigningFlow(
-      key: ValueKey('mobile_keystone_sign_round_${_rounds.index}'),
-      title: _rounds.title,
-      description: widget.args.addressType == 'tex'
-          ? 'This TEX send requires two Keystone approvals. Scan transaction ${_rounds.index + 1} of 2.'
-          : 'Use your Keystone wallet to scan this transaction QR code. '
-                'Follow the steps on your device.',
-      preparePczt: _preparePczt,
-      onSigned: _handleSignedPczt,
-      signedPcztDecoder: _decodeKeystoneResponse,
-      expectedSignedUrType: widget.args.addressType == 'tex'
-          ? 'zcash-pczt'
-          : 'zcash-batch-sig-result',
-      friendlyError: _friendlyError,
-      keyPrefix: 'mobile_keystone_sign',
-      scanCaption: 'Scan the QR code on your Keystone to finish sending',
-      logTag: 'MobileKeystoneSign',
-      onCancel: () {
-        _proposalOwnershipTransferred = true;
-        unawaited(
-          discardSendProposal(
-            proposalId: widget.args.proposalId,
-            sendFlowId: widget.args.sendFlowId,
-            logContext: 'MobileKeystoneSign(cancel)',
-          ),
-        );
-        context.pop();
+    return PopScope<void>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _proposalOwnershipTransferred = true;
       },
+      child: AbsorbPointer(
+        absorbing: _cancelRequested,
+        child: MobileKeystonePcztSigningFlow(
+          key: ValueKey('mobile_keystone_sign_round_${_rounds.index}'),
+          title: _cancelRequested ? 'Cancelling…' : _rounds.title,
+          description: widget.args.addressType == 'tex'
+              ? 'This TEX send requires two Keystone approvals. Scan transaction ${_rounds.index + 1} of 2.'
+              : 'Use your Keystone wallet to scan this transaction QR code. '
+                    'Follow the steps on your device.',
+          preparePczt: _preparePczt,
+          onSigned: _handleSignedPczt,
+          signedPcztDecoder: _decodeKeystoneResponse,
+          expectedSignedUrType: widget.args.addressType == 'tex'
+              ? 'zcash-pczt'
+              : 'zcash-batch-sig-result',
+          friendlyError: _friendlyError,
+          keyPrefix: 'mobile_keystone_sign',
+          scanCaption: 'Scan the QR code on your Keystone to finish sending',
+          logTag: 'MobileKeystoneSign',
+          onCancel: _cancelSigning,
+        ),
+      ),
     );
+  }
+
+  Future<void> _cancelSigning() async {
+    if (_cancelRequested || _proposalOwnershipTransferred) return;
+    setState(() => _cancelRequested = true);
+    // Finish an in-flight creator before the review releases its input lock.
+    try {
+      await _proposalConsumption;
+    } catch (_) {
+      // The review handles idempotent cleanup of failed creation as well.
+    }
+    if (!mounted) return;
+    _proposalOwnershipTransferred = true;
+    context.pop();
   }
 
   Future<MobileKeystonePcztSigningPayload> _preparePczt(
@@ -127,9 +157,15 @@ class _MobileKeystoneSignScreenState
   ) async {
     final cached = _payloads;
     if (cached != null) return cached[_rounds.index];
-    final dbPath = await getWalletDbPath();
+    final dbPath = await widget.loadWalletDbPath();
+    if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
+      throw const MobileKeystonePcztSigningAborted();
+    }
     final endpoint = ref.read(rpcEndpointProvider);
     var saplingParams = await loadSaplingParamsStatus();
+    if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
+      throw const MobileKeystonePcztSigningAborted();
+    }
 
     if (widget.args.needsSaplingParams && !saplingParams.complete) {
       if (!context.mounted) {
@@ -146,8 +182,11 @@ class _MobileKeystoneSignScreenState
       saplingParams = await loadSaplingParamsStatus();
     }
 
-    final texPczts = widget.args.addressType == 'tex'
-        ? await rust_sync.createTexPcztsFromProposal(
+    if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
+      throw const MobileKeystonePcztSigningAborted();
+    }
+    final texFuture = widget.args.addressType == 'tex'
+        ? rust_sync.createTexPcztsFromProposal(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             network: endpoint.networkName,
@@ -155,17 +194,25 @@ class _MobileKeystoneSignScreenState
             sendFlowId: widget.args.sendFlowId,
           )
         : null;
-    final pczts =
-        texPczts?.pczts ??
-        [
-          await rust_sync.createPcztFromProposal(
+    _proposalConsumption = texFuture;
+    final texPczts = await texFuture;
+    if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
+      throw const MobileKeystonePcztSigningAborted();
+    }
+    final pcztFuture = texPczts == null
+        ? rust_sync.createPcztFromProposal(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             network: endpoint.networkName,
             proposalId: widget.args.proposalId,
             sendFlowId: widget.args.sendFlowId,
-          ),
-        ];
+          )
+        : null;
+    if (pcztFuture != null) _proposalConsumption = pcztFuture;
+    final pczts = texPczts?.pczts ?? [await pcztFuture!];
+    if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
+      throw const MobileKeystonePcztSigningAborted();
+    }
     final payloads = <MobileKeystonePcztSigningPayload>[];
     final batchRequests = <KeystoneBatchSigningRequest?>[];
     final signerPczts = texPczts?.signerPczts;
@@ -242,6 +289,7 @@ class _MobileKeystoneSignScreenState
     List<int> pcztWithProofs,
     Uint8List signedPczt,
   ) async {
+    if (_cancelRequested || _proposalOwnershipTransferred) return;
     if (!_rounds.add(pcztWithProofs, signedPczt)) {
       if (mounted) setState(() {});
       return;

@@ -21,6 +21,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
 import '../activity_row_mapper.dart';
+import '../gift_card_activity_index.dart';
 import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
@@ -178,8 +179,11 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     unawaited(_loadTransactions(showLoading: true, clearExisting: true));
   }
 
-  void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
-    unawaited(_pushTransactionStatus(transaction));
+  void _openTransactionStatus(
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) {
+    unawaited(_pushTransactionStatus(transaction, giftCard: giftCard));
   }
 
   String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
@@ -230,10 +234,17 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   }
 
   Future<void> _pushTransactionStatus(
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityMetadata? giftCard,
+  }) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final detail = await _loadTransactionDetail(transaction);
     if (!mounted) return;
+    // The receipt takes this transaction and its Gift Card metadata as the
+    // active account's, so a switch during the load has to cancel the handoff.
+    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      return;
+    }
     context.push(
       Uri(
         path: '/activity/tx/${transaction.txidHex}',
@@ -244,6 +255,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
+        giftCard: giftCard,
       ),
     );
   }
@@ -302,6 +314,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     });
 
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final giftCardActivityIndex = accountUuid == null
+        ? GiftCardActivityIndex.empty
+        : ref.watch(giftCardActivityIndexProvider(accountUuid)).value ??
+              GiftCardActivityIndex.empty;
     final loadedTransactions = _transactionsAccountUuid == accountUuid
         ? _transactions
         : null;
@@ -328,20 +344,28 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
     final entries = <_ActivityEntry>[];
     var sourceOrder = 0;
-    if (canRenderTransactions) {
-      for (final tx in transactions) {
+    if (accountUuid != null) {
+      for (final tx in giftCardActivityIndex.withPendingClaims(transactions)) {
         if (absorption.absorbs(tx)) continue;
+        final giftCard = giftCardActivityIndex.metadataFor(tx);
         entries.add(
           _ActivityEntry(
             sortKey: activitySortKeyForTransaction(
               tx,
               sourceOrder: sourceOrder++,
+              giftCard: giftCard,
             ),
             row: buildTransactionActivityRow(
               context: context,
               transaction: tx,
+              giftCardKind: giftCard?.kind,
+              giftCardAmountZatoshi: giftCard?.amountZatoshi,
+              giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
+              giftCardStableId: giftCard?.stableId,
+              giftCardActivityTimestamp: giftCard?.activityTimestamp,
+              giftCardDisplayPool: giftCard?.displayPool,
               privacyModeEnabled: privacyModeEnabled,
-              onTap: () => _openTransactionStatus(tx),
+              onTap: () => _openTransactionStatus(tx, giftCard: giftCard),
             ),
           ),
         );
@@ -422,9 +446,10 @@ class ActivityEntrySortKey {
 ActivityEntrySortKey activitySortKeyForTransaction(
   rust_sync.TransactionInfo tx, {
   required int sourceOrder,
+  GiftCardActivityMetadata? giftCard,
 }) {
   return ActivityEntrySortKey(
-    timestamp: _transactionActivityTimestamp(tx),
+    timestamp: giftCard?.activityTimestamp ?? _transactionActivityTimestamp(tx),
     isPendingTransaction: isPendingActivityTransaction(tx),
     sourceOrder: sourceOrder,
   );

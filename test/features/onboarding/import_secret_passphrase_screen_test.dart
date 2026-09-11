@@ -26,6 +26,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_secret_passphrase_screen.dart';
@@ -777,6 +778,18 @@ void main() {
     await tester.pumpWidget(_importPassphraseScreen(afterNode: afterNode));
     afterNode.requestFocus();
     await tester.pump();
+
+    // The pane toolbar's back link is keyboard-focusable, so wrapping past the
+    // end of the cycle stops there before reaching the mnemonic grid.
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+
+    expect(
+      tester.binding.focusManager.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<AppBackLink>(),
+      isNotNull,
+    );
+    expect(_textField(tester, 0).focusNode!.hasFocus, isFalse);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pump();

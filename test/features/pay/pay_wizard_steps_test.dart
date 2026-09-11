@@ -6,6 +6,8 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon_hover_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
+import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
+import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_add_contact_modal.dart';
@@ -396,6 +398,37 @@ void main() {
             .style
             ?.fontSize,
         AppTypography.displayLarge.fontSize,
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('pay_amount_input')))
+            .textAlign,
+        TextAlign.start,
+      );
+      final amountFormatters = tester
+          .widget<TextField>(find.byKey(const ValueKey('pay_amount_input')))
+          .inputFormatters!;
+      expect(amountFormatters.first, isA<CommaToDotInputFormatter>());
+      expect(
+        (amountFormatters.last as DecimalAmountInputFormatter)
+            .maxFractionDigits,
+        SwapAsset.usdc.decimals,
+      );
+      final amountInputRow = tester.widget<Row>(
+        find.byKey(const ValueKey('pay_amount_input_row')),
+      );
+      expect(amountInputRow.crossAxisAlignment, CrossAxisAlignment.baseline);
+      expect(amountInputRow.textBaseline, TextBaseline.alphabetic);
+      expect(
+        tester
+            .widget<Padding>(
+              find.byKey(const ValueKey('pay_amount_input_padding')),
+            )
+            .padding,
+        const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs,
+        ),
       );
       final assetSelector = find.byKey(const ValueKey('pay_asset_selector'));
       expect(

@@ -238,6 +238,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
       _globalError = null;
     });
     final flowId = newSendFlowId();
+    final syncNotifier = ref.read(syncProvider.notifier);
     BigInt? proposalId;
     var openedReview = false;
     try {
@@ -268,6 +269,8 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
           proposalId: proposalId,
           sendFlowId: flowId,
           logContext: 'Donation(review not opened)',
+          syncNotifier: syncNotifier,
+          accountUuid: accountUuid,
         );
       }
     }

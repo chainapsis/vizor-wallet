@@ -18,6 +18,11 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     return 'u1actualshieldedrecipient';
   }
+
+  @override
+  Future<String> reserveOrchardAddress({required String accountUuid}) async {
+    return 'u1actualshieldedrecipient';
+  }
 }
 
 class _FakeSwapSyncNotifier extends SyncNotifier {
@@ -900,6 +905,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   }) async {
     depositDrafts.add(intent.id);
     return SwapHardwarePcztDraft(
+      accountUuid: accountUuid,
       pcztBytes: const [1, 2, 3],
       needsSaplingParams: false,
       feeZatoshi: BigInt.from(10000),

@@ -2,8 +2,9 @@
 Type=Application
 Name=@APP_DISPLAY_NAME@
 Comment=Self-custody Zcash wallet
-Exec=@BINARY_NAME@
+Exec=@BINARY_NAME@ %u
 Icon=@APPLICATION_ID@
 Terminal=false
 Categories=Office;Finance;
+MimeType=x-scheme-handler/zcash;
 StartupWMClass=@APPLICATION_ID@

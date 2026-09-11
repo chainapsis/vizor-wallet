@@ -18,6 +18,46 @@ use zcash_voting::VotingError;
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
 
+/// Supplies the disposable local chain anchor for regtest integration tests.
+/// This does not change mainnet/testnet trust or verification rules.
+pub fn configure_regtest_voting_participation(
+    chain_id: String,
+    validator_hash: String,
+) -> Result<(), String> {
+    crate::wallet::voting::participation::configure_regtest_trust(chain_id, validator_hash)
+}
+
+/// UFVK-only preparation for read-only participation discovery (also Keystone).
+pub fn prepare_voting_participation(ctx: ApiVotingRoundContext) -> Result<String, String> {
+    crate::wallet::voting::participation::prepare(
+        &ctx.db_path,
+        &ctx.account_uuid,
+        &ctx.network,
+        &ctx.round_params.vote_round_id,
+        ctx.round_params.snapshot_height,
+    )
+}
+
+/// Verify consensus/storage evidence and evaluate the remaining snapshot notes.
+pub fn evaluate_voting_participation(
+    ctx: ApiVotingRoundContext,
+    fingerprint: String,
+    evidence: String,
+    now_seconds: i64,
+) -> Result<String, String> {
+    crate::wallet::voting::participation::evaluate(
+        &ctx.db_path,
+        &ctx.account_uuid,
+        &ctx.network,
+        &ctx.round_params.vote_round_id,
+        ctx.round_params.snapshot_height,
+        &fingerprint,
+        &evidence,
+        now_seconds,
+        ctx.max_real_notes_per_bundle,
+    )
+}
+
 /// Selected PIR endpoint plus a diagnostic for every endpoint probed.
 ///
 /// The full diagnostic set is part of the result, not debug output: the
@@ -1010,6 +1050,7 @@ pub fn delete_voting_account_state(
 ) -> Result<u32, VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
+        crate::wallet::voting::participation::clear_account(&db).map_err(internal)?;
         let round_count = db.clear_wallet_state()?;
 
         log::info!(

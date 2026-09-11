@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart' show InputDecoration, TextField;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_fiat_amount.dart';
@@ -180,7 +180,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
             : widget.onAmountChanged,
         prefixText: payInputIsFiat ? r'$' : null,
         maxFractionDigits: payInputIsFiat
-            ? null
+            ? 2
             : state.direction.fromAsset(state.externalAsset).decimals,
       ),
       asset: sendsZec
@@ -227,7 +227,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
             : widget.onReceiveAmountChanged,
         prefixText: receiveInputIsFiat ? r'$' : null,
         maxFractionDigits: receiveInputIsFiat
-            ? null
+            ? 2
             : state.direction.toAsset(state.externalAsset).decimals,
       ),
       asset: sendsZec
@@ -419,8 +419,8 @@ class _SwapAmountInput extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.onChanged,
+    required this.maxFractionDigits,
     this.prefixText,
-    this.maxFractionDigits,
     super.key,
   });
 
@@ -428,7 +428,7 @@ class _SwapAmountInput extends StatelessWidget {
   final FocusNode focusNode;
   final ValueChanged<String> onChanged;
   final String? prefixText;
-  final int? maxFractionDigits;
+  final int maxFractionDigits;
 
   @override
   Widget build(BuildContext context) {
@@ -449,9 +449,7 @@ class _SwapAmountInput extends StatelessWidget {
               // The decimal-pad key follows the device locale, so map a
               // comma to the period the validator below expects.
               const CommaToDotInputFormatter(),
-              _DecimalAmountInputFormatter(
-                maxFractionDigits: maxFractionDigits,
-              ),
+              DecimalAmountInputFormatter(maxFractionDigits: maxFractionDigits),
             ],
             style: valueStyle,
             cursorColor: colors.text.accent,
@@ -735,27 +733,6 @@ class _SwapDirectionButton extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _DecimalAmountInputFormatter extends TextInputFormatter {
-  const _DecimalAmountInputFormatter({this.maxFractionDigits});
-
-  final int? maxFractionDigits;
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final text = newValue.text;
-    if (text.isEmpty) return newValue;
-    final max = maxFractionDigits;
-    final pattern = max == null
-        ? RegExp(r'^\d*(\.\d*)?$')
-        : RegExp('^\\d*(\\.\\d{0,$max})?\$');
-    if (pattern.hasMatch(text)) return newValue;
-    return oldValue;
   }
 }
 

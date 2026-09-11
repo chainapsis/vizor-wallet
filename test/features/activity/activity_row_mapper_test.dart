@@ -4,14 +4,18 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/activity_amount_text.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   Future<ActivityRowData> mapRow(
     WidgetTester tester,
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    GiftCardActivityKind? giftCardKind,
+    BigInt? giftCardAmountZatoshi,
+    bool giftCardClaimInFlight = false,
+  }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
       AppTheme(
@@ -21,6 +25,9 @@ void main() {
             row = buildTransactionActivityRow(
               context: context,
               transaction: transaction,
+              giftCardKind: giftCardKind,
+              giftCardAmountZatoshi: giftCardAmountZatoshi,
+              giftCardClaimInFlight: giftCardClaimInFlight,
             );
             return const SizedBox.shrink();
           },
@@ -29,6 +36,59 @@ void main() {
     );
     return row;
   }
+
+  testWidgets(
+    'a mined gift claim stays in progress until card reconciliation completes',
+    (tester) async {
+      final tx = _transaction(txKind: 'received');
+      final pending = await mapRow(
+        tester,
+        tx,
+        giftCardKind: GiftCardActivityKind.redeemed,
+        giftCardClaimInFlight: true,
+      );
+      expect(pending.title, 'Redeeming a card ...');
+      expect(pending.statusText, 'In progress');
+      expect(pending.leadingIconName, AppIcons.loader);
+      final completed = await mapRow(
+        tester,
+        tx,
+        giftCardKind: GiftCardActivityKind.redeemed,
+      );
+      expect(completed.title, 'Redeemed a gift card');
+      expect(completed.statusText, 'Completed');
+      expect(completed.stableId, pending.stableId);
+      final regular = await mapRow(tester, tx);
+      expect(regular.title, 'Received');
+    },
+  );
+
+  testWidgets('an expired visible leg does not fail an in-flight card', (
+    tester,
+  ) async {
+    final tx = _transaction(
+      txKind: 'receiving',
+      minedHeight: BigInt.zero,
+      expiredUnmined: true,
+    );
+    final row = await mapRow(
+      tester,
+      tx,
+      giftCardKind: GiftCardActivityKind.redeemed,
+      giftCardClaimInFlight: true,
+    );
+    expect(row.title, 'Redeeming a card ...');
+    expect(row.statusText, 'In progress');
+    expect(row.amountSubtitle, isNot('Refunded'));
+    final ordinary = await mapRow(tester, tx);
+    expect(ordinary.statusText, 'Failed');
+    final failedCard = await mapRow(
+      tester,
+      tx,
+      giftCardKind: GiftCardActivityKind.redeemed,
+    );
+    expect(failedCard.statusText, 'Failed');
+  });
 
   testWidgets('unconfirmed send renders as an in-flight loader row', (
     tester,
@@ -82,6 +142,31 @@ void main() {
     final received = await mapRow(tester, _transaction(txKind: 'received'));
     expect(received.title, 'Received');
     expect(received.leadingIconName, AppIcons.arrowDownCircle);
+  });
+
+  testWidgets('Gift Card transactions use their Figma titles and icon', (
+    tester,
+  ) async {
+    final created = await mapRow(
+      tester,
+      _transaction(txKind: 'sent'),
+      giftCardKind: GiftCardActivityKind.created,
+      giftCardAmountZatoshi: BigInt.from(100000),
+    );
+    final redeemed = await mapRow(
+      tester,
+      _transaction(txKind: 'received'),
+      giftCardKind: GiftCardActivityKind.redeemed,
+      giftCardAmountZatoshi: BigInt.from(100000),
+    );
+
+    expect(created.title, 'Created a gift card');
+    expect(created.leadingIconName, AppIcons.giftCard);
+    expect(created.subtitle, 'Shielded');
+    expect(created.amountText, '-0.001 ZEC');
+    expect(redeemed.title, 'Redeemed a gift card');
+    expect(redeemed.leadingIconName, AppIcons.giftCard);
+    expect(redeemed.amountText, '+0.001 ZEC');
   });
 
   testWidgets('confirmed migration renders as an Ironwood activity row', (

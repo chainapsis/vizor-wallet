@@ -265,6 +265,9 @@ Future<void> cleanupE2eWalletState() async {
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
 
+  final votingCache = Directory('${supportDir.path}/$dbName.voting-cache');
+  if (await votingCache.exists()) await votingCache.delete(recursive: true);
+
   for (final name in [
     dbName,
     '$dbName-shm',
@@ -1011,6 +1014,7 @@ Future<void> mineRegtestBlocks(int blocks) async {
   while (DateTime.now().isBefore(deadline)) {
     final lightwalletdHeight = await rust_wallet.getLatestBlockHeight(
       lightwalletdUrl: mobileE2eLightwalletdUrl,
+      network: 'regtest',
     );
     if (lightwalletdHeight.toInt() >= targetHeight) {
       logE2e('lightwalletd reached mined height $targetHeight');
@@ -1193,4 +1197,19 @@ String reverseTxidHex(String txidHex) {
     bytes.add(txidHex.substring(i, i + 2));
   }
   return bytes.reversed.join();
+}
+
+/// Regtest-guarded Gift Card claim-wallet sweep, the mobile counterpart of
+/// the desktop flow's. Claim wallets from every network share one support
+/// directory, so the sweep is scoped to regtest names.
+Future<void> cleanupMobileE2ePaymentLinkClaimWallets() async {
+  if (kZcashDefaultNetworkName != ZcashNetwork.regtest.name) {
+    throw StateError(
+      'Refusing to delete Gift Card claim wallets without '
+      'ZCASH_DEFAULT_NETWORK=regtest.',
+    );
+  }
+  await deletePaymentLinkClaimWalletDirectories(
+    network: ZcashNetwork.regtest.name,
+  );
 }

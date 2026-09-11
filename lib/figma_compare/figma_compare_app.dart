@@ -37,7 +37,7 @@ class FigmaCompareApp extends StatelessWidget {
           key: captureBoundaryKey,
           child: Focus(
             canRequestFocus: false,
-            descendantsAreFocusable: false,
+            descendantsAreFocusable: scenario.allowFocus,
             child: IgnorePointer(child: Builder(builder: scenario.builder)),
           ),
         ),

@@ -124,6 +124,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
           _matches('/receive') ||
           _matches('/migration'));
 
+  bool get _settingsShouldBeActive =>
+      !widget.suppressActiveSelection &&
+      (_matches('/settings') || _matches('/payment-links'));
+
   bool get _isAccountMenuOpen => _accountMenuEntry != null;
 
   @override
@@ -589,11 +593,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       key: const ValueKey('sidebar_settings_button'),
                       label: 'Settings',
                       iconName: AppIcons.cog,
-                      active: _routeShouldBeActive('/settings'),
+                      active: _settingsShouldBeActive,
                       onTap: _openSettings,
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
+                      key: const ValueKey('sidebar_sign_out_button'),
                       label: 'Sign out',
                       iconName: AppIcons.logOut,
                       onTap: _isSigningOut ? null : _handleSignOut,

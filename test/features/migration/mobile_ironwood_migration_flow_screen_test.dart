@@ -49,6 +49,7 @@ import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 final _rustApiFake = _RustApiFake();
 
@@ -188,6 +189,23 @@ class _HardwareAccountNotifier extends AccountNotifier {
   @override
   Future<AccountState> build() async =>
       _bootstrap(hardware: true).initialAccountState;
+}
+
+class _ManageTestMigrationCoordinator extends IronwoodMigrationCoordinator {
+  _ManageTestMigrationCoordinator(this.onStop);
+
+  final Future<void> Function(String accountUuid, String runId) onStop;
+
+  @override
+  IronwoodMigrationCoordinatorState build() =>
+      const IronwoodMigrationCoordinatorState();
+
+  @override
+  Future<void> stop({required String accountUuid, required String runId}) =>
+      onStop(accountUuid, runId);
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {}
 }
 
 class _StartScreenTestMigrationCoordinator
@@ -533,6 +551,7 @@ final _immediatePlan = rust_sync.OrchardMigrationImmediatePlan(
 rust_sync.MigrationStatus _status({
   required String phase,
   String? activeRunId = 'run-1',
+  bool canAbandon = false,
   List<String>? broadcastStatuses,
   List<rust_sync.MigrationPartStatus> parts = const [],
   List<int> targetValues = const [412_000_000, 412_000_000, 412_000_000],
@@ -572,7 +591,7 @@ rust_sync.MigrationStatus _status({
     totalCount: 3,
     signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: pendingSplitStageCount,
-    canAbandon: false,
+    canAbandon: canAbandon,
     signingBatchLimit: signingBatchLimit,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
@@ -828,6 +847,7 @@ Widget _productionApp({
   SyncState? syncState,
   FakeSyncNotifier? syncNotifier,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
+  bool liveSchedule = false,
   bool realKeystoneCombinedRoute = false,
   bool realKeystoneDenominationRoute = false,
   bool realKeystoneBatchRoute = false,
@@ -908,13 +928,14 @@ Widget _productionApp({
       ),
       GoRoute(
         path: '/migration/private/schedule',
-        builder: (_, _) =>
-            MobileIronwoodMigrationScheduleScreen(previewStatus: status),
+        builder: (_, _) => MobileIronwoodMigrationScheduleScreen(
+          previewStatus: liveSchedule ? null : status,
+        ),
       ),
       GoRoute(
         path: '/migration/private/preparation-schedule',
         builder: (_, _) => MobileIronwoodMigrationPreparationScheduleScreen(
-          previewStatus: status,
+          previewStatus: liveSchedule ? null : status,
         ),
       ),
       GoRoute(
@@ -1359,7 +1380,9 @@ void main() {
     expect(supportsPrivateMobileIronwoodMigration(isAndroid: true), isFalse);
   });
 
-  setUpAll(() {
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    await loadFigmaCompareFonts();
     RustLib.initMock(api: _rustApiFake);
   });
 
@@ -1369,6 +1392,309 @@ void main() {
     _rustApiFake.reset();
     FlutterSecureStorage.setMockInitialValues({});
   });
+
+  for (final preparation in [false, true]) {
+    for (final fast in [false, true]) {
+      testWidgets(
+        'mobile schedule manage ${preparation ? 'preparation' : 'migration'} '
+        '${fast ? 'Fast' : 'stop'} waits for cleanup before navigating',
+        (tester) async {
+          _useMobileViewport(tester, size: const Size(375, 667));
+          final release = Completer<void>();
+          var calls = 0;
+          var planCalls = 0;
+          var status = _status(
+            phase: kIronwoodMigrationBroadcastScheduledPhase,
+            canAbandon: true,
+          );
+          late ProviderContainer container;
+          final coordinator = _ManageTestMigrationCoordinator((
+            account,
+            run,
+          ) async {
+            expect(account, 'account-1');
+            expect(run, 'run-1');
+            calls++;
+            // Rust can commit before native credential/outbox cleanup returns.
+            status = _status(
+              phase: kIronwoodMigrationCompletePhase,
+              activeRunId: null,
+            );
+            container.invalidate(ironwoodMigrationStatusProvider);
+            await release.future;
+          });
+          await tester.pumpWidget(
+            _productionApp(
+              initialLocation: preparation
+                  ? '/migration/private/preparation-schedule'
+                  : '/migration/private/schedule',
+              migrationService: _migrationService(),
+              liveSchedule: true,
+              statusLoader: () async => status,
+              migrationCoordinator: () => coordinator,
+              immediatePlanLoader: () async {
+                planCalls++;
+                return _immediatePlan;
+              },
+            ),
+          );
+          await tester.pumpAndSettle();
+          container = ProviderScope.containerOf(
+            tester.element(
+              find
+                      .byType(MobileIronwoodMigrationScheduleScreen)
+                      .evaluate()
+                      .isNotEmpty
+                  ? find.byType(MobileIronwoodMigrationScheduleScreen)
+                  : find.byType(
+                      MobileIronwoodMigrationPreparationScheduleScreen,
+                    ),
+            ),
+          );
+          final planSubscription = container.listen(
+            ironwoodMigrationImmediatePlanProvider,
+            (_, _) {},
+          );
+          addTearDown(planSubscription.close);
+          await container.read(ironwoodMigrationImmediatePlanProvider.future);
+          expect(planCalls, 1);
+          await tester.tap(
+            find.byKey(
+              const ValueKey('mobile_ironwood_schedule_manage_button'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(
+              ValueKey(
+                fast
+                    ? 'mobile_ironwood_manage_fast'
+                    : 'mobile_ironwood_manage_stop',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Transactions already broadcast will not be reverted.'),
+            findsOneWidget,
+          );
+          final confirm = find.byKey(
+            const ValueKey('mobile_ironwood_manage_confirm'),
+          );
+          await tester.tap(confirm);
+          await tester.pumpAndSettle();
+          expect(calls, 1);
+          expect(planCalls, 1);
+          expect(
+            find.byKey(const ValueKey('mobile_ironwood_manage_dialog')),
+            findsOneWidget,
+          );
+          expect(tester.widget<AppButton>(confirm).onPressed, isNull);
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('mobile_ironwood_manage_cancel')),
+                )
+                .onPressed,
+            isNull,
+          );
+          await tester.binding.handlePopRoute();
+          await tester.tapAt(const Offset(4, 4));
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('mobile_ironwood_manage_dialog')),
+            findsOneWidget,
+          );
+          release.complete();
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('mobile_ironwood_manage_dialog')),
+            findsNothing,
+          );
+          expect(
+            find.text(fast ? 'Fast Migration' : 'home route'),
+            findsOneWidget,
+          );
+          expect(planCalls, fast ? 2 : 1);
+          expect(calls, 1);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets(
+    'mobile schedule manage hides actions for a non-abandonable run',
+    (tester) async {
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/schedule',
+          migrationService: _migrationService(),
+          liveSchedule: true,
+          status: _status(phase: kIronwoodMigrationWaitingConfirmationsPhase),
+          migrationCoordinator: () =>
+              _ManageTestMigrationCoordinator((_, _) async {
+                fail('A non-abandonable migration cannot be stopped');
+              }),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile_ironwood_schedule_manage_button')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'mobile schedule manage cancels without stopping and rejects a changed run',
+    (tester) async {
+      _useMobileViewport(tester);
+      var status = _status(
+        phase: kIronwoodMigrationBroadcastScheduledPhase,
+        canAbandon: true,
+      );
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/schedule',
+          migrationService: _migrationService(),
+          liveSchedule: true,
+          statusLoader: () async => status,
+          migrationCoordinator: () => _ManageTestMigrationCoordinator((
+            _,
+            _,
+          ) async {
+            fail('Cancelled or stale confirmation must not stop a migration');
+          }),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileIronwoodMigrationScheduleScreen)),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_schedule_manage_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_manage_cancel')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile_ironwood_manage_dialog')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_schedule_manage_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_manage_fast')),
+      );
+      await tester.pumpAndSettle();
+      status = _status(
+        phase: kIronwoodMigrationBroadcastScheduledPhase,
+        activeRunId: 'run-2',
+        canAbandon: true,
+      );
+      container.invalidate(ironwoodMigrationStatusProvider);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('mobile_ironwood_manage_confirm')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        find.text('This migration is no longer available to manage.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  for (final failStatusRead in [false, true]) {
+    testWidgets(
+      'mobile schedule manage retries native cleanup after a terminal stop failure '
+      '(status read fails: $failStatusRead)',
+      (tester) async {
+        _useMobileViewport(tester);
+        var calls = 0;
+        var statusUnavailable = false;
+        var status = _status(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          canAbandon: true,
+        );
+        await tester.pumpWidget(
+          _productionApp(
+            initialLocation: '/migration/private/schedule',
+            migrationService: _migrationService(),
+            liveSchedule: true,
+            statusLoader: () async {
+              if (statusUnavailable) throw StateError('Status read failed');
+              return status;
+            },
+            migrationCoordinator: () => _ManageTestMigrationCoordinator((
+              account,
+              run,
+            ) async {
+              expect(run, 'run-1');
+              calls++;
+              if (calls == 1) {
+                statusUnavailable = failStatusRead;
+                status = _status(
+                  phase: kIronwoodMigrationCompletePhase,
+                  activeRunId: null,
+                );
+                throw StateError('Native cleanup failed after Rust committed');
+              }
+            }),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_ironwood_schedule_manage_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_ironwood_manage_fast')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_ironwood_manage_confirm')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text('The migration could not be updated. Please try again.'),
+          findsOneWidget,
+        );
+        expect(find.text('Fast Migration'), findsNothing);
+        if (failStatusRead) {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('mobile_ironwood_manage_confirm')),
+                )
+                .onPressed,
+            isNull,
+          );
+          statusUnavailable = false;
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_ironwood_manage_retry_status')),
+          );
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_ironwood_manage_confirm')),
+        );
+        await tester.pumpAndSettle();
+        expect(calls, 2);
+        expect(find.text('Fast Migration'), findsOneWidget);
+      },
+    );
+  }
 
   testWidgets('connects the About and migration-steps screens', (tester) async {
     await tester.pumpWidget(_app(step: MobileIronwoodMigrationStep.intro));
@@ -4352,7 +4678,10 @@ void main() {
     expect(painter.highlightedSegmentOffset, 3.5);
     expect(painter.highlightedOuterOutlineWidth, 18);
     expect(painter.highlightedOutlineWidth, 16);
-    expect(tester.getCenter(find.text('1 ZEC (2%)')).dx, greaterThan(250));
+    expect(
+      tester.getCenter(find.text('1 ZEC (2%)')).dx,
+      greaterThan(tester.getCenter(find.byWidget(ring)).dx),
+    );
     expect(
       mobileIronwoodMigrationAttention(
         _status(

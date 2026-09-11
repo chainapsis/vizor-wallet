@@ -63,6 +63,31 @@ bool isSyncCancelRequested() =>
 /// Check if a sync is currently running.
 bool isSyncRunning() => RustLib.instance.api.crateApiSyncIsSyncRunning();
 
+/// Runs an isolated scan for one short-lived payment-link claim database.
+///
+/// Claim syncs do not use the main wallet's process-global running guard or
+/// desired mode. Different claim IDs can therefore scan independent databases
+/// concurrently with each other and with the main wallet.
+Future<void> runPaymentLinkClaimSync({
+  required String claimId,
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required bool allowResubmit,
+}) => RustLib.instance.api.crateApiSyncRunPaymentLinkClaimSync(
+  claimId: claimId,
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  allowResubmit: allowResubmit,
+);
+
+/// Cancels only the isolated scan associated with `claim_id`.
+void cancelPaymentLinkClaimSync({required String claimId}) => RustLib
+    .instance
+    .api
+    .crateApiSyncCancelPaymentLinkClaimSync(claimId: claimId);
+
 /// Start the background mempool observer.
 ///
 /// Blocks until [`stop_mempool_observer`] is called or the
@@ -209,8 +234,18 @@ Future<BigInt> rewindToHeight({
   height: height,
 );
 
-Future<AddressValidationResult> validateAddress({required String address}) =>
-    RustLib.instance.api.crateApiSyncValidateAddress(address: address);
+/// Validate a recipient address against the network this build talks to.
+///
+/// `network` is the usual `"main"` / `"test"` / `"regtest"` name; an unknown
+/// name is a programming error and comes back as an `Err`, not as an invalid
+/// address.
+Future<AddressValidationResult> validateAddress({
+  required String address,
+  required String network,
+}) => RustLib.instance.api.crateApiSyncValidateAddress(
+  address: address,
+  network: network,
+);
 
 /// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
 Future<ProposalResult> proposeSend({
@@ -1036,6 +1071,15 @@ storeAndBroadcastPcztsWithKeystoneSignaturesForProposal({
       outputParamsPath: outputParamsPath,
     );
 
+/// Computes the stable transaction ID before a finalized PCZT crosses the
+/// irreversible broadcast boundary.
+String getPcztTxid({required List<int> pcztBytes}) =>
+    RustLib.instance.api.crateApiSyncGetPcztTxid(pcztBytes: pcztBytes);
+
+/// Returns the expiry height committed to by an IO-finalized PCZT.
+int getPcztExpiryHeight({required List<int> pcztBytes}) =>
+    RustLib.instance.api.crateApiSyncGetPcztExpiryHeight(pcztBytes: pcztBytes);
+
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
 /// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
 /// Returns the txid.
@@ -1065,17 +1109,37 @@ Future<ExtractAndBroadcastPcztResult> extractAndBroadcastPczt({
   outputParamsPath: outputParamsPath,
 );
 
+Future<PaymentLinkSpendEvidence> getPaymentLinkSpendEvidence({
+  required String dbPath,
+  required String accountUuid,
+  required String claimTxids,
+}) => RustLib.instance.api.crateApiSyncGetPaymentLinkSpendEvidence(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  claimTxids: claimTxids,
+);
+
+/// Flat address-validation result for the Dart side.
+///
+/// `wrong_network` marks the one case where `is_valid` is false but the input
+/// is still a real Zcash address: it decoded fine, and `address_type` carries
+/// the kind it decoded to, but its encoding belongs to a network other than
+/// the one this build talks to. For input that is not an address we can send
+/// to at all, `address_type` is `"invalid"` and `wrong_network` is false.
 class AddressValidationResult {
   final bool isValid;
   final String addressType;
+  final bool wrongNetwork;
 
   const AddressValidationResult({
     required this.isValid,
     required this.addressType,
+    required this.wrongNetwork,
   });
 
   @override
-  int get hashCode => isValid.hashCode ^ addressType.hashCode;
+  int get hashCode =>
+      isValid.hashCode ^ addressType.hashCode ^ wrongNetwork.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1083,7 +1147,8 @@ class AddressValidationResult {
       other is AddressValidationResult &&
           runtimeType == other.runtimeType &&
           isValid == other.isValid &&
-          addressType == other.addressType;
+          addressType == other.addressType &&
+          wrongNetwork == other.wrongNetwork;
 }
 
 /// Event emitted by the mempool observer when a wallet-relevant
@@ -1237,12 +1302,16 @@ class ExecuteProposalResult {
   final int totalCount;
   final String? message;
 
+  /// Server rejection is distinct from a missing response, but is not finality.
+  final String? broadcastFailureKind;
+
   const ExecuteProposalResult({
     required this.txids,
     required this.status,
     required this.broadcastedCount,
     required this.totalCount,
     this.message,
+    this.broadcastFailureKind,
   });
 
   @override
@@ -1251,7 +1320,8 @@ class ExecuteProposalResult {
       status.hashCode ^
       broadcastedCount.hashCode ^
       totalCount.hashCode ^
-      message.hashCode;
+      message.hashCode ^
+      broadcastFailureKind.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1262,7 +1332,8 @@ class ExecuteProposalResult {
           status == other.status &&
           broadcastedCount == other.broadcastedCount &&
           totalCount == other.totalCount &&
-          message == other.message;
+          message == other.message &&
+          broadcastFailureKind == other.broadcastFailureKind;
 }
 
 class ExtractAndBroadcastPcztResult {
@@ -2126,6 +2197,39 @@ class OrchardMigrationPrivatePlan {
           proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
           estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
           scheduledTransfers == other.scheduledTransfers;
+}
+
+/// Positive, scanned evidence for a Gift Card's shielded inputs. This reads
+/// only the claim database; it never submits or retransmits a transaction.
+class PaymentLinkSpendEvidence {
+  final bool allFundsSpentElsewhere;
+  final List<String> conflictedTxids;
+  final List<String> localClaimTxids;
+  final BigInt verifiedHeight;
+
+  const PaymentLinkSpendEvidence({
+    required this.allFundsSpentElsewhere,
+    required this.conflictedTxids,
+    required this.localClaimTxids,
+    required this.verifiedHeight,
+  });
+
+  @override
+  int get hashCode =>
+      allFundsSpentElsewhere.hashCode ^
+      conflictedTxids.hashCode ^
+      localClaimTxids.hashCode ^
+      verifiedHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PaymentLinkSpendEvidence &&
+          runtimeType == other.runtimeType &&
+          allFundsSpentElsewhere == other.allFundsSpentElsewhere &&
+          conflictedTxids == other.conflictedTxids &&
+          localClaimTxids == other.localClaimTxids &&
+          verifiedHeight == other.verifiedHeight;
 }
 
 class ProposalResult {
