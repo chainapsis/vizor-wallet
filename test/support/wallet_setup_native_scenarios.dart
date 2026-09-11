@@ -545,7 +545,7 @@ void runWalletSetupNativeTests({required bool mobile}) {
           router.routeInformationProvider.value.uri.path,
           '/wallet-recovery',
         );
-        expect(find.text('Recover your wallet'), findsOneWidget);
+        expect(find.text('Wallet found'), findsOneWidget);
         expect(tester.takeException(), isNull);
         expect(
           await tester.runAsync(() => store.verifyPasswordOnly(password)),

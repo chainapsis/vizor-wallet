@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show Scaffold;
+import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,13 +9,16 @@ import '../../core/security/software_wallet_secret.dart';
 import '../../core/storage/wallet_recovery.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/password_text_field.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
 import '../../rust/api/wallet.dart' as rust_wallet;
 import '../../services/qr_scanner.dart';
 import '../keystone/widgets/keystone_qr_scanner_card.dart';
+import 'mobile/mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'mobile/passcode_widgets.dart';
+import 'shared/onboarding_auth_shell.dart';
 
 const _mobile = kAppFormFactor == AppFormFactor.mobile;
 
@@ -33,9 +36,14 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
   final _mnemonic = TextEditingController();
   final _passphrase = TextEditingController();
   WalletRecoverySession? _session;
+  String? _selectedCandidatePath;
   String? _editingAccount;
   String? _scanningAccount;
-  String? _error;
+  String? _passwordError;
+  String? _phraseError;
+  String? _newPasswordError;
+  String? _confirmationError;
+  String? _stageError;
   bool _busy = false;
   bool _authenticated = false;
   String _passcode = '';
@@ -58,8 +66,9 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
     _session?.dispose();
     setState(() {
       _session = WalletRecoverySession(candidate: candidate);
+      _selectedCandidatePath = candidate.path;
       _authenticated = !_recovery.isPasswordConfigured;
-      _error = null;
+      _clearErrors();
       _editingAccount = null;
       _scanningAccount = null;
       _passcode = '';
@@ -71,12 +80,13 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
     if (_busy || _session == null) return;
     final password = _mobile ? _passcode : _password.text;
     if (!isWalletPasswordValid(password)) {
-      setState(() => _error = validateRequiredWalletPassword(password));
+      setState(() => _passwordError = validateRequiredWalletPassword(password));
       return;
     }
     setState(() {
       _busy = true;
-      _error = null;
+      _passwordError = null;
+      _stageError = null;
     });
     try {
       final valid = await _session!.unlockExistingSecrets(password);
@@ -84,7 +94,7 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
       setState(() {
         _authenticated = valid;
         if (!valid) {
-          _error = _mobile
+          _passwordError = _mobile
               ? 'Incorrect passcode. Try again.'
               : 'Incorrect password. Try again.';
         }
@@ -92,7 +102,7 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
     } catch (_) {
       if (mounted) {
         setState(
-          () => _error =
+          () => _passwordError =
               'Your saved recovery material could not be read. Try again.',
         );
       }
@@ -111,7 +121,8 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
     if (_busy) return;
     setState(() {
       _busy = true;
-      _error = null;
+      _phraseError = null;
+      _stageError = null;
     });
     try {
       final verified = await _session!.verifySoftwareSecret(
@@ -128,14 +139,15 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
           _mnemonic.clear();
           _passphrase.clear();
         } else {
-          _error =
-              'This recovery phrase and passphrase do not match the selected account.';
+          final accountName = _accountName(uuid);
+          _phraseError =
+              "This phrase doesn't match $accountName. Check the words and passphrase.";
         }
       });
     } catch (_) {
       if (mounted) {
         setState(
-          () => _error =
+          () => _phraseError =
               'Check your recovery phrase and passphrase, then try again.',
         );
       }
@@ -149,7 +161,7 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
     if (_busy || uuid == null) return;
     setState(() {
       _busy = true;
-      _error = null;
+      _stageError = null;
     });
     try {
       final accounts = await rust_keystone.decodeAccountsFromCbor(
@@ -167,14 +179,15 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
         if (matched) {
           _scanningAccount = null;
         } else {
-          _error =
+          _stageError =
               'This Keystone QR does not match the selected wallet account.';
         }
       });
     } catch (_) {
       if (mounted) {
         setState(
-          () => _error = 'Scan the Zcash account QR from your Keystone again.',
+          () => _stageError =
+              'Scan the Zcash account QR from your Keystone again.',
         );
       }
     } finally {
@@ -189,17 +202,19 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
       newPassword = _mobile ? _newPasscode : _password.text;
       final policy = validateRequiredWalletPassword(newPassword ?? '');
       if (policy != null) {
-        setState(() => _error = policy);
+        setState(() => _newPasswordError = policy);
         return;
       }
       if (!_mobile && newPassword != _confirmation.text) {
-        setState(() => _error = 'Passwords do not match.');
+        setState(() => _confirmationError = 'Passwords do not match.');
         return;
       }
     }
     setState(() {
       _busy = true;
-      _error = null;
+      _newPasswordError = null;
+      _confirmationError = null;
+      _stageError = null;
     });
     try {
       await _session!.reconnect(newPassword: newPassword);
@@ -210,8 +225,8 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
     } catch (_) {
       if (mounted) {
         setState(
-          () => _error =
-              'The wallet could not be reconnected. Your original file is still in place. Try again.',
+          () => _stageError =
+              "Couldn't reconnect. Your original wallet file is unchanged. Try again.",
         );
       }
     } finally {
@@ -221,7 +236,11 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
 
   void _enterDigit(String digit) {
     if (_busy || _passcode.length >= 6) return;
-    setState(() => _passcode += digit);
+    setState(() {
+      _passcode += digit;
+      _passwordError = null;
+      _newPasswordError = null;
+    });
     if (_passcode.length != 6) return;
     if (!_authenticated) {
       _unlock();
@@ -236,285 +255,896 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
       setState(() {
         _newPasscode = null;
         _passcode = '';
-        _error = 'Passcodes do not match. Try again.';
+        _newPasswordError = 'Passcodes do not match. Try again.';
       });
     }
   }
+
+  void _clearErrors() {
+    _passwordError = null;
+    _phraseError = null;
+    _newPasswordError = null;
+    _confirmationError = null;
+    _stageError = null;
+  }
+
+  String _accountName(String uuid) => _session!.candidate.accounts
+      .firstWhere((account) => account.uuid == uuid)
+      .name;
+
+  bool get _needsNewCredential =>
+      _session?.canReconnect == true &&
+      !_recovery.isPasswordConfigured &&
+      !_session!.hasEstablishedPassword;
+
+  bool get _isMobilePasscodeStage =>
+      _mobile && _session != null && (!_authenticated || _needsNewCredential);
 
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(appBootstrapProvider).walletRecovery;
     if (recovery == null) return const SizedBox.shrink();
-    final colors = context.colors;
+
     return Scaffold(
-      backgroundColor: colors.background.ground,
+      backgroundColor: _mobile
+          ? context.colors.background.ground
+          : Colors.transparent,
       body: SafeArea(
-        child: ColoredBox(
-          color: colors.background.ground,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 480),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'Recover your wallet',
-                          style: AppTypography.headlineLarge.copyWith(
-                            color: colors.text.primary,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Text(
-                          'Vizor found signs of an existing wallet. Verify your recovery material to reconnect it.',
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.secondary,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        if (_session == null)
-                          ..._candidateList(recovery)
-                        else
-                          ..._selectedWallet(),
-                        if (_error != null) ...[
-                          const SizedBox(height: AppSpacing.sm),
-                          Semantics(
-                            liveRegion: true,
-                            child: Text(
-                              _error!,
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: colors.text.secondary,
-                              ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: AppSpacing.md),
-                        AppButton(
-                          variant: AppButtonVariant.ghost,
-                          onPressed: _busy
-                              ? null
-                              : () async {
-                                  _session?.dispose();
-                                  _session = null;
-                                  await ref.read(appBootstrapRetryProvider)();
-                                },
-                          child: const Text('Search again'),
-                        ),
-                      ],
-                    ),
-                  ),
+        child: _mobile
+            ? (_isMobilePasscodeStage
+                  ? _mobilePasscodeContent()
+                  : _mobileRegularContent(recovery))
+            : OnboardingAuthShell(card: _desktopCard(recovery)),
+      ),
+    );
+  }
+
+  Widget _desktopCard(WalletRecoveryState recovery) {
+    return OnboardingAuthCard(
+      width: 396,
+      height: 600,
+      borderRadius: AppSpacing.md,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.xl,
+        AppSpacing.md,
+        AppSpacing.lg,
+      ),
+      child: Column(
+        children: [
+          _RecoveryHeader(title: _title(recovery), body: _subtitle(recovery)),
+          const SizedBox(height: AppSpacing.base),
+          Expanded(child: SingleChildScrollView(child: _regularBody(recovery))),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileRegularContent(WalletRecoveryState recovery) {
+    return ColoredBox(
+      color: context.colors.background.ground,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.md,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _RecoveryHeader(
+                  title: _title(recovery),
+                  body: _subtitle(recovery),
                 ),
-              );
-            },
+                const SizedBox(height: AppSpacing.base),
+                _regularBody(recovery),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  List<Widget> _candidateList(WalletRecoveryState recovery) => [
-    if (recovery.candidates.isEmpty)
-      Text(
-        'No wallet file was found in this app’s data folder. Restore a preserved copy of your wallet file to that folder, then search again.',
-        style: AppTypography.bodyMedium.copyWith(
-          color: context.colors.text.secondary,
-        ),
-      ),
-    for (final candidate in recovery.candidates) ...[
-      Text(
-        candidate.fileName,
-        style: AppTypography.bodyMedium.copyWith(
-          color: context.colors.text.primary,
-        ),
-      ),
-      const SizedBox(height: AppSpacing.xs),
-      if (candidate.error != null)
-        Text(
-          candidate.error!,
-          style: AppTypography.bodySmall.copyWith(
-            color: context.colors.text.secondary,
-          ),
-        )
-      else
-        AppButton(
-          onPressed: _busy ? null : () => _select(candidate),
-          variant: AppButtonVariant.secondary,
-          child: const Text('Recover this wallet'),
-        ),
-      const SizedBox(height: AppSpacing.md),
-    ],
-  ];
+  Widget _mobilePasscodeContent() {
+    final colors = context.colors;
+    final enteringExistingPasscode = !_authenticated;
+    final confirming = !enteringExistingPasscode && _newPasscode != null;
+    final title = enteringExistingPasscode
+        ? 'Enter your passcode'
+        : confirming
+        ? 'Confirm passcode'
+        : 'Create passcode';
+    final subtitle = enteringExistingPasscode
+        ? 'Use the passcode you set for this wallet.'
+        : confirming
+        ? 'Re-enter your passcode.'
+        : '6 digits';
+    final error = enteringExistingPasscode ? _passwordError : _newPasswordError;
 
-  List<Widget> _selectedWallet() {
-    final session = _session!;
-    if (!_authenticated) {
-      return [
-        Text(
-          _mobile
-              ? 'Enter your existing passcode.'
-              : 'Enter your existing password.',
-          style: AppTypography.bodyMedium.copyWith(
-            color: context.colors.text.primary,
-          ),
+    return ColoredBox(
+      color: colors.background.ground,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.md,
         ),
-        const SizedBox(height: AppSpacing.sm),
-        if (_mobile)
-          ..._passcodeEntry()
-        else ...[
-          PasswordTextField(
-            label: 'Password',
-            controller: _password,
-            enabled: !_busy,
-            onSubmitted: (_) => _unlock(),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          AppButton(
-            onPressed: _busy ? null : _unlock,
-            child: Text(_busy ? 'Checking' : 'Continue'),
-          ),
-        ],
-      ];
-    }
-    return [
-      for (final entry in session.candidate.accounts.indexed) ...[
-        Text(
-          'Account ${entry.$1 + 1}',
-          style: AppTypography.headlineSmall.copyWith(
-            color: context.colors.text.primary,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          session.isVerified(entry.$2.uuid)
-              ? 'Recovery material verified'
-              : entry.$2.isHardware
-              ? 'Reconnect your hardware wallet to verify this account.'
-              : 'Recovery phrase needed',
-          style: AppTypography.bodyMedium.copyWith(
-            color: context.colors.text.secondary,
-          ),
-        ),
-        if (!session.isVerified(entry.$2.uuid)) ..._accountRecovery(entry.$2),
-        const SizedBox(height: AppSpacing.md),
-      ],
-      if (session.canReconnect) ...[
-        if (!_recovery.isPasswordConfigured &&
-            !session.hasEstablishedPassword) ...[
-          Text(
-            _mobile
-                ? (_newPasscode == null
-                      ? 'Set a new passcode'
-                      : 'Confirm your passcode')
-                : 'Set a new password',
-            style: AppTypography.headlineSmall.copyWith(
-              color: context.colors.text.primary,
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Semantics(
+                      header: true,
+                      child: Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.displayLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.s),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 320),
+                      child: Text(
+                        subtitle,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    SizedBox(
+                      height: kPasscodePromptDigitsHeight,
+                      child: PasscodePromptField(
+                        length: kMobilePasscodeLength,
+                        filled: _passcode.length,
+                        error: error,
+                        minGap: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          if (_mobile)
-            ..._passcodeEntry()
-          else ...[
-            PasswordTextField(
-              label: 'New password',
-              controller: _password,
+            PasscodeNumpad(
+              onDigit: (digit) => _enterDigit('$digit'),
               enabled: !_busy,
+              canDelete: _passcode.isNotEmpty && !_busy,
+              onBackspace: () {
+                if (_busy || _passcode.isEmpty) return;
+                setState(() {
+                  _passcode = _passcode.substring(0, _passcode.length - 1);
+                  _passwordError = null;
+                  _newPasswordError = null;
+                });
+              },
             ),
-            const SizedBox(height: AppSpacing.sm),
-            PasswordTextField(
-              label: 'Confirm password',
-              controller: _confirmation,
-              enabled: !_busy,
-            ),
+            const SizedBox(height: AppSpacing.md),
           ],
-          const SizedBox(height: AppSpacing.sm),
-        ],
-        if (!_mobile ||
-            _recovery.isPasswordConfigured ||
-            session.hasEstablishedPassword)
-          AppButton(
-            onPressed: _busy ? null : _reconnect,
-            child: Text(_busy ? 'Reconnecting' : 'Reconnect wallet'),
-          ),
-      ],
-    ];
+        ),
+      ),
+    );
   }
 
-  List<Widget> _accountRecovery(rust_wallet.AccountInfo account) => [
-    const SizedBox(height: AppSpacing.sm),
-    if (account.isHardware && _scanningAccount != account.uuid)
-      AppButton(
-        variant: AppButtonVariant.secondary,
+  Widget _regularBody(WalletRecoveryState recovery) {
+    if (_session == null) return _candidateContent(recovery);
+    if (!_authenticated) return _desktopPasswordContent();
+    if (!_session!.canReconnect) return _accountVerificationContent();
+    if (_needsNewCredential) return _desktopNewPasswordContent();
+    return _readyContent();
+  }
+
+  Widget _candidateContent(WalletRecoveryState recovery) {
+    if (recovery.candidates.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _primaryAction(
+            label: _busy ? 'Searching...' : 'Search again',
+            onPressed: _busy ? null : _restart,
+          ),
+        ],
+      );
+    }
+
+    final selectable = recovery.candidates
+        .where((candidate) => candidate.canInspect)
+        .toList();
+    final selected = _selectedCandidate(recovery);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final entry in recovery.candidates.indexed) ...[
+          _CandidateRow(
+            candidate: entry.$2,
+            networkLabel: _networkLabel(entry.$2.network),
+            accountCount: _accountCount(entry.$2.accounts.length),
+            selected: selected?.path == entry.$2.path,
+            showSelection: selectable.length > 1,
+            onSelect: entry.$2.canInspect
+                ? () => setState(() => _selectedCandidatePath = entry.$2.path)
+                : null,
+          ),
+          if (entry.$1 != recovery.candidates.length - 1) _rowDivider(),
+        ],
+        if (_stageError != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _StageError(message: _stageError!),
+        ],
+        const SizedBox(height: AppSpacing.base),
+        if (selected != null)
+          _primaryAction(
+            label: 'Recover this wallet',
+            onPressed: _busy ? null : () => _select(selected),
+          )
+        else
+          _primaryAction(
+            label: _busy ? 'Searching...' : 'Search again',
+            onPressed: _busy ? null : _restart,
+          ),
+        if (selected != null) ...[
+          const SizedBox(height: AppSpacing.s),
+          _secondaryAction(label: 'Search again', onPressed: _restart),
+        ],
+      ],
+    );
+  }
+
+  Widget _desktopPasswordContent() {
+    final candidate = _session!.candidate;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _WalletMeta(
+          text:
+              '${_networkLabel(candidate.network)} · ${_accountCount(candidate.accounts.length)}',
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Center(
+          child: SizedBox(
+            width: 256,
+            child: _RecoveryFieldBlock(
+              child: PasswordTextField(
+                label: 'Password',
+                hintText: 'Password',
+                showLabel: false,
+                surface: AppTextFieldSurface.secondary,
+                leadingSlotWidth: 32,
+                inputHorizontalPadding: AppSpacing.s,
+                controller: _password,
+                enabled: !_busy,
+                showVisibilityToggle: false,
+                messageText: _passwordError,
+                tone: _passwordError == null
+                    ? AppTextFieldTone.neutral
+                    : AppTextFieldTone.destructive,
+                onChanged: (_) => setState(() => _passwordError = null),
+                onSubmitted: (_) => _unlock(),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.base),
+        _primaryAction(
+          label: _busy ? 'Checking...' : 'Continue',
+          onPressed: _busy ? null : _unlock,
+        ),
+        const SizedBox(height: AppSpacing.s),
+        _secondaryAction(label: 'Start over', onPressed: _restart),
+      ],
+    );
+  }
+
+  Widget _accountVerificationContent() {
+    final session = _session!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final entry in session.candidate.accounts.indexed) ...[
+          _AccountRow(
+            account: entry.$2,
+            verified: session.isVerified(entry.$2.uuid),
+            child: session.isVerified(entry.$2.uuid)
+                ? null
+                : _accountRecovery(entry.$2),
+          ),
+          if (entry.$1 != session.candidate.accounts.length - 1) _rowDivider(),
+        ],
+        if (_stageError != null && _scanningAccount == null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _StageError(message: _stageError!),
+        ],
+        const SizedBox(height: AppSpacing.base),
+        _secondaryAction(label: 'Start over', onPressed: _restart),
+      ],
+    );
+  }
+
+  Widget _desktopNewPasswordContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: SizedBox(
+            width: 256,
+            child: Column(
+              children: [
+                _RecoveryFieldBlock(
+                  child: PasswordTextField(
+                    label: 'New password',
+                    hintText: 'Min. 8 characters and symbols',
+                    controller: _password,
+                    enabled: !_busy,
+                    showVisibilityToggle: false,
+                    messageText: _newPasswordError,
+                    tone: _newPasswordError == null
+                        ? AppTextFieldTone.neutral
+                        : AppTextFieldTone.destructive,
+                    onChanged: (_) => setState(() {
+                      _newPasswordError = null;
+                      _confirmationError = null;
+                    }),
+                    onSubmitted: (_) => _reconnect(),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                _RecoveryFieldBlock(
+                  child: PasswordTextField(
+                    label: 'Confirm password',
+                    hintText: 'Confirm password',
+                    controller: _confirmation,
+                    enabled: !_busy,
+                    showVisibilityToggle: false,
+                    messageText: _confirmationError,
+                    tone: _confirmationError == null
+                        ? AppTextFieldTone.neutral
+                        : AppTextFieldTone.destructive,
+                    onChanged: (_) => setState(() => _confirmationError = null),
+                    onSubmitted: (_) => _reconnect(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_stageError != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _StageError(message: _stageError!),
+        ],
+        const SizedBox(height: AppSpacing.base),
+        _primaryAction(
+          label: _busy ? 'Reconnecting...' : 'Reconnect wallet',
+          onPressed: _busy ? null : _reconnect,
+        ),
+        const SizedBox(height: AppSpacing.s),
+        _secondaryAction(label: 'Start over', onPressed: _restart),
+      ],
+    );
+  }
+
+  Widget _readyContent() {
+    final session = _session!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final entry in session.candidate.accounts.indexed) ...[
+          _AccountRow(account: entry.$2, verified: true),
+          if (entry.$1 != session.candidate.accounts.length - 1) _rowDivider(),
+        ],
+        if (_stageError != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _StageError(message: _stageError!),
+        ],
+        const SizedBox(height: AppSpacing.base),
+        _primaryAction(
+          label: _busy ? 'Reconnecting...' : 'Reconnect wallet',
+          onPressed: _busy ? null : _reconnect,
+        ),
+        const SizedBox(height: AppSpacing.s),
+        _secondaryAction(label: 'Start over', onPressed: _restart),
+      ],
+    );
+  }
+
+  Widget _accountRecovery(rust_wallet.AccountInfo account) {
+    if (account.isHardware && _scanningAccount != account.uuid) {
+      return _inlineAction(
+        label: 'Scan Keystone QR',
         onPressed: _busy
             ? null
-            : () => setState(() => _scanningAccount = account.uuid),
-        child: const Text('Scan Keystone QR'),
-      )
-    else if (account.isHardware)
-      KeystoneQrScannerCard(
+            : () => setState(() {
+                _scanningAccount = account.uuid;
+                _stageError = null;
+              }),
+      );
+    }
+    if (account.isHardware) {
+      return KeystoneQrScannerCard(
         expectedUrType: 'zcash-accounts',
         decoding: _busy,
-        error: _error,
+        error: _stageError,
         onProgress: (_) {},
         onDecodeError: (_) => setState(
-          () => _error = 'Scan the Zcash account QR from your Keystone.',
+          () => _stageError = 'Scan the Zcash account QR from your Keystone.',
         ),
         onComplete: _verifyKeystone,
         unavailableMessage:
             'Connect a camera to scan your Keystone account QR.',
-      )
-    else if (_editingAccount != account.uuid)
-      AppButton(
-        variant: AppButtonVariant.secondary,
+      );
+    }
+    if (_editingAccount != account.uuid) {
+      return _inlineAction(
+        label: 'Enter recovery phrase',
         onPressed: _busy
             ? null
             : () {
                 _mnemonic.clear();
                 _passphrase.clear();
-                setState(() => _editingAccount = account.uuid);
+                setState(() {
+                  _editingAccount = account.uuid;
+                  _phraseError = null;
+                });
               },
-        child: const Text('Enter recovery phrase'),
-      )
-    else ...[
-      AppTextField(
-        label: 'Recovery phrase',
-        controller: _mnemonic,
-        minLines: 3,
-        maxLines: 6,
-        enabled: !_busy,
-        autocorrect: false,
-        enableSuggestions: false,
-      ),
-      const SizedBox(height: AppSpacing.sm),
-      PasswordTextField(
-        label: 'BIP39 passphrase (optional)',
-        controller: _passphrase,
-        enabled: !_busy,
-      ),
-      const SizedBox(height: AppSpacing.sm),
-      AppButton(
-        onPressed: _busy ? null : () => _verifyPhrase(account.uuid),
-        child: Text(_busy ? 'Verifying' : 'Verify recovery phrase'),
-      ),
-    ],
-  ];
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _RecoveryFieldBlock(
+          child: AppTextField(
+            label: 'Recovery phrase',
+            controller: _mnemonic,
+            minLines: 3,
+            maxLines: 6,
+            enabled: !_busy,
+            autocorrect: false,
+            enableSuggestions: false,
+            messageText: _phraseError,
+            tone: _phraseError == null
+                ? AppTextFieldTone.neutral
+                : AppTextFieldTone.destructive,
+            onChanged: (_) => setState(() => _phraseError = null),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        PasswordTextField(
+          label: 'BIP39 passphrase (optional)',
+          controller: _passphrase,
+          enabled: !_busy,
+          onChanged: (_) => setState(() => _phraseError = null),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        _primaryAction(
+          label: _busy ? 'Verifying...' : 'Verify recovery phrase',
+          onPressed: _busy ? null : () => _verifyPhrase(account.uuid),
+        ),
+      ],
+    );
+  }
 
-  List<Widget> _passcodeEntry() => [
-    PasscodeDots(length: 6, filled: _passcode.length),
-    const SizedBox(height: AppSpacing.sm),
-    PasscodeNumpad(
-      onDigit: (digit) => _enterDigit('$digit'),
-      enabled: !_busy,
-      canDelete: _passcode.isNotEmpty && !_busy,
-      onBackspace: () {
-        if (!_busy && _passcode.isNotEmpty) {
-          setState(
-            () => _passcode = _passcode.substring(0, _passcode.length - 1),
-          );
-        }
-      },
+  Widget _primaryAction({
+    required String label,
+    required VoidCallback? onPressed,
+  }) => Center(
+    child: AppButton(
+      onPressed: onPressed,
+      minWidth: _mobile ? null : 196,
+      expand: _mobile,
+      child: Text(label),
     ),
-  ];
+  );
+
+  Widget _secondaryAction({
+    required String label,
+    required VoidCallback? onPressed,
+  }) => Center(
+    child: AppButton(
+      variant: AppButtonVariant.ghost,
+      size: AppButtonSize.large,
+      onPressed: _busy ? null : onPressed,
+      minWidth: _mobile ? null : 196,
+      expand: _mobile,
+      child: Text(label),
+    ),
+  );
+
+  Widget _inlineAction({
+    required String label,
+    required VoidCallback? onPressed,
+  }) => Center(
+    child: AppButton(
+      variant: AppButtonVariant.secondary,
+      size: _mobile ? AppButtonSize.large : AppButtonSize.mediumLarge,
+      onPressed: onPressed,
+      minWidth: _mobile ? null : 196,
+      expand: _mobile,
+      child: Text(label),
+    ),
+  );
+
+  Widget _rowDivider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+    child: SizedBox(
+      height: 1,
+      child: ColoredBox(color: context.colors.border.subtle),
+    ),
+  );
+
+  WalletRecoveryCandidate? _selectedCandidate(WalletRecoveryState recovery) {
+    final selectable = recovery.candidates.where(
+      (candidate) => candidate.canInspect,
+    );
+    if (selectable.isEmpty) return null;
+    return selectable.firstWhere(
+      (candidate) => candidate.path == _selectedCandidatePath,
+      orElse: () => selectable.first,
+    );
+  }
+
+  Future<void> _restart() async {
+    if (_busy) return;
+    _session?.dispose();
+    setState(() {
+      _session = null;
+      _selectedCandidatePath = null;
+      _authenticated = false;
+      _editingAccount = null;
+      _scanningAccount = null;
+      _passcode = '';
+      _newPasscode = null;
+      _password.clear();
+      _confirmation.clear();
+      _mnemonic.clear();
+      _passphrase.clear();
+      _clearErrors();
+    });
+    await ref.read(appBootstrapRetryProvider)();
+  }
+
+  String _title(WalletRecoveryState recovery) {
+    if (_session == null) {
+      return recovery.candidates.isEmpty ? 'No wallet found' : 'Wallet found';
+    }
+    if (!_authenticated) {
+      return _mobile ? 'Enter your passcode' : 'Enter your password';
+    }
+    if (!_session!.canReconnect) return 'Verify accounts';
+    if (_needsNewCredential) {
+      return _mobile ? 'Create passcode' : 'New password';
+    }
+    return 'Reconnect wallet';
+  }
+
+  String _subtitle(WalletRecoveryState recovery) {
+    if (_session == null) {
+      return recovery.candidates.isEmpty
+          ? "Restore your backup copy to Vizor's data folder, then search again."
+          : 'Vizor found a wallet from a previous setup. Verify it to keep using it.';
+    }
+    if (!_authenticated) {
+      return _mobile
+          ? 'Use the passcode you set for this wallet.'
+          : 'Use the password you set for this wallet.';
+    }
+    if (!_session!.canReconnect) {
+      return 'Add the missing recovery details for each account.';
+    }
+    if (_needsNewCredential) {
+      return _mobile
+          ? '6 digits'
+          : 'Choose a password to protect this wallet on this device.';
+    }
+    return 'All accounts are verified. Your original wallet file stays unchanged.';
+  }
+
+  String _accountCount(int count) =>
+      '$count ${count == 1 ? 'account' : 'accounts'}';
+
+  String _networkLabel(String network) => switch (network.toLowerCase()) {
+    'main' || 'mainnet' => 'Zcash mainnet',
+    'test' || 'testnet' => 'Zcash testnet',
+    'regtest' => 'Local regtest',
+    _ => network,
+  };
+}
+
+class _RecoveryHeader extends StatelessWidget {
+  const _RecoveryHeader({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      children: [
+        ExcludeSemantics(
+          child: Image.asset(
+            'assets/illustrations/welcome_badge.png',
+            width: 50,
+            height: 50,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.base),
+        Semantics(
+          header: true,
+          child: SizedBox(
+            width: _mobile ? 320 : 348,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Text(
+                title,
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: AppTypography.displayMedium.copyWith(
+                  color: colors.text.accent,
+                  height: _mobile ? null : 48 / 45,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 348),
+          child: Text(
+            body,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CandidateRow extends StatelessWidget {
+  const _CandidateRow({
+    required this.candidate,
+    required this.networkLabel,
+    required this.accountCount,
+    required this.selected,
+    required this.showSelection,
+    required this.onSelect,
+  });
+
+  final WalletRecoveryCandidate candidate;
+  final String networkLabel;
+  final String accountCount;
+  final bool selected;
+  final bool showSelection;
+  final VoidCallback? onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$networkLabel · $accountCount',
+                    style: AppTypography.bodyLarge.copyWith(
+                      color: colors.text.primary,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Semantics(
+                    label: 'Wallet file ${candidate.fileName}',
+                    child: ExcludeSemantics(
+                      child: Text(
+                        candidate.fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.codeSmall.copyWith(
+                          color: colors.text.muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (candidate.error != null)
+              AppIcon(
+                AppIcons.warningCircle,
+                size: AppIconSize.medium,
+                color: colors.icon.destructive,
+              )
+            else if (selected && showSelection)
+              _RecoveryStatus(icon: AppIcons.checkCircle, label: 'Selected')
+            else if (showSelection)
+              AppButton(
+                variant: AppButtonVariant.secondary,
+                size: _mobile ? AppButtonSize.large : AppButtonSize.mediumLarge,
+                onPressed: onSelect,
+                child: const Text('Select'),
+              ),
+          ],
+        ),
+        if (candidate.error != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          _StageError(message: candidate.error!),
+        ],
+      ],
+    );
+  }
+}
+
+class _AccountRow extends StatelessWidget {
+  const _AccountRow({
+    required this.account,
+    required this.verified,
+    this.child,
+  });
+
+  final rust_wallet.AccountInfo account;
+  final bool verified;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Row(
+            children: [
+              if (account.isHardware) ...[
+                AppIcon(AppIcons.keystone, size: 20, color: colors.icon.accent),
+                const SizedBox(width: AppSpacing.xs),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      account.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.primary,
+                      ),
+                    ),
+                    Text(
+                      account.isHardware
+                          ? 'Keystone account'
+                          : 'Software account',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              _RecoveryStatus(
+                icon: verified
+                    ? AppIcons.checkCircle
+                    : account.isHardware
+                    ? AppIcons.keystone
+                    : AppIcons.key,
+                label: verified
+                    ? 'Verified'
+                    : account.isHardware
+                    ? 'Keystone needed'
+                    : 'Phrase needed',
+                positive: verified,
+              ),
+            ],
+          ),
+        ),
+        if (child != null) ...[const SizedBox(height: AppSpacing.s), child!],
+      ],
+    );
+  }
+}
+
+class _RecoveryStatus extends StatelessWidget {
+  const _RecoveryStatus({
+    required this.icon,
+    required this.label,
+    this.positive = false,
+  });
+
+  final String icon;
+  final String label;
+  final bool positive;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = positive ? colors.text.positiveStrong : colors.text.secondary;
+    return Semantics(
+      label: label,
+      child: ExcludeSemantics(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(icon, size: AppIconSize.medium, color: color),
+            const SizedBox(width: AppSpacing.xxs),
+            Text(
+              label,
+              style: AppTypography.labelMedium.copyWith(color: color),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WalletMeta extends StatelessWidget {
+  const _WalletMeta({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      style: AppTypography.bodySmall.copyWith(
+        color: context.colors.text.secondary,
+      ),
+    );
+  }
+}
+
+class _RecoveryFieldBlock extends StatelessWidget {
+  const _RecoveryFieldBlock({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(padding: const EdgeInsets.only(bottom: 20), child: child);
+  }
+}
+
+class _StageError extends StatelessWidget {
+  const _StageError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      liveRegion: true,
+      child: Text(
+        message,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: AppTypography.bodyMediumStrong.copyWith(
+          color: context.colors.text.destructive,
+        ),
+      ),
+    );
+  }
 }

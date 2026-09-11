@@ -809,7 +809,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Recover your wallet'), findsOneWidget);
+        expect(find.text('Wallet found'), findsOneWidget);
         expect(find.text('Create wallet'), findsNothing);
         final recoveryContainer = ProviderScope.containerOf(
           tester.element(find.byType(WalletRecoveryScreen)),
@@ -837,9 +837,16 @@ void main() {
         }
         await _pumpUntil(
           tester,
-          () => find.text('Recovery material verified').evaluate().isNotEmpty,
+          () => find
+              .text(
+                allMetadataMissing
+                    ? (_mobile ? 'Create passcode' : 'New password')
+                    : 'Verified',
+              )
+              .evaluate()
+              .isNotEmpty,
         );
-        expect(find.text('Recovery phrase needed'), findsNothing);
+        expect(find.text('Phrase needed'), findsNothing);
         debugPrint('recovery UI: account verified');
         await _capture(
           tester,
@@ -854,8 +861,8 @@ void main() {
             await _enterField(tester, 'New password', _newPassword);
             await _enterField(tester, 'Confirm password', _newPassword);
           }
-          await tester.ensureVisible(find.text('Reconnect wallet'));
-          await _tapNativeAction(tester, find.text('Reconnect wallet'));
+          await tester.ensureVisible(find.text('Reconnect wallet').last);
+          await _tapNativeAction(tester, find.text('Reconnect wallet').last);
         }
         final unlockScreen = find.byType(
           _mobile ? MobileUnlockScreen : UnlockScreen,
