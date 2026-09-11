@@ -6269,53 +6269,6 @@ fn wire__crate__api__sync__set_active_sync_account_impl(
         },
     )
 }
-fn wire__crate__api__voting__set_ballot_intent_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "set_ballot_intent",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_db_path = <String>::sse_decode(&mut deserializer);
-            let api_account_uuid = <String>::sse_decode(&mut deserializer);
-            let api_round_id = <String>::sse_decode(&mut deserializer);
-            let api_proposal_id = <u32>::sse_decode(&mut deserializer);
-            let api_num_options = <u32>::sse_decode(&mut deserializer);
-            let api_skipped = <bool>::sse_decode(&mut deserializer);
-            let api_choice = <Option<u32>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, zcash_voting::wire::VotingErrorView>((move || {
-                    let output_ok = crate::api::voting::set_ballot_intent(
-                        api_db_path,
-                        api_account_uuid,
-                        api_round_id,
-                        api_proposal_id,
-                        api_num_options,
-                        api_skipped,
-                        api_choice,
-                    )?;
-                    Ok(output_ok)
-                })())
-            }
-        },
-    )
-}
 fn wire__crate__api__network_privacy__set_network_privacy_dormant_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -7319,8 +7272,7 @@ fn wire__crate__api__sync__validate_address_impl(
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::sync::validate_address(api_address, api_network)?;
+                    let output_ok = crate::api::sync::validate_address(api_address, api_network)?;
                     Ok(output_ok)
                 })())
             }
@@ -12599,7 +12551,6 @@ fn pde_ffi_dispatcher_primary_impl(
 143 => wire__zcash_voting__wire__round_work_tally_view_default_impl(port, ptr, rust_vec_len, data_len),
 144 => wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len),
 145 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
-147 => wire__crate__api__voting__set_ballot_intent_impl(port, ptr, rust_vec_len, data_len),
 150 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
 151 => wire__crate__api__voting__set_voting_observability_sink_impl(port, ptr, rust_vec_len, data_len),
 152 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
@@ -12663,7 +12614,9 @@ fn pde_ffi_dispatcher_sync_impl(
             rust_vec_len,
             data_len,
         ),
-        182 => wire__crate__api__sync__cancel_payment_link_claim_sync_impl(ptr, rust_vec_len, data_len),
+        182 => {
+            wire__crate__api__sync__cancel_payment_link_claim_sync_impl(ptr, rust_vec_len, data_len)
+        }
         185 => wire__crate__api__sync__get_pczt_expiry_height_impl(ptr, rust_vec_len, data_len),
         186 => wire__crate__api__sync__get_pczt_txid_impl(ptr, rust_vec_len, data_len),
         66 => wire__crate__api__wallet__generate_mnemonic_impl(ptr, rust_vec_len, data_len),

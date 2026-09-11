@@ -367,27 +367,6 @@ Future<RoundPlanView> getRoundPlan({
   proposalIds: proposalIds,
 );
 
-/// Persist (insert or replace) the voter's ballot intent for one proposal.
-/// Pass `skipped: true` for `Decision::Skipped`; otherwise `choice` must be set.
-/// `num_options` is the proposal's declared option count.
-Future<void> setBallotIntent({
-  required String dbPath,
-  required String accountUuid,
-  required String roundId,
-  required int proposalId,
-  required int numOptions,
-  required bool skipped,
-  int? choice,
-}) => RustLib.instance.api.crateApiVotingSetBallotIntent(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  roundId: roundId,
-  proposalId: proposalId,
-  numOptions: numOptions,
-  skipped: skipped,
-  choice: choice,
-);
-
 /// Authenticate the static voting config bytes and surface the dynamic mirrors.
 ///
 /// The wallet fetches the static trust anchor with its own transport and passes

@@ -588,31 +588,29 @@ fn save_exclusions(
     snapshot: u64,
     excluded: &[String],
 ) -> Result<bool, String> {
-    // No sidecar write lock: main needed one because delegation bundles held
+    // No sidecar write lock: it existed because delegation bundles held
     // independent SQLite connections that could race each other. Every handle
     // for one sidecar now shares a single connection with SDK-owned busy
     // handling, so opening and writing here is already serialized.
-    (|| {
-        let db = super::db::open_voting_db(db_path, account).map_err(|_| INVALID)?;
-        db.conn().execute_batch(TABLE).map_err(|_| INVALID)?;
-        // Never replan a round someone has already started locally, including
-        // a concurrently prepared round. Existing recovery remains authoritative.
-        if db.get_bundle_count(round).map_err(|_| INVALID)? > 0 {
-            return Ok(true);
-        }
-        db.conn()
-            .execute(
-                "INSERT OR REPLACE INTO vizor_voting_participation VALUES (?1,?2,?3,?4)",
-                rusqlite::params![
-                    account,
-                    round,
-                    snapshot,
-                    serde_json::to_string(excluded).map_err(|_| INVALID)?
-                ],
-            )
-            .map_err(|_| INVALID)?;
-        Ok(false)
-    })()
+    let db = super::db::open_voting_db(db_path, account).map_err(|_| INVALID)?;
+    db.conn().execute_batch(TABLE).map_err(|_| INVALID)?;
+    // Never replan a round someone has already started locally, including
+    // a concurrently prepared round. Existing recovery remains authoritative.
+    if db.get_bundle_count(round).map_err(|_| INVALID)? > 0 {
+        return Ok(true);
+    }
+    db.conn()
+        .execute(
+            "INSERT OR REPLACE INTO vizor_voting_participation VALUES (?1,?2,?3,?4)",
+            rusqlite::params![
+                account,
+                round,
+                snapshot,
+                serde_json::to_string(excluded).map_err(|_| INVALID)?
+            ],
+        )
+        .map_err(|_| INVALID)?;
+    Ok(false)
 }
 
 pub fn filter_notes(
@@ -652,74 +650,6 @@ pub fn clear_account(db: &zcash_voting::storage::VotingDb) -> Result<(), String>
         .map_err(|_| INVALID)?;
     }
     Ok(())
-}
-
-/// Assemble SDK bundles from the participation-filtered snapshot note set.
-/// Keep proof/signature/witness algorithms owned by the pinned SDK.
-pub fn prepare_bundle(
-    db: &zcash_voting::storage::VotingDb,
-    wallet: &crate::wallet::db::WalletDatabase,
-    params: zcash_voting::delegate::PrepareDelegationBundleParams<'_>,
-) -> Result<zcash_voting::delegate::PreparedDelegationBundle, zcash_voting::VotingError> {
-    use zcash_voting::{delegate, selection, VotingError};
-    let err = |message: String| VotingError::InvalidInput { message };
-    let lwd = params.lwd;
-    if lwd.network != params.voting_hotkey.network() {
-        return Err(err("Voting network mismatch".into()));
-    }
-    delegate::ensure_round_context(
-        db,
-        lwd.network,
-        &lwd.round_params,
-        &lwd.resolved_round_name,
-        params.session_json,
-    )?;
-    let scanned = wallet
-        .block_fully_scanned()
-        .map_err(|_| err(INVALID.into()))?
-        .map(|m| u64::from(u32::from(m.block_height())))
-        .unwrap_or(0);
-    let inputs =
-        selection::gather_delegation_wallet_inputs(selection::GatherDelegationWalletParams {
-            wallet_db: wallet,
-            account_uuid: params.account_uuid,
-            voting_hotkey: params.voting_hotkey,
-            snapshot_height: lwd.round_params.snapshot_height,
-            scanned_height: scanned,
-            anchor_tree_state_bytes: lwd.anchor_tree_state_bytes,
-            resolved_round_name: lwd.resolved_round_name.clone(),
-        })?;
-    let round = lwd.round_params.vote_round_id.as_str();
-    let notes = filter_notes(
-        db,
-        round,
-        lwd.round_params.snapshot_height,
-        &inputs.round_note_infos,
-    )
-    .map_err(err)?;
-    let layout =
-        db.ensure_bundles_with_skipped_suffix_with_policy(round, &notes, params.bundle_policy)?;
-    let bundle_note_infos = zcash_voting::round::bundle_notes_for_index_for_round(
-        &notes,
-        &layout,
-        params.bundle_index,
-        db,
-        round,
-    )?;
-    let prepared = delegate::PreparedDelegationBundle {
-        round_id: round.to_string(),
-        round_params: lwd.round_params,
-        bundle_index: params.bundle_index,
-        layout,
-        bundle_note_infos,
-        delegation_keys: inputs.delegation_keys,
-        branch_id_provider: lwd.branch_id_provider,
-        anchor_tree_state_bytes: inputs.anchor_tree_state_bytes,
-        network: lwd.network,
-        round_name: lwd.resolved_round_name,
-    };
-    prepared.ensure_witnesses(db, wallet)?;
-    Ok(prepared)
 }
 
 #[cfg(test)]

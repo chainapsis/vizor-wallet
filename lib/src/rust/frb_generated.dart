@@ -1031,16 +1031,6 @@ abstract class RustLibApi extends BaseApi {
 
   void crateApiSyncSetActiveSyncAccount({String? accountUuid});
 
-  Future<void> crateApiVotingSetBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  });
-
   void crateApiNetworkPrivacySetNetworkPrivacyDormant({required bool dormant});
 
   void crateApiSyncSetSyncMode({required int mode});
@@ -7580,67 +7570,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "set_active_sync_account",
         argNames: ["accountUuid"],
-      );
-
-  @override
-  Future<void> crateApiVotingSetBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(dbPath, serializer);
-          sse_encode_String(accountUuid, serializer);
-          sse_encode_String(roundId, serializer);
-          sse_encode_u_32(proposalId, serializer);
-          sse_encode_u_32(numOptions, serializer);
-          sse_encode_bool(skipped, serializer);
-          sse_encode_opt_box_autoadd_u_32(choice, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 147,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_voting_error_view,
-        ),
-        constMeta: kCrateApiVotingSetBallotIntentConstMeta,
-        argValues: [
-          dbPath,
-          accountUuid,
-          roundId,
-          proposalId,
-          numOptions,
-          skipped,
-          choice,
-        ],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiVotingSetBallotIntentConstMeta =>
-      const TaskConstMeta(
-        debugName: "set_ballot_intent",
-        argNames: [
-          "dbPath",
-          "accountUuid",
-          "roundId",
-          "proposalId",
-          "numOptions",
-          "skipped",
-          "choice",
-        ],
       );
 
   @override

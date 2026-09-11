@@ -156,46 +156,26 @@ pub fn start_proving_cache_warmup() {
 
 /// Select notes and create/reuse delegation bundle rows for a round.
 ///
-/// The pipeline's own `setup_bundles` selects and plans in one call, which
-/// leaves nowhere to drop the notes this wallet has already voted with. The
-/// three steps are driven here instead so [`participation_filtered_notes`]
-/// runs between selection and planning, exactly where participation filtering
-/// ran before the round session took over. Dropping it would plan bundles
-/// over notes that already participated.
+/// **Participation exclusions are deliberately not applied here.** The note
+/// set has to be derived identically everywhere it is derived, and the SDK
+/// derives it again on its own: `prepare_delegation_bundle`, reached through
+/// the round session while proving, re-plans from an unfiltered selection and
+/// then calls `require_bundle_notes` against the rows this persisted. A plan
+/// stored from a filtered set fails that check outright — "notes do not match
+/// persisted setup" — so filtering only here would break delegation for
+/// exactly the wallets the filter exists for.
+///
+/// `participation::filter_notes` therefore stays unused by planning until the
+/// SDK can filter its own selection. See `docs/voting-participation.md`.
 pub async fn setup_delegation_bundles(inputs: RoundInputs) -> Result<BundleLayout, VotingError> {
-    let bundle_policy = inputs.bundle_policy;
     let pipeline = open_pipeline(&inputs, None).await?;
     blocking("bundle setup", move || {
-        pipeline.ensure_round()?;
-        let notes = participation_filtered_notes(&pipeline)?;
-        pipeline
-            .voting_db()
-            .ensure_bundles_with_skipped_suffix_with_policy(
-                pipeline.round_id(),
-                &notes,
-                bundle_policy,
-            )
+        observability::report(
+            "setup_delegation_bundles",
+            pipeline.setup_bundles_with_report(observability::options()),
+        )
     })
     .await
-}
-
-/// This round's selected notes, minus the ones already voted with.
-///
-/// The exclusion set is written by `participation::evaluate` after it has
-/// verified the chain evidence; an absent table or absent row means nothing
-/// is excluded, so a wallet that never ran participation discovery selects
-/// exactly as it did before.
-fn participation_filtered_notes(
-    pipeline: &VizorDelegationPipeline,
-) -> Result<Vec<zcash_voting::types::NoteInfo>, VotingError> {
-    let notes = pipeline.select_notes()?;
-    super::participation::filter_notes(
-        &pipeline.voting_db(),
-        pipeline.round_id(),
-        pipeline.snapshot_height(),
-        &notes,
-    )
-    .map_err(internal)
 }
 
 /// Select notes and check whether a wallet can vote without persisting bundles.
@@ -206,52 +186,15 @@ pub async fn check_voting_eligibility(
     inputs: RoundInputs,
 ) -> Result<VotingEligibilityReport, VotingError> {
     let snapshot_height = inputs.round_params.snapshot_height;
-    let bundle_policy = inputs.bundle_policy;
     let pipeline = open_pipeline(&inputs, None).await?;
     blocking("eligibility", move || {
-        // Same reason as bundle setup: the pipeline's `eligibility` selects
-        // its own notes, so the weight it reports would count notes this
-        // wallet has already voted with.
-        (|| {
-            let notes = participation_filtered_notes(&pipeline)?;
-            voting_eligibility_report(
-                &pipeline.voting_db(),
-                pipeline.round_id(),
-                &notes,
-                bundle_policy,
-            )
-        })()
-        .map_err(|error: VotingError| error.with_snapshot_height(snapshot_height))
+        // Unfiltered for the same reason as bundle setup: this has to describe
+        // the plan the round will actually derive.
+        pipeline
+            .eligibility()
+            .map_err(|error| error.with_snapshot_height(snapshot_height))
     })
     .await
-
-}
-
-/// Reports eligibility and the privacy-trim loss for an already-selected note set.
-///
-/// Mirrors the pipeline's own `eligibility`, but over a note set the caller
-/// chose, so participation-excluded notes can be dropped before the weight is
-/// computed.
-///
-/// `seed_policy` is only what an unplanned round would be planned with. Once a
-/// round has a plan, its stored policy is authoritative, so the policy is
-/// resolved from round state first.
-fn voting_eligibility_report(
-    voting_db: &zcash_voting::storage::VotingDb,
-    round_id: &str,
-    note_infos: &[zcash_voting::types::NoteInfo],
-    seed_policy: BundlePolicy,
-) -> Result<VotingEligibilityReport, VotingError> {
-    let bundle_policy = voting_db.effective_bundle_policy(round_id, seed_policy)?;
-    // One plan, so the reported weight and the reported loss cannot describe
-    // different bundle sets. This also applies the canonical duplicate-nullifier
-    // collapse rather than repeating it here.
-    let (eligibility, plan) =
-        zcash_voting::minimum_voting_eligibility_and_plan_for_notes(note_infos, bundle_policy)?;
-    Ok(VotingEligibilityReport {
-        eligibility,
-        privacy_trim_dropped_value_zatoshi: plan.privacy_trim.dropped_value,
-    })
 }
 
 /// Persist the snapshot-stable bundle plan and warm PIR for every bundle.
@@ -267,9 +210,7 @@ pub async fn precompute_snapshot_bundles(
     let bundle_policy = inputs.bundle_policy;
     blocking("snapshot bundle precompute", move || {
         pipeline.ensure_round()?;
-        // Precompute persists the bundle plan, so it has to see the same note
-        // set bundle setup does.
-        let notes = participation_filtered_notes(&pipeline)?;
+        let notes = pipeline.select_notes()?;
         let round_id = pipeline.round_id().to_string();
         fleet.with_failover(|session| {
             observability::report(
@@ -383,5 +324,4 @@ pub async fn warm_pir_proof_cache(
         })
     })
     .await
-
 }

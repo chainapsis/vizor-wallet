@@ -372,7 +372,6 @@ pub fn voting_proposal_id_range() -> ApiProposalIdRange {
     }
 }
 
-
 #[cfg(test)]
 const KEYSTONE_SIG_LEN: usize = 64;
 #[cfg(test)]
@@ -1110,33 +1109,6 @@ pub fn get_round_plan(
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)?;
         zcash_voting::wire::RoundPlanView::try_from(plan)
-    })
-}
-
-/// Persist (insert or replace) the voter's ballot intent for one proposal.
-/// Pass `skipped: true` for `Decision::Skipped`; otherwise `choice` must be set.
-/// `num_options` is the proposal's declared option count.
-pub fn set_ballot_intent(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    proposal_id: u32,
-    num_options: u32,
-    skipped: bool,
-    choice: Option<u32>,
-) -> Result<(), VotingErrorView> {
-    catch(|| {
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        // `skipped` takes precedence; otherwise a concrete choice is required.
-        let decision = if skipped {
-            zcash_voting::session::Decision::Skipped
-        } else {
-            let c = choice.ok_or_else(|| {
-                invalid_input("set_ballot_intent: choice must be Some when skipped is false")
-            })?;
-            zcash_voting::session::Decision::Choice(c)
-        };
-        db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
     })
 }
 
@@ -2854,52 +2826,6 @@ mod tests {
         )
         .unwrap();
         assert!(records.is_empty());
-    }
-
-    #[test]
-    fn set_ballot_intent_persists_choice_and_skipped() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(
-            zcash_voting::Network::Regtest,
-            &test_api_round_params(),
-            None,
-        )
-        .unwrap();
-
-        set_ballot_intent(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            1,
-            3,
-            false,
-            Some(2),
-        )
-        .unwrap();
-        set_ballot_intent(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            2,
-            3,
-            true,
-            None,
-        )
-        .unwrap();
-
-        let err = set_ballot_intent(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            3,
-            3,
-            false,
-            None,
-        )
-        .unwrap_err();
-        assert!(err.message.contains("choice must be Some"));
     }
 
     #[test]
