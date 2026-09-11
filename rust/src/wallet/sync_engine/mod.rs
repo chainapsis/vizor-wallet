@@ -55,7 +55,7 @@ pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
     download_blocks, download_subtree_roots, get_address_utxos_stream, get_compact_block_hash,
-    get_tree_state,
+    get_tree_state, get_tree_state_for_block,
 };
 pub(crate) use lwd::{
     get_latest_block, get_taddress_txids, get_transaction, next_stream_message,
@@ -2013,7 +2013,65 @@ async fn download_scan_batch(
         }
     };
 
-    join_scan_batch_inputs(download_blocks(client, start, end, network), tree_state).await
+    let (block_source, from_state) =
+        join_scan_batch_inputs(download_blocks(client, start, end, network), tree_state).await?;
+
+    if scan_batch_tree_state_is_sequential(&block_source, &from_state) {
+        return Ok((block_source, from_state));
+    }
+
+    let predecessor_hash = match block_source
+        .first_block_prev_hash()
+        .filter(|hash| !hash.is_empty())
+    {
+        Some(hash) => hash,
+        None => {
+            let BlockHash(hash) =
+                get_compact_block_hash(client, u64::from(u32::from(start - 1))).await?;
+            hash.to_vec()
+        }
+    };
+    log::warn!(
+        "[{}] sync: parallel block/tree-state requests returned different branches at {}; \
+         re-fetching tree state by predecessor hash",
+        elapsed(),
+        u32::from(start),
+    );
+    let pinned_state = get_tree_state_for_block(
+        client,
+        u64::from(u32::from(start - 1)),
+        predecessor_hash,
+    )
+    .await?
+    .to_chain_state()
+    .map_err(|e| SyncError::parse(format!("parse hash-pinned tree state: {e}")))?;
+
+    Ok((block_source, pinned_state))
+}
+
+fn scan_batch_tree_state_is_sequential(
+    block_source: &block_source::MemoryBlockSource,
+    from_state: &chain::ChainState,
+) -> bool {
+    let Some((
+        _,
+        sapling_commitments,
+        sapling_final,
+        orchard_commitments,
+        orchard_final,
+        ironwood_commitments,
+        ironwood_final,
+    )) = block_source.first_block_tree_sizes()
+    else {
+        return false;
+    };
+
+    from_state.final_sapling_tree().tree_size() + sapling_commitments as u64
+        == sapling_final as u64
+        && from_state.final_orchard_tree().tree_size() + orchard_commitments as u64
+            == orchard_final as u64
+        && from_state.final_ironwood_tree().tree_size() + ironwood_commitments as u64
+            == ironwood_final as u64
 }
 
 fn validate_scan_batch(
@@ -2038,6 +2096,37 @@ fn validate_scan_batch(
             "downloaded tree state height {} does not match scan frontier {frontier_height}",
             u32::from(from_state.block_height()),
         )));
+    }
+
+    if let Some((
+        block_height,
+        sapling_commitments,
+        sapling_final,
+        orchard_commitments,
+        orchard_final,
+        ironwood_commitments,
+        ironwood_final,
+    )) = block_source.first_block_tree_sizes()
+    {
+        let sapling_prior = from_state.final_sapling_tree().tree_size();
+        let orchard_prior = from_state.final_orchard_tree().tree_size();
+        let ironwood_prior = from_state.final_ironwood_tree().tree_size();
+        let sapling_sequential = sapling_prior + sapling_commitments as u64 == sapling_final as u64;
+        let orchard_sequential = orchard_prior + orchard_commitments as u64 == orchard_final as u64;
+        let ironwood_sequential =
+            ironwood_prior + ironwood_commitments as u64 == ironwood_final as u64;
+
+        if !(sapling_sequential && orchard_sequential && ironwood_sequential) {
+            return Err(SyncError::other(format!(
+                "lightwalletd returned inconsistent tree state at block {block_height}: \
+                 sapling {sapling_prior}+{sapling_commitments}!={sapling_final} \
+                 (sequential={sapling_sequential}), \
+                 orchard {orchard_prior}+{orchard_commitments}!={orchard_final} \
+                 (sequential={orchard_sequential}), \
+                 ironwood {ironwood_prior}+{ironwood_commitments}!={ironwood_final} \
+                 (sequential={ironwood_sequential})"
+            )));
+        }
     }
 
     Ok(())
@@ -3068,6 +3157,12 @@ async fn run_sync_impl(
         //     to a continuity error and equally recoverable via
         //     `truncate_to_height`, so it gets the same treatment.
         //
+        //   - `ChainError::Wallet(SqliteClientError::NonSequentialBlocks)` is
+        //     different: `put_blocks` rejects the batch transaction before it
+        //     commits when the compact blocks and preceding tree state do not
+        //     form one sequence. Retry with a freshly downloaded tuple without
+        //     rewinding valid progress already committed by earlier batches.
+        //
         // Any other `ChainError::Wallet(e)` is a real DB failure and
         // becomes `SyncError::Db` (Fatal). Everything else (non-scan,
         // non-wallet — e.g. block-source errors, unrecognised scan
@@ -3114,6 +3209,13 @@ async fn run_sync_impl(
                         at_height,
                         format!("BlockConflict at {at_height}: wallet rewind required"),
                     )
+                }
+                ChainError::Wallet(SqliteClientError::NonSequentialBlocks) => {
+                    let at_height = u32::from(start) as u64;
+                    SyncError::other(format!(
+                        "non-sequential compact block batch while scanning from {at_height}; \
+                         retrying with a fresh block/tree-state tuple"
+                    ))
                 }
                 ChainError::Wallet(wallet_err) if is_commitment_tree_root_conflict(&wallet_err) => {
                     let at_height = u32::from(start) as u64;

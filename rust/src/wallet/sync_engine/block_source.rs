@@ -52,6 +52,37 @@ impl MemoryBlockSource {
                 .all(|(offset, block)| block.height == u64::from(start) + offset as u64)
     }
 
+    /// Returns the first block's commitment counts and advertised final tree
+    /// sizes for diagnosing a non-sequential block/tree-state tuple.
+    pub(super) fn first_block_tree_sizes(
+        &self,
+    ) -> Option<(u64, usize, u32, usize, u32, usize, u32)> {
+        self.blocks.first().map(|block| {
+            let sapling_commitments = block.vtx.iter().map(|tx| tx.outputs.len()).sum();
+            let orchard_commitments = block.vtx.iter().map(|tx| tx.actions.len()).sum();
+            let ironwood_commitments = block
+                .vtx
+                .iter()
+                .map(|tx| tx.ironwood_actions.len())
+                .sum();
+            let metadata = block.chain_metadata.unwrap_or_default();
+
+            (
+                block.height,
+                sapling_commitments,
+                metadata.sapling_commitment_tree_size,
+                orchard_commitments,
+                metadata.orchard_commitment_tree_size,
+                ironwood_commitments,
+                metadata.ironwood_commitment_tree_size,
+            )
+        })
+    }
+
+    pub(super) fn first_block_prev_hash(&self) -> Option<Vec<u8>> {
+        self.blocks.first().map(|block| block.prev_hash.clone())
+    }
+
     /// Returns the block heights that scanning will add as Orchard subtree
     /// checkpoints before Orchard checkpoint pruning runs.
     pub(super) fn orchard_checkpoint_heights(&self) -> BTreeSet<u32> {
