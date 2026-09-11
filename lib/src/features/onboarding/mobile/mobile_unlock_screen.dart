@@ -19,7 +19,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/device_owner_auth_provider.dart';
-import '../../../providers/payment_request_flow_provider.dart';
+import '../../../core/navigation/present_payment_request.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
@@ -237,9 +237,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         if (pendingPrefill != null) {
           // The link becomes a card over the wallet the user just unlocked,
           // not a jump into the composer.
-          ref
-              .read(paymentRequestFlowProvider.notifier)
-              .present(pendingPrefill, source: PaymentRequestSource.link);
+          presentPaymentRequest(ref, pendingPrefill);
         } else if (notice != null) {
           // The link outlived its park window while the user was finding their
           // passcode, or the wallet it landed on cannot open it. Landing with

@@ -16,6 +16,11 @@ import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
 import 'src/core/navigation/incoming_link_dispatch.dart';
+import 'src/core/navigation/payment_request_intake.dart';
+import 'src/core/navigation/present_payment_request.dart';
+import 'src/core/payments/cross_chain_payment_request.dart';
+import 'src/features/pay/providers/cross_chain_payment_request_provider.dart';
+import 'src/features/pay/widgets/cross_chain_payment_request_host.dart';
 import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/navigation/payload_page_key.dart';
@@ -275,6 +280,10 @@ final _routerProvider = Provider<_AppRouter>((ref) {
     // to reach the card here or it would navigate — and on the second press
     // exit the app — underneath a modal the user is still looking at.
     handleBackAboveRouter: () {
+      if (ref.read(crossChainPaymentFlowProvider) != null) {
+        ref.read(crossChainPaymentFlowProvider.notifier).clear();
+        return true;
+      }
       if (ref.read(paymentRequestFlowProvider) == null) return false;
       ref.read(paymentRequestFlowProvider.notifier).dismiss();
       return true;
@@ -1046,8 +1055,18 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
     builder: (_, state) {
       final args = state.extra;
       return PayScreen(
+        key: args is PayComposerNavigationArgs && args.paymentRequestId != null
+            ? ValueKey(args.paymentRequestId)
+            : null,
         preservePreparedComposer:
             args is PayComposerNavigationArgs && args.preservePreparedComposer,
+        paymentRequestId: args is PayComposerNavigationArgs
+            ? args.paymentRequestId
+            : null,
+        showPreparedReview:
+            args is PayComposerNavigationArgs && args.showPreparedReview,
+        reviewAfterAmount:
+            args is PayComposerNavigationArgs && args.reviewAfterAmount,
       );
     },
   ),
@@ -1269,9 +1288,12 @@ class ZcashWalletApp extends ConsumerWidget {
                                     // and the keep-awake hosts above it. The
                                     // link intake that feeds it lives further
                                     // up, in `_IncomingLinkHost`.
-                                    child: PaymentRequestHost(
+                                    child: CrossChainPaymentRequestHost(
                                       router: router,
-                                      child: child!,
+                                      child: PaymentRequestHost(
+                                        router: router,
+                                        child: child!,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1351,7 +1373,7 @@ Widget buildIncomingLinkHostForTest({
 /// in the ZIP-321 rejection snackbar. `classifyIncomingLink` picks the lane;
 /// everything below is per-lane and unchanged from the two hosts this replaced:
 ///
-/// * **payment request** (`zcash:`) — parks in `paymentUriPrefillProvider` and
+/// * **payment request** (Zcash or cross-chain) — parks in `paymentUriPrefillProvider` and
 ///   drains through `decidePaymentUriDrain` into a card over the current
 ///   screen. Route-agnostic: it never navigates on delivery.
 /// * **gift card** (`https://` on the Vizor origin) — queues in
@@ -1388,7 +1410,6 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   bool _navigationScheduled = false;
 
   // --- payment request lane ---
-  var _paymentSequence = 0;
 
   /// Last wallet-existence value seen from [walletProvider]. Used to spot the
   /// true -> false transition of a wallet reset, which must drop a parked link
@@ -1449,14 +1470,16 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
           hasWallet: wallet.hasWallet,
         )) {
           // Wallet reset (uninstall, lost-password reset). Drop the parked
-          // ZIP-321 link quietly: draining it here would follow the wipe with
+          // payment request quietly: draining it here would follow the wipe with
           // a "Set up or import a wallet" notice and a jump to /welcome.
           //
-          // Only the ZIP-321 park and its card. A Gift Card is a bearer claim
+          // Only the payment-request park and its card. A Gift Card is a bearer claim
           // on funds that do not belong to this wallet, so it survives a reset
           // by design — see `paymentLinkIntakeProvider`.
+          ref.read(paymentRequestIntakeProvider).invalidate();
           ref.read(paymentUriPrefillProvider.notifier).clear();
           ref.read(paymentRequestFlowProvider.notifier).clear();
+          ref.read(crossChainPaymentFlowProvider.notifier).clear();
           return;
         }
       }
@@ -1480,6 +1503,15 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     ) {
       if (next == null && previous != null) _openPendingPaymentLink();
     });
+    ref.listen<CrossChainPaymentFlowState?>(crossChainPaymentFlowProvider, (
+      previous,
+      next,
+    ) {
+      if (next == null && previous != null) _openPendingPaymentLink();
+    });
+    ref.listen<int>(paymentRequestArrivalProvider, (_, _) {
+      _schedulePendingDrain();
+    });
     // No appSecurityProvider listener: the unlock screens own the post-unlock
     // navigation for a parked prefill (claim + present the card). Draining
     // here on unlock too would race and clobber that navigation. The wallet
@@ -1493,7 +1525,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   void _handleIncomingUri(String rawUri) {
     switch (classifyIncomingLink(rawUri)) {
       case IncomingPaymentRequestLink(:final raw):
-        _handlePaymentRequestLink(raw);
+        unawaited(_handlePaymentRequestLink(raw));
       case IncomingGiftCardLink():
         _handleGiftCardLink(rawUri);
       case IncomingVizorHomeLink():
@@ -1591,7 +1623,8 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   }
 
   bool get _paymentRequestCardPresented =>
-      ref.read(paymentRequestFlowProvider) != null;
+      ref.read(paymentRequestFlowProvider) != null ||
+      ref.read(crossChainPaymentFlowProvider) != null;
 
   void _showDeferredPaymentLinkMessage(VizorPaymentLink link, String message) {
     if (identical(_lastDeferredLink, link)) return;
@@ -1606,53 +1639,23 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   // Payment request lane
   // ---------------------------------------------------------------------
 
-  void _handlePaymentRequestLink(String rawUri) {
+  Future<void> _handlePaymentRequestLink(String rawUri) async {
     try {
-      final replacedParkedPrefill = ref
-          .read(paymentUriPrefillProvider.notifier)
-          .set(_prefillFromUri(rawUri));
+      final replaced = await ref
+          .read(paymentRequestIntakeProvider)
+          .receive(rawUri);
+      if (!mounted) return;
       _schedulePendingDrain();
-      if (replacedParkedPrefill) {
-        // A batch of links from native on cold start, or a second link while
-        // the first is still parked (locked wallet, wallet still loading).
-        // Only the newest survives, so say so instead of silently dropping
-        // the earlier one.
-        _showPaymentUriMessage(kPaymentUriReplacedMessage);
-      }
-    } on Zip321UnsupportedRequestException catch (e) {
-      // Do not clear here: a refused link must not wipe a prefill already
-      // parked from an earlier valid one.
-      log('Payment URI: unsupported: ${e.reason}');
-      _showPaymentUriMessage(paymentUriRejectionMessage(e));
-    } on Zip321ParseException catch (e) {
-      // The parser's message is spec wording written for us, and it echoes
-      // fragments of the link's own text; keep it in the log and show the
-      // payer one sentence they can act on.
-      log('Payment URI: rejected: ${e.message}');
-      _showPaymentUriMessage(paymentUriRejectionMessage(e));
-    } catch (e) {
-      // Defensive: no current parse path reaches this. It shares the drain
-      // policy's constant rather than a literal of its own so the two cannot
-      // drift into two different sentences for the same "the link is gone".
-      // Only `zcash:` links reach this lane, so `$e` cannot carry a Gift
-      // Card's mnemonic fragment.
-      log('Payment URI: failed to parse: $e');
+      if (replaced) _showPaymentUriMessage(kPaymentUriReplacedMessage);
+    } on Zip321UnsupportedRequestException catch (error) {
+      _showPaymentUriMessage(paymentUriRejectionMessage(error));
+    } on Zip321ParseException catch (error) {
+      _showPaymentUriMessage(paymentUriRejectionMessage(error));
+    } on CrossChainPaymentParseException catch (error) {
+      _showPaymentUriMessage(error.toString());
+    } catch (_) {
       _showPaymentUriMessage(kPaymentUriUnavailableMessage);
     }
-  }
-
-  SendPrefillArgs _prefillFromUri(String rawUri) {
-    final request = Zip321PaymentRequest.parse(rawUri);
-    if (!request.isSupported) {
-      // Its own type, not a parse exception: the link is well-formed and the
-      // payer needs a different sentence than a broken one gets.
-      throw Zip321UnsupportedRequestException(request.unsupportedReason!);
-    }
-    final payment = request.primaryPayment;
-    return sendPrefillArgsFromZip321Payment(
-      id: 'payment-uri-${++_paymentSequence}',
-      payment: payment,
-    );
   }
 
   void _schedulePendingDrain() {
@@ -1728,9 +1731,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       case PaymentUriDrainAction.deliver:
         prefillNotifier.clear();
         // The request is presented over the current screen, not navigated to.
-        ref
-            .read(paymentRequestFlowProvider.notifier)
-            .present(prefill!, source: PaymentRequestSource.link);
+        presentPaymentRequest(ref, prefill!);
     }
   }
 

@@ -864,6 +864,100 @@ void main() {
     expect(sessionStore.savedPayAsset, SwapAsset.sol);
   });
 
+  for (final hasAmount in [true, false]) {
+    testWidgets(
+      'payment request Pay entry ${hasAmount ? 'opens prepared review' : 'asks only for amount'}',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        const address = '0x52908400098527886e0f7030069857d2e4169ee7';
+        final provider = _FakeSwapProvider();
+        final router = GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _payRoute()],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(
+          _routerHarness(
+            router,
+            swapProvider: provider,
+            seedSwapActivityFixtures: false,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(SwapScreen)),
+          listen: false,
+        );
+        final notifier = container.read(swapStateProvider.notifier);
+        notifier.preparePayFromShieldedZec();
+        notifier.updateDestination(address);
+        if (hasAmount) {
+          notifier.updateReceiveAmount('25');
+          await notifier.showReview();
+        }
+        router.go(
+          '/pay',
+          extra: PayComposerNavigationArgs(
+            preservePreparedComposer: true,
+            paymentRequestId: 'request-entry',
+            showPreparedReview: hasAmount,
+            reviewAfterAmount: !hasAmount,
+          ),
+        );
+        for (
+          var i = 0;
+          i < 5 && find.byType(PayScreen).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump();
+        }
+        expect(find.byType(PayScreen), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('pay_review_step')),
+          hasAmount ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('pay_amount_step')),
+          hasAmount ? findsNothing : findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('pay_recipient_step')), findsNothing);
+        await tester.pumpAndSettle();
+        expect(provider.requests, hasLength(hasAmount ? 1 : 0));
+        if (hasAmount) {
+          await tester.tap(find.text('Amount').first);
+          await tester.pumpAndSettle();
+        }
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_amount_input')),
+          '30',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('pay_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        if (hasAmount) {
+          expect(
+            find.byKey(const ValueKey('pay_recipient_step')),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('pay_select_recipient_button')),
+          );
+          await tester.pumpAndSettle();
+        }
+        expect(find.byKey(const ValueKey('pay_review_step')), findsOneWidget);
+        expect(find.byKey(const ValueKey('pay_recipient_step')), findsNothing);
+        expect(container.read(swapStateProvider).destinationText, address);
+        expect(container.read(swapStateProvider).receiveAmountText, '30');
+        expect(provider.requests.last.mode, SwapQuoteMode.exactOutput);
+        expect(provider.requests.last.amountText, '30');
+        expect(provider.startedQuotes, isEmpty);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('Pay review uses the completed spendable snapshot during sync', (
     tester,
   ) async {
@@ -1013,7 +1107,7 @@ void main() {
   testWidgets('Pay retry waits for its original dynamic asset', (tester) async {
     await _setDesktopViewport(tester);
     final savedBaseUsdc = SwapAsset.live(
-      assetId: 'saved-base-usdc',
+      assetId: 'live-base-usdc',
       symbol: 'USDC',
       blockchain: 'base',
       decimals: 6,
@@ -1105,70 +1199,79 @@ void main() {
     expect(container.read(paySelectedAssetProvider), liveBaseUsdc);
   });
 
-  testWidgets('Pay retry does not substitute an unsupported asset', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    final savedBaseUsdc = SwapAsset.live(
-      assetId: 'removed-base-usdc',
-      symbol: 'USDC',
-      blockchain: 'base',
-      decimals: 6,
-    );
-    final swapProvider = _DeferredSupportedAssetsSwapProvider();
-    final router = GoRouter(
-      initialLocation: '/activity/swap/removed-pay?from=pay',
-      routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
-    );
-    final payIntent =
-        _persistedIntent(
-          id: 'removed-pay',
-          txHash: '',
-          status: SwapIntentStatus.expired,
-          nextAction: 'Start a fresh quote',
-        ).copyWith(
-          sellAmount: '1.5000 ZEC',
-          receiveEstimate: '100 USDC',
-          externalAsset: savedBaseUsdc,
-          payMode: true,
-        );
+  testWidgets(
+    'Pay retry does not substitute a same-symbol token with a different ID',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final savedBaseUsdc = SwapAsset.live(
+        assetId: 'removed-base-usdc',
+        symbol: 'USDC',
+        blockchain: 'base',
+        decimals: 6,
+      );
+      final swapProvider = _DeferredSupportedAssetsSwapProvider();
+      final router = GoRouter(
+        initialLocation: '/activity/swap/removed-pay?from=pay',
+        routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
+      );
+      final payIntent =
+          _persistedIntent(
+            id: 'removed-pay',
+            txHash: '',
+            status: SwapIntentStatus.expired,
+            nextAction: 'Start a fresh quote',
+          ).copyWith(
+            sellAmount: '1.5000 ZEC',
+            receiveEstimate: '100 USDC',
+            externalAsset: savedBaseUsdc,
+            payMode: true,
+          );
 
-    await tester.pumpWidget(
-      _routerHarness(
-        router,
-        swapProvider: swapProvider,
-        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
-        seedSwapActivityFixtures: false,
-      ),
-    );
-    await _pumpUntilPresent(tester, find.text('Restart swap'));
+      await tester.pumpWidget(
+        _routerHarness(
+          router,
+          swapProvider: swapProvider,
+          sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await _pumpUntilPresent(tester, find.text('Restart swap'));
 
-    await tester.tap(find.text('Restart swap'));
-    await tester.pump();
-    swapProvider.completeSupportedAssets(const [SwapAsset.usdc]);
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Restart swap'));
+      await tester.pump();
+      swapProvider.completeSupportedAssets([
+        SwapAsset.usdc,
+        SwapAsset.live(
+          assetId: 'different-base-usdc',
+          symbol: 'USDC',
+          blockchain: 'base',
+          decimals: 6,
+        ),
+      ]);
+      await tester.pumpAndSettle();
 
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(PayScreen)),
-      listen: false,
-    );
-    final state = container.read(swapStateProvider);
-    expect(state.externalAsset, savedBaseUsdc);
-    expect(container.read(paySelectedAssetProvider), savedBaseUsdc);
-    expect(
-      state.externalAssetSupportError,
-      'USDC on Base is not currently supported.',
-    );
-    expect(find.byKey(const ValueKey('pay_amount_error')), findsOneWidget);
-    expect(
-      tester
-          .widget<AppButton>(
-            find.byKey(const ValueKey('pay_amount_continue_button')),
-          )
-          .onPressed,
-      isNull,
-    );
-  });
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(PayScreen)),
+        listen: false,
+      );
+      final state = container.read(swapStateProvider);
+      expect(state.externalAsset, savedBaseUsdc);
+      expect(container.read(paySelectedAssetProvider), savedBaseUsdc);
+      expect(
+        state.externalAssetSupportError,
+        'USDC on Base is not currently supported.',
+      );
+      expect(find.byKey(const ValueKey('pay_amount_error')), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('pay_amount_continue_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+    },
+  );
 
   testWidgets('swap status summary shows the captured fiat from the mapper', (
     tester,
@@ -9618,8 +9721,18 @@ GoRoute _payRoute() {
     builder: (_, state) {
       final args = state.extra;
       return PayScreen(
+        key: args is PayComposerNavigationArgs && args.paymentRequestId != null
+            ? ValueKey(args.paymentRequestId)
+            : null,
         preservePreparedComposer:
             args is PayComposerNavigationArgs && args.preservePreparedComposer,
+        paymentRequestId: args is PayComposerNavigationArgs
+            ? args.paymentRequestId
+            : null,
+        showPreparedReview:
+            args is PayComposerNavigationArgs && args.showPreparedReview,
+        reviewAfterAmount:
+            args is PayComposerNavigationArgs && args.reviewAfterAmount,
       );
     },
   );

@@ -152,6 +152,7 @@ class _DelayedPayReviewNotifier extends SwapNotifier {
         mode: SwapQuoteMode.exactOutput,
         amount: 10,
         externalPerZec: 400,
+        quoteExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
       ),
       reviewAddressPlan: const SwapAddressPlan(
         direction: SwapDirection.zecToExternal,
@@ -818,6 +819,129 @@ void main() {
     final state = container.read(swapStateProvider);
     expect(state.externalAsset, SwapAsset.sol);
     expect(state.destinationText, isEmpty);
+  });
+
+  testWidgets('editing a payment request keeps its recipient reachable', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    final notifier = _DelayedPayReviewNotifier();
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) => const MobilePayScreen(
+            preservePreparedComposer: true,
+            paymentRequestId: 'request-edit',
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_routedPayApp(router, notifier));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_pay_amount_input')),
+      '12',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('mobile_pay_recipient_step')),
+      findsOneWidget,
+    );
+    expect(notifier.quoteLoading, isFalse);
+    const changedRecipient = '0x52908400098527886E0F7030069857D2E4169EE7';
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_pay_recipient_input')),
+      changedRecipient,
+    );
+    await tester.pump();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobilePayScreen)),
+      listen: false,
+    );
+    expect(container.read(swapStateProvider).receiveAmountText, '12');
+    expect(container.read(swapStateProvider).destinationText, changedRecipient);
+    expect(container.read(swapStateProvider).reviewVisible, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('payment request amount continues directly to Pay review', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    final notifier = _DelayedPayReviewNotifier();
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) => const MobilePayScreen(
+            preservePreparedComposer: true,
+            paymentRequestId: 'request-entry',
+            reviewAfterAmount: true,
+          ),
+        ),
+        GoRoute(
+          path: '/pay/review',
+          builder: (_, _) => const MobileSwapReviewScreen(payMode: true),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_routedPayApp(router, notifier));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_pay_amount_input')),
+      '10',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pump();
+    expect(notifier.quoteLoading, isTrue);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_recipient_step')),
+      findsNothing,
+    );
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/pay');
+    notifier.completeQuote();
+    await tester.pumpAndSettle();
+    expect(find.text('Review Payment'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_review_confirm_button')),
+      findsOneWidget,
+    );
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/pay');
+    expect(
+      find.byKey(const ValueKey('mobile_pay_amount_step')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('mobile_pay_amount_input')),
+          )
+          .controller!
+          .text,
+      '10',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_pay_recipient_step')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('leaving recipient while quote loads cannot open review later', (

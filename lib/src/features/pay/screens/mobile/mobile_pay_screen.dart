@@ -35,9 +35,16 @@ enum _PayModalSurface { assetSelector, addressScanner, addContact, slippage }
 enum _MobilePayStep { amount, recipient }
 
 class MobilePayScreen extends ConsumerStatefulWidget {
-  const MobilePayScreen({this.preservePreparedComposer = false, super.key});
+  const MobilePayScreen({
+    this.preservePreparedComposer = false,
+    this.paymentRequestId,
+    this.reviewAfterAmount = false,
+    super.key,
+  });
 
   final bool preservePreparedComposer;
+  final String? paymentRequestId;
+  final bool reviewAfterAmount;
 
   @override
   ConsumerState<MobilePayScreen> createState() => _MobilePayScreenState();
@@ -52,6 +59,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   bool _modalRouteOpen = false;
   bool _reviewRequestInFlight = false;
   int _reviewRequestGeneration = 0;
+  bool _reviewAfterAmount = false;
   var _step = _MobilePayStep.amount;
 
   @override
@@ -60,6 +68,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     _amountController = TextEditingController();
     _amountFocusNode = FocusNode(debugLabel: 'MobilePayAmount');
     _recipientController = TextEditingController();
+    _reviewAfterAmount =
+        widget.preservePreparedComposer &&
+        widget.paymentRequestId != null &&
+        widget.reviewAfterAmount;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final preparedState = ref.read(swapStateProvider);
@@ -265,6 +277,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     if (next.reviewVisible &&
         next.reviewQuote != null &&
         next.reviewAddressPlan != null) {
+      _reviewAfterAmount = false;
       await context.push('/pay/review', extra: selection);
     }
   }
@@ -365,7 +378,11 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     onOpenSlippage: () => _openModal(_PayModalSurface.slippage),
                     onContinue: () {
                       _amountFocusNode.unfocus();
-                      setState(() => _step = _MobilePayStep.recipient);
+                      if (_reviewAfterAmount && swapState.canReviewQuote) {
+                        unawaited(_openReview(effectiveSelection));
+                      } else {
+                        setState(() => _step = _MobilePayStep.recipient);
+                      }
                     },
                   ),
                   _MobilePayStep.recipient => MobilePayRecipientStep(
