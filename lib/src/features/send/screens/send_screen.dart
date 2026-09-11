@@ -12,6 +12,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -35,6 +36,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
+import '../../address_scan/widgets/payment_request_input.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/send_prefill_args.dart';
 import '../services/send_amount_conversion.dart';
@@ -445,9 +447,33 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
+  Future<void> _reviewInputPaymentRequest(String raw) async {
+    final sequence = _addressSeq;
+    final input = _addressController.text;
+    await reviewPaymentRequestFromInput(
+      ref,
+      raw,
+      isCurrent: () =>
+          mounted &&
+          sequence == _addressSeq &&
+          input == _addressController.text,
+    );
+  }
+
   void _handleAddressChanged() {
     _addressSeq++;
     _maxDebounceTimer?.cancel();
+    if (isPaymentRequestUri(_addressController.text)) {
+      _validateSeq++;
+      _maxSeq++;
+      setState(() {
+        _addressType = '';
+        _addressWrongNetwork = false;
+        _isResolvingMax = false;
+        _maxQuote = null;
+      });
+      return;
+    }
     setState(() {
       _addressType = '';
       _addressWrongNetwork = false;
@@ -1133,14 +1159,19 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         matchedRecipientName = recipient.name;
       }
     }
-    final addressMessage = switch (_addressType) {
-      // A wrong-network address is well-formed, so "Invalid address" would
-      // send the user hunting for a typo that is not there.
-      'invalid' =>
-        _addressWrongNetwork ? kWrongNetworkAddressMessage : 'Invalid address',
-      'error' => 'Address validation failed',
-      _ => matchedRecipientName,
-    };
+    final isRequest = isPaymentRequestUri(_addressController.text);
+    final addressMessage = isRequest
+        ? 'Payment request detected.'
+        : switch (_addressType) {
+            // A wrong-network address is well-formed, so "Invalid address" would
+            // send the user hunting for a typo that is not there.
+            'invalid' =>
+              _addressWrongNetwork
+                  ? kWrongNetworkAddressMessage
+                  : 'Invalid address',
+            'error' => 'Address validation failed',
+            _ => matchedRecipientName,
+          };
     final addressMessageIcon = switch (_addressType) {
       'invalid' || 'error' => AppIcon(
         AppIcons.warning,
@@ -1278,7 +1309,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                             event.logicalKey ==
                                                 LogicalKeyboardKey
                                                     .numpadEnter)) {
-                                      onFieldSubmitted();
+                                      if (isRequest) {
+                                        unawaited(
+                                          _reviewInputPaymentRequest(
+                                            controller.text,
+                                          ),
+                                        );
+                                      } else {
+                                        onFieldSubmitted();
+                                      }
                                       return KeyEventResult.handled;
                                     }
                                     return KeyEventResult.ignored;
@@ -1288,8 +1327,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                     label: 'Send to',
                                     labelStyle: sendFieldLabelStyle,
                                     rightSlot: _SendContactsLabelButton(
-                                      label: 'Contacts',
-                                      onTap: _openContactPicker,
+                                      label: isRequest
+                                          ? 'Review request'
+                                          : 'Contacts',
+                                      onTap: isRequest
+                                          ? () => unawaited(
+                                              _reviewInputPaymentRequest(
+                                                controller.text,
+                                              ),
+                                            )
+                                          : _openContactPicker,
                                     ),
                                     tone: addressTone,
                                     borderColor:
@@ -1308,7 +1355,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                     messageText: addressMessage,
                                     messageIcon: addressMessageIcon,
                                     onChanged: (_) => _handleAddressChanged(),
-                                    onSubmitted: (_) => onFieldSubmitted(),
+                                    onSubmitted: (raw) {
+                                      if (isRequest) {
+                                        unawaited(
+                                          _reviewInputPaymentRequest(raw),
+                                        );
+                                      } else {
+                                        onFieldSubmitted();
+                                      }
+                                    },
                                     keyboardType: TextInputType.text,
                                     showClearButton: true,
                                     onClear: () {

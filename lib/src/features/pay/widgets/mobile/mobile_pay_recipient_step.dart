@@ -2,11 +2,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart' show TextInputAction;
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/navigation/payment_request_intake.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../address_book/models/address_book_contact.dart';
+import '../../../address_scan/widgets/payment_request_input.dart';
 import '../../../address_book/models/address_book_label_lookup.dart';
 import '../../../swap/models/swap_address_formatting.dart';
 import '../../../swap/models/swap_models.dart';
@@ -37,6 +39,7 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.onChooseRecipient,
     required this.onSelectRecipient,
     required this.onAddToContacts,
+    this.onReviewPaymentRequest,
     super.key,
   });
 
@@ -55,6 +58,7 @@ class MobilePayRecipientStep extends StatefulWidget {
   final ValueChanged<PayRecipientSelection> onChooseRecipient;
   final VoidCallback onSelectRecipient;
   final VoidCallback onAddToContacts;
+  final VoidCallback? onReviewPaymentRequest;
 
   @override
   State<MobilePayRecipientStep> createState() => _MobilePayRecipientStepState();
@@ -78,8 +82,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
   @override
   Widget build(BuildContext context) {
     final typed = widget.typedAddress.trim();
+    final isRequest = isPaymentRequestUri(typed);
     final hasInput = typed.isNotEmpty;
-    final valid = hasInput && widget.addressError == null;
+    final valid = hasInput && widget.addressError == null && !isRequest;
     final contactMatches = valid
         ? payContactsForAddress(widget.contacts, typed)
         : const <AddressBookContact>[];
@@ -140,6 +145,14 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                     children: [
                       _buildRecipientField(context),
                       const SizedBox(height: AppSpacing.md),
+                      if (isRequest) ...[
+                        PaymentRequestInputNotice(
+                          onReview: widget.busy
+                              ? null
+                              : widget.onReviewPaymentRequest,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                      ],
                       _buildQrRow(context),
                       if (visibleRecents.isNotEmpty) ...[
                         const SizedBox(height: AppSpacing.md),
@@ -309,7 +322,8 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
 
   Widget _buildRecipientField(BuildContext context) {
     final colors = context.colors;
-    final hasError = widget.addressError != null;
+    final isRequest = isPaymentRequestUri(widget.typedAddress);
+    final hasError = widget.addressError != null && !isRequest;
     return SizedBox(
       key: const ValueKey('mobile_pay_recipient_field_group'),
       height: _recipientFieldGroupHeight,
@@ -352,6 +366,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
               ),
             ),
             onChanged: widget.onAddressChanged,
+            onSubmitted: isRequest
+                ? (_) => widget.onReviewPaymentRequest?.call()
+                : null,
           ),
           SizedBox(
             height: _recipientErrorGap + _recipientErrorHeight,

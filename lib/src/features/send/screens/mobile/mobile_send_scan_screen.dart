@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/payments/cross_chain_payment_request.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_scan/domain/address_scan_payload.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
@@ -36,6 +37,7 @@ Future<SendScanResult?> showMobileSendScanSheet(
   return showAppMobileSheet<SendScanResult>(
     context: context,
     builder: (sheetContext) => MobileAddressScanCard(
+      caption: 'Scan an address or payment request QR code',
       controller: controller,
       resolve: (raw) async {
         final outcome = await resolver(raw);
@@ -43,6 +45,11 @@ Future<SendScanResult?> showMobileSendScanSheet(
         return outcome;
       },
       onScanned: (address) {
+        final raw = acceptedRaw ?? address;
+        if (isCrossChainPaymentUri(raw.trim())) {
+          Navigator.of(sheetContext).pop(SendScanPaymentUri(raw.trim()));
+          return;
+        }
         final result =
             resolveSendScanPayload(
               acceptedRaw ?? address,
@@ -66,6 +73,9 @@ Future<MobileScanOutcome> resolveScannedZcashAddress(
   String raw, {
   required String networkName,
 }) async {
+  if (isCrossChainPaymentUri(raw.trim())) {
+    return MobileScanOutcome.accepted(raw.trim());
+  }
   final address = normalizeAddressScanPayload(raw);
   if (address == null || address.isEmpty) {
     return const MobileScanOutcome.rejected(

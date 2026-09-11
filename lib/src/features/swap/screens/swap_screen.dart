@@ -10,6 +10,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -28,6 +29,7 @@ import '../models/swap_models.dart';
 import '../models/swap_address_book_helpers.dart';
 import '../providers/swap_state_provider.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
+import '../../address_scan/widgets/payment_request_input.dart';
 import '../widgets/swap_address_edit_modal.dart';
 import '../widgets/swap_asset_selector_modal.dart';
 import '../widgets/swap_composer_panel.dart';
@@ -56,6 +58,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     debugLabel: 'swap_toast_overlay_context',
   );
   _SwapModalSurface? _swapModal;
+  var _addressEditorGeneration = 0;
 
   @override
   void initState() {
@@ -81,6 +84,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   }
 
   void _openAddressEditor() {
+    _addressEditorGeneration++;
     setState(() => _swapModal = _SwapModalSurface.addressEditor);
   }
 
@@ -97,12 +101,41 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   }
 
   void _closeSwapModal() {
+    _addressEditorGeneration++;
     if (_swapModal == null) return;
     setState(() => _swapModal = null);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shortcutFocusNode.requestFocus();
     });
+  }
+
+  Future<void> _reviewPastedPaymentRequest(String raw) async {
+    if (!ref.read(swapStateProvider).direction.sendsZec) return;
+    final generation = _addressEditorGeneration;
+    bool isCurrent() =>
+        mounted &&
+        generation == _addressEditorGeneration &&
+        _swapModal == _SwapModalSurface.addressEditor;
+    // Keep rejected input editable, and discard cancelled submissions before
+    // intake can publish them. Accepted cards are presented after the frame.
+    final accepted = await reviewPaymentRequestFromInput(
+      ref,
+      raw,
+      isCurrent: isCurrent,
+    );
+    if (!accepted || !isCurrent()) return;
+    _closeSwapModal();
+  }
+
+  Future<void> _reviewScannedPaymentRequest(String raw) async {
+    if (!ref.read(swapStateProvider).direction.sendsZec) return;
+    _closeSwapModal();
+    // Let the scanner/editor release its modal and busy hold before the card
+    // intake can drain. Keep the existing composer unchanged behind the card.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await reviewPaymentRequestFromInput(ref, raw);
   }
 
   void _selectAddressBookContact(AddressBookContact contact) {
@@ -333,10 +366,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       ),
                       _SwapModalSurface.addressEditor => SwapAddressEditModal(
                         state: swapState,
+                        onChanged: () => _addressEditorGeneration++,
                         contacts:
                             ref.watch(addressBookProvider).value?.contacts ??
                             const [],
                         onSubmitted: (value, remember) {
+                          if (isPaymentRequestUri(value)) {
+                            unawaited(_reviewPastedPaymentRequest(value));
+                            return;
+                          }
                           if (remember) {
                             unawaited(_rememberSwapAddress(value, swapState));
                           }
@@ -348,6 +386,9 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         onCancel: _closeSwapModal,
                       ),
                       _SwapModalSurface.addressScanner => AddressQrScanModal(
+                        isRefundAddress: !swapState.direction.sendsZec,
+                        onPaymentRequestScanned: (value) =>
+                            unawaited(_reviewScannedPaymentRequest(value)),
                         onAddressScanned: (value) {
                           swapNotifier.updateDestination(value);
                           _closeSwapModal();

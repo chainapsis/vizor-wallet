@@ -113,6 +113,27 @@ void main() {
     });
     tearDownAll(RustLib.dispose);
 
+    test(
+      'preserves cross-chain payment terms for the common request intake',
+      () async {
+        rustApi.lastNetwork = null;
+        for (final raw in [
+          'bitcoin:bc1qinvoice?amount=0.01&label=Coffee%20shop',
+          'litecoin:ltc1qinvoice?amount=1.5',
+          'ethereum:0xToken@8453/transfer?address=0xPayee&uint256=25000000',
+          'solana:Payee?amount=25&spl-token=Mint&reference=Order',
+        ]) {
+          final outcome = await resolveScannedZcashAddress(
+            raw,
+            networkName: kZcashDefaultNetworkName,
+          );
+          expect(outcome.isAccepted, isTrue);
+          expect(outcome.address, raw);
+        }
+        expect(rustApi.lastNetwork, isNull);
+      },
+    );
+
     test('accepts an address this wallet can pay', () async {
       final outcome = await resolveScannedZcashAddress(
         _mainnetAddress,

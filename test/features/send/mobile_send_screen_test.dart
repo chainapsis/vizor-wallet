@@ -2,10 +2,15 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/core/navigation/payment_request_intake.dart';
+import 'package:zcash_wallet/src/core/payments/cross_chain_payment_request.dart';
+import 'package:zcash_wallet/src/features/pay/providers/cross_chain_payment_request_provider.dart';
+import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
@@ -397,6 +402,7 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 }
 
 Widget _app({
+  CrossChainPaymentParser? paymentParser,
   List<AddressBookContact> contacts = const [],
   AccountState? accountState,
   Map<String, AccountInfo> ownAccounts = const {},
@@ -445,6 +451,8 @@ Widget _app({
   );
   return ProviderScope(
     overrides: [
+      if (paymentParser != null)
+        crossChainPaymentParserProvider.overrideWithValue(paymentParser),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accountState: accountState),
       ),
@@ -826,6 +834,162 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  testWidgets('rejected clipboard request remains editable and retries', (
+    tester,
+  ) async {
+    const raw = 'bitcoin:malformed?amount=oops';
+    final parsed = <String>[];
+    await tester.pumpWidget(
+      _app(
+        paymentParser: (value) async {
+          parsed.add(value);
+          if (value == raw) throw const CrossChainPaymentParseException();
+          return CrossChainPaymentRequest(
+            id: 'corrected',
+            rawUri: value,
+            address: 'bc1qinvoice',
+            isEvm: false,
+            chain: 'btc',
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => call.method == 'Clipboard.getData'
+          ? <String, dynamic>{'text': raw}
+          : null,
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final field = find.byKey(const ValueKey('mobile_send_address_field'));
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    final actions = find.byKey(
+      const ValueKey('mobile_send_address_action_slot'),
+    );
+    await tester.tap(
+      find.descendant(of: actions, matching: find.text('Paste')),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+    );
+    expect(find.text(raw), findsOneWidget);
+    expect(parsed, [raw]);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    const corrected = 'bitcoin:bc1qinvoice?amount=0.1';
+    await tester.enterText(
+      find.descendant(of: field, matching: find.byType(EditableText)),
+      corrected,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(of: actions, matching: find.text('Review')),
+    );
+    await tester.pumpAndSettle();
+    expect(parsed, [raw, corrected]);
+    expect(container.read(paymentUriPrefillProvider)!.id, 'corrected');
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final change in ['none', 'edit', 'leave', 'paste-edit']) {
+    testWidgets(
+      'Send request intake respects input lifetime (change: $change)',
+      (tester) async {
+        final parsed = Completer<CrossChainPaymentRequest>();
+        await tester.pumpWidget(_app(paymentParser: (_) => parsed.future));
+        await tester.pumpAndSettle();
+        final element = tester.element(find.byType(MobileSendScreen));
+        final container = ProviderScope.containerOf(element);
+        final router = GoRouter.of(element);
+        const raw = 'bitcoin:bc1qinvoice?amount=0.1';
+        if (change == 'paste-edit') {
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            (call) async => call.method == 'Clipboard.getData'
+                ? <String, dynamic>{'text': raw}
+                : null,
+          );
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(SystemChannels.platform, null),
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_send_address_field')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.descendant(
+              of: find.byKey(const ValueKey('mobile_send_address_action_slot')),
+              matching: find.text('Paste'),
+            ),
+          );
+          await tester.pumpAndSettle();
+        } else {
+          await tester.enterText(
+            find.descendant(
+              of: find.byKey(const ValueKey('mobile_send_address_field')),
+              matching: find.byType(EditableText),
+            ),
+            raw,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.descendant(
+              of: find.byKey(const ValueKey('mobile_send_address_action_slot')),
+              matching: find.text('Review'),
+            ),
+          );
+          await tester.pumpAndSettle();
+        }
+        if (change == 'edit' || change == 'paste-edit') {
+          await tester.enterText(
+            find.descendant(
+              of: find.byKey(const ValueKey('mobile_send_address_field')),
+              matching: find.byType(EditableText),
+            ),
+            'bitcoin:new-draft',
+          );
+        } else if (change == 'leave') {
+          unawaited(router.push('/home'));
+        }
+        await tester.pumpAndSettle();
+        parsed.complete(
+          const CrossChainPaymentRequest(
+            id: 'send-input',
+            rawUri: raw,
+            address: 'bc1qinvoice',
+            isEvm: false,
+            chain: 'btc',
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (change == 'none') {
+          expect(container.read(paymentUriPrefillProvider)!.id, 'send-input');
+          expect(container.read(paymentRequestArrivalProvider), 1);
+        } else {
+          expect(container.read(paymentUriPrefillProvider), isNull);
+          expect(container.read(paymentRequestArrivalProvider), 0);
+        }
+        if (change == 'edit' || change == 'paste-edit') {
+          expect(find.text('bitcoin:new-draft'), findsOneWidget);
+        }
+        if (change == 'leave') {
+          expect(find.text('home'), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+  }
 
   testWidgets('starts Orchard proving-key warmup when mobile send loads', (
     tester,

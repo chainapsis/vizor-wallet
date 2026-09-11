@@ -18,6 +18,38 @@ void main() {
     return container;
   }
 
+  for (final parseFails in [false, true]) {
+    test(
+      'cancelled input preserves the park and arrival (parseFails: $parseFails)',
+      () async {
+        final parked = _request('parked');
+        final cancelled = _request('cancelled');
+        final parser = Completer<CrossChainPaymentRequest>();
+        final container = containerFor(
+          (raw) => raw == parked.rawUri ? Future.value(parked) : parser.future,
+        );
+        final intake = container.read(paymentRequestIntakeProvider);
+        await intake.receive(parked.rawUri);
+        var current = true;
+        final pending = intake.receive(
+          cancelled.rawUri,
+          isCurrent: () => current,
+        );
+
+        current = false;
+        if (parseFails) {
+          parser.completeError(const CrossChainPaymentParseException());
+        } else {
+          parser.complete(cancelled);
+        }
+
+        expect(await pending, PaymentRequestIntakeResult.ignored);
+        expect(container.read(paymentUriPrefillProvider), same(parked));
+        expect(container.read(paymentRequestArrivalProvider), 1);
+      },
+    );
+  }
+
   test('a slow older parse cannot replace a newer accepted request', () async {
     final older = _request('older');
     final newer = _request('newer', solana: true);
@@ -34,12 +66,12 @@ void main() {
     final pendingNewer = intake.receive(newer.rawUri);
     newerParse.complete(newer);
 
-    expect(await pendingNewer, isFalse);
+    expect(await pendingNewer, PaymentRequestIntakeResult.accepted);
     expect(container.read(paymentUriPrefillProvider), same(newer));
     expect(container.read(paymentRequestArrivalProvider), 1);
 
     olderParse.complete(older);
-    expect(await pendingOlder, isFalse);
+    expect(await pendingOlder, PaymentRequestIntakeResult.ignored);
     expect(container.read(paymentUriPrefillProvider), same(newer));
     expect(container.read(paymentRequestArrivalProvider), 1);
     expect(received, [older.rawUri, newer.rawUri]);
@@ -70,7 +102,7 @@ void main() {
       // Even a late error from the superseded parse must not become a new error
       // on the input surface after the latest request was already rejected.
       olderParse.completeError(const CrossChainPaymentParseException());
-      expect(await pendingOlder, isFalse);
+      expect(await pendingOlder, PaymentRequestIntakeResult.ignored);
       expect(container.read(paymentUriPrefillProvider), same(parked));
       expect(container.read(paymentRequestArrivalProvider), 1);
     },
@@ -94,11 +126,14 @@ void main() {
       container.read(paymentUriPrefillProvider.notifier).clear();
       pendingParse.complete(beforeReset);
 
-      expect(await pending, isFalse);
+      expect(await pending, PaymentRequestIntakeResult.ignored);
       expect(container.read(paymentUriPrefillProvider), isNull);
       expect(container.read(paymentRequestArrivalProvider), 0);
 
-      expect(await intake.receive(afterReset.rawUri), isFalse);
+      expect(
+        await intake.receive(afterReset.rawUri),
+        PaymentRequestIntakeResult.accepted,
+      );
       expect(container.read(paymentUriPrefillProvider), same(afterReset));
       expect(container.read(paymentRequestArrivalProvider), 1);
     },
@@ -123,7 +158,7 @@ void main() {
       container.dispose();
       parser.complete(request);
 
-      expect(await pending, isFalse);
+      expect(await pending, PaymentRequestIntakeResult.ignored);
     },
   );
 
@@ -138,14 +173,23 @@ void main() {
       final intake = container.read(paymentRequestIntakeProvider);
       final park = container.read(paymentUriPrefillProvider.notifier);
 
-      expect(await intake.receive(first.rawUri), isFalse);
-      expect(await intake.receive(second.rawUri), isTrue);
+      expect(
+        await intake.receive(first.rawUri),
+        PaymentRequestIntakeResult.accepted,
+      );
+      expect(
+        await intake.receive(second.rawUri),
+        PaymentRequestIntakeResult.replaced,
+      );
       final fresh = park.takeIfFresh();
       expect(fresh.prefill, same(second));
       expect(fresh.expired, isFalse);
       expect(container.read(paymentUriPrefillProvider), isNull);
 
-      expect(await intake.receive(first.rawUri), isFalse);
+      expect(
+        await intake.receive(first.rawUri),
+        PaymentRequestIntakeResult.accepted,
+      );
       park.debugAgePark(
         PaymentUriPrefillNotifier.parkTtl + const Duration(seconds: 1),
       );
@@ -187,7 +231,10 @@ void main() {
         return Future.error(StateError('Zcash must use its existing parser'));
       });
       final intake = container.read(paymentRequestIntakeProvider);
-      expect(await intake.receive(' ZCASH:u1recipient?amount=0.25 '), isFalse);
+      expect(
+        await intake.receive(' ZCASH:u1recipient?amount=0.25 '),
+        PaymentRequestIntakeResult.accepted,
+      );
       final parked = container.read(paymentUriPrefillProvider);
       expect(parked, isA<SendPrefillArgs>());
       final zcashPrefill = parked! as SendPrefillArgs;
