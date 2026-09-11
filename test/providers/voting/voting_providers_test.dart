@@ -14,6 +14,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override, ProviderListenable;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
+import 'package:zcash_wallet/src/core/storage/linux_secret_operation_guard.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -2643,6 +2647,119 @@ void main() {
       expect(rust.setupCalls, 1);
     },
   );
+
+  test(
+    'Linux voting job discards a delayed secret after lock and unlock',
+    () async {
+      final store = AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+        enforceSessionGeneration: true,
+      )..setSessionPassword('test-password');
+      final accounts = _DelayedVotingAccountNotifier();
+      final rust = FakeVotingRustApi();
+      final draft = FakeVotingDraftPersistence();
+      const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
+      await draft.save(key, const VotingDraftState(choices: {7: 1}));
+      final roundStatus = roundStatusJson(roundId: kRoundId)
+        ..['proposals'] = [
+          {
+            'id': 7,
+            'title': 'Question',
+            'options': [
+              {'index': 0, 'label': 'No'},
+              {'index': 1, 'label': 'Yes'},
+            ],
+          },
+        ];
+      final container = _sessionContainer(
+        http: FakeVotingHttpClient(
+          responses: votingHttpResponses(roundStatus: roundStatus),
+        ),
+        rust: rust,
+        draftPersistence: draft,
+        accountNotifier: accounts,
+        extraOverrides: [
+          linuxSecretOperationStoreProvider.overrideWithValue(store),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      await accounts.started.future.timeout(const Duration(seconds: 3));
+      store.clearSessionPassword();
+      store.setSessionPassword('test-password');
+      accounts.release.complete(
+        const SoftwareWalletSecret(mnemonic: kTestMnemonic),
+      );
+      final result = await _waitForJobStatus(
+        container,
+        key,
+        VotingSubmissionJobStatus.error,
+      );
+      expect(result.errorMessage, contains('wallet session changed'));
+      expect(result.errorMessage, isNot(contains('password')));
+      expect(rust.delegationBundleCalls, isEmpty);
+    },
+  );
+
+  for (final interruption in ['lock and unlock', 'mutation', 'none']) {
+    test(
+      'Linux voting rechecks the session after a pre-sign wait: $interruption',
+      () async {
+        final store = AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+          enforceSessionGeneration: true,
+        )..setSessionPassword('test-password');
+        final coordinator = LinuxKeyringCoordinator.testing();
+        addTearDown(coordinator.dispose);
+        final hotkeyGate = Completer<void>();
+        final rust = FakeVotingRustApi(hotkeyGenerationGate: hotkeyGate);
+        final container = _sessionContainer(
+          rust: rust,
+          hotkeyStore: FakeVotingHotkeyStore(null),
+          extraOverrides: [
+            linuxSecretOperationStoreProvider.overrideWithValue(store),
+            linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+        await container.read(votingSessionProvider(kRoundId).future);
+        final operation = container
+            .read(votingSessionProvider(kRoundId).notifier)
+            .delegatePendingBundles(mnemonic: kTestMnemonic);
+        await rust.hotkeyGenerationStarted.future;
+        Completer<void>? mutationRelease;
+        Future<void>? mutation;
+        if (interruption == 'lock and unlock') {
+          store.clearSessionPassword();
+          store.setSessionPassword('test-password');
+        } else if (interruption == 'mutation') {
+          mutationRelease = Completer<void>();
+          mutation = coordinator.runMutation(() => mutationRelease!.future);
+        }
+        hotkeyGate.complete();
+        await operation;
+        expect(
+          rust.delegationBundleCalls,
+          interruption == 'none' ? [0] : isEmpty,
+        );
+        if (interruption != 'none') {
+          final error = container
+              .read(votingSessionProvider(kRoundId))
+              .value
+              ?.error
+              ?.message;
+          expect(error, contains('wallet session changed'));
+          expect(error, isNot(contains('password')));
+        }
+        mutationRelease?.complete();
+        await mutation;
+      },
+    );
+  }
 
   test('resume after delegated does not rebuild delegation bundle', () async {
     final rust = FakeVotingRustApi();
@@ -12084,6 +12201,7 @@ ProviderContainer _sessionContainer({
   FakeVotingRustApi? rust,
   FakeVotingRecoveryApi? recoveryApi,
   AppSecurityNotifier? securityNotifier,
+  AccountNotifier? accountNotifier,
   VotingDraftPersistence? draftPersistence,
   PirSnapshotResolver? pirResolver,
   VotingHotkeyStore? hotkeyStore,
@@ -12183,10 +12301,12 @@ ProviderContainer _sessionContainer({
         ),
       ),
       accountProvider.overrideWith(
-        () => _FakeVotingAccountNotifier(
-          mnemonic: accountMnemonic,
-          bip39Passphrase: accountBip39Passphrase,
-        ),
+        () =>
+            accountNotifier ??
+            _FakeVotingAccountNotifier(
+              mnemonic: accountMnemonic,
+              bip39Passphrase: accountBip39Passphrase,
+            ),
       ),
       votingDraftPersistenceProvider.overrideWithValue(
         draftPersistence ?? FakeVotingDraftPersistence(),
@@ -13261,6 +13381,20 @@ class _ActiveVotingAccountNotifier extends Notifier<String?> {
 
   void set(String? accountUuid) {
     state = accountUuid;
+  }
+}
+
+class _DelayedVotingAccountNotifier extends _FakeVotingAccountNotifier {
+  _DelayedVotingAccountNotifier()
+    : super(mnemonic: kTestMnemonic, bip39Passphrase: '');
+
+  final started = Completer<void>();
+  final release = Completer<SoftwareWalletSecret?>();
+
+  @override
+  Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(String uuid) {
+    started.complete();
+    return release.future;
   }
 }
 

@@ -8,6 +8,8 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/storage/linux_keyring_coordinator.dart';
+import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -63,7 +65,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     state = const WalletLinkState(phase: WalletLinkPhase.preparing);
 
     try {
-      final upload = await _createUpload();
+      final upload = await _createUpload(epoch);
       if (epoch != _epoch) return;
 
       final lifetime = walletLinkDisplayLifetime(
@@ -113,56 +115,81 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     );
   }
 
-  Future<WalletLinkPackageUpload> _createUpload() async {
+  Future<WalletLinkPackageUpload> _createUpload(int epoch) async {
+    final secretGuard = LinuxSecretOperationGuard(
+      store: ref.read(linuxSecretOperationStoreProvider),
+      coordinator: ref.read(linuxKeyringCoordinatorProvider),
+      isRequestCurrent: () => ref.mounted && epoch == _epoch,
+      readAccounts: () => ref.read(accountProvider).value,
+    );
     final id = _newUuidV4();
     final keyBytes = _randomBytes(32);
-    final completionToken = _base64UrlNoPadding(_randomBytes(32));
-    final payload = await _buildTransferPayload();
-    final envelope = await _encryptPayload(payload, keyBytes: keyBytes);
-    final completionTokenHash = await _sha256Base64UrlNoPadding(
-      completionToken,
-    );
-    final createResponse = await _client.createPackage(
-      WalletLinkCreatePackageRequest(
-        id: id,
-        envelope: envelope,
-        completionTokenHash: completionTokenHash,
-      ),
-    );
-    if (createResponse.id != id) {
-      throw const FormatException('Wallet link package response id mismatch.');
+    var keepKey = false;
+    try {
+      final completionToken = _base64UrlNoPadding(_randomBytes(32));
+      final payload = await _buildTransferPayload(secretGuard);
+      secretGuard.check();
+      final envelope = await _encryptPayload(payload, keyBytes: keyBytes);
+      final completionTokenHash = await _sha256Base64UrlNoPadding(
+        completionToken,
+      );
+      // This is the last check before uploading recovery material. A later
+      // request or disposed screen must not allow an obsolete upload to start.
+      secretGuard.check();
+      final createResponse = await _client.createPackage(
+        WalletLinkCreatePackageRequest(
+          id: id,
+          envelope: envelope,
+          completionTokenHash: completionTokenHash,
+        ),
+      );
+      secretGuard.check();
+      if (createResponse.id != id) {
+        throw const FormatException(
+          'Wallet link package response id mismatch.',
+        );
+      }
+
+      final qrPayload = Uri(
+        scheme: 'vizor',
+        host: 'wallet-link',
+        path: '/v1',
+        queryParameters: {
+          'id': id,
+          'key': _base64UrlNoPadding(keyBytes),
+          'completion': completionToken,
+        },
+      ).toString();
+
+      final accountCount = (payload['accounts'] as List<Object?>).length;
+      final contactCount = (payload['contacts'] as List<Object?>).length;
+      keepKey = true;
+      return WalletLinkPackageUpload(
+        packageId: id,
+        qrPayload: qrPayload,
+        keyBytes: keyBytes,
+        relayTtlSeconds: createResponse.ttlSeconds,
+        accountCount: accountCount,
+        contactCount: contactCount,
+      );
+    } finally {
+      if (secretGuard.enabled && !keepKey) {
+        keyBytes.fillRange(0, keyBytes.length, 0);
+      }
     }
-
-    final qrPayload = Uri(
-      scheme: 'vizor',
-      host: 'wallet-link',
-      path: '/v1',
-      queryParameters: {
-        'id': id,
-        'key': _base64UrlNoPadding(keyBytes),
-        'completion': completionToken,
-      },
-    ).toString();
-
-    final accountCount = (payload['accounts'] as List<Object?>).length;
-    final contactCount = (payload['contacts'] as List<Object?>).length;
-    return WalletLinkPackageUpload(
-      packageId: id,
-      qrPayload: qrPayload,
-      keyBytes: keyBytes,
-      relayTtlSeconds: createResponse.ttlSeconds,
-      accountCount: accountCount,
-      contactCount: contactCount,
-    );
   }
 
-  Future<Map<String, Object?>> _buildTransferPayload() async {
+  Future<Map<String, Object?>> _buildTransferPayload(
+    LinuxSecretOperationGuard secretGuard,
+  ) async {
     final accountState = await ref.read(accountProvider.future);
+    secretGuard.check();
     if (accountState.accounts.isEmpty) {
       throw StateError('No wallet accounts are available to link.');
     }
 
     final dbPath = await getWalletDbPath();
+    secretGuard.check();
     final endpoint = ref.read(rpcEndpointProvider);
     final network = endpoint.networkName;
     final accountNotifier = ref.read(accountProvider.notifier);
@@ -173,6 +200,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
         network: network,
         accountUuid: account.uuid,
       );
+      secretGuard.check();
       final exportMetadata = await rust_wallet.getAccountExportMetadata(
         dbPath: dbPath,
         network: network,
@@ -186,6 +214,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
           : await accountNotifier.getSoftwareWalletSecretForAccount(
               account.uuid,
             );
+      secretGuard.check();
       final mnemonic = softwareSecret?.mnemonic;
       if (!account.isHardware && (mnemonic == null || mnemonic.isEmpty)) {
         throw StateError('Unlock this wallet before linking mobile.');
@@ -228,6 +257,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     }
 
     final contacts = await ref.read(addressBookProvider.future);
+    secretGuard.check();
     return {
       'version': 1,
       'exportedAt': DateTime.now().toUtc().toIso8601String(),

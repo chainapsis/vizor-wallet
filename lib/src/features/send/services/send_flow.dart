@@ -15,6 +15,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
+import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/zcash/zip321_payment_request.dart'
     show stripUnsupportedZip321MemoText;
@@ -648,6 +650,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
 }) async {
   var proposalConsumed = keystone != null;
   var proposalReleased = false;
+  LinuxSecretOperationGuard? secretGuard;
   final syncNotifier = ref.read(syncProvider.notifier);
 
   Future<bool> abortRequested() async {
@@ -674,7 +677,15 @@ Future<SendBroadcastOutcome> runSendBroadcast({
   );
 
   try {
+    secretGuard = LinuxSecretOperationGuard(
+      store: ref.read(linuxSecretOperationStoreProvider),
+      coordinator: ref.read(linuxKeyringCoordinatorProvider),
+      isRequestCurrent: () => ref.context.mounted,
+      readAccounts: () => ref.read(accountProvider).value,
+      accountUuid: args.proposalAccountUuid,
+    );
     final dbPath = await getWalletDbPath();
+    secretGuard.check();
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
     var saplingParams = await loadSaplingParamsStatus();
 
@@ -711,6 +722,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       }
     }
 
+    secretGuard.check();
     final accountNotifier = ref.read(accountProvider.notifier);
     final isHardware = accountNotifier.isHardwareAccount(
       args.proposalAccountUuid,
@@ -795,7 +807,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       broadcastMessageForFallback = result.message;
     } else {
       late final rust_sync.ExecuteProposalResult result;
-      if (Platform.isMacOS) {
+      if (Platform.isMacOS && !secretGuard.enabled) {
         final password = ref
             .read(appSecurityProvider.notifier)
             .requireSessionPasswordForNativeSecretUse();
@@ -816,17 +828,20 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
           args.proposalAccountUuid,
         );
-        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-          if (await abortRequested()) return aborted();
-          return SendBroadcastOutcome(
-            phase: SendBroadcastPhase.failed,
-            proposalConsumed: proposalConsumed,
-            error: 'Mnemonic not found for the proposal account.',
-          );
-        }
-
         late final Future<rust_sync.ExecuteProposalResult> resultFuture;
         try {
+          if (secretGuard.enabled) {
+            if (await abortRequested()) return aborted();
+            secretGuard.check();
+          }
+          if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+            if (await abortRequested()) return aborted();
+            return SendBroadcastOutcome(
+              phase: SendBroadcastPhase.failed,
+              proposalConsumed: proposalConsumed,
+              error: 'Mnemonic not found for the proposal account.',
+            );
+          }
           resultFuture = rust_sync.executeProposal(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -841,7 +856,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
                 : null,
           );
         } finally {
-          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+          mnemonicBytes?.fillRange(0, mnemonicBytes.length, 0);
         }
         result = await resultFuture;
       }
@@ -856,7 +871,9 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       broadcastMessageForFallback = result.message;
     }
 
-    if (!broadcastComplete &&
+    final canReadProviders = !secretGuard.enabled || ref.context.mounted;
+    if (canReadProviders &&
+        !broadcastComplete &&
         !broadcastExpired &&
         broadcastMessageForFallback != null) {
       final switched = await ref
@@ -873,13 +890,15 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       }
     }
 
-    try {
-      await ref.read(syncProvider.notifier).refreshAfterSend();
-    } catch (e) {
-      log('SendBroadcast: refreshAfterSend failed (non-critical): $e');
+    if (canReadProviders) {
+      try {
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (e) {
+        log('SendBroadcast: refreshAfterSend failed (non-critical): $e');
+      }
     }
 
-    if (await abortRequested()) return aborted();
+    if (!secretGuard.enabled && await abortRequested()) return aborted();
     return SendBroadcastOutcome(
       phase: broadcastExpired
           ? SendBroadcastPhase.failed

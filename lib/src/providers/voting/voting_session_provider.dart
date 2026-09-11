@@ -6,6 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/duration_format.dart';
+import '../../core/storage/linux_keyring_coordinator.dart';
+import '../../core/storage/linux_secret_operation_guard.dart';
+import '../account_provider.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
@@ -505,7 +508,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> delegatePendingBundles({String? mnemonic}) {
+    final secretGuard = mnemonic == null
+        ? null
+        : LinuxSecretOperationGuard(
+            store: ref.read(linuxSecretOperationStoreProvider),
+            coordinator: ref.read(linuxKeyringCoordinatorProvider),
+            isRequestCurrent: () => !_isDisposed && ref.mounted,
+            readAccounts: () => ref.read(accountProvider).value,
+            accountUuid: _sessionAccountUuid,
+          );
     return _enqueue(() async {
+      secretGuard?.check();
       var current = await future;
       var context = await _loadContext(_roundId);
       if (context.isHardwareAccount) {
@@ -583,6 +596,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             prove: (bundleIndex, publishProgress) async {
               await _awaitSnapshotBundlePrecomputeIfRunning(context);
               _throwIfContextStale(context, 'delegation-proof');
+              secretGuard?.check();
               rust_wire.SignedDelegationPayloadView? signedPayload;
               await for (final event
                   in rust.buildProveAndSignDelegationPayloadWithProgress(

@@ -9,6 +9,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/password_text_field.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
@@ -66,6 +67,17 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   }
 
   Future<void> _submit() async {
+    try {
+      await ref
+          .read(linuxKeyringCoordinatorProvider)
+          .runMutation(_submitWithOwnership);
+    } on LinuxWalletMutationBusyException catch (error) {
+      if (!mounted) return;
+      setState(() => _submitError = error.toString());
+    }
+  }
+
+  Future<void> _submitWithOwnership() async {
     final args = widget.args;
     final passwordPolicyError = _passwordPolicyError;
     final password = _passwordController.text;
