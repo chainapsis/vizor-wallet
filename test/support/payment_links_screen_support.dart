@@ -53,8 +53,10 @@ Future<void> pumpPaymentLinksScreen(
   FakeSyncNotifier? syncNotifier,
   ZecMarketDataSource? marketDataSource,
   bool? pricingEnabled,
+  Size logicalSize = const Size(1080, 720),
+  GlobalKey? captureBoundaryKey,
 }) async {
-  await tester.binding.setSurfaceSize(const Size(1080, 720));
+  await tester.binding.setSurfaceSize(logicalSize);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final paymentLinkOperations = operations ?? FakePaymentLinkOperations();
   final paymentLinkClipboard = clipboard ?? FakePaymentLinkClipboard();
@@ -119,7 +121,12 @@ Future<void> pumpPaymentLinksScreen(
           FakeMigrationCoordinator.new,
         ),
       ],
-      child: const ZcashWalletApp(),
+      child: captureBoundaryKey == null
+          ? const ZcashWalletApp()
+          : RepaintBoundary(
+              key: captureBoundaryKey,
+              child: const ZcashWalletApp(),
+            ),
     ),
   );
   await tester.pump();
@@ -430,13 +437,22 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<PaymentLinkClaimSession> claimedSessions = [];
   final List<String> discardedClaimAddresses = [];
   final List<String> retainedClaimAddresses = [];
+  PaymentLinkAvailability? claimAvailability;
+  final List<bool> inspectResubmitModes = [];
   final List<String> keptLinkAddresses = [];
-  final List<String> forgottenLinkAddresses = [];
   final List<bool> allowLongSyncCalls = [];
   final List<VizorPaymentLink> preparedLinks = [];
   int createdLoadCalls = 0;
   int receivedLoadCalls = 0;
   int fundingMetadataRetries = 0;
+
+  @override
+  Future<void> setReceivedCardArchived(String address, bool archived) async {
+    _replaceReceivedRecord(
+      address,
+      (record) => record.copyWith(archived: archived),
+    );
+  }
 
   @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
@@ -582,8 +598,10 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
 
   @override
   Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
-    List<PaymentLinkReceivedRecord> records,
-  ) async {
+    List<PaymentLinkReceivedRecord> records, {
+    bool allowResubmit = true,
+  }) async {
+    inspectResubmitModes.add(allowResubmit);
     for (var index = 0; index < receivedRecords.length; index++) {
       final record = receivedRecords[index];
       final status = receivedClaimStatuses[record.address] ?? record.status;
@@ -641,6 +659,11 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
       feeZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
       fundingConfirmationCount: fundingConfirmationCount,
       waitingForFundingConfirmations: waitingForFundingConfirmations,
+      availability:
+          claimAvailability ??
+          (claimable
+              ? PaymentLinkAvailability.available
+              : PaymentLinkAvailability.noBalance),
     );
   }
 
@@ -666,6 +689,10 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
         session.link.address,
         (record) => record.copyWith(
           status: PaymentLinkReceivedStatus.receiving,
+          availability:
+              result.status == PaymentLinkClaimBroadcastStatus.broadcasted
+              ? PaymentLinkAvailability.available
+              : PaymentLinkAvailability.checking,
           destinationAccountUuid: session.destinationAccountUuid,
           claimTxids: result.txids,
           claimSubmittedAt: DateTime.utc(2026, 8, 6, 2),
@@ -678,6 +705,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
         session.link.address,
         (record) => record.copyWith(
           status: PaymentLinkReceivedStatus.readyToClaim,
+          availability: PaymentLinkAvailability.failed,
           destinationAccountUuid: null,
           claimTxids: null,
           updatedAt: DateTime.utc(2026, 8, 6, 2),
@@ -690,12 +718,6 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
   @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
     discardedClaimAddresses.add(session.link.address);
-  }
-
-  @override
-  Future<void> forgetReceivedLink(VizorPaymentLink link) async {
-    forgottenLinkAddresses.add(link.address);
-    receivedRecords.removeWhere((record) => record.address == link.address);
   }
 
   @override
@@ -726,6 +748,10 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
         ),
       );
     }
+    _replaceReceivedRecord(
+      session.link.address,
+      (record) => record.copyWith(availability: session.availability),
+    );
   }
 
   Future<PaymentLinkClaimResult> _claimLink(VizorPaymentLink link) async {
@@ -782,10 +808,11 @@ const broadcastedClaimResult = PaymentLinkClaimResult(
 );
 
 class FakePaymentLinkClipboard implements PaymentLinkClipboard {
-  FakePaymentLinkClipboard({this.text, this.readCompleter});
+  FakePaymentLinkClipboard({this.text, this.readCompleter, this.copyCompleter});
 
   String? text;
   final Completer<String?>? readCompleter;
+  final Completer<void>? copyCompleter;
   final List<String> copiedSecrets = [];
   int clearCalls = 0;
 
@@ -798,6 +825,7 @@ class FakePaymentLinkClipboard implements PaymentLinkClipboard {
   @override
   Future<void> copySecret(String text) async {
     copiedSecrets.add(text);
+    await copyCompleter?.future;
     this.text = text;
   }
 
@@ -806,12 +834,15 @@ class FakePaymentLinkClipboard implements PaymentLinkClipboard {
 }
 
 class FakePaymentLinkQrImageSaver implements PaymentLinkQrImageSaver {
+  FakePaymentLinkQrImageSaver({this.saveCompleter});
+
+  final Completer<bool>? saveCompleter;
   final List<Uint8List> savedImages = [];
 
   @override
   Future<bool> savePng(Uint8List pngBytes) async {
     savedImages.add(Uint8List.fromList(pngBytes));
-    return true;
+    return await saveCompleter?.future ?? true;
   }
 }
 

@@ -14,6 +14,34 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `helper_client`, `helper_delivery_db`, `is_cancelled`, `log_sink_closed`, `parse_tx_events_json`, `share_record`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`
 
+/// Supplies the disposable local chain anchor for regtest integration tests.
+/// This does not change mainnet/testnet trust or verification rules.
+Future<void> configureRegtestVotingParticipation({
+  required String chainId,
+  required String validatorHash,
+}) => RustLib.instance.api.crateApiVotingConfigureRegtestVotingParticipation(
+  chainId: chainId,
+  validatorHash: validatorHash,
+);
+
+/// UFVK-only preparation for read-only participation discovery (also Keystone).
+Future<String> prepareVotingParticipation({
+  required ApiVotingRoundContext ctx,
+}) => RustLib.instance.api.crateApiVotingPrepareVotingParticipation(ctx: ctx);
+
+/// Verify consensus/storage evidence and evaluate the remaining snapshot notes.
+Future<String> evaluateVotingParticipation({
+  required ApiVotingRoundContext ctx,
+  required String fingerprint,
+  required String evidence,
+  required PlatformInt64 nowSeconds,
+}) => RustLib.instance.api.crateApiVotingEvaluateVotingParticipation(
+  ctx: ctx,
+  fingerprint: fingerprint,
+  evidence: evidence,
+  nowSeconds: nowSeconds,
+);
+
 /// Select an exact-height PIR endpoint using the SDK's snapshot policy.
 ///
 /// Dart owns probing and diagnostics because it owns the routed HTTP client.

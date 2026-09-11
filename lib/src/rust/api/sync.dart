@@ -73,11 +73,13 @@ Future<void> runPaymentLinkClaimSync({
   required String dbPath,
   required String lightwalletdUrl,
   required String network,
+  required bool allowResubmit,
 }) => RustLib.instance.api.crateApiSyncRunPaymentLinkClaimSync(
   claimId: claimId,
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
+  allowResubmit: allowResubmit,
 );
 
 /// Cancels only the isolated scan associated with `claim_id`.
@@ -1107,6 +1109,16 @@ Future<ExtractAndBroadcastPcztResult> extractAndBroadcastPczt({
   outputParamsPath: outputParamsPath,
 );
 
+Future<PaymentLinkSpendEvidence> getPaymentLinkSpendEvidence({
+  required String dbPath,
+  required String accountUuid,
+  required String claimTxids,
+}) => RustLib.instance.api.crateApiSyncGetPaymentLinkSpendEvidence(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  claimTxids: claimTxids,
+);
+
 /// Flat address-validation result for the Dart side.
 ///
 /// `wrong_network` marks the one case where `is_valid` is false but the input
@@ -1290,12 +1302,16 @@ class ExecuteProposalResult {
   final int totalCount;
   final String? message;
 
+  /// Server rejection is distinct from a missing response, but is not finality.
+  final String? broadcastFailureKind;
+
   const ExecuteProposalResult({
     required this.txids,
     required this.status,
     required this.broadcastedCount,
     required this.totalCount,
     this.message,
+    this.broadcastFailureKind,
   });
 
   @override
@@ -1304,7 +1320,8 @@ class ExecuteProposalResult {
       status.hashCode ^
       broadcastedCount.hashCode ^
       totalCount.hashCode ^
-      message.hashCode;
+      message.hashCode ^
+      broadcastFailureKind.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1315,7 +1332,8 @@ class ExecuteProposalResult {
           status == other.status &&
           broadcastedCount == other.broadcastedCount &&
           totalCount == other.totalCount &&
-          message == other.message;
+          message == other.message &&
+          broadcastFailureKind == other.broadcastFailureKind;
 }
 
 class ExtractAndBroadcastPcztResult {
@@ -2179,6 +2197,39 @@ class OrchardMigrationPrivatePlan {
           proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
           estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
           scheduledTransfers == other.scheduledTransfers;
+}
+
+/// Positive, scanned evidence for a Gift Card's shielded inputs. This reads
+/// only the claim database; it never submits or retransmits a transaction.
+class PaymentLinkSpendEvidence {
+  final bool allFundsSpentElsewhere;
+  final List<String> conflictedTxids;
+  final List<String> localClaimTxids;
+  final BigInt verifiedHeight;
+
+  const PaymentLinkSpendEvidence({
+    required this.allFundsSpentElsewhere,
+    required this.conflictedTxids,
+    required this.localClaimTxids,
+    required this.verifiedHeight,
+  });
+
+  @override
+  int get hashCode =>
+      allFundsSpentElsewhere.hashCode ^
+      conflictedTxids.hashCode ^
+      localClaimTxids.hashCode ^
+      verifiedHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PaymentLinkSpendEvidence &&
+          runtimeType == other.runtimeType &&
+          allFundsSpentElsewhere == other.allFundsSpentElsewhere &&
+          conflictedTxids == other.conflictedTxids &&
+          localClaimTxids == other.localClaimTxids &&
+          verifiedHeight == other.verifiedHeight;
 }
 
 class ProposalResult {

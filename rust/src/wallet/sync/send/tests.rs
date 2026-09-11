@@ -1326,6 +1326,7 @@ fn parse_txid_hex_accepts_display_order_hex() {
 #[test]
 fn shield_result_preserves_pending_broadcast_status() {
     let result = CreatedBroadcastResult {
+        broadcast_failure_kind: None,
         txids: "abc123".to_string(),
         status: CreatedBroadcastResult::PENDING_BROADCAST,
         broadcasted_count: 0,
@@ -2130,6 +2131,7 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
 fn split_broadcast_result_preserves_status_and_migrated_amount() {
     let result = migration_result_from_split_broadcast(
         CreatedBroadcastResult {
+            broadcast_failure_kind: None,
             txids: "abc123,def456".to_string(),
             status: CreatedBroadcastResult::PARTIAL_BROADCAST,
             broadcasted_count: 1,
@@ -3281,4 +3283,23 @@ fn prefers_non_ephemeral_sources_over_ephemeral_sources() {
 
     assert_eq!(addresses, vec![taddr(2)]);
     assert_eq!(u64::from(total), 120_000);
+}
+
+#[test]
+fn execute_result_distinguishes_rejection_without_asserting_finality() {
+    for (kind, expected) in [(Some("rejected"), "rejected"), (None, "unknown")] {
+        let result = CreatedBroadcastResult {
+            broadcast_failure_kind: kind,
+            txids: "a,b".to_string(),
+            status: CreatedBroadcastResult::PARTIAL_BROADCAST,
+            broadcasted_count: 1,
+            total_count: 2,
+            message: None,
+        }
+        .into_execute_result();
+        assert_eq!(result.broadcast_failure_kind.as_deref(), Some(expected));
+        assert_eq!(result.status, "partial_broadcast");
+        assert_eq!(result.broadcasted_count, 1);
+        assert_eq!(result.total_count, 2);
+    }
 }

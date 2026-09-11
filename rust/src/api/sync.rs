@@ -202,6 +202,7 @@ pub fn run_payment_link_claim_sync(
     db_path: String,
     lightwalletd_url: String,
     network: String,
+    allow_resubmit: bool,
 ) -> Result<(), String> {
     if claim_id.trim().is_empty() {
         return Err("Payment-link claim ID must not be empty".into());
@@ -228,6 +229,7 @@ pub fn run_payment_link_claim_sync(
             &lightwalletd_url,
             network,
             cancel,
+            allow_resubmit,
         ))
     }));
 
@@ -790,6 +792,8 @@ pub struct ExecuteProposalResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// Server rejection is distinct from a missing response, but is not finality.
+    pub broadcast_failure_kind: Option<String>,
 }
 
 pub struct IronwoodMigrationResult {
@@ -1198,6 +1202,7 @@ pub fn execute_proposal(
             broadcasted_count: r.broadcasted_count,
             total_count: r.total_count,
             message: r.message,
+            broadcast_failure_kind: r.broadcast_failure_kind,
         })
     })
 }
@@ -1238,6 +1243,7 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
             broadcasted_count: r.broadcasted_count,
             total_count: r.total_count,
             message: r.message,
+            broadcast_failure_kind: r.broadcast_failure_kind,
         })
     })
 }
@@ -2902,4 +2908,30 @@ mod validate_address_tests {
     fn unknown_network_name_is_a_programming_error() {
         assert!(validate_address(MAINNET_UA.into(), "moonnet".into()).is_err());
     }
+}
+
+/// Positive, scanned evidence for a Gift Card's shielded inputs. This reads
+/// only the claim database; it never submits or retransmits a transaction.
+pub struct PaymentLinkSpendEvidence {
+    pub all_funds_spent_elsewhere: bool,
+    pub conflicted_txids: Vec<String>,
+    pub local_claim_txids: Vec<String>,
+    pub verified_height: u64,
+}
+
+pub fn get_payment_link_spend_evidence(
+    db_path: String,
+    account_uuid: String,
+    claim_txids: String,
+) -> Result<PaymentLinkSpendEvidence, String> {
+    catch(|| {
+        let evidence =
+            wallet_sync::payment_link_spend_evidence(&db_path, &account_uuid, &claim_txids)?;
+        Ok(PaymentLinkSpendEvidence {
+            all_funds_spent_elsewhere: evidence.all_funds_spent_elsewhere,
+            conflicted_txids: evidence.conflicted_txids,
+            local_claim_txids: evidence.local_claim_txids,
+            verified_height: evidence.verified_height,
+        })
+    })
 }

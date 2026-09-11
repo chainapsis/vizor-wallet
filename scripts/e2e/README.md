@@ -2,7 +2,7 @@
 
 ## Gift Cards
 
-Three macOS regtest runners cover the Gift Card (payment-link) flows. They
+The macOS regtest runners cover the Gift Card (payment-link) flows. They
 share `scripts/e2e/lib-payment-link.sh`, which starts the regtest stack, funds
 the sender account, and passes the regtest + payment-link defines every phase
 needs:
@@ -16,7 +16,27 @@ scripts/e2e/flutter-macos-regtest-payment-link.sh
 
 # Retry a failed claim broadcast and survive a reorg.
 scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh
+
+# Competition, lost-response recovery, and archive/restore (three scenarios).
+scripts/e2e/flutter-macos-regtest-gift-card-outcomes.sh
 ```
+
+The outcomes runner uses four process phases for three scenarios: competition
+leaves a real losing card archived, the next process restores it, and a separate
+prepare/resume pair recovers a transaction whose accepted response was dropped.
+It checks five versus six confirmations, winner/loser balances, a fresh
+observer's spend evidence, retained secrets and claim databases, and zero
+transmissions during a manual status check. A fully spent competing card resolves
+to `Already claimed`; `Claim failed` is reserved for other settled failures.
+Automatic claim recovery is gated only during the manual-check measurement,
+then released to execute the production recovery path.
+
+Run this suite serially: it uses the shared Docker regtest chain and resets it
+between the competition/archive and response-loss scenarios by default. The
+fault proxy and node are pinned to local ports 19068 and 18232. macOS windows
+remain hidden by default. Logs are saved to `.regtest-logs/gift-card-outcomes.log`;
+the chain remains available for inspection afterward. As with the other runners,
+run it only when regtest execution is intended.
 
 The runners default `VIZOR_DEEPLINK_BASE_URL` to
 `https://link-dev.vizor.cash`. Override it explicitly when testing another

@@ -70,6 +70,9 @@ typedef _SendMaxEstimateBuilder =
 /// Holds `discardProposal` open so a test can look at the busy-surface hold
 /// while a cancelled send's proposal is still being released.
 Completer<void>? _discardGate;
+bool _discardFails = false;
+int _discardCalls = 0;
+int _proposeCalls = 0;
 
 class _RustApiFake implements RustLibApi {
   @override
@@ -77,8 +80,10 @@ class _RustApiFake implements RustLibApi {
     required BigInt proposalId,
     required String sendFlowId,
   }) async {
+    _discardCalls++;
     final gate = _discardGate;
     if (gate != null) await gate.future;
+    if (_discardFails) throw StateError('proposal release failed');
   }
 
   @override
@@ -170,6 +175,7 @@ class _RustApiFake implements RustLibApi {
     required BigInt amountZatoshi,
     String? memo,
   }) async {
+    _proposeCalls++;
     _lastProposeToAddress = toAddress;
     _lastProposeMemo = memo;
     final completer = _proposeSendCompleter;
@@ -233,6 +239,49 @@ class _FakeSyncNotifier extends SyncNotifier {
     spendableBalance: BigInt.from(500000000), // 5 ZEC
     totalBalance: BigInt.from(500000000),
   );
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {}
+}
+
+class _CancelRecoverySyncNotifier extends _FakeSyncNotifier {
+  Completer<void>? refreshGate;
+  int refreshCalls = 0;
+  bool refreshFails = false;
+
+  void publishAccount(String accountUuid) {
+    state = AsyncData(state.requireValue.copyWith(accountUuid: accountUuid));
+  }
+
+  void publishLockedBalance() {
+    state = AsyncData(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        spendableBalance: BigInt.zero,
+        totalBalance: BigInt.from(500000000),
+      ),
+    );
+  }
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {
+    refreshCalls++;
+    await refreshGate?.future;
+    if (refreshFails) throw StateError('balance unavailable');
+    if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+      return;
+    }
+    state = AsyncData(await build());
+  }
+}
+
+class _SwitchableAccountNotifier extends AccountNotifier {
+  void selectAccount(String accountUuid) {
+    state = AsyncData(
+      state.requireValue.copyWith(activeAccountUuid: accountUuid),
+    );
+  }
 }
 
 /// A sync notifier whose state can be pushed mid-test, so a test can force the
@@ -520,6 +569,8 @@ Widget _reviewApp({
 /// SendPrefillArgs)`, so `/send` becomes the entire stack and there is nothing
 /// under it to pop.
 Widget _sendFlowRouterApp({
+  AccountNotifier Function()? accountNotifier,
+  SyncNotifier Function()? syncNotifier,
   MobileSendFeeEstimator? estimateFee,
   String? initialMemo,
   bool preserveInitialMemoWhitespace = false,
@@ -652,11 +703,13 @@ Widget _sendFlowRouterApp({
   );
   return ProviderScope(
     overrides: [
+      if (accountNotifier != null)
+        accountProvider.overrideWith(accountNotifier),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accountState: accountState),
       ),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      syncProvider.overrideWith(syncNotifier ?? _FakeSyncNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
@@ -756,6 +809,9 @@ void main() {
 
   setUp(() {
     _discardGate = null;
+    _discardFails = false;
+    _discardCalls = 0;
+    _proposeCalls = 0;
     _proposeSendSucceeds = false;
     _proposeSendCompleter = null;
     _proposalFeeZatoshi = BigInt.from(10000);
@@ -1763,36 +1819,189 @@ void main() {
     );
   });
 
-  testWidgets('changed proposal fee requires a second confirmation', (
+  for (final recoveredFeeZatoshi in [20000, 30000]) {
+    testWidgets(
+      'changed proposal fee preserves recovery fee $recoveredFeeZatoshi',
+      (tester) async {
+        _proposeSendSucceeds = true;
+        _proposalFeeZatoshi = BigInt.from(20000);
+
+        await tester.pumpWidget(
+          _sendFlowRouterApp(
+            estimateFee:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                  required toAddress,
+                  required amountZatoshi,
+                  memo,
+                }) async => BigInt.from(
+                  _proposeCalls == 0 ? 10000 : recoveredFeeZatoshi,
+                ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_send_open_from_home')),
+        );
+        await tester.pumpAndSettle();
+        await _toReviewStep(tester);
+
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Review Send'), findsOneWidget);
+        expect(
+          find.text('Fee updated after sync. Review and confirm again.'),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('mobile_send_fee')))
+              .data,
+          ZecAmount.fromZatoshi(
+            BigInt.from(recoveredFeeZatoshi),
+          ).fee.toString(),
+        );
+        expect(find.text('status can pop'), findsNothing);
+        expect(_discardCalls, 1);
+        _proposalFeeZatoshi = BigInt.from(recoveredFeeZatoshi);
+
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('status can pop'), findsOneWidget);
+        expect(_proposeCalls, 2);
+        expect(_discardCalls, 1);
+      },
+    );
+  }
+
+  for (final insufficient in [false, true]) {
+    testWidgets('changed proposal fee preserves recovery quote failure '
+        '(insufficient=$insufficient)', (tester) async {
+      _proposeSendSucceeds = true;
+      _proposalFeeZatoshi = BigInt.from(20000);
+      await tester.pumpWidget(
+        _sendFlowRouterApp(
+          estimateFee:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+                required toAddress,
+                required amountZatoshi,
+                memo,
+              }) async {
+                if (_proposeCalls > 0) {
+                  throw StateError(
+                    insufficient ? 'InsufficientFunds' : 'fee lookup failed',
+                  );
+                }
+                return BigInt.from(10000);
+              },
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_send_open_from_home')),
+      );
+      await tester.pumpAndSettle();
+      await _toReviewStep(tester);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(_proposeCalls, 1);
+      expect(find.text('status can pop'), findsNothing);
+      expect(find.text('Confirm & Send'), findsNothing);
+      if (insufficient) {
+        expect(find.text('Not enough ZEC'), findsOneWidget);
+        expect(_confirmButton(tester).onPressed, isNull);
+      } else {
+        expect(find.text('Fee unavailable. Try again.'), findsOneWidget);
+        expect(find.text('Try again'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        expect(_proposeCalls, 1);
+      }
+    });
+  }
+
+  testWidgets('changed proposal fee preserves the fresh Max amount and fee', (
     tester,
   ) async {
     _proposeSendSucceeds = true;
     _proposalFeeZatoshi = BigInt.from(20000);
+    _sendMaxEstimateBuilder = ({required toAddress, memo}) {
+      final fee = BigInt.from(_proposeCalls == 0 ? 10000 : 30000);
+      return SendMaxEstimateResult(
+        amountZatoshi: BigInt.from(500000000) - fee,
+        feeZatoshi: fee,
+        needsSaplingParams: false,
+      );
+    };
+    await tester.pumpWidget(
+      _cancelRecoveryApp(_CancelRecoverySyncNotifier(), isMaxMode: true),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(_proposeCalls, 1);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('mobile_send_fee'))).data,
+      ZecAmount.fromZatoshi(BigInt.from(30000)).fee.toString(),
+    );
+    expect(_confirmButton(tester).onPressed, isNotNull);
+  });
 
-    await tester.pumpWidget(_sendFlowRouterApp());
+  testWidgets('changed proposal fee preserves a new account recovery quote', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = true;
+    _proposalFeeZatoshi = BigInt.from(20000);
+    final accounts = _SwitchableAccountNotifier();
+    final sync = _CancelRecoverySyncNotifier();
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        accountNotifier: () => accounts,
+        syncNotifier: () => sync,
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(uuid: 'account-1', name: 'First', order: 0),
+            AccountInfo(uuid: 'account-2', name: 'Second', order: 1),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async => BigInt.from(accountUuid == 'account-1' ? 10000 : 30000),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('mobile_send_open_from_home')));
     await tester.pumpAndSettle();
     await _toReviewStep(tester);
-
+    _discardGate = Completer<void>();
     await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
     await tester.pumpAndSettle();
-
-    expect(find.text('Review Send'), findsOneWidget);
-    expect(
-      find.text('Fee updated after sync. Review and confirm again.'),
-      findsOneWidget,
-    );
+    accounts.selectAccount('account-2');
+    sync.publishAccount('account-2');
+    await tester.pumpAndSettle();
+    _discardGate!.complete();
+    await tester.pumpAndSettle();
+    expect(_proposeCalls, 1);
     expect(
       tester.widget<Text>(find.byKey(const ValueKey('mobile_send_fee'))).data,
-      ZecAmount.fromZatoshi(_proposalFeeZatoshi).fee.toString(),
+      ZecAmount.fromZatoshi(BigInt.from(30000)).fee.toString(),
     );
-    expect(find.text('status can pop'), findsNothing);
-
-    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('status can pop'), findsOneWidget);
+    expect(_confirmButton(tester).onPressed, isNotNull);
   });
 
   testWidgets('route-step send status clears intermediate send pages', (
@@ -1942,6 +2151,216 @@ void main() {
     discardGate.complete();
     await tester.pumpAndSettle();
     expect(container.read(paymentUriBusySurfaceProvider), 0);
+  });
+
+  testWidgets(
+    'Keystone cancel refreshes locked balance before enabling retry',
+    (tester) async {
+      _proposeSendSucceeds = true;
+      final sync = _CancelRecoverySyncNotifier();
+      await tester.pumpWidget(_cancelRecoveryApp(sync));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileSendScreen)),
+      );
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(_proposeCalls, 1);
+
+      sync.publishLockedBalance();
+      await tester.pumpAndSettle();
+      _discardGate = Completer<void>();
+      sync.refreshGate = Completer<void>();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_send_keystone_cancel')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Review Send'), findsOneWidget);
+      expect(_confirmButton(tester).onPressed, isNull);
+      expect(sync.refreshCalls, 0);
+      expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+      _discardGate!.complete();
+      await tester.pumpAndSettle();
+      expect(sync.refreshCalls, 1);
+      expect(_confirmButton(tester).onPressed, isNull);
+      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(_proposeCalls, 1);
+
+      sync.refreshGate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Not enough ZEC'), findsNothing);
+      expect(find.text('Confirm with Keystone'), findsOneWidget);
+      expect(_confirmButton(tester).onPressed, isNotNull);
+      expect(container.read(paymentUriBusySurfaceProvider), 0);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(find.text('keystone sign'), findsOneWidget);
+      expect(_proposeCalls, 2);
+    },
+  );
+
+  testWidgets(
+    'Keystone release failure retries cleanup without a new proposal',
+    (tester) async {
+      _proposeSendSucceeds = true;
+      final sync = _CancelRecoverySyncNotifier();
+      await tester.pumpWidget(_cancelRecoveryApp(sync));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      sync.publishLockedBalance();
+      _discardFails = true;
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_send_keystone_cancel')),
+      );
+      await tester.pumpAndSettle();
+      expect(_discardCalls, 3);
+      expect(sync.refreshCalls, 0);
+      expect(_proposeCalls, 1);
+      expect(find.text('Confirm with Keystone'), findsNothing);
+      expect(find.text('Try again'), findsOneWidget);
+      expect(
+        find.text('Could not finish cancellation. Try again.'),
+        findsOneWidget,
+      );
+
+      _discardFails = false;
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(_discardCalls, 4);
+      expect(sync.refreshCalls, 1);
+      expect(_proposeCalls, 1);
+      expect(find.text('Confirm with Keystone'), findsOneWidget);
+      expect(_confirmButton(tester).onPressed, isNotNull);
+    },
+  );
+
+  testWidgets('Keystone cancel keeps retry gated when balance refresh fails', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = true;
+    final sync = _CancelRecoverySyncNotifier()..refreshFails = true;
+    await tester.pumpWidget(_cancelRecoveryApp(sync));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    sync.publishLockedBalance();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_keystone_cancel')));
+    await tester.pumpAndSettle();
+    expect(_discardCalls, 1);
+    expect(sync.refreshCalls, 1);
+    expect(find.text('Confirm with Keystone'), findsNothing);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(_proposeCalls, 1);
+
+    sync.refreshFails = false;
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(sync.refreshCalls, 2);
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(_proposeCalls, 1);
+  });
+
+  for (final refreshFailure in [false, true]) {
+    for (final systemBack in [false, true]) {
+      testWidgets('pending cancellation blocks exit until cleanup succeeds '
+          '(refreshFailure=$refreshFailure, systemBack=$systemBack)', (
+        tester,
+      ) async {
+        _proposeSendSucceeds = true;
+        final sync = _CancelRecoverySyncNotifier();
+        await tester.pumpWidget(_cancelRecoveryApp(sync));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        sync.publishLockedBalance();
+        _discardFails = !refreshFailure;
+        sync.refreshFails = refreshFailure;
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_send_keystone_cancel')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Could not finish cancellation. Try again.'),
+          findsOneWidget,
+        );
+        expect(find.bySemanticsLabel('Back'), findsNothing);
+        expect(
+          tester
+              .widget<AppButton>(
+                find.byKey(const ValueKey('mobile_send_cancel')),
+              )
+              .onPressed,
+          isNull,
+        );
+        final discardsBeforeRetry = _discardCalls;
+        final refreshesBeforeRetry = sync.refreshCalls;
+        if (systemBack) {
+          await tester.binding.handlePopRoute();
+        } else {
+          await tester.tap(find.byKey(const ValueKey('mobile_send_cancel')));
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('Review Send'), findsOneWidget);
+        expect(find.text('home'), findsNothing);
+        expect(_discardCalls, discardsBeforeRetry);
+        expect(sync.refreshCalls, refreshesBeforeRetry);
+
+        _discardFails = false;
+        sync.refreshFails = false;
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        expect(_discardCalls, discardsBeforeRetry + 1);
+        expect(sync.refreshCalls, refreshesBeforeRetry + 1);
+        expect(_proposeCalls, 1);
+        expect(find.text('Confirm with Keystone'), findsOneWidget);
+        expect(find.bySemanticsLabel('Back'), findsOneWidget);
+        expect(
+          tester
+              .widget<AppButton>(
+                find.byKey(const ValueKey('mobile_send_cancel')),
+              )
+              .onPressed,
+          isNotNull,
+        );
+        if (systemBack) {
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(find.text('Review Send'), findsNothing);
+        } else {
+          await tester.tap(find.byKey(const ValueKey('mobile_send_cancel')));
+          await tester.pumpAndSettle();
+          expect(find.text('home'), findsOneWidget);
+        }
+      });
+    }
+  }
+
+  testWidgets('Keystone cancel requotes Max only after inputs are released', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = true;
+    final sync = _CancelRecoverySyncNotifier();
+    await tester.pumpWidget(_cancelRecoveryApp(sync, isMaxMode: true));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    final initialMaxCalls = _estimateSendMaxCalls;
+    sync.publishLockedBalance();
+    await tester.pumpAndSettle();
+    expect(_estimateSendMaxCalls, initialMaxCalls);
+
+    _discardGate = Completer<void>();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_keystone_cancel')));
+    await tester.pumpAndSettle();
+    expect(_estimateSendMaxCalls, initialMaxCalls);
+    expect(_confirmButton(tester).onPressed, isNull);
+    _discardGate!.complete();
+    await tester.pumpAndSettle();
+    expect(_estimateSendMaxCalls, greaterThan(initialMaxCalls));
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(_confirmButton(tester).onPressed, isNotNull);
   });
 
   testWidgets('a failed proposal gives the busy-surface hold back', (
@@ -3346,9 +3765,14 @@ void main() {
       find.byKey(const ValueKey('mobile_address_verify_chunks')),
       findsOneWidget,
     );
-    expect(find.text('u1tes'), findsOneWidget);
-    expect(find.text('Cancel'), findsWidgets);
-    await tester.tap(find.text('Cancel').last);
+    expect(
+      find.text(
+        'u1testshieldedaddress00000000000000000000000000000000000000000000000',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Copy address'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Close').last);
     await tester.pumpAndSettle();
 
     // Memo round-trip through the sheet.
@@ -3729,6 +4153,37 @@ void main() {
   });
 }
 
+AppButton _confirmButton(WidgetTester tester) =>
+    tester.widget<AppButton>(find.byKey(const ValueKey('mobile_send_confirm')));
+
+Widget _cancelRecoveryApp(
+  _CancelRecoverySyncNotifier sync, {
+  bool isMaxMode = false,
+}) => _sendFlowRouterApp(
+  syncNotifier: () => sync,
+  initialLocation: '/send/review',
+  initialReviewDraft: MobileSendReviewDraftArgs(
+    sendFlowId: 'cancel-recovery-flow',
+    recipient: _shieldedAddress,
+    addressType: 'unified',
+    amountText: '1.5',
+    isMaxMode: isMaxMode,
+    feeZatoshi: BigInt.from(10000),
+  ),
+  accountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Keystone',
+        order: 0,
+        isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1activeaddress',
+  ),
+);
+
 Future<BigInt> _fixedFeeEstimator({
   required String dbPath,
   required String network,
@@ -3778,5 +4233,6 @@ PaymentRequestPrecheck _readyPaymentRequestPrecheck() => PaymentRequestPrecheck(
         required BigInt proposalId,
         required String sendFlowId,
         required String logContext,
+        required String accountUuid,
       }) async => true,
 );

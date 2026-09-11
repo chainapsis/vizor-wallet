@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'dart:typed_data';
+
+import '../services/voting/voting_file_cache.dart';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +35,7 @@ import 'app_security_provider.dart';
 import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
+import 'voting/voting_home_cache_provider.dart';
 import 'voting/voting_share_tracking_registry_provider.dart';
 import 'voting/voting_submission_guard_provider.dart';
 
@@ -799,6 +803,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     } catch (e, st) {
       log('removeAccount: failed to delete voting drafts for $uuid: $e\n$st');
     }
+    try {
+      await ref.read(votingHomeCacheProvider.notifier).removeAccount(uuid);
+    } catch (e, st) {
+      log(
+        'removeAccount: failed to delete voting Home cache for $uuid: $e\n$st',
+      );
+    }
+    try {
+      await VotingFileCache(
+        directory: () async => Directory('$dbPath.voting-cache'),
+      ).removeAccount(uuid);
+    } catch (e, st) {
+      log(
+        'removeAccount: failed to delete voting note cache for $uuid: $e\n$st',
+      );
+    }
 
     final updated = [
       for (var i = 0; i < remaining.length; i++)
@@ -1026,6 +1046,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         // Finish the remaining safe cleanup, but do not report a complete
         // reset while a privacy-sensitive claim database remains.
         recordError('payment-link claim db cleanup', e, st);
+      }
+      try {
+        ref.read(votingHomeCacheProvider.notifier).clearForReset();
+        await clearVotingCachesForReset();
+      } catch (e, st) {
+        recordError('voting cache wipe', e, st);
       }
       try {
         await _storage.deleteAll();

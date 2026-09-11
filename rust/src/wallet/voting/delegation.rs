@@ -245,12 +245,9 @@ fn prepare_delegation_setup(
     )?;
     let (voting_db, (prepared_bundle, delegation_pczt_bytes, proof_persisted)) =
         with_open_voting_db_write(db_path, account_uuid, |voting_db| {
-            let prepared_bundle = zcash_voting::delegate::prepare_delegation_bundle(
-                voting_db,
-                &wallet_db,
-                prepare_params,
-            )
-            .map_err(|e| e.to_string())?;
+            let prepared_bundle =
+                super::participation::prepare_bundle(voting_db, &wallet_db, prepare_params)
+                    .map_err(|e| e.to_string())?;
             let phase = voting_db
                 .delegation_phase(&prepared_bundle.round_id, prepared_bundle.bundle_index)
                 .map_err(|e| format!("load delegation phase failed: {e}"))?;
@@ -388,8 +385,13 @@ pub async fn setup_delegation_bundles(
     )
     .await
     .map_err(|e| e.to_string())?;
-    let note_infos = selected.voting_note_infos();
     with_voting_sidecar_write_lock(db_path, || {
+        let note_infos = super::participation::filter_notes(
+            voting_db,
+            round_params.vote_round_id.as_str(),
+            round_context.snapshot_height,
+            &selected.voting_note_infos(),
+        )?;
         voting_db
             .ensure_bundles_with_skipped_suffix_with_policy(
                 round_params.vote_round_id.as_str(),
@@ -488,6 +490,12 @@ pub async fn precompute_snapshot_bundles(
         let pir_client = pir_connect.join()?;
         let voting_db = open_voting_db(&db_path, &account_uuid)?;
         retry_voting_db_locks_coordinated(&db_path, || {
+            let note_infos = super::participation::filter_notes(
+                &voting_db,
+                &round_id,
+                snapshot_height,
+                &note_infos,
+            )?;
             zcash_voting::precompute::precompute_snapshot_bundles(
                 &voting_db,
                 &round_id,
@@ -581,7 +589,12 @@ pub async fn check_voting_eligibility(
     )
     .await
     .map_err(|e| e.to_string())?;
-    let note_infos = selected.voting_note_infos();
+    let note_infos = super::participation::filter_notes(
+        voting_db,
+        round_id,
+        snapshot_height,
+        &selected.voting_note_infos(),
+    )?;
     voting_eligibility_report(voting_db, round_id, &note_infos, bundle_policy)
 }
 
@@ -637,12 +650,8 @@ pub async fn precompute_delegation_pir(
         };
         let (voting_db, prepared) =
             with_open_voting_db_write(&db_path, &account_uuid, |voting_db| {
-                zcash_voting::delegate::prepare_delegation_bundle(
-                    voting_db,
-                    &wallet_db,
-                    prepare_params,
-                )
-                .map_err(|e| e.to_string())
+                super::participation::prepare_bundle(voting_db, &wallet_db, prepare_params)
+                    .map_err(|e| e.to_string())
             })?;
         // Join the dedicated connect thread rather than calling
         // `connect_pir_blocking` here: that API builds a nested Tokio runtime,
@@ -1027,12 +1036,8 @@ pub async fn build_keystone_delegation_request(
         wallet_network(prepare_params.voting_hotkey.network()),
     )?;
     with_open_voting_db_write(db_path, account_uuid, |voting_db| {
-        let prepared = zcash_voting::delegate::prepare_delegation_bundle(
-            voting_db,
-            &wallet_db,
-            prepare_params,
-        )
-        .map_err(|e| e.to_string())?;
+        let prepared = super::participation::prepare_bundle(voting_db, &wallet_db, prepare_params)
+            .map_err(|e| e.to_string())?;
         let noop_stages = zcash_voting::NoopProgressReporter;
         prepared
             .keystone_request(voting_db, &noop_stages)
@@ -1079,7 +1084,7 @@ where
             wallet_network(prepare_params.voting_hotkey.network()),
         )?;
         with_open_voting_db_write(db_path, account_uuid, |voting_db| {
-            zcash_voting::delegate::prepare_delegation_bundle(voting_db, &wallet_db, prepare_params)
+            super::participation::prepare_bundle(voting_db, &wallet_db, prepare_params)
                 .map_err(|e| e.to_string())
         })
     })();

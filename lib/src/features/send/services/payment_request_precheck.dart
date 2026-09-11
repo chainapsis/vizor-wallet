@@ -79,12 +79,13 @@ typedef PaymentRequestSpendableIsAuthoritativeNow = bool Function();
 typedef PaymentRequestSpendableBalanceNow = BigInt Function();
 
 /// Releases a proposal. Matches [discardSendProposal].
-/// Returns whether Rust confirmed the release (`discardSendProposal`).
+/// Returns whether release and the owning account's balance refresh completed.
 typedef PaymentRequestDiscardProposal =
     Future<bool> Function({
       required BigInt proposalId,
       required String sendFlowId,
       required String logContext,
+      required String accountUuid,
     });
 
 /// A proposal the card is holding on the user's behalf.
@@ -129,6 +130,7 @@ class PaymentRequestProposalHandle {
         proposalId: reviewArgs.proposalId,
         sendFlowId: reviewArgs.sendFlowId,
         logContext: logContext,
+        accountUuid: reviewArgs.proposalAccountUuid,
       );
       _discardConfirmed = released;
       _discardInFlight = null;
@@ -429,12 +431,25 @@ BigInt paymentRequestSpendableOf(
 
 /// The live pre-check, wired to Rust and the send pipeline.
 final paymentRequestPrecheckProvider = Provider<PaymentRequestPrecheck>((ref) {
+  final syncNotifier = ref.read(syncProvider.notifier);
   return PaymentRequestPrecheck(
     validateAddress: rust_sync.validateAddress,
     // The same endpoint the proposal below is made against, so a link can
     // never be refused for a network the wallet is not on.
     readNetworkName: () => ref.read(rpcEndpointProvider).networkName,
-    discardProposal: discardSendProposal,
+    discardProposal:
+        ({
+          required BigInt proposalId,
+          required String sendFlowId,
+          required String logContext,
+          required String accountUuid,
+        }) => discardSendProposal(
+          proposalId: proposalId,
+          sendFlowId: sendFlowId,
+          logContext: logContext,
+          accountUuid: accountUuid,
+          syncNotifier: syncNotifier,
+        ),
     // The same predicate the card's own read and its sync watch use, scoped
     // to the active account: an unscoped read answers with the wallet-wide
     // sync fields of a state that may hold no balance for this account.

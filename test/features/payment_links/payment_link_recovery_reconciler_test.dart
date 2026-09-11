@@ -346,21 +346,24 @@ void main() {
   );
 
   test(
-    'removes an ambiguous submission that never reached the chain',
+    'retains an ambiguous submission without consulting source scan height',
     () async {
       final fixture = await _ambiguousFixture();
       final reconciler = PaymentLinkRecoveryReconciler(
         fixture.store,
-        loadCurrentHeight: () async => BigInt.from(200),
-        loadScannedHeight: () async => BigInt.from(160),
+        loadCurrentHeight: () => throw StateError('must not be queried'),
+        loadScannedHeight: () => throw StateError('must not be queried'),
         loadTransactionsByAccount: (_) async => const {'source-account': []},
         loadLinkFundingHistory: (_) async => const [],
       );
 
-      expect(await reconciler.load(), isEmpty);
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.isAmbiguousSubmission, isTrue);
       expect(
         await reconciler.countUnsharedFundedForAccount('source-account'),
-        0,
+        1,
       );
     },
   );

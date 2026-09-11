@@ -27,7 +27,6 @@ const kPaymentLinkAlmostReadyHeading = 'Gift Card is\nalmost ready!';
 const kPaymentLinkCardFeeLabel = 'Card fee (deposit + redeem)';
 const kPaymentLinkTotalDeductedLabel = 'Total amount deducted';
 const kPaymentLinkInvalidTitle = 'The link doesn’t look legit.';
-const kPaymentLinkUnavailableSubtitle = 'It may have already been claimed.';
 const kPaymentLinkRedeemSubtitle =
     'Copy the card link you’ve received, and paste it below.';
 const kPaymentLinkInvalidSubtitle = 'Copy the link & try again';

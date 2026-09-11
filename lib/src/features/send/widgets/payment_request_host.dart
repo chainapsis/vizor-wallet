@@ -186,7 +186,14 @@ class PaymentRequestHost extends ConsumerWidget {
           request: request,
           onContinue: review,
           onEdit: edit,
-          onCancel: notifier.dismiss,
+          onCancel: () {
+            // A drag-dismiss animation can finish before the host rebuilds
+            // for a newer link. Only the request that began closing may end.
+            if (ref.read(paymentRequestFlowProvider)?.prefill.id ==
+                flow.prefill.id) {
+              notifier.dismiss();
+            }
+          },
           onRecheck: notifier.recheck,
         ),
       ],

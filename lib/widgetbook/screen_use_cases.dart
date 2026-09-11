@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show ThemeMode, MaterialApp, Material;
 import 'package:flutter/widgets.dart';
+import '../src/providers/voting/voting_home_entry_provider.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
@@ -309,6 +310,19 @@ Widget buildMobileUnlockFingerprintUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileUnlockTouchIdUseCase(BuildContext context) {
+  return _buildMobileUnlockUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.touchId,
+      ),
+      enabled: true,
+    ),
+  );
+}
+
 Widget buildMobileCreatePasscodeUseCase(BuildContext context) {
   return _MobilePreviewFrame(
     child: IgnorePointer(
@@ -599,6 +613,19 @@ Widget buildMobileFingerprintOptInUseCase(BuildContext context) {
         supported: true,
         enrolled: true,
         kind: BiometricKind.fingerprint,
+      ),
+      enabled: false,
+    ),
+  );
+}
+
+Widget buildMobileTouchIdOptInUseCase(BuildContext context) {
+  return _buildMobileBiometricOptInUseCase(
+    const BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.touchId,
       ),
       enabled: false,
     ),
@@ -1202,9 +1229,13 @@ Widget buildMobileAccountsManyUseCase(BuildContext context) {
   return _buildMobileAccountsUseCase(_accountsManyState);
 }
 
-Widget buildMobileHomeDefaultUseCase(BuildContext context) {
+Widget buildMobileHomeDefaultUseCase(
+  BuildContext context, {
+  bool votingVisible = true,
+}) {
   return _buildMobileHomeUseCase(
     accountState: _accountsDesignState,
+    votingVisible: votingVisible,
     syncState: _homeSyncedState(
       orchardBalance: BigInt.from(14312000000),
       recentTransactions: [_homeTx(1), _homeTx(2)],
@@ -2276,7 +2307,11 @@ Widget _buildUtilityUseCase(String initialLocation, AccountState accountState) {
   );
 }
 
+Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
+    buildMobileHomeDefaultUseCase(context, votingVisible: false);
+
 Widget _buildMobileHomeUseCase({
+  bool votingVisible = true,
   required AccountState accountState,
   required SyncState syncState,
   bool openAccountsSheet = false,
@@ -2300,6 +2335,8 @@ Widget _buildMobileHomeUseCase({
   );
   return ProviderScope(
     overrides: [
+      votingHomeEntryVisibleProvider.overrideWithValue(votingVisible),
+      votingHomeRefreshActionProvider.overrideWithValue(() async {}),
       if (networkPrivacyState != null)
         networkPrivacyProvider.overrideWith(
           () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),

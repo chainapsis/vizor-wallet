@@ -4,6 +4,8 @@
 import 'package:flutter/widgets.dart';
 
 import '../widgetbook/activity_use_cases.dart';
+import '../widgetbook/keystone_use_cases.dart';
+import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
@@ -18,6 +20,7 @@ import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
+import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
@@ -49,6 +52,124 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-keystone-loading',
+    description: 'Shared Keystone signing loading',
+    builder: buildMobileKeystoneSigningLoadingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-keystone-ready',
+    description: 'Shared Keystone signing ready',
+    builder: buildMobileKeystoneSigningReadyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-keystone-scanner',
+    description: 'Shared Keystone signing scanner',
+    builder: buildMobileKeystoneSigningScannerUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-claim-rejected',
+    description: 'gift-card-claim-rejected',
+    builder: buildClaimRejectedUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-claim-busy',
+    description: 'gift-card-claim-busy',
+    builder: buildClaimBusyUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-archived-outcome',
+    description: 'gift-card-archived-outcome',
+    builder: buildClaimArchivedUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-outcome-list',
+    description: 'gift-card-outcome-list',
+    builder: buildClaimOutcomeListUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-archive-closed',
+    description: 'gift-card-archive-closed',
+    builder: buildClaimArchiveClosedUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-archive-open',
+    description: 'gift-card-archive-open',
+    builder: buildClaimArchiveOpenUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-claimed-elsewhere',
+    description: 'Gift Card already claimed outcome',
+    builder: buildClaimedElsewhereUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-claim-failed',
+    description: 'Gift Card failed claim outcome',
+    builder: buildClaimFailedUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-claim-checking',
+    description: 'Gift Card uncertain claim outcome',
+    builder: buildClaimCheckingUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-unlock-face-id',
+    description: 'Mobile unlock with face-id',
+    builder: buildMobileUnlockFaceIdUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-biometrics-face-id',
+    description: 'Mobile biometrics with face-id',
+    builder: buildMobileFaceIdOptInUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-unlock-touch-id',
+    description: 'Mobile unlock with touch-id',
+    builder: buildMobileUnlockTouchIdUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-biometrics-touch-id',
+    description: 'Mobile biometrics with touch-id',
+    builder: buildMobileTouchIdOptInUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-unlock-fingerprint',
+    description: 'Mobile unlock with fingerprint',
+    builder: buildMobileUnlockFingerprintUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-biometrics-fingerprint',
+    description: 'Mobile biometrics with fingerprint',
+    builder: buildMobileFingerprintOptInUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+
   FigmaCompareScenario(
     id: 'voting-share-status',
     description: 'Desktop completed vote with shares still submitting',
@@ -377,9 +498,10 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkRedeemInvalidUseCase,
   ),
   FigmaCompareScenario(
-    id: 'payment-link-redeem-unavailable',
-    description: 'Desktop Gift Card redeem no-balance state',
-    builder: buildPaymentLinkRedeemUnavailableUseCase,
+    id: 'gift-card-no-balance',
+    description: 'Gift Card no-balance outcome',
+    builder: buildClaimNoBalanceUseCase,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'payment-link-received-waiting',
@@ -673,6 +795,35 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildMobileCustomiseAccountUseCase,
     desktop: false,
     mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-voting-hidden',
+    description: 'Home after no usable voting rights remain',
+    builder: buildMobileHomeVotingHiddenUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-previously-used-list',
+    description: 'Voting list with previously used snapshot rights',
+    builder: buildMobileVotingPreviouslyUsedListUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-previously-used-detail',
+    description: 'Unavailable voting detail with explicit retry',
+    builder: buildMobileVotingPreviouslyUsedDetailUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-previously-used-actions',
+    description: 'Unavailable voting detail scrolled to disabled actions',
+    builder: buildMobileVotingPreviouslyUsedDetailUseCase,
+    desktop: false,
+    mobile: true,
+    scrollToEnd: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-home-default',
@@ -1617,6 +1768,32 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'activity-gift-card-redeemed-detail-mobile',
     description: 'Mobile redeemed card with saved fiat',
     builder: buildGiftCardRedeemedDetailPreview,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'verify-address-action-footer',
+    description:
+        'Desktop full-address viewer: wrapping address with Copy action',
+    builder: buildVerifyAddressActionFooterUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'verify-address-transparent',
+    description:
+        'Desktop full-address viewer with a wrapping transparent header',
+    builder: buildVerifyAddressUnknownTransparentUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'verify-address-contact',
+    description:
+        'Desktop full-address viewer with contact and transaction history',
+    builder: buildVerifyAddressKnownContactUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-verify-address-action-footer',
+    description:
+        'Mobile full-address sheet: wrapping address with Copy address CTA',
+    builder: buildMobileVerifyAddressActionFooterUseCase,
     desktop: false,
     mobile: true,
   ),

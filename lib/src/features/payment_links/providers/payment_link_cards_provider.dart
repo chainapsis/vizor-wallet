@@ -18,6 +18,17 @@ class PaymentLinkCardsSnapshot {
 
 typedef PaymentLinkCardsLoader = Future<PaymentLinkCardsSnapshot> Function();
 
+/// Sharing or refreshing a card must not move it in the created-card list.
+int compareCreatedPaymentLinks(
+  PaymentLinkRecoveryRecord a,
+  PaymentLinkRecoveryRecord b,
+) {
+  final byCreation = b.link.createdAt.compareTo(a.link.createdAt);
+  return byCreation != 0
+      ? byCreation
+      : a.link.address.compareTo(b.link.address);
+}
+
 final paymentLinkCardsLoaderProvider = Provider<PaymentLinkCardsLoader>((ref) {
   final operations = ref.watch(paymentLinkOperationsProvider);
   return () => loadPaymentLinkCardsSnapshot(operations);
@@ -36,7 +47,7 @@ Future<PaymentLinkCardsSnapshot> loadPaymentLinkCardsSnapshot(
   final received = List<PaymentLinkReceivedRecord>.of(
     results[1] as List<PaymentLinkReceivedRecord>,
   );
-  created.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  created.sort(compareCreatedPaymentLinks);
   received.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   return PaymentLinkCardsSnapshot(created: created, received: received);
 }

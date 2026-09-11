@@ -23,6 +23,8 @@ use crate::wallet::{
 };
 
 mod broadcast;
+mod payment_link;
+pub(crate) use payment_link::{payment_link_resubmit_exclusions, payment_link_spend_evidence};
 mod migration;
 mod migration_wallet_ops;
 mod pczt;
@@ -459,12 +461,15 @@ pub(crate) fn get_sync_progress(
 // ======================== Rewind ========================
 
 pub fn rewind_to_height(db_path: &str, network: WalletNetwork, height: u64) -> Result<u64, String> {
+    crate::wallet::voting::snapshot_changes::record(db_path, height);
     let result = with_wallet_db_write_lock("sync.rewind_to_height", || {
         let mut db = open_wallet_db(db_path, network)?;
         db.truncate_to_height(BlockHeight::from_u32(height as u32))
             .map_err(|e| format!("{e}"))
     })?;
-    Ok(u32::from(result) as u64)
+    let actual = u32::from(result) as u64;
+    crate::wallet::voting::snapshot_changes::record(db_path, actual);
+    Ok(actual)
 }
 
 // ======================== Address Validation ========================

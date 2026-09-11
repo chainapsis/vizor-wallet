@@ -179,32 +179,27 @@ void main() {
     );
   });
 
-  for (final state in [
-    PaymentLinkRedeemMobileState.invalid,
-    PaymentLinkRedeemMobileState.unavailable,
-  ]) {
-    testWidgets('QR $state keeps both input actions visible on a small phone', (
+  testWidgets('invalid QR keeps both input actions visible on a small phone', (
+    tester,
+  ) async {
+    await _pumpRedeem(
       tester,
-    ) async {
-      await _pumpRedeem(
-        tester,
-        state,
-        fromQrCode: true,
-        size: const Size(320, 568),
-      );
-      expect(find.text('Paste card link'), findsOneWidget);
-      expect(find.text('Scan again'), findsOneWidget);
-      expect(find.text('Clear clipboard'), findsNothing);
-      expect(tester.takeException(), isNull);
-      final surface = tester.getRect(
-        find.byKey(const ValueKey('payment_link_mobile_redeem_drop_zone')),
-      );
-      final scan = tester.getRect(
-        find.byKey(const ValueKey('payment_link_mobile_scan_button')),
-      );
-      expect(surface.contains(scan.bottomRight), isTrue);
-    });
-  }
+      PaymentLinkRedeemMobileState.invalid,
+      fromQrCode: true,
+      size: const Size(320, 568),
+    );
+    expect(find.text('Paste card link'), findsOneWidget);
+    expect(find.text('Scan again'), findsOneWidget);
+    expect(find.text('Clear clipboard'), findsNothing);
+    expect(tester.takeException(), isNull);
+    final surface = tester.getRect(
+      find.byKey(const ValueKey('payment_link_mobile_redeem_drop_zone')),
+    );
+    final scan = tester.getRect(
+      find.byKey(const ValueKey('payment_link_mobile_scan_button')),
+    );
+    expect(surface.contains(scan.bottomRight), isTrue);
+  });
 
   testWidgets('received card exposes Figma claim copy and action', (
     tester,

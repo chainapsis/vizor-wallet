@@ -2,6 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:zcash_wallet/src/providers/voting/voting_participation_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_home_cache_provider.dart';
+import '../../fakes/fake_voting_participation_client.dart';
+import '../../fakes/memory_voting_home_cache_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -4603,6 +4607,12 @@ ProviderContainer _statusContainer({
       (accountIsHardware ? {'account-1', 'hardware-1'} : <String>{});
   return ProviderContainer(
     overrides: [
+      votingHomeCacheStoreProvider.overrideWithValue(
+        MemoryVotingHomeCacheStore(),
+      ),
+      votingParticipationClientProvider.overrideWithValue(
+        FakeVotingParticipationClient(),
+      ),
       appBootstrapProvider.overrideWithValue(_bootstrap),
       syncProvider.overrideWith(_NoopSyncNotifier.new),
       if (accountOverride != null)

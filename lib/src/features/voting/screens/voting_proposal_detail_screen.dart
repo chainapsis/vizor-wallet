@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../providers/voting/voting_participation_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -188,6 +189,9 @@ class _VotingProposalDetailViewState
   @override
   Widget build(BuildContext context) {
     final roundId = widget.roundId;
+    final participationUnavailable = ref.watch(
+      votingParticipationUnavailableProvider(roundId),
+    );
     final roundSession = ref.watch(votingSessionProvider(roundId));
     final roundState = roundSession.value;
     final accountUuid = roundState?.accountUuid;
@@ -344,12 +348,23 @@ class _VotingProposalDetailViewState
               ? BigInt.zero
               : state.eligibleWeightZatoshi,
           votingPowerPreparing: votingPowerPreparing,
-          votingEligibilityConfirmed: hasConfirmedVotingEligibility,
+          participationUnavailable: participationUnavailable,
+          onParticipationRetry: () => unawaited(
+            ref
+                .read(votingParticipationProvider)
+                .checkRound(roundId, force: true)
+                .then((_) {
+                  if (mounted) _retryVotingPowerPreparation();
+                }),
+          ),
+          votingEligibilityConfirmed:
+              hasConfirmedVotingEligibility && !participationUnavailable,
           // Drafting answers only writes local state, so it stays open while
           // voting power is still being calculated. Only a resolved
           // ineligibility (or another eligibility failure) locks the options.
           answersEditable:
-              hasConfirmedVotingEligibility || isVotingEligibilityPending,
+              !participationUnavailable &&
+              (hasConfirmedVotingEligibility || isVotingEligibilityPending),
           votingEligibilityMessage: votingEligibilityError
               ? null
               : votingEligibilityMessage,
@@ -454,8 +469,14 @@ class _VotingProposalDetailViewState
       if (!mounted) return;
       unawaited(
         ref
-            .read(votingSessionProvider(widget.roundId).notifier)
-            .refreshEligibleWeight()
+            .read(votingParticipationProvider)
+            .checkRound(widget.roundId, knownRound: state.round)
+            .then((_) {
+              if (!mounted) return null;
+              return ref
+                  .read(votingSessionProvider(widget.roundId).notifier)
+                  .refreshEligibleWeight();
+            })
             .catchError((Object error, StackTrace stackTrace) {
               debugPrint(
                 '[zcash] Voting: voting eligibility refresh failed '
@@ -587,6 +608,8 @@ class VotingActivePollContent extends StatefulWidget {
     required this.proposals,
     required this.draft,
     required this.onChoice,
+    this.participationUnavailable = false,
+    this.onParticipationRetry,
   });
 
   final bool showDesktopToolbar;
@@ -599,6 +622,8 @@ class VotingActivePollContent extends StatefulWidget {
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
   final bool votingEligibilityConfirmed;
+  final bool participationUnavailable;
+  final VoidCallback? onParticipationRetry;
 
   /// Whether the user may still pick answers. Broader than
   /// [votingEligibilityConfirmed]: it also covers the window where voting
@@ -731,10 +756,13 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     return _ReviewAnswersButton(
       key: const ValueKey('voting_review_answers_button'),
       enabled:
-          canRetryEligibility ||
-          isIneligible ||
-          widget.votingEligibilityConfirmed && !widget.draft.isEmpty,
-      label: canRetryEligibility
+          !widget.participationUnavailable &&
+          (canRetryEligibility ||
+              isIneligible ||
+              widget.votingEligibilityConfirmed && !widget.draft.isEmpty),
+      label: widget.participationUnavailable
+          ? 'Unavailable'
+          : canRetryEligibility
           ? 'Retry eligibility'
           : isIneligible
           ? 'Not eligible'
@@ -791,6 +819,24 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
       children: [
         if (widget.showDesktopToolbar)
           const AppPaneToolbar(backLinkMinWidth: 60),
+        if (widget.participationUnavailable)
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  votingAlreadyUsedMessage,
+                  key: const ValueKey('voting_participation_unavailable'),
+                  style: AppTypography.labelLarge,
+                ),
+                TextButton(
+                  onPressed: widget.onParticipationRetry,
+                  child: const Text('Check again'),
+                ),
+              ],
+            ),
+          ),
         Expanded(
           child: widget.proposals.isEmpty
               ? const _Message(

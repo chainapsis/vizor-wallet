@@ -9,6 +9,9 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../../core/widgets/app_icon.dart';
+import '../../../providers/sync_provider.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../../send/services/sapling_params.dart';
@@ -31,7 +34,7 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
-  final VoidCallback onCancel;
+  final FutureOr<void> Function() onCancel;
   final Future<void> Function(
     VizorPaymentLink link,
     PaymentLinkHardwareFundingResult result,
@@ -53,6 +56,11 @@ class _PaymentLinkKeystoneSigningOverlayState
   String? _error;
   PaymentLinkHardwareSigningService? _signingService;
   PaymentLinkHardwarePcztDraft? _draft;
+  Future<PaymentLinkHardwarePcztDraft>? _draftCreation;
+  Future<void>? _discardFuture;
+  late final SyncNotifier _syncNotifier;
+  bool _cancelling = false;
+  bool _cancelled = false;
   List<String> _urParts = const [];
   List<int>? _pcztWithProofs;
   SaplingParamsStatus? _saplingParams;
@@ -60,6 +68,7 @@ class _PaymentLinkKeystoneSigningOverlayState
   @override
   void initState() {
     super.initState();
+    _syncNotifier = ref.read(syncProvider.notifier);
     // The mobile surface is driven by MobileKeystonePcztSigningFlow, which
     // calls its own `preparePczt` once it is mounted.
     if (kAppFormFactor == AppFormFactor.mobile) return;
@@ -75,7 +84,11 @@ class _PaymentLinkKeystoneSigningOverlayState
     if (completer != null && !completer.isCompleted) {
       completer.complete(false);
     }
-    unawaited(_discardDraft());
+    unawaited(
+      _discardDraft().catchError((Object error) {
+        log('PaymentLinkKeystoneSigning: cleanup failed: $error');
+      }),
+    );
     super.dispose();
   }
 
@@ -83,17 +96,18 @@ class _PaymentLinkKeystoneSigningOverlayState
     try {
       final service = ref.read(paymentLinkHardwareSigningServiceProvider);
       _signingService = service;
-      final draft = await service.createFundingPczt(
+      final creation = service.createFundingPczt(
         amountZatoshi: widget.amountZatoshi,
         sourceAccountUuid: widget.sourceAccountUuid,
         presentation: widget.presentation,
       );
-      if (!mounted) {
-        await service.discardPcztDraft(draft: draft);
+      _draftCreation = creation;
+      final draft = await creation;
+      _draft = draft;
+      if (!mounted || _cancelled) {
+        await _discardDraft();
         return;
       }
-      _draft = draft;
-
       SaplingParamsStatus? saplingParams;
       if (draft.needsSaplingParams) {
         saplingParams = await loadSaplingParamsStatus();
@@ -101,7 +115,7 @@ class _PaymentLinkKeystoneSigningOverlayState
           final confirmed = await _showDownloadPrompt();
           if (!confirmed) {
             await _discardDraft();
-            if (!mounted) return;
+            if (!mounted || _cancelled) return;
             setState(() {
               _phase = _PaymentLinkKeystonePhase.failed;
               _error =
@@ -127,7 +141,7 @@ class _PaymentLinkKeystoneSigningOverlayState
             ? saplingParams!.outputPath
             : null,
       );
-      if (!mounted) return;
+      if (!mounted || _cancelled) return;
       setState(() {
         _phase = _PaymentLinkKeystonePhase.ready;
         _urParts = urParts;
@@ -136,8 +150,13 @@ class _PaymentLinkKeystoneSigningOverlayState
       });
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._preparePczt: $error\n$stackTrace');
-      await _discardDraft();
-      if (!mounted) return;
+      if (_cancelled) return;
+      try {
+        await _discardDraft();
+      } catch (cleanupError) {
+        log('PaymentLinkKeystoneSigning: cleanup failed: $cleanupError');
+      }
+      if (!mounted || _cancelled) return;
       setState(() {
         _phase = _PaymentLinkKeystonePhase.failed;
         _error = _friendlyError(error);
@@ -176,7 +195,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       '/send/keystone/scan',
       extra: const KeystoneSendScanArgs.batch(),
     );
-    if (responseCbor == null || !mounted) return;
+    if (responseCbor == null || !mounted || _cancelled) return;
     final service = _signingService;
     final draft = _draft;
     if (service == null || draft == null) return;
@@ -185,7 +204,7 @@ class _PaymentLinkKeystoneSigningOverlayState
         draft: draft,
         responseCbor: responseCbor,
       );
-      if (!mounted) return;
+      if (!mounted || _cancelled) return;
       await _broadcast(signatures);
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._getSignature: $error\n$stackTrace');
@@ -197,6 +216,7 @@ class _PaymentLinkKeystoneSigningOverlayState
   }
 
   Future<void> _broadcast(List<int> signatures) async {
+    if (_cancelled) return;
     setState(() {
       _phase = _PaymentLinkKeystonePhase.broadcasting;
       _error = null;
@@ -289,16 +309,18 @@ class _PaymentLinkKeystoneSigningOverlayState
   ) async {
     final service = ref.read(paymentLinkHardwareSigningServiceProvider);
     _signingService = service;
-    final draft = await service.createFundingPczt(
+    final creation = service.createFundingPczt(
       amountZatoshi: widget.amountZatoshi,
       sourceAccountUuid: widget.sourceAccountUuid,
       presentation: widget.presentation,
     );
-    if (!mounted) {
-      await service.discardPcztDraft(draft: draft);
+    _draftCreation = creation;
+    final draft = await creation;
+    _draft = draft;
+    if (!mounted || _cancelled) {
+      await _discardDraft();
       throw const MobileKeystonePcztSigningAborted();
     }
-    _draft = draft;
 
     SaplingParamsStatus? saplingParams;
     if (draft.needsSaplingParams) {
@@ -319,6 +341,7 @@ class _PaymentLinkKeystoneSigningOverlayState
     _saplingParams = saplingParams;
 
     final urParts = await service.encodeSigningUrParts(draft: draft);
+    if (!mounted || _cancelled) throw const MobileKeystonePcztSigningAborted();
     return MobileKeystonePcztSigningPayload(
       urParts: urParts,
       pcztWithProofs: service.addProofsForSigning(
@@ -334,6 +357,11 @@ class _PaymentLinkKeystoneSigningOverlayState
   }
 
   Future<Uint8List> _decodeMobileSigningResponse(List<int> responseCbor) async {
+    if (_cancelled) {
+      throw StateError(
+        'Signing was cancelled. Return to the review to try again.',
+      );
+    }
     final draft = _draft;
     final service = _signingService;
     if (draft == null || service == null) {
@@ -353,21 +381,57 @@ class _PaymentLinkKeystoneSigningOverlayState
     List<int> pcztWithProofs,
     Uint8List signatures,
   ) async {
+    if (_cancelled) {
+      throw StateError(
+        'Signing was cancelled. Return to the review to try again.',
+      );
+    }
     _pcztWithProofs = pcztWithProofs;
     await _completeFunding(signatures);
   }
 
-  void _cancel() {
-    if (_phase == _PaymentLinkKeystonePhase.broadcasting) return;
-    unawaited(_discardDraft());
-    widget.onCancel();
+  Future<void> _cancel() async {
+    if (_cancelling || _phase == _PaymentLinkKeystonePhase.broadcasting) return;
+    setState(() {
+      _cancelling = true;
+      _cancelled = true;
+    });
+    try {
+      await _discardDraft();
+      if (mounted) await widget.onCancel();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _cancelling = false;
+        _phase = _PaymentLinkKeystonePhase.failed;
+        _error = 'Could not finish cancelling. Please try again.';
+      });
+      showAppToast(
+        context,
+        _error!,
+        iconName: AppIcons.warningCircle,
+        tone: AppToastTone.destructive,
+      );
+    }
   }
 
-  Future<void> _discardDraft() async {
+  Future<void> _discardDraft() =>
+      _discardFuture ??= _releaseDraft().catchError((Object error) {
+        _discardFuture = null;
+        throw error;
+      });
+
+  Future<void> _releaseDraft() async {
+    try {
+      await _draftCreation;
+    } catch (_) {
+      // Creation owns cleanup if it could not return a draft.
+    }
     final draft = _draft;
-    _draft = null;
     if (draft == null) return;
     await _signingService?.discardPcztDraft(draft: draft);
+    await _syncNotifier.refreshAfterProposalRelease(widget.sourceAccountUuid);
+    _draft = null;
   }
 
   @override
@@ -415,11 +479,14 @@ class _PaymentLinkKeystoneSigningOverlayState
                   ? null
                   : 'Get signature',
               onPrimary:
-                  _phase == _PaymentLinkKeystonePhase.ready &&
+                  !_cancelled &&
+                      _phase == _PaymentLinkKeystonePhase.ready &&
                       _pcztWithProofs != null
                   ? () => unawaited(_getSignature())
                   : null,
-              secondaryLabel: isBroadcasting
+              secondaryLabel: _cancelling
+                  ? 'Cancelling…'
+                  : isBroadcasting
                   ? null
                   : _phase == _PaymentLinkKeystonePhase.failed
                   ? 'Back to gift card'
@@ -448,22 +515,26 @@ class _PaymentLinkKeystoneSigningOverlayState
         // animated PCZT QR while `/payment-links` stays put behind it, so an
         // arriving `zcash:` link must stay parked until the round ends.
         PaymentUriBusySurfaceHold(
-          child: MobileKeystonePcztSigningFlow(
-            title: 'Confirm Gift Card',
-            description:
-                'Use your Keystone wallet to scan this transaction QR code. '
-                'Follow the steps on your device.',
-            scanCaption: 'Scan the QR code on your Keystone to finish creating',
-            readingSignatureLabel: 'Reading signature...',
-            finalizingSignatureLabel: 'Creating your gift card...',
-            keyPrefix: 'payment_link_keystone_sign',
-            logTag: 'PaymentLinkKeystoneSigning',
-            expectedSignedUrType: 'zcash-batch-sig-result',
-            preparePczt: _prepareMobilePczt,
-            signedPcztDecoder: _decodeMobileSigningResponse,
-            onSigned: _handleMobileSigned,
-            friendlyError: _friendlyError,
-            onCancel: _cancel,
+          child: AbsorbPointer(
+            absorbing: _cancelling,
+            child: MobileKeystonePcztSigningFlow(
+              title: _cancelling ? 'Cancelling…' : 'Confirm Gift Card',
+              description:
+                  'Use your Keystone wallet to scan this transaction QR code. '
+                  'Follow the steps on your device.',
+              scanCaption:
+                  'Scan the QR code on your Keystone to finish creating',
+              readingSignatureLabel: 'Reading signature...',
+              finalizingSignatureLabel: 'Creating your gift card...',
+              keyPrefix: 'payment_link_keystone_sign',
+              logTag: 'PaymentLinkKeystoneSigning',
+              expectedSignedUrType: 'zcash-batch-sig-result',
+              preparePczt: _prepareMobilePczt,
+              signedPcztDecoder: _decodeMobileSigningResponse,
+              onSigned: _handleMobileSigned,
+              friendlyError: _friendlyError,
+              onCancel: _cancel,
+            ),
           ),
         ),
         if (_showSaplingParamsPrompt)

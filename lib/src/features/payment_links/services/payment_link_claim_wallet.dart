@@ -41,6 +41,7 @@ class PaymentLinkClaimWallet {
   Future<void> runClaimSync({
     required VizorPaymentLink link,
     required String dbPath,
+    bool allowResubmit = false,
   }) {
     final claimId = paymentLinkClaimWalletDirectoryName(link);
     final existing = _claimSyncs[claimId];
@@ -49,6 +50,7 @@ class PaymentLinkClaimWallet {
       claimId: claimId,
       dbPath: dbPath,
       network: link.network,
+      allowResubmit: allowResubmit,
     );
     _claimSyncs[claimId] = future;
     return future.whenComplete(() {
@@ -62,6 +64,7 @@ class PaymentLinkClaimWallet {
     required String claimId,
     required String dbPath,
     required String network,
+    required bool allowResubmit,
   }) {
     return _ref
         .read(rpcEndpointFailoverProvider.notifier)
@@ -79,25 +82,31 @@ class PaymentLinkClaimWallet {
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
               network: network,
+              allowResubmit: allowResubmit,
             );
           },
         );
   }
 
-  Future<bool> syncRetained({
+  Future<PaymentLinkAvailability?> syncRetained({
     required PaymentLinkReceivedRecord record,
     required String network,
+    required bool allowResubmit,
   }) async {
     final link = record.claimLink;
     final claimTxids = record.claimTxids;
     if (link == null || claimTxids == null || claimTxids.trim().isEmpty) {
-      return false;
+      return null;
     }
 
     final tempWallet = await locate(link);
-    if (!await File(tempWallet.dbPath).exists()) return false;
+    if (!await File(tempWallet.dbPath).exists()) return null;
 
-    await runClaimSync(link: link, dbPath: tempWallet.dbPath);
+    await runClaimSync(
+      link: link,
+      dbPath: tempWallet.dbPath,
+      allowResubmit: allowResubmit,
+    );
     final accounts = await rust_wallet.listAccounts(
       dbPath: tempWallet.dbPath,
       network: network,
@@ -112,7 +121,7 @@ class PaymentLinkClaimWallet {
         'PaymentLinkService: retained claim wallet no longer matches its '
         'Gift Card identity; leaving it recoverable from the stored link',
       );
-      return false;
+      return null;
     }
     final transactions = await rust_sync.getTransactionHistory(
       dbPath: tempWallet.dbPath,
@@ -120,10 +129,21 @@ class PaymentLinkClaimWallet {
       accountUuid: accounts.single.uuid,
       limit: null,
     );
-    return paymentLinkClaimTransactionsExpired(
+    final evidence = await rust_sync.getPaymentLinkSpendEvidence(
+      dbPath: tempWallet.dbPath,
+      accountUuid: accounts.single.uuid,
+      claimTxids: claimTxids,
+    );
+    final settled = paymentLinkClaimFailureSettled(
       claimTxids: claimTxids,
       transactions: transactions,
+      conflictedTxids: evidence.conflictedTxids,
+      verifiedHeight: evidence.verifiedHeight,
     );
+    if (!settled) return null;
+    return evidence.allFundsSpentElsewhere
+        ? PaymentLinkAvailability.claimedElsewhere
+        : PaymentLinkAvailability.failed;
   }
 
   /// Reads the link's own wallet history so a funding broadcast whose result

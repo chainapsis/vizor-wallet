@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +24,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 void main() {
   setUpAll(() async {
@@ -64,28 +68,104 @@ void main() {
     },
   );
 
+  testWidgets(
+    'cancelled gift card review remains inspectable when fee refresh fails',
+    (tester) async {
+      final signing = _FakePaymentLinkHardwareSigningService();
+      final operations = _FakePaymentLinkOperations();
+      await _pumpMobilePaymentLinks(
+        tester,
+        hardwareSigning: signing,
+        operations: operations,
+      );
+      await _walkToApproveAndCreate(tester);
+      operations.failQuote = true;
+      final semantics = tester.ensureSemantics();
+      await tester.tap(find.bySemanticsLabel('Back').last);
+      await tester.pumpAndSettle();
+      semantics.dispose();
+      expect(find.byType(MobileKeystonePcztSigningFlow), findsNothing);
+      expect(find.text('Approve & create'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(
+                const ValueKey('payment_link_mobile_review_continue_button'),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(signing.discardedDrafts, [BigInt.one]);
+    },
+  );
+
   testWidgets('cancelling the mobile Keystone round returns a usable review', (
     tester,
   ) async {
     final hardwareSigning = _FakePaymentLinkHardwareSigningService();
-    await _pumpMobilePaymentLinks(tester, hardwareSigning: hardwareSigning);
+    final operations = _FakePaymentLinkOperations();
+    await _pumpMobilePaymentLinks(
+      tester,
+      hardwareSigning: hardwareSigning,
+      operations: operations,
+    );
 
     await _walkToApproveAndCreate(tester);
     expect(find.byType(MobileKeystonePcztSigningFlow), findsOneWidget);
+    final quotesBeforeCancel = operations.quoteCount;
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileKeystonePcztSigningFlow)),
+    );
+    final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+    final refreshesBeforeCancel = sync.balanceRefreshes;
 
     final semantics = tester.ensureSemantics();
+    final release = Completer<void>();
+    hardwareSigning.releaseCompleter = release;
     await tester.tap(find.bySemanticsLabel('Back').last);
+    await tester.pump();
+    expect(find.byType(MobileKeystonePcztSigningFlow), findsOneWidget);
+    release.complete();
     await tester.pumpAndSettle();
     semantics.dispose();
 
     expect(find.byType(MobileKeystonePcztSigningFlow), findsNothing);
     expect(hardwareSigning.discardedDrafts, [BigInt.one]);
+    expect(sync.balanceRefreshes, refreshesBeforeCancel + 1);
+    expect(operations.quoteCount, quotesBeforeCancel + 1);
     final cta = tester.widget<AppButton>(
       find.byKey(const ValueKey('payment_link_mobile_review_continue_button')),
     );
     expect(cta.onPressed, isNotNull);
     expect(find.text('Approve & create'), findsOneWidget);
   });
+  testWidgets(
+    'iOS swipe cancels only signing and releases its PCZT',
+    (tester) async {
+      final hardwareSigning = _FakePaymentLinkHardwareSigningService();
+      await _pumpMobilePaymentLinks(tester, hardwareSigning: hardwareSigning);
+      await _walkToApproveAndCreate(tester);
+      final route =
+          ModalRoute.of(
+                tester.element(find.byType(MobileKeystonePcztSigningFlow)),
+              )!
+              as PageRoute;
+      expect(route.popGestureEnabled, isTrue);
+      await tester.dragFrom(const Offset(1, 150), const Offset(1000, 0));
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileKeystonePcztSigningFlow), findsNothing);
+      expect(hardwareSigning.discardedDrafts, [BigInt.one]);
+      expect(find.text('Approve & create'), findsOneWidget);
+      final cta = tester.widget<AppButton>(
+        find.byKey(
+          const ValueKey('payment_link_mobile_review_continue_button'),
+        ),
+      );
+      expect(cta.onPressed, isNotNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 }
 
 Future<void> _walkToApproveAndCreate(WidgetTester tester) async {
@@ -99,7 +179,19 @@ Future<void> _walkToApproveAndCreate(WidgetTester tester) async {
     '0.1',
   );
   await tester.pump(const Duration(milliseconds: 350));
-  await tester.pumpAndSettle();
+  // The gift card preview has a repeating caret animation. Wait for the
+  // debounce/quote, not for every animation on the amount page to settle.
+  await tester.pump(const Duration(milliseconds: 400));
+  expect(
+    tester
+        .widget<AppButton>(
+          find.byKey(
+            const ValueKey('payment_link_mobile_amount_continue_button'),
+          ),
+        )
+        .onPressed,
+    isNotNull,
+  );
 
   await tester.tap(
     find.byKey(const ValueKey('payment_link_mobile_amount_continue_button')),
@@ -128,6 +220,10 @@ Future<void> _pumpMobilePaymentLinks(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        zecMarketDataSourceProvider.overrideWithValue(
+          _KeystoneTestMarketData(),
+        ),
+        zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
         appBootstrapProvider.overrideWithValue(_hardwareBootstrap),
         paymentLinkOperationsProvider.overrideWithValue(
           operations ?? _FakePaymentLinkOperations(),
@@ -181,6 +277,12 @@ Future<void> _pumpMobilePaymentLinks(
   await tester.pumpAndSettle();
 }
 
+class _KeystoneTestMarketData implements ZecMarketDataSource {
+  @override
+  Future<ZecMarketData?> fetchMarketData() async =>
+      const ZecMarketData(usdPrice: 100);
+}
+
 const _hardwareAccountState = AccountState(
   accounts: [
     AccountInfo(
@@ -220,15 +322,17 @@ final _hardwareLink = VizorPaymentLink(
 
 class _FakePaymentLinkOperations implements PaymentLinkOperations {
   final List<BigInt> createdAmounts = [];
+  int quoteCount = 0;
+  bool failQuote = false;
+
+  @override
+  Future<void> setReceivedCardArchived(String address, bool archived) async {}
 
   @override
   Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {}
 
   @override
   Future<void> keepReceivedLink(VizorPaymentLink link) async {}
-
-  @override
-  Future<void> forgetReceivedLink(VizorPaymentLink link) async {}
 
   @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
@@ -247,6 +351,8 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
   }) async {
+    quoteCount++;
+    if (failQuote) throw StateError('fee unavailable');
     return PaymentLinkFundingQuote(
       sourceAccountUuid: sourceAccountUuid,
       recipientAmountZatoshi: amountZatoshi,
@@ -293,8 +399,9 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
 
   @override
   Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
-    List<PaymentLinkReceivedRecord> records,
-  ) async => const [];
+    List<PaymentLinkReceivedRecord> records, {
+    bool allowResubmit = true,
+  }) async => const [];
 
   @override
   Future<PaymentLinkClaimSession> prepareClaim(
@@ -320,6 +427,7 @@ class _FakePaymentLinkHardwareSigningService
   final createdAmounts = <BigInt>[];
   final createdFromAccounts = <String>[];
   final discardedDrafts = <BigInt>[];
+  Completer<void>? releaseCompleter;
 
   PaymentLinkHardwarePcztDraft get draft => PaymentLinkHardwarePcztDraft(
     link: _hardwareLink,
@@ -364,6 +472,7 @@ class _FakePaymentLinkHardwareSigningService
     required PaymentLinkHardwarePcztDraft draft,
   }) async {
     discardedDrafts.add(draft.proposalId);
+    await releaseCompleter?.future;
   }
 
   @override

@@ -444,7 +444,8 @@ class PaymentLinkRecoveryStore {
       final records = await _loadUnlocked();
       final existing = _findByAddress(records, address);
       if (existing == null) return;
-      if (existing.state != PaymentLinkRecoveryState.draft) {
+      if (existing.state != PaymentLinkRecoveryState.draft ||
+          existing.isAmbiguousSubmission) {
         throw StateError(
           'Only an unbroadcast payment link draft can be removed.',
         );

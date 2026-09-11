@@ -76,6 +76,10 @@ hex = "0.4"
 ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }
 serde_json = "1"
 url = "2.5.8"
+ics23 = "0.12"
+prost13 = { package = "prost", version = "0.13" }
+tendermint = "0.40.4"
+tendermint-light-client-verifier = "0.40.4"
 
 # Zcash core. Package names are the Zakura forks; lib names stay upstream so
 # `use orchard` / `use zcash_client_backend` keep working.
@@ -153,6 +157,8 @@ features = ["std"]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
 [dev-dependencies]
+# Deterministic signatures for validator-rotation verification tests.
+ed25519-consensus = "2.1"
 tempfile = "3"
 hex = "0.4"
 

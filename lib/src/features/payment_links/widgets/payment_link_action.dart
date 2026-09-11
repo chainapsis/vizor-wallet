@@ -17,6 +17,7 @@ class PaymentLinkAction extends StatefulWidget {
     this.semanticLabel,
     this.excludeChildSemantics = true,
     this.selected,
+    this.expanded,
     this.button = true,
     this.role,
     this.focusNode,
@@ -29,6 +30,7 @@ class PaymentLinkAction extends StatefulWidget {
   final String? semanticLabel;
   final bool excludeChildSemantics;
   final bool? selected;
+  final bool? expanded;
   final bool button;
   final SemanticsRole? role;
   final FocusNode? focusNode;
@@ -70,6 +72,7 @@ class _PaymentLinkActionState extends State<PaymentLinkAction> {
           widget.semanticLabel != null && widget.excludeChildSemantics,
       button: widget.button,
       selected: widget.selected,
+      expanded: widget.expanded,
       enabled: _enabled,
       label: widget.semanticLabel,
       role: widget.role,

@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/app_icon.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../keystone/services/keystone_batch_signing.dart';
 import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
@@ -80,37 +82,49 @@ class _MobileSwapKeystoneSignScreenState
     with PaymentUriBusySurfaceHoldMixin {
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
+  Future<SwapHardwarePcztDraft>? _draftCreation;
+  Future<void>? _discardFuture;
   SaplingParamsStatus? _saplingParams;
 
   @override
   void dispose() {
-    unawaited(_discardDraft());
+    unawaited(
+      _discardDraft().catchError((Object e) {
+        log('MobileSwapKeystoneSign: cleanup failed: $e');
+      }),
+    );
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return MobileKeystonePcztSigningFlow(
-      title: 'Sign ZEC deposit',
-      failedTitle: 'Keystone signing failed',
-      description:
-          'Use your Keystone wallet to scan this transaction QR code. '
-          'Follow the steps on your device.',
-      preparePczt: _preparePczt,
-      onSigned: _handleSignedPczt,
-      friendlyError: _friendlyError,
-      onCancel: _handleCancel,
-      signedPcztDecoder: widget.signedPcztDecoder ?? _decodeSigningResponse,
-      expectedSignedUrType: 'zcash-batch-sig-result',
-      unexpectedUrMessage:
-          'Open the signature result QR on Keystone, then scan again.',
-      scannerBuilder: widget.scannerBuilder,
-      forceScannerActiveForTesting: widget.forceScannerActiveForTesting,
-      keyPrefix: 'mobile_swap_keystone_sign',
-      scanCaption:
-          'Scan the QR code on your Keystone to finish the ZEC deposit',
-      finalizingSignatureLabel: 'Broadcasting ZEC deposit...',
-      logTag: 'MobileSwapKeystoneSign',
+    return PopScope<void>(
+      canPop: false,
+      child: AbsorbPointer(
+        absorbing: _cancelling,
+        child: MobileKeystonePcztSigningFlow(
+          title: _cancelling ? 'Cancelling…' : 'Sign ZEC deposit',
+          failedTitle: 'Keystone signing failed',
+          description:
+              'Use your Keystone wallet to scan this transaction QR code. '
+              'Follow the steps on your device.',
+          preparePczt: _preparePczt,
+          onSigned: _handleSignedPczt,
+          friendlyError: _friendlyError,
+          onCancel: _handleCancel,
+          signedPcztDecoder: widget.signedPcztDecoder ?? _decodeSigningResponse,
+          expectedSignedUrType: 'zcash-batch-sig-result',
+          unexpectedUrMessage:
+              'Open the signature result QR on Keystone, then scan again.',
+          scannerBuilder: widget.scannerBuilder,
+          forceScannerActiveForTesting: widget.forceScannerActiveForTesting,
+          keyPrefix: 'mobile_swap_keystone_sign',
+          scanCaption:
+              'Scan the QR code on your Keystone to finish the ZEC deposit',
+          finalizingSignatureLabel: 'Broadcasting ZEC deposit...',
+          logTag: 'MobileSwapKeystoneSign',
+        ),
+      ),
     );
   }
 
@@ -125,11 +139,17 @@ class _MobileSwapKeystoneSignScreenState
 
     final service = ref.read(swapHardwareSigningServiceProvider);
     _signingService = service;
-    final draft = await service.createZecDepositPczt(
+    final creation = service.createZecDepositPczt(
       accountUuid: accountUuid,
       intent: widget.args.intent,
     );
+    _draftCreation = creation;
+    final draft = await creation;
     _draft = draft;
+    if (!mounted || _cancelled) {
+      await _discardDraft();
+      throw const MobileKeystonePcztSigningAborted();
+    }
 
     try {
       SaplingParamsStatus? saplingParams;
@@ -152,6 +172,9 @@ class _MobileSwapKeystoneSignScreenState
       }
 
       final urParts = await service.encodeSigningUrParts(draft: draft);
+      if (!mounted || _cancelled) {
+        throw const MobileKeystonePcztSigningAborted();
+      }
       _saplingParams = saplingParams;
 
       return MobileKeystonePcztSigningPayload(
@@ -182,6 +205,11 @@ class _MobileSwapKeystoneSignScreenState
   }
 
   Future<Uint8List> _decodeSigningResponse(List<int> responseCbor) async {
+    if (_cancelled) {
+      throw StateError(
+        'Signing was cancelled. Return to the composer to try again.',
+      );
+    }
     final service = _signingService;
     final draft = _draft;
     if (service == null || draft == null) {
@@ -201,6 +229,11 @@ class _MobileSwapKeystoneSignScreenState
     List<int> pcztWithProofs,
     Uint8List signedPczt,
   ) async {
+    if (_cancelled) {
+      throw StateError(
+        'Signing was cancelled. Return to the composer to try again.',
+      );
+    }
     final draft = _draft;
     final saplingParams = _saplingParams;
     if (draft == null || (draft.needsSaplingParams && saplingParams == null)) {
@@ -309,13 +342,31 @@ class _MobileSwapKeystoneSignScreenState
   }
 
   var _cancelling = false;
+  var _cancelled = false;
 
   Future<void> _handleCancel() async {
     if (_cancelling) return;
-    _cancelling = true;
+    setState(() {
+      _cancelling = true;
+      _cancelled = true;
+    });
     // Awaited: the busy hold lifts on dispose, and a parked link must not be
     // pre-checked against inputs the draft's proposal still holds.
-    await _discardDraft();
+    try {
+      await _discardDraft();
+    } catch (e) {
+      if (mounted) setState(() => _cancelling = false);
+      log('MobileSwapKeystoneSign: cancellation failed: $e');
+      if (mounted) {
+        showAppToast(
+          context,
+          'Could not finish cancelling. Please try again.',
+          iconName: AppIcons.warningCircle,
+          tone: AppToastTone.destructive,
+        );
+      }
+      return;
+    }
     if (!mounted) return;
     if (widget.args.startedFromReview) {
       ref
@@ -331,11 +382,22 @@ class _MobileSwapKeystoneSignScreenState
     context.go(widget.args.returnTarget.path);
   }
 
-  Future<void> _discardDraft() async {
+  Future<void> _discardDraft() =>
+      _discardFuture ??= _releaseDraft().catchError((Object error) {
+        _discardFuture = null;
+        throw error;
+      });
+
+  Future<void> _releaseDraft() async {
+    try {
+      await _draftCreation;
+    } catch (_) {
+      // Failed creation owns cleanup of any partial proposal.
+    }
     final draft = _draft;
-    _draft = null;
     if (draft == null) return;
     await _signingService?.discardPcztDraft(draft: draft);
+    _draft = null;
   }
 
   bool _hasBroadcastTxid(rust_sync.ExtractAndBroadcastPcztResult result) {

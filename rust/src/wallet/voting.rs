@@ -3,7 +3,10 @@ pub mod delegation;
 pub(crate) mod helper_transport;
 pub mod hotkey;
 pub mod network;
+pub mod participation;
 pub(crate) mod transport;
 
 #[cfg(test)]
 pub(crate) mod test_support;
+
+pub mod snapshot_changes;

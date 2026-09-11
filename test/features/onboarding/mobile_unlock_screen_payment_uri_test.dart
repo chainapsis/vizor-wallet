@@ -108,6 +108,7 @@ PaymentRequestPrecheck _stubPrecheck() => PaymentRequestPrecheck(
         required BigInt proposalId,
         required String sendFlowId,
         required String logContext,
+        required String accountUuid,
       }) async => true,
 );
 

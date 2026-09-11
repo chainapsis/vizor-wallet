@@ -8,6 +8,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
@@ -31,10 +32,13 @@ class PaymentLinksMobileBody extends StatelessWidget {
   const PaymentLinksMobileBody({
     required this.page,
     required this.redeemState,
+    this.claimOutcome,
     required this.operationInProgress,
     required this.redeemActionLabel,
     required this.redeemFromQrCode,
     required this.keystoneOverlay,
+    required this.onCancelKeystone,
+    required this.navigationLocked,
     required this.hasCards,
     required this.cardsSections,
     required this.activeCardsTab,
@@ -56,6 +60,8 @@ class PaymentLinksMobileBody extends StatelessWidget {
     required this.reviewShowsBack,
     required this.hasPendingFundingMetadata,
     required this.readyLink,
+    required this.readyFiatText,
+    required this.readyCopyInProgress,
     required this.fundingProgressByAddress,
     required this.readyShowsBack,
     required this.receivedLink,
@@ -84,12 +90,14 @@ class PaymentLinksMobileBody extends StatelessWidget {
     required this.onToggleReadyBack,
     required this.onToggleReceivedBack,
     required this.onAbandonReceivedPreview,
+    required this.onReceivedHome,
     required this.onClaimReceivedLink,
     super.key,
   });
 
   final PaymentLinksLocalPage page;
   final PaymentLinkRedeemVisualState redeemState;
+  final Widget? claimOutcome;
   final bool operationInProgress;
   final String redeemActionLabel;
   final bool redeemFromQrCode;
@@ -99,6 +107,8 @@ class PaymentLinksMobileBody extends StatelessWidget {
   /// runs; without this overlay the mobile review CTA would sit on
   /// "Creating..." forever.
   final Widget? keystoneOverlay;
+  final VoidCallback onCancelKeystone;
+  final bool navigationLocked;
 
   /// Whether any created or received Card exists, which is what decides the
   /// home page between the empty landing surface and the cards list.
@@ -130,6 +140,8 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final bool hasPendingFundingMetadata;
 
   final VizorPaymentLink? readyLink;
+  final String? readyFiatText;
+  final bool readyCopyInProgress;
   final Map<String, PaymentLinkFundingProgress> fundingProgressByAddress;
   final bool readyShowsBack;
 
@@ -161,73 +173,36 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final VoidCallback onToggleReadyBack;
   final VoidCallback onToggleReceivedBack;
   final VoidCallback onAbandonReceivedPreview;
+  final VoidCallback onReceivedHome;
   final VoidCallback onClaimReceivedLink;
 
   @override
-  Widget build(BuildContext context) {
-    final currentPage = switch (page) {
-      PaymentLinksLocalPage.home => _buildHome(context),
-      PaymentLinksLocalPage.amount => _buildAmount(),
-      PaymentLinksLocalPage.message => _buildMessage(),
-      PaymentLinksLocalPage.review => _buildReview(),
-      PaymentLinksLocalPage.ready => _buildReady(context),
-      PaymentLinksLocalPage.shareQr => _buildHome(context),
-      PaymentLinksLocalPage.redeem => PaymentLinkRedeemMobileView(
-        state: PaymentLinkRedeemMobileState.values.byName(redeemState.name),
-        onBack: () => onShowPage(PaymentLinksLocalPage.home),
-        onPaste: operationInProgress ? null : onRunRedeemAction,
-        onScan: operationInProgress ? null : onScanCard,
-        fromQrCode: redeemFromQrCode,
-        onClearClipboard: operationInProgress ? null : onClearClipboard,
-        pasteLabel: redeemActionLabel,
-      ),
-      PaymentLinksLocalPage.received => _buildReceived(context),
-    };
+  Widget build(BuildContext context) =>
+      _PaymentLinksMobileNavigator(body: this);
 
-    final overlay = keystoneOverlay;
-    final body = overlay == null
-        ? currentPage
-        : Stack(
-            fit: StackFit.expand,
-            children: [
-              currentPage,
-              Positioned.fill(child: overlay),
-            ],
-          );
-
-    // System Back does what the step's own back control does, so the draft
-    // survives; while the Keystone overlay is up, Back waits for it.
-    final stepBack = overlay == null ? _stepBack() : null;
-    return PopScope(
-      canPop: overlay == null && stepBack == null,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) stepBack?.call();
-      },
-      child: Scaffold(
-        key: const ValueKey('payment_links_mobile_screen'),
-        backgroundColor: context.colors.background.window,
-        body: AppToastHost(child: SafeArea(child: body)),
-      ),
-    );
-  }
-
-  /// The pages whose visible back control steps within the screen. The rest
-  /// leave the route, so their Back keeps popping it.
-  VoidCallback? _stepBack() => switch (page) {
-    PaymentLinksLocalPage.amount => () => onShowPage(
-      PaymentLinksLocalPage.home,
-    ),
-    PaymentLinksLocalPage.message => () => onShowPage(
-      PaymentLinksLocalPage.amount,
-    ),
-    PaymentLinksLocalPage.review => () => onShowPage(
-      PaymentLinksLocalPage.message,
-    ),
-    PaymentLinksLocalPage.redeem => () => onShowPage(
-      PaymentLinksLocalPage.home,
-    ),
-    _ => null,
-  };
+  Widget _buildPage(BuildContext context, PaymentLinksLocalPage page) =>
+      switch (page) {
+        PaymentLinksLocalPage.home => _buildHome(context),
+        PaymentLinksLocalPage.amount => _buildAmount(),
+        PaymentLinksLocalPage.message => _buildMessage(),
+        PaymentLinksLocalPage.review => _buildReview(),
+        PaymentLinksLocalPage.ready => _buildReady(context),
+        PaymentLinksLocalPage.shareQr => _buildHome(context),
+        PaymentLinksLocalPage.redeem =>
+          claimOutcome ??
+              PaymentLinkRedeemMobileView(
+                state: PaymentLinkRedeemMobileState.values.byName(
+                  redeemState.name,
+                ),
+                onBack: () => onShowPage(PaymentLinksLocalPage.home),
+                onPaste: operationInProgress ? null : onRunRedeemAction,
+                onScan: operationInProgress ? null : onScanCard,
+                fromQrCode: redeemFromQrCode,
+                onClearClipboard: operationInProgress ? null : onClearClipboard,
+                pasteLabel: redeemActionLabel,
+              ),
+        PaymentLinksLocalPage.received => _buildReceived(context),
+      };
 
   void _leavePaymentLinks(BuildContext context) {
     if (context.canPop()) {
@@ -356,6 +331,8 @@ class PaymentLinksMobileBody extends StatelessWidget {
       cardWidth: kPaymentLinkMobileCardWidth,
       cardHeight: kPaymentLinkMobileCardHeight,
       amountText: amountController.text,
+      supportingText: amountFiatText,
+      supportingLoading: amountFiatLoading,
       showCaret: false,
       onTap: message.isEmpty ? null : () => onReviewShowsBackChanged(true),
       semanticLabel: message.isEmpty ? null : 'Reveal gift card message',
@@ -381,7 +358,9 @@ class PaymentLinksMobileBody extends StatelessWidget {
       cardAmountText: '${formatZecAmount(quote.recipientAmountZatoshi)} ZEC',
       cardFeeText: '${formatZecAmount(quote.cardFeeZatoshi)} ZEC',
       totalAmountText: '${formatZecAmount(quote.totalDeductedZatoshi)} ZEC',
-      onContinue: operationInProgress
+      onContinue:
+          operationInProgress ||
+              (!hasPendingFundingMetadata && !canContinueAmount)
           ? null
           : !hasPendingFundingMetadata
           ? onCreateFundedLink
@@ -417,6 +396,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
       cardWidth: kPaymentLinkMobileCardWidth,
       cardHeight: kPaymentLinkMobileCardHeight,
       amountText: formatZecAmount(link.amountZatoshi),
+      supportingText: readyFiatText,
       showCaret: false,
     );
     final card = message.isEmpty
@@ -443,10 +423,12 @@ class PaymentLinksMobileBody extends StatelessWidget {
           ? const PaymentLinkConfetti()
           : null,
       onHome: () => onShowPage(PaymentLinksLocalPage.home),
-      onCopy: ready && !operationInProgress ? () => onCopyLink(link) : null,
+      onCopy: ready && !operationInProgress && !readyCopyInProgress
+          ? () => onCopyLink(link)
+          : null,
       onCardTap: ready && message.isNotEmpty ? onToggleReadyBack : null,
       waitingStatusLabel: linkWaitLabel(progress),
-      copyLabel: operationInProgress ? 'Copying...' : 'Copy link',
+      copyLabel: readyCopyInProgress ? 'Copying...' : 'Copy link',
     );
   }
 
@@ -502,7 +484,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
             : PaymentLinkReadyMobileState.waiting,
         card: card,
         cardTop: kPaymentLinkMobileReceivedCardTop,
-        onHome: onAbandonReceivedPreview,
+        onHome: onReceivedHome,
         waitingHeading: 'Your Gift Card\nis almost ready!',
         waitingDescription:
             '$kPaymentLinkClaimWaitingDescription\n$kPaymentLinkWaitingDescription',
@@ -523,6 +505,136 @@ class PaymentLinksMobileBody extends StatelessWidget {
           : receivedClaimSession == null
           ? 'Try again'
           : 'Claim the gift',
+    );
+  }
+}
+
+/// Keep the wallet state above the navigator, but give each mobile step a real
+/// Cupertino route. The outer /payment-links route remains the intake owner.
+class _PaymentLinksMobileNavigator extends StatefulWidget {
+  const _PaymentLinksMobileNavigator({required this.body});
+  final PaymentLinksMobileBody body;
+
+  @override
+  State<_PaymentLinksMobileNavigator> createState() =>
+      _PaymentLinksMobileNavigatorState();
+}
+
+class _PaymentLinksMobileNavigatorState
+    extends State<_PaymentLinksMobileNavigator> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  final _stepKeys = <PaymentLinksLocalPage, LocalKey>{};
+  ValueKey<Key?> get _signingKey => ValueKey(widget.body.keystoneOverlay?.key);
+
+  List<PaymentLinksLocalPage> get _steps => switch (widget.body.page) {
+    PaymentLinksLocalPage.home ||
+    PaymentLinksLocalPage.shareQr => [PaymentLinksLocalPage.home],
+    PaymentLinksLocalPage.amount => [
+      PaymentLinksLocalPage.home,
+      PaymentLinksLocalPage.amount,
+    ],
+    PaymentLinksLocalPage.message => [
+      PaymentLinksLocalPage.home,
+      PaymentLinksLocalPage.amount,
+      PaymentLinksLocalPage.message,
+    ],
+    PaymentLinksLocalPage.review => [
+      PaymentLinksLocalPage.home,
+      PaymentLinksLocalPage.amount,
+      PaymentLinksLocalPage.message,
+      PaymentLinksLocalPage.review,
+    ],
+    PaymentLinksLocalPage.ready => [
+      PaymentLinksLocalPage.home,
+      PaymentLinksLocalPage.ready,
+    ],
+    PaymentLinksLocalPage.redeem => [
+      PaymentLinksLocalPage.home,
+      PaymentLinksLocalPage.redeem,
+    ],
+    PaymentLinksLocalPage.received => [
+      PaymentLinksLocalPage.home,
+      PaymentLinksLocalPage.received,
+    ],
+  };
+
+  void _didRemovePage(Page<Object?> removed) {
+    final body = widget.body;
+    if (removed.key == _signingKey) {
+      if (body.keystoneOverlay != null) body.onCancelKeystone();
+      return;
+    }
+    // Declarative resets also remove routes. Only a user pop of the current
+    // step may update the owner; removed predecessors must not resurrect it.
+    if (body.keystoneOverlay != null || removed.key != _stepKeys[body.page]) {
+      return;
+    }
+    if (body.page == PaymentLinksLocalPage.received) {
+      body.onAbandonReceivedPreview();
+    } else {
+      final steps = _steps;
+      if (steps.length > 1) body.onShowPage(steps[steps.length - 2]);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final body = widget.body;
+    final signing = body.keystoneOverlay;
+    final steps = _steps;
+    // A newly entered step must not reuse the identity of its outgoing route.
+    // In particular, late removal callbacks must never dismiss a new draft.
+    _stepKeys.removeWhere((step, _) => !steps.contains(step));
+    for (final step in steps) {
+      _stepKeys.putIfAbsent(step, UniqueKey.new);
+    }
+    final hasInnerBack = steps.length > 1 || signing != null;
+    final outerRoute = ModalRoute.of(context);
+    return PopScope<Object?>(
+      canPop:
+          !hasInnerBack &&
+          !body.navigationLocked &&
+          outerRoute?.isFirst != true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (hasInnerBack) {
+          _navigatorKey.currentState?.maybePop();
+        } else if (!body.navigationLocked) {
+          body._leavePaymentLinks(context);
+        }
+      },
+      child: Scaffold(
+        key: const ValueKey('payment_links_mobile_screen'),
+        backgroundColor: context.colors.background.window,
+        body: Navigator(
+          key: _navigatorKey,
+          onDidRemovePage: _didRemovePage,
+          pages: [
+            for (final step in steps)
+              CupertinoPage<Object?>(
+                key: _stepKeys[step],
+                child: PopScope<Object?>(
+                  canPop: !body.navigationLocked,
+                  child: Scaffold(
+                    backgroundColor: context.colors.background.window,
+                    body: AppToastHost(
+                      child: SafeArea(child: body._buildPage(context, step)),
+                    ),
+                  ),
+                ),
+              ),
+            if (signing != null)
+              CupertinoPage<Object?>(
+                key: _signingKey,
+                // The shared signing flow owns its decode/finalization guard.
+                child: Scaffold(
+                  backgroundColor: context.colors.background.window,
+                  body: AppToastHost(child: SafeArea(child: signing)),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

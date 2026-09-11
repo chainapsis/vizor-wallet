@@ -689,6 +689,8 @@ void main() {
         proposalId: BigInt.one,
         sendFlowId: 'test-send-flow',
         logContext: 'SendStatusTest',
+        syncNotifier: _FakeSyncNotifier(),
+        accountUuid: 'test-account',
       ),
     );
 
@@ -1071,6 +1073,9 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<void> refreshAfterSend() async {}
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {}
 
   @override
   Future<void> restartSync() async {}

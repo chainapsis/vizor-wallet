@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../../../../providers/app_security_provider.dart';
+import '../../../../providers/voting/voting_participation_provider.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +24,9 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/voting/voting_home_entry_provider.dart';
+import '../../../../providers/voting/voting_home_cache_provider.dart';
+import '../../../../providers/voting/voting_config_source_provider.dart';
 import '../../../../providers/migration_send_gate_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -1220,8 +1225,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-            const SizedBox(height: AppSpacing.s),
-            _MobileVotingEntryCard(onTap: () => context.push('/voting')),
+            const _MobileVotingEntry(),
             if (widget.ironwoodMigrationCta.visible) ...[
               const SizedBox(height: AppSpacing.s),
               MobileIronwoodMigrationBanner(
@@ -1272,6 +1276,134 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Route/lifecycle triggers check for voting changes; the minute timer only
+/// reevaluates cached deadlines. Participation retries require an event such
+/// as Home reentry, foregrounding, or sync completion.
+class _MobileVotingEntry extends ConsumerStatefulWidget {
+  const _MobileVotingEntry();
+
+  @override
+  ConsumerState<_MobileVotingEntry> createState() => _MobileVotingEntryState();
+}
+
+class _MobileVotingEntryState extends ConsumerState<_MobileVotingEntry> {
+  late final AppLifecycleListener _lifecycle;
+  Timer? _timer;
+  bool _foreground = true;
+  bool _homeCurrent = false;
+  int _participationEpoch = 0;
+  GoRouter? _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) {
+        _foreground = state == AppLifecycleState.resumed;
+        if (!_foreground) _participationEpoch++;
+        if (_foreground) _refresh();
+      },
+    );
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted && _foreground && _homeCurrent) {
+        ref.invalidate(votingHomeEntryVisibleProvider);
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (!identical(_router, router)) {
+      _router?.routerDelegate.removeListener(_routeChanged);
+      _router = router;
+      router.routerDelegate.addListener(_routeChanged);
+    }
+    _routeChanged();
+  }
+
+  void _routeChanged() {
+    final current =
+        _router?.routerDelegate.currentConfiguration.uri.path == '/home';
+    if (current && !_homeCurrent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    }
+    if (!current && _homeCurrent) _participationEpoch++;
+    _homeCurrent = current;
+  }
+
+  void _refresh() {
+    if (!mounted || !_foreground || !_homeCurrent) return;
+    ref.invalidate(votingHomeEntryVisibleProvider);
+    unawaited(
+      ref
+          .read(votingHomeRefreshActionProvider)()
+          .then((_) => _checkParticipation()),
+    );
+  }
+
+  Future<void> _checkParticipation() async {
+    if (!mounted || !_foreground || !_homeCurrent) return;
+    final epoch = _participationEpoch;
+    await ref
+        .read(votingParticipationProvider)
+        .checkHomeCandidates(
+          isHomeCurrent: () =>
+              mounted &&
+              _foreground &&
+              _homeCurrent &&
+              epoch == _participationEpoch,
+        );
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _router?.routerDelegate.removeListener(_routeChanged);
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(votingConfigSourceProvider.select((s) => s.value?.sourceUrl), (
+      _,
+      _,
+    ) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    });
+    ref.listen(rpcEndpointProvider.select((s) => s.networkName), (_, _) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    });
+    void schedule() => WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _checkParticipation(),
+    );
+    ref.listen(votingHomeCacheProvider, (_, _) => schedule());
+    ref.listen(
+      accountProvider.select((s) => s.value?.activeAccountUuid),
+      (_, _) => schedule(),
+    );
+    ref.listen(
+      appSecurityProvider.select((s) => s.requiresUnlock),
+      (_, _) => schedule(),
+    );
+    ref.listen(
+      syncProvider.select(
+        (s) => (s.value?.isSyncing, s.value?.lastSyncCompletedAt),
+      ),
+      (_, _) => schedule(),
+    );
+    if (!ref.watch(votingHomeEntryVisibleProvider)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.s),
+      child: _MobileVotingEntryCard(onTap: () => context.push('/voting')),
     );
   }
 }

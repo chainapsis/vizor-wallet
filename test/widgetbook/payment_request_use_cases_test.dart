@@ -338,9 +338,13 @@ void main() {
       find.byKey(const ValueKey('payment_request_address_chunks')),
       findsOneWidget,
     );
-    // 5-character groups, taken from the verify-address grid.
-    expect(find.text('u1950'), findsOneWidget);
-    expect(find.text('591'), findsOneWidget);
+    expect(
+      find.text(
+        'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+        '73d57f73c6dc05121591a83861cd190591',
+      ),
+      findsOneWidget,
+    );
     // Nothing left the card: the actions are still on screen.
     expect(find.text('Review'), findsOneWidget);
 
@@ -360,7 +364,13 @@ void main() {
       await _pumpUseCase(tester, builder, size: size);
       expect(tester.takeException(), isNull);
       expect(find.text('Hide full address'), findsOneWidget);
-      expect(find.text('u1950'), findsOneWidget);
+      expect(
+        find.text(
+          'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+          '73d57f73c6dc05121591a83861cd190591',
+        ),
+        findsOneWidget,
+      );
     }
   });
 
@@ -1042,7 +1052,13 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(_key('payment_request_address_chunks'), findsOneWidget);
-      expect(find.text('u1950'), findsOneWidget);
+      expect(
+        find.text(
+          'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+          '73d57f73c6dc05121591a83861cd190591',
+        ),
+        findsOneWidget,
+      );
       // The name and its sub-label stay; the truncated sub-line does not
       // repeat the address the grid is already showing.
       expect(_key('payment_request_recipient_name'), findsOneWidget);
@@ -1068,7 +1084,13 @@ void main() {
       await _pumpUseCase(tester, builder, size: size);
       expect(tester.takeException(), isNull);
       expect(find.text('Hide full address'), findsOneWidget);
-      expect(find.text('u1950'), findsOneWidget);
+      expect(
+        find.text(
+          'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+          '73d57f73c6dc05121591a83861cd190591',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Your account'), findsOneWidget);
     }
   });

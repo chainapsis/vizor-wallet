@@ -7,6 +7,214 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_li
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 
 void main() {
+  for (final status in PaymentLinkReceivedStatus.values) {
+    for (final explicitNull in [false, true]) {
+      test(
+        'legacy $status with ${explicitNull ? 'null' : 'missing'} fields survives writes',
+        () async {
+          final storage = _FakePaymentLinkReceivedStorage();
+          final store = PaymentLinkReceivedStore(storage);
+          final link = _link();
+          await store.saveReady(link);
+          if (status != PaymentLinkReceivedStatus.readyToClaim) {
+            await store.markClaimStarted(
+              address: link.address,
+              destinationAccountUuid: 'receiver',
+            );
+          }
+          if (status == PaymentLinkReceivedStatus.receiving ||
+              status == PaymentLinkReceivedStatus.received) {
+            await store.markReceiving(
+              address: link.address,
+              destinationAccountUuid: 'receiver',
+              claimTxids: 'claim',
+            );
+          }
+          if (status == PaymentLinkReceivedStatus.received) {
+            await store.markReceived(address: link.address);
+          }
+          final payload = jsonDecode(storage.value!) as Map<String, dynamic>;
+          final row =
+              (payload['records'] as List).single as Map<String, dynamic>;
+          for (final field in ['availability', 'archived', 'claimPriorTxids']) {
+            if (explicitNull) {
+              row[field] = null;
+            } else {
+              row.remove(field);
+            }
+          }
+          storage.value = jsonEncode(payload);
+          final restored = (await store.load()).single;
+          expect(restored.status, status);
+          expect(restored.archived, isFalse);
+          expect(restored.claimPriorTxids, isNull);
+          expect(restored.availability, switch (status) {
+            PaymentLinkReceivedStatus.readyToClaim =>
+              PaymentLinkAvailability.unchecked,
+            PaymentLinkReceivedStatus.submitting =>
+              PaymentLinkAvailability.checking,
+            _ => PaymentLinkAvailability.available,
+          });
+          expect(restored.copyWith(archived: false).claimPriorTxids, isNull);
+          await store.saveReady(
+            link,
+          ); // Must not manufacture an empty baseline.
+          await store.setArchived(link.address, false);
+          final reopened = (await PaymentLinkReceivedStore(
+            storage,
+          ).load()).single;
+          expect(reopened.claimPriorTxids, isNull);
+          expect(reopened.status, status);
+          expect(reopened.claimTxids, restored.claimTxids);
+          expect(reopened.claimSubmittedAt, restored.claimSubmittedAt);
+          expect(reopened.claimLink!.toUri(), link.toUri());
+          expect(
+            await store.countReceivingForAccount('receiver'),
+            restored.isClaimInFlight ? 1 : 0,
+          );
+        },
+      );
+    }
+  }
+
+  test(
+    'mixed old and new records preserve new fields and capture a fresh baseline',
+    () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final store = PaymentLinkReceivedStore(storage);
+      final oldLink = _link();
+      final newLink = _link(address: 'u1newcard');
+      await store.saveReady(oldLink);
+      await store.saveReady(newLink);
+      await store.setAvailability(
+        newLink.address,
+        PaymentLinkAvailability.failed,
+      );
+      await store.setArchived(newLink.address, true);
+      final payload = jsonDecode(storage.value!) as Map<String, dynamic>;
+      final old = (payload['records'] as List).first as Map<String, dynamic>;
+      for (final field in ['availability', 'archived', 'claimPriorTxids']) {
+        old.remove(field);
+      }
+      storage.value = jsonEncode(payload);
+      final records = await store.load();
+      expect(records.first.claimPriorTxids, isNull);
+      expect(records.last.claimPriorTxids, isEmpty);
+      expect(records.last.archived, isTrue);
+      expect(records.last.availability, PaymentLinkAvailability.failed);
+      await store.markClaimStarted(
+        address: oldLink.address,
+        destinationAccountUuid: 'receiver',
+        priorTxids: ['previous'],
+      );
+      expect((await store.find(oldLink.address))!.claimPriorTxids, [
+        'previous',
+      ]);
+      expect((await store.find(newLink.address))!.archived, isTrue);
+    },
+  );
+
+  for (final invalid in <(String, Object)>[
+    ('availability', 1),
+    ('availability', 'unknown'),
+    ('archived', 'false'),
+    ('claimPriorTxids', 'not-a-list'),
+    ('claimPriorTxids', [1]),
+  ]) {
+    test(
+      'optional ${invalid.$1} still rejects malformed ${invalid.$2}',
+      () async {
+        final storage = _FakePaymentLinkReceivedStorage();
+        final store = PaymentLinkReceivedStore(storage);
+        await store.saveReady(_link());
+        final payload = jsonDecode(storage.value!) as Map<String, dynamic>;
+        (payload['records'] as List).single[invalid.$1] = invalid.$2;
+        storage.value = jsonEncode(payload);
+        final original = storage.value;
+        await expectLater(
+          store.load(),
+          throwsA(isA<PaymentLinkReceivedStoreFormatException>()),
+        );
+        expect(storage.value, original);
+      },
+    );
+  }
+
+  test('an old outcome cannot settle a newer submission', () async {
+    final store = PaymentLinkReceivedStore(_FakePaymentLinkReceivedStorage());
+    final link = _link();
+    await store.saveReady(link);
+    final old = await store.markClaimStarted(
+      address: link.address,
+      destinationAccountUuid: 'a',
+    );
+    await store.markReadyToClaim(address: link.address, expected: old);
+    await store.markClaimStarted(
+      address: link.address,
+      destinationAccountUuid: 'b',
+    );
+    await store.markReadyToClaim(
+      address: link.address,
+      expected: old,
+      availability: PaymentLinkAvailability.claimedElsewhere,
+    );
+    final current = (await store.load()).single;
+    expect(current.status, PaymentLinkReceivedStatus.submitting);
+    expect(current.destinationAccountUuid, 'b');
+    expect(await store.countReceivingForAccount('b'), 1);
+  });
+
+  test(
+    'archive preserves the secret and outcome across restart and restore',
+    () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link);
+      await store.setAvailability(
+        link.address,
+        PaymentLinkAvailability.claimedElsewhere,
+      );
+      await store.setArchived(link.address, true);
+      final reopened = PaymentLinkReceivedStore(storage);
+      var record = (await reopened.load()).single;
+      expect(record.archived, isTrue);
+      expect(record.availability, PaymentLinkAvailability.claimedElsewhere);
+      expect(record.claimLink!.toUri(), link.toUri());
+      await reopened.setArchived(link.address, false);
+      record = (await reopened.load()).single;
+      expect(record.archived, isFalse);
+      expect(record.claimLink!.toUri(), link.toUri());
+    },
+  );
+
+  test('late empty preview cannot settle or hide an in-flight claim', () async {
+    final store = PaymentLinkReceivedStore(_FakePaymentLinkReceivedStorage());
+    final link = _link();
+    await store.saveReady(link);
+    await store.markClaimStarted(
+      address: link.address,
+      destinationAccountUuid: 'receiver',
+    );
+    await store.setAvailability(
+      link.address,
+      PaymentLinkAvailability.noBalance,
+    );
+    await expectLater(store.setArchived(link.address, true), throwsStateError);
+    expect(await store.countReceivingForAccount('receiver'), 1);
+    expect(
+      (await store.load()).single.availability,
+      PaymentLinkAvailability.checking,
+    );
+    await store.markReadyToClaim(address: link.address);
+    await store.setAvailability(
+      link.address,
+      PaymentLinkAvailability.claimedElsewhere,
+    );
+    expect(await store.countReceivingForAccount('receiver'), 0);
+    expect((await store.load()).single.claimLink!.toUri(), link.toUri());
+  });
+
   test(
     'retains fiat after submission, completion, and restart without bearer data',
     () async {
@@ -455,10 +663,10 @@ void main() {
   });
 }
 
-VizorPaymentLink _link() {
+VizorPaymentLink _link({String address = 'u1paymentlinkaddress'}) {
   return VizorPaymentLink(
     network: 'main',
-    address: 'u1paymentlinkaddress',
+    address: address,
     amountZatoshi: BigInt.from(100000),
     mnemonic:
         'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',

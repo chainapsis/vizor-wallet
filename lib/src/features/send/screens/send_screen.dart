@@ -934,6 +934,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   Future<void> _openReview() async {
+    final syncNotifier = ref.read(syncProvider.notifier);
+    final proposalAccountUuid = widget.activeAccountUuid;
     setState(() {
       _isSending = true;
       _error = null;
@@ -1038,6 +1040,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
           proposalId: activeProposalId,
           sendFlowId: _sendFlowId,
           logContext: 'Send(review not opened)',
+          syncNotifier: syncNotifier,
+          accountUuid: proposalAccountUuid!,
         );
       }
     }

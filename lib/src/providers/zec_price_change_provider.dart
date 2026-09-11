@@ -217,7 +217,7 @@ class ZecHomeMarketDataState {
   final ZecMarketData? liveData;
   final DateTime? fetchedAt;
 
-  /// The initial cache/network lookup has not completed yet.
+  /// The initial lookup or a network price refresh is in progress.
   final bool isLoading;
 
   bool isFreshAt(DateTime now) {
@@ -262,10 +262,10 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
       _expiryTimer?.cancel();
     });
 
-    void clearMarketData() {
+    void clearMarketData({bool isLoading = false}) {
       _expiryTimer?.cancel();
       _expiryTimer = null;
-      state = const ZecHomeMarketDataState();
+      state = ZecHomeMarketDataState(isLoading: isLoading);
     }
 
     void scheduleExpiry(DateTime fetchedAt) {
@@ -275,13 +275,12 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
           .add(zecMarketDataCacheTtl)
           .difference(now().toUtc());
       if (remaining <= Duration.zero) {
-        clearMarketData();
+        clearMarketData(isLoading: state.isLoading);
         return;
       }
       _expiryTimer = Timer(remaining, () {
         if (epoch != _epoch || state.fetchedAt != fetchedAt) return;
-        _expiryTimer = null;
-        state = const ZecHomeMarketDataState();
+        clearMarketData(isLoading: state.isLoading);
       });
     }
 
@@ -297,6 +296,12 @@ class ZecHomeMarketDataNotifier extends Notifier<ZecHomeMarketDataState> {
       if (state.displayData != null && !state.isFreshAt(now())) {
         clearMarketData();
       }
+      state = ZecHomeMarketDataState(
+        displayData: state.displayData,
+        liveData: state.liveData,
+        fetchedAt: state.fetchedAt,
+        isLoading: true,
+      );
       final data = await source.fetchMarketData();
       if (epoch != _epoch) return;
       if (data != null) {

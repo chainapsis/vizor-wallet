@@ -223,6 +223,7 @@ Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
           ),
         ],
       ),
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
       GoRoute(
         path: '/payment-links',
         builder: (_, state) => Text(
@@ -271,6 +272,17 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
 }
 
 void main() {
+  testWidgets('Settings always opens coinholder voting', (tester) async {
+    await tester.pumpWidget(_routedApp());
+    await tester.pumpAndSettle();
+    final row = find.byKey(
+      const ValueKey('mobile_settings_coinholder_voting_row'),
+    );
+    expect(row, findsOneWidget);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(find.text('voting route'), findsOneWidget);
+  });
   setUp(() {
     // Phone-sized surface so the lazily-built list renders every group.
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -439,6 +451,8 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
     await tester.tap(row);
     await tester.pumpAndSettle();
 
@@ -574,6 +588,8 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
     expect(find.text('Connecting…'), findsOneWidget);
     expect(
       tester
@@ -610,6 +626,8 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
     // Nothing to escape from here: the route is already on its way to direct.
     expect(tester.widget<GestureDetector>(row).onTap, isNull);
     await tester.tap(row);
@@ -908,6 +926,8 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_gift_cards_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
     await tester.tap(row);
     await tester.pumpAndSettle();
 
@@ -923,6 +943,8 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_gift_cards_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
     final router = GoRouter.of(tester.element(row));
     await tester.tap(row);
     await tester.pump();
@@ -945,6 +967,8 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_gift_cards_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
     await tester.tap(row);
     await tester.pump();
 
@@ -1264,6 +1288,48 @@ void main() {
 
     expect(biometricNotifier.disableCount, 0);
     expect(find.text('Turn off fingerprint unlock?'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_settings_biometric_row')),
+        matching: find.text('On'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Touch ID settings and disable sheet use Apple naming', (
+    tester,
+  ) async {
+    final biometricNotifier = _FakeBiometricNotifier(
+      const BiometricUnlockState(
+        availability: BiometricAvailability(
+          supported: true,
+          enrolled: true,
+          kind: BiometricKind.touchId,
+        ),
+        enabled: true,
+      ),
+    );
+
+    await tester.pumpWidget(_app(biometricNotifier: () => biometricNotifier));
+    await tester.pump();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Turn off Touch ID unlock?'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(biometricNotifier.disableCount, 0);
+    expect(find.text('Turn off Touch ID unlock?'), findsNothing);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_settings_biometric_row')),

@@ -8,6 +8,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../core/widgets/full_address_viewer.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../core/widgets/pool_badge.dart';
 import '../../../core/widgets/review_list_row.dart'
@@ -1004,10 +1005,8 @@ class _TransactionContentFrame extends StatelessWidget {
 /// makes the privacy status and address action easier to scan.
 ///
 /// The full address never leaves this card. "Show full address" swaps the
-/// one-line truncation for the canonical verify grouping — 5-character
-/// groups with the same head/tail emphasis the verify-address modal uses —
-/// so the user can compare characters without losing the request behind a
-/// second modal.
+/// one-line truncation for a continuous Geist Mono string that wraps
+/// naturally, matching the dedicated verify-address viewer.
 ///
 /// When the wallet can put a name to the address ([identity]) the block leads
 /// with that name and an avatar instead, the way the pay and send reviews
@@ -1235,13 +1234,11 @@ class _RecipientIdentityBlock extends StatelessWidget {
   }
 }
 
-/// The full address in 5-character groups, five groups to a row.
+/// The full address as a continuous wrapping Geist Mono string.
 ///
-/// Chunking and the head/tail crimson emphasis come from
-/// [addressVerifyGrid], the same source the verify-address modal renders,
-/// so a user who has compared an address in one place reads the other
-/// identically. The glyphs stay monospace here because the collapsed form
-/// directly above them is monospace too.
+/// Same typeface as the collapsed truncation above it so expanding the
+/// row does not change the glyph language — only the amount of address
+/// that is visible.
 class _AddressChunks extends StatelessWidget {
   const _AddressChunks({required this.address, super.key});
 
@@ -1249,45 +1246,7 @@ class _AddressChunks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final rows = addressVerifyGrid(address);
-    final normalStyle = AppTypography.codeMedium.copyWith(
-      color: colors.text.accent,
-    );
-    final highlightedStyle = AppTypography.codeMedium.copyWith(
-      color: colors.text.brandCrimson,
-      fontWeight: FontWeight.w600,
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var row = 0; row < rows.length; row++) ...[
-          if (row > 0) const SizedBox(height: AppSpacing.xxs),
-          // scaleDown keeps wide glyph metrics (and the test environment's
-          // square Ahem font) from overflowing the card column; with the
-          // production Geist Mono metrics the row fits and renders 1:1.
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: AlignmentDirectional.centerStart,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var i = 0; i < rows[row].length; i++) ...[
-                  if (i > 0) const SizedBox(width: AppSpacing.xs),
-                  Text(
-                    rows[row][i].text,
-                    style: rows[row][i].highlighted
-                        ? highlightedStyle
-                        : normalStyle,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
+    return FullAddressText(address: address, color: context.colors.text.accent);
   }
 }
 

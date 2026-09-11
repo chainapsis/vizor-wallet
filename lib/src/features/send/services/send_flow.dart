@@ -413,16 +413,19 @@ Duration debugUnconfirmedReleaseGrace = const Duration(seconds: 3);
 
 /// Idempotent proposal release for every non-consuming exit path.
 ///
-/// Returns whether Rust confirmed the release. Never throws: a release that
-/// still fails after its retries is logged and left to height-based expiry,
-/// and the caller that needs to know (the terminal flag's departure edge) reads
-/// the result instead of catching.
+/// Returns true only after Rust confirmed release and the account's balance
+/// was reconciled. Never throws. A false result can be retried idempotently;
+/// it must not enable signing the old proposal or proposing a replacement.
+/// Capture [syncNotifier] before leaving a widget so disposal never reads ref.
 Future<bool> discardSendProposal({
   required BigInt proposalId,
   required String sendFlowId,
   required String logContext,
+  required SyncNotifier syncNotifier,
+  required String accountUuid,
 }) async {
   Object? lastError;
+  var released = false;
   for (var attempt = 1; attempt <= 3; attempt++) {
     try {
       await rust_sync.discardProposal(
@@ -430,13 +433,23 @@ Future<bool> discardSendProposal({
         sendFlowId: sendFlowId,
       );
       log('$logContext: released proposal $proposalId');
-      return true;
+      released = true;
+      break;
     } catch (e) {
       lastError = e;
       log('$logContext: discardProposal cleanup attempt $attempt failed: $e');
       if (attempt < 3) {
         await Future<void>.delayed(Duration(milliseconds: attempt * 100));
       }
+    }
+  }
+  if (released) {
+    try {
+      await syncNotifier.refreshAfterProposalRelease(accountUuid);
+      return true;
+    } catch (e) {
+      log('$logContext: proposal released but balance refresh failed: $e');
+      return false;
     }
   }
   // Rust keeps the owner token when unlock fails, so another idempotent
@@ -638,6 +651,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
   var proposalConsumed = keystone != null;
   var proposalReleased = false;
   LinuxSecretOperationGuard? secretGuard;
+  final syncNotifier = ref.read(syncProvider.notifier);
 
   Future<bool> abortRequested() async {
     if (shouldAbort == null) return false;
@@ -649,6 +663,8 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         proposalId: args.proposalId,
         sendFlowId: args.sendFlowId,
         logContext: 'SendBroadcast(abort)',
+        syncNotifier: syncNotifier,
+        accountUuid: args.proposalAccountUuid,
       );
       proposalReleased = true;
     }
@@ -684,6 +700,8 @@ Future<SendBroadcastOutcome> runSendBroadcast({
               proposalId: args.proposalId,
               sendFlowId: args.sendFlowId,
               logContext: 'SendBroadcast(params-declined)',
+              syncNotifier: syncNotifier,
+              accountUuid: args.proposalAccountUuid,
             );
             proposalReleased = true;
           }
@@ -903,6 +921,8 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         proposalId: args.proposalId,
         sendFlowId: args.sendFlowId,
         logContext: 'SendBroadcast(pre-broadcast-failure)',
+        syncNotifier: syncNotifier,
+        accountUuid: args.proposalAccountUuid,
       );
       proposalReleased = true;
     }

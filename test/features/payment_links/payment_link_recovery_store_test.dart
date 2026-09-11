@@ -664,6 +664,33 @@ void main() {
       expect(await store.countUnsharedFundedForAccount('source-account'), 1);
     });
 
+    test(
+      'automatic draft removal preserves an ambiguous submission and its secret',
+      () async {
+        final storage = _FakePaymentLinkRecoveryStorage();
+        final store = PaymentLinkRecoveryStore(storage);
+        final link = _link();
+        await store.saveDraft(
+          link: link,
+          sourceAccountUuid: 'source-account',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+        );
+        await store.markSubmissionStarted(
+          address: link.address,
+          chainHeight: 100,
+        );
+        await expectLater(
+          store.removeUnbroadcastDraft(address: link.address),
+          throwsStateError,
+        );
+        expect(await store.countUnsharedFundedForAccount('source-account'), 1);
+        expect(
+          (await PaymentLinkRecoveryStore(storage).load()).single.link.toUri(),
+          link.toUri(),
+        );
+      },
+    );
+
     test('a lost broadcast result leaves an ambiguous submission', () async {
       final storage = _FakePaymentLinkRecoveryStorage();
       final store = PaymentLinkRecoveryStore(storage);

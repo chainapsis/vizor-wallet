@@ -7,12 +7,15 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -21,6 +24,346 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_
 import '../../support/payment_links_screen_support.dart';
 
 void main() {
+  testWidgets('copying an older card preserves creation order after reload', (
+    tester,
+  ) async {
+    final older = PaymentLinkRecoveryRecord(
+      link: otherAccountLink,
+      sourceAccountUuid: 'account-1',
+      claimFeeReserveZatoshi: BigInt.from(10000),
+      state: PaymentLinkRecoveryState.funded,
+      updatedAt: DateTime.utc(2026, 8, 5),
+      fundingTxids: 'funding-txid-2',
+    );
+    final operations = FakePaymentLinkOperations(
+      records: [older, fundedRecovery],
+    );
+    final clipboard = FakePaymentLinkClipboard();
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await tester.pumpAndSettle();
+    final newestRow = find.byKey(
+      ValueKey('payment_link_mobile_recovery_${incomingLink.address}'),
+    );
+    final olderRow = find.byKey(
+      ValueKey('payment_link_mobile_recovery_${otherAccountLink.address}'),
+    );
+    final originalPositions = [
+      tester.getTopLeft(newestRow),
+      tester.getTopLeft(olderRow),
+    ];
+    expect(originalPositions.first.dy, lessThan(originalPositions.last.dy));
+
+    await tester.tap(
+      find.descendant(
+        of: olderRow,
+        matching: find.byKey(
+          const ValueKey('payment_link_mobile_card_copy_action'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(clipboard.copiedSecrets, [otherAccountLink.toUri().toString()]);
+    expect(
+      operations.records.first.updatedAt.isAfter(fundedRecovery.updatedAt),
+      isTrue,
+    );
+    expect([
+      tester.getTopLeft(newestRow),
+      tester.getTopLeft(olderRow),
+    ], originalPositions);
+    final reloaded = await loadPaymentLinkCardsSnapshot(operations);
+    expect(reloaded.created.map((record) => record.link.address), [
+      incomingLink.address,
+      otherAccountLink.address,
+    ]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mobile share and copy keep independent pending feedback', (
+    tester,
+  ) async {
+    final copyGate = Completer<void>();
+    final shareGate = Completer<bool>();
+    final clipboard = FakePaymentLinkClipboard(copyCompleter: copyGate);
+    final operations = FakePaymentLinkOperations(records: [fundedRecovery]);
+    final images = <Uint8List>[];
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+      qrShareHandler: ({required png, required sharePositionOrigin}) async {
+        images.add(png);
+        return shareGate.future;
+      },
+    );
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Show gift card QR code'));
+    await tester.pumpAndSettle();
+    final copy = find.byKey(const ValueKey('payment_link_share_copy_button'));
+    await tester.tap(copy);
+    await tester.pump();
+    expect(find.text('Copying...'), findsOneWidget);
+    expect(find.text('Sharing...'), findsNothing);
+    expect(
+      tester
+          .widget<AppButton>(find.widgetWithText(AppButton, 'Share card'))
+          .onPressed,
+      isNotNull,
+    );
+    await tester.tap(find.text('Share card'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      for (var attempt = 0; attempt < 50 && images.isEmpty; attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    await tester.pump();
+    expect(images, hasLength(1));
+    expect(find.text('Sharing...'), findsOneWidget);
+    copyGate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Copy link'), findsOneWidget);
+    expect(find.text('Sharing...'), findsOneWidget);
+    expect(tester.widget<AppButton>(copy).onPressed, isNotNull);
+    await tester.tap(find.text('Sharing...'), warnIfMissed: false);
+    await tester.pump();
+    expect(images, hasLength(1));
+    shareGate.complete(false);
+    await tester.pumpAndSettle();
+    expect(find.text('Share card'), findsOneWidget);
+    expect(find.text('Copy link'), findsOneWidget);
+    expect(operations.sharedLinks, hasLength(1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('copying one card leaves other list icons unchanged', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final clipboard = FakePaymentLinkClipboard(copyCompleter: gate);
+    final second = PaymentLinkRecoveryRecord(
+      link: otherAccountLink,
+      sourceAccountUuid: 'account-1',
+      claimFeeReserveZatoshi: BigInt.from(10000),
+      state: PaymentLinkRecoveryState.funded,
+      updatedAt: DateTime.utc(2026, 8, 5),
+      fundingTxids: 'funding-txid-2',
+    );
+    final operations = FakePaymentLinkOperations(
+      records: [fundedRecovery, second],
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: clipboard,
+    );
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await tester.pumpAndSettle();
+    final copy = find.byKey(
+      const ValueKey('payment_link_mobile_card_copy_action'),
+    );
+    final qr = find.byKey(const ValueKey('payment_link_mobile_card_qr_action'));
+    Color? iconColor(Finder action) => tester
+        .widget<AppIcon>(
+          find.descendant(of: action, matching: find.byType(AppIcon)).first,
+        )
+        .color;
+    final qrColor = iconColor(qr.first);
+    final otherCopyColor = iconColor(copy.last);
+    await tester.tap(copy.first);
+    await tester.pump();
+    expect(clipboard.copiedSecrets, hasLength(1));
+    expect(iconColor(qr.first), qrColor);
+    expect(iconColor(qr.last), qrColor);
+    expect(iconColor(copy.last), otherCopyColor);
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(iconColor(qr.first), qrColor);
+    expect(iconColor(copy.last), otherCopyColor);
+    await tester.tap(copy.first, warnIfMissed: false);
+    await tester.pump();
+    expect(clipboard.copiedSecrets, hasLength(1));
+    await tester.tap(copy.last);
+    await tester.pump();
+    expect(clipboard.copiedSecrets, hasLength(2));
+    await tester.tap(qr.first);
+    await tester.pumpAndSettle();
+    expect(find.byType(PaymentLinkQrShareCard), findsOneWidget);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(operations.sharedLinks, hasLength(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final settings in [
+    (true, true, 100.0),
+    (true, false, 100.0),
+    (false, false, 100.0),
+    (true, false, null),
+  ]) {
+    testWidgets(
+      'completed card keeps saved fiat through waiting and sharing $settings',
+      (tester) async {
+        final source = _PendingCardPrice();
+        source.result.complete(
+          settings.$3 == null ? null : ZecMarketData(usdPrice: settings.$3!),
+        );
+        final operations = FakePaymentLinkOperations(
+          fundingBroadcastAcceptedOnCreate: false,
+          fundingConfirmationCount: 0,
+        );
+        final clipboard = FakePaymentLinkClipboard();
+        await pumpPaymentLinksScreen(
+          tester,
+          operations: operations,
+          clipboard: clipboard,
+          marketDataSource: source,
+          pricingEnabled: settings.$1,
+        );
+        await tester.binding.setSurfaceSize(const Size(390, 844));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('payment_links_mobile_create_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('payment_link_amount_editor')),
+          '1.25',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(
+            const ValueKey('payment_link_mobile_amount_continue_button'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (settings.$2) {
+          await tester.enterText(
+            find.byKey(const ValueKey('payment_link_message_editor')),
+            'For you',
+          );
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(
+          find.byKey(
+            const ValueKey('payment_link_mobile_message_continue_button'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(
+            const ValueKey('payment_link_mobile_review_continue_button'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final hasFiat = settings.$1 && settings.$3 != null;
+        void expectSavedFiat() {
+          expect(
+            find.text(r'$125.00'),
+            hasFiat ? findsOneWidget : findsNothing,
+          );
+          expect(find.text('Fiat unavailable'), findsNothing);
+          expect(
+            find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
+            findsNothing,
+          );
+        }
+
+        expectSavedFiat();
+        expect(find.text('Copy link'), findsNothing);
+        operations.fundingConfirmationCount = 1;
+        await tester.pump(const Duration(seconds: 10));
+        await tester.pumpAndSettle();
+        expectSavedFiat();
+        expect(find.text('Copy link'), findsOneWidget);
+        if (settings.$2) {
+          await tester.tap(find.bySemanticsLabel('Flip gift card'));
+          await tester.pumpAndSettle();
+          expect(find.text('For you'), findsOneWidget);
+          await tester.tap(find.bySemanticsLabel('Flip gift card'));
+          await tester.pumpAndSettle();
+          expectSavedFiat();
+        }
+        await tester.pump(zecMarketDataRefreshInterval);
+        await tester.pumpAndSettle();
+        expectSavedFiat();
+        expect(source.fetchCount, settings.$1 ? 1 : 0);
+        await tester.tap(find.text('Copy link'));
+        await tester.pumpAndSettle();
+        expect(
+          VizorPaymentLink.parse(
+            clipboard.copiedSecrets.single,
+          ).presentation?.fiatSnapshot?.amount,
+          hasFiat ? 125 : null,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('payment_link_mobile_ready_home_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.bySemanticsLabel('Show gift card QR code'));
+        await tester.pumpAndSettle();
+        final qr = tester.widget<PaymentLinkQrShareCard>(
+          find.byType(PaymentLinkQrShareCard),
+        );
+        expect(
+          VizorPaymentLink.parse(qr.qrData).presentation?.fiatSnapshot?.amount,
+          hasFiat ? 125 : null,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final outcome in [
+    (PaymentLinkAvailability.claimedElsewhere, 'Already claimed'),
+    (PaymentLinkAvailability.noBalance, 'No balance'),
+    (PaymentLinkAvailability.failed, 'Claim failed'),
+  ]) {
+    testWidgets('shows ${outcome.$2} inside the mobile redeem area', (
+      tester,
+    ) async {
+      final operations = FakePaymentLinkOperations(claimable: false)
+        ..claimAvailability = outcome.$1;
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: FakePaymentLinkClipboard(
+          text: incomingLink.toUri().toString(),
+        ),
+      );
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_mobile_paste_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Redeem the Card'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('payment_link_mobile_redeem_drop_zone'),
+          ),
+          matching: find.text(outcome.$2),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Check status'), findsOneWidget);
+      expect(operations.claimedLinks, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final settings in [
     (true, true, true),
     (true, true, false),
@@ -71,6 +414,37 @@ void main() {
   }
 
   setUpAll(loadPaymentLinksTestFonts);
+
+  testWidgets(
+    'mobile keeps a saved unavailable Card during destination preparation',
+    (tester) async {
+      final accounts = SwitchablePaymentLinkAccountNotifier();
+      final operations = FakePaymentLinkOperations(
+        receivedRecords: [PaymentLinkReceivedRecord.fromLink(incomingLink)],
+        readClaimDestination: () => accounts.current,
+      );
+      await _openReceivedCard(tester, operations, accountNotifier: accounts);
+      await tester.tap(find.text('Claim the gift'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_claim_account_account-2')),
+      );
+      operations.claimable = false;
+      await tester.tap(find.text('Claim gift'));
+      await tester.pumpAndSettle();
+      expect(operations.claimedLinks, isEmpty);
+      expect(operations.discardedClaimAddresses, isEmpty);
+      expect(operations.retainedClaimAddresses, [incomingLink.address]);
+      expect(
+        operations.receivedRecords.single.claimLink?.toUri(),
+        incomingLink.toUri(),
+      );
+      expect(
+        find.text('There is currently no balance available to claim.'),
+        findsOneWidget,
+      );
+    },
+  );
   for (final pricingEnabled in [true, false]) {
     testWidgets(
       'creation snapshots fiat only with pricing enabled: $pricingEnabled',
@@ -96,6 +470,12 @@ void main() {
           'payment_link_mobile_message_continue_button',
           'payment_link_mobile_review_continue_button',
         ]) {
+          if (key == 'payment_link_mobile_review_continue_button') {
+            expect(
+              find.text(r'$125.00'),
+              pricingEnabled ? findsOneWidget : findsNothing,
+            );
+          }
           await tester.tap(find.byKey(ValueKey(key)));
           await tester.pumpAndSettle();
         }
@@ -194,6 +574,14 @@ void main() {
       expect(loading, findsNothing);
       expect(max, findsOneWidget);
 
+      for (final amount in ['0', '2', '', '2']) {
+        await tester.enterText(editor, amount);
+        await tester.pump();
+        expect(loading, findsNothing);
+        if (amount == '2') expect(find.text(r'$200.00'), findsOneWidget);
+        expect(source.fetchCount, 1);
+      }
+
       await tester.enterText(editor, '');
       await tester.pumpAndSettle();
       expect(find.textContaining('Use max:'), findsOneWidget);
@@ -208,8 +596,22 @@ void main() {
         zecUsdUnitPrice: 100,
       );
       expect(find.text(fiat!), findsOneWidget);
-      expect(find.textContaining('Use max:'), findsNothing);
-      expect(max, findsOneWidget);
+      await tester.tap(
+        find.byKey(
+          const ValueKey('payment_link_mobile_amount_continue_button'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey('payment_link_mobile_message_continue_button'),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Review a Card'), findsOneWidget);
+      expect(find.text(fiat), findsOneWidget);
+      expect(loading, findsNothing);
+      expect(source.fetchCount, 1);
     },
   );
 
@@ -697,9 +1099,16 @@ void main() {
       find.byKey(const ValueKey('payment_link_mobile_message_continue_button')),
       findsOneWidget,
     );
+    final messageFocus = tester
+        .widget<TextField>(
+          find.byKey(const ValueKey('payment_link_message_editor')),
+        )
+        .focusNode!;
+    expect(messageFocus.hasFocus, isTrue);
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
+    expect(messageFocus.hasFocus, isFalse);
 
     expect(
       find.byKey(const ValueKey('payment_links_mobile_screen')),
@@ -824,8 +1233,11 @@ void main() {
           router.routerDelegate.currentConfiguration.uri.path,
           '/payment-links',
         );
-        expect(find.text('Receiving...'), findsOneWidget);
-        expect(find.text('Your gift is still being received.'), findsOneWidget);
+        expect(find.text('Checking result'), findsOneWidget);
+        expect(
+          find.text('Claim result is not confirmed. Check its status.'),
+          findsOneWidget,
+        );
         expect(find.text('Claim the gift'), findsNothing);
         expect(find.text('Try again'), findsNothing);
       },

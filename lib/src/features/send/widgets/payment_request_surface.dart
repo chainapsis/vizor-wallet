@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show Material, MaterialType;
+import 'package:flutter/material.dart' show BottomSheet, Material, MaterialType;
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_form_factor.dart';
@@ -151,10 +151,14 @@ class PaymentRequestSurface extends StatelessWidget {
           minimum: const EdgeInsets.only(top: AppSpacing.base),
           child: Align(
             alignment: Alignment.bottomCenter,
-            child: MobileModalCard(
-              child: Material(
-                type: MaterialType.transparency,
-                child: paymentRequestSheetBody(card, onClose: onCancel),
+            child: _DraggablePaymentRequestSheet(
+              key: cardKey,
+              onDismiss: onCancel,
+              child: MobileModalCard(
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: paymentRequestSheetBody(card, onClose: onCancel),
+                ),
               ),
             ),
           ),
@@ -173,6 +177,69 @@ class PaymentRequestSurface extends StatelessWidget {
       // mounted they are zero and this centers on the window as before.
       child: ContentPaneCenteringPadding(
         child: AppModalCard(width: kPaymentRequestCardWidth, child: card),
+      ),
+    );
+  }
+}
+
+/// The app-level host has no sheet route to supply drag motion or dismissal.
+/// Keep Flutter's bottom-sheet gesture thresholds and animate the inline card
+/// with the same controller. Keying this by request also prevents a closing
+/// animation from dismissing a replacement request.
+class _DraggablePaymentRequestSheet extends StatefulWidget {
+  const _DraggablePaymentRequestSheet({
+    required this.onDismiss,
+    required this.child,
+    super.key,
+  });
+
+  final VoidCallback onDismiss;
+  final Widget child;
+
+  @override
+  State<_DraggablePaymentRequestSheet> createState() =>
+      _DraggablePaymentRequestSheetState();
+}
+
+class _DraggablePaymentRequestSheetState
+    extends State<_DraggablePaymentRequestSheet>
+    with SingleTickerProviderStateMixin {
+  late final _controller = BottomSheet.createAnimationController(this)
+    ..value = 1;
+  late final _position = Tween<Offset>(
+    begin: const Offset(0, 1),
+    end: Offset.zero,
+  ).animate(_controller);
+  bool _closing = false;
+
+  void _dismiss() {
+    if (_closing) return;
+    setState(() => _closing = true);
+    _controller.reverse().then((_) {
+      if (mounted) widget.onDismiss();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _position,
+      child: IgnorePointer(
+        ignoring: _closing,
+        child: BottomSheet(
+          animationController: _controller,
+          onClosing: _dismiss,
+          showDragHandle: false,
+          backgroundColor: const Color(0x00000000),
+          elevation: 0,
+          builder: (_) => widget.child,
+        ),
       ),
     );
   }

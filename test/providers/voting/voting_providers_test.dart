@@ -1,6 +1,14 @@
+import 'package:zcash_wallet/src/services/voting/voting_file_cache.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_home_entry_provider.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+
+import 'package:zcash_wallet/src/providers/voting/voting_participation_provider.dart';
+import 'package:zcash_wallet/src/services/voting/voting_participation_client.dart';
+import '../../fakes/fake_voting_participation_client.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_home_cache_provider.dart';
+import '../../fakes/memory_voting_home_cache_store.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -61,6 +69,687 @@ import '../../services/voting/fake_voting_http.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'Home asynchronously restores decisions without waiting for sync or repeating participation',
+    () async {
+      for (final visible in [true, false]) {
+        final store = MemoryVotingHomeCacheStore();
+        final client = FakeVotingParticipationClient();
+        ProviderContainer make() => _sessionContainer(
+          homeCacheStore: store,
+          extraOverrides: [
+            votingParticipationClientProvider.overrideWithValue(client),
+            syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+          ],
+        );
+        var container = make();
+        await container.read(accountProvider.future);
+        final source = await container.read(votingConfigSourceProvider.future);
+        final config = await container.read(votingConfigProvider.future);
+        final cache = container.read(votingHomeCacheProvider.notifier);
+        await cache.recordList(
+          votingHomeListKey('main', source.sourceUrl),
+          VotingHomeRoundList(
+            checkedAt: DateTime.now(),
+            fingerprint: config.sourceFingerprint,
+            rounds: [
+              VotingRoundSummary.fromJson({
+                'vote_round_id': kRoundId,
+                'title': 'Vote',
+                'status': '1',
+                'snapshot_height': 123,
+              }),
+            ],
+          ),
+        );
+        await cache.recordParticipation(
+          votingHomeFactKey(
+            'main',
+            config.sourceFingerprint,
+            'account-1',
+            kRoundId,
+          ),
+          123,
+          VotingParticipationResult(
+            fingerprint: 'notes',
+            usedCount: visible ? 0 : 1,
+            noteCount: 1,
+            remainingEligible: visible,
+            localState: false,
+          ),
+        );
+        container.dispose();
+        container = make();
+        await container.read(accountProvider.future);
+        expect(container.read(votingHomeEntryVisibleProvider), false);
+        await container.read(votingConfigSourceProvider.future);
+        await container.read(votingHomeCacheProvider.notifier).ensureLoaded();
+        expect(container.read(votingHomeEntryVisibleProvider), visible);
+        await container.read(syncProvider.future); // scannedHeight == 0
+        await container.read(votingParticipationProvider).checkHomeCandidates();
+        final sync =
+            container.read(syncProvider.notifier)
+                as _PollEligibilitySyncNotifier;
+        sync.complete(scannedHeight: 123);
+        await container.read(votingParticipationProvider).checkHomeCandidates();
+        expect(container.read(votingHomeEntryVisibleProvider), visible);
+        expect(client.calls, 0);
+        expect(
+          container
+              .read(votingHomeCacheProvider.notifier)
+              .fact(
+                votingHomeFactKey(
+                  'main',
+                  config.sourceFingerprint,
+                  'account-1',
+                  kRoundId,
+                ),
+              )
+              .participation,
+          isNotNull,
+        );
+        // An actual snapshot revision change causes one new local inspection.
+        (container.read(votingFileCacheProvider) as _SnapshotCache).revision =
+            'changed';
+        client.result = VotingParticipationResult(
+          fingerprint: 'notes',
+          usedCount: visible ? 0 : 1,
+          noteCount: 1,
+          remainingEligible: visible,
+          localState: false,
+          snapshotRevision: 'changed',
+        );
+        await container.read(votingParticipationProvider).checkHomeCandidates();
+        expect(client.calls, 1);
+        await container.read(votingParticipationProvider).checkHomeCandidates();
+        expect(client.calls, 1);
+        expect(container.read(votingHomeEntryVisibleProvider), visible);
+        container.dispose();
+      }
+    },
+  );
+
+  test(
+    'Home remains hidden through failed checks and preserves a confirmed decision on forced failure',
+    () async {
+      final client = FakeVotingParticipationClient();
+      final container = _sessionContainer(
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+          syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final source = await container.read(votingConfigSourceProvider.future);
+      final config = await container.read(votingConfigProvider.future);
+      await container.read(showTestVotingRoundsProvider.future);
+      final cache = container.read(votingHomeCacheProvider.notifier);
+      await cache.recordList(
+        votingHomeListKey('main', source.sourceUrl),
+        VotingHomeRoundList(
+          checkedAt: DateTime.now(),
+          fingerprint: config.sourceFingerprint,
+          rounds: [
+            VotingRoundSummary.fromJson({
+              'vote_round_id': kRoundId,
+              'title': 'Vote',
+              'status': '1',
+            }),
+          ],
+        ),
+      );
+      expect(container.read(votingHomeEntryVisibleProvider), false);
+      final checker = container.read(votingParticipationProvider);
+      await checker.checkHomeCandidates();
+      expect(
+        client.calls,
+        1,
+        reason: 'Hidden Home still starts the background check',
+      );
+      expect(container.read(votingHomeEntryVisibleProvider), false);
+      client.result = const VotingParticipationResult(
+        fingerprint: 'notes',
+        usedCount: 0,
+        noteCount: 1,
+        remainingEligible: true,
+        localState: false,
+      );
+      await checker.checkRound(kRoundId, force: true);
+      expect(container.read(votingHomeEntryVisibleProvider), true);
+      client.result = null;
+      await checker.checkRound(kRoundId, force: true);
+      expect(container.read(votingHomeEntryVisibleProvider), true);
+    },
+  );
+
+  test(
+    'Home restores local decisions with an empty cache without participation RPC',
+    () async {
+      for (final completed in [true, false]) {
+        final client = FakeVotingParticipationClient(); // Fails if invoked.
+        final recovery = FakeVotingRecoveryApi(
+          state: recoveryState(),
+          roundPlan: apiRoundPlan(
+            roundId: kRoundId,
+            pendingRecovery: false,
+            nextSteps: [],
+            openProposals: Uint32List.fromList(completed ? [] : [1]),
+            allDecided: completed,
+            completedForDisplay: true,
+            needsDraftSetup: false,
+          ),
+        );
+        final container = _sessionContainer(
+          http: FakeVotingHttpClient(
+            responses: votingHttpResponses(
+              roundStatus: roundStatusJson(roundId: kRoundId)
+                ..['proposals'] = [
+                  {'id': 1, 'title': 'Question'},
+                ],
+            ),
+          ),
+          recoveryApi: recovery,
+          extraOverrides: [
+            votingParticipationClientProvider.overrideWithValue(client),
+            syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+          ],
+        );
+        await container.read(accountProvider.future);
+        await container.read(votingConfigSourceProvider.future);
+        final checker = container.read(votingParticipationProvider);
+        await checker.checkRound(kRoundId);
+        final config = container.read(votingConfigProvider).requireValue;
+        final fact = container
+            .read(votingHomeCacheProvider.notifier)
+            .fact(
+              votingHomeFactKey(
+                'main',
+                config.sourceFingerprint,
+                'account-1',
+                kRoundId,
+              ),
+            );
+        expect(recovery.roundPlanProposalIds, hasLength(1));
+        expect(recovery.roundPlanProposalIds.single, isNotEmpty);
+        expect(
+          fact.decision,
+          completed ? VotingHomeDecision.hide : VotingHomeDecision.show,
+        );
+        expect(fact.needsRecheck, false);
+        await checker.checkRound(kRoundId);
+        expect(client.calls, 0);
+        await checker.checkRound(kRoundId, force: true);
+        expect(client.calls, 1);
+        final afterFailure = container
+            .read(votingHomeCacheProvider.notifier)
+            .fact(
+              votingHomeFactKey(
+                'main',
+                config.sourceFingerprint,
+                'account-1',
+                kRoundId,
+              ),
+            );
+        expect(
+          afterFailure.decision,
+          fact.decision,
+          reason:
+              'Forced RPC failure must preserve the restored local decision',
+        );
+        container.dispose();
+      }
+    },
+  );
+
+  test(
+    'incomplete recovery response does not replace the prior Home decision',
+    () async {
+      final client = FakeVotingParticipationClient()
+        ..result = const VotingParticipationResult(
+          fingerprint: 'notes',
+          usedCount: 0,
+          noteCount: 1,
+          remainingEligible: true,
+          localState: false,
+        );
+      final recovery = FakeVotingRecoveryApi(state: recoveryState());
+      final container = _sessionContainer(
+        recoveryApi: recovery,
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+          syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(votingConfigSourceProvider.future);
+      final checker = container.read(votingParticipationProvider);
+      await checker.checkRound(kRoundId);
+      client.result = const VotingParticipationResult(
+        fingerprint: 'notes',
+        usedCount: 1,
+        noteCount: 1,
+        remainingEligible: false,
+        localState: true,
+      );
+      await checker.checkRound(kRoundId, force: true);
+      final config = container.read(votingConfigProvider).requireValue;
+      final fact = container
+          .read(votingHomeCacheProvider.notifier)
+          .fact(
+            votingHomeFactKey(
+              'main',
+              config.sourceFingerprint,
+              'account-1',
+              kRoundId,
+            ),
+          );
+      expect(fact.decision, VotingHomeDecision.show);
+      expect(
+        fact.participation!.localState,
+        false,
+        reason: 'Incomplete response must not replace last success',
+      );
+      expect(recovery.roundPlanProposalIds, isEmpty);
+    },
+  );
+
+  test(
+    'local recovery restores Home even during participation backoff',
+    () async {
+      final client = FakeVotingParticipationClient();
+      final recovery = FakeVotingRecoveryApi(state: recoveryState());
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          roundStatus: roundStatusJson(roundId: kRoundId)
+            ..['proposals'] = [
+              {'id': 1, 'title': 'Question'},
+            ],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        recoveryApi: recovery,
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+          syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(votingConfigSourceProvider.future);
+      final checker = container.read(votingParticipationProvider);
+      await checker.checkRound(kRoundId);
+      expect(client.calls, 1);
+      final requests = http.requests.length;
+      recovery.roundPlan = apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: true,
+        blockingRecovery: true,
+        nextSteps: [],
+        openProposals: Uint32List.fromList([1]),
+        allDecided: false,
+      );
+      await checker.checkRound(kRoundId);
+      final config = container.read(votingConfigProvider).requireValue;
+      final fact = container
+          .read(votingHomeCacheProvider.notifier)
+          .fact(
+            votingHomeFactKey(
+              'main',
+              config.sourceFingerprint,
+              'account-1',
+              kRoundId,
+            ),
+          );
+      expect(fact.decision, VotingHomeDecision.show);
+      expect(fact.progress, VotingHomeProgress.inProgress);
+      expect(client.calls, 1);
+      expect(
+        http.requests.length,
+        requests,
+        reason: 'Local recovery during backoff must reuse round metadata',
+      );
+    },
+  );
+
+  test(
+    'participation deduplicates and persists only successful checks',
+    () async {
+      final client = FakeVotingParticipationClient();
+      final container = _sessionContainer(
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+          syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final source = await container.read(votingConfigSourceProvider.future);
+      final config = await container.read(votingConfigProvider.future);
+      final cache = container.read(votingHomeCacheProvider.notifier);
+      await cache.recordList(
+        votingHomeListKey('main', source.sourceUrl),
+        VotingHomeRoundList(
+          checkedAt: DateTime.now(),
+          fingerprint: config.sourceFingerprint,
+          rounds: const [],
+        ),
+      );
+      final checker = container.read(votingParticipationProvider);
+      await checker.checkRound(kRoundId);
+      expect(client.calls, 1);
+      final key = votingHomeFactKey(
+        'main',
+        config.sourceFingerprint,
+        'account-1',
+        kRoundId,
+      );
+      expect(cache.fact(key).participation, isNull);
+      client.result = const VotingParticipationResult(
+        fingerprint: 'notes',
+        usedCount: 1,
+        noteCount: 1,
+        remainingEligible: false,
+        localState: false,
+      );
+      client.gate = Completer<void>();
+      final first = checker.checkRound(kRoundId, force: true);
+      final second = checker.checkRound(kRoundId, force: true);
+      expect(identical(first, second), isTrue);
+      client.gate!.complete();
+      await first;
+      expect(client.calls, 2);
+      expect(cache.fact(key).participation?.unavailable, isTrue);
+      await checker.checkRound(kRoundId);
+      expect(client.calls, 2);
+      client.gate = Completer<void>();
+      final pending = checker.checkRound(kRoundId, force: true);
+      var drained = false;
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      final drain = registry
+          .quiesceAndDrain(accountUuid: 'account-1')
+          .then((_) => drained = true);
+      expect(drained, isFalse);
+      client.gate!.complete();
+      await Future.wait([pending, drain]);
+      expect(drained, isTrue);
+      registry.resume(accountUuid: 'account-1');
+    },
+  );
+
+  test('participation backoff grows, caps, and resets after success', () async {
+    var now = DateTime.utc(2026, 9, 10);
+    final client = FakeVotingParticipationClient();
+    final container = _sessionContainer(
+      extraOverrides: [
+        votingParticipationClientProvider.overrideWithValue(client),
+        votingHomeClockProvider.overrideWithValue(() => now),
+        syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    await container.read(votingConfigSourceProvider.future);
+    final checker = container.read(votingParticipationProvider);
+    await checker.checkRound(kRoundId);
+    expect(client.calls, 1);
+    for (final minutes in [1, 2, 4, 8, 16, 30, 30]) {
+      final calls = client.calls;
+      now = now.add(
+        Duration(minutes: minutes) - const Duration(milliseconds: 1),
+      );
+      await checker.checkRound(kRoundId);
+      expect(
+        client.calls,
+        calls,
+        reason: 'Must wait the full $minutes minutes',
+      );
+      now = now.add(const Duration(milliseconds: 1));
+      await checker.checkRound(kRoundId);
+      expect(client.calls, calls + 1);
+    }
+    // Explicit user retry bypasses the current 30-minute wait.
+    client.result = const VotingParticipationResult(
+      fingerprint: 'notes',
+      usedCount: 0,
+      noteCount: 1,
+      remainingEligible: true,
+      localState: false,
+    );
+    final calls = client.calls;
+    await checker.checkRound(kRoundId, force: true);
+    expect(client.calls, calls + 1);
+    client.result = null;
+    await checker.checkRound(kRoundId, force: true);
+    expect(client.calls, calls + 2);
+    now = now.add(const Duration(minutes: 1));
+    // A forced failure preserves the success cache; invalidate the snapshot
+    // so the next automatic attempt exercises the reset backoff.
+    await container
+        .read(votingHomeCacheProvider.notifier)
+        .invalidateEligibilityAfterRewind(
+          network: 'main',
+          accountUuid: 'account-1',
+          scannedHeight: 0,
+        );
+    await checker.checkRound(kRoundId);
+    expect(
+      client.calls,
+      calls + 3,
+      reason: 'Success resets the failure delay to one minute',
+    );
+  });
+
+  test('participation cancellation does not impose a retry delay', () async {
+    final security = _MutableVotingSecurityNotifier(
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+    );
+    final client = FakeVotingParticipationClient()..gate = Completer<void>();
+    final container = _sessionContainer(
+      securityNotifier: security,
+      extraOverrides: [
+        votingParticipationClientProvider.overrideWithValue(client),
+        syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    await container.read(votingConfigSourceProvider.future);
+    final checker = container.read(votingParticipationProvider);
+    final pending = checker.checkRound(kRoundId);
+    await Future.doWhile(() async {
+      await Future<void>.delayed(Duration.zero);
+      return client.calls == 0;
+    }).timeout(const Duration(seconds: 5));
+    security.setUnlocked(false);
+    await container.pump();
+    client.gate!.complete();
+    await pending;
+    security.setUnlocked(true);
+    await container.pump();
+    client.gate = null;
+    await checker.checkRound(kRoundId);
+    expect(
+      client.calls,
+      2,
+      reason: 'Cancelled work must permit an immediate retry',
+    );
+  });
+
+  test(
+    'participation reuses round details while snapshot sync is pending',
+    () async {
+      final http = FakeVotingHttpClient(responses: votingHttpResponses());
+      final readiness = FakeVotingWalletSyncReadinessChecker(
+        responses: [
+          const VotingWalletSyncReadiness(
+            scannedHeight: 0,
+            snapshotHeight: 100,
+            chainTipHeight: 100,
+          ),
+          const VotingWalletSyncReadiness(
+            scannedHeight: 0,
+            snapshotHeight: 100,
+            chainTipHeight: 100,
+          ),
+          const VotingWalletSyncReadiness(
+            scannedHeight: 100,
+            snapshotHeight: 100,
+            chainTipHeight: 100,
+          ),
+        ],
+      );
+      final client = FakeVotingParticipationClient();
+      final container = _sessionContainer(
+        http: http,
+        walletSyncReadinessChecker: readiness,
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(votingConfigSourceProvider.future);
+      final checker = container.read(votingParticipationProvider);
+      int reads() => http.requests
+          .where((r) => r.uri.path.endsWith('/round/$kRoundId'))
+          .length;
+      await checker.checkRound(kRoundId);
+      expect(reads(), 1);
+      await checker.checkRound(kRoundId);
+      expect(reads(), 1);
+      expect(client.calls, 0);
+      await checker.checkRound(kRoundId);
+      expect(reads(), 1);
+      expect(client.calls, 1);
+      await checker.checkRound(kRoundId, force: true);
+      expect(reads(), 2, reason: 'Manual retry fetches fresh details');
+    },
+  );
+
+  test(
+    'participation detail request survives cancellation of pending Home work',
+    () async {
+      var homeCurrent = true;
+      final client = FakeVotingParticipationClient()..gate = Completer<void>();
+      final container = _sessionContainer(
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(votingConfigSourceProvider.future);
+      final checker = container.read(votingParticipationProvider);
+      final home = checker.checkRound(
+        kRoundId,
+        isHomeCurrent: () => homeCurrent,
+      );
+      await Future.doWhile(() async {
+        await Future<void>.delayed(Duration.zero);
+        return client.calls == 0;
+      }).timeout(const Duration(seconds: 5));
+      final detail = checker.checkRound(kRoundId);
+      homeCurrent = false;
+      client.gate!.complete();
+      await Future.wait([home, detail]);
+      expect(
+        client.calls,
+        2,
+        reason: 'Detail must retry cancelled Home work without backoff',
+      );
+    },
+  );
+
+  test(
+    'participation queued detail does not restart across security context changes',
+    () async {
+      final security = _MutableVotingSecurityNotifier(
+        const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+      );
+      var homeCurrent = true;
+      final client = FakeVotingParticipationClient()..gate = Completer<void>();
+      final container = _sessionContainer(
+        securityNotifier: security,
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(votingConfigSourceProvider.future);
+      final checker = container.read(votingParticipationProvider);
+      final home = checker.checkRound(
+        kRoundId,
+        isHomeCurrent: () => homeCurrent,
+      );
+      await Future.doWhile(() async {
+        await Future<void>.delayed(Duration.zero);
+        return client.calls == 0;
+      }).timeout(const Duration(seconds: 5));
+      final detail = checker.checkRound(kRoundId);
+      homeCurrent = false;
+      security.setUnlocked(false);
+      await container.pump();
+      security.setUnlocked(true);
+      await container.pump();
+      client.gate!.complete();
+      await Future.wait([home, detail]);
+      expect(client.calls, 1);
+    },
+  );
+
+  test('Home participation checks only visible synced candidates', () async {
+    final container = _sessionContainer(
+      extraOverrides: [
+        votingParticipationProvider.overrideWith(
+          (ref) => _CandidateChecker(ref),
+        ),
+        syncProvider.overrideWith(_PollEligibilitySyncNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    final source = await container.read(votingConfigSourceProvider.future);
+    await container.read(showTestVotingRoundsProvider.future);
+    await container.read(syncProvider.future);
+    final cache = container.read(votingHomeCacheProvider.notifier);
+    await cache.recordList(
+      votingHomeListKey('main', source.sourceUrl),
+      VotingHomeRoundList(
+        checkedAt: DateTime.now(),
+        fingerprint: 'source',
+        rounds: [
+          for (final entry in [
+            ('a' * 64, 'Vote', '1', 0),
+            ('b' * 64, '[TEST] Vote', '1', 0),
+            ('c' * 64, 'Vote', '3', 0),
+            ('d' * 64, 'Vote', '1', 0),
+            ('e' * 64, 'Vote', '1', 100),
+          ])
+            VotingRoundSummary.fromJson({
+              'vote_round_id': entry.$1,
+              'title': entry.$2,
+              'status': entry.$3,
+              'snapshot_height': entry.$4,
+            }),
+        ],
+      ),
+    );
+    await cache.recordEligibility(
+      votingHomeFactKey('main', 'source', 'account-1', 'd' * 64),
+      false,
+      0,
+    );
+    final checker =
+        container.read(votingParticipationProvider) as _CandidateChecker;
+    await checker.checkHomeCandidates();
+    // An eligibility-only hint is not a note-level participation observation.
+    expect(checker.checked, ['a' * 64, 'd' * 64]);
+  });
 
   group('poll eligibility', () {
     test('lock discards pending results and unlock rechecks', () async {
@@ -167,6 +856,24 @@ void main() {
             eligible
                 ? VotingPollEligibility.eligible
                 : VotingPollEligibility.ineligible,
+          );
+          await container.pump();
+          final config = await container.read(votingConfigProvider.future);
+          final cached = container
+              .read(votingHomeCacheProvider.notifier)
+              .fact(
+                votingHomeFactKey(
+                  'main',
+                  config.sourceFingerprint,
+                  'account-1',
+                  kRoundId,
+                ),
+              );
+          expect(
+            cached.eligibility,
+            eligible
+                ? VotingHomeEligibility.eligible
+                : VotingHomeEligibility.ineligible,
           );
           expect(rust.eligibilityAccountUuids, ['account-1']);
           expect(rust.trustedRoundParamsCalls, 1);
@@ -367,6 +1074,16 @@ void main() {
     });
     final container = ProviderContainer(
       overrides: [
+        votingRpcEndpointConfigProvider.overrideWithValue(
+          const RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: 'https://lightwalletd.example:443',
+          ),
+        ),
+        votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+        votingHomeCacheStoreProvider.overrideWithValue(
+          MemoryVotingHomeCacheStore(),
+        ),
         votingConfigSourceStoreProvider.overrideWithValue(store),
         votingConfigLoaderProvider.overrideWith((ref) {
           final source =
@@ -416,6 +1133,16 @@ void main() {
       });
       final container = ProviderContainer(
         overrides: [
+          votingRpcEndpointConfigProvider.overrideWithValue(
+            const RpcEndpointConfig(
+              networkName: 'main',
+              lightwalletdUrl: 'https://lightwalletd.example:443',
+            ),
+          ),
+          votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+          votingHomeCacheStoreProvider.overrideWithValue(
+            MemoryVotingHomeCacheStore(),
+          ),
           votingConfigSourceStoreProvider.overrideWithValue(store),
           votingConfigLoaderProvider.overrideWith((ref) {
             final source =
@@ -464,6 +1191,16 @@ void main() {
       });
       final container = ProviderContainer(
         overrides: [
+          votingRpcEndpointConfigProvider.overrideWithValue(
+            const RpcEndpointConfig(
+              networkName: 'main',
+              lightwalletdUrl: 'https://lightwalletd.example:443',
+            ),
+          ),
+          votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+          votingHomeCacheStoreProvider.overrideWithValue(
+            MemoryVotingHomeCacheStore(),
+          ),
           votingConfigSourceStoreProvider.overrideWithValue(store),
           votingConfigLoaderProvider.overrideWith((ref) {
             final source =
@@ -513,6 +1250,16 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        votingRpcEndpointConfigProvider.overrideWithValue(
+          const RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: 'https://lightwalletd.example:443',
+          ),
+        ),
+        votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+        votingHomeCacheStoreProvider.overrideWithValue(
+          MemoryVotingHomeCacheStore(),
+        ),
         votingConfigSourceStoreProvider.overrideWithValue(
           FakeVotingConfigSourceStore(),
         ),
@@ -605,6 +1352,16 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        votingRpcEndpointConfigProvider.overrideWithValue(
+          const RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: 'https://lightwalletd.example:443',
+          ),
+        ),
+        votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+        votingHomeCacheStoreProvider.overrideWithValue(
+          MemoryVotingHomeCacheStore(),
+        ),
         votingConfigSourceStoreProvider.overrideWithValue(
           FakeVotingConfigSourceStore(),
         ),
@@ -676,6 +1433,16 @@ void main() {
       final http = FakeVotingHttpClient(responses: responses);
       final container = ProviderContainer(
         overrides: [
+          votingRpcEndpointConfigProvider.overrideWithValue(
+            const RpcEndpointConfig(
+              networkName: 'main',
+              lightwalletdUrl: 'https://lightwalletd.example:443',
+            ),
+          ),
+          votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+          votingHomeCacheStoreProvider.overrideWithValue(
+            MemoryVotingHomeCacheStore(),
+          ),
           votingConfigSourceStoreProvider.overrideWithValue(
             FakeVotingConfigSourceStore(),
           ),
@@ -771,6 +1538,16 @@ void main() {
       );
       final container = ProviderContainer(
         overrides: [
+          votingRpcEndpointConfigProvider.overrideWithValue(
+            const RpcEndpointConfig(
+              networkName: 'main',
+              lightwalletdUrl: 'https://lightwalletd.example:443',
+            ),
+          ),
+          votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+          votingHomeCacheStoreProvider.overrideWithValue(
+            MemoryVotingHomeCacheStore(),
+          ),
           votingConfigSourceStoreProvider.overrideWithValue(
             FakeVotingConfigSourceStore(sourceUrl: firstSource),
           ),
@@ -895,6 +1672,16 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        votingRpcEndpointConfigProvider.overrideWithValue(
+          const RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: 'https://lightwalletd.example:443',
+          ),
+        ),
+        votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+        votingHomeCacheStoreProvider.overrideWithValue(
+          MemoryVotingHomeCacheStore(),
+        ),
         votingConfigSourceStoreProvider.overrideWithValue(
           FakeVotingConfigSourceStore(),
         ),
@@ -1035,6 +1822,16 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        votingRpcEndpointConfigProvider.overrideWithValue(
+          const RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: 'https://lightwalletd.example:443',
+          ),
+        ),
+        votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+        votingHomeCacheStoreProvider.overrideWithValue(
+          MemoryVotingHomeCacheStore(),
+        ),
         votingConfigSourceStoreProvider.overrideWithValue(
           FakeVotingConfigSourceStore(),
         ),
@@ -7335,6 +8132,16 @@ void main() {
     await persistence.save(key, const VotingDraftState(choices: {7: 1, 8: 0}));
     final container = ProviderContainer(
       overrides: [
+        votingRpcEndpointConfigProvider.overrideWithValue(
+          const RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: 'https://lightwalletd.example:443',
+          ),
+        ),
+        votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+        votingHomeCacheStoreProvider.overrideWithValue(
+          MemoryVotingHomeCacheStore(),
+        ),
         votingDraftPersistenceProvider.overrideWithValue(persistence),
       ],
     );
@@ -11202,6 +12009,16 @@ ProviderContainer _container({
 }) {
   return ProviderContainer(
     overrides: [
+      votingRpcEndpointConfigProvider.overrideWithValue(
+        const RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: 'https://lightwalletd.example:443',
+        ),
+      ),
+      votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+      votingHomeCacheStoreProvider.overrideWithValue(
+        MemoryVotingHomeCacheStore(),
+      ),
       votingConfigSourceStoreProvider.overrideWithValue(
         sourceStore ?? FakeVotingConfigSourceStore(),
       ),
@@ -11378,6 +12195,7 @@ PirSnapshotResolution _pirResolution(Uri selected, List<Uri> matches) {
 }
 
 ProviderContainer _sessionContainer({
+  VotingHomeCacheStore? homeCacheStore,
   List<Override> extraOverrides = const [],
   FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
@@ -11418,6 +12236,10 @@ ProviderContainer _sessionContainer({
   return ProviderContainer(
     observers: observers,
     overrides: [
+      votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
+      votingHomeCacheStoreProvider.overrideWithValue(
+        homeCacheStore ?? MemoryVotingHomeCacheStore(),
+      ),
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       if (securityNotifier != null)
         appSecurityProvider.overrideWith(() => securityNotifier),
@@ -11549,8 +12371,11 @@ class _PollEligibilitySyncNotifier extends SyncNotifier {
   void progress() =>
       state = AsyncData(state.requireValue.copyWith(percentage: 50));
 
-  void complete() => state = AsyncData(
-    state.requireValue.copyWith(lastSyncCompletedAt: DateTime(2026, 8, 26)),
+  void complete({int? scannedHeight}) => state = AsyncData(
+    state.requireValue.copyWith(
+      lastSyncCompletedAt: DateTime(2026, 8, 26),
+      scannedHeight: scannedHeight,
+    ),
   );
 }
 
@@ -15141,4 +15966,24 @@ rust_frb_types.RoundRecoveryStateView _withUnconfirmedShares(
     shareDelegations: state.shareDelegations,
     unconfirmedShareDelegations: unconfirmed,
   );
+}
+
+class _CandidateChecker extends VotingParticipationCoordinator {
+  _CandidateChecker(super.ref);
+  final checked = <String>[];
+  @override
+  Future<void> checkRound(
+    String round, {
+    bool force = false,
+    VotingRoundDetails? knownRound,
+    bool Function()? isHomeCurrent,
+  }) async {
+    checked.add(round);
+  }
+}
+
+class _SnapshotCache extends VotingFileCache {
+  String revision = '0';
+  @override
+  Future<String> snapshotRevision(int snapshot) async => revision;
 }

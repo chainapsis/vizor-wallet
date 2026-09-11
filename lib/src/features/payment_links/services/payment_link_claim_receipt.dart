@@ -18,7 +18,7 @@ Future<void> reconcilePaymentLinkClaimReceipt({
   );
   switch (status) {
     case PaymentLinkReceivedStatus.readyToClaim:
-      await store.markReadyToClaim(address: record.address);
+      await store.markReadyToClaim(address: record.address, expected: record);
     case PaymentLinkReceivedStatus.submitting:
       throw StateError(
         'Receipt reconciliation cannot produce submitting state.',
@@ -37,6 +37,7 @@ Future<void> reconcilePaymentLinkClaimReceipt({
       if (record.status == PaymentLinkReceivedStatus.received &&
           hasInvalidatedReceipt) {
         await store.markReceiving(
+          expected: record,
           address: record.address,
           destinationAccountUuid: record.destinationAccountUuid!,
           claimTxids: record.claimTxids!,

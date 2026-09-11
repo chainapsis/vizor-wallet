@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter/services.dart';
@@ -842,6 +843,38 @@ void main() {
 
       expect(find.bySemanticsLabel('Sign in with fingerprint'), findsOneWidget);
       expect(find.byIcon(Icons.fingerprint), findsOneWidget);
+      expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
+    });
+
+    testWidgets('Touch ID devices label the retry action by modality', (
+      tester,
+    ) async {
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
+      final biometric = FakeBiometricUnlock(
+        avail: const BiometricAvailability(
+          supported: true,
+          enrolled: true,
+          kind: BiometricKind.touchId,
+        ),
+        escrow: '123456',
+      );
+
+      await tester.pumpWidget(
+        _app(biometric: biometric, autoPromptBiometric: false),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsLabel('Sign in with Touch ID'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is AppIcon && w.name == AppIcons.touchId,
+        ),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.fingerprint), findsNothing);
       expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
     });
 

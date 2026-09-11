@@ -19,10 +19,11 @@ void runFigmaCompareCaptureTest({
   required AppFormFactor expectedFormFactor,
   required Size defaultLogicalSize,
   required double defaultPixelRatio,
+  FigmaCompareConfiguration? overrideConfiguration,
 }) {
-  testWidgets('captures the configured Figma comparison scenario', (
-    tester,
-  ) async {
+  final testName =
+      'captures ${overrideConfiguration?.scenarioId ?? 'configured scenario'} ${overrideConfiguration?.themeMode.name ?? ''}';
+  testWidgets(testName, (tester) async {
     expect(
       kAppFormFactor,
       expectedFormFactor,
@@ -35,13 +36,15 @@ void runFigmaCompareCaptureTest({
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     }
 
-    final configuration = FigmaCompareConfiguration.fromEnvironment(
-      defaultLogicalSize: defaultLogicalSize,
-      defaultPixelRatio: defaultPixelRatio,
-      defaultScenarioId: expectedFormFactor == AppFormFactor.mobile
-          ? 'mobile-home-default'
-          : 'pay-recipient',
-    );
+    final configuration =
+        overrideConfiguration ??
+        FigmaCompareConfiguration.fromEnvironment(
+          defaultLogicalSize: defaultLogicalSize,
+          defaultPixelRatio: defaultPixelRatio,
+          defaultScenarioId: expectedFormFactor == AppFormFactor.mobile
+              ? 'mobile-home-default'
+              : 'pay-recipient',
+        );
     final scenario = configuration.resolveScenario(expectedFormFactor);
     if (scenario.allowFocus) {
       EditableText.debugDeterministicCursor = true;

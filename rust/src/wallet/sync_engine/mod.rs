@@ -2278,17 +2278,21 @@ pub async fn run_payment_link_claim_sync(
     lightwalletd_url: &str,
     network: WalletNetwork,
     cancel: Arc<AtomicBool>,
+    allow_resubmit: bool,
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_error = String::new();
 
     for attempt in 0..=MAX_RETRIES {
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Gift Card scan cancelled".to_string());
+        }
         if attempt > 0 {
             let delay_secs = 1u64 << attempt;
             for _ in 0..delay_secs {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 if cancel.load(Ordering::Relaxed) {
-                    return Ok(());
+                    return Err("Gift Card scan cancelled".to_string());
                 }
             }
         }
@@ -2298,9 +2302,13 @@ pub async fn run_payment_link_claim_sync(
             lightwalletd_url,
             network,
             cancel.clone(),
+            allow_resubmit,
         )
         .await
         {
+            Ok(()) if cancel.load(Ordering::Relaxed) => {
+                return Err("Gift Card scan cancelled".to_string())
+            }
             Ok(()) => return Ok(()),
             Err(error) => {
                 let strategy = error.recovery_strategy();
@@ -2320,6 +2328,7 @@ async fn run_payment_link_claim_sync_once(
     lightwalletd_url: &str,
     network: WalletNetwork,
     cancel: Arc<AtomicBool>,
+    allow_resubmit: bool,
 ) -> Result<(), SyncError> {
     let should_exit = || cancel.load(Ordering::Relaxed);
     let mut client = open_lwd_channel(lightwalletd_url).await?;
@@ -2420,15 +2429,20 @@ async fn run_payment_link_claim_sync_once(
                 }
                 RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {
                     ensure_complete_scan_state(&mut db, current_tip_height)?;
-                    let _ = crate::wallet::sync::resubmit_pending_transactions(
-                        db_data_path,
-                        lightwalletd_url,
-                        &mut client,
-                        u32::try_from(current_tip_height).unwrap_or(u32::MAX),
-                        &std::collections::HashSet::new(),
-                        &should_exit,
-                    )
-                    .await;
+                    if allow_resubmit {
+                        let exclusions =
+                            crate::wallet::sync::payment_link_resubmit_exclusions(db_data_path)
+                                .map_err(SyncError::db)?;
+                        let _ = crate::wallet::sync::resubmit_pending_transactions(
+                            db_data_path,
+                            lightwalletd_url,
+                            &mut client,
+                            u32::try_from(current_tip_height).unwrap_or(u32::MAX),
+                            &exclusions,
+                            &should_exit,
+                        )
+                        .await;
+                    }
                     return Ok(());
                 }
             }
@@ -2838,6 +2852,7 @@ async fn run_sync_impl(
     let initial_window_start_height =
         earliest_pending_scan_start(&initial_ranges).unwrap_or(current_tip_height);
     let mut queued_ranges = Some(initial_ranges);
+    let mut voting_scan_end = None;
     let mut prev_remaining = initial_total;
     let mut progress_display_mode = ProgressDisplayMode::Work;
     let mut last_progress_percentage: f64 = 0.0;
@@ -3359,6 +3374,14 @@ async fn run_sync_impl(
                     );
                 }
             }
+            // One notification per contiguous scan range, not per batch.
+            if voting_scan_end != Some(start) {
+                crate::wallet::voting::snapshot_changes::record(
+                    db_data_path,
+                    u32::from(start) as u64,
+                );
+            }
+            voting_scan_end = Some(end);
             scan_cached_blocks(
                 &network,
                 &block_source,
@@ -3400,6 +3423,18 @@ async fn run_sync_impl(
                     }
                 }
                 other => SyncError::other(format!("scan: {other}")),
+            })
+            .map(|summary| {
+                // A snapshot can be registered while a contiguous range is
+                // already scanning. Notify actual note changes as well, before
+                // releasing the wallet write lock, so that registration cannot
+                // miss a later mutation in that range.
+                if summary.received_orchard_note_count() > 0
+                    || summary.spent_orchard_note_count() > 0
+                {
+                    crate::wallet::voting::snapshot_changes::record(db_data_path, u32::from(start) as u64);
+                }
+                summary
             })
         });
 

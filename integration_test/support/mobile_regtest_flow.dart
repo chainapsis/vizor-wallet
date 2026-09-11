@@ -265,6 +265,9 @@ Future<void> cleanupE2eWalletState() async {
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
 
+  final votingCache = Directory('${supportDir.path}/$dbName.voting-cache');
+  if (await votingCache.exists()) await votingCache.delete(recursive: true);
+
   for (final name in [
     dbName,
     '$dbName-shm',

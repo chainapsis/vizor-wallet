@@ -93,6 +93,18 @@ class MobileSettingsScreen extends ConsumerWidget {
                 _SettingsGroup(
                   title: 'Personal',
                   rows: [
+                    MobileListRow(
+                      key: const ValueKey(
+                        'mobile_settings_coinholder_voting_row',
+                      ),
+                      leading: _RowIcon(AppIcons.scroll),
+                      label: 'Coinholder voting',
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      chevronColor: settingsChevronColor,
+                      showChevron: true,
+                      onTap: () => context.push('/voting'),
+                    ),
                     _GiftCardsRow(
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,

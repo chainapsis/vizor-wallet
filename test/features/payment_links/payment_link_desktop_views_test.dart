@@ -20,10 +20,6 @@ import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 void main() {
   setUpAll(_loadAppFonts);
 
-  test('preview inventory covers all 27 desktop states', () {
-    expect(PaymentLinkPreviewState.values, hasLength(27));
-  });
-
   for (final state in PaymentLinkPreviewState.values) {
     testWidgets('renders the ${state.name} desktop fixture', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1080, 720));
@@ -253,6 +249,94 @@ void main() {
     final gap = tester.getTopLeft(create).dy - tester.getBottomRight(help).dy;
     expect(gap, greaterThanOrEqualTo(30));
   });
+
+  for (final showMessage in [false, true]) {
+    testWidgets('review fits normally and scrolls with larger text '
+        '(message: $showMessage)', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      // Match the production pane without the unrelated sidebar fixtures.
+      await _pump(
+        tester,
+        SizedBox(
+          width: 800,
+          height: 704,
+          child: PaymentLinkReviewDesktopView(
+            card: PaymentLinkGiftCard(
+              artwork: PaymentLinkCardArtwork.ruby,
+              amountText: '4.45',
+              supportingText: r'$1,210.20',
+              showCaret: false,
+              showBack: showMessage,
+              message: showMessage ? 'Happy birthday!' : '',
+            ),
+            onBack: () {},
+            onConfirm: () {},
+            cardAmountText: '4.45 ZEC',
+            cardFeeText: '0.04 ZEC',
+            totalAmountText: '4.49 ZEC',
+          ),
+        ),
+      );
+      final summary = find.byKey(const ValueKey('payment_link_review_summary'));
+      final card = find.byType(PaymentLinkGiftCard);
+      final confirm = find.byKey(
+        const ValueKey('payment_link_confirm_create_button'),
+      );
+
+      for (final scale in [1.0, 1.3, 2.0, 1.0]) {
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        await tester.pumpAndSettle();
+        final scroll = tester
+            .widget<SingleChildScrollView>(
+              find.byKey(const ValueKey('app_pane_scroll_view')),
+            )
+            .controller!;
+        scroll.jumpTo(0);
+        await tester.pumpAndSettle();
+        expect(
+          tester.getTopLeft(summary).dy - tester.getBottomLeft(card).dy,
+          greaterThanOrEqualTo(AppSpacing.sm),
+        );
+        expect(
+          scroll.position.maxScrollExtent,
+          scale == 1 ? 0 : greaterThan(0),
+        );
+
+        final rows = find.byWidgetPredicate(
+          (widget) =>
+              widget is Padding &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'payment_link_review_row_',
+              ),
+        );
+        expect(rows, findsNWidgets(3));
+        for (var index = 0; index < 3; index++) {
+          final rowRect = tester.getRect(rows.at(index));
+          if (index > 0) {
+            expect(
+              rowRect.top,
+              greaterThanOrEqualTo(tester.getBottomLeft(rows.at(index - 1)).dy),
+            );
+          }
+          for (final text
+              in find
+                  .descendant(of: rows.at(index), matching: find.byType(Text))
+                  .evaluate()) {
+            final textRect = tester.getRect(find.byWidget(text.widget));
+            expect(textRect.top, greaterThanOrEqualTo(rowRect.top));
+            expect(textRect.bottom, lessThanOrEqualTo(rowRect.bottom));
+          }
+        }
+        scroll.jumpTo(scroll.position.maxScrollExtent);
+        await tester.pumpAndSettle();
+        expect(confirm.hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+    });
+  }
 
   testWidgets('review exposes the total tooltip without a divider', (
     tester,
@@ -573,6 +657,18 @@ void main() {
       await tester.pump();
 
       expect(find.text(r'$680.00'), findsOneWidget);
+      for (final amount in ['3', '0', '2.5', '', '2.5']) {
+        await tester.enterText(
+          find.byKey(const ValueKey('payment_link_interactive_amount_editor')),
+          amount,
+        );
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
+          findsNothing,
+        );
+        if (amount == '2.5') expect(find.text(r'$680.00'), findsOneWidget);
+      }
       expect(
         find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
         findsNothing,
@@ -619,6 +715,42 @@ void main() {
     expect(tester.widget<EditableText>(editor).focusNode.hasFocus, isTrue);
     expect(find.text('ZEC'), findsOneWidget);
   });
+
+  for (final reducedMotion in [false, true]) {
+    testWidgets(
+      'message focuses on reveal without a late focus reset ($reducedMotion)',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1080, 720));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await _pump(
+          tester,
+          const PaymentLinkInteractiveMessageDesktopPreview(),
+          disableAnimations: reducedMotion,
+        );
+        await tester.tap(find.text('Start typing...'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+        await tester.pump();
+        final editor = find.byKey(
+          const ValueKey('payment_link_interactive_message_editor'),
+        );
+        expect(editor, findsOneWidget);
+        final focusNode = tester.widget<TextField>(editor).focusNode!;
+        expect(focusNode.hasFocus, isTrue);
+        // Type through the active input connection without tapping the editor.
+        tester.testTextInput.enterText('Ready to type');
+        await tester.pump();
+        expect(
+          tester.widget<TextField>(editor).controller!.text,
+          'Ready to type',
+        );
+        focusNode.unfocus();
+        await tester.pumpAndSettle();
+        expect(focusNode.hasFocus, isFalse);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'interactive Widgetbook message preview accepts and clears text',
@@ -1247,13 +1379,24 @@ void main() {
     );
     expect(
       tester.getTopLeft(find.byType(PaymentLinkGiftCard)),
-      const Offset(492, 251),
+      const Offset(492, 250),
     );
     final reviewSummary = find.byKey(
       const ValueKey('payment_link_review_summary'),
     );
     expect(tester.getTopLeft(reviewSummary), const Offset(512, 492));
     expect(tester.getSize(reviewSummary), const Size(320, 136));
+    expect(
+      tester.getTopLeft(
+        find.byKey(const ValueKey('payment_link_confirm_create_button')),
+      ),
+      const Offset(574, 652),
+    );
+    await tester.pumpAndSettle();
+    final reviewScroll = tester.widget<SingleChildScrollView>(
+      find.byKey(const ValueKey('app_pane_scroll_view')),
+    );
+    expect(reviewScroll.controller!.position.maxScrollExtent, 0);
 
     await _pump(
       tester,

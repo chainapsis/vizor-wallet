@@ -65,7 +65,6 @@ enum PaymentLinkPreviewState {
   redeemLongSyncWarning,
   redeemLoading,
   redeemInvalid,
-  redeemUnavailable,
   receivedWaiting,
   received,
   receivedMessage,
@@ -192,11 +191,6 @@ Widget buildPaymentLinkRedeemLoadingUseCase(BuildContext context) =>
 Widget buildPaymentLinkRedeemInvalidUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(
       state: PaymentLinkPreviewState.redeemInvalid,
-    );
-
-Widget buildPaymentLinkRedeemUnavailableUseCase(BuildContext context) =>
-    const PaymentLinkDesktopPreview(
-      state: PaymentLinkPreviewState.redeemUnavailable,
     );
 
 Widget buildPaymentLinkReceivedUseCase(BuildContext context) =>
@@ -512,12 +506,6 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         subtitle: 'Copy the card link you’ve received, and paste it below.',
         pasteLabel: 'Paste card link',
         clearLabel: 'Clear clipboard',
-      ),
-      PaymentLinkPreviewState.redeemUnavailable => PaymentLinkRedeemDesktopView(
-        state: PaymentLinkRedeemVisualState.unavailable,
-        onBack: _noop,
-        onPaste: _noop,
-        onClearClipboard: _noop,
       ),
       PaymentLinkPreviewState.received => const _PaymentLinkReceivedPreview(
         hasMessage: false,
@@ -888,11 +876,6 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
     super.initState();
     _controller = TextEditingController(text: widget.initialMessage);
     _editorRevealed = widget.initialEditorRevealed;
-    if (_editorRevealed) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _focusNode.context != null) _focusNode.requestFocus();
-      });
-    }
   }
 
   @override
@@ -914,14 +897,10 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
       return;
     }
     setState(() => _editorRevealed = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_editorRevealed || _focusNode.context == null) return;
-      _focusNode.requestFocus();
-    });
   }
 
-  void _focusEditorAfterFlip() {
-    if (!mounted || !_editorRevealed) return;
+  void _focusVisibleEditor(bool showingBack) {
+    if (!showingBack || !mounted || !_editorRevealed) return;
     _focusNode.requestFocus();
   }
 
@@ -962,7 +941,7 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
                   onDeleteMessage: _hasMessage ? _clearMessage : null,
                   semanticLabel: 'Gift card message input',
                 ),
-                onAnimationEnd: _focusEditorAfterFlip,
+                onVisibleSideChanged: _focusVisibleEditor,
               ),
               onBack: _noop,
               onSkip: _clearMessage,
@@ -1079,15 +1058,17 @@ class _PaymentLinkInteractiveDesktopPreviewState
   late final TextEditingController _amountController;
   final FocusNode _amountFocusNode = FocusNode();
   PaymentLinkCardArtwork _selectedArtwork = PaymentLinkCardArtwork.gift;
-  Timer? _fiatTimer;
-  String? _fiatText;
-  bool _fiatLoading = false;
+  Timer? _priceTimer;
+  bool _priceLoading = true;
   bool _amountFocused = false;
 
   @override
   void initState() {
     super.initState();
     _amountController = TextEditingController(text: widget.initialAmount);
+    _priceTimer = Timer(kPaymentLinkPreviewFiatDelay, () {
+      if (mounted) setState(() => _priceLoading = false);
+    });
     _amountFocused = widget.focusAmount;
     _amountFocusNode.addListener(_handleAmountFocus);
     if (widget.focusAmount) {
@@ -1099,7 +1080,7 @@ class _PaymentLinkInteractiveDesktopPreviewState
 
   @override
   void dispose() {
-    _fiatTimer?.cancel();
+    _priceTimer?.cancel();
     _amountFocusNode
       ..removeListener(_handleAmountFocus)
       ..dispose();
@@ -1112,28 +1093,16 @@ class _PaymentLinkInteractiveDesktopPreviewState
     setState(() => _amountFocused = _amountFocusNode.hasFocus);
   }
 
-  void _handleAmountChanged(String value) {
-    _fiatTimer?.cancel();
+  String? get _fiatText {
+    final value = _amountController.text;
     final amount = double.tryParse(value.startsWith('.') ? '0$value' : value);
-    if (amount == null || amount <= 0) {
-      setState(() {
-        _fiatLoading = false;
-        _fiatText = null;
-      });
-      return;
-    }
+    if (amount == null || amount < 0) return null;
+    if (amount == 0) return r'$0.00';
+    return _priceLoading ? null : _formatUsd(amount * _usdPerZec);
+  }
 
-    setState(() {
-      _fiatLoading = true;
-      _fiatText = null;
-    });
-    _fiatTimer = Timer(kPaymentLinkPreviewFiatDelay, () {
-      if (!mounted || _amountController.text != value) return;
-      setState(() {
-        _fiatLoading = false;
-        _fiatText = _formatUsd(amount * _usdPerZec);
-      });
-    });
+  void _handleAmountChanged(String _) {
+    setState(() {});
   }
 
   PaymentLinkAmountVisualState get _visualState {
@@ -1143,7 +1112,7 @@ class _PaymentLinkInteractiveDesktopPreviewState
           : PaymentLinkAmountVisualState.empty;
     }
     if (!_hasPositiveAmount) return PaymentLinkAmountVisualState.focused;
-    if (_fiatLoading) return PaymentLinkAmountVisualState.fiatLoading;
+    if (_priceLoading) return PaymentLinkAmountVisualState.fiatLoading;
     if (_fiatText != null) return PaymentLinkAmountVisualState.fiatLoaded;
     return PaymentLinkAmountVisualState.amount;
   }
@@ -1188,7 +1157,7 @@ class _PaymentLinkInteractiveDesktopPreviewState
                 onUseMax: _useMax,
                 showMaxButton: true,
                 supportingText: _fiatText,
-                supportingLoading: _fiatLoading,
+                supportingLoading: _hasPositiveAmount && _priceLoading,
                 emptyAmountLabel: 'Enter Amount',
                 semanticLabel: 'Gift card amount input',
               ),

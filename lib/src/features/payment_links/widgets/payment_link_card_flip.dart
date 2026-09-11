@@ -16,7 +16,7 @@ class PaymentLinkCardFlip extends StatefulWidget {
     required this.showBack,
     required this.front,
     required this.back,
-    this.onAnimationEnd,
+    this.onVisibleSideChanged,
     super.key,
   });
 
@@ -28,7 +28,10 @@ class PaymentLinkCardFlip extends StatefulWidget {
   final bool showBack;
   final Widget front;
   final Widget back;
-  final VoidCallback? onAnimationEnd;
+
+  /// Called after the visible face is laid out, including the initial face.
+  /// This lets an editor take focus as soon as its face becomes interactive.
+  final ValueChanged<bool>? onVisibleSideChanged;
 
   @override
   State<PaymentLinkCardFlip> createState() => _PaymentLinkCardFlipState();
@@ -49,6 +52,7 @@ class _PaymentLinkCardFlipState extends State<PaymentLinkCardFlip>
     value: widget.showBack ? 1 : 0,
   );
   bool? _lastMotionDisabled;
+  bool? _lastVisibleSide;
 
   bool get _motionDisabled =>
       (MediaQuery.maybeOf(context)?.disableAnimations ?? false) ||
@@ -73,17 +77,10 @@ class _PaymentLinkCardFlipState extends State<PaymentLinkCardFlip>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.showBack == widget.showBack) return;
     final target = widget.showBack ? 1.0 : 0.0;
-    if (_motionDisabled) {
-      widget.onAnimationEnd?.call();
-      return;
-    }
-    _controller
-        .animateWith(SpringSimulation(_spring, _controller.value, target, 0))
-        .then((_) {
-          if (mounted && widget.showBack == (target == 1)) {
-            widget.onAnimationEnd?.call();
-          }
-        });
+    if (_motionDisabled) return;
+    _controller.animateWith(
+      SpringSimulation(_spring, _controller.value, target, 0),
+    );
   }
 
   @override
@@ -113,16 +110,9 @@ class _PaymentLinkCardFlipState extends State<PaymentLinkCardFlip>
         final rawAngle = value * math.pi;
         // Keep a narrow projected width around the face swap instead of
         // rendering a fully edge-on (and therefore invisible) card frame.
-        final angle =
-            showingBack
-                ? math.max(
-                  rawAngle,
-                  (math.pi / 2) + PaymentLinkCardFlip.edgeBand,
-                )
-                : math.min(
-                  rawAngle,
-                  (math.pi / 2) - PaymentLinkCardFlip.edgeBand,
-                );
+        final angle = showingBack
+            ? math.max(rawAngle, (math.pi / 2) + PaymentLinkCardFlip.edgeBand)
+            : math.min(rawAngle, (math.pi / 2) - PaymentLinkCardFlip.edgeBand);
         final transform = Matrix4.identity();
         // PaymentLinkCardMotion owns the camera when present. Keeping the
         // local flip rotation but omitting a second perspective avoids the
@@ -145,13 +135,25 @@ class _PaymentLinkCardFlipState extends State<PaymentLinkCardFlip>
     );
   }
 
-  static Widget _faces({
+  Widget _faces({
     required bool showBack,
     required Widget front,
     required Widget back,
     required PaymentLinkCardMotionScope? motion,
     required double rotation,
   }) {
+    if (_lastVisibleSide != showBack) {
+      _lastVisibleSide = showBack;
+      if (widget.onVisibleSideChanged != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted &&
+              _lastVisibleSide == showBack &&
+              widget.showBack == showBack) {
+            widget.onVisibleSideChanged?.call(showBack);
+          }
+        });
+      }
+    }
     Widget faces = IndexedStack(
       index: showBack ? 1 : 0,
       children: [

@@ -1,3 +1,5 @@
+import 'package:zcash_wallet/src/providers/voting/voting_home_cache_provider.dart';
+import 'package:zcash_wallet/src/services/voting/voting_file_cache.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -658,6 +660,72 @@ void main() {
     await container.read(accountProvider.future);
 
     await container.read(accountProvider.notifier).removeAccount('account-2');
+
+    expect(shareTracking.isQuiesced('account-2'), isFalse);
+    expect(restoreRequests, 1);
+    expect(_rustApi.deletedAccountUuids, ['account-2']);
+    expect(
+      container
+          .read(accountProvider)
+          .value!
+          .accounts
+          .map((account) => account.uuid),
+      ['account-1'],
+    );
+  });
+
+  test('note cleanup still runs when Home cache persistence fails', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final supportDirectory = Directory.systemTemp.createTempSync(
+      'vizor-account-removal',
+    );
+    addTearDown(() {
+      if (supportDirectory.existsSync()) {
+        supportDirectory.deleteSync(recursive: true);
+      }
+    });
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, (call) async {
+          if (call.method == 'getApplicationSupportDirectory') {
+            return supportDirectory.path;
+          }
+          throw MissingPluginException('Unexpected path provider call.');
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+    });
+
+    final shareTracking = VotingShareTrackingRegistry();
+    var restoreRequests = 0;
+    shareTracking.addRestoreRequestListener(() => restoreRequests++);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        votingHomeCacheStoreProvider.overrideWithValue(
+          _FailingHomeCacheStore(),
+        ),
+        votingShareTrackingRegistryProvider.overrideWithValue(shareTracking),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    final root = '${await getWalletDbPath()}.voting-cache';
+    final removedNotes = File(
+      '$root/${VotingFileCache.digest('account-2')}/notes.json',
+    );
+    final keptNotes = File(
+      '$root/${VotingFileCache.digest('account-1')}/notes.json',
+    );
+    for (final file in [removedNotes, keptNotes]) {
+      await file.parent.create(recursive: true);
+      await file.writeAsString('{}');
+    }
+    await container.read(accountProvider.notifier).removeAccount('account-2');
+    expect(await removedNotes.parent.exists(), false);
+    expect(await keptNotes.exists(), true);
 
     expect(shareTracking.isQuiesced('account-2'), isFalse);
     expect(restoreRequests, 1);
@@ -1343,4 +1411,12 @@ AppBootstrapState _bootstrapWithAccounts({bool isUnlocked = true}) {
     isUnlocked: isUnlocked,
     passwordRotationRecoveryFailed: false,
   );
+}
+
+class _FailingHomeCacheStore implements VotingHomeCacheStore {
+  @override
+  Future<String?> read() async => null;
+  @override
+  Future<void> write(String value) async =>
+      throw StateError('disk write failed');
 }

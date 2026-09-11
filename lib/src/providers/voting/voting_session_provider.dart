@@ -23,7 +23,9 @@ import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_models.dart';
 import '../app_security_provider.dart';
+import 'voting_participation_provider.dart';
 import 'voting_config_provider.dart';
+import 'voting_home_cache_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
@@ -2848,6 +2850,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       txHash: txHash,
       eventsJson: confirmation.eventsJson,
     );
+    try {
+      await ref
+          .read(votingParticipationClientProvider)
+          .refreshLocal(_apiRoundContext(context));
+    } catch (_) {
+      // Confirmation is durable in Rust. A later prepare reconciles it again.
+      debugPrint('Voting participation local cache update deferred');
+    }
     return (txHash: txHash, leafIndex: delegationConfirmation.vanLeafPosition);
   }
 
@@ -4202,9 +4212,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required _VotingSessionContext context,
   }) async {
     try {
-      final eligibility = await ref
-          .read(votingRustApiProvider)
-          .checkVotingEligibility(ctx: _apiRoundContext(context));
+      final eligibility = await observeVotingHomeResult(
+        ref,
+        operation: () => ref
+            .read(votingRustApiProvider)
+            .checkVotingEligibility(ctx: _apiRoundContext(context)),
+        record: (cache, result) => cache.recordEligibility(
+          votingHomeFactKey(
+            context.network,
+            context.config.sourceFingerprint,
+            context.accountUuid,
+            context.round.roundId,
+          ),
+          result.isEligible,
+          context.round.snapshotHeight,
+        ),
+      );
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final successPhase = current.phase == VotingSessionPhase.error
@@ -4272,6 +4295,26 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     String roundId, {
     bool checkStaleAction = true,
   }) async {
+    final release = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork();
+    if (release == null) {
+      throw StateError('Voting work is paused for wallet changes.');
+    }
+    try {
+      return await _loadContextWithCache(
+        roundId,
+        checkStaleAction: checkStaleAction,
+      );
+    } finally {
+      release();
+    }
+  }
+
+  Future<_VotingSessionContext> _loadContextWithCache(
+    String roundId, {
+    required bool checkStaleAction,
+  }) async {
     void checkAction() {
       if (checkStaleAction) _throwIfActionStale();
     }
@@ -4308,14 +4351,26 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // Build a temporary context without roundPlan to derive proposalIds.
     final proposals = proposalsFromRound(round);
     final proposalIds = proposals.map((p) => p.id).toList();
-    final roundPlan = await ref
-        .read(votingRecoveryServiceProvider)
-        .loadRoundPlan(
-          dbPath: dbPath,
-          accountUuid: accountUuid,
-          roundId: round.roundId,
-          proposalIds: proposalIds,
-        );
+    final roundPlan = await observeVotingHomeResult(
+      ref,
+      operation: () => ref
+          .read(votingRecoveryServiceProvider)
+          .loadRoundPlan(
+            dbPath: dbPath,
+            accountUuid: accountUuid,
+            roundId: round.roundId,
+            proposalIds: proposalIds,
+          ),
+      record: (cache, plan) => cache.recordPlan(
+        votingHomeFactKey(
+          endpoint.networkName,
+          config.sourceFingerprint,
+          accountUuid,
+          round.roundId,
+        ),
+        plan,
+      ),
+    );
     checkAction();
     final context = _VotingSessionContext(
       sessionGeneration: _sessionGeneration,
@@ -4372,14 +4427,26 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context,
   ) {
     final proposals = proposalsFromRound(context.round);
-    return ref
-        .read(votingRecoveryServiceProvider)
-        .loadRoundPlan(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-          proposalIds: proposals.map((p) => p.id).toList(),
-        );
+    return observeVotingHomeResult(
+      ref,
+      operation: () => ref
+          .read(votingRecoveryServiceProvider)
+          .loadRoundPlan(
+            dbPath: context.dbPath,
+            accountUuid: context.accountUuid,
+            roundId: context.round.roundId,
+            proposalIds: proposals.map((p) => p.id).toList(),
+          ),
+      record: (cache, plan) => cache.recordPlan(
+        votingHomeFactKey(
+          context.network,
+          context.config.sourceFingerprint,
+          context.accountUuid,
+          context.round.roundId,
+        ),
+        plan,
+      ),
+    );
   }
 
   Future<void> _waitUntilWalletReadyForVoting(

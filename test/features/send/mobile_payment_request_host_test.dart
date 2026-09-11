@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart'
@@ -64,8 +65,13 @@ class _RustApiFake implements RustLibApi {
 }
 
 class _FakeAddressBookNotifier extends AddressBookNotifier {
+  _FakeAddressBookNotifier(this.contacts);
+
+  final FutureOr<List<AddressBookContact>> contacts;
+
   @override
-  Future<AddressBookState> build() async => const AddressBookState();
+  Future<AddressBookState> build() async =>
+      AddressBookState(contacts: await contacts);
 }
 
 class _FakeAccountNotifier extends AccountNotifier {
@@ -120,6 +126,7 @@ PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
         required BigInt proposalId,
         required String sendFlowId,
         required String logContext,
+        required String accountUuid,
       }) async {
         final pending = _discardGate;
         if (pending != null) await pending.future;
@@ -143,6 +150,8 @@ class _Harness {
 Future<_Harness> _pumpHost(
   WidgetTester tester, {
   bool realComposer = false,
+  FutureOr<List<AddressBookContact>> contacts = const [],
+  FutureOr<Map<String, AccountInfo>> ownAccounts = const {},
 }) async {
   tester.view.physicalSize = const Size(393, 852);
   tester.view.devicePixelRatio = 1.0;
@@ -210,8 +219,10 @@ Future<_Harness> _pumpHost(
         zecHomeUsdUnitPriceProvider.overrideWithValue(null),
         zecLiveUsdUnitPriceProvider.overrideWithValue(100),
         sendProvingKeyWarmupProvider.overrideWithValue(() {}),
-        addressBookProvider.overrideWith(_FakeAddressBookNotifier.new),
-        ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+        addressBookProvider.overrideWith(
+          () => _FakeAddressBookNotifier(contacts),
+        ),
+        ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
       ],
       child: Consumer(
         builder: (context, ref, _) {
@@ -231,6 +242,10 @@ Future<_Harness> _pumpHost(
     ),
   );
   await tester.pumpAndSettle();
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
   return harness;
 }
 
@@ -243,6 +258,170 @@ void main() {
     _discarded.clear();
     _discardGate = null;
   });
+
+  testWidgets('dragging the sheet down dismisses and releases its proposal', (
+    tester,
+  ) async {
+    final harness = await _pumpHost(tester);
+    harness.container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    final title = find.text('Payment request');
+    final start = tester.getCenter(title);
+    final gesture = await tester.startGesture(start);
+    await gesture.moveBy(const Offset(0, 20));
+    await gesture.moveBy(const Offset(0, 100));
+    await tester.pump();
+    expect(tester.getCenter(title).dy, greaterThan(start.dy));
+    await gesture.moveBy(const Offset(0, 300));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Payment request'), findsNothing);
+    expect(harness.container.read(paymentRequestFlowProvider), isNull);
+    expect(_discarded, [BigInt.from(11)]);
+    expect(harness.location, '/home');
+  });
+
+  testWidgets('a short drag returns the sheet to its original position', (
+    tester,
+  ) async {
+    final harness = await _pumpHost(tester);
+    harness.container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    final title = find.text('Payment request');
+    final start = tester.getCenter(title);
+    final gesture = await tester.startGesture(start);
+    await gesture.moveBy(const Offset(0, 20));
+    await gesture.moveBy(const Offset(0, 40));
+    await tester.pump();
+    expect(tester.getCenter(title).dy, greaterThan(start.dy));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(tester.getCenter(title), start);
+    expect(harness.container.read(paymentRequestFlowProvider), isNotNull);
+    expect(_discarded, isEmpty);
+  });
+
+  testWidgets('a replacement request survives the previous sheet closing', (
+    tester,
+  ) async {
+    final harness = await _pumpHost(tester);
+    final notifier = harness.container.read(
+      paymentRequestFlowProvider.notifier,
+    );
+    notifier.present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    final originalTop = tester.getTopLeft(find.text('Payment request')).dy;
+    await tester.fling(
+      find.text('Payment request'),
+      const Offset(0, 100),
+      1000,
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(
+      tester.getTopLeft(find.text('Payment request')).dy,
+      greaterThan(originalTop),
+    );
+    notifier.present(
+      const SendPrefillArgs(
+        id: 'replacement',
+        source: kPaymentUriPrefillSource,
+        address: _address,
+        amountText: '0.75',
+      ),
+      source: PaymentRequestSource.link,
+    );
+    // Let the old animation finish in the frame that rebuilds the host for
+    // the new request: its completion callback runs before that rebuild.
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Payment request'), findsOneWidget);
+    expect(
+      harness.container.read(paymentRequestFlowProvider)!.prefill.id,
+      'replacement',
+    );
+    expect(find.text('0.75 ZEC'), findsOneWidget);
+    expect(_discarded, [BigInt.from(11)]);
+  });
+
+  for (final ownAccount in [false, true]) {
+    testWidgets(
+      'the mobile recipient updates when ${ownAccount ? 'own accounts' : 'contacts'} load',
+      (tester) async {
+        final contacts = Completer<List<AddressBookContact>>();
+        final accounts = Completer<Map<String, AccountInfo>>();
+        final harness = await _pumpHost(
+          tester,
+          contacts: contacts.future,
+          ownAccounts: accounts.future,
+        );
+        harness.container
+            .read(paymentRequestFlowProvider.notifier)
+            .present(_request, source: PaymentRequestSource.qrCode);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Payment request'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('payment_request_recipient_name')),
+          findsNothing,
+        );
+        contacts.complete(
+          ownAccount
+              ? []
+              : [
+                  const AddressBookContact(
+                    id: 'contact',
+                    label: 'Blue Door Coffee',
+                    network: AddressBookNetwork.zcash,
+                    address: _address,
+                    profilePictureId: 'pfp-03',
+                    createdAtMs: 0,
+                    updatedAtMs: 0,
+                  ),
+                ],
+        );
+        accounts.complete(
+          ownAccount
+              ? {
+                  _address: const AccountInfo(
+                    uuid: 'account-2',
+                    name: 'Savings',
+                    order: 1,
+                  ),
+                }
+              : {},
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(ownAccount ? 'Savings' : 'Blue Door Coffee'),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Your account'),
+          ownAccount ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('payment_request_recipient_address')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('payment_request_recipient_avatar')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'Enter amount opens the real amount step for an address-only request',

@@ -16,8 +16,13 @@ enum PaymentLinkCardsTab { created, received }
 /// The rows themselves are form-factor specific widgets — this only carries
 /// the heading the list renders above them.
 class PaymentLinkCardsSection {
-  const PaymentLinkCardsSection({required this.label, required this.cards});
+  const PaymentLinkCardsSection({
+    required this.label,
+    required this.cards,
+    this.header,
+  });
 
   final String label;
+  final Widget? header;
   final List<Widget> cards;
 }

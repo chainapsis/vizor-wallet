@@ -18,17 +18,6 @@ typedef PaymentLinkFundingHistoryLoader =
 typedef PaymentLinkOwnFundingHistoryLoader =
     Future<List<rust_sync.TransactionInfo>> Function(VizorPaymentLink link);
 
-/// How far past its submission height an ambiguous funding broadcast is
-/// treated as never having reached the chain.
-///
-/// A Zcash transaction expires 40 blocks after the height it was built at
-/// (ZIP-203), and the wallet's own scan trails the tip; 20 blocks of margin
-/// keeps a slow scan from discarding a Gift Card that really was funded.
-const kPaymentLinkAmbiguousFundingExpiryDelta = 60;
-
-/// How long an ambiguous funding is kept when no submission height was known.
-const kPaymentLinkAmbiguousFundingUndatedRetention = Duration(hours: 24);
-
 /// How long a draft that never started its broadcast is kept before recovery
 /// drops it — long enough for a creation still proposing in this process.
 const kPaymentLinkInertDraftRetention = Duration(minutes: 10);
@@ -139,20 +128,6 @@ List<String> _paymentLinkOwnFundingTxids(
       .toList();
 }
 
-bool _paymentLinkAmbiguousFundingExpired({
-  required PaymentLinkRecoveryRecord record,
-  required BigInt scannedHeight,
-}) {
-  final submittedAtHeight = record.submittedAtHeight ?? 0;
-  if (submittedAtHeight <= 0) {
-    // No height was known at submission, so age is the only measure left.
-    return DateTime.now().toUtc().difference(record.updatedAt) >
-        kPaymentLinkAmbiguousFundingUndatedRetention;
-  }
-  return scannedHeight >=
-      BigInt.from(submittedAtHeight + kPaymentLinkAmbiguousFundingExpiryDelta);
-}
-
 class PaymentLinkRecoveryReconciler {
   const PaymentLinkRecoveryReconciler(
     this._store, {
@@ -244,7 +219,7 @@ class PaymentLinkRecoveryReconciler {
       late final BigInt scannedHeight;
       late final Map<String, List<rust_sync.TransactionInfo>>
       transactionsByAccount;
-      if (preparedDrafts.isEmpty && ambiguousDrafts.isEmpty) {
+      if (preparedDrafts.isEmpty) {
         transactionsByAccount = await _loadTransactionsByAccount(accountUuids);
       } else {
         final lookupResults = await Future.wait<Object>([
@@ -315,17 +290,12 @@ class PaymentLinkRecoveryReconciler {
             changed = true;
             continue;
           }
-          if (!_paymentLinkAmbiguousFundingExpired(
-            record: record,
-            scannedHeight: scannedHeight,
-          )) {
-            continue;
-          }
-          // The wallet scanned well past any height this broadcast could have
-          // been mined at and the Gift Card holds nothing: the transaction
-          // never reached the chain.
-          await _store.removeUnbroadcastDraft(address: record.link.address);
-          changed = true;
+          // Absence is not proof that the broadcast failed. The Gift Card is
+          // scanned through separately selected lightwalletd infrastructure,
+          // which can omit compact-block data or disagree with the source
+          // wallet's scan. Retain the bearer secret unless positive funding
+          // evidence promotes it; automatic cleanup could make mined funds
+          // permanently unspendable.
         } catch (error) {
           log(
             'PaymentLinkRecoveryReconciler: ambiguous funding update failed '

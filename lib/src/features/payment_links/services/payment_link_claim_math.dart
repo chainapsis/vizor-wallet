@@ -176,20 +176,41 @@ bool paymentLinkClaimTransactionsExpired({
   );
 }
 
+/// A partially successful claim can stop waiting only once every leg is
+/// terminal, with at least one failed leg. Mined legs need the same scanned
+/// confirmation window used for conflict evidence and recovery cleanup.
 @visibleForTesting
-List<String> paymentLinkActiveClaimTxids(
-  Iterable<rust_sync.TransactionInfo> transactions,
-) {
-  return transactions
-      .where(
-        (transaction) =>
-            transaction.txKind == 'sent' &&
-            !transaction.expiredUnmined &&
-            transaction.txidHex.trim().isNotEmpty,
-      )
-      .map((transaction) => transaction.txidHex.trim())
-      .toSet()
-      .toList();
+bool paymentLinkClaimFailureSettled({
+  required String claimTxids,
+  required List<rust_sync.TransactionInfo> transactions,
+  required List<String> conflictedTxids,
+  required BigInt verifiedHeight,
+}) {
+  final ids = claimTxids
+      .split(',')
+      .map(normalizePaymentLinkTxid)
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  if (ids.isEmpty) return false;
+  bool failed(String id) =>
+      conflictedTxids.any((conflict) => paymentLinkTxidsMatch(id, conflict)) ||
+      transactions.any(
+        (tx) => paymentLinkTxidsMatch(id, tx.txidHex) && tx.expiredUnmined,
+      );
+  return ids.any(failed) &&
+      ids.every(
+        (id) =>
+            failed(id) ||
+            transactions.any(
+              (tx) =>
+                  paymentLinkTxidsMatch(id, tx.txidHex) &&
+                  paymentLinkConfirmationCount(
+                        minedHeight: tx.minedHeight,
+                        chainTipHeight: verifiedHeight,
+                      ) >=
+                      kPaymentLinkClaimRecoveryConfirmationTarget,
+            ),
+      );
 }
 
 const _submittedPaymentLinkFundingStatuses = {

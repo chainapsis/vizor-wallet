@@ -55,6 +55,7 @@ abstract final class AppIcons {
   static const eyeClosed = 'eye_closed';
   static const expand = 'expand';
   static const faceId = 'face_id';
+  static const touchId = 'touch_id';
   static const filter = 'filter';
   static const github = 'github';
   static const giftCard = 'gift_card';

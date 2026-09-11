@@ -2,6 +2,11 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'package:zcash_wallet/src/providers/voting/voting_home_cache_provider.dart';
+import 'package:zcash_wallet/src/services/voting/voting_models.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_home_entry_provider.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
@@ -10,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_participation_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -184,6 +190,21 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+class _VotingRpcNotifier extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() => defaultRpcEndpointConfig('main');
+  void useTestnet() => state = defaultRpcEndpointConfig('test');
+}
+
+class _HomeParticipationRecorder extends VotingParticipationCoordinator {
+  _HomeParticipationRecorder(super.ref, this.guards);
+  final List<bool Function()> guards;
+  @override
+  Future<void> checkHomeCandidates({bool Function()? isHomeCurrent}) async {
+    guards.add(isHomeCurrent!);
+  }
+}
+
 Widget _app(
   SyncState syncState, {
   ZecMarketData? marketData = const ZecMarketData(
@@ -193,6 +214,12 @@ Widget _app(
   FakeSyncNotifier? syncNotifier,
   SyncKeepAwakeNotifier? syncKeepAwakeNotifier,
   bool? swapEnabled,
+  bool showVoting = true,
+  VotingHomeCacheStore? deferredVotingStore,
+  DateTime Function()? votingNow,
+  Future<void> Function()? refreshVoting,
+  List<bool Function()>? participationGuards,
+  RpcEndpointNotifier? rpcNotifier,
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
   IronwoodHomeMigrationCtaState? migrationPresentationCta,
@@ -278,6 +305,38 @@ Widget _app(
 
   return ProviderScope(
     overrides: [
+      if (participationGuards != null)
+        votingParticipationProvider.overrideWith(
+          (ref) => _HomeParticipationRecorder(ref, participationGuards),
+        ),
+      if (rpcNotifier != null)
+        rpcEndpointProvider.overrideWith(() => rpcNotifier),
+      if (deferredVotingStore == null)
+        votingHomeEntryVisibleProvider.overrideWithValue(showVoting)
+      else ...[
+        votingHomeCacheStoreProvider.overrideWithValue(deferredVotingStore),
+        votingHomeEntryVisibleProvider.overrideWith((ref) {
+          ref.watch(votingHomeCacheProvider);
+          return ref
+              .read(votingHomeCacheProvider.notifier)
+              .shouldShow(
+                listKey: votingHomeListKey('main', 'source'),
+                network: 'main',
+                accountUuid: 'account',
+                showTestRounds: false,
+                now: (votingNow ?? DateTime.now)(),
+              );
+        }),
+      ],
+      if (deferredVotingStore == null)
+        votingHomeRefreshActionProvider.overrideWithValue(
+          refreshVoting ?? () async {},
+        )
+      else
+        votingHomeRefreshActionProvider.overrideWith(
+          (ref) =>
+              () => ref.read(votingHomeCacheProvider.notifier).ensureLoaded(),
+        ),
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       if (migrationCompletion != null || migrationCompletionFuture != null)
         ironwoodMigrationCompletionProvider.overrideWith(
@@ -561,7 +620,187 @@ SwapIntentRecord _externalToZecActivityRecord({
   );
 }
 
+class _DeferredVotingStore implements VotingHomeCacheStore {
+  final readGate = Completer<String?>();
+  int reads = 0;
+  @override
+  Future<String?> read() {
+    reads++;
+    return readGate.future;
+  }
+
+  @override
+  Future<void> write(String value) async {}
+}
+
 void main() {
+  testWidgets(
+    'Home renders before cache read and restores the card during sync',
+    (tester) async {
+      final store = _DeferredVotingStore();
+      final round = 'a' * 64;
+      var now = DateTime.utc(2026, 9, 10);
+      final end = now.add(const Duration(hours: 1));
+      final guards = <bool Function()>[];
+      await tester.pumpWidget(
+        _app(
+          _syncedState().copyWith(isSyncing: true, scannedHeight: 0),
+          deferredVotingStore: store,
+          votingNow: () => now,
+          participationGuards: guards,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 500));
+      final card = find.byKey(const ValueKey('mobile_home_coinholder_voting'));
+      expect(store.reads, 1);
+      expect(store.readGate.isCompleted, false);
+      expect(find.byKey(const ValueKey('mobile_home_receive')), findsOneWidget);
+      expect(card, findsNothing);
+      store.readGate.complete(
+        jsonEncode({
+          'lists': {
+            votingHomeListKey('main', 'source'): VotingHomeRoundList(
+              checkedAt: DateTime.now(),
+              fingerprint: 'config',
+              rounds: [
+                VotingRoundSummary.fromJson({
+                  'vote_round_id': round,
+                  'title': 'Vote',
+                  'status': '1',
+                  'vote_end_time': end.toIso8601String(),
+                }),
+              ],
+            ).toJson(),
+          },
+          'facts': {
+            votingHomeFactKey(
+              'main',
+              'config',
+              'account',
+              round,
+            ): const VotingHomeFact(
+              decision: VotingHomeDecision.show,
+            ).toJson(),
+          },
+        }),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(card, findsOneWidget);
+      // Returning to Home reuses the loaded state instead of reading again.
+      final router = GoRouter.of(tester.element(card));
+      router.go('/voting');
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 500));
+      router.go('/home');
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(card, findsOneWidget);
+      expect(store.reads, 1);
+      final checks = guards.length;
+      now = end;
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+      expect(card, findsNothing);
+      expect(guards, hasLength(checks));
+      expect(store.reads, 1);
+    },
+  );
+
+  testWidgets('hides the voting card when no actionable rounds are cached', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(ironwoodBalance: BigInt.from(100000000)),
+        showVoting: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_home_coinholder_voting')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('mobile_home_receive')), findsOneWidget);
+  });
+
+  testWidgets(
+    'voting discovery refreshes when the wallet network changes on Home',
+    (tester) async {
+      final rpc = _VotingRpcNotifier();
+      var refreshes = 0;
+      await tester.pumpWidget(
+        _app(
+          _syncedState(ironwoodBalance: BigInt.from(100000000)),
+          rpcNotifier: rpc,
+          refreshVoting: () async {
+            refreshes++;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      final before = refreshes;
+      rpc.useTestnet();
+      await tester.pumpAndSettle();
+      expect(refreshes, greaterThan(before));
+    },
+  );
+
+  testWidgets('voting discovery pauses on other tabs and in background', (
+    tester,
+  ) async {
+    var refreshes = 0;
+    final guards = <bool Function()>[];
+    await tester.pumpWidget(
+      _app(
+        _syncedState(ironwoodBalance: BigInt.from(100000000)),
+        useShellRouter: true,
+        participationGuards: guards,
+        refreshVoting: () async {
+          refreshes++;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    final router = GoRouter.of(tester.element(find.byType(MobileHomeScreen)));
+    final initial = refreshes;
+    expect(initial, greaterThan(0));
+    final initialChecks = guards.length;
+    expect(initialChecks, greaterThan(0));
+    await tester.pump(const Duration(minutes: 2));
+    expect(refreshes, initial); // The minute timer must stay local on Home too.
+    expect(guards, hasLength(initialChecks));
+    final firstVisit = guards.last;
+    expect(firstVisit(), isTrue);
+    router.go('/shell-activity');
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(minutes: 1));
+    expect(refreshes, initial);
+    expect(firstVisit(), isFalse);
+    router.go('/home');
+    await tester.pumpAndSettle();
+    expect(refreshes, greaterThan(initial));
+    expect(guards.length, greaterThan(initialChecks));
+    expect(firstVisit(), isFalse);
+    final secondVisit = guards.last;
+    expect(secondVisit(), isTrue);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    expect(secondVisit(), isFalse);
+    final beforeBackground = refreshes;
+    await tester.pump(const Duration(minutes: 1));
+    expect(refreshes, beforeBackground);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(refreshes, greaterThan(beforeBackground));
+    expect(secondVisit(), isFalse);
+    expect(guards.last(), isTrue);
+  });
+
   testWidgets('shows coinholder voting below actions and opens the flow', (
     tester,
   ) async {

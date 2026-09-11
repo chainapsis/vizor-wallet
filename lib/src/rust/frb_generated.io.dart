@@ -753,6 +753,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PaymentLinkSpendEvidence dco_decode_payment_link_spend_evidence(dynamic raw);
+
+  @protected
   PirLayout dco_decode_pir_layout(dynamic raw);
 
   @protected
@@ -1821,6 +1824,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OrchardMigrationPrivatePlan sse_decode_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PaymentLinkSpendEvidence sse_decode_payment_link_spend_evidence(
     SseDeserializer deserializer,
   );
 
@@ -3123,6 +3131,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_orchard_migration_private_plan(
     OrchardMigrationPrivatePlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_payment_link_spend_evidence(
+    PaymentLinkSpendEvidence self,
     SseSerializer serializer,
   );
 

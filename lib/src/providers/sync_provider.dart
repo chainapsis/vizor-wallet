@@ -783,6 +783,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _balanceRefreshQueued = false;
   bool _balanceRefreshQueuedReleaseSnapshot = false;
   bool _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
+  bool _balanceRefreshQueuedRequireAuthoritativeBalance = false;
   Future<void>? _balanceRefreshChain;
 
   @override
@@ -1681,6 +1682,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _balanceRefreshQueued = false;
     _balanceRefreshQueuedReleaseSnapshot = false;
     _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
+    _balanceRefreshQueuedRequireAuthoritativeBalance = false;
     _lastKnownByAccount.clear();
     state = AsyncData(SyncState());
 
@@ -2343,6 +2345,23 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> refreshAfterSend() =>
       _requestBalanceRefresh(releaseSnapshotOnAuthoritativeBalance: true);
 
+  /// Reconcile released inputs before a cancelled send can be retried.
+  /// An outgoing account's locked snapshot must not be restored on switch-back.
+  /// Never publish that account's balance over a different active account.
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {
+    _lastKnownByAccount.remove(accountUuid);
+    if (_requiresUnlock || _getActiveAccountUuid() != accountUuid) return;
+    try {
+      await _requestBalanceRefresh(
+        releaseSnapshotOnAuthoritativeBalance: true,
+        requireAuthoritativeBalance: true,
+      );
+    } finally {
+      // A switch during the read may have cached the outgoing locked state.
+      _lastKnownByAccount.remove(accountUuid);
+    }
+  }
+
   /// Reconciles the account selected by a switch or active-account removal.
   ///
   /// If its balance summary is temporarily unavailable, discard only the
@@ -2370,12 +2389,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> _requestBalanceRefresh({
     bool releaseSnapshotOnAuthoritativeBalance = false,
     bool clearRestoredSnapshotIfUnavailable = false,
+    bool requireAuthoritativeBalance = false,
   }) {
     if (releaseSnapshotOnAuthoritativeBalance) {
       _balanceRefreshQueuedReleaseSnapshot = true;
     }
     if (clearRestoredSnapshotIfUnavailable) {
       _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = true;
+    }
+    if (requireAuthoritativeBalance) {
+      _balanceRefreshQueuedRequireAuthoritativeBalance = true;
     }
     if (_balanceRefreshInFlight) {
       _balanceRefreshQueued = true;
@@ -2393,6 +2416,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> _runCoalescedBalanceRefresh() async {
     Object? terminalError;
     StackTrace? terminalStackTrace;
+    var requireAuthoritativeBalance = false;
     try {
       do {
         _balanceRefreshQueued = false;
@@ -2401,11 +2425,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         final clearRestoredSnapshotIfUnavailable =
             _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable;
         _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
+        // Keep this requirement for the whole chain: an ordinary trailing
+        // refresh must not turn an unavailable cancellation balance into success.
+        requireAuthoritativeBalance =
+            requireAuthoritativeBalance ||
+            _balanceRefreshQueuedRequireAuthoritativeBalance;
+        _balanceRefreshQueuedRequireAuthoritativeBalance = false;
         try {
           await _refreshBalance(
-            releaseSnapshotOnAuthoritativeBalance: releaseSnapshot,
+            releaseSnapshotOnAuthoritativeBalance:
+                releaseSnapshot || requireAuthoritativeBalance,
             clearRestoredSnapshotIfUnavailable:
                 clearRestoredSnapshotIfUnavailable,
+            requireAuthoritativeBalance: requireAuthoritativeBalance,
           );
           // A successful trailing pass satisfies every caller sharing this
           // chain, even if an earlier pass failed.
@@ -2428,6 +2460,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _balanceRefreshQueued = false;
       _balanceRefreshQueuedReleaseSnapshot = false;
       _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
+      _balanceRefreshQueuedRequireAuthoritativeBalance = false;
       _balanceRefreshChain = null;
     }
   }
@@ -2572,6 +2605,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> _refreshBalance({
     bool releaseSnapshotOnAuthoritativeBalance = false,
     bool clearRestoredSnapshotIfUnavailable = false,
+    bool requireAuthoritativeBalance = false,
   }) async {
     if (_requiresUnlock) {
       state = AsyncData(SyncState());
@@ -2693,7 +2727,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     if (balanceReadVersion != _balanceReadVersion) {
       log('SyncNotifier: discarding superseded balance refresh');
+      if (requireAuthoritativeBalance) {
+        _balanceRefreshQueued = true;
+        _balanceRefreshQueuedReleaseSnapshot = true;
+      }
       return;
+    }
+    if (requireAuthoritativeBalance && !hasAuthoritativeBalance) {
+      throw StateError('Balance unavailable after releasing send proposal');
     }
     // Commit against the latest state so a slow balance/history refresh
     // cannot roll sync progress or completion metadata back to the snapshot

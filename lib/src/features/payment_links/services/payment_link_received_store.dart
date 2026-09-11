@@ -47,6 +47,17 @@ final paymentLinkClaimsInFlightProvider = FutureProvider<int>((ref) {
 
 enum PaymentLinkReceivedStatus { readyToClaim, submitting, receiving, received }
 
+/// Availability is separate from the lifetime of our submitted transaction.
+enum PaymentLinkAvailability {
+  unchecked,
+  available,
+  noBalance,
+  claimedElsewhere,
+  checking,
+  rejected,
+  failed,
+}
+
 class PaymentLinkInFlightClaimsException implements Exception {
   const PaymentLinkInFlightClaimsException({
     required this.destinationAccountUuid,
@@ -77,6 +88,9 @@ class PaymentLinkReceivedRecord {
     this.fiatSnapshot,
     this.claimSubmittedAt,
     this.claimDestinationPool,
+    this.availability = PaymentLinkAvailability.unchecked,
+    this.archived = false,
+    this.claimPriorTxids = const [],
   });
 
   factory PaymentLinkReceivedRecord.fromLink(
@@ -127,6 +141,18 @@ class PaymentLinkReceivedRecord {
 
   /// Pool of the claim output addressed to the destination account.
   final String? claimDestinationPool;
+  final PaymentLinkAvailability availability;
+  final bool archived;
+
+  /// Local transactions that predate this attempt, excluded from recovery.
+  /// Null means an older record has no baseline; [] is a known empty baseline.
+  final List<String>? claimPriorTxids;
+
+  bool get canArchive =>
+      !isClaimInFlight &&
+      (availability == PaymentLinkAvailability.noBalance ||
+          availability == PaymentLinkAvailability.claimedElsewhere ||
+          availability == PaymentLinkAvailability.failed);
 
   bool get isClaimInFlight =>
       status == PaymentLinkReceivedStatus.submitting ||
@@ -148,6 +174,9 @@ class PaymentLinkReceivedRecord {
     DateTime? updatedAt,
     DateTime? claimSubmittedAt,
     String? claimDestinationPool,
+    PaymentLinkAvailability? availability,
+    bool? archived,
+    Object? claimPriorTxids = _fieldNotProvided,
   }) {
     return PaymentLinkReceivedRecord(
       network: network,
@@ -171,6 +200,11 @@ class PaymentLinkReceivedRecord {
       updatedAt: (updatedAt ?? this.updatedAt).toUtc(),
       claimSubmittedAt: claimSubmittedAt ?? this.claimSubmittedAt,
       claimDestinationPool: claimDestinationPool ?? this.claimDestinationPool,
+      availability: availability ?? this.availability,
+      archived: archived ?? this.archived,
+      claimPriorTxids: identical(claimPriorTxids, _fieldNotProvided)
+          ? this.claimPriorTxids
+          : claimPriorTxids as List<String>?,
     );
   }
 }
@@ -319,6 +353,10 @@ class PaymentLinkReceivedStore {
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
         claimSubmittedAt: existing?.claimSubmittedAt,
         claimDestinationPool: existing?.claimDestinationPool,
+        availability:
+            existing?.availability ?? PaymentLinkAvailability.unchecked,
+        archived: existing?.archived ?? false,
+        claimPriorTxids: existing == null ? const [] : existing.claimPriorTxids,
       );
       await _writeRecords(_replaceByAddress(records, record));
       return record;
@@ -332,6 +370,7 @@ class PaymentLinkReceivedStore {
     DateTime? updatedAt,
     DateTime? claimSubmittedAt,
     String? claimDestinationPool,
+    PaymentLinkReceivedRecord? expected,
   }) {
     return _runExclusive(() async {
       if (destinationAccountUuid.trim().isEmpty) {
@@ -350,6 +389,15 @@ class PaymentLinkReceivedStore {
       }
       final records = await _loadUnlocked();
       final existing = _findRequired(records, address);
+      if (expected != null &&
+          (existing.status != expected.status ||
+              existing.claimTxids != expected.claimTxids ||
+              existing.claimSubmittedAt != expected.claimSubmittedAt ||
+              existing.destinationAccountUuid !=
+                  expected.destinationAccountUuid)) {
+        return existing;
+      }
+
       if (existing.status == PaymentLinkReceivedStatus.received &&
           existing.claimLink == null) {
         return existing;
@@ -376,6 +424,9 @@ class PaymentLinkReceivedStore {
         claimSubmittedAt: submissionTime.toUtc(),
         claimDestinationPool:
             claimDestinationPool ?? existing.claimDestinationPool,
+        availability: PaymentLinkAvailability.available,
+        archived: existing.archived,
+        claimPriorTxids: existing.claimPriorTxids,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -386,6 +437,7 @@ class PaymentLinkReceivedStore {
     required String address,
     required String destinationAccountUuid,
     DateTime? updatedAt,
+    List<String> priorTxids = const [],
   }) {
     return _runExclusive(() async {
       final normalizedAccountUuid = destinationAccountUuid.trim();
@@ -408,6 +460,9 @@ class PaymentLinkReceivedStore {
       final submissionTime = (updatedAt ?? DateTime.now()).toUtc();
       final updated = existing.copyWith(
         status: PaymentLinkReceivedStatus.submitting,
+        availability: PaymentLinkAvailability.checking,
+        archived: false,
+        claimPriorTxids: List<String>.unmodifiable(priorTxids),
         destinationAccountUuid: normalizedAccountUuid,
         claimTxids: null,
         updatedAt: submissionTime,
@@ -441,6 +496,9 @@ class PaymentLinkReceivedStore {
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
         claimSubmittedAt: existing.claimSubmittedAt,
         claimDestinationPool: existing.claimDestinationPool,
+        availability: existing.availability,
+        archived: existing.archived,
+        claimPriorTxids: existing.claimPriorTxids,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -487,10 +545,23 @@ class PaymentLinkReceivedStore {
   Future<PaymentLinkReceivedRecord> markReadyToClaim({
     required String address,
     DateTime? updatedAt,
+    PaymentLinkReceivedRecord? expected,
+    PaymentLinkAvailability availability = PaymentLinkAvailability.failed,
   }) {
     return _runExclusive(() async {
       final records = await _loadUnlocked();
       final existing = _findRequired(records, address);
+      // A concurrent check may finish after another check settled this attempt
+      // and the user started a new one. Never settle that newer attempt.
+      if (expected != null &&
+          (existing.status != expected.status ||
+              existing.claimTxids != expected.claimTxids ||
+              existing.claimSubmittedAt != expected.claimSubmittedAt ||
+              existing.destinationAccountUuid !=
+                  expected.destinationAccountUuid)) {
+        return existing;
+      }
+
       if (existing.claimLink == null) {
         throw StateError(
           'A received payment link without its secret cannot be retried.',
@@ -505,6 +576,8 @@ class PaymentLinkReceivedStore {
         message: existing.message,
         fiatSnapshot: existing.fiatSnapshot,
         status: PaymentLinkReceivedStatus.readyToClaim,
+        availability: availability,
+        archived: existing.archived,
         claimLink: existing.claimLink,
         destinationAccountUuid: null,
         claimTxids: null,
@@ -514,6 +587,45 @@ class PaymentLinkReceivedStore {
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
+    });
+  }
+
+  Future<void> setAvailability(
+    String address,
+    PaymentLinkAvailability availability,
+  ) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findByAddress(records, address);
+      if (existing == null ||
+          existing.status == PaymentLinkReceivedStatus.received) {
+        return;
+      }
+      // A preview arriving late cannot overwrite an in-flight submission.
+      if (existing.isClaimInFlight &&
+          availability != PaymentLinkAvailability.checking &&
+          availability != PaymentLinkAvailability.rejected) {
+        return;
+      }
+      await _writeRecords(
+        _replaceByAddress(
+          records,
+          existing.copyWith(availability: availability),
+        ),
+      );
+    });
+  }
+
+  Future<void> setArchived(String address, bool archived) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findRequired(records, address);
+      if (archived && !existing.canArchive) {
+        throw StateError('Only inactive gift cards can be hidden.');
+      }
+      await _writeRecords(
+        _replaceByAddress(records, existing.copyWith(archived: archived)),
+      );
     });
   }
 
@@ -637,6 +749,9 @@ Map<String, Object?> _recordToJson(PaymentLinkReceivedRecord record) {
     'message': record.message,
     'fiat': record.fiatSnapshot?.toPayload(),
     'status': record.status.name,
+    'availability': record.availability.name,
+    'archived': record.archived,
+    'claimPriorTxids': record.claimPriorTxids,
     'claimLink': record.claimLink?.toUri().toString(),
     'destinationAccountUuid': record.destinationAccountUuid,
     'claimTxids': record.claimTxids,
@@ -659,6 +774,9 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
   final artworkId = value['artworkId'];
   final message = value['message'];
   final statusRaw = value['status'];
+  final availabilityRaw = value['availability'];
+  final archivedRaw = value['archived'];
+  final priorTxidsRaw = value['claimPriorTxids'];
   final claimLinkRaw = value['claimLink'];
   final destinationAccountUuid = value['destinationAccountUuid'];
   final claimTxids = value['claimTxids'];
@@ -763,6 +881,30 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
     );
   }
 
+  // Missing or null new fields are supported for older development records.
+  // Present but malformed values still fail the entire read rather than
+  // silently changing a claim's recovery or visibility semantics.
+  if ((availabilityRaw != null && availabilityRaw is! String) ||
+      (archivedRaw != null && archivedRaw is! bool) ||
+      (priorTxidsRaw != null &&
+          (priorTxidsRaw is! List ||
+              priorTxidsRaw.any((id) => id is! String)))) {
+    throw const PaymentLinkReceivedStoreFormatException(
+      'Received-card outcome fields are invalid.',
+    );
+  }
+  final availability = availabilityRaw == null
+      ? switch (status) {
+          PaymentLinkReceivedStatus.readyToClaim =>
+            PaymentLinkAvailability.unchecked,
+          PaymentLinkReceivedStatus.submitting =>
+            PaymentLinkAvailability.checking,
+          PaymentLinkReceivedStatus.receiving ||
+          PaymentLinkReceivedStatus.received =>
+            PaymentLinkAvailability.available,
+        }
+      : PaymentLinkAvailability.values.byName(availabilityRaw as String);
+
   return PaymentLinkReceivedRecord(
     network: network,
     address: address,
@@ -772,6 +914,11 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
     message: message as String?,
     fiatSnapshot: PaymentLinkFiatSnapshot.fromPayload(value['fiat']),
     status: status,
+    availability: availability,
+    archived: (archivedRaw as bool?) ?? false,
+    claimPriorTxids: priorTxidsRaw == null
+        ? null
+        : List<String>.unmodifiable((priorTxidsRaw as List).cast<String>()),
     claimLink: claimLink,
     destinationAccountUuid: destinationAccountUuid as String?,
     claimTxids: claimTxids as String?,

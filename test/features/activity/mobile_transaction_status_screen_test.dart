@@ -664,8 +664,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Unified address'), findsOneWidget);
-    expect(find.text('u1l8x'), findsOneWidget);
-    expect(find.text(_address), findsNothing);
+    expect(find.text(_address), findsOneWidget);
+    expect(find.text('Copy address'), findsOneWidget);
   });
 
   testWidgets('show full address action label fits on mobile width', (

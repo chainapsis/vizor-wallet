@@ -15,6 +15,9 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
   @override
+  Future<void> setReceivedCardArchived(String address, bool archived) async {}
+
+  @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
     required String sourceAccountUuid,
   }) => throw UnimplementedError();
@@ -34,8 +37,9 @@ class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
 
   @override
   Future<List<PaymentLinkReceivedRecord>> inspectReceivedLinkClaims(
-    List<PaymentLinkReceivedRecord> records,
-  ) async => records;
+    List<PaymentLinkReceivedRecord> records, {
+    bool allowResubmit = true,
+  }) async => records;
 
   @override
   Future<PaymentLinkClaimSession> prepareClaim(
@@ -62,9 +66,6 @@ class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
 
   @override
   Future<void> keepReceivedLink(VizorPaymentLink link) async {}
-
-  @override
-  Future<void> forgetReceivedLink(VizorPaymentLink link) async {}
 
   @override
   Future<PaymentLinkFundingQuote> quoteFunding({

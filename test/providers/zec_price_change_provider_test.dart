@@ -386,10 +386,12 @@ void main() {
 
       await Future<void>.delayed(const Duration(milliseconds: 30));
       expect(sub.read(), isNull);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isTrue);
 
       source.completer.complete(null);
       await Future<void>.delayed(Duration.zero);
       expect(sub.read(), isNull);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isFalse);
     });
 
     test('removes the last value after its one-hour TTL expires', () async {

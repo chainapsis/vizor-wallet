@@ -809,9 +809,8 @@ class _MobilePaymentLinkInteractivePreviewState
   final _amountFocusNode = FocusNode();
   final _messageController = TextEditingController();
   final _messageFocusNode = FocusNode();
-  Timer? _fiatTimer;
-  String? _fiatText;
-  var _fiatLoading = false;
+  Timer? _priceTimer;
+  var _priceLoading = true;
   var _step = _MobilePaymentLinkStep.amount;
   var _artwork = _fixtureArtwork;
 
@@ -827,8 +826,16 @@ class _MobilePaymentLinkInteractivePreviewState
       );
 
   @override
+  void initState() {
+    super.initState();
+    _priceTimer = Timer(kMobilePaymentLinkPreviewFiatDelay, () {
+      if (mounted) setState(() => _priceLoading = false);
+    });
+  }
+
+  @override
   void dispose() {
-    _fiatTimer?.cancel();
+    _priceTimer?.cancel();
     _amountController.dispose();
     _amountFocusNode.dispose();
     _messageController.dispose();
@@ -839,6 +846,13 @@ class _MobilePaymentLinkInteractivePreviewState
   void _showStep(_MobilePaymentLinkStep step) {
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _step = step);
+    if (step == _MobilePaymentLinkStep.message) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _step == _MobilePaymentLinkStep.message) {
+          _messageFocusNode.requestFocus();
+        }
+      });
+    }
   }
 
   void _clearMessage() {
@@ -846,28 +860,16 @@ class _MobilePaymentLinkInteractivePreviewState
     setState(() {});
   }
 
-  void _handleAmountChanged(String value) {
-    _fiatTimer?.cancel();
+  String? get _fiatText {
+    final value = _amountController.text;
     final amount = double.tryParse(value.startsWith('.') ? '0$value' : value);
-    if (amount == null || amount <= 0) {
-      setState(() {
-        _fiatLoading = false;
-        _fiatText = null;
-      });
-      return;
-    }
+    if (amount == null || amount < 0) return null;
+    if (amount == 0) return r'$0.00';
+    return _priceLoading ? null : _formatUsd(amount * _usdPerZec);
+  }
 
-    setState(() {
-      _fiatLoading = true;
-      _fiatText = null;
-    });
-    _fiatTimer = Timer(kMobilePaymentLinkPreviewFiatDelay, () {
-      if (!mounted || _amountController.text != value) return;
-      setState(() {
-        _fiatLoading = false;
-        _fiatText = _formatUsd(amount * _usdPerZec);
-      });
-    });
+  void _handleAmountChanged(String _) {
+    setState(() {});
   }
 
   @override
@@ -886,7 +888,7 @@ class _MobilePaymentLinkInteractivePreviewState
           amountInputFormatters: [_amountFormatter],
           onAmountChanged: _handleAmountChanged,
           supportingText: _fiatText,
-          supportingLoading: _fiatLoading,
+          supportingLoading: _hasPositiveAmount && _priceLoading,
           maxAmountText: '142.23',
           onUseMax: () {
             _amountController.text = _fixtureAmount;
@@ -950,6 +952,8 @@ class _MobilePaymentLinkInteractivePreviewState
           cardWidth: _cardWidth,
           cardHeight: _cardHeight,
           amountText: _amountController.text,
+          supportingText: _fiatText,
+          supportingLoading: _hasPositiveAmount && _priceLoading,
           showCaret: false,
         ),
         onBack: () => _showStep(_MobilePaymentLinkStep.message),
