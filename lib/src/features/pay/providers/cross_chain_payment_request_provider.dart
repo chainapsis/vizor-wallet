@@ -37,12 +37,18 @@ class CrossChainPaymentFlowState {
     this.slippageBps,
     this.isPreparingReview = false,
     this.reviewError,
+    this.isEditingSlippage = false,
   });
   final CrossChainPaymentRequest request;
   final String? selectedChain;
   final int? slippageBps;
   final bool isPreparingReview;
   final String? reviewError;
+
+  /// The slippage editor is inline card state, not a route, so the Android
+  /// back dispatcher above the router reads it here to close the editor
+  /// instead of dropping the request.
+  final bool isEditingSlippage;
 }
 
 class CrossChainPaymentFlowNotifier
@@ -86,6 +92,23 @@ class CrossChainPaymentFlowNotifier
       current.request,
       selectedChain: chain,
       slippageBps: current.slippageBps,
+      isEditingSlippage: current.isEditingSlippage,
+    );
+  }
+
+  void setSlippageEditing(bool editing) {
+    final current = state;
+    if (current == null ||
+        current.isPreparingReview ||
+        current.isEditingSlippage == editing) {
+      return;
+    }
+    state = CrossChainPaymentFlowState(
+      current.request,
+      selectedChain: current.selectedChain,
+      slippageBps: current.slippageBps,
+      reviewError: current.reviewError,
+      isEditingSlippage: editing,
     );
   }
 

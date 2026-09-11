@@ -61,7 +61,6 @@ class _RequestOverlay extends ConsumerStatefulWidget {
 }
 
 class _RequestOverlayState extends ConsumerState<_RequestOverlay> {
-  bool _editingSlippage = false;
   bool _closingRequest = false;
 
   @override
@@ -101,10 +100,9 @@ class _RequestOverlayState extends ConsumerState<_RequestOverlay> {
     final flowNotifier = ref.read(crossChainPaymentFlowProvider.notifier);
     final mobile = kAppFormFactor == AppFormFactor.mobile;
     final slippageBps = flow.slippageBps ?? swap?.slippageBps;
-    final editingSlippage = _editingSlippage && enabled && slippageBps != null;
-    void closeSlippage() {
-      if (mounted) setState(() => _editingSlippage = false);
-    }
+    final editingSlippage =
+        flow.isEditingSlippage && enabled && slippageBps != null;
+    void closeSlippage() => flowNotifier.setSlippageEditing(false);
 
     void closeRequest() {
       if (!mounted) return;
@@ -171,7 +169,7 @@ class _RequestOverlayState extends ConsumerState<_RequestOverlay> {
         availabilityMessage: availability,
         isMobile: mobile,
         slippageBps: slippageBps,
-        onOpenSlippage: () => setState(() => _editingSlippage = true),
+        onOpenSlippage: () => flowNotifier.setSlippageEditing(true),
         onCancel: dismissRequest,
         onNetworkSelected: flowNotifier.chooseNetwork,
         onRetry: () {

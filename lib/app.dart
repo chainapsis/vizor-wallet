@@ -280,8 +280,16 @@ final _routerProvider = Provider<_AppRouter>((ref) {
     // to reach the card here or it would navigate — and on the second press
     // exit the app — underneath a modal the user is still looking at.
     handleBackAboveRouter: () {
-      if (ref.read(crossChainPaymentFlowProvider) != null) {
-        ref.read(crossChainPaymentFlowProvider.notifier).clear();
+      final crossChainFlow = ref.read(crossChainPaymentFlowProvider);
+      if (crossChainFlow != null) {
+        final notifier = ref.read(crossChainPaymentFlowProvider.notifier);
+        // Back from the inline slippage editor returns to the card, as its
+        // on-screen Back does; only a back on the card itself drops it.
+        if (crossChainFlow.isEditingSlippage) {
+          notifier.setSlippageEditing(false);
+        } else {
+          notifier.clear();
+        }
         return true;
       }
       if (ref.read(paymentRequestFlowProvider) == null) return false;

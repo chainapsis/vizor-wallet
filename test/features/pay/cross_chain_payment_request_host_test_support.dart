@@ -67,6 +67,48 @@ final _btc = SwapAsset.live(
 void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(loadFigmaCompareFonts);
+  testWidgets(
+    'closing the slippage editor from above the router keeps the card',
+    (tester) async {
+      // The Android back dispatcher runs above the router and reads the editing
+      // state from the flow provider; closing it must return to the card
+      // rather than dropping the request.
+      final harness = await _readyHarness(
+        tester,
+        isMobile: isMobile,
+        holdQuotes: true,
+      );
+      await tester.tap(find.byKey(_slippageKey));
+      await tester.pumpAndSettle();
+      final flow = harness.container.read(crossChainPaymentFlowProvider);
+      expect(flow?.isEditingSlippage, isTrue);
+      expect(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+        findsOneWidget,
+      );
+      harness.container
+          .read(crossChainPaymentFlowProvider.notifier)
+          .setSlippageEditing(false);
+      await tester.pumpAndSettle();
+      expect(
+        harness.container.read(crossChainPaymentFlowProvider)?.request.id,
+        flow?.request.id,
+      );
+      expect(
+        harness.container
+            .read(crossChainPaymentFlowProvider)
+            ?.isEditingSlippage,
+        isFalse,
+      );
+      expect(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+        findsNothing,
+      );
+      expect(find.byKey(_slippageKey), findsOneWidget);
+      await harness.dispose(tester);
+    },
+  );
+
   testWidgets('request slippage is staged and applied to the review quote', (
     tester,
   ) async {
