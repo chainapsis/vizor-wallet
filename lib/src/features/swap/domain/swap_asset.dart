@@ -288,6 +288,7 @@ class SwapAsset {
       'chainLabel': chainLabel,
       'decimals': decimals,
       'assetId': assetId,
+      'contractAddress': contractAddress,
       'railLabel': _railLabel,
     };
   }
@@ -303,6 +304,9 @@ class SwapAsset {
     final symbol = value['symbol'];
     final chainTicker = value['chainTicker'];
     final decimals = value['decimals'];
+    final contractAddress = value['contractAddress'] is String
+        ? value['contractAddress'] as String
+        : null;
     if (name is String) {
       final staticAsset = byName(name);
       if (staticAsset != null &&
@@ -310,7 +314,10 @@ class SwapAsset {
         final assetId = value['assetId'] as String?;
         return assetId == null
             ? staticAsset
-            : staticAsset._withAssetId(assetId);
+            : staticAsset._withAssetId(
+                assetId,
+                contractAddress: contractAddress,
+              );
       }
     }
     if (symbol is! String || chainTicker is! String || decimals is! int) {
@@ -328,6 +335,7 @@ class SwapAsset {
           : _chainDisplayName(chainTicker),
       decimals: decimals,
       assetId: value['assetId'] is String ? value['assetId'] as String : null,
+      contractAddress: contractAddress,
       railLabel: value['railLabel'] is String
           ? value['railLabel'] as String
           : null,

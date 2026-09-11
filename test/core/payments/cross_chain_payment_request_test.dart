@@ -415,6 +415,23 @@ void main() {
       );
     });
 
+    test('persisted tokens still resolve by their exact contract or mint', () {
+      for (final (request, asset) in [
+        (_decode(_erc20Json()), _asset(contract: _baseUsdc)),
+        (
+          _decode(_solanaJson(amount: '2.5', mint: _solanaUsdc)),
+          _asset(chain: 'sol', contract: _solanaUsdc),
+        ),
+      ]) {
+        final restored = SwapAsset.fromPersistedJson(
+          jsonDecode(jsonEncode(asset.toPersistedJson())),
+        )!;
+        final resolution = resolveCrossChainPaymentRequest(request, [restored]);
+        expect(resolution.asset, same(restored));
+        expect(resolution.amountText, '2.5');
+      }
+    });
+
     test('does not select another token merely because its symbol matches', () {
       final resolution =
           resolveCrossChainPaymentRequest(_decode(_erc20Json()), [
@@ -448,7 +465,13 @@ void main() {
       );
       final native = _asset(symbol: 'ETH', decimals: 18);
 
-      expect(resolveCrossChainPaymentRequest(request, [wrapped]).asset, isNull);
+      final restoredWrapped = SwapAsset.fromPersistedJson(
+        jsonDecode(jsonEncode(wrapped.toPersistedJson())),
+      )!;
+      expect(
+        resolveCrossChainPaymentRequest(request, [restoredWrapped]).asset,
+        isNull,
+      );
       expect(
         resolveCrossChainPaymentRequest(request, [wrapped, native]).asset,
         same(native),
