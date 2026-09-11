@@ -3,8 +3,10 @@
 
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
+import '../src/core/layout/app_form_factor.dart';
 import '../src/core/layout/app_pane_scroll_scaffold.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
@@ -19,6 +21,8 @@ import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/swap/widgets/swap_address_edit_modal.dart';
 import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
 import '../src/features/swap/widgets/swap_composer_panel.dart';
+import '../src/features/swap/widgets/mobile/mobile_swap_timeout_content.dart';
+import '../src/features/swap/widgets/swap_deposit_policy_notes.dart';
 import '../src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
 import '../src/features/swap/widgets/swap_near_intents_attribution.dart';
 import '../src/features/swap/widgets/swap_review_page_content.dart';
@@ -362,6 +366,242 @@ Widget buildSwapDepositTimeoutUseCase(BuildContext context) {
     backLabel: 'Swap',
     child: SwapDepositTimeoutPageContent(onRestart: () {}),
   );
+}
+
+// MARK: - NEAR recovery policy (sub-$300 floor) placement
+
+// The deposit page states the network as a fact, in the same row language as
+// amount and address, with the policy behind that row's help icon — the one
+// place the mistake it describes can happen. After a missed deadline the
+// existing timeout page gains the refund note and a copy of the support
+// bundle, but only when the swap's deposit details are known.
+
+// Two knob-driven use cases: layout (desktop / mobile) and the policy
+// element on/off. The help sheet and the late-deposit modal/sheet open live
+// from their own triggers, exactly as the activity detail host wires them.
+
+enum _PolicyLayout { desktop, mobile }
+
+_PolicyLayout _policyLayoutKnob(BuildContext context) {
+  return context.knobs.object.segmented<_PolicyLayout>(
+    label: 'Layout',
+    options: _PolicyLayout.values,
+    // Follow the compiled token set (`--dart-define=VIZOR_FORM_FACTOR`), so
+    // a mobile-token run opens on the mobile layout; the knob still lets
+    // either layout be previewed against either token set.
+    initialOption: kAppFormFactor == AppFormFactor.mobile
+        ? _PolicyLayout.mobile
+        : _PolicyLayout.desktop,
+    labelBuilder: (l) => l.name,
+  );
+}
+
+Widget buildSwapPolicyDepositUseCase(BuildContext context) {
+  final layout = _policyLayoutKnob(context);
+  final networkRow = context.knobs.boolean(
+    label: 'Network row',
+    initialValue: true,
+  );
+  return _policyDepositPage(
+    mobile: layout == _PolicyLayout.mobile,
+    networkRow: networkRow,
+  );
+}
+
+Widget buildSwapPolicyTimeoutUseCase(BuildContext context) {
+  final layout = _policyLayoutKnob(context);
+  final prompt = context.knobs.boolean(
+    label: 'Late-deposit prompt',
+    initialValue: true,
+  );
+  return _policyTimeoutPage(
+    mobile: layout == _PolicyLayout.mobile,
+    prompt: prompt,
+  );
+}
+
+// Fixed-state entry points for figma-compare captures.
+
+Widget buildSwapDepositNetworkRowUseCase(BuildContext context) =>
+    _policyDepositPage(mobile: false, networkRow: true);
+
+Widget buildMobileSwapDepositNetworkRowUseCase(BuildContext context) =>
+    _policyDepositPage(mobile: true, networkRow: true);
+
+Widget buildMobileSwapDepositNetworkSheetUseCase(BuildContext context) =>
+    const _MobileScanCardFrame(
+      child: SwapDepositNetworkSheet(asset: SwapAsset.usdc),
+    );
+
+Widget buildSwapDepositTimeoutRecoveryUseCase(BuildContext context) =>
+    _policyTimeoutPage(mobile: false, prompt: true);
+
+Widget buildSwapLateDepositModalUseCase(BuildContext context) =>
+    _policyTimeoutPage(mobile: false, prompt: true, modalOpen: true);
+
+Widget buildMobileSwapDepositTimeoutRecoveryUseCase(BuildContext context) =>
+    _policyTimeoutPage(mobile: true, prompt: true);
+
+Widget buildMobileSwapLateDepositSheetUseCase(BuildContext context) =>
+    _MobileScanCardFrame(child: SwapLateDepositSheet(info: _recoveryInfo));
+
+final _recoveryInfo = SwapDepositRecoveryInfo(
+  asset: SwapAsset.usdc,
+  amountText: '150 USDC',
+  depositAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
+  memo: 'memo with & routing=value?',
+  depositTxId: '0x9f1c…3b7e',
+  expiredAtText: 'May 20, 2026 13:20 UTC',
+);
+
+Widget _policyDepositPage({required bool mobile, required bool networkRow}) {
+  Widget page(BuildContext context) => SwapDepositTokensPageContent(
+    asset: SwapAsset.usdc,
+    amountText: '150 USDC',
+    depositAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
+    expiresInLabel: '14:59',
+    expiresAt: DateTime.now().add(const Duration(minutes: 14, seconds: 59)),
+    showNetworkRow: networkRow,
+    mobile: mobile,
+    onDeposited: () {},
+    // Mobile help is a sheet; desktop keeps the row's tooltip.
+    onNetworkHelp: mobile
+        ? () => showAppMobileSheet<void>(
+            context: context,
+            builder: (_) => const SwapDepositNetworkSheet(asset: SwapAsset.usdc),
+          )
+        : null,
+  );
+  if (mobile) return _MobilePhoneFrame(child: Builder(builder: page));
+  return _SwapFlowPageFrame(backLabel: 'Review', child: Builder(builder: page));
+}
+
+Widget _policyTimeoutPage({
+  required bool mobile,
+  required bool prompt,
+  bool modalOpen = false,
+}) {
+  if (mobile) {
+    return _MobilePhoneFrame(
+      child: Builder(
+        builder: (context) => MobileSwapTimeoutContent(
+          onRestart: () {},
+          onLateDeposit: prompt
+              ? () => showAppMobileSheet<void>(
+                  context: context,
+                  builder: (_) => SwapLateDepositSheet(info: _recoveryInfo),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+  return _DesktopTimeoutPreview(prompt: prompt, initiallyOpen: modalOpen);
+}
+
+/// Desktop timeout page in the activity-detail pane. The prompt opens the
+/// late-deposit modal as a real pane overlay and the scrim closes it, the
+/// same way `SwapActivityDetailSurface` does it.
+class _DesktopTimeoutPreview extends StatefulWidget {
+  const _DesktopTimeoutPreview({
+    required this.prompt,
+    required this.initiallyOpen,
+  });
+
+  final bool prompt;
+  final bool initiallyOpen;
+
+  @override
+  State<_DesktopTimeoutPreview> createState() => _DesktopTimeoutPreviewState();
+}
+
+class _DesktopTimeoutPreviewState extends State<_DesktopTimeoutPreview> {
+  late var _open = widget.initiallyOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 1080,
+      height: 720,
+      child: ColoredBox(
+        color: colors.background.base,
+        child: AppDesktopShell(
+          sidebar: const _PreviewSwapSidebar(),
+          pane: AppDesktopPane(
+            padding: EdgeInsets.zero,
+            child: Stack(
+              children: [
+                AppPaneScrollScaffold(
+                  toolbar: const AppPaneToolbar(
+                    leading: AppBackLink(
+                      label: 'Activity',
+                      minWidth: 60,
+                      onTap: _noop,
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Center(
+                    child: SwapDepositTimeoutPageContent(
+                      onRestart: _noop,
+                      onLateDeposit: widget.prompt
+                          ? () => setState(() => _open = true)
+                          : null,
+                    ),
+                  ),
+                ),
+                if (_open)
+                  AppPaneModalOverlay(
+                    onDismiss: () => setState(() => _open = false),
+                    child: SwapLateDepositModal(info: _recoveryInfo),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 393×852 phone canvas with the app ground and horizontal page padding, for
+/// mobile page content that the host screen normally wraps.
+class _MobilePhoneFrame extends StatelessWidget {
+  const _MobilePhoneFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox(
+          width: 393,
+          height: 852,
+          child: MediaQuery(
+            data: const MediaQueryData(size: Size(393, 852)),
+            child: ColoredBox(
+              color: colors.background.base,
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Widget buildSwapStatusProgressUseCase(BuildContext context) {

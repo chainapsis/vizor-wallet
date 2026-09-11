@@ -1467,6 +1467,14 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Timeout',
                       builder: buildSwapDepositTimeoutUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Policy - Deposit page',
+                      builder: buildSwapPolicyDepositUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Policy - Timeout page',
+                      builder: buildSwapPolicyTimeoutUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
