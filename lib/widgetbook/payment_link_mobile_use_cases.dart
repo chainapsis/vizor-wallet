@@ -176,6 +176,34 @@ Widget buildMobilePaymentLinkReviewUseCase(BuildContext context) {
   );
 }
 
+/// Reproduces the fee label wrapping with the fee help icon visible.
+Widget buildMobilePaymentLinkReviewWrappedFeeUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReviewMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.gift,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: '0.001',
+        showCaret: false,
+      ),
+      onBack: _noop,
+      cardAmountText: '0.001 ZEC',
+      cardFeeText: '0.0002 ZEC',
+      totalAmountText: '0.0012 ZEC',
+      onContinue: _noop,
+      onFeeHelp: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkReviewLargeTextUseCase(BuildContext context) {
+  return MediaQuery(
+    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
+    child: buildMobilePaymentLinkReviewWrappedFeeUseCase(context),
+  );
+}
+
 Widget buildMobilePaymentLinkReadyCelebratingUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: PaymentLinkReadyMobileView(

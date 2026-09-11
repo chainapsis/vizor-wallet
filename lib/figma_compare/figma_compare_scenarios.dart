@@ -582,6 +582,23 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-payment-link-review-wrapped-fee',
+    description: 'Mobile Gift Card review with a wrapping fee label',
+    builder: buildMobilePaymentLinkReviewWrappedFeeUseCase,
+    scrollToEnd: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-link-review-large-text',
+    description:
+        'Mobile Gift Card review with enlarged text, scrolled to action',
+    builder: buildMobilePaymentLinkReviewLargeTextUseCase,
+    scrollToEnd: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-payment-link-ready-celebrating',
     description: 'Mobile Gift Card deposited celebration state',
     builder: buildMobilePaymentLinkReadyCelebratingUseCase,

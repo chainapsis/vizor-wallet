@@ -248,6 +248,38 @@ void main() {
       );
     });
   });
+
+  testWidgets(
+    'content-sized button grows for wrapped labels and shrinks back',
+    (tester) async {
+      const key = ValueKey('growing-button');
+      for (final label in [
+        'Confirm',
+        'Confirm\nand create\nthe gift card',
+        'Confirm',
+      ]) {
+        await _pump(
+          tester,
+          AppButton(
+            key: key,
+            onPressed: () {},
+            height: 50,
+            growWithContent: true,
+            constrainContent: true,
+            expand: true,
+            child: Text(label, textAlign: TextAlign.center),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final labelRect = tester.getRect(find.text(label));
+        final buttonRect = tester.getRect(find.byKey(key));
+        expect(buttonRect.height, label.contains('\n') ? greaterThan(50) : 50);
+        expect(buttonRect.contains(labelRect.topLeft), isTrue);
+        expect(buttonRect.contains(labelRect.bottomRight), isTrue);
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
 }
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
