@@ -63,26 +63,40 @@ void SetStringValue(HKEY key, const wchar_t* name, const std::wstring& value) {
       static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
 }
 
-// Whether the effective payment URI shell open command could be read, and if so
-// whether one exists at all. Any failure we cannot attribute to "there is no
-// registration" is kUnreadable: a REG_EXPAND_SZ whose expansion needs a
+// Whether the effective payment URI handler uses a command or a COM delegate.
+// Any failure other than a missing registration is kUnreadable: a
+// REG_EXPAND_SZ whose expansion needs a
 // second pass, a value of an unexpected type, a key an ACL keeps us out of.
-// Callers must read kUnreadable as "somebody owns the scheme" -- reporting it
-// as absent is how a failed read ends up overwriting another wallet's handler.
+// Callers must preserve both delegated and unreadable registrations: neither
+// proves that this executable owns the scheme or that the scheme is unclaimed.
 enum class DefaultCommandState {
   kAbsent,
   kPresent,
+  kDelegated,
   kUnreadable,
 };
 
 // Reads the effective payment URI shell open command into |command|, which is left
-// empty unless kPresent is returned. Only ERROR_FILE_NOT_FOUND -- no key, or
-// no default value under it -- counts as kAbsent.
+// empty unless kPresent is returned. A DelegateExecute owner takes precedence
+// over the default command, which may be missing, empty, or left by an installer.
+// Only ERROR_FILE_NOT_FOUND for both values counts as kAbsent.
 DefaultCommandState ReadDefaultCommand(const wchar_t* scheme,
                                        std::wstring* command) {
   const std::wstring effective_command_path =
       std::wstring(scheme) + L"\\shell\\open\\command";
   command->clear();
+
+  DWORD delegate_size = 0;
+  const LSTATUS delegate_status =
+      ::RegGetValueW(HKEY_CLASSES_ROOT, effective_command_path.c_str(),
+                     L"DelegateExecute", RRF_RT_REG_SZ, nullptr, nullptr,
+                     &delegate_size);
+  if (delegate_status == ERROR_SUCCESS) {
+    return DefaultCommandState::kDelegated;
+  }
+  if (delegate_status != ERROR_FILE_NOT_FOUND) {
+    return DefaultCommandState::kUnreadable;
+  }
 
   DWORD size = 0;
   LSTATUS status =
@@ -327,7 +341,7 @@ void UnregisterPaymentProtocolHandler(const wchar_t* scheme) {
     return;
   }
   // Delete only a registration we could actually read and whose executable
-  // is this module. An unreadable command is not evidence the scheme is ours,
+  // is this module. A delegated or unreadable handler is not evidence it is ours,
   // and neither is a command that merely contains our path, so leave both
   // alone rather than tearing down a handler that may belong to someone else.
   std::wstring command;
@@ -359,7 +373,8 @@ void RegisterPaymentProtocolHandlerIfUnclaimed(const wchar_t* scheme) {
   // assume it is owned and write nothing. Treating a permissions error or an
   // ERROR_MORE_DATA expansion as "unclaimed" is what would let a plain launch
   // overwrite the handler another wallet is holding.
-  if (state == DefaultCommandState::kUnreadable) {
+  if (state == DefaultCommandState::kDelegated ||
+      state == DefaultCommandState::kUnreadable) {
     return;
   }
   if (state == DefaultCommandState::kPresent && !command.empty()) {
