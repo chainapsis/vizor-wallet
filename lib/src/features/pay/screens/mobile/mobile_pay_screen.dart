@@ -153,7 +153,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
 
   void _handleAddressChanged(String value) {
     _paymentRequestGeneration++;
-    if (isPaymentRequestUri(value)) {
+    if (isPaymentRequestInputDraft(value)) {
       setState(() => _paymentRequestText = value);
       return;
     }
@@ -186,6 +186,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
 
   void _chooseRecipient(PayRecipientSelection selection) {
     _paymentRequestGeneration++;
+    setState(() => _paymentRequestText = null);
     final notifier = ref.read(swapStateProvider.notifier);
     final contactId = selection.contactId;
     if (contactId == null) {
@@ -433,7 +434,9 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     controller: _recipientController,
                     typedAddress:
                         _paymentRequestText ?? swapState.destinationText,
-                    addressError: swapState.destinationAddressFormatError,
+                    addressError: swapState
+                        .copyWith(destinationText: _paymentRequestText)
+                        .destinationAddressFormatError,
                     quoteError:
                         swapState.externalAssetSupportError ??
                         swapState.quoteError,

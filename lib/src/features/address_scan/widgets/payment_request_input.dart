@@ -14,6 +14,17 @@ import '../../../core/zcash/zip321_payment_request.dart';
 const paymentRequestRefundAddressMessage =
     'Enter or scan a plain refund address. A payment request cannot be used here.';
 
+/// Keep an empty field or an unfinished payment scheme local while typing.
+/// Once the input diverges from every scheme it can follow address handling.
+bool isPaymentRequestInputDraft(String raw) {
+  final value = raw.trim().toLowerCase();
+  return isPaymentRequestUri(value) ||
+      const {
+        'zcash',
+        ...crossChainPaymentSchemes,
+      }.any((scheme) => scheme.startsWith(value));
+}
+
 class PaymentRequestInputNotice extends StatelessWidget {
   const PaymentRequestInputNotice({required this.onReview, super.key});
 

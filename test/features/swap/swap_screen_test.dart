@@ -1172,6 +1172,17 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
     await tester.pumpAndSettle();
 
+    // Abandon a possible URI prefix and select an existing contact.
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      's',
+    );
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      '',
+    );
+    await tester.pumpAndSettle();
     expect(find.text('First'), findsOneWidget);
     expect(find.text('Second'), findsOneWidget);
     await tester.tap(find.text('Second'));
@@ -2813,72 +2824,103 @@ void main() {
     expect(_destinationSummaryText(tester), '0x529084...169ee7');
   });
 
-  testWidgets(
-    'Pay pasted payment request waits for review and preserves composer',
-    (tester) async {
-      await _setDesktopViewport(tester);
-      final parsed = <String>[];
-      final router = GoRouter(initialLocation: '/pay', routes: [_payRoute()]);
-      await tester.pumpWidget(
-        _routerHarness(
-          router,
-          seedSwapActivityFixtures: false,
-          paymentParser: (raw) async {
-            parsed.add(raw);
-            return _crossChainInputFixture(raw);
-          },
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('pay_amount_input')),
-        '25',
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('pay_amount_continue_button')),
-      );
-      await tester.pumpAndSettle();
-      const destination = '0x52908400098527886e0f7030069857d2e4169ee7';
-      await tester.enterText(
-        find.byKey(const ValueKey('pay_recipient_search_field')),
-        destination,
-      );
-      await tester.pumpAndSettle();
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(PayScreen)),
-      );
-      final previous = container.read(swapStateProvider);
-      const raw = 'bitcoin:bc1qinvoice?amount=0.01&label=Coffee%20shop';
-      await tester.enterText(
-        find.byKey(const ValueKey('pay_recipient_search_field')),
-        raw,
-      );
-      await tester.pumpAndSettle();
-      expect(parsed, isEmpty);
-      expect(container.read(swapStateProvider).destinationText, destination);
-      expect(
-        find.byKey(const ValueKey('pay_select_recipient_button')),
-        findsNothing,
-      );
-      expect(find.text('Invalid EVM address'), findsNothing);
-      await tester.tap(
-        find.byKey(const ValueKey('review_pasted_payment_request')),
-      );
-      await tester.pumpAndSettle();
-      expect(parsed, [raw]);
-      expect(
-        (container.read(paymentUriPrefillProvider) as CrossChainPaymentRequest)
-            .rawUri,
-        raw,
-      );
-      final after = container.read(swapStateProvider);
-      expect(after.destinationText, previous.destinationText);
-      expect(after.externalAsset, previous.externalAsset);
-      expect(after.receiveAmountText, previous.receiveAmountText);
-      expect(tester.takeException(), isNull);
-    },
-  );
+  for (final typing in [false, true]) {
+    testWidgets(
+      'Pay pasted payment request waits for review and preserves composer (typing: $typing)',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        final parsed = <String>[];
+        final router = GoRouter(initialLocation: '/pay', routes: [_payRoute()]);
+        await tester.pumpWidget(
+          _routerHarness(
+            router,
+            seedSwapActivityFixtures: false,
+            paymentParser: (raw) async {
+              parsed.add(raw);
+              return _crossChainInputFixture(raw);
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_amount_input')),
+          '25',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('pay_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        const destination = '0x52908400098527886e0f7030069857d2e4169ee7';
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_recipient_search_field')),
+          destination,
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(PayScreen)),
+        );
+        final previous = container.read(swapStateProvider);
+        const raw = 'bitcoin:bc1qinvoice?amount=0.01&label=Coffee%20shop';
+        if (typing) {
+          final field = find.byKey(
+            const ValueKey('pay_recipient_search_field'),
+          );
+          await tester.enterText(field, '');
+          await tester.pump();
+          for (var length = 1; length <= raw.length; length++) {
+            await tester.enterText(field, raw.substring(0, length));
+            await tester.pump();
+            expect(
+              container.read(swapStateProvider).destinationText,
+              previous.destinationText,
+            );
+          }
+        } else {
+          await tester.enterText(
+            find.byKey(const ValueKey('pay_recipient_search_field')),
+            raw,
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(parsed, isEmpty);
+        expect(container.read(swapStateProvider).destinationText, destination);
+        expect(
+          find.byKey(const ValueKey('pay_select_recipient_button')),
+          findsNothing,
+        );
+        expect(find.text('Invalid EVM address'), findsNothing);
+        await tester.tap(
+          find.byKey(const ValueKey('review_pasted_payment_request')),
+        );
+        await tester.pumpAndSettle();
+        expect(parsed, [raw]);
+        expect(
+          (container.read(paymentUriPrefillProvider)
+                  as CrossChainPaymentRequest)
+              .rawUri,
+          raw,
+        );
+        final after = container.read(swapStateProvider);
+        expect(after.destinationText, previous.destinationText);
+        expect(after.externalAsset, previous.externalAsset);
+        expect(after.receiveAmountText, previous.receiveAmountText);
+        if (typing) {
+          final field = find.byKey(
+            const ValueKey('pay_recipient_search_field'),
+          );
+          await tester.enterText(field, 's');
+          await tester.pump();
+          const plain = '0x2222222222222222222222222222222222222222';
+          await tester.enterText(field, plain);
+          await tester.pumpAndSettle();
+          expect(container.read(swapStateProvider).destinationText, plain);
+          expect(find.text(plain), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('newer review survives an older completion in the same editor', (
     tester,
