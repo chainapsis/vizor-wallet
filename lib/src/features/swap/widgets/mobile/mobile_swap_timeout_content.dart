@@ -3,13 +3,22 @@ import 'package:flutter/widgets.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../swap_deposit_policy_notes.dart';
 
 /// Mobile deposit-timeout state — Figma `Swap failed` (4755:89127):
 /// the fallen-knight illustration, the "Time's up" tag, the serif
 /// headline, and the restart action. The host's top nav carries the
 /// "Swap failed" title, so it doesn't repeat here.
 class MobileSwapTimeoutContent extends StatelessWidget {
-  const MobileSwapTimeoutContent({required this.onRestart, super.key});
+  const MobileSwapTimeoutContent({
+    required this.onRestart,
+    this.onLateDeposit,
+    super.key,
+  });
+
+  /// See [SwapDepositTimeoutPageContent.onLateDeposit]; the mobile host
+  /// opens `SwapLateDepositSheet`.
+  final VoidCallback? onLateDeposit;
 
   static const _illustration =
       'assets/illustrations/swap_failed_illustration.png';
@@ -104,6 +113,10 @@ class MobileSwapTimeoutContent extends StatelessWidget {
               leading: const AppIcon(AppIcons.renew, size: 20),
               child: const Text('Restart swap'),
             ),
+            if (onLateDeposit != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              SwapLateDepositPrompt(onTap: onLateDeposit!),
+            ],
           ],
         ),
       ),

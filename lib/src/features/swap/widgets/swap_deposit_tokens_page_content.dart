@@ -14,6 +14,8 @@ import '../../../core/widgets/dot_qr_shape.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_deposit_qr_payload.dart';
+import '../models/swap_refund_policy.dart';
+import 'swap_deposit_policy_notes.dart';
 
 class SwapDepositTokensPageContent extends StatelessWidget {
   const SwapDepositTokensPageContent({
@@ -24,6 +26,8 @@ class SwapDepositTokensPageContent extends StatelessWidget {
     required this.onDeposited,
     this.checking = false,
     this.checkWarning,
+    this.showNetworkRow = false,
+    this.onNetworkHelp,
     this.expiresAt,
     this.now,
     this.memo,
@@ -42,6 +46,16 @@ class SwapDepositTokensPageContent extends StatelessWidget {
   final bool checking;
   final String? checkWarning;
 
+  /// Adds a "Network" row above the address, stating the chain the one-time
+  /// address accepts in the same row language as amount and memo, with the
+  /// NEAR recovery policy behind its help icon. Wrong network is the one
+  /// deposit mistake the automatic refund cannot undo.
+  final bool showNetworkRow;
+
+  /// Mobile help affordance for the Network row: the host opens a bottom
+  /// sheet (`SwapDepositNetworkSheet`) instead of the desktop tooltip.
+  final VoidCallback? onNetworkHelp;
+
   /// Renders the Figma mobile deposit frame (4731:96923): a single
   /// full-width card with a large QR stacked over the amount, then the
   /// detail rows and a full-width primary action.
@@ -58,6 +72,8 @@ class SwapDepositTokensPageContent extends StatelessWidget {
       now: now,
       memo: memo,
       mobile: mobile,
+      showNetworkRow: showNetworkRow,
+      onNetworkHelp: onNetworkHelp,
       actionArea: _DepositConfirmActionArea(
         checking: checking,
         warning: checkWarning,
@@ -128,6 +144,8 @@ class _SwapDepositPageShell extends StatelessWidget {
     this.now,
     this.memo,
     this.mobile = false,
+    this.showNetworkRow = false,
+    this.onNetworkHelp,
   });
 
   final SwapAsset asset;
@@ -139,6 +157,8 @@ class _SwapDepositPageShell extends StatelessWidget {
   final String? memo;
   final Widget actionArea;
   final bool mobile;
+  final bool showNetworkRow;
+  final VoidCallback? onNetworkHelp;
 
   @override
   Widget build(BuildContext context) {
@@ -171,6 +191,8 @@ class _SwapDepositPageShell extends StatelessWidget {
           depositAddress: depositAddress,
           memo: memo,
           mobile: true,
+          showNetwork: showNetworkRow,
+          onNetworkHelp: onNetworkHelp,
         ),
         actionArea,
       ],
@@ -209,6 +231,7 @@ class _SwapDepositPageShell extends StatelessWidget {
             amountText: amountText,
             depositAddress: depositAddress,
             memo: memo,
+            showNetwork: showNetworkRow,
           ),
           actionArea,
         ],
@@ -468,7 +491,11 @@ class _DepositCheckWarning extends StatelessWidget {
 }
 
 class SwapDepositTimeoutPageContent extends StatelessWidget {
-  const SwapDepositTimeoutPageContent({required this.onRestart, super.key});
+  const SwapDepositTimeoutPageContent({
+    required this.onRestart,
+    this.onLateDeposit,
+    super.key,
+  });
 
   static const _lightIllustration =
       'assets/illustrations/swap_deposit_timeout_illustration_light.png';
@@ -476,6 +503,11 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
       'assets/illustrations/swap_deposit_timeout_illustration_dark.png';
 
   final VoidCallback onRestart;
+
+  /// Opens the late-deposit explainer (`SwapLateDepositModal`). Offered as a
+  /// quiet prompt under the restart action; the host passes it only when the
+  /// swap's deposit details are known.
+  final VoidCallback? onLateDeposit;
 
   @override
   Widget build(BuildContext context) {
@@ -554,6 +586,10 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
             leading: const AppIcon(AppIcons.renew, size: 16),
             child: const Text('Restart swap'),
           ),
+          if (onLateDeposit != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            SwapLateDepositPrompt(onTap: onLateDeposit!),
+          ],
         ],
       ),
     );
@@ -806,6 +842,10 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
 /// dotted as the design, longer data still grows naturally.
 const _depositMinQrVersion = 9;
 
+/// Trailing-slot tap target on the detail rows (copy / help). The icons stay
+/// 20px; the slot meets the WCAG 2.5.8 24px minimum inside the 32px row.
+const _kDepositTrailingHitSize = 24.0;
+
 QrImage _depositQrImage(String data) {
   final natural = QrCode.fromData(
     data: data,
@@ -939,6 +979,8 @@ class _DepositDetailsList extends StatelessWidget {
     required this.depositAddress,
     this.memo,
     this.mobile = false,
+    this.showNetwork = false,
+    this.onNetworkHelp,
   });
 
   final SwapAsset asset;
@@ -946,6 +988,8 @@ class _DepositDetailsList extends StatelessWidget {
   final String depositAddress;
   final String? memo;
   final bool mobile;
+  final bool showNetwork;
+  final VoidCallback? onNetworkHelp;
 
   static const _desktopAmountRightWidth = 120.0;
   static const _desktopAddressRightWidth = 177.0;
@@ -975,6 +1019,24 @@ class _DepositDetailsList extends StatelessWidget {
             desktopAllowRightSlotGrowth: true,
             desktopValueOverflow: TextOverflow.visible,
           ),
+          if (showNetwork)
+            _detailRow(
+              label: 'Network',
+              value: asset.chainLabel,
+              copyText: asset.chainLabel,
+              toastMessage: 'Network copied',
+              copyKey: const ValueKey('swap_copy_deposit_network'),
+              rightKey: const ValueKey('swap_deposit_network_right_item'),
+              desktopLabelWidth: _desktopAmountLabelWidth,
+              desktopRightWidth: _desktopAmountRightWidth,
+              desktopAllowRightSlotGrowth: true,
+              copyable: false,
+              helpTooltip: SwapRefundPolicy.depositNetworkHelp(
+                symbol: asset.symbol,
+                chainLabel: asset.chainLabel,
+              ),
+              onHelpTap: onNetworkHelp,
+            ),
           _detailRow(
             label: 'One-time address',
             value: compactSwapAddress(depositAddress),
@@ -1014,6 +1076,9 @@ class _DepositDetailsList extends StatelessWidget {
     bool desktopAllowRightSlotGrowth = false,
     TextOverflow desktopValueOverflow = TextOverflow.ellipsis,
     bool scaleValueToFit = false,
+    bool copyable = true,
+    String? helpTooltip,
+    VoidCallback? onHelpTap,
   }) {
     if (mobile) {
       return _MobileDepositDetailRow(
@@ -1023,6 +1088,9 @@ class _DepositDetailsList extends StatelessWidget {
         toastMessage: toastMessage,
         copyKey: copyKey,
         rightKey: rightKey,
+        copyable: copyable,
+        helpTooltip: helpTooltip,
+        onHelpTap: onHelpTap,
       );
     }
     return _DesktopDepositDetailRow(
@@ -1037,6 +1105,8 @@ class _DepositDetailsList extends StatelessWidget {
       allowRightSlotGrowth: desktopAllowRightSlotGrowth,
       valueOverflow: desktopValueOverflow,
       scaleValueToFit: scaleValueToFit,
+      copyable: copyable,
+      helpTooltip: helpTooltip,
     );
   }
 }
@@ -1054,6 +1124,8 @@ class _DesktopDepositDetailRow extends StatelessWidget {
     this.allowRightSlotGrowth = false,
     this.valueOverflow = TextOverflow.ellipsis,
     this.scaleValueToFit = false,
+    this.copyable = true,
+    this.helpTooltip,
   });
 
   final String label;
@@ -1067,6 +1139,12 @@ class _DesktopDepositDetailRow extends StatelessWidget {
   final bool allowRightSlotGrowth;
   final TextOverflow valueOverflow;
   final bool scaleValueToFit;
+
+  /// A plain fact row (e.g. Network) keeps the value column aligned with
+  /// its copyable neighbours but renders no copy affordance; [helpTooltip]
+  /// puts a help icon in that slot instead.
+  final bool copyable;
+  final String? helpTooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -1140,13 +1218,24 @@ class _DesktopDepositDetailRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
-                      _DepositCopyButton(
-                        copyKey: copyKey,
-                        copyText: copyText,
-                        toastMessage: toastMessage,
-                        size: AppIconSize.medium,
-                        color: colors.icon.muted,
-                      ),
+                      if (copyable)
+                        _DepositCopyButton(
+                          copyKey: copyKey,
+                          copyText: copyText,
+                          toastMessage: toastMessage,
+                          size: AppIconSize.medium,
+                          hitSize: _kDepositTrailingHitSize,
+                          color: colors.icon.muted,
+                        )
+                      else if (helpTooltip != null)
+                        _DepositHelpIcon(
+                          message: helpTooltip!,
+                          size: AppIconSize.medium,
+                          hitSize: _kDepositTrailingHitSize,
+                          color: colors.icon.muted,
+                        )
+                      else
+                        const SizedBox(width: _kDepositTrailingHitSize),
                     ],
                   ),
                 ),
@@ -1161,7 +1250,7 @@ class _DesktopDepositDetailRow extends StatelessWidget {
   double _rightNaturalWidth(BuildContext context, {required TextStyle style}) {
     return _textWidth(context, value, style) +
         AppSpacing.xxs +
-        AppIconSize.medium +
+        _kDepositTrailingHitSize +
         AppSpacing.xxs;
   }
 
@@ -1184,6 +1273,9 @@ class _MobileDepositDetailRow extends StatelessWidget {
     required this.toastMessage,
     required this.copyKey,
     required this.rightKey,
+    this.copyable = true,
+    this.helpTooltip,
+    this.onHelpTap,
   });
 
   static const _labelWidth = 134.0;
@@ -1195,6 +1287,12 @@ class _MobileDepositDetailRow extends StatelessWidget {
   final String toastMessage;
   final Key copyKey;
   final Key rightKey;
+  final bool copyable;
+  final String? helpTooltip;
+
+  /// Mobile opens help as a sheet, so the icon is a tap target here rather
+  /// than a tooltip anchor; falls back to the tooltip when unset.
+  final VoidCallback? onHelpTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1248,19 +1346,83 @@ class _MobileDepositDetailRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xxs),
-                  _DepositCopyButton(
-                    copyKey: copyKey,
-                    copyText: copyText,
-                    toastMessage: toastMessage,
-                    size: _copyIconSize,
-                    color: colors.icon.regular.withValues(alpha: 0.72),
-                  ),
+                  if (copyable)
+                    _DepositCopyButton(
+                      copyKey: copyKey,
+                      copyText: copyText,
+                      toastMessage: toastMessage,
+                      size: _copyIconSize,
+                      hitSize: _kDepositTrailingHitSize,
+                      color: colors.icon.regular.withValues(alpha: 0.72),
+                    )
+                  else if (helpTooltip != null)
+                    _DepositHelpIcon(
+                      message: helpTooltip!,
+                      size: _copyIconSize,
+                      hitSize: _kDepositTrailingHitSize,
+                      color: colors.icon.regular.withValues(alpha: 0.72),
+                      onTap: onHelpTap,
+                    )
+                  else
+                    const SizedBox(width: _kDepositTrailingHitSize),
                 ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Help icon in a fact row's trailing slot, sized like the copy button it
+/// stands in for so the value column stays aligned. With [onTap] the icon
+/// is a plain tap target (mobile opens a sheet); otherwise it anchors a
+/// tooltip.
+class _DepositHelpIcon extends StatelessWidget {
+  const _DepositHelpIcon({
+    required this.message,
+    required this.size,
+    required this.hitSize,
+    required this.color,
+    this.onTap,
+  });
+
+  final String message;
+  final double size;
+  final double hitSize;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = SizedBox.square(
+      dimension: hitSize,
+      child: Center(
+        child: AppIcon(
+          AppIcons.help,
+          key: const ValueKey('swap_deposit_network_help'),
+          size: size,
+          color: color,
+        ),
+      ),
+    );
+    if (onTap != null) {
+      return Semantics(
+        button: true,
+        label: message,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: icon,
+        ),
+      );
+    }
+    return AppTooltip(
+      message: message,
+      tapToShow: true,
+      focusable: true,
+      child: icon,
     );
   }
 }
@@ -1291,6 +1453,7 @@ class _DepositCopyButton extends StatelessWidget {
     required this.copyText,
     required this.toastMessage,
     required this.size,
+    required this.hitSize,
     required this.color,
   });
 
@@ -1300,10 +1463,13 @@ class _DepositCopyButton extends StatelessWidget {
   final double size;
   final Color color;
 
+  /// Tap target, larger than the drawn icon (WCAG 2.5.8 minimum 24px).
+  final double hitSize;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox.square(
-      dimension: size,
+      dimension: hitSize,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(

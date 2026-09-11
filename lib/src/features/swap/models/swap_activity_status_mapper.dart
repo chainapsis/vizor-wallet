@@ -6,6 +6,7 @@ import '../../address_book/widgets/contact_name_inline.dart';
 import '../domain/near_intents_explorer.dart';
 import 'swap_address_book_helpers.dart';
 import 'swap_address_formatting.dart';
+import 'swap_deposit_recovery_info.dart';
 import 'swap_detail_tooltips.dart';
 import 'swap_fiat_value_formatting.dart';
 import 'swap_models.dart';
@@ -951,6 +952,35 @@ String? _swapActivityTimestampLabel(DateTime? timestamp) {
   final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
   return '$month ${local.day}, ${local.year} $hour:$minute';
+}
+
+/// Same shape as [_swapActivityTimestampLabel] but pinned to UTC and
+/// labelled, for text that leaves the app (support bundles).
+String _swapActivityUtcTimestampLabel(DateTime timestamp) {
+  final utc = timestamp.toUtc();
+  final month = _monthNames[utc.month - 1];
+  final hour = utc.hour.toString().padLeft(2, '0');
+  final minute = utc.minute.toString().padLeft(2, '0');
+  return '$month ${utc.day}, ${utc.year} $hour:$minute UTC';
+}
+
+/// Support bundle for an expired external → ZEC deposit, or null when the
+/// intent has no external deposit instruction to recover (ZEC-side deposits
+/// never leave the wallet, so there is nothing for NEAR to return).
+SwapDepositRecoveryInfo? swapDepositRecoveryInfoFor(SwapIntent intent) {
+  if (intent.direction?.sendsZec ?? true) return null;
+  final instruction = SwapActivityDepositInstruction.fromIntent(intent);
+  final asset = swapActivitySellAsset(intent);
+  final deadline = intent.depositDeadline;
+  if (instruction == null || asset == null || deadline == null) return null;
+  return SwapDepositRecoveryInfo(
+    asset: asset,
+    amountText: intent.sellAmount,
+    depositAddress: instruction.address,
+    memo: instruction.memo,
+    depositTxId: intent.depositTxHash,
+    expiredAtText: _swapActivityUtcTimestampLabel(deadline),
+  );
 }
 
 class SwapActivityDepositInstruction {
