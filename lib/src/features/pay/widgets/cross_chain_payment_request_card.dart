@@ -302,7 +302,7 @@ class _CrossChainPaymentRequestCardState
             children: [
               Text(formatSwapSlippage(widget.slippageBps!)),
               const SizedBox(width: AppSpacing.xxs),
-              AppIcon(AppIcons.cog, size: 16, color: context.colors.icon.muted),
+              const AppIcon(AppIcons.cog, size: 16),
             ],
           ),
         ),
@@ -709,10 +709,9 @@ class _CrossChainPaymentRequestCardState
           const SizedBox(width: AppSpacing.xs),
           RotatedBox(
             quarterTurns: expanded ? 3 : 1,
-            child: AppIcon(
+            child: const AppIcon(
               AppIcons.chevronForward,
               size: AppIconSize.medium,
-              color: context.colors.icon.regular,
             ),
           ),
         ],

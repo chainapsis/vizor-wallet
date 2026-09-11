@@ -518,7 +518,10 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     harness.present();
     await tester.pumpAndSettle();
     expect(find.text('Connecting to Tor…'), findsOneWidget);
-    expect(find.text('Loading amount…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_request_amount_skeleton')),
+      findsOneWidget,
+    );
     expect(_primary(tester).onPressed, isNull);
     expect(find.textContaining('not available in Vizor'), findsNothing);
     await _captureHost(tester, isMobile: isMobile, state: 'tor-connecting');
