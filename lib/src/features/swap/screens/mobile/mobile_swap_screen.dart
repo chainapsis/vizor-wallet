@@ -160,15 +160,18 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   Future<void> _reviewPastedPaymentRequest(String raw) async {
     if (!ref.read(swapStateProvider).direction.sendsZec) return;
     final generation = _addressEditorGeneration;
-    // Keep the editor and its raw text until parsing succeeds. Intake presents
-    // the card after the frame, so closing here still removes the editor first.
-    final accepted = await reviewPaymentRequestFromInput(ref, raw);
-    if (!mounted ||
-        !accepted ||
-        generation != _addressEditorGeneration ||
-        _swapModal.value != _SwapModalSurface.addressEditor) {
-      return;
-    }
+    bool isCurrent() =>
+        mounted &&
+        generation == _addressEditorGeneration &&
+        _swapModal.value == _SwapModalSurface.addressEditor;
+    // Keep rejected input editable, and discard cancelled submissions before
+    // intake can publish them. Accepted cards are presented after the frame.
+    final accepted = await reviewPaymentRequestFromInput(
+      ref,
+      raw,
+      isCurrent: isCurrent,
+    );
+    if (!accepted || !isCurrent()) return;
     _closeSwapModal();
   }
 

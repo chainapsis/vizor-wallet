@@ -46,13 +46,17 @@ class PaymentRequestInputNotice extends StatelessWidget {
 
 /// Accepts the whole request into the common card flow. A failed request stays
 /// a request: callers must never fall through to extracting just its address.
-Future<bool> reviewPaymentRequestFromInput(WidgetRef ref, String raw) async {
+Future<bool> reviewPaymentRequestFromInput(
+  WidgetRef ref,
+  String raw, {
+  bool Function()? isCurrent,
+}) async {
   if (!isPaymentRequestUri(raw)) return false;
   FocusScope.of(ref.context).unfocus();
   try {
-    return await intakePaymentRequest(ref, raw);
+    return await intakePaymentRequest(ref, raw, isCurrent: isCurrent);
   } catch (error) {
-    if (!ref.context.mounted) return false;
+    if (!ref.context.mounted || isCurrent?.call() == false) return false;
     final message = switch (error) {
       CrossChainPaymentParseException() => error.toString(),
       Zip321ParseException() ||

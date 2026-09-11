@@ -17,6 +17,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_request_intake.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -2931,6 +2932,8 @@ void main() {
             .text,
         nextDraft,
       );
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(container.read(paymentRequestArrivalProvider), 0);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();

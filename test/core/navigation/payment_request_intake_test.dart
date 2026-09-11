@@ -18,6 +18,38 @@ void main() {
     return container;
   }
 
+  for (final parseFails in [false, true]) {
+    test(
+      'cancelled input preserves the park and arrival (parseFails: $parseFails)',
+      () async {
+        final parked = _request('parked');
+        final cancelled = _request('cancelled');
+        final parser = Completer<CrossChainPaymentRequest>();
+        final container = containerFor(
+          (raw) => raw == parked.rawUri ? Future.value(parked) : parser.future,
+        );
+        final intake = container.read(paymentRequestIntakeProvider);
+        await intake.receive(parked.rawUri);
+        var current = true;
+        final pending = intake.receive(
+          cancelled.rawUri,
+          isCurrent: () => current,
+        );
+
+        current = false;
+        if (parseFails) {
+          parser.completeError(const CrossChainPaymentParseException());
+        } else {
+          parser.complete(cancelled);
+        }
+
+        expect(await pending, isFalse);
+        expect(container.read(paymentUriPrefillProvider), same(parked));
+        expect(container.read(paymentRequestArrivalProvider), 1);
+      },
+    );
+  }
+
   test('a slow older parse cannot replace a newer accepted request', () async {
     final older = _request('older');
     final newer = _request('newer', solana: true);
