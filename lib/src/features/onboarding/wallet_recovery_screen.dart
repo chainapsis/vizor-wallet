@@ -280,6 +280,16 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
   bool get _isMobilePasscodeStage =>
       _mobile && _session != null && (!_authenticated || _needsNewCredential);
 
+  String _regularStageKey(WalletRecoveryState recovery) {
+    if (_session == null) {
+      return recovery.candidates.isEmpty ? 'empty' : 'candidate';
+    }
+    if (!_authenticated) return 'password';
+    if (!_session!.canReconnect) return 'accounts';
+    if (_needsNewCredential) return 'new-credential';
+    return 'ready';
+  }
+
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(appBootstrapProvider).walletRecovery;
@@ -314,7 +324,12 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
         children: [
           _RecoveryHeader(title: _title(recovery), body: _subtitle(recovery)),
           const SizedBox(height: AppSpacing.base),
-          Expanded(child: SingleChildScrollView(child: _regularBody(recovery))),
+          Expanded(
+            child: SingleChildScrollView(
+              key: ValueKey('desktop-${_regularStageKey(recovery)}'),
+              child: _regularBody(recovery),
+            ),
+          ),
         ],
       ),
     );
@@ -326,6 +341,7 @@ class _WalletRecoveryScreenState extends ConsumerState<WalletRecoveryScreen> {
       child: Align(
         alignment: Alignment.topCenter,
         child: SingleChildScrollView(
+          key: ValueKey('mobile-${_regularStageKey(recovery)}'),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.sm,
             vertical: AppSpacing.md,

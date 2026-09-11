@@ -25,7 +25,9 @@ import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_recovery.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
+import 'package:zcash_wallet/src/core/widgets/password_text_field.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
@@ -847,6 +849,30 @@ void main() {
               .isNotEmpty,
         );
         expect(find.text('Phrase needed'), findsNothing);
+        if (allMetadataMissing && !_mobile) {
+          final recoveryScroll = find.descendant(
+            of: find.byType(WalletRecoveryScreen),
+            matching: find.byType(Scrollable),
+          );
+          final firstPasswordField = find.byType(PasswordTextField).first;
+          expect(
+            tester.getTopLeft(firstPasswordField).dy,
+            greaterThanOrEqualTo(tester.getTopLeft(recoveryScroll.first).dy),
+            reason:
+                'The new-password step must start at the top of its scroll area.',
+          );
+        } else if (!allMetadataMissing && _mobile) {
+          final badge = find.descendant(
+            of: find.byType(WalletRecoveryScreen),
+            matching: find.byType(Image),
+          );
+          expect(
+            tester.getTopLeft(badge).dy,
+            greaterThanOrEqualTo(AppSpacing.sm),
+            reason:
+                'The ready step must not restore the discovery scroll offset.',
+          );
+        }
         debugPrint('recovery UI: account verified');
         await _capture(
           tester,
