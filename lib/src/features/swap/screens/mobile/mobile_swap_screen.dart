@@ -65,6 +65,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   bool _modalRouteOpen = false;
   String? _addressEditorDraftText;
   bool _addressEditorDraftRemember = false;
+  var _addressEditorGeneration = 0;
 
   @override
   void initState() {
@@ -101,6 +102,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         transitionDuration: Duration.zero,
         pageBuilder: (_, _, _) => _buildSwapModal(),
       ).whenComplete(() {
+        _addressEditorGeneration++;
         _modalRouteOpen = false;
         if (mounted) {
           setState(() {
@@ -113,6 +115,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   }
 
   void _openAddressEditor({String? draftText, bool? draftRemember}) {
+    _addressEditorGeneration++;
     _addressEditorDraftText = draftText ?? _addressEditorDraftText;
     _addressEditorDraftRemember = draftRemember ?? _addressEditorDraftRemember;
     _openModal(_SwapModalSurface.addressEditor);
@@ -129,6 +132,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   }
 
   void _closeSwapModal() {
+    _addressEditorGeneration++;
     if (_modalRouteOpen) {
       // State resets in the route's whenComplete.
       _clearAddressEditorDraft();
@@ -150,6 +154,21 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
           address: contact.address,
           contactId: contact.id,
         );
+    _closeSwapModal();
+  }
+
+  Future<void> _reviewPastedPaymentRequest(String raw) async {
+    if (!ref.read(swapStateProvider).direction.sendsZec) return;
+    final generation = _addressEditorGeneration;
+    // Keep the editor and its raw text until parsing succeeds. Intake presents
+    // the card after the frame, so closing here still removes the editor first.
+    final accepted = await reviewPaymentRequestFromInput(ref, raw);
+    if (!mounted ||
+        !accepted ||
+        generation != _addressEditorGeneration ||
+        _swapModal.value != _SwapModalSurface.addressEditor) {
+      return;
+    }
     _closeSwapModal();
   }
 
@@ -192,7 +211,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 initialRememberAddress: _addressEditorDraftRemember,
                 onSubmitted: (value, remember) {
                   if (isPaymentRequestUri(value)) {
-                    unawaited(_reviewScannedPaymentRequest(value));
+                    unawaited(_reviewPastedPaymentRequest(value));
                     return;
                   }
                   if (remember) {

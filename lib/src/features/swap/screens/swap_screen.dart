@@ -58,6 +58,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     debugLabel: 'swap_toast_overlay_context',
   );
   _SwapModalSurface? _swapModal;
+  var _addressEditorGeneration = 0;
 
   @override
   void initState() {
@@ -83,6 +84,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   }
 
   void _openAddressEditor() {
+    _addressEditorGeneration++;
     setState(() => _swapModal = _SwapModalSurface.addressEditor);
   }
 
@@ -99,12 +101,28 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   }
 
   void _closeSwapModal() {
+    _addressEditorGeneration++;
     if (_swapModal == null) return;
     setState(() => _swapModal = null);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shortcutFocusNode.requestFocus();
     });
+  }
+
+  Future<void> _reviewPastedPaymentRequest(String raw) async {
+    if (!ref.read(swapStateProvider).direction.sendsZec) return;
+    final generation = _addressEditorGeneration;
+    // Keep the editor and its raw text until parsing succeeds. Intake presents
+    // the card after the frame, so closing here still removes the editor first.
+    final accepted = await reviewPaymentRequestFromInput(ref, raw);
+    if (!mounted ||
+        !accepted ||
+        generation != _addressEditorGeneration ||
+        _swapModal != _SwapModalSurface.addressEditor) {
+      return;
+    }
+    _closeSwapModal();
   }
 
   Future<void> _reviewScannedPaymentRequest(String raw) async {
@@ -350,7 +368,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                             const [],
                         onSubmitted: (value, remember) {
                           if (isPaymentRequestUri(value)) {
-                            unawaited(_reviewScannedPaymentRequest(value));
+                            unawaited(_reviewPastedPaymentRequest(value));
                             return;
                           }
                           if (remember) {
