@@ -642,7 +642,7 @@ String _chainDisplayName(String ticker) {
     'base' => 'Base',
     'bera' => 'Bera',
     'bch' => 'Bitcoin Cash',
-    'bsc' => 'Binance Smart Chain',
+    'bsc' => 'BNB Chain',
     'btc' => 'Bitcoin',
     'cardano' => 'Cardano',
     'dash' => 'Dash',
