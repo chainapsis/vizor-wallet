@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'package:zcash_wallet/src/core/navigation/payment_request_intake.dart';
+import 'package:zcash_wallet/src/core/payments/cross_chain_payment_request.dart';
+import 'package:zcash_wallet/src/features/pay/providers/cross_chain_payment_request_provider.dart';
+import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -45,6 +49,63 @@ void main() {
   });
 
   tearDownAll(RustLib.dispose);
+
+  for (final change in ['none', 'edit', 'leave']) {
+    testWidgets(
+      'Send request intake respects input lifetime (change: $change)',
+      (tester) async {
+        final parsed = Completer<CrossChainPaymentRequest>();
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _sendHarness(paymentParser: (_) => parsed.future),
+        );
+        await tester.pumpAndSettle();
+        final element = tester.element(find.byType(SendScreen));
+        final container = ProviderScope.containerOf(element);
+        final router = GoRouter.of(element);
+        const raw = 'bitcoin:bc1qinvoice?amount=0.1';
+        await tester.enterText(_editableIn('send_address_field'), raw);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Review request'));
+        await tester.pumpAndSettle();
+        if (change == 'edit') {
+          await tester.enterText(
+            _editableIn('send_address_field'),
+            'bitcoin:new-draft',
+          );
+        } else if (change == 'leave') {
+          unawaited(router.push('/home'));
+        }
+        await tester.pumpAndSettle();
+        parsed.complete(
+          const CrossChainPaymentRequest(
+            id: 'send-input',
+            rawUri: raw,
+            address: 'bc1qinvoice',
+            isEvm: false,
+            chain: 'btc',
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (change == 'none') {
+          expect(container.read(paymentUriPrefillProvider)!.id, 'send-input');
+          expect(container.read(paymentRequestArrivalProvider), 1);
+        } else {
+          expect(container.read(paymentUriPrefillProvider), isNull);
+          expect(container.read(paymentRequestArrivalProvider), 0);
+        }
+        if (change == 'edit') {
+          expect(find.text('bitcoin:new-draft'), findsOneWidget);
+        }
+        if (change == 'leave') {
+          expect(find.text('home'), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+  }
 
   testWidgets('starts Orchard proving-key warmup when send loads', (
     tester,
@@ -1577,6 +1638,7 @@ MigrationStatus _migrationStatus(String phase) {
 }
 
 Widget _sendHarness({
+  CrossChainPaymentParser? paymentParser,
   SendPrefillArgs? prefill,
   AddressBookRepository? addressBookRepository,
   AppBootstrapState? bootstrap,
@@ -1599,6 +1661,7 @@ Widget _sendHarness({
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
+      GoRoute(path: '/home', builder: (_, _) => const Text('home')),
       GoRoute(
         path: '/send',
         builder: (_, _) => SendScreen(prefill: prefill),
@@ -1618,6 +1681,8 @@ Widget _sendHarness({
 
   return ProviderScope(
     overrides: [
+      if (paymentParser != null)
+        crossChainPaymentParserProvider.overrideWithValue(paymentParser),
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       if (realReview)
         ownAccountAddressesProvider.overrideWith((ref) async => {}),

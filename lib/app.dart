@@ -1641,12 +1641,14 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
 
   Future<void> _handlePaymentRequestLink(String rawUri) async {
     try {
-      final replaced = await ref
+      final result = await ref
           .read(paymentRequestIntakeProvider)
           .receive(rawUri);
       if (!mounted) return;
       _schedulePendingDrain();
-      if (replaced) _showPaymentUriMessage(kPaymentUriReplacedMessage);
+      if (result == PaymentRequestIntakeResult.replaced) {
+        _showPaymentUriMessage(kPaymentUriReplacedMessage);
+      }
     } on Zip321UnsupportedRequestException catch (error) {
       _showPaymentUriMessage(paymentUriRejectionMessage(error));
     } on Zip321ParseException catch (error) {

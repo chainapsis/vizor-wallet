@@ -73,6 +73,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   late final TextEditingController _recipientController;
   _PayModalSurface? _payModal;
   String? _paymentRequestText;
+  var _paymentRequestGeneration = 0;
   var _wizardStep = _PayWizardStep.amount;
   var _startingIntent = false;
   var _reviewRequestGeneration = 0;
@@ -153,6 +154,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   }
 
   void _handleAddressChanged(String value) {
+    _paymentRequestGeneration++;
     if (isPaymentRequestUri(value)) {
       setState(() => _paymentRequestText = value);
       return;
@@ -162,14 +164,30 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   }
 
   Future<void> _reviewInputPaymentRequest(String raw) async {
+    final generation = ++_paymentRequestGeneration;
+    final reviewGeneration = _reviewRequestGeneration;
+    final step = _wizardStep;
+    final input = _recipientController.text;
+    bool isCurrent() =>
+        mounted &&
+        generation == _paymentRequestGeneration &&
+        reviewGeneration == _reviewRequestGeneration &&
+        step == _wizardStep &&
+        input == _recipientController.text &&
+        _payModal == null;
     _closePayModal();
     await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-    final accepted = await reviewPaymentRequestFromInput(ref, raw);
-    if (accepted && mounted) setState(() => _paymentRequestText = null);
+    if (!isCurrent()) return;
+    final accepted = await reviewPaymentRequestFromInput(
+      ref,
+      raw,
+      isCurrent: isCurrent,
+    );
+    if (accepted && isCurrent()) setState(() => _paymentRequestText = null);
   }
 
   void _chooseRecipient(PayRecipientSelection selection) {
+    _paymentRequestGeneration++;
     final notifier = ref.read(swapStateProvider.notifier);
     final contactId = selection.contactId;
     if (contactId == null) {

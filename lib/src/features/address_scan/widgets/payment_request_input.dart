@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/navigation/payment_uri_drain_policy.dart';
@@ -52,11 +53,26 @@ Future<bool> reviewPaymentRequestFromInput(
   bool Function()? isCurrent,
 }) async {
   if (!isPaymentRequestUri(raw)) return false;
-  FocusScope.of(ref.context).unfocus();
+  final context = ref.context;
+  final delegate = GoRouter.maybeOf(context)?.routerDelegate;
+  final location = delegate?.state.uri;
+  final pageKey = delegate?.state.pageKey;
+  var leftSurface = false;
+  void onRouteChanged() {
+    if (delegate?.state.uri != location || delegate?.state.pageKey != pageKey) {
+      leftSurface = true;
+    }
+  }
+
+  bool isActive() =>
+      context.mounted && !leftSurface && (isCurrent?.call() ?? true);
+
+  FocusScope.of(context).unfocus();
+  delegate?.addListener(onRouteChanged);
   try {
-    return await intakePaymentRequest(ref, raw, isCurrent: isCurrent);
+    return await intakePaymentRequest(ref, raw, isCurrent: isActive);
   } catch (error) {
-    if (!ref.context.mounted || isCurrent?.call() == false) return false;
+    if (!isActive()) return false;
     final message = switch (error) {
       CrossChainPaymentParseException() => error.toString(),
       Zip321ParseException() ||
@@ -70,5 +86,7 @@ Future<bool> reviewPaymentRequestFromInput(
       tone: AppToastTone.destructive,
     );
     return false;
+  } finally {
+    delegate?.removeListener(onRouteChanged);
   }
 }

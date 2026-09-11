@@ -33,6 +33,7 @@ class MobileSwapAddressEditModal extends StatefulWidget {
     required this.onScan,
     required this.onOpenContacts,
     required this.onCancel,
+    this.onChanged,
     this.contacts = const <AddressBookContact>[],
     this.initialAddress,
     this.initialRememberAddress = false,
@@ -44,6 +45,7 @@ class MobileSwapAddressEditModal extends StatefulWidget {
   final void Function(String value, bool remember) onScan;
   final void Function(String value, bool remember) onOpenContacts;
   final VoidCallback onCancel;
+  final VoidCallback? onChanged;
   final String? initialAddress;
   final bool initialRememberAddress;
 
@@ -187,7 +189,10 @@ class _MobileSwapAddressEditModalState
             hintText: hint,
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _submit(),
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) {
+              widget.onChanged?.call();
+              setState(() {});
+            },
             trailing: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Row(

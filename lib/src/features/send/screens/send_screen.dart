@@ -447,6 +447,19 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
+  Future<void> _reviewInputPaymentRequest(String raw) async {
+    final sequence = _addressSeq;
+    final input = _addressController.text;
+    await reviewPaymentRequestFromInput(
+      ref,
+      raw,
+      isCurrent: () =>
+          mounted &&
+          sequence == _addressSeq &&
+          input == _addressController.text,
+    );
+  }
+
   void _handleAddressChanged() {
     _addressSeq++;
     _maxDebounceTimer?.cancel();
@@ -1298,8 +1311,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                     .numpadEnter)) {
                                       if (isRequest) {
                                         unawaited(
-                                          reviewPaymentRequestFromInput(
-                                            ref,
+                                          _reviewInputPaymentRequest(
                                             controller.text,
                                           ),
                                         );
@@ -1320,8 +1332,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                           : 'Contacts',
                                       onTap: isRequest
                                           ? () => unawaited(
-                                              reviewPaymentRequestFromInput(
-                                                ref,
+                                              _reviewInputPaymentRequest(
                                                 controller.text,
                                               ),
                                             )
@@ -1347,10 +1358,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                     onSubmitted: (raw) {
                                       if (isRequest) {
                                         unawaited(
-                                          reviewPaymentRequestFromInput(
-                                            ref,
-                                            raw,
-                                          ),
+                                          _reviewInputPaymentRequest(raw),
                                         );
                                       } else {
                                         onFieldSubmitted();

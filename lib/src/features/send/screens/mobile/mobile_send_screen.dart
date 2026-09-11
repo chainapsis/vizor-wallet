@@ -796,6 +796,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
   }
 
+  Future<void> _reviewInputPaymentRequest(String raw) async {
+    final sequence = _addressSeq;
+    final input = _addressController.text;
+    final step = _step;
+    final phase = _phase;
+    await reviewPaymentRequestFromInput(
+      ref,
+      raw,
+      isCurrent: () =>
+          mounted &&
+          sequence == _addressSeq &&
+          input == _addressController.text &&
+          step == _step &&
+          phase == _phase,
+    );
+  }
+
   void _handleAddressChanged({bool clearContact = true}) {
     if (isPaymentRequestUri(_addressController.text)) {
       _addressSeq++;
@@ -851,7 +868,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       case SendScanPaymentUri(:final rawUri):
         await WidgetsBinding.instance.endOfFrame;
         if (!mounted) return;
-        await reviewPaymentRequestFromInput(ref, rawUri);
+        await _reviewInputPaymentRequest(rawUri);
       case SendScanPaymentRequest(:final prefill):
         // A QR that already names an amount is the same object a `zcash:`
         // link is, so it gets the same answer: the card, over whatever is on
@@ -883,11 +900,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _pasteAddress() async {
+    final sequence = _addressSeq;
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final pasted = data?.text?.trim() ?? '';
-    if (pasted.isEmpty || !mounted) return;
+    if (pasted.isEmpty || !mounted || sequence != _addressSeq) return;
     if (isPaymentRequestUri(pasted)) {
-      await reviewPaymentRequestFromInput(ref, pasted);
+      await _reviewInputPaymentRequest(pasted);
       return;
     }
     _addressController.value = TextEditingValue(
@@ -2524,10 +2542,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       : 'Clear',
                   onTap: isRequest
                       ? () => unawaited(
-                          reviewPaymentRequestFromInput(
-                            ref,
-                            _addressController.text,
-                          ),
+                          _reviewInputPaymentRequest(_addressController.text),
                         )
                       : _addressController.text.trim().isEmpty
                       ? () => unawaited(_pasteAddress())
@@ -2538,7 +2553,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           : null,
       onChanged: (_) => _handleAddressChanged(),
       onSubmitted: isRequest
-          ? (raw) => unawaited(reviewPaymentRequestFromInput(ref, raw))
+          ? (raw) => unawaited(_reviewInputPaymentRequest(raw))
           : null,
       keyboardType: TextInputType.text,
     );

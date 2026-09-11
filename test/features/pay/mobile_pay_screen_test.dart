@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/payments/cross_chain_payment_request.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_request_intake.dart';
 import 'package:zcash_wallet/src/features/pay/providers/cross_chain_payment_request_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -339,6 +340,70 @@ Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
 }
 
 void main() {
+  for (final leaveStep in [false, true]) {
+    testWidgets(
+      'Pay discards a pending request after input or step changes (leaveStep: $leaveStep)',
+      (tester) async {
+        final parsed = Completer<CrossChainPaymentRequest>();
+        await _setMobileViewport(tester, const Size(393, 852));
+        await tester.pumpWidget(_app(paymentParser: (_) => parsed.future));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('mobile_pay_amount_input')),
+          '10',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(MobilePayScreen)),
+        );
+        const raw = 'bitcoin:bc1qinvoice?amount=0.1';
+        await tester.enterText(
+          find.byKey(const ValueKey('mobile_pay_recipient_input')),
+          raw,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('review_pasted_payment_request')),
+        );
+        await tester.pumpAndSettle();
+        if (leaveStep) {
+          await tester.tap(find.bySemanticsLabel('Back'));
+        } else {
+          await tester.enterText(
+            find.byKey(const ValueKey('mobile_pay_recipient_input')),
+            'bitcoin:new-draft',
+          );
+        }
+        await tester.pumpAndSettle();
+        parsed.complete(
+          const CrossChainPaymentRequest(
+            id: 'obsolete',
+            rawUri: raw,
+            address: 'bc1qinvoice',
+            isEvm: false,
+            chain: 'btc',
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(container.read(paymentUriPrefillProvider), isNull);
+        expect(container.read(paymentRequestArrivalProvider), 0);
+        if (leaveStep) {
+          expect(
+            find.byKey(const ValueKey('mobile_pay_amount_input')),
+            findsOneWidget,
+          );
+        } else {
+          expect(find.text('bitcoin:new-draft'), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets(
     'mobile Pay pasted request preserves composer until explicit review',
     (tester) async {

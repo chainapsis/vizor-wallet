@@ -13,6 +13,8 @@ bool isPaymentRequestUri(String raw) =>
     raw.trim().toLowerCase().startsWith('zcash:') ||
     isCrossChainPaymentUri(raw.trim());
 
+enum PaymentRequestIntakeResult { ignored, accepted, replaced }
+
 /// One arrival order across native links, QR scans and pasted requests.
 /// A slow parser cannot replace a newer request or re-park after a reset.
 /// Input surfaces may also invalidate their own submission before it is parked.
@@ -23,7 +25,10 @@ class PaymentRequestIntake {
 
   void invalidate() => _generation++;
 
-  Future<bool> receive(String raw, {bool Function()? isCurrent}) async {
+  Future<PaymentRequestIntakeResult> receive(
+    String raw, {
+    bool Function()? isCurrent,
+  }) async {
     final generation = ++_generation;
     final uri = raw.trim();
     try {
@@ -41,14 +46,16 @@ class PaymentRequestIntake {
         );
       }
       if (generation != _generation || isCurrent?.call() == false) {
-        return false;
+        return PaymentRequestIntakeResult.ignored;
       }
       final replaced = ref.read(paymentUriPrefillProvider.notifier).set(draft);
       ref.read(paymentRequestArrivalProvider.notifier).arrived();
-      return replaced;
+      return replaced
+          ? PaymentRequestIntakeResult.replaced
+          : PaymentRequestIntakeResult.accepted;
     } catch (_) {
       if (generation != _generation || isCurrent?.call() == false) {
-        return false;
+        return PaymentRequestIntakeResult.ignored;
       }
       rethrow;
     }
@@ -70,11 +77,14 @@ Future<bool> intakePaymentRequest(
   bool Function()? isCurrent,
 }) async {
   if (!isPaymentRequestUri(raw)) return false;
-  final replaced = await ref
+  final result = await ref
       .read(paymentRequestIntakeProvider)
       .receive(raw, isCurrent: isCurrent);
-  if (isCurrent?.call() == false) return false;
-  if (replaced && ref.context.mounted) {
+  if (result == PaymentRequestIntakeResult.ignored ||
+      isCurrent?.call() == false) {
+    return false;
+  }
+  if (result == PaymentRequestIntakeResult.replaced && ref.context.mounted) {
     showAppToast(ref.context, kPaymentUriReplacedMessage);
   }
   return true;

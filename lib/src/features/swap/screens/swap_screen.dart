@@ -366,6 +366,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       ),
                       _SwapModalSurface.addressEditor => SwapAddressEditModal(
                         state: swapState,
+                        onChanged: () => _addressEditorGeneration++,
                         contacts:
                             ref.watch(addressBookProvider).value?.contacts ??
                             const [],

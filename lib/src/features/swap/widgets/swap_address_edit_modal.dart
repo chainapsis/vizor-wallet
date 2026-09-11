@@ -23,6 +23,7 @@ class SwapAddressEditModal extends StatefulWidget {
     required this.onScan,
     required this.onOpenContacts,
     required this.onCancel,
+    this.onChanged,
     this.contacts = const <AddressBookContact>[],
     super.key,
   });
@@ -32,6 +33,7 @@ class SwapAddressEditModal extends StatefulWidget {
   final VoidCallback onScan;
   final VoidCallback onOpenContacts;
   final VoidCallback onCancel;
+  final VoidCallback? onChanged;
 
   /// Saved contacts; when the entered address matches one, its name is shown
   /// under the field so the user knows the address is correct.
@@ -195,7 +197,10 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                   focusNode: _focusNode,
                   hint: hint,
                   onSubmitted: (_) => _submit(),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) {
+                    widget.onChanged?.call();
+                    setState(() {});
+                  },
                   onScan: widget.onScan,
                   onOpenContacts: widget.onOpenContacts,
                 ),
