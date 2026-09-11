@@ -814,14 +814,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleAddressChanged({bool clearContact = true}) {
-    if (isPaymentRequestUri(_addressController.text)) {
-      _addressSeq++;
-      setState(() {
-        _addressType = '';
-        _addressWrongNetwork = false;
-      });
-      return;
-    }
+    // A request URI is not validated as an address, but it still replaces
+    // the payee: drop the contact, MAX and fee state like any other edit.
+    final isRequest = isPaymentRequestUri(_addressController.text);
+    if (isRequest) _addressSeq++;
     setState(() {
       if (widget.isPaymentRequest &&
           !_paymentRequestDetached &&
@@ -840,6 +836,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _invalidateReviewFeeQuote();
       _clearMaxMode();
     });
+    if (isRequest) return;
     unawaited(_validateAddress());
   }
 

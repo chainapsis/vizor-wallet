@@ -469,6 +469,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       setState(() {
         _addressType = '';
         _addressWrongNetwork = false;
+        _error = null;
         _isResolvingMax = false;
         _maxQuote = null;
       });
