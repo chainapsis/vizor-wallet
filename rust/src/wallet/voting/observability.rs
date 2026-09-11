@@ -31,7 +31,13 @@ pub const VOTING_OBSERVABILITY_ENABLED: bool = cfg!(debug_assertions);
 
 /// Options for a `*_with_report` entry point, or `None` when collection is off.
 pub fn options() -> Option<ObservabilityOptions> {
-    VOTING_OBSERVABILITY_ENABLED.then(ObservabilityOptions::default)
+    // Keep the expanded helper trace for a 3-bundle, 37-proposal vote; the
+    // SDK's 4,096-record default truncates this workload.
+    VOTING_OBSERVABILITY_ENABLED.then(|| ObservabilityOptions {
+        max_records: 262_144,
+        max_summary_groups: 131_072,
+        ..ObservabilityOptions::default()
+    })
 }
 
 /// The transport `api` installs so snapshots can also reach Dart.
@@ -58,6 +64,41 @@ fn emit(context: &str, observability: &OperationObservability) {
     if let Some(observer) = observer.as_ref() {
         observer(context, observability);
     }
+}
+
+/// Buffers and atomically publishes the full SDK snapshot after the run finishes.
+/// The domain result is deliberately excluded: it can contain signed payloads.
+fn save_snapshot(
+    directory: &std::path::Path,
+    snapshot: &OperationObservability,
+) -> std::io::Result<std::path::PathBuf> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    std::fs::create_dir_all(directory)?;
+    let path = directory.join(format!(
+        "{}-{}-{}.json",
+        snapshot.started_at_unix_us,
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    // Publish only complete JSON so a concurrent reader never sees a partial report.
+    let pending_path = path.with_extension("json.partial");
+    let file = options.open(&pending_path)?;
+    let mut file = std::io::BufWriter::with_capacity(256 * 1024, file);
+    serde_json::to_writer_pretty(&mut file, snapshot)?;
+    file.write_all(b"\n")?;
+    file.flush()?;
+    drop(file);
+    std::fs::rename(&pending_path, &path)?;
+    Ok(path)
 }
 
 /// Renders the error category of every record that did not succeed.
@@ -118,34 +159,192 @@ pub fn failure_lines(observability: &OperationObservability) -> Vec<String> {
 /// Unwraps an SDK [`OperationReport`], reporting its snapshot when one came back.
 ///
 /// `context` names the Vizor path that asked; the SDK's own operation name is
-/// already inside the snapshot. Reporting happens before the caller applies
-/// `?`, so a failed operation still describes the stages that preceded the
-/// failure — the case these reports exist for.
+/// already inside the snapshot. The snapshot is queued before the caller applies `?`; exporting and
+/// rendering happen on a bounded diagnostic worker, never on the voting
+/// completion path. Domain results are returned unchanged even if export fails.
 pub fn report<T>(context: &str, report: OperationReport<T>) -> T {
     let (result, observability) = report.into_parts();
     if let Some(observability) = observability {
-        // One record per rendered line, not one record for the whole report.
-        // os_log truncates a single message at ~1018 characters with a `<…>`
-        // marker, and the renderer sorts summaries by stage name, so a long
-        // report loses whichever stages sort last — `vote::*` before anything
-        // else. Per-line records keep every stage. The Dart stream has no such
-        // limit and still receives the report as one block.
-        for line in observability.to_string().lines() {
-            log::info!("[VOTING_OBS] {context}: {line}");
+        // Diagnostics must never hold up vote completion. A bounded worker
+        // limits retained snapshots when disk or a consumer is unusually slow.
+        let job = ExportJob {
+            context: context.to_owned(),
+            observability,
+        };
+        match exporter().as_ref() {
+            Some(exporter) => {
+                if exporter.submit(job).is_err() {
+                    log::warn!("[VOTING_OBS] diagnostic export queue full or unavailable; snapshot dropped");
+                }
+            }
+            None => log::warn!("[VOTING_OBS] diagnostic exporter unavailable; snapshot dropped"),
         }
-        // Warn level so a failure stands out against the summary rows, and
-        // survives any future tightening of the log filter above Info.
-        for line in failure_lines(&observability) {
-            log::warn!("[VOTING_OBS] {context}: FAILED {line}");
-        }
-        emit(context, &observability);
     }
     result
+}
+
+struct ExportJob {
+    context: String,
+    observability: OperationObservability,
+}
+
+/// One process-lifetime worker; dropping a test worker closes its queue and
+/// joins it. No wallet database or secure-storage writes occur on this worker.
+struct ReportExporter {
+    sender: Option<std::sync::mpsc::SyncSender<ExportJob>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ReportExporter {
+    fn start(process: impl Fn(ExportJob) + Send + 'static) -> std::io::Result<Self> {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(4);
+        let worker = std::thread::Builder::new()
+            .name("voting-diagnostics".into())
+            .spawn(move || {
+                while let Ok(job) = receiver.recv() {
+                    process(job);
+                }
+            })?;
+        Ok(Self {
+            sender: Some(sender),
+            worker: Some(worker),
+        })
+    }
+
+    fn submit(&self, job: ExportJob) -> Result<(), std::sync::mpsc::TrySendError<ExportJob>> {
+        self.sender
+            .as_ref()
+            .expect("exporter is alive")
+            .try_send(job)
+    }
+}
+
+impl Drop for ReportExporter {
+    fn drop(&mut self) {
+        self.sender.take();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+fn exporter() -> &'static Option<ReportExporter> {
+    static EXPORTER: std::sync::OnceLock<Option<ReportExporter>> = std::sync::OnceLock::new();
+    EXPORTER.get_or_init(|| ReportExporter::start(export_snapshot).ok())
+}
+
+fn export_snapshot(job: ExportJob) {
+    let context = job.context.as_str();
+    let observability = job.observability;
+    let directory = std::env::temp_dir().join("vizor-voting-observability");
+    match save_snapshot(&directory, &observability) {
+        Ok(path) => log::info!("[VOTING_OBS] {context}: report={}", path.display()),
+        Err(error) => log::warn!("[VOTING_OBS] {context}: could not save report: {error}"),
+    }
+    // One record per rendered line, not one record for the whole report.
+    // os_log truncates a single message at ~1018 characters with a `<…>`
+    // marker, and the renderer sorts summaries by stage name, so a long
+    // report loses whichever stages sort last — `vote::*` before anything
+    // else. Per-line records keep every stage. The Dart stream has no such
+    // limit and still receives the report as one block.
+    for line in observability.to_string().lines() {
+        log::info!("[VOTING_OBS] {context}: {line}");
+    }
+    // Warn level so a failure stands out against the summary rows, and
+    // survives any future tightening of the log filter above Info.
+    for line in failure_lines(&observability) {
+        log::warn!("[VOTING_OBS] {context}: FAILED {line}");
+    }
+    emit(context, &observability);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn export_job() -> ExportJob {
+        ExportJob {
+            context: "test".into(),
+            observability: serde_json::from_value(serde_json::json!({
+                "operation": "test", "started_at_unix_us": 123, "round_id": null,
+                "elapsed_us": 42, "outcome": "succeeded", "records": [], "summaries": [],
+                "records_dropped": 0, "summary_updates_dropped": 0, "active_stages_dropped": 0
+            }))
+            .unwrap(),
+        }
+    }
+
+    #[test]
+    fn slow_export_is_bounded_and_does_not_block_submission() {
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        let first = std::cell::Cell::new(true);
+        let exporter = ReportExporter::start(move |_| {
+            if first.replace(false) {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            }
+            finished_tx.send(()).unwrap();
+        })
+        .unwrap();
+        assert!(exporter.submit(export_job()).is_ok());
+        entered_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        // The worker is held: all of these calls must return without waiting.
+        for _ in 0..4 {
+            assert!(exporter.submit(export_job()).is_ok());
+        }
+        let full = matches!(
+            exporter.submit(export_job()),
+            Err(std::sync::mpsc::TrySendError::Full(_))
+        );
+        release_tx.send(()).unwrap();
+        drop(exporter); // closes the queue, drains admitted reports and joins
+        assert!(full);
+        assert_eq!(finished_rx.iter().count(), 5);
+    }
+
+    #[test]
+    fn large_snapshot_round_trips_through_buffered_export() {
+        let mut snapshot = export_job().observability;
+        let record: zcash_voting::ObservationRecord = serde_json::from_value(serde_json::json!({
+            "id": 0, "parent_id": null, "stage": "helper.http.wake_to_poll",
+            "attribution": {"bundle_index": 2, "proposal_id": 1, "share_index": 0},
+            "started_after_us": 0, "elapsed_us": 100, "outcome": "succeeded",
+            "error_kind": null, "http_status": null, "endpoint_index": 0, "attempt": 1
+        }))
+        .unwrap();
+        snapshot.records = vec![record; 32000];
+        let directory = tempfile::tempdir().unwrap();
+        let started = std::time::Instant::now();
+        let path = save_snapshot(directory.path(), &snapshot).unwrap();
+        eprintln!("buffered 32000-record export: {:?}", started.elapsed());
+        let saved: OperationObservability =
+            serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(&path).unwrap()))
+                .unwrap();
+        assert!(!path.with_extension("json.partial").exists());
+        assert_eq!(saved, snapshot);
+    }
+
+    #[test]
+    fn saved_snapshot_preserves_detailed_timing_and_uses_unique_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let snapshot: OperationObservability = serde_json::from_value(serde_json::json!({
+            "operation": "test", "started_at_unix_us": 123, "round_id": null,
+            "elapsed_us": 42, "outcome": "failed", "records": [], "summaries": [],
+            "records_dropped": 0, "summary_updates_dropped": 0, "active_stages_dropped": 0
+        }))
+        .unwrap();
+        let first = save_snapshot(directory.path(), &snapshot).unwrap();
+        let second = save_snapshot(directory.path(), &snapshot).unwrap();
+        assert_ne!(first, second);
+        let saved: OperationObservability =
+            serde_json::from_slice(&std::fs::read(&first).unwrap()).unwrap();
+        assert_eq!(saved, snapshot);
+        assert!(save_snapshot(&first, &snapshot).is_err());
+    }
 
     /// Options are what every call site passes, so they must follow the switch
     /// rather than being decided independently anywhere.

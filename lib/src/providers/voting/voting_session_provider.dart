@@ -1481,6 +1481,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       case rust_wire.RoundStepProgressKind.selected ||
           rust_wire.RoundStepProgressKind.delegation ||
+          rust_wire.RoundStepProgressKind.delegateAndVoteBatchPersisted ||
           rust_wire.RoundStepProgressKind.treeSynced ||
           rust_wire.RoundStepProgressKind.shareConfirmed:
         break;
