@@ -16,9 +16,15 @@ import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
+import '../voting_progress_presentation.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+
+// The step enum moved next to the projections the ratchet compares it against.
+// It is re-exported so the platform progress screens keep importing it from the
+// screen that hands them the presentation.
+export '../voting_progress_presentation.dart' show VotingSubmissionProgressStep;
 
 typedef VotingStatusContentWrapper =
     Widget Function(BuildContext context, Widget content);
@@ -32,8 +38,6 @@ typedef VotingKeystoneStatusBuilder =
       BuildContext context,
       VotingKeystoneStatusPresentation presentation,
     );
-
-enum VotingSubmissionProgressStep { delegating, castingVotes, finalizing }
 
 class VotingSubmissionProgressPresentation {
   const VotingSubmissionProgressPresentation({
@@ -70,7 +74,7 @@ VotingSubmissionProgressStep votingSubmissionProgressStepFor({
     VotingSessionPhase.castingVotes ||
     VotingSessionPhase.submittingShares ||
     VotingSessionPhase.done => VotingSubmissionProgressStep.castingVotes,
-    _ => VotingSubmissionProgressStep.delegating,
+    _ => VotingSubmissionProgressStep.provingAuthority,
   };
 }
 
@@ -150,6 +154,20 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   VotingSessionKey? _jobKey;
   VotingSessionKey? _confirmationNavigationScheduledFor;
 
+  /// High-water mark for this round's submission progress.
+  ///
+  /// This view builds the desktop step list and, through
+  /// [VotingStatusView.submissionProgressBuilder], the mobile one, so holding
+  /// the ratchet here covers both form factors with one instance.
+  final VotingProgressRatchet _progressRatchet = VotingProgressRatchet();
+
+  /// The terminal-delegation notice from the last frame that had one to read.
+  ///
+  /// Held for the same reason as the ratchet: the session provider refreshes
+  /// through its loading state, and a warning that blinks out and back is the
+  /// flicker this screen exists to avoid.
+  String? _heldTerminalNotice;
+
   @override
   void initState() {
     super.initState();
@@ -164,6 +182,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       return;
     }
     _startScheduled = false;
+    _progressRatchet.reset();
+    _heldTerminalNotice = null;
     _jobKey = widget.accountUuid == null
         ? null
         : VotingSessionKey(
@@ -262,16 +282,47 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         .skipRemainingKeystoneBundles(key);
   }
 
+  /// The platform progress screens' view of one ratcheted frame.
+  ///
+  /// Only the active step has a ring and a line of its own, and each step
+  /// reads the projection it owns.
+  VotingSubmissionProgressPresentation _submissionPresentation(
+    VotingProgressView progress, {
+    String? warning,
+  }) {
+    // Null until the delegation step has bundles to count.
+    final authority = progress.authorityOrNull;
+    return VotingSubmissionProgressPresentation(
+      activeStep: progress.step,
+      activeStepProgress: switch (progress.step) {
+        VotingSubmissionProgressStep.provingAuthority => authority?.fraction,
+        VotingSubmissionProgressStep.castingVotes => progress.ballot.fraction,
+        VotingSubmissionProgressStep.finalizing => null,
+      },
+      activeStepDetail: switch (progress.step) {
+        VotingSubmissionProgressStep.provingAuthority => authority?.detail,
+        VotingSubmissionProgressStep.castingVotes => progress.ballot.detail,
+        VotingSubmissionProgressStep.finalizing => null,
+      },
+      warning: warning,
+    );
+  }
+
   bool _hasCompletedSubmission(VotingSessionState? session) {
     if (session == null) return false;
     return hasCompletedVoteForDisplay(session.roundPlan);
   }
 
+  /// Whether this run's own counters say the ballot is finished.
+  ///
+  /// The ring is only consulted when the run has published no counts at all.
+  /// A full ring beside a zero total is a value left behind by a previous run,
+  /// not a finished ballot, and reading it as one flipped the step list
+  /// between casting and finalizing.
   bool _hasCompletedCurrentSubmissionProgress(VotingSessionState session) {
     final total = session.voteSubmissionTotalCount;
-    if (total > 0 && session.voteSubmissionCompletedCount >= total) {
-      return true;
-    }
+    if (total > 0) return session.voteSubmissionCompletedCount >= total;
+    if (session.voteProgress.isNotEmpty) return false;
     return (session.voteSubmissionProgress ?? 0) >= 1;
   }
 
@@ -335,11 +386,18 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         final progressBuilder = widget.submissionProgressBuilder;
         if (progressBuilder != null) {
           usesPlatformScreen = true;
+          // The session provider refreshes without skipping its loading state,
+          // so this frame happens mid-submission with nothing new to show.
+          // Repeating the mark keeps the step list still; only a submission
+          // that has not started yet has no mark to repeat.
+          final held = _progressRatchet.held;
           return progressBuilder(
             context,
-            const VotingSubmissionProgressPresentation(
-              activeStep: VotingSubmissionProgressStep.delegating,
-            ),
+            held == null
+                ? const VotingSubmissionProgressPresentation(
+                    activeStep: VotingSubmissionProgressStep.provingAuthority,
+                  )
+                : _submissionPresentation(held, warning: _heldTerminalNotice),
           );
         }
         return const VotingPaneLoading();
@@ -396,49 +454,60 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             ),
           );
         }
-        final voteSubmissionProgress = _voteSubmissionProgress(
+        final reportedBallot = votingBallotProgress(
           state,
           completedSubmission: completedSubmission,
         );
-        final voteStepComplete =
-            completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
-        final delegationProgress = _delegationProgress(state);
-        final delegationDetail = _delegationDetail(state);
+        final progress = _progressRatchet.advance(
+          step: votingSubmissionProgressStepFor(
+            phase: phase,
+            voteStepComplete:
+                completedSubmission ||
+                reportedBallot.stage == VotingBallotStage.complete,
+            submissionJobComplete: submissionJobComplete,
+            submissionJobInFlight: submissionJobInFlight,
+          ),
+          authority: votingAuthorityProgress(state),
+          ballot: reportedBallot,
+        );
+        _heldTerminalNotice = state.terminalDelegationNotice;
+        final ballot = progress.ballot;
+        final voteSubmissionProgress = ballot.fraction;
+        final voteStepComplete = completedSubmission || progress.ballotComplete;
+        // The delegation row owns the ring only until the step list moves on.
+        // Gating on the ratcheted step rather than on `phase == delegating`
+        // keeps the proof reported while an unrelated writer — a wallet-sync
+        // pause, a plan refresh — briefly names some other phase.
+        final authority =
+            progress.step == VotingSubmissionProgressStep.provingAuthority
+            ? progress.authorityOrNull
+            : null;
+        final delegationProgress = authority?.fraction;
+        final delegationDetail = authority?.detail;
         final progressBuilder = widget.submissionProgressBuilder;
         if (progressBuilder != null &&
             phase != VotingSessionPhase.error &&
             phase != VotingSessionPhase.keystoneSigning &&
             !(job?.softwareAccountRequired ?? false)) {
           usesPlatformScreen = true;
-          final activeStep = votingSubmissionProgressStepFor(
-            phase: phase,
-            voteStepComplete: voteStepComplete,
-            submissionJobComplete: submissionJobComplete,
-            submissionJobInFlight: submissionJobInFlight,
-          );
           return progressBuilder(
             context,
-            VotingSubmissionProgressPresentation(
-              activeStep: activeStep,
-              activeStepProgress: switch (activeStep) {
-                VotingSubmissionProgressStep.delegating => delegationProgress,
-                VotingSubmissionProgressStep.castingVotes =>
-                  voteSubmissionProgress,
-                VotingSubmissionProgressStep.finalizing => null,
-              },
-              activeStepDetail:
-                  activeStep == VotingSubmissionProgressStep.delegating
-                  ? delegationDetail
-                  : null,
+            _submissionPresentation(
+              progress,
               warning: state.terminalDelegationNotice,
             ),
           );
         }
         return _StatusContent(
-          phase: phase,
+          phase: _phaseForStep(phase, progress.step),
           horizontalPadding: widget.contentHorizontalPadding,
-          voteSubmissionDetail: _voteSubmissionDetail(state),
+          voteSubmissionDetail:
+              ballot.detail ??
+              (ballot.stage == VotingBallotStage.complete
+                  ? null
+                  : _shareSubmissionDetail(state)),
           voteSubmissionProgress: voteSubmissionProgress,
+          voteStepComplete: voteStepComplete,
           delegationProgress: delegationProgress,
           delegationDetail: delegationDetail,
           completedSubmission: completedSubmission,
@@ -483,6 +552,32 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     return phase;
   }
 
+  /// The phase the step rows should read, once the ratchet knows the round is
+  /// at the ballot.
+  ///
+  /// The desktop rows derive `active` and `complete` from the phase directly.
+  /// Several writers report a pre-vote phase while a vote is in flight — a
+  /// wallet-sync pause is the one the session genuinely needs to keep, since
+  /// its control flow turns on it — so the rows read a phase that cannot fall
+  /// behind the step the ratchet has reached. Terminal and interactive phases
+  /// still get through: an error has to be shown, and Keystone signing drives
+  /// the QR panel.
+  VotingSessionPhase _phaseForStep(
+    VotingSessionPhase phase,
+    VotingSubmissionProgressStep step,
+  ) {
+    if (step != VotingSubmissionProgressStep.castingVotes) return phase;
+    return switch (phase) {
+      VotingSessionPhase.syncingVoteTree ||
+      VotingSessionPhase.castingVotes ||
+      VotingSessionPhase.submittingShares ||
+      VotingSessionPhase.keystoneSigning ||
+      VotingSessionPhase.done ||
+      VotingSessionPhase.error => phase,
+      _ => VotingSessionPhase.castingVotes,
+    };
+  }
+
   String? _sessionErrorMessage(VotingSessionState state, String? localError) {
     if (localError != null) return localError;
     return _statusErrorMessage(state, fallbackForErrorPhase: false);
@@ -511,8 +606,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       'Voting could not continue for this account. Retry, or switch to an '
       'eligible account if this account cannot vote in this voting round.';
 
-
-
   String? _shareSubmissionDetail(VotingSessionState state) {
     final key = state.currentVoteKey;
     if (key != null) {
@@ -534,94 +627,11 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     return messages.isEmpty ? null : messages.last;
   }
 
-  String? _voteSubmissionDetail(VotingSessionState state) {
-    final total = state.voteSubmissionTotalCount;
-    if (total > 0) {
-      final completed = state.voteSubmissionCompletedCount.clamp(0, total);
-      final current = completed >= total ? total : completed + 1;
-      return 'Question $current/$total';
-    }
-    return _shareSubmissionDetail(state);
-  }
-
-  double? _voteSubmissionProgress(
-    VotingSessionState state, {
-    required bool completedSubmission,
-  }) {
-    if (completedSubmission) return 1;
-    final progress = state.voteSubmissionProgress;
-    if (progress == null) return null;
-    return progress.clamp(0.0, 1.0).toDouble();
-  }
-
-  double? _delegationProgress(VotingSessionState state) {
-    if (state.phase != VotingSessionPhase.delegating) return null;
-    final bundleIndexes = _delegationProgressBundleIndexes(state);
-    if (bundleIndexes.isEmpty) return null;
-
-    final completed = bundleIndexes
-        .where(
-          (index) =>
-              _isDelegationBundleComplete(state.delegationProgress[index]),
-        )
-        .length;
-    // Use the same unit as the bundle counter. A finished proof still owes
-    // signing, submission, and confirmation. Once every bundle confirms, keep
-    // animating while the round driver finishes and its plan is refreshed.
-    return completed == bundleIndexes.length
-        ? null
-        : completed / bundleIndexes.length;
-  }
-
-  String? _delegationDetail(VotingSessionState state) {
-    if (state.phase != VotingSessionPhase.delegating) return null;
-    final bundleIndexes = _delegationProgressBundleIndexes(state);
-    if (bundleIndexes.isEmpty) return null;
-    final completed = bundleIndexes
-        .where(
-          (bundleIndex) => _isDelegationBundleComplete(
-            state.delegationProgress[bundleIndex],
-          ),
-        )
-        .length;
-    final waiting = state.delegationProgress.values.any(
-      (progress) =>
-          progress.phase == VotingProgressPhase.waitingForExistingProof,
-    );
-    final count = '$completed of ${bundleIndexes.length} bundles complete';
-    if (completed == bundleIndexes.length) {
-      return 'Finalizing delegation — $count';
-    }
-    if (waiting) return 'Reusing an in-progress proof — $count';
-    final awaitingChain = bundleIndexes
-        .where(
-          (index) =>
-              !_isDelegationBundleComplete(state.delegationProgress[index]),
-        )
-        .every((index) {
-          final phase = state.delegationProgress[index]?.phase;
-          return phase == VotingProgressPhase.payloadReady ||
-              phase == VotingProgressPhase.submitted;
-        });
-    return awaitingChain
-        ? 'Waiting for submission and confirmation — $count'
-        : count;
-  }
-
-  List<int> _delegationProgressBundleIndexes(VotingSessionState state) {
-    final indexes = <int>{
-      ...delegationBundleIndexesNeedingWork(state.roundPlan),
-      ...state.delegationProgress.keys,
-      ?state.currentBundleIndex,
-    }.toList()..sort();
-    return indexes;
-  }
-
-  bool _isDelegationBundleComplete(VotingSessionProgress? progress) {
-    return progress?.phase == VotingProgressPhase.confirmed;
-  }
-
   void _retry() {
+    // A retry starts the submission over, so the high-water mark from the
+    // attempt that failed must not hold the new one forward.
+    _progressRatchet.reset();
+    _heldTerminalNotice = null;
     final key = _selectedJobKey();
     if (key == null) {
       _startScheduled = false;
@@ -632,6 +642,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   void _clearError() {
+    _progressRatchet.reset();
+    _heldTerminalNotice = null;
     final key = _selectedJobKey();
     if (key != null) {
       ref.read(votingSubmissionJobsProvider.notifier).dismiss(key);
@@ -766,6 +778,7 @@ class _StatusContent extends StatelessWidget {
     this.horizontalPadding = 0,
     this.voteSubmissionDetail,
     this.voteSubmissionProgress,
+    this.voteStepComplete,
     this.delegationProgress,
     this.delegationDetail,
     this.completedSubmission = false,
@@ -796,6 +809,13 @@ class _StatusContent extends StatelessWidget {
   final double horizontalPadding;
   final String? voteSubmissionDetail;
   final double? voteSubmissionProgress;
+
+  /// Whether the ballot row is finished, as the caller's ratchet reports it.
+  ///
+  /// Null on the loading and error paths, which have no ratchet to read; the
+  /// ring is the only signal there.
+  final bool? voteStepComplete;
+
   final double? delegationProgress;
   final String? delegationDetail;
   final bool completedSubmission;
@@ -835,7 +855,8 @@ class _StatusContent extends StatelessWidget {
     }
     final terminalNotice = terminalDelegationNotice;
     final voteStepComplete =
-        completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
+        completedSubmission ||
+        (this.voteStepComplete ?? (voteSubmissionProgress ?? 0) >= 1);
     final finalizingSubmission =
         submissionJobInFlight &&
         voteStepComplete &&
@@ -905,7 +926,7 @@ class _StatusContent extends StatelessWidget {
                   complete: _after(VotingSessionPhase.keystoneSigning),
                 ),
               _StepRow(
-                label: 'Delegating voting authority',
+                label: 'Proving voting authority',
                 active: phase == VotingSessionPhase.delegating,
                 complete: _after(VotingSessionPhase.delegating),
                 detail: delegationDetail,

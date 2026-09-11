@@ -1,6 +1,5 @@
 // ignore_for_file: depend_on_referenced_packages
 
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -393,8 +392,10 @@ Widget buildMobileVotingSubmissionDelegatingUseCase(BuildContext context) {
   return _mobileVotingFullPagePreview(
     context,
     const MobileVotingSubmissionProgressScreen(
-      activeStep: VotingSubmissionProgressStep.delegating,
+      activeStep: VotingSubmissionProgressStep.provingAuthority,
       activeStepProgress: 0.25,
+      // The delegation proof carries no count until a bundle finishes, so the
+      // row is a label and a ring. This previews that state.
     ),
   );
 }
@@ -405,6 +406,7 @@ Widget buildMobileVotingSubmissionCastingUseCase(BuildContext context) {
     const MobileVotingSubmissionProgressScreen(
       activeStep: VotingSubmissionProgressStep.castingVotes,
       activeStepProgress: 0.6,
+      activeStepDetail: 'Casting votes',
     ),
   );
 }
@@ -415,6 +417,7 @@ Widget buildMobileVotingSubmissionCastingCompactUseCase(BuildContext context) {
     const MobileVotingSubmissionProgressScreen(
       activeStep: VotingSubmissionProgressStep.castingVotes,
       activeStepProgress: 0.6,
+      activeStepDetail: 'Casting votes',
     ),
     size: const Size(375, 667),
     safeArea: const EdgeInsets.only(top: 47, bottom: 34),
