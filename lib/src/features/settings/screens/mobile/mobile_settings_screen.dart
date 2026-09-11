@@ -97,7 +97,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                       key: const ValueKey(
                         'mobile_settings_coinholder_voting_row',
                       ),
-                      leading: _RowIcon(AppIcons.scroll),
+                      leading: _RowIcon(AppIcons.vote),
                       label: 'Coinholder voting',
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
