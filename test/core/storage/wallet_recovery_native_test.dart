@@ -10,26 +10,43 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show ExternalLibrary;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_recovery.dart';
-import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
+import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
+import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/unlock_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/wallet_recovery_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_home_entry_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_restorer_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../fakes/fake_sync_notifier.dart';
 
 const _nativeLibrary = String.fromEnvironment('VIZOR_RECOVERY_NATIVE_LIBRARY');
 const _captureDirectory = String.fromEnvironment('VIZOR_RECOVERY_CAPTURE_DIR');
@@ -396,6 +413,303 @@ void main() {
     },
   );
 
+  test('recovery tolerates damaged presentation metadata', () async {
+    final uuid = await createWallet();
+    final original = await getDb().readAsBytes();
+    backend.data.remove(kWalletDbNameKey);
+    backend.data['zcash_accounts'] = jsonEncode([
+      null,
+      {
+        'uuid': uuid,
+        'name': 42,
+        'profilePictureId': ['damaged'],
+      },
+    ]);
+    final session = await recoverySession();
+    expect(await session.unlockExistingSecrets(_password), isTrue);
+    await session.reconnect();
+    final restarted = await loadAppBootstrap();
+    expect(restarted.initialLocation, '/unlock');
+    expect(
+      restarted.initialAccountState.activeAccount!.name,
+      'Recovery fixture',
+    );
+    expect(await getDb().readAsBytes(), original);
+  });
+
+  test(
+    'damaged metadata alone never looks like a fresh installation',
+    () async {
+      backend.data['zcash_accounts'] = '{damaged';
+      final state = await loadAppBootstrap();
+      expect(state.initialLocation, '/wallet-recovery');
+      expect(state.walletRecovery!.candidates, isEmpty);
+      expect(backend.data, {'zcash_accounts': '{damaged'});
+      expect(await support.list().toList(), isEmpty);
+    },
+  );
+
+  test(
+    'damaged account metadata offers recovery even with a valid locator',
+    () async {
+      await createWallet();
+      final original = await getDb().readAsBytes();
+      backend.data['zcash_accounts'] = '{damaged';
+      final session = await recoverySession();
+      expect(await session.unlockExistingSecrets(_password), isTrue);
+      await session.reconnect();
+      expect((await loadAppBootstrap()).initialLocation, '/unlock');
+      expect(await getDb().readAsBytes(), original);
+    },
+  );
+
+  test(
+    'recovery preserves valid presentation fields beside damaged ones',
+    () async {
+      final uuid = await createWallet();
+      backend.data.remove(kWalletDbNameKey);
+      backend.data['zcash_accounts'] = jsonEncode([
+        {
+          'uuid': uuid,
+          'name': 'My recovered wallet',
+          'profilePictureId': 42,
+          'isHardware': true,
+          'walletLinkSourceAccountUuid': 'source-account',
+        },
+      ]);
+      final session = await recoverySession();
+      await session.unlockExistingSecrets(_password);
+      await session.reconnect();
+      final account =
+          (await loadAppBootstrap()).initialAccountState.activeAccount!;
+      expect(account.name, 'My recovered wallet');
+      expect(account.isHardware, isFalse);
+      expect(account.walletLinkSourceAccountUuid, 'source-account');
+    },
+  );
+
+  test('a missing recovery marker prevents every following write', () async {
+    await createWallet();
+    backend.data.remove(kWalletDbNameKey);
+    final session = await recoverySession();
+    await session.unlockExistingSecrets(_password);
+    final before = Map<String, String>.of(backend.data);
+    backend.dropWriteKey = kWalletRecoveryPendingKey;
+    await expectLater(session.reconnect(), throwsStateError);
+    expect(backend.data, before);
+    expect((await loadAppBootstrap()).initialLocation, '/wallet-recovery');
+    await session.reconnect();
+    expect((await loadAppBootstrap()).initialLocation, '/unlock');
+  });
+
+  for (final credentialKey in [
+    'zcash_password_verifier_salt',
+    'zcash_password_verifier',
+  ]) {
+    test('unpersisted $credentialKey cannot finish recovery', () async {
+      final uuid = await createWallet(metadata: false);
+      final original = await getDb().readAsBytes();
+      var session = await recoverySession();
+      await session.verifySoftwareSecret(
+        uuid,
+        const SoftwareWalletSecret(mnemonic: _phrase),
+      );
+      backend.dropWriteKey = credentialKey;
+      await expectLater(
+        session.reconnect(newPassword: _newPassword),
+        throwsStateError,
+      );
+      expect(backend.data[kWalletRecoveryPendingKey], _dbName);
+      expect(backend.data['zcash_account_mnemonic_$uuid'], isNull);
+      session.dispose();
+      session = await recoverySession();
+      await session.verifySoftwareSecret(
+        uuid,
+        const SoftwareWalletSecret(mnemonic: _phrase),
+      );
+      await session.reconnect(newPassword: _newPassword);
+      expect((await loadAppBootstrap()).initialLocation, '/unlock');
+      expect(await store.verifyPassword(_newPassword), isTrue);
+      expect(await store.readAccountMnemonic(uuid), _phrase);
+      expect(await getDb().readAsBytes(), original);
+    });
+  }
+
+  for (final drop in [false, true]) {
+    test(
+      'recovery checks final marker deletion (silent drop: $drop)',
+      () async {
+        await createWallet();
+        backend.data.remove(kWalletDbNameKey);
+        final original = await getDb().readAsBytes();
+        var session = await recoverySession();
+        await session.unlockExistingSecrets(_password);
+        if (drop) {
+          backend.dropDeleteKey = kWalletRecoveryPendingKey;
+        } else {
+          backend.failDeleteKey = kWalletRecoveryPendingKey;
+        }
+        await expectLater(
+          session.reconnect(),
+          drop
+              ? throwsStateError
+              : throwsA(isA<SecureStorageUnavailableException>()),
+        );
+        session.dispose();
+        session = await recoverySession();
+        await session.unlockExistingSecrets(_password);
+        await session.reconnect();
+        expect((await loadAppBootstrap()).initialLocation, '/unlock');
+        expect(await getDb().readAsBytes(), original);
+      },
+    );
+  }
+
+  test(
+    'every persisted recovery write can resume in a fresh session',
+    () async {
+      final first = await createWallet(metadata: false);
+      final second = await rust.importSoftwareAccountAtIndex(
+        dbPath: getDb().path,
+        network: 'main',
+        name: 'Second',
+        mnemonic: _secondPhrase,
+        bip39Passphrase: 'recovery passphrase',
+        birthdayHeight: BigInt.from(2_000_000),
+        zip32AccountIndex: 7,
+        isFirstWalletAccount: false,
+      );
+      final original = await getDb().readAsBytes();
+      // Stop immediately after each durable write, without running rollback.
+      // Only persisted key/value state survives into the new recovery session.
+      for (final stopAfterKey in [
+        kWalletRecoveryPendingKey,
+        'zcash_password_verifier_salt',
+        'zcash_password_verifier',
+        'zcash_secure_store_salt',
+        'zcash_account_mnemonic_$first',
+        'zcash_account_mnemonic_${second.accountUuid}',
+        'zcash_wallet_network',
+        'zcash_accounts',
+        'zcash_active_account',
+        kWalletDbNameKey,
+      ]) {
+        backend.data.clear();
+        store.clearSessionPassword();
+        var session = await recoverySession();
+        Future<void> proveAccounts() async {
+          expect(
+            await session.verifySoftwareSecret(
+              first,
+              const SoftwareWalletSecret(mnemonic: _phrase),
+            ),
+            isTrue,
+          );
+          expect(
+            await session.verifySoftwareSecret(
+              second.accountUuid,
+              const SoftwareWalletSecret(
+                mnemonic: _secondPhrase,
+                bip39Passphrase: 'recovery passphrase',
+              ),
+            ),
+            isTrue,
+          );
+        }
+
+        await proveAccounts();
+        backend.failAfterWriteKey = stopAfterKey;
+        await expectLater(
+          session.reconnect(newPassword: _newPassword),
+          throwsA(isA<SecureStorageUnavailableException>()),
+          reason: stopAfterKey,
+        );
+        session.dispose();
+        expect(await getDb().readAsBytes(), original, reason: stopAfterKey);
+        session = await recoverySession();
+        final configured = await store.isPasswordConfigured();
+        if (configured) {
+          expect(await session.unlockExistingSecrets(_newPassword), isTrue);
+        }
+        await proveAccounts();
+        await session.reconnect(newPassword: configured ? null : _newPassword);
+        final restarted = await loadAppBootstrap();
+        expect(restarted.initialLocation, '/unlock', reason: stopAfterKey);
+        expect(
+          restarted.initialAccountState.accounts.map((a) => a.uuid),
+          unorderedEquals([first, second.accountUuid]),
+        );
+        expect(await store.verifyPassword(_newPassword), isTrue);
+        expect(await store.readAccountMnemonic(first), _phrase);
+        final secret = await store.readAccountSoftwareWalletSecret(
+          second.accountUuid,
+        );
+        expect(secret?.mnemonic, _secondPhrase);
+        expect(secret?.bip39Passphrase, 'recovery passphrase');
+        expect(await getDb().readAsBytes(), original, reason: stopAfterKey);
+        session.dispose();
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'a candidate replaced after verification cannot be reconnected',
+    () async {
+      await createWallet();
+      backend.data.remove(kWalletDbNameKey);
+      final session = await recoverySession();
+      await session.unlockExistingSecrets(_password);
+      await createWallet(
+        metadata: false,
+        dbName: 'zcash_wallet_replacement.db',
+        phrase: _secondPhrase,
+      );
+      final replacement = await File(
+        '${support.path}/zcash_wallet_replacement.db',
+      ).readAsBytes();
+      await getDb().writeAsBytes(replacement);
+      final before = Map<String, String>.of(backend.data);
+      await expectLater(session.reconnect(), throwsStateError);
+      expect(backend.data, before);
+      expect(await getDb().readAsBytes(), replacement);
+    },
+  );
+
+  test('mixed software and hardware recovery verifies all accounts', () async {
+    final software = await createWallet(phrase: _secondPhrase);
+    final hardware = await rust.importHardwareAccount(
+      dbPath: getDb().path,
+      network: 'main',
+      name: 'Hardware fixture',
+      ufvkString: _keystoneUfvk,
+      seedFingerprint: List<int>.filled(32, 1),
+      zip32Index: 0,
+      birthdayHeight: BigInt.from(2_000_000),
+    );
+    backend.data.remove(kWalletDbNameKey);
+    final original = await getDb().readAsBytes();
+    final session = await recoverySession();
+    expect(await session.unlockExistingSecrets(_password), isTrue);
+    expect(session.isVerified(software), isTrue);
+    await expectLater(session.reconnect(), throwsStateError);
+    expect(
+      await session.verifyHardwareKey(hardware.accountUuid, _keystoneUfvk),
+      isTrue,
+    );
+    await session.reconnect();
+    final accounts = (await loadAppBootstrap()).initialAccountState.accounts;
+    expect(accounts.singleWhere((a) => a.uuid == software).isHardware, isFalse);
+    expect(
+      accounts.singleWhere((a) => a.uuid == hardware.accountUuid).isHardware,
+      isTrue,
+    );
+    expect(await store.verifyPassword(_password), isTrue);
+    expect(await store.readAccountMnemonic(software), _secondPhrase);
+    expect(await store.readAccountMnemonic(hardware.accountUuid), isNull);
+    expect(await getDb().readAsBytes(), original);
+  });
+
   test(
     'a pending recovery is honored even if the old pointer still exists',
     () async {
@@ -478,7 +792,6 @@ void main() {
           backend.data.remove(kWalletDbNameKey);
         }
         final bootstrap = (await tester.runAsync(loadAppBootstrap))!;
-        AppBootstrapState? restarted;
         final boundary = GlobalKey();
         tester.view.physicalSize = _mobile
             ? const Size(390, 844)
@@ -487,27 +800,20 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              appBootstrapProvider.overrideWithValue(bootstrap),
-              appBootstrapRetryProvider.overrideWithValue(() async {
-                restarted = await loadAppBootstrap();
-              }),
-            ],
-            child: MaterialApp(
-              home: AppTheme(
-                data: AppThemeData.dark,
-                child: RepaintBoundary(
-                  key: boundary,
-                  child: const WalletRecoveryScreen(),
-                ),
-              ),
+          RepaintBoundary(
+            key: boundary,
+            child: BootstrappedZcashWalletApp(
+              initialBootstrap: bootstrap,
+              overrides: _offlineAppOverrides(),
             ),
           ),
         );
         await tester.pumpAndSettle();
         expect(find.text('Recover your wallet'), findsOneWidget);
         expect(find.text('Create wallet'), findsNothing);
+        final recoveryContainer = ProviderScope.containerOf(
+          tester.element(find.byType(WalletRecoveryScreen)),
+        );
         await _capture(
           tester,
           boundary,
@@ -551,12 +857,66 @@ void main() {
           await tester.ensureVisible(find.text('Reconnect wallet'));
           await _tapNativeAction(tester, find.text('Reconnect wallet'));
         }
-        await _pumpUntil(tester, () => restarted != null);
-        expect(restarted!.initialLocation, '/unlock');
-        expect(restarted!.initialAccountState.activeAccountUuid, uuid);
+        final unlockScreen = find.byType(
+          _mobile ? MobileUnlockScreen : UnlockScreen,
+        );
+        await _pumpUntil(tester, () => unlockScreen.evaluate().isNotEmpty);
+        await tester.pumpAndSettle();
+        final unlockedContainer = ProviderScope.containerOf(
+          tester.element(unlockScreen),
+        );
+        expect(identical(recoveryContainer, unlockedContainer), isFalse);
+        expect(
+          unlockedContainer.read(appBootstrapProvider).initialLocation,
+          '/unlock',
+        );
+        expect(
+          unlockedContainer
+              .read(appBootstrapProvider)
+              .initialAccountState
+              .activeAccountUuid,
+          uuid,
+        );
+        expect(store.hasSessionPassword, isFalse);
         expect(await tester.runAsync(getWalletDbPath), getDb().path);
+        await _capture(
+          tester,
+          boundary,
+          allMetadataMissing ? 'loss-unlock' : 'unlock',
+        );
+        final recoveredPassword = allMetadataMissing ? _newPassword : _password;
+        if (_mobile) {
+          await _enterPasscode(tester, recoveredPassword, allowReset: true);
+        } else {
+          await _enterField(tester, 'Password', recoveredPassword);
+          await _tapNativeAction(tester, find.text('Unlock Vizor'));
+        }
+        final homeScreen = find.byType(_mobile ? MobileHomeScreen : HomeScreen);
+        await _pumpUntil(tester, () => homeScreen.evaluate().isNotEmpty);
+        await tester.pumpAndSettle();
+        final homeContainer = ProviderScope.containerOf(
+          tester.element(homeScreen),
+        );
+        expect(homeContainer.read(appSecurityProvider).requiresUnlock, isFalse);
+        final accounts = homeContainer.read(accountProvider).requireValue;
+        expect(accounts.activeAccountUuid, uuid);
+        expect(accounts.activeAddress, isNotEmpty);
+        await _capture(
+          tester,
+          boundary,
+          allMetadataMissing ? 'loss-home' : 'home',
+        );
+        // Finish the app's unrelated background discovery before destroying
+        // the provider scope, including when screenshots are disabled.
+        await tester.runAsync(
+          () => homeContainer.read(votingShareTrackingRestorerProvider).pause(),
+        );
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
+        store.clearSessionPassword();
+        final restarted = (await tester.runAsync(loadAppBootstrap))!;
+        expect(restarted.initialLocation, '/unlock');
+        expect(restarted.initialAccountState.activeAccountUuid, uuid);
         debugDefaultTargetPlatformOverride = null;
       },
       timeout: const Timeout(Duration(seconds: 45)),
@@ -584,17 +944,82 @@ Future<void> _enterField(
     find.descendant(of: field, matching: find.byType(EditableText)),
     value,
   );
+  await tester.pump();
 }
 
-Future<void> _enterPasscode(WidgetTester tester, String passcode) async {
+Future<void> _enterPasscode(
+  WidgetTester tester,
+  String passcode, {
+  bool allowReset = false,
+}) async {
   final keypad = tester.widget<PasscodeNumpad>(find.byType(PasscodeNumpad));
-  expect(keypad.onHelp, isNull);
+  if (!allowReset) expect(keypad.onHelp, isNull);
   for (final digit in passcode.split('')) {
     final key = find.bySemanticsLabel('Digit $digit');
     await tester.ensureVisible(key);
     await _tapNativeAction(tester, key);
     await tester.pump();
   }
+}
+
+// Keep discovery, key verification, credential storage, bootstrap, account
+// hydration, security and routing real. Disable only unrelated network work.
+List<Override> _offlineAppOverrides() => [
+  syncProvider.overrideWith(_OfflineRecoverySync.new),
+  ironwoodMigrationCoordinatorProvider.overrideWith(
+    _OfflineRecoveryMigration.new,
+  ),
+  networkPrivacyProvider.overrideWith(_OfflineRecoveryPrivacy.new),
+  swapFeatureEnabledProvider.overrideWithValue(false),
+  zecHomeMarketDataProvider.overrideWithValue(null),
+  zecLiveUsdUnitPriceProvider.overrideWithValue(null),
+  votingHomeEntryVisibleProvider.overrideWithValue(false),
+  votingHomeRefreshActionProvider.overrideWithValue(() async {}),
+  votingPendingShareRoundLoaderProvider.overrideWithValue(
+    ({required dbPath, required accountUuids}) async => [],
+  ),
+  paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(() async => []),
+  giftCardActivityIndexProvider.overrideWith(
+    (ref, accountUuid) async => GiftCardActivityIndex.empty,
+  ),
+];
+
+class _OfflineRecoverySync extends FakeSyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState(
+    accountUuid: (await ref.watch(accountProvider.future)).activeAccountUuid,
+    hasAccountScopedData: true,
+    isSyncComplete: true,
+    percentage: 1,
+    scannedHeight: 2000000,
+    chainTipHeight: 2000000,
+  );
+
+  @override
+  Future<void> refreshAfterUnlock() async {}
+
+  @override
+  Future<void> startSyncAnyway() async {}
+}
+
+class _OfflineRecoveryPrivacy extends NetworkPrivacyNotifier {
+  @override
+  NetworkPrivacyState build() => const NetworkPrivacyState.off();
+}
+
+class _OfflineRecoveryMigration extends IronwoodMigrationCoordinator {
+  @override
+  IronwoodMigrationCoordinatorState build() =>
+      const IronwoodMigrationCoordinatorState();
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {}
+
+  @override
+  Future<void> refreshForPolling() async {}
+
+  @override
+  Future<void> resumeBackgroundPreparations() async {}
 }
 
 Future<void> _pumpUntil(WidgetTester tester, bool Function() done) async {
@@ -636,6 +1061,9 @@ class _FaultStorage extends MapBase<String, String> {
   bool failReads = false;
   String? failWriteKey;
   String? dropWriteKey;
+  String? failAfterWriteKey;
+  String? failDeleteKey;
+  String? dropDeleteKey;
 
   @override
   Iterable<String> get keys => data.keys;
@@ -657,10 +1085,24 @@ class _FaultStorage extends MapBase<String, String> {
       return;
     }
     data[key] = value;
+    if (key == failAfterWriteKey) {
+      failAfterWriteKey = null;
+      throw PlatformException(code: 'fixture_interrupted_after_write');
+    }
   }
 
   @override
-  String? remove(Object? key) => data.remove(key);
+  String? remove(Object? key) {
+    if (key == failDeleteKey) {
+      failDeleteKey = null;
+      throw PlatformException(code: 'fixture_delete_interrupted');
+    }
+    if (key == dropDeleteKey) {
+      dropDeleteKey = null;
+      return data[key];
+    }
+    return data.remove(key);
+  }
 
   @override
   void clear() => data.clear();
