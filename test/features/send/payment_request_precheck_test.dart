@@ -53,6 +53,7 @@ class FakeSendApi {
   var proposeCalls = 0;
   String? lastValidatedNetwork;
   final discarded = <BigInt>[];
+  final discardedAccounts = <String>[];
   String? lastProposedMemo;
   String? lastRequestedBy;
 
@@ -108,8 +109,10 @@ class FakeSendApi {
     required BigInt proposalId,
     required String sendFlowId,
     required String logContext,
+    required String accountUuid,
   }) async {
     discarded.add(proposalId);
+    discardedAccounts.add(accountUuid);
     return true;
   }
 
@@ -558,6 +561,7 @@ void main() {
       await handle.discard();
 
       expect(api.discarded, [BigInt.from(7)]);
+      expect(api.discardedAccounts, ['account-1']);
     });
 
     test('release transfers ownership, so discard becomes a no-op', () async {

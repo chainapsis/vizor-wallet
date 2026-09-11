@@ -286,6 +286,7 @@ class RustPaymentLinkHardwareSigningService
       'PaymentLinkHardwareSigning: proposal cleanup remains pending '
       'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$lastError',
     );
+    throw StateError('Could not finish cancelling. Please try again.');
   }
 
   @override

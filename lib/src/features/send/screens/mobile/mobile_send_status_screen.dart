@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../providers/sync_provider.dart';
 
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -61,11 +62,13 @@ class _MobileSendStatusScreenState
   /// Captured in [initState] so [dispose] can release the flag without reading
   /// from `ref` after the element is gone.
   late final SendStatusTerminalNotifier _sendStatusTerminal;
+  late final SyncNotifier _syncNotifier;
 
   @override
   void initState() {
     super.initState();
     _sendStatusTerminal = ref.read(sendStatusTerminalProvider.notifier);
+    _syncNotifier = ref.read(syncProvider.notifier);
     _proposalConsumed = widget.keystone != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_startBroadcast());
@@ -89,6 +92,8 @@ class _MobileSendStatusScreenState
           : _proposalRelease,
       // Idempotent in Rust, so no gate on the (optimistic) consumed flag.
       retryRelease: () => discardSendProposal(
+        syncNotifier: _syncNotifier,
+        accountUuid: widget.args.proposalAccountUuid,
         proposalId: widget.args.proposalId,
         sendFlowId: widget.args.sendFlowId,
         logContext: 'MobileSendStatus(retry)',
@@ -106,6 +111,8 @@ class _MobileSendStatusScreenState
   Future<bool> _discardProposalIfNeeded(String logContext) {
     if (_proposalConsumed) return Future<bool>.value(true);
     return _proposalRelease ??= discardSendProposal(
+      syncNotifier: _syncNotifier,
+      accountUuid: widget.args.proposalAccountUuid,
       proposalId: widget.args.proposalId,
       sendFlowId: widget.args.sendFlowId,
       logContext: logContext,

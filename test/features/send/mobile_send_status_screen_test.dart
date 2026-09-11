@@ -13,6 +13,9 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+import '../../fakes/fake_sync_notifier.dart';
 
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
@@ -42,6 +45,7 @@ MobileSendBroadcastRunner _runner(Future<SendBroadcastOutcome> outcome) {
 
 Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
   return ProviderScope(
+    overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
     child: MaterialApp(
       home: AppTheme(
         data: AppThemeData.light,
@@ -395,7 +399,9 @@ void main() {
 
     // The test owns the container so the flag outlives the receipt; a
     // `ProviderScope` widget would dispose it together with the screen.
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
+    );
     addTearDown(container.dispose);
     final broadcast = Completer<SendBroadcastOutcome>();
     await tester.pumpWidget(
@@ -487,7 +493,9 @@ void main() {
 
   testWidgets('leaving mid-broadcast keeps terminal closed until the runner '
       'finishes', (tester) async {
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
+    );
     addTearDown(container.dispose);
     final broadcast = Completer<SendBroadcastOutcome>();
     await tester.pumpWidget(
@@ -660,6 +668,7 @@ void main() {
     );
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
         child: MaterialApp.router(
           routerConfig: router,
           builder: (context, child) =>

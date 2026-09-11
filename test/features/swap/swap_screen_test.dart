@@ -8840,6 +8840,96 @@ void main() {
     },
   );
 
+  testWidgets(
+    'hardware Pay cancel returns to an empty composer and requires a fresh quote',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final provider = _FakeSwapProvider();
+      final signing = _FakeSwapHardwareSigningService();
+      final router = GoRouter(
+        initialLocation: '/pay',
+        routes: [_payRoute(), _swapActivityRoute()],
+      );
+      await tester.pumpWidget(
+        _routerHarness(
+          router,
+          bootstrap: _hardwareBootstrap,
+          swapProvider: provider,
+          hardwareSigningService: signing,
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '25',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      const recipient = '0x52908400098527886e0f7030069857d2e4169ee7';
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        recipient,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('pay_confirm_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('swap_keystone_signing_overlay_surface'),
+          ),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/pay');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(PayScreen)),
+      );
+      final restored = container.read(swapStateProvider);
+      expect(restored.payMode, isTrue);
+      expect(restored.quoteMode, SwapQuoteMode.exactOutput);
+      expect(restored.receiveAmountText, isEmpty);
+      expect(restored.destinationText, isEmpty);
+      expect(restored.reviewQuote, isNull);
+      expect(restored.pendingKeystoneSigningIntent, isNull);
+      expect(
+        tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+        isEmpty,
+      );
+      final requests = provider.requests.length;
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '25',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        recipient,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(provider.requests, hasLength(requests + 1));
+      expect(provider.requests.last.mode, SwapQuoteMode.exactOutput);
+      expect(provider.requests.last.amount, 25);
+    },
+  );
+
   testWidgets('hardware ZEC auto signing cancel drops the pending intent', (
     tester,
   ) async {
@@ -8905,6 +8995,39 @@ void main() {
     expect(hardwareSigningService.discardedDrafts, [BigInt.one]);
     expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
     expect(find.text('Deposit ZEC'), findsNothing);
+    expect(
+      tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_amount_field')),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .controller
+          .text,
+      '',
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    final restored = container.read(swapStateProvider);
+    expect(restored.destinationText, isEmpty);
+    expect(restored.reviewQuote, isNull);
+    expect(restored.pendingKeystoneSigningIntent, isNull);
+    final requestsBeforeRetry = swapProvider.requests.length;
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.003',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    expect(swapProvider.requests, hasLength(requestsBeforeRetry + 1));
+    expect(container.read(swapStateProvider).reviewQuote, isNotNull);
   });
 
   testWidgets(

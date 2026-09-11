@@ -520,6 +520,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   var _paymentRequestDetached = false;
   var _phase = _SendPhase.compose;
   var _isConfirmingSend = false;
+  SendReviewArgs? _pendingCancellation;
+  late final SyncNotifier _syncNotifier;
 
   /// Captured in [initState] so the hold can be given back from [dispose]
   /// and from an async continuation that outlives the element.
@@ -568,6 +570,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   @override
   void initState() {
     super.initState();
+    _syncNotifier = ref.read(syncProvider.notifier);
     _paymentUriBusySurface = ref.read(paymentUriBusySurfaceProvider.notifier);
     try {
       ref.read(sendProvingKeyWarmupProvider).call();
@@ -716,7 +719,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // into `onPopInvokedWithResult` → [_handleBack] instead.
   bool get _routePopAllowed {
     if (_phase != _SendPhase.compose) return false;
-    if (_isConfirmingSend) return false;
+    if (_isConfirmingSend || _pendingCancellation != null) return false;
     if (!widget.useRouteSteps && _step != _SendStep.recipient) return false;
     // Without an enclosing route (bare widgetbook renders) there is no way to
     // tell whether a pop would go anywhere, so keep the framework default.
@@ -1668,6 +1671,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       }
       setState(() {
         _feeZatoshi = fee;
+        _amountError = null;
         _reviewFeeQuote = _MobileSendFeeQuote(
           accountUuid: accountUuid,
           address: address,
@@ -1780,7 +1784,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   /// window; when it lifts, the app re-runs the drain against `/send/status`,
   /// which waits for the receipt.
   Future<void> _confirmAndSend() async {
-    if (_phase != _SendPhase.compose || _isConfirmingSend) return;
+    if (_phase != _SendPhase.compose ||
+        _isConfirmingSend ||
+        _pendingCancellation != null) {
+      return;
+    }
     _acquireConfirmBusySurface();
     try {
       await _confirmAndSendHeld();
@@ -1853,6 +1861,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       // this returns, and a link parked behind it would otherwise be
       // pre-checked against inputs this proposal still holds.
       await discardSendProposal(
+        syncNotifier: _syncNotifier,
+        accountUuid: args.proposalAccountUuid,
         proposalId: args.proposalId,
         sendFlowId: _sendFlowId,
         logContext: 'MobileSend(unmounted)',
@@ -1860,23 +1870,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       return;
     }
     if (args.feeZatoshi != reviewedFeeZatoshi) {
-      await discardSendProposal(
-        proposalId: args.proposalId,
-        sendFlowId: _sendFlowId,
-        logContext: 'MobileSend(fee changed after review)',
-      );
+      await _recoverCancelledProposal(args);
       if (!mounted) return;
+      // Recovery may have failed, switched accounts, or recomputed Max. Keep
+      // that result instead of replacing it with the discarded proposal's fee.
+      if (_pendingCancellation != null ||
+          !_hasCurrentReviewFeeQuote ||
+          _isMaxMode ||
+          !_reviewFeeQuote!.matches(
+            accountUuid: accountUuid,
+            address: address,
+            memo: memo,
+            amountZatoshi: amountZatoshi,
+            feeZatoshi: _feeZatoshi,
+          )) {
+        return;
+      }
       setState(() {
-        _isConfirmingSend = false;
-        _feeZatoshi = args.feeZatoshi;
-        _reviewFeeQuote = _MobileSendFeeQuote(
-          accountUuid: accountUuid,
-          address: address,
-          memo: memo,
-          amountZatoshi: amountZatoshi,
-          feeZatoshi: args.feeZatoshi,
-        );
-        _reviewFeeRetryAvailable = false;
         _reviewFeeNotice = 'Fee updated after sync. Review and confirm again.';
       });
       return;
@@ -1896,20 +1906,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         extra: args,
       );
       if (keystone == null) {
-        // Cancelled (or failed before signing); discard is idempotent. Released
-        // before the review is re-enabled so neither Back nor a second Confirm
-        // can run while the proposal still holds its inputs.
-        await discardSendProposal(
-          proposalId: args.proposalId,
-          sendFlowId: _sendFlowId,
-          logContext: 'MobileSend(keystone cancelled)',
-        );
-        if (mounted) {
-          setState(() {
-            _isConfirmingSend = false;
-            _phase = _SendPhase.compose;
-          });
-        }
+        await _recoverCancelledProposal(args);
         return;
       }
       if (!mounted) return;
@@ -1921,9 +1918,60 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _openStatusRoute(args);
   }
 
+  Future<void> _recoverCancelledProposal(SendReviewArgs args) async {
+    if (mounted) {
+      setState(() {
+        _pendingCancellation = args;
+        _isConfirmingSend = true;
+        _invalidateReviewFeeQuote();
+        _validateSeq++;
+        _maxSeq++;
+        _maxQuote = null;
+        _isResolvingMax = false;
+      });
+    }
+    final released = await discardSendProposal(
+      syncNotifier: _syncNotifier,
+      accountUuid: args.proposalAccountUuid,
+      proposalId: args.proposalId,
+      sendFlowId: args.sendFlowId,
+      logContext: 'MobileSend(cancelled proposal)',
+    );
+    if (!mounted) return;
+    if (!released) {
+      setState(() {
+        _isConfirmingSend = false;
+        _reviewFeeNotice = 'Could not finish cancellation. Try again.';
+      });
+      return;
+    }
+    setState(() {
+      _pendingCancellation = null;
+      _amountError = '';
+      _phase = _SendPhase.compose;
+    });
+    // Re-read the current account and amount through the normal quote path.
+    // Nothing may re-enable Confirm using the balance cached while inputs
+    // were reserved, including a Max quote from the first signing attempt.
+    await _refreshReviewQuote();
+    if (mounted) setState(() => _isConfirmingSend = false);
+  }
+
+  Future<void> _retryCancelledProposal() async {
+    final args = _pendingCancellation;
+    if (args == null || _isConfirmingSend) return;
+    _acquireConfirmBusySurface();
+    try {
+      await _recoverCancelledProposal(args);
+    } finally {
+      _releaseConfirmBusySurface();
+    }
+  }
+
   // ── Navigation ─────────────────────────────────────────────────────
 
   void _cancelSend() {
+    if (_isConfirmingSend || _pendingCancellation != null) return;
     if (widget.useRouteSteps) {
       context.go('/home');
       return;
@@ -1932,7 +1980,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleBack() {
-    if (_isConfirmingSend) return;
+    if (_isConfirmingSend || _pendingCancellation != null) return;
     switch (_phase) {
       case _SendPhase.failed:
         setState(() => _phase = _SendPhase.compose);
@@ -2086,9 +2134,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       previous,
       next,
     ) {
-      if (previous == next) return;
+      if (previous == next ||
+          _isConfirmingSend ||
+          _pendingCancellation != null) {
+        return;
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+        if (!mounted || _isConfirmingSend || _pendingCancellation != null) {
+          return;
+        }
         if (_isMaxMode) {
           if (next.freshness == SpendableBalanceFreshness.lastCompletedSync) {
             _invalidateMaxQuoteForSync();
@@ -2147,7 +2201,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   children: [
                     MobileTopNav.back(
                       title: title,
-                      onBack: _isConfirmingSend ? null : _handleBack,
+                      onBack: _isConfirmingSend || _pendingCancellation != null
+                          ? null
+                          : _handleBack,
                     ),
                     Expanded(child: body),
                   ],
@@ -3143,7 +3199,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                     isShielded: _isShieldedAddress,
                     memo: _effectiveMemo,
                     feeText: feeText,
-                    onMemoTap: () => unawaited(_editMemo()),
+                    onMemoTap: _isConfirmingSend || _pendingCancellation != null
+                        ? null
+                        : () => unawaited(_editMemo()),
                     onFeeInfoTap: () => unawaited(_showFeeInfo()),
                   ),
                   if (_reviewFeeNotice != null) ...[
@@ -3173,13 +3231,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   expand: true,
                   onPressed:
                       _isConfirmingSend ||
-                          _isResolvingMax ||
-                          (_isMaxMode && !_hasCurrentMaxQuote) ||
-                          (!_hasCurrentReviewFeeQuote &&
-                              !_reviewFeeRetryAvailable)
+                          (_pendingCancellation == null &&
+                              (_isResolvingMax ||
+                                  (_isMaxMode && !_hasCurrentMaxQuote) ||
+                                  (!_hasCurrentReviewFeeQuote &&
+                                      !_reviewFeeRetryAvailable)))
                       ? null
                       : () => unawaited(
-                          _reviewFeeRetryAvailable
+                          _pendingCancellation != null
+                              ? _retryCancelledProposal()
+                              : _reviewFeeRetryAvailable
                               ? _refreshReviewQuote()
                               : _confirmAndSend(),
                         ),
@@ -3190,7 +3251,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   child: Text(
                     _isConfirmingSend
                         ? 'Preparing...'
-                        : _reviewFeeRetryAvailable
+                        : _pendingCancellation != null ||
+                              _reviewFeeRetryAvailable
                         ? 'Try again'
                         : _isUsingCompletedSpendableSnapshot
                         ? 'Finishing wallet sync...'
@@ -3208,7 +3270,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   key: const ValueKey('mobile_send_cancel'),
                   expand: true,
                   variant: AppButtonVariant.ghost,
-                  onPressed: _cancelSend,
+                  onPressed: _isConfirmingSend || _pendingCancellation != null
+                      ? null
+                      : _cancelSend,
                   child: const Text('Cancel'),
                 ),
               ],
@@ -3784,7 +3848,7 @@ class _ReviewWrap extends StatelessWidget {
   final bool isShielded;
   final String memo;
   final String feeText;
-  final VoidCallback onMemoTap;
+  final VoidCallback? onMemoTap;
   final VoidCallback onFeeInfoTap;
 
   @override

@@ -905,6 +905,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   }) async {
     depositDrafts.add(intent.id);
     return SwapHardwarePcztDraft(
+      accountUuid: accountUuid,
       pcztBytes: const [1, 2, 3],
       needsSaplingParams: false,
       feeZatoshi: BigInt.from(10000),

@@ -127,6 +127,7 @@ class _FakeSendApi {
           required BigInt proposalId,
           required String sendFlowId,
           required String logContext,
+          required String accountUuid,
         }) async {
           final pending = discardGate;
           if (pending != null) await pending.future;
