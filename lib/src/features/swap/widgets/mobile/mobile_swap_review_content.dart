@@ -236,6 +236,7 @@ class _ReviewRow extends StatelessWidget {
                     AppTooltip(
                       message: helpTooltip!,
                       tapToShow: true,
+                      focusable: true,
                       child: AppIcon(
                         AppIcons.help,
                         size: 20,

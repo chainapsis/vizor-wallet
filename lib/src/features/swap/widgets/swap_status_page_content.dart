@@ -1086,7 +1086,7 @@ class _StatusDetailActionIcon extends StatelessWidget {
         Overlay.maybeOf(context) == null) {
       return child;
     }
-    return AppTooltip(message: message, child: child);
+    return AppTooltip(message: message, focusable: true, child: child);
   }
 }
 
