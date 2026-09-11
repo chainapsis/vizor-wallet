@@ -14,6 +14,7 @@ import 'button_use_cases.dart';
 import 'carousel_use_cases.dart';
 import 'chip_use_cases.dart';
 import 'context_menu_use_cases.dart';
+import 'cross_chain_payment_request_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
 import 'keystone_use_cases.dart';
@@ -895,6 +896,56 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookFolder(
               name: 'Pay',
               children: [
+                WidgetbookComponent(
+                  name: 'Payment request card',
+                  useCases: [
+                    for (final example in crossChainPaymentRequestExamples)
+                      WidgetbookUseCase(
+                        name: example.name,
+                        builder: (context) =>
+                            buildCrossChainPaymentRequestUseCase(
+                              context,
+                              example,
+                              isMobile: false,
+                            ),
+                      ),
+                    WidgetbookUseCase(
+                      name: 'Slippage settings',
+                      builder: (context) =>
+                          buildCrossChainPaymentRequestUseCase(
+                            context,
+                            crossChainPaymentRequestExamples.first,
+                            isMobile: false,
+                            showSlippageSettings: true,
+                          ),
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile payment request card',
+                  useCases: [
+                    for (final example in crossChainPaymentRequestExamples)
+                      WidgetbookUseCase(
+                        name: example.name,
+                        builder: (context) =>
+                            buildCrossChainPaymentRequestUseCase(
+                              context,
+                              example,
+                              isMobile: true,
+                            ),
+                      ),
+                    WidgetbookUseCase(
+                      name: 'Slippage settings',
+                      builder: (context) =>
+                          buildCrossChainPaymentRequestUseCase(
+                            context,
+                            crossChainPaymentRequestExamples.first,
+                            isMobile: true,
+                            showSlippageSettings: true,
+                          ),
+                    ),
+                  ],
+                ),
                 WidgetbookComponent(
                   name: 'Desktop wizard',
                   useCases: [

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/comma_to_dot_input_formatter.dart';
@@ -13,6 +14,7 @@ class SwapSlippageModal extends StatefulWidget {
     required this.slippageBps,
     required this.onSubmitted,
     required this.onCancel,
+    this.onBack,
     this.initialCustomText,
     this.paymentMode = false,
     super.key,
@@ -21,6 +23,7 @@ class SwapSlippageModal extends StatefulWidget {
   final int slippageBps;
   final ValueChanged<int> onSubmitted;
   final VoidCallback onCancel;
+  final VoidCallback? onBack;
   final String? initialCustomText;
   final bool paymentMode;
 
@@ -131,7 +134,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
     final selectedBps = _selectedBps;
     final canSubmit = selectedBps != null;
 
-    return AppModalCard(
+    final card = AppModalCard(
       key: const ValueKey('swap_slippage_modal'),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -197,6 +200,39 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
                 : null,
             onCancel: widget.onCancel,
           ),
+        ],
+      ),
+    );
+    if (widget.onBack == null) return card;
+
+    return SizedBox(
+      width: kAppModalCardWidth,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: AppButton(
+              key: const ValueKey('swap_slippage_back_button'),
+              variant: AppButtonVariant.secondary,
+              minWidth: kAppModalButtonHeight,
+              height: kAppModalButtonHeight,
+              contentPadding: EdgeInsets.zero,
+              enabledBackgroundColor: colors.background.base,
+              onPressed: widget.onBack,
+              child: Semantics(
+                label: 'Back',
+                child: AppIcon(
+                  AppIcons.arrowBack,
+                  size: 16,
+                  color: colors.icon.accent,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          card,
         ],
       ),
     );

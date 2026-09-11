@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../widgetbook/activity_use_cases.dart';
 import '../widgetbook/keystone_use_cases.dart';
+import '../widgetbook/cross_chain_payment_request_use_cases.dart';
 import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
@@ -1478,6 +1479,50 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'payment-request-full',
     description: 'Desktop payment request card with label, message and note',
     builder: buildPaymentRequestFullUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'cross-chain-payment-base-usdc',
+    description:
+        'Base USDC request with an estimated ZEC spend and slippage setting',
+    builder: buildBaseUsdcPaymentRequestUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'cross-chain-payment-slippage',
+    description:
+        'Payment request slippage settings using the existing Pay editor',
+    builder: buildPaymentRequestSlippageUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'cross-chain-payment-requester',
+    description: 'Payment request with requester-provided label and message',
+    builder: buildPaymentRequestRequesterDetailsUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'cross-chain-payment-requester-long',
+    description: 'Payment request with a long requester-provided message',
+    builder: buildPaymentRequestLongRequesterDetailsUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'cross-chain-payment-bitcoin',
+    description: 'Bitcoin payment request with eight-decimal precision',
+    builder: buildBitcoinPaymentRequestUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'cross-chain-payment-litecoin',
+    description: 'Litecoin payment request with its native asset icon',
+    builder: buildLitecoinPaymentRequestUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'cross-chain-payment-solana-usdc',
+    description: 'Solana USDC request with network badge and mint disclosure',
+    builder: buildSolanaUsdcPaymentRequestUseCase,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'payment-request-minimal',
