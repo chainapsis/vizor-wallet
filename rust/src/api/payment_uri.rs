@@ -10,6 +10,7 @@ pub fn parse_cross_chain_payment_uri(uri: String) -> Result<String, String> {
         return Err("Payment request is too long.".to_owned());
     }
 
+    let uri = lowercase_uppercase_bech32_address(&uri);
     let parsed = payment_uri::PaymentRequest::parse(&uri).map_err(sanitized_payment_uri_error)?;
     if let payment_uri::PaymentRequest::Ethereum(request) = &parsed {
         let raw = request.as_raw();
@@ -41,6 +42,31 @@ pub fn parse_cross_chain_payment_uri(uri: String) -> Result<String, String> {
     // Upstream currently exposes JSON serialization through parsing only. Use
     // that versioned contract after validating conditions it does not retain.
     payment_uri::parse_to_json(&uri).map_err(sanitized_payment_uri_error)
+}
+
+/// BIP-173 allows an all-uppercase bech32 address so QR encoders can use the
+/// smaller alphanumeric mode, and merchant QR codes use that form. The parser
+/// compares the HRP case-sensitively, so lowercase such an address first.
+/// Base58 addresses are mixed case and never match; parameters are untouched.
+fn lowercase_uppercase_bech32_address(uri: &str) -> String {
+    const BECH32_PREFIXES: [&str; 6] = ["bc1", "tb1", "bcrt1", "ltc1", "tltc1", "rltc1"];
+    let Some((scheme, rest)) = uri.split_once(':') else {
+        return uri.to_owned();
+    };
+    if !(scheme.eq_ignore_ascii_case("bitcoin") || scheme.eq_ignore_ascii_case("litecoin")) {
+        return uri.to_owned();
+    }
+    let address_len = rest.find('?').unwrap_or(rest.len());
+    let (address, query) = rest.split_at(address_len);
+    let is_uppercase_bech32 = address.is_ascii()
+        && !address.bytes().any(|byte| byte.is_ascii_lowercase())
+        && BECH32_PREFIXES.iter().any(|prefix| {
+            address.len() > prefix.len() && address[..prefix.len()].eq_ignore_ascii_case(prefix)
+        });
+    if !is_uppercase_bech32 {
+        return uri.to_owned();
+    }
+    format!("{scheme}:{}{query}", address.to_ascii_lowercase())
 }
 
 fn sanitized_payment_uri_error(error: payment_uri::Error) -> String {
@@ -96,6 +122,26 @@ mod tests {
                 "message": "Order 123",
             })
         );
+    }
+
+    #[test]
+    fn uppercase_bech32_qr_form_parses_like_lowercase() {
+        let lowercase = parse(
+            "bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4?amount=0.001&label=Coffee%20Shop"
+                .to_owned(),
+        );
+        let uppercase = parse(
+            "BITCOIN:BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4?amount=0.001&label=Coffee%20Shop"
+                .to_owned(),
+        );
+        assert_eq!(uppercase, lowercase);
+        assert_eq!(uppercase["label"], "Coffee Shop");
+        // Base58 and mixed-case bech32 are left to the parser untouched.
+        assert!(parse_cross_chain_payment_uri(format!("BITCOIN:{BITCOIN}")).is_ok());
+        assert!(parse_cross_chain_payment_uri(
+            "bitcoin:bc1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4".to_owned()
+        )
+        .is_err());
     }
 
     #[test]
