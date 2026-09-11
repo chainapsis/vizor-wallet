@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
@@ -69,17 +70,14 @@ void main() {
     );
   });
 
-  testWidgets('review summary matches the mobile Figma surface geometry', (
-    tester,
-  ) async {
+  testWidgets('review summary preserves its surface styling', (tester) async {
     await _pumpReview(tester);
 
     final summary = find.byKey(
       const ValueKey('payment_link_mobile_review_summary'),
     );
-    expect(tester.getSize(summary), const Size(361, 193));
+    expect(tester.getSize(summary).width, 361);
     expect(tester.getTopLeft(summary).dx, 16);
-    expect(tester.getTopLeft(summary).dy, closeTo(456.625, 0.01));
 
     final container = tester.widget<Container>(summary);
     expect(
@@ -92,6 +90,83 @@ void main() {
     final decoration = container.decoration! as BoxDecoration;
     expect(decoration.color, AppThemeData.light.colors.background.ground);
     expect(decoration.borderRadius, BorderRadius.circular(AppRadii.large));
+  });
+
+  for (final size in [const Size(393, 773), const Size(320, 568)]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('review contains wrapped content at $size, scale $scale', (
+        tester,
+      ) async {
+        var continued = 0;
+        await _pumpReview(
+          tester,
+          size: size,
+          textScale: scale,
+          onFeeHelp: _noop,
+          onContinue: () => continued++,
+          cardAmountText: '0.001 ZEC',
+          cardFeeText: '0.0002 ZEC',
+          totalAmountText: '0.0012 ZEC',
+        );
+        _expectSummaryTextFits(tester);
+        final normalHeight = tester.getSize(_summary).height;
+
+        // More digits must grow content, without hiding either column.
+        await _pumpReview(
+          tester,
+          size: size,
+          textScale: scale,
+          onFeeHelp: _noop,
+          onContinue: () => continued++,
+          cardAmountText: '12345678.12345678 ZEC',
+          cardFeeText: '0.00020001 ZEC',
+          totalAmountText: '12345678.12365679 ZEC',
+        );
+        _expectSummaryTextFits(tester);
+        expect(tester.getSize(_summary).height, greaterThan(normalHeight));
+
+        final button = find.byKey(
+          const ValueKey('payment_link_mobile_review_continue_button'),
+        );
+        await tester.scrollUntilVisible(button, 150);
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(button).top - tester.getRect(_summary).bottom,
+          greaterThanOrEqualTo(AppSpacing.md),
+        );
+        await tester.ensureVisible(button);
+        await tester.pumpAndSettle();
+        final buttonLabel = tester.renderObject<RenderParagraph>(
+          find.descendant(of: button, matching: find.byType(RichText)),
+        );
+        _expectParagraphFits(buttonLabel);
+        expect(
+          tester.getSize(button).height,
+          greaterThanOrEqualTo(buttonLabel.size.height),
+        );
+        await tester.tap(button);
+        await tester.pump();
+        expect(continued, 1);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  testWidgets('review keeps its action at the bottom when content fits', (
+    tester,
+  ) async {
+    await _pumpReview(tester, onFeeHelp: _noop);
+    final button = find.byKey(
+      const ValueKey('payment_link_mobile_review_continue_button'),
+    );
+    expect(tester.getRect(button).bottom, 773 - 12);
+    final scrollable = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byKey(const ValueKey('payment_link_mobile_review_scroll')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(scrollable.position.maxScrollExtent, 0);
   });
 
   testWidgets('amount selector strip uses the lowered mobile anchor', (
@@ -226,32 +301,104 @@ void main() {
   });
 }
 
-Future<void> _pumpReview(WidgetTester tester, {VoidCallback? onFeeHelp}) async {
-  await tester.binding.setSurfaceSize(const Size(393, 773));
+Future<void> _pumpReview(
+  WidgetTester tester, {
+  VoidCallback? onFeeHelp,
+  VoidCallback? onContinue,
+  Size size = const Size(393, 773),
+  double textScale = 1,
+  String cardAmountText = '4.45 ZEC',
+  String cardFeeText = '0.04 ZEC',
+  String totalAmountText = '4.49 ZEC',
+}) async {
+  await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
   await tester.pumpWidget(
     MaterialApp(
-      builder: (_, navigator) =>
-          AppTheme(data: AppThemeData.light, child: navigator!),
+      builder: (context, navigator) => AppTheme(
+        data: AppThemeData.light,
+        child: MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: navigator!,
+        ),
+      ),
       home: Directionality(
         textDirection: TextDirection.ltr,
         child: SizedBox(
-          width: 393,
-          height: 773,
+          width: size.width,
+          height: size.height,
           child: PaymentLinkReviewMobileView(
             card: const SizedBox(width: 361, height: 225.625),
             onBack: _noop,
-            cardAmountText: '4.45 ZEC',
-            cardFeeText: '0.04 ZEC',
-            totalAmountText: '4.49 ZEC',
-            onContinue: _noop,
+            cardAmountText: cardAmountText,
+            cardFeeText: cardFeeText,
+            totalAmountText: totalAmountText,
+            onContinue: onContinue ?? _noop,
             onFeeHelp: onFeeHelp,
           ),
         ),
       ),
     ),
   );
+}
+
+final _summary = find.byKey(
+  const ValueKey('payment_link_mobile_review_summary'),
+);
+
+void _expectSummaryTextFits(WidgetTester tester) {
+  final summaryRect = tester.getRect(_summary);
+  final divider = tester.getRect(
+    find.byKey(const ValueKey('payment_link_mobile_review_divider')),
+  );
+  final texts = find.descendant(of: _summary, matching: find.byType(RichText));
+  expect(texts, findsNWidgets(6));
+  for (final label in [
+    'Card amount',
+    'Card fee (deposit + redeem)',
+    'Total amount deducted',
+  ]) {
+    final labelRect = tester.getRect(find.text(label));
+    final valueRect = tester.getRect(
+      find.byKey(ValueKey('payment_link_mobile_review_value_$label')),
+    );
+    expect(
+      valueRect.top,
+      closeTo(labelRect.top, 0.01),
+      reason: '$label and its value must start on the same line',
+    );
+    expect(valueRect.left, greaterThanOrEqualTo(labelRect.right));
+  }
+  for (final element in texts.evaluate()) {
+    final paragraph = element.renderObject! as RenderParagraph;
+    _expectParagraphFits(paragraph);
+    final rect = paragraph.localToGlobal(Offset.zero) & paragraph.size;
+    expect(summaryRect.contains(rect.topLeft), isTrue);
+    expect(summaryRect.contains(rect.bottomRight), isTrue);
+    final total = paragraph.text.toPlainText().contains(
+      'Total amount deducted',
+    );
+    if (total) {
+      expect(rect.top, greaterThan(divider.bottom));
+    } else if (paragraph.text.toPlainText().contains('Card fee')) {
+      expect(rect.bottom, lessThan(divider.top));
+    }
+  }
+  expect(tester.takeException(), isNull);
+}
+
+void _expectParagraphFits(RenderParagraph paragraph) {
+  final painter = TextPainter(
+    text: paragraph.text,
+    textDirection: paragraph.textDirection,
+    textScaler: paragraph.textScaler,
+  )..layout(maxWidth: paragraph.size.width);
+  // Presence and absence of RenderFlex errors do not catch clipped glyphs.
+  expect(paragraph.size.height, greaterThanOrEqualTo(painter.height - 0.01));
+  painter.dispose();
 }
 
 void _noop() {}
