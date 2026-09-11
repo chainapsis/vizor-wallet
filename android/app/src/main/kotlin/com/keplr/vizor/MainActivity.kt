@@ -45,6 +45,11 @@ class MainActivity : FlutterFragmentActivity() {
     private var launchIncomingUriDigest: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        restoreIncomingUriState(savedInstanceState)
+        super.onCreate(savedInstanceState)
+    }
+
+    private fun restoreIncomingUriState(savedInstanceState: Bundle?) {
         // Restored before super.onCreate: on a recreated activity super
         // re-attaches the Flutter fragment, which already runs
         // configureFlutterEngine and the capture guard below.
@@ -59,17 +64,20 @@ class MainActivity : FlutterFragmentActivity() {
         // restore would recognise the creating intent as already delivered and
         // skip it, while the in-memory queue that still held it is gone —
         // a cold-start link opened just before the app was backgrounded would
-        // simply disappear. Only `zcash:` links are restored; see
-        // [onSaveInstanceState] for why an https link is dropped instead.
+        // simply disappear. Only payment transfer links are restored; see
+        // [saveIncomingUriState] for why secret-bearing links are dropped.
         pendingIncomingUris.clear()
         savedInstanceState?.getStringArrayList(KEY_PENDING_INCOMING_URIS)?.let {
             pendingIncomingUris.addAll(it.filter(::isSecretFreeIncomingUri))
         }
-        super.onCreate(savedInstanceState)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        saveIncomingUriState(outState)
+    }
+
+    private fun saveIncomingUriState(outState: Bundle) {
         // Survives process death, so the recreated activity knows which of the
         // task's VIEW intents were already delivered. Digests only: the system
         // persists this bundle to disk, and a Gift Card link's fragment is a
@@ -81,8 +89,8 @@ class MainActivity : FlutterFragmentActivity() {
         outState.putString(KEY_LAUNCH_INCOMING_URI_DIGEST, launchIncomingUriDigest)
         // Undelivered links normally travel with the consumed record they were
         // already added to, so restoring one cannot lose the other. Only
-        // `zcash:` links are persisted here, because they carry no secret; an
-        // https Gift Card link that has not reached Dart yet is deliberately
+        // payment transfer links are persisted here; a Gift Card link or remote
+        // transaction request that has not reached Dart yet is deliberately
         // dropped on process death rather than written to disk, and the user
         // re-taps it. The consumed digest for it stays, so the restore does not
         // replay a link that was already delivered.
@@ -191,6 +199,10 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
         }
+        captureLaunchIncomingUri(intent)
+    }
+
+    private fun captureLaunchIncomingUri(intent: Intent?) {
         // A link that cold-starts Vizor arrives as the launch intent. Restoring
         // the task after the process was killed recreates the activity with a
         // VIEW intent (NEW_TASK only, no LAUNCHED_FROM_HISTORY), which replayed
@@ -372,15 +384,35 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     /**
-     * Whether this link may be written to disk. A ZIP-321 `zcash:` request
-     * carries no bearer secret; an https deeplink can carry a Gift Card claim
-     * mnemonic in its fragment and never leaves memory. Other schemes remain
-     * memory-only until Dart classifies them: a Solana transaction request,
-     * for example, can contain a server URL with bearer material.
+     * Disk persistence is restricted to transfer requests. Gift Card fragments
+     * and remote transaction URLs can contain bearer secrets. This is only a
+     * persistence allowlist; Dart/Rust still validate every incoming request.
      */
     private fun isSecretFreeIncomingUri(uri: String): Boolean {
-        val scheme = runCatching { Uri.parse(uri).scheme }.getOrNull() ?: return false
-        return "zcash".equals(scheme, ignoreCase = true)
+        val data = runCatching { Uri.parse(uri) }.getOrNull() ?: return false
+        val scheme = data.scheme?.lowercase() ?: return false
+        if (scheme == "zcash") return true
+        if (data.encodedFragment != null) return false
+        val allowedParameters = when (scheme) {
+            "bitcoin", "litecoin" -> setOf("amount", "label", "message")
+            "ethereum" -> setOf("value", "address", "uint256", "gas", "gasLimit", "gasPrice")
+            "solana" -> setOf("amount", "spl-token", "reference", "label", "message", "memo")
+            else -> return false
+        }
+        val payload = data.encodedSchemeSpecificPart ?: return false
+        val target = payload.substringBefore('?')
+        val transferTarget = when (scheme) {
+            "ethereum" -> Regex("(?:pay-)?0x[0-9a-fA-F]{40}(?:@[0-9]+)?(?:/transfer)?")
+            "solana" -> Regex("[1-9A-HJ-NP-Za-km-z]{32,44}")
+            else -> Regex("[a-zA-Z0-9]+")
+        }
+        if (!transferTarget.matches(target)) return false
+        // Android treats scheme:address as opaque, so queryParameterNames is
+        // unavailable. Decode only the keys, leaving the original URI intact.
+        val query = payload.substringAfter('?', "")
+        return query.isEmpty() || query.split('&').all {
+            Uri.decode(it.substringBefore('=')) in allowedParameters
+        }
     }
 
     private fun incomingUriDigest(uri: String): String {
