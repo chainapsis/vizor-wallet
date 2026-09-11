@@ -11,11 +11,12 @@
 
 namespace {
 
-constexpr wchar_t kProtocolKeyPath[] = L"Software\\Classes\\zcash";
-constexpr wchar_t kProtocolCommandKeyPath[] =
-    L"Software\\Classes\\zcash\\shell\\open\\command";
-constexpr wchar_t kEffectiveProtocolCommandKeyPath[] =
-    L"zcash\\shell\\open\\command";
+constexpr const wchar_t* kPaymentRequestSchemes[] = {
+    L"zcash", L"bitcoin", L"litecoin", L"ethereum", L"solana"};
+
+std::wstring ProtocolKeyPath(const wchar_t* scheme) {
+  return std::wstring(L"Software\\Classes\\") + scheme;
+}
 
 struct RegistryKey {
   HKEY value = nullptr;
@@ -62,7 +63,7 @@ void SetStringValue(HKEY key, const wchar_t* name, const std::wstring& value) {
       static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
 }
 
-// Whether the effective zcash: shell open command could be read, and if so
+// Whether the effective payment URI shell open command could be read, and if so
 // whether one exists at all. Any failure we cannot attribute to "there is no
 // registration" is kUnreadable: a REG_EXPAND_SZ whose expansion needs a
 // second pass, a value of an unexpected type, a key an ACL keeps us out of.
@@ -74,15 +75,18 @@ enum class DefaultCommandState {
   kUnreadable,
 };
 
-// Reads the effective zcash: shell open command into |command|, which is left
+// Reads the effective payment URI shell open command into |command|, which is left
 // empty unless kPresent is returned. Only ERROR_FILE_NOT_FOUND -- no key, or
 // no default value under it -- counts as kAbsent.
-DefaultCommandState ReadDefaultCommand(std::wstring* command) {
+DefaultCommandState ReadDefaultCommand(const wchar_t* scheme,
+                                       std::wstring* command) {
+  const std::wstring effective_command_path =
+      std::wstring(scheme) + L"\\shell\\open\\command";
   command->clear();
 
   DWORD size = 0;
   LSTATUS status =
-      ::RegGetValueW(HKEY_CLASSES_ROOT, kEffectiveProtocolCommandKeyPath,
+      ::RegGetValueW(HKEY_CLASSES_ROOT, effective_command_path.c_str(),
                      nullptr, RRF_RT_REG_SZ, nullptr, nullptr, &size);
   if (status == ERROR_FILE_NOT_FOUND) {
     return DefaultCommandState::kAbsent;
@@ -104,7 +108,7 @@ DefaultCommandState ReadDefaultCommand(std::wstring* command) {
         static_cast<DWORD>(value.size() * sizeof(wchar_t));
     DWORD read_bytes = capacity_bytes;
     status =
-        ::RegGetValueW(HKEY_CLASSES_ROOT, kEffectiveProtocolCommandKeyPath,
+        ::RegGetValueW(HKEY_CLASSES_ROOT, effective_command_path.c_str(),
                        nullptr, RRF_RT_REG_SZ, nullptr, value.data(),
                        &read_bytes);
     if (status == ERROR_SUCCESS) {
@@ -177,7 +181,7 @@ bool IsAbsoluteWindowsPath(const std::wstring& value) {
 // (ERROR_NOT_READY), an ACL-restricted directory (ERROR_ACCESS_DENIED) and an
 // unreachable UNC share (ERROR_BAD_NETPATH) all leave a handler that is merely
 // unreachable right now, which is still the user's chosen handler; stealing the
-// zcash: scheme from it is not something the user can undo by plugging the
+// scheme from it is not something the user can undo by plugging the
 // drive back in.
 bool PathExistsOrIsUnreachable(const std::wstring& path) {
   if (::GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -287,29 +291,29 @@ void NotifyAssociationChanged() {
   ::SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
 
-}  // namespace
-
-void RegisterZcashProtocolHandler() {
+void RegisterPaymentProtocolHandler(const wchar_t* scheme) {
   const std::wstring module_path = ModuleFileName();
   if (module_path.empty()) {
     return;
   }
 
   RegistryKey protocol_key;
-  if (!CreateCurrentUserKey(kProtocolKeyPath, &protocol_key)) {
+  if (!CreateCurrentUserKey(ProtocolKeyPath(scheme).c_str(), &protocol_key)) {
     return;
   }
-  SetStringValue(protocol_key.value, nullptr, L"URL:Zcash Payment URI");
+  SetStringValue(protocol_key.value, nullptr, L"URL:Vizor Payment URI");
   SetStringValue(protocol_key.value, L"URL Protocol", L"");
 
   RegistryKey icon_key;
-  if (CreateCurrentUserKey(L"Software\\Classes\\zcash\\DefaultIcon",
+  if (CreateCurrentUserKey((ProtocolKeyPath(scheme) + L"\\DefaultIcon").c_str(),
                            &icon_key)) {
     SetStringValue(icon_key.value, nullptr, L"\"" + module_path + L"\",0");
   }
 
   RegistryKey command_key;
-  if (!CreateCurrentUserKey(kProtocolCommandKeyPath, &command_key)) {
+  if (!CreateCurrentUserKey(
+          (ProtocolKeyPath(scheme) + L"\\shell\\open\\command").c_str(),
+          &command_key)) {
     return;
   }
   SetStringValue(command_key.value, nullptr,
@@ -317,7 +321,7 @@ void RegisterZcashProtocolHandler() {
   NotifyAssociationChanged();
 }
 
-void UnregisterZcashProtocolHandler() {
+void UnregisterPaymentProtocolHandler(const wchar_t* scheme) {
   const std::wstring module_path = ToLower(ModuleFileName());
   if (module_path.empty()) {
     return;
@@ -327,30 +331,30 @@ void UnregisterZcashProtocolHandler() {
   // and neither is a command that merely contains our path, so leave both
   // alone rather than tearing down a handler that may belong to someone else.
   std::wstring command;
-  if (ReadDefaultCommand(&command) != DefaultCommandState::kPresent) {
+  if (ReadDefaultCommand(scheme, &command) != DefaultCommandState::kPresent) {
     return;
   }
   if (!CommandLaunchesModule(command, module_path)) {
     return;
   }
 
-  ::RegDeleteTreeW(HKEY_CURRENT_USER, kProtocolKeyPath);
+  ::RegDeleteTreeW(HKEY_CURRENT_USER, ProtocolKeyPath(scheme).c_str());
   NotifyAssociationChanged();
 }
 
-void RegisterZcashProtocolHandlerIfUnclaimed() {
+void RegisterPaymentProtocolHandlerIfUnclaimed(const wchar_t* scheme) {
   const std::wstring module_path = ToLower(ModuleFileName());
   if (module_path.empty()) {
     return;
   }
   // Only claim the scheme at startup when nobody holds it, or when the handler
   // that holds it points at an executable that no longer exists. Registering on
-  // every launch unconditionally would silently steal the zcash: handler back
-  // from another wallet (or another Vizor channel) the user selected. Install
-  // and update hooks still register unconditionally -- that is the intended
-  // moment to claim the handler.
+  // every launch unconditionally would silently steal a payment URI handler
+  // back from another wallet (or Vizor channel) the user selected. The existing
+  // Zcash install hook registers unconditionally; new schemes respect an
+  // existing owner even at install.
   std::wstring command;
-  const DefaultCommandState state = ReadDefaultCommand(&command);
+  const DefaultCommandState state = ReadDefaultCommand(scheme, &command);
   // A read we could not complete says nothing about who owns the scheme, so
   // assume it is owned and write nothing. Treating a permissions error or an
   // ERROR_MORE_DATA expansion as "unclaimed" is what would let a plain launch
@@ -373,5 +377,30 @@ void RegisterZcashProtocolHandlerIfUnclaimed() {
       return;
     }
   }
-  RegisterZcashProtocolHandler();
+  RegisterPaymentProtocolHandler(scheme);
+}
+
+}  // namespace
+
+void RegisterPaymentProtocolHandlers() {
+  // Preserve Zcash's existing install/update association. Supporting additional
+  // payment networks does not opt the user out of their other wallet choices.
+  RegisterPaymentProtocolHandler(L"zcash");
+  for (const wchar_t* scheme : kPaymentRequestSchemes) {
+    if (std::wstring(scheme) != L"zcash") {
+      RegisterPaymentProtocolHandlerIfUnclaimed(scheme);
+    }
+  }
+}
+
+void RegisterPaymentProtocolHandlersIfUnclaimed() {
+  for (const wchar_t* scheme : kPaymentRequestSchemes) {
+    RegisterPaymentProtocolHandlerIfUnclaimed(scheme);
+  }
+}
+
+void UnregisterPaymentProtocolHandlers() {
+  for (const wchar_t* scheme : kPaymentRequestSchemes) {
+    UnregisterPaymentProtocolHandler(scheme);
+  }
 }

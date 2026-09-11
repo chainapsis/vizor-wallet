@@ -53,7 +53,7 @@
                     android:scheme="https"
                     android:host="${vizorDeeplinkHost}" />
             </intent-filter>
-            <!-- ZIP-321 payment links: zcash:<address>?amount=... open Vizor.
+            <!-- Payment request schemes open the review card in Vizor.
                  Handled in MainActivity (com.zcash.wallet/payment_uri channel),
                  not Flutter's built-in deep linking. -->
             <intent-filter>
@@ -61,6 +61,10 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="zcash"/>
+                <data android:scheme="bitcoin"/>
+                <data android:scheme="litecoin"/>
+                <data android:scheme="ethereum"/>
+                <data android:scheme="solana"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

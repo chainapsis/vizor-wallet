@@ -19,12 +19,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
   std::vector<std::string> initial_payment_uris =
-      GetZcashUriArguments(command_line_arguments);
+      GetPaymentUriArguments(command_line_arguments);
 
   SingleInstanceGuard single_instance;
   const SingleInstanceAcquireResult instance_result = single_instance.Acquire();
   if (instance_result == SingleInstanceAcquireResult::kSecondary) {
-    // A zcash: link launched this secondary process. Hand the URIs to the
+    // A payment request launched this secondary process. Hand the URIs to the
     // primary window, which presents itself from its WM_COPYDATA handler; only
     // fall back to a bare activation when nothing could be delivered.
     if (ForwardPaymentUrisToRunningInstance(
@@ -71,9 +71,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   const HRESULT ro_init = ::RoInitialize(RO_INIT_SINGLETHREADED);
   const bool ro_initialized = SUCCEEDED(ro_init);
-  // Conditional: don't steal the zcash: handler from another wallet/channel on
-  // every launch. Install/update hooks (RunVelopackHooks) still claim it.
-  RegisterZcashProtocolHandlerIfUnclaimed();
+  // Conditional: don't steal payment URI handlers from another wallet/channel on
+  // every launch. Install/update hooks retain Zcash's existing claim behavior.
+  RegisterPaymentProtocolHandlersIfUnclaimed();
 
   flutter::DartProject project(L"data");
 

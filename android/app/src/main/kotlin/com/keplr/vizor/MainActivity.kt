@@ -313,19 +313,22 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     /**
-     * Whether [data] is a link this app takes in: a ZIP-321 `zcash:` payment
+     * Whether [data] is a link this app takes in: a supported payment request
      * link, or a verified HTTPS link on the deeplink host with no userinfo and
      * no explicit port. One predicate for both kinds, so the two intent-filters
      * in the manifest and this capture never disagree about what is accepted.
      */
     private fun acceptsIncomingUri(data: Uri): Boolean {
         val scheme = data.scheme ?: return false
-        if ("zcash".equals(scheme, ignoreCase = true)) return true
+        if (isPaymentRequestScheme(scheme)) return true
         return "https".equals(scheme, ignoreCase = true) &&
             DEEPLINK_HOST.equals(data.host, ignoreCase = true) &&
             data.userInfo == null &&
             data.port == -1
     }
+
+    private fun isPaymentRequestScheme(scheme: String): Boolean =
+        PAYMENT_REQUEST_SCHEMES.any { it.equals(scheme, ignoreCase = true) }
 
     private fun captureIncomingUri(intent: Intent?, isLaunchIntent: Boolean = false) {
         if (intent == null || intent.action != Intent.ACTION_VIEW) return
@@ -371,7 +374,9 @@ class MainActivity : FlutterFragmentActivity() {
     /**
      * Whether this link may be written to disk. A ZIP-321 `zcash:` request
      * carries no bearer secret; an https deeplink can carry a Gift Card claim
-     * mnemonic in its fragment and never leaves memory.
+     * mnemonic in its fragment and never leaves memory. Other schemes remain
+     * memory-only until Dart classifies them: a Solana transaction request,
+     * for example, can contain a server URL with bearer material.
      */
     private fun isSecretFreeIncomingUri(uri: String): Boolean {
         val scheme = runCatching { Uri.parse(uri).scheme }.getOrNull() ?: return false
@@ -393,6 +398,8 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     companion object {
+        private val PAYMENT_REQUEST_SCHEMES =
+            setOf("zcash", "bitcoin", "litecoin", "ethereum", "solana")
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"

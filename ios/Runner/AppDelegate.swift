@@ -805,14 +805,17 @@ import UIKit
   }
 }
 
-/// Buffers trusted Vizor HTTPS links until the Dart isolate has installed its
-/// handler. Never logs the URL because a route may contain bearer material.
+/// Buffers payment requests and trusted Vizor HTTPS links until the Dart isolate
+/// has installed its handler. Never logs URLs that may contain bearer material.
 final class IncomingUriChannelBridge {
   static let shared = IncomingUriChannelBridge()
   static let deeplinkHost =
     (Bundle.main.object(forInfoDictionaryKey: "VizorDeeplinkHost") as? String)?
     .lowercased() ?? "link.vizor.cash"
   private static let paymentLinkPath = "/payment-links/open"
+  private static let paymentRequestSchemes: Set<String> = [
+    "zcash", "bitcoin", "litecoin", "ethereum", "solana"
+  ]
   /// Sanity ceiling, set far above every link this app actually accepts.
   ///
   /// Dart owns the real size limits -- `VizorPaymentLink.maxEncodedLength` and
@@ -862,10 +865,10 @@ final class IncomingUriChannelBridge {
   }
 
   func handles(_ url: URL) -> Bool {
-    // A ZIP-321 payment link is an opaque `zcash:` URL: no host to check, and
-    // the Dart side owns its parsing. Everything else must be one of the
-    // verified HTTPS routes on the deeplink host.
-    if url.scheme?.lowercased() == "zcash" {
+    // Payment request schemes have no host to check; Dart owns their parsing.
+    // Everything else must be a verified HTTPS route on the deeplink host.
+    if let scheme = url.scheme?.lowercased(),
+      Self.paymentRequestSchemes.contains(scheme) {
       return true
     }
     guard
