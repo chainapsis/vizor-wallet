@@ -8,30 +8,30 @@
 #include <cctype>
 #include <iostream>
 
-bool IsZcashUri(const std::string& value) {
-  constexpr char prefix[] = "zcash:";
-  constexpr size_t prefix_length = sizeof(prefix) - 1;
-  if (value.size() < prefix_length || value.size() > kMaxZcashUriBytes) {
+bool IsPaymentUri(const std::string& value) {
+  if (value.size() > kMaxPaymentUriBytes) {
     return false;
   }
-
-  for (size_t i = 0; i < prefix_length; ++i) {
-    const auto actual =
-        static_cast<unsigned char>(value[i]);
-    const auto expected =
-        static_cast<unsigned char>(prefix[i]);
-    if (std::tolower(actual) != std::tolower(expected)) {
-      return false;
+  constexpr const char* prefixes[] = {
+      "zcash:", "bitcoin:", "litecoin:", "ethereum:", "solana:"};
+  for (const char* prefix : prefixes) {
+    size_t i = 0;
+    while (prefix[i] != '\0' && i < value.size() &&
+           std::tolower(static_cast<unsigned char>(value[i])) == prefix[i]) {
+      ++i;
+    }
+    if (prefix[i] == '\0') {
+      return true;
     }
   }
-  return true;
+  return false;
 }
 
 // Returns true when |value| is something the Dart side can actually decode.
 // The channel carries the URI through StandardMessageCodec, which throws on
 // malformed UTF-8; a bad payload that arrives before Dart is ready aborts
 // takePendingUris and wedges the payment-URI channel for the rest of the
-// session. Control characters are rejected too: no ZIP-321 URI contains one,
+// session. Control characters are rejected too: payment request URIs contain none,
 // and they have no business reaching the send screen.
 bool IsDecodablePaymentUriPayload(const std::string& value) {
   if (value.empty()) {
@@ -84,7 +84,7 @@ std::vector<std::string> GetCommandLineArguments() {
   return command_line_arguments;
 }
 
-std::vector<std::string> GetZcashUriArguments(
+std::vector<std::string> GetPaymentUriArguments(
     const std::vector<std::string>& arguments) {
   std::vector<std::string> uris;
   for (const auto& argument : arguments) {
@@ -92,7 +92,7 @@ std::vector<std::string> GetZcashUriArguments(
     // so the two entry points accept the same set. An argv URI reaches Dart
     // through the identical channel, and an undecodable one wedges it just as
     // thoroughly as a forwarded one would.
-    if (IsZcashUri(argument) && IsDecodablePaymentUriPayload(argument)) {
+    if (IsPaymentUri(argument) && IsDecodablePaymentUriPayload(argument)) {
       uris.push_back(argument);
     }
   }

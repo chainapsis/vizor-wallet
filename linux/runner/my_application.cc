@@ -58,8 +58,18 @@ static void register_icon_theme_paths() {
   }
 }
 
-static gboolean is_zcash_uri(const gchar* value) {
-  return value != nullptr && g_ascii_strncasecmp(value, "zcash:", 6) == 0;
+static gboolean is_payment_uri(const gchar* value) {
+  if (value == nullptr) {
+    return FALSE;
+  }
+  static const gchar* prefixes[] = {
+      "zcash:", "bitcoin:", "litecoin:", "ethereum:", "solana:"};
+  for (const gchar* prefix : prefixes) {
+    if (g_ascii_strncasecmp(value, prefix, strlen(prefix)) == 0) {
+      return TRUE;
+    }
+  }
+  return FALSE;
 }
 
 // Bound on links buffered before Dart installs its handler, matching the
@@ -71,7 +81,7 @@ static const guint kMaxPendingPaymentUris = 16;
 // that is already waiting, which would make the "keep only the latest link"
 // notice churn on a duplicate of the link it is showing.
 static void add_pending_payment_uri(MyApplication* self, const gchar* value) {
-  if (!is_zcash_uri(value)) {
+  if (!is_payment_uri(value)) {
     return;
   }
   for (guint i = 0; i < self->pending_payment_uris->len; ++i) {
@@ -220,7 +230,7 @@ static void my_application_activate(GApplication* application) {
 }
 
 // Implements GApplication::open. Reached only on the primary instance, when a
-// later process forwards zcash: links over D-Bus.
+// later process forwards payment requests over D-Bus.
 static void my_application_open(GApplication* application, GFile** files,
                                 gint n_files, const gchar* /*hint*/) {
   MyApplication* self = MY_APPLICATION(application);
@@ -265,7 +275,7 @@ static gboolean my_application_local_command_line(GApplication* application,
     g_autoptr(GPtrArray) files = g_ptr_array_new_with_free_func(g_object_unref);
     for (gchar** argument = self->dart_entrypoint_arguments;
          argument != nullptr && *argument != nullptr; ++argument) {
-      if (is_zcash_uri(*argument)) {
+      if (is_payment_uri(*argument)) {
         g_ptr_array_add(files, g_file_new_for_uri(*argument));
       }
     }

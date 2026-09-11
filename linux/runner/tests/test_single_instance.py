@@ -129,17 +129,20 @@ class Runner:
 
 
 def runner_tests():
-    primary = Runner('primary', args=('zcash:test-fixture', 'argument with spaces'),
+    bitcoin_request = 'bitcoin:bc1qfixture?amount=0.01&label=Coffee%20shop'
+    evm_request = 'ethereum:0xToken@8453/transfer?address=0xPayee&uint256=25000000'
+    primary = Runner('primary', args=('zcash:test-fixture', bitcoin_request,
+                                      'argument with spaces'),
                      extra={'VIZOR_TEST_FRAME_DELAY_MS': '1800'})
     wait_for(lambda: events('plugins', primary.process.pid), 'plugin registration')
-    secondary = Runner('during-startup', args=('zcash:queued-fixture',))
+    secondary = Runner('during-startup', args=(evm_request,))
     secondary.wait()
     assert len(events('engine')) == 1
     assert not events('first-frame')
     assert primary.state()['visible'] is False
     primary.ready()
     assert events('engine', primary.process.pid)[0][2:] == [
-        'zcash:test-fixture', 'argument with spaces']
+        'zcash:test-fixture', bitcoin_request, 'argument with spaces']
     passed('startup reactivation creates one engine and waits for first frame')
     passed('cold-start Dart arguments remain intact')
 
@@ -147,17 +150,24 @@ def runner_tests():
     wait_for(lambda: events('payment-ready', primary.process.pid),
              'Dart payment URI readiness')
     assert [row[2] for row in events('payment-uri', primary.process.pid)] == [
-        'zcash:test-fixture', 'zcash:queued-fixture']
+        'zcash:test-fixture', bitcoin_request, evm_request]
     passed('cold and forwarded links survive the wait for Dart readiness')
 
-    secondary = Runner('warm-payment-link', args=('zcash:warm-fixture',))
-    secondary.wait()
-    wait_for(lambda: any(row[2] == 'zcash:warm-fixture'
-                         for row in events('payment-uri', primary.process.pid)),
-             'warm link forwarding')
+    warm_requests = (
+        'zcash:warm-fixture',
+        'litecoin:ltc1qfixture?amount=1.5',
+        'solana:Payee?amount=25&spl-token=Mint&reference=Order',
+        'BITCOIN:bc1quppercase?amount=2',
+    )
+    for index, uri in enumerate(warm_requests):
+        secondary = Runner(f'warm-payment-link-{index}', args=(uri,))
+        secondary.wait()
+        wait_for(lambda: any(row[2] == uri
+                             for row in events('payment-uri', primary.process.pid)),
+                 'warm link forwarding')
     assert len(events('engine')) == 1
-    assert len(events('payment-uri', primary.process.pid)) == 3
-    passed('warm payment link reaches the primary without another engine')
+    assert len(events('payment-uri', primary.process.pid)) == 7
+    passed('all payment schemes reach the primary without another engine')
 
     # A different executable path models another extracted AppImage directory.
     shutil.copy2(OUTPUT / 'runner', OUTPUT / 'runner-copy')

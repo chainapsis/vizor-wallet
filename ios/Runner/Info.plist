@@ -51,6 +51,10 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>zcash</string>
+				<string>bitcoin</string>
+				<string>litecoin</string>
+				<string>ethereum</string>
+				<string>solana</string>
 			</array>
 		</dict>
 	</array>
