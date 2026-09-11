@@ -8,6 +8,7 @@ import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/navigation/mobile_tab_history.dart';
+import '../../../../core/navigation/payment_request_intake.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -20,6 +21,7 @@ import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
+import '../../../address_scan/widgets/payment_request_input.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../models/swap_address_book_helpers.dart';
@@ -151,6 +153,14 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     _closeSwapModal();
   }
 
+  Future<void> _reviewScannedPaymentRequest(String raw) async {
+    if (!ref.read(swapStateProvider).direction.sendsZec) return;
+    _closeSwapModal();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await reviewPaymentRequestFromInput(ref, raw);
+  }
+
   /// Content of the root modal route: re-renders on surface switches
   /// via [_swapModal] and on swap state changes via its own Consumer
   /// (the route doesn't rebuild with the screen). Empty space around
@@ -181,6 +191,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 initialAddress: _addressEditorDraftText,
                 initialRememberAddress: _addressEditorDraftRemember,
                 onSubmitted: (value, remember) {
+                  if (isPaymentRequestUri(value)) {
+                    unawaited(_reviewScannedPaymentRequest(value));
+                    return;
+                  }
                   if (remember) {
                     unawaited(_rememberSwapAddress(value, swapState));
                   }
@@ -201,7 +215,17 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
               // `Address QR` 4697:106096); it shares the same MobileModalCard
               // surface as the other swap modals.
               _SwapModalSurface.addressScanner => MobileAddressScanCard(
+                caption: swapState.direction.sendsZec
+                    ? 'Scan an address or payment request QR code'
+                    : 'Scan a plain refund address QR code',
                 resolve: (raw) async {
+                  if (isPaymentRequestUri(raw)) {
+                    return swapState.direction.sendsZec
+                        ? MobileScanOutcome.accepted(raw.trim())
+                        : const MobileScanOutcome.rejected(
+                            paymentRequestRefundAddressMessage,
+                          );
+                  }
                   final address = normalizeAddressScanPayload(raw);
                   if (address == null || address.isEmpty) {
                     return const MobileScanOutcome.rejected(
@@ -211,6 +235,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                   return MobileScanOutcome.accepted(address);
                 },
                 onScanned: (value) {
+                  if (isPaymentRequestUri(value)) {
+                    unawaited(_reviewScannedPaymentRequest(value));
+                    return;
+                  }
                   _openAddressEditor(draftText: value);
                 },
                 onClose: _openAddressEditor,

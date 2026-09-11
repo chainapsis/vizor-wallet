@@ -8,10 +8,12 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/navigation/payment_request_intake.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
+import '../../../address_scan/widgets/payment_request_input.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../../../providers/account_provider.dart';
@@ -61,6 +63,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   int _reviewRequestGeneration = 0;
   bool _reviewAfterAmount = false;
   var _step = _MobilePayStep.amount;
+  String? _paymentRequestText;
 
   @override
   void initState() {
@@ -139,12 +142,29 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   }
 
   void _handleAddressScanned(String value) {
+    if (isPaymentRequestUri(value)) {
+      unawaited(_reviewInputPaymentRequest(value));
+      return;
+    }
     _handleAddressChanged(value);
     _closePayModal();
   }
 
   void _handleAddressChanged(String value) {
+    if (isPaymentRequestUri(value)) {
+      setState(() => _paymentRequestText = value);
+      return;
+    }
+    if (_paymentRequestText != null) setState(() => _paymentRequestText = null);
     ref.read(swapStateProvider.notifier).updateDestination(value);
+  }
+
+  Future<void> _reviewInputPaymentRequest(String raw) async {
+    _closePayModal();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final accepted = await reviewPaymentRequestFromInput(ref, raw);
+    if (accepted && mounted) setState(() => _paymentRequestText = null);
   }
 
   void _chooseRecipient(PayRecipientSelection selection) {
@@ -203,10 +223,13 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                 onClose: _closePayModal,
               ),
               _PayModalSurface.addressScanner => MobileAddressScanCard(
-                caption: 'Scan the recipient address QR code',
+                caption: 'Scan an address or payment request QR code',
                 permissionTitle: 'Scan the recipient address',
                 steadyHint: 'Keep the QR code steady and fully visible.',
                 resolve: (raw) async {
+                  if (isPaymentRequestUri(raw)) {
+                    return MobileScanOutcome.accepted(raw.trim());
+                  }
                   final address = normalizeAddressScanPayload(raw)?.trim();
                   if (address == null || address.isEmpty) {
                     return const MobileScanOutcome.rejected(
@@ -294,7 +317,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
           ? swapState.receiveFiatText
           : swapState.receiveAmountText,
     );
-    _syncController(_recipientController, swapState.destinationText);
+    _syncController(
+      _recipientController,
+      _paymentRequestText ?? swapState.destinationText,
+    );
 
     final network = AddressBookNetwork.tryFromChainTicker(
       swapState.externalAsset.chainTicker,
@@ -387,7 +413,8 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                   ),
                   _MobilePayStep.recipient => MobilePayRecipientStep(
                     controller: _recipientController,
-                    typedAddress: swapState.destinationText,
+                    typedAddress:
+                        _paymentRequestText ?? swapState.destinationText,
                     addressError: swapState.destinationAddressFormatError,
                     quoteError:
                         swapState.externalAssetSupportError ??
@@ -401,6 +428,9 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     selectedContactId: swapState.userExternalContactId,
                     externalAsset: swapState.externalAsset,
                     onAddressChanged: _handleAddressChanged,
+                    onReviewPaymentRequest: () => unawaited(
+                      _reviewInputPaymentRequest(_recipientController.text),
+                    ),
                     onOpenScanner: () =>
                         _openModal(_PayModalSurface.addressScanner),
                     onChooseRecipient: _chooseRecipient,

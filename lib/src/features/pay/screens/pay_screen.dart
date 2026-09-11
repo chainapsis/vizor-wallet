@@ -7,12 +7,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
+import '../../address_scan/widgets/payment_request_input.dart';
 import '../../send/widgets/verify_address_modal.dart';
 import '../../../providers/account_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
@@ -70,6 +72,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   late final FocusNode _amountFocusNode;
   late final TextEditingController _recipientController;
   _PayModalSurface? _payModal;
+  String? _paymentRequestText;
   var _wizardStep = _PayWizardStep.amount;
   var _startingIntent = false;
   var _reviewRequestGeneration = 0;
@@ -141,12 +144,29 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   }
 
   void _handleAddressScanned(String value) {
+    if (isPaymentRequestUri(value)) {
+      unawaited(_reviewInputPaymentRequest(value));
+      return;
+    }
     _handleAddressChanged(value);
     _closePayModal();
   }
 
   void _handleAddressChanged(String value) {
+    if (isPaymentRequestUri(value)) {
+      setState(() => _paymentRequestText = value);
+      return;
+    }
+    if (_paymentRequestText != null) setState(() => _paymentRequestText = null);
     ref.read(swapStateProvider.notifier).updateDestination(value);
+  }
+
+  Future<void> _reviewInputPaymentRequest(String raw) async {
+    _closePayModal();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final accepted = await reviewPaymentRequestFromInput(ref, raw);
+    if (accepted && mounted) setState(() => _paymentRequestText = null);
   }
 
   void _chooseRecipient(PayRecipientSelection selection) {
@@ -287,7 +307,10 @@ class _PayScreenState extends ConsumerState<PayScreen> {
           ? swapState.receiveFiatText
           : swapState.receiveAmountText,
     );
-    _syncController(_recipientController, swapState.destinationText);
+    _syncController(
+      _recipientController,
+      _paymentRequestText ?? swapState.destinationText,
+    );
 
     final network = AddressBookNetwork.tryFromChainTicker(
       swapState.externalAsset.chainTicker,
@@ -388,7 +411,9 @@ class _PayScreenState extends ConsumerState<PayScreen> {
         },
       ),
       _PayWizardStep.recipient =>
-        recipientActions.visible ? recipientActions : null,
+        _paymentRequestText == null && recipientActions.visible
+            ? recipientActions
+            : null,
       _PayWizardStep.review =>
         quote == null
             ? swapState.quoteLoading
@@ -455,7 +480,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                 ),
                 _PayWizardStep.recipient => PayRecipientStep(
                   controller: _recipientController,
-                  typedAddress: swapState.destinationText,
+                  typedAddress:
+                      _paymentRequestText ?? swapState.destinationText,
                   addressError: swapState.destinationAddressFormatError,
                   contacts: contacts,
                   recents: recents,
@@ -465,6 +491,9 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                       !addressBookInitialLoading,
                   selectedContactId: swapState.userExternalContactId,
                   onAddressChanged: _handleAddressChanged,
+                  onReviewPaymentRequest: () => unawaited(
+                    _reviewInputPaymentRequest(_recipientController.text),
+                  ),
                   onOpenScanner: () => setState(
                     () => _payModal = _PayModalSurface.addressScanner,
                   ),
@@ -524,6 +553,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                     ),
                     _PayModalSurface.addressScanner => AddressQrScanModal(
                       onAddressScanned: _handleAddressScanned,
+                      onPaymentRequestScanned: _handleAddressScanned,
                       onCancel: _closePayModal,
                     ),
                     // The contact picker surface is mobile-only; the desktop

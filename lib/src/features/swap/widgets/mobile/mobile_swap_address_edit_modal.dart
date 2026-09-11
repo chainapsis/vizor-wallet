@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/navigation/payment_request_intake.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
@@ -10,6 +11,7 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/models/address_book_label_lookup.dart';
 import '../../../address_book/models/address_format_validator.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
+import '../../../address_scan/widgets/payment_request_input.dart';
 import '../../models/swap_models.dart';
 import '../swap_modal_controls.dart';
 
@@ -111,10 +113,16 @@ class _MobileSwapAddressEditModalState
   }
 
   bool get _canSubmit => _formatError == null;
+  bool get _isPaymentRequest => isPaymentRequestUri(_controller.text);
 
   String? get _formatError {
     final trimmed = _controller.text.trim();
     if (trimmed.isEmpty) return null;
+    if (_isPaymentRequest) {
+      return widget.state.direction.sendsZec
+          ? null
+          : paymentRequestRefundAddressMessage;
+    }
     final network = AddressBookNetwork.tryFromChainTicker(
       widget.state.externalAsset.chainTicker,
     );
@@ -243,17 +251,23 @@ class _MobileSwapAddressEditModalState
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: 16),
-          _AddressRememberToggle(
-            selected: _rememberAddress,
-            label: rememberLabel,
-            onTap: _toggleRemember,
-          ),
+          if (!_isPaymentRequest)
+            _AddressRememberToggle(
+              selected: _rememberAddress,
+              label: rememberLabel,
+              onTap: _toggleRemember,
+            ),
           const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('swap_address_update_button'),
             expand: true,
+            constrainContent: true,
             onPressed: _canSubmit ? _submit : null,
-            child: const Text('Update'),
+            child: Text(
+              _isPaymentRequest ? 'Review payment request' : 'Update',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
           const SizedBox(height: 12),
           AppButton(
