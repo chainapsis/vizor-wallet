@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../features/address_book/models/address_book_contact.dart';
+import '../../features/address_book/models/address_format_validator.dart';
 import '../navigation/payment_request_draft.dart';
 import '../zcash/zip321_payment_request.dart'
     show stripUnsupportedZip321MemoText;
@@ -104,6 +106,9 @@ class CrossChainPaymentRequest implements PaymentRequestDraft {
           if (!RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(address)) {
             unsupported =
                 'This request uses a name instead of an address. Ask the sender for a full wallet address.';
+          } else if (addressFormatIssue(AddressBookNetwork.ethereum, address)
+              case final issue?) {
+            unsupported = '$issue. Ask the sender for a valid wallet address.';
           }
           if (contract != null &&
               !RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(contract)) {

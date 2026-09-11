@@ -502,6 +502,46 @@ void main() {
     );
   });
 
+  group('EVM recipient checksum', () {
+    const validChecksum = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+    const invalidChecksum = '0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+    for (final erc20 in [false, true]) {
+      final type = erc20 ? 'ERC-20' : 'native EVM';
+      final asset = erc20
+          ? _asset(contract: _baseUsdc)
+          : _asset(symbol: 'ETH', decimals: 18);
+      Map<String, Object?> requestJson(String address) => {
+        ...(erc20 ? _erc20Json() : _nativeJson()),
+        'recipient_address': address,
+      };
+
+      test('$type blocks an invalid mixed-case recipient before review', () {
+        final request = _decode(requestJson(invalidChecksum));
+        final resolution = resolveCrossChainPaymentRequest(request, [asset]);
+        expect(
+          request.unsupportedReason,
+          'Invalid EVM address. Ask the sender for a valid wallet address.',
+        );
+        expect(resolution.isReady, isFalse);
+        expect(resolution.message, request.unsupportedReason);
+      });
+
+      for (final address in [
+        validChecksum,
+        validChecksum.toLowerCase(),
+        '0x${validChecksum.substring(2).toUpperCase()}',
+      ]) {
+        test('$type accepts recipient $address unchanged', () {
+          final request = _decode(requestJson(address));
+          final resolution = resolveCrossChainPaymentRequest(request, [asset]);
+          expect(request.address, address);
+          expect(request.unsupportedReason, isNull);
+          expect(resolution.isReady, isTrue);
+        });
+      }
+    }
+  });
+
   group('unsupported payment conditions', () {
     final unsupported = <String, Map<String, Object?>>{
       'Bitcoin testnet': {..._utxoJson(), 'network': 'testnet'},

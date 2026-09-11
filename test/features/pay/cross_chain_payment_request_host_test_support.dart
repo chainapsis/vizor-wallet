@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -819,6 +820,43 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
       await harness.dispose(tester);
     },
   );
+
+  testWidgets('invalid EVM checksum shows an address error before review', (
+    tester,
+  ) async {
+    final harness = await _readyHarness(tester, isMobile: isMobile);
+    const recipient = '0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+    final request = CrossChainPaymentRequest.fromParserJson(
+      id: 'invalid-checksum',
+      rawUri:
+          'ethereum:$_contract@8453/transfer?address=$recipient&uint256=25000001',
+      json: jsonEncode({
+        'version': 1,
+        'type': 'ethereum_erc20',
+        'chain_id': '8453',
+        'recipient_address': recipient,
+        'token_contract_address': _contract,
+        'value_hex': '0x17d7841',
+      }),
+    );
+    harness.container
+        .read(crossChainPaymentFlowProvider.notifier)
+        .present(request);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Invalid EVM address. Ask the sender for a valid wallet address.',
+      ),
+      findsOneWidget,
+    );
+    expect(_primary(tester).onPressed, isNull);
+    expect(harness.provider.quoteCalls, 0);
+    expect(harness.location, '/swap');
+    await _captureHost(tester, isMobile: isMobile, state: 'invalid-checksum');
+    expect(tester.takeException(), isNull);
+    await harness.dispose(tester);
+  });
 
   testWidgets('missing network and amount go from selection to amount entry', (
     tester,
