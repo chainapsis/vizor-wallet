@@ -6,5 +6,5 @@ Exec=@BINARY_NAME@ %u
 Icon=@APPLICATION_ID@
 Terminal=false
 Categories=Office;Finance;
-MimeType=x-scheme-handler/zcash;
+MimeType=x-scheme-handler/zcash;x-scheme-handler/bitcoin;x-scheme-handler/litecoin;x-scheme-handler/ethereum;x-scheme-handler/solana;
 StartupWMClass=@APPLICATION_ID@

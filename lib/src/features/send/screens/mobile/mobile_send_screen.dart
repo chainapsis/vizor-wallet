@@ -14,6 +14,7 @@ import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/navigation/payment_uri_busy_surface_provider.dart';
+import '../../../../core/navigation/payment_request_intake.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -36,6 +37,7 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
+import '../../../address_scan/widgets/payment_request_input.dart';
 import '../../../../providers/payment_request_flow_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../models/send_scan_result.dart';
@@ -794,7 +796,28 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
   }
 
+  Future<void> _reviewInputPaymentRequest(String raw) async {
+    final sequence = _addressSeq;
+    final input = _addressController.text;
+    final step = _step;
+    final phase = _phase;
+    await reviewPaymentRequestFromInput(
+      ref,
+      raw,
+      isCurrent: () =>
+          mounted &&
+          sequence == _addressSeq &&
+          input == _addressController.text &&
+          step == _step &&
+          phase == _phase,
+    );
+  }
+
   void _handleAddressChanged({bool clearContact = true}) {
+    // A request URI is not validated as an address, but it still replaces
+    // the payee: drop the contact, MAX and fee state like any other edit.
+    final isRequest = isPaymentRequestUri(_addressController.text);
+    if (isRequest) _addressSeq++;
     setState(() {
       if (widget.isPaymentRequest &&
           !_paymentRequestDetached &&
@@ -813,6 +836,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _invalidateReviewFeeQuote();
       _clearMaxMode();
     });
+    if (isRequest) return;
     unawaited(_validateAddress());
   }
 
@@ -838,6 +862,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
     if (scanned == null || !mounted) return;
     switch (scanned) {
+      case SendScanPaymentUri(:final rawUri):
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted) return;
+        await _reviewInputPaymentRequest(rawUri);
       case SendScanPaymentRequest(:final prefill):
         // A QR that already names an amount is the same object a `zcash:`
         // link is, so it gets the same answer: the card, over whatever is on
@@ -869,14 +897,18 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _pasteAddress() async {
+    final sequence = _addressSeq;
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final pasted = data?.text?.trim() ?? '';
-    if (pasted.isEmpty || !mounted) return;
+    if (pasted.isEmpty || !mounted || sequence != _addressSeq) return;
     _addressController.value = TextEditingValue(
       text: pasted,
       selection: TextSelection.collapsed(offset: pasted.length),
     );
     _handleAddressChanged();
+    if (isPaymentRequestUri(pasted)) {
+      await _reviewInputPaymentRequest(pasted);
+    }
   }
 
   void _clearAddress() {
@@ -2452,6 +2484,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAddressField(BuildContext context) {
     final colors = context.colors;
+    final isRequest = isPaymentRequestUri(_addressController.text);
     final showAction = _addressFocus.hasFocus;
     final hasAddressError =
         _addressType == 'invalid' || _addressType == 'error';
@@ -2498,10 +2531,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               height: AppInputSizing.height,
               child: Center(
                 child: _AddressFieldActionButton(
-                  label: _addressController.text.trim().isEmpty
+                  label: isRequest
+                      ? 'Review'
+                      : _addressController.text.trim().isEmpty
                       ? 'Paste'
                       : 'Clear',
-                  onTap: _addressController.text.trim().isEmpty
+                  onTap: isRequest
+                      ? () => unawaited(
+                          _reviewInputPaymentRequest(_addressController.text),
+                        )
+                      : _addressController.text.trim().isEmpty
                       ? () => unawaited(_pasteAddress())
                       : _clearAddress,
                 ),
@@ -2509,6 +2548,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             )
           : null,
       onChanged: (_) => _handleAddressChanged(),
+      onSubmitted: isRequest
+          ? (raw) => unawaited(_reviewInputPaymentRequest(raw))
+          : null,
       keyboardType: TextInputType.text,
     );
   }

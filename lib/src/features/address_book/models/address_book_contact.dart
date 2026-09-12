@@ -8,7 +8,7 @@ enum AddressBookNetwork {
   solana('sol', 'Solana', 'assets/swap/chains/sol.png'),
   near('near', 'NEAR', 'assets/swap/chains/near.png'),
   bitcoin('btc', 'Bitcoin', 'assets/swap/chains/btc.png'),
-  binanceSmartChain('bsc', 'Binance Smart Chain', 'assets/swap/tokens/bnb.png'),
+  binanceSmartChain('bsc', 'BNB Chain', 'assets/swap/tokens/bnb.png'),
   tron('tron', 'Tron', 'assets/swap/chains/tron.png'),
   sui('sui', 'Sui', 'assets/swap/chains/sui.png'),
   aptos('aptos', 'Aptos', 'assets/swap/chains/aptos.png'),

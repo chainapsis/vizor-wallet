@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-// Forwards zcash: payment URIs to an already-running Vizor instance. The target
+// Forwards payment request URIs to an already-running Vizor instance. The target
 // window is the one that acknowledges |activation_message| (the registered
 // single-instance message from SingleInstanceGuard), so the instance boundary
 // used here is the same one the instance lock enforces. Retries while the

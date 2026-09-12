@@ -17,7 +17,8 @@ const kTxFeeHelpTooltip =
 /// supplied, never a sender the wallet verified — so the one surface that
 /// shows it says so. The send review never renders it at all.
 const kPaymentRequestRequesterTooltip =
-    "Name supplied by the payment link. Vizor can't verify who sent it.";
+    'The requester provided this name. '
+    "It may differ from the recipient's name.";
 
 /// One 32px "List Item" row inside a `ReviewWrapCard`: left label, right
 /// value cluster with optional 16px leading/trailing icons.

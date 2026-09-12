@@ -1,7 +1,7 @@
 /// The single classifier for everything the native runners hand to Dart on
 /// `com.zcash.wallet/payment_uri`.
 ///
-/// Two products arrive on one pipe: ZIP-321 `zcash:` payment requests (all
+/// Two products arrive on one pipe: Zcash and cross-chain payment requests (all
 /// five platforms) and Vizor Gift Card `https://` deeplinks (Android and iOS —
 /// the desktop runners never register a handler for them). One classifier, one
 /// subscription, so a link can only ever be handled by one of them.
@@ -20,15 +20,15 @@
 library;
 
 import 'vizor_deep_link.dart';
+import '../payments/cross_chain_payment_request.dart';
 
 /// What an incoming link turned out to be.
 sealed class IncomingLinkTarget {
   const IncomingLinkTarget();
 }
 
-/// A ZIP-321 `zcash:` payment request. [raw] is the trimmed link, still
-/// unparsed — parsing stays with the payment-URI park/drain path so its two
-/// rejection sentences keep living in one place.
+/// A payment request. [raw] is the trimmed link, still unparsed; the common
+/// intake owns parsing and the park/drain lifecycle.
 final class IncomingPaymentRequestLink extends IncomingLinkTarget {
   const IncomingPaymentRequestLink(this.raw);
 
@@ -75,7 +75,8 @@ IncomingLinkTarget classifyIncomingLink(String raw) {
         }
     }
 
-    if (uri.scheme.toLowerCase() == _zcashScheme) {
+    if (uri.scheme.toLowerCase() == _zcashScheme ||
+        crossChainPaymentSchemes.contains(uri.scheme.toLowerCase())) {
       return IncomingPaymentRequestLink(trimmed);
     }
     return const IncomingLinkUnknown();
@@ -85,7 +86,8 @@ IncomingLinkTarget classifyIncomingLink(String raw) {
   // so it cannot be a Gift Card link. A malformed `zcash:` link still has to
   // reach the payment-URI path, which is the only one that can tell the payer
   // their link is broken.
-  return trimmed.toLowerCase().startsWith('$_zcashScheme:')
+  return trimmed.toLowerCase().startsWith('$_zcashScheme:') ||
+          isCrossChainPaymentUri(trimmed)
       ? IncomingPaymentRequestLink(trimmed)
       : const IncomingLinkUnknown();
 }

@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/models/address_format_validator.dart';
 import '../../address_book/widgets/contact_name_inline.dart';
+import '../../address_scan/widgets/payment_request_input.dart';
 import '../models/swap_models.dart';
 import 'swap_modal_controls.dart';
 
@@ -21,6 +23,7 @@ class SwapAddressEditModal extends StatefulWidget {
     required this.onScan,
     required this.onOpenContacts,
     required this.onCancel,
+    this.onChanged,
     this.contacts = const <AddressBookContact>[],
     super.key,
   });
@@ -30,6 +33,7 @@ class SwapAddressEditModal extends StatefulWidget {
   final VoidCallback onScan;
   final VoidCallback onOpenContacts;
   final VoidCallback onCancel;
+  final VoidCallback? onChanged;
 
   /// Saved contacts; when the entered address matches one, its name is shown
   /// under the field so the user knows the address is correct.
@@ -91,10 +95,18 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
   }
 
   bool get _canSubmit => _formatError == null;
+  bool get _isPaymentRequest => isPaymentRequestUri(_controller.text);
 
   AddressFormatFinding? get _formatFinding {
     final trimmed = _controller.text.trim();
     if (trimmed.isEmpty) return null;
+    if (_isPaymentRequest) {
+      return widget.state.direction.sendsZec
+          ? null
+          : const AddressFormatFinding.error(
+              paymentRequestRefundAddressMessage,
+            );
+    }
     final network = AddressBookNetwork.tryFromChainTicker(
       widget.state.externalAsset.chainTicker,
     );
@@ -185,7 +197,10 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                   focusNode: _focusNode,
                   hint: hint,
                   onSubmitted: (_) => _submit(),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) {
+                    widget.onChanged?.call();
+                    setState(() {});
+                  },
                   onScan: widget.onScan,
                   onOpenContacts: widget.onOpenContacts,
                 ),
@@ -240,11 +255,12 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                 const SizedBox(height: AppSpacing.sm),
                 // Remembered addresses are auto-named (and auto-avatared)
                 // on save, so opting in needs no extra fields here.
-                _AddressRememberToggle(
-                  selected: _rememberAddress,
-                  label: rememberLabel,
-                  onTap: _toggleRemember,
-                ),
+                if (!_isPaymentRequest)
+                  _AddressRememberToggle(
+                    selected: _rememberAddress,
+                    label: rememberLabel,
+                    onTap: _toggleRemember,
+                  ),
               ],
             ),
           ),
@@ -252,7 +268,9 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
           AppModalActions(
             actionKey: const ValueKey('swap_address_update_button'),
             cancelKey: const ValueKey('swap_address_cancel_button'),
-            actionLabel: 'Update',
+            actionLabel: _isPaymentRequest
+                ? 'Review payment request'
+                : 'Update',
             onAction: _canSubmit ? _submit : null,
             onCancel: widget.onCancel,
           ),

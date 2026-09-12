@@ -949,6 +949,9 @@ final class DeviceOwnerAuthChannel {
 }
 
 final class PaymentUriChannel {
+  private static let paymentRequestSchemes: Set<String> = [
+    "zcash", "bitcoin", "litecoin", "ethereum", "solana"
+  ]
   private static var channel: FlutterMethodChannel?
   private static var pendingURLs: [String] = []
   private static var dartReady = false
@@ -980,7 +983,9 @@ final class PaymentUriChannel {
 
   static func handle(urls: [URL]) {
     let urlStrings = urls.compactMap { url -> String? in
-      guard url.scheme?.lowercased() == "zcash" else {
+      guard let scheme = url.scheme?.lowercased(),
+        paymentRequestSchemes.contains(scheme)
+      else {
         return nil
       }
       return url.absoluteString

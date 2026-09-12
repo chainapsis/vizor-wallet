@@ -457,7 +457,8 @@ void main() {
 
     expect(
       find.text(
-        "Name supplied by the payment link. Vizor can't verify who sent it.",
+        'The requester provided this name. '
+        "It may differ from the recipient's name.",
       ),
       findsOneWidget,
     );

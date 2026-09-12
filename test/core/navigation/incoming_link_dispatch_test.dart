@@ -8,6 +8,21 @@ import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 // fragment carries a 24-word mnemonic, and the ZIP-321 parser puts fragments
 // of what it rejected into a log line.
 void main() {
+  test(
+    'standard external payment schemes enter the payment lane, even malformed',
+    () {
+      for (final raw in [
+        'bitcoin:broken',
+        'litecoin:broken',
+        'ethereum:broken',
+        'solana:broken',
+        'ETHEREUM:broken',
+      ]) {
+        expect(classifyIncomingLink(raw), isA<IncomingPaymentRequestLink>());
+      }
+    },
+  );
+
   final host = VizorDeepLink.host;
 
   group('host is tested before scheme', () {

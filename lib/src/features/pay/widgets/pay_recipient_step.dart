@@ -1,12 +1,14 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_scan/widgets/payment_request_input.dart';
 import '../../swap/models/swap_address_formatting.dart';
 import '../models/pay_recent_recipients.dart';
 import 'pay_wizard_page.dart';
@@ -26,6 +28,7 @@ class PayRecipientStep extends StatelessWidget {
     required this.onAddressChanged,
     required this.onOpenScanner,
     required this.onChooseRecipient,
+    this.onReviewPaymentRequest,
     super.key,
   });
 
@@ -47,6 +50,7 @@ class PayRecipientStep extends StatelessWidget {
 
   final ValueChanged<String> onAddressChanged;
   final VoidCallback onOpenScanner;
+  final VoidCallback? onReviewPaymentRequest;
 
   /// Row tap: select this exact recipient. The screen owns quote/review
   /// orchestration so the same selection contract works on desktop and mobile.
@@ -56,8 +60,9 @@ class PayRecipientStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final typed = typedAddress.trim();
+    final isRequest = isPaymentRequestUri(typed);
     final hasInput = typed.isNotEmpty;
-    final validDestination = hasInput && addressError == null;
+    final validDestination = hasInput && addressError == null && !isRequest;
     final matchedContacts = !hasInput
         ? contacts
         : [
@@ -74,7 +79,8 @@ class PayRecipientStep extends StatelessWidget {
         : const <PayRecentRecipient>[];
     final hasMatches = matchedRecents.isNotEmpty || matchedContacts.isNotEmpty;
     final unknownAddress = validDestination && !hasMatches;
-    final showAddressError = hasInput && addressError != null && !hasMatches;
+    final showAddressError =
+        hasInput && addressError != null && !hasMatches && !isRequest;
 
     Widget buildRecentRow(PayRecentRecipient recent) {
       final selection = payRecipientSelectionForRecent(contacts, recent);
@@ -105,7 +111,7 @@ class PayRecipientStep extends StatelessWidget {
           label: 'Recipient address',
           showLabel: false,
           controller: controller,
-          hintText: 'Paste an address or scan QR code',
+          hintText: 'Paste an address or payment request',
           leading: AppIcon(AppIcons.user, size: 20, color: colors.icon.regular),
           leadingSlotWidth: 32,
           trailing: AppIconHoverButton(
@@ -119,6 +125,7 @@ class PayRecipientStep extends StatelessWidget {
           trailingSlotWidth: 40,
           trailingFitsSlot: true,
           onChanged: onAddressChanged,
+          onSubmitted: isRequest ? (_) => onReviewPaymentRequest?.call() : null,
           textStyle: AppTypography.codeMedium.copyWith(
             color: colors.text.accent,
           ),
@@ -128,7 +135,11 @@ class PayRecipientStep extends StatelessWidget {
           messageText: showAddressError ? addressError : null,
         ),
         const SizedBox(height: AppSpacing.s),
-        if (unknownAddress)
+        if (isRequest)
+          PaymentRequestInputNotice(
+            onReview: busy ? null : onReviewPaymentRequest,
+          )
+        else if (unknownAddress)
           SizedBox(
             height: 310,
             child: Center(

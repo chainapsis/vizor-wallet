@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -14,6 +15,7 @@ import '../../../core/widgets/app_modal_card.dart' show appModalShadow;
 import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
 import '../domain/address_scan_payload.dart';
+import 'payment_request_input.dart';
 
 enum AddressQrCameraStatus { requesting, denied, active, loading, unavailable }
 
@@ -21,11 +23,15 @@ class AddressQrScanModal extends StatefulWidget {
   const AddressQrScanModal({
     required this.onAddressScanned,
     required this.onCancel,
+    this.onPaymentRequestScanned,
+    this.isRefundAddress = false,
     super.key,
   });
 
   final ValueChanged<String> onAddressScanned;
   final VoidCallback onCancel;
+  final ValueChanged<String>? onPaymentRequestScanned;
+  final bool isRefundAddress;
 
   @override
   State<AddressQrScanModal> createState() => _AddressQrScanModalState();
@@ -228,6 +234,21 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
 
   void _handleScanComplete(String value) {
     if (_completed) return;
+    if (isPaymentRequestUri(value)) {
+      if (widget.isRefundAddress) {
+        setState(() {
+          _error = paymentRequestRefundAddressMessage;
+          _scanResetToken++;
+        });
+        return;
+      }
+      final onPaymentRequestScanned = widget.onPaymentRequestScanned;
+      if (onPaymentRequestScanned != null) {
+        _completed = true;
+        onPaymentRequestScanned(value.trim());
+        return;
+      }
+    }
     final normalized = normalizeAddressScanPayload(value);
     if (normalized == null || normalized.isEmpty) {
       setState(() {

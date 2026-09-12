@@ -7,12 +7,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
+import '../../address_scan/widgets/payment_request_input.dart';
 import '../../send/widgets/verify_address_modal.dart';
 import '../../../providers/account_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
@@ -47,9 +49,18 @@ enum _PayModalSurface {
 enum _PayWizardStep { amount, recipient, review }
 
 class PayScreen extends ConsumerStatefulWidget {
-  const PayScreen({this.preservePreparedComposer = false, super.key});
+  const PayScreen({
+    this.preservePreparedComposer = false,
+    this.paymentRequestId,
+    this.showPreparedReview = false,
+    this.reviewAfterAmount = false,
+    super.key,
+  });
 
   final bool preservePreparedComposer;
+  final String? paymentRequestId;
+  final bool showPreparedReview;
+  final bool reviewAfterAmount;
 
   @override
   ConsumerState<PayScreen> createState() => _PayScreenState();
@@ -61,9 +72,12 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   late final FocusNode _amountFocusNode;
   late final TextEditingController _recipientController;
   _PayModalSurface? _payModal;
+  String? _paymentRequestText;
+  var _paymentRequestGeneration = 0;
   var _wizardStep = _PayWizardStep.amount;
   var _startingIntent = false;
   var _reviewRequestGeneration = 0;
+  var _reviewAfterAmount = false;
   Timer? _expiryTimer;
   DateTime? _expiryDeadline;
   Duration? _expiryRemaining;
@@ -75,13 +89,25 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     _amountController = TextEditingController();
     _amountFocusNode = FocusNode(debugLabel: 'PayWizardAmount');
     _recipientController = TextEditingController();
+    _reviewAfterAmount =
+        widget.preservePreparedComposer &&
+        widget.paymentRequestId != null &&
+        widget.reviewAfterAmount;
+    final initial = ref.read(swapStateProvider);
+    if (widget.preservePreparedComposer &&
+        widget.showPreparedReview &&
+        initial.payMode &&
+        initial.reviewVisible &&
+        initial.reviewQuote != null &&
+        initial.reviewAddressPlan != null) {
+      _wizardStep = _PayWizardStep.review;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final preparedState = ref.read(swapStateProvider);
       if (!widget.preservePreparedComposer || !preparedState.payMode) {
         ref.read(swapStateProvider.notifier).preparePayFromShieldedZec();
       }
-      setState(() => _wizardStep = _PayWizardStep.amount);
     });
   }
 
@@ -119,15 +145,57 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   }
 
   void _handleAddressScanned(String value) {
+    if (isPaymentRequestUri(value)) {
+      unawaited(_reviewInputPaymentRequest(value));
+      return;
+    }
     _handleAddressChanged(value);
     _closePayModal();
   }
 
   void _handleAddressChanged(String value) {
+    _paymentRequestGeneration++;
+    if (isPaymentRequestInputDraft(value)) {
+      _cancelReviewForPaymentRequest();
+      setState(() => _paymentRequestText = value);
+      return;
+    }
+    if (_paymentRequestText != null) setState(() => _paymentRequestText = null);
     ref.read(swapStateProvider.notifier).updateDestination(value);
   }
 
+  void _cancelReviewForPaymentRequest() {
+    _reviewRequestGeneration++;
+    ref.read(swapStateProvider.notifier).cancelReviewQuote();
+  }
+
+  Future<void> _reviewInputPaymentRequest(String raw) async {
+    _cancelReviewForPaymentRequest();
+    final generation = ++_paymentRequestGeneration;
+    final reviewGeneration = _reviewRequestGeneration;
+    final step = _wizardStep;
+    final input = _recipientController.text;
+    bool isCurrent() =>
+        mounted &&
+        generation == _paymentRequestGeneration &&
+        reviewGeneration == _reviewRequestGeneration &&
+        step == _wizardStep &&
+        input == _recipientController.text &&
+        _payModal == null;
+    _closePayModal();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!isCurrent()) return;
+    final accepted = await reviewPaymentRequestFromInput(
+      ref,
+      raw,
+      isCurrent: isCurrent,
+    );
+    if (accepted && isCurrent()) setState(() => _paymentRequestText = null);
+  }
+
   void _chooseRecipient(PayRecipientSelection selection) {
+    _paymentRequestGeneration++;
+    setState(() => _paymentRequestText = null);
     final notifier = ref.read(swapStateProvider.notifier);
     final contactId = selection.contactId;
     if (contactId == null) {
@@ -146,6 +214,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   }
 
   Future<void> _openReview() async {
+    if (ref.read(swapStateProvider).quoteLoading) return;
     final requestGeneration = ++_reviewRequestGeneration;
     final originStep = _wizardStep;
     final notifier = ref.read(swapStateProvider.notifier);
@@ -159,7 +228,10 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     if (next.reviewVisible &&
         next.reviewQuote != null &&
         next.reviewAddressPlan != null) {
-      setState(() => _wizardStep = _PayWizardStep.review);
+      setState(() {
+        _reviewAfterAmount = false;
+        _wizardStep = _PayWizardStep.review;
+      });
     }
   }
 
@@ -261,7 +333,10 @@ class _PayScreenState extends ConsumerState<PayScreen> {
           ? swapState.receiveFiatText
           : swapState.receiveAmountText,
     );
-    _syncController(_recipientController, swapState.destinationText);
+    _syncController(
+      _recipientController,
+      _paymentRequestText ?? swapState.destinationText,
+    );
 
     final network = AddressBookNetwork.tryFromChainTicker(
       swapState.externalAsset.chainTicker,
@@ -339,7 +414,9 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     };
     final recipientActions = PayRecipientActions(
       typedAddress: swapState.destinationText,
-      addressError: swapState.destinationAddressFormatError,
+      addressError: swapState
+          .copyWith(destinationText: _paymentRequestText)
+          .destinationAddressFormatError,
       contacts: contacts,
       busy: swapState.quoteLoading,
       enabled: swapState.externalAssetIsAvailable && !addressBookInitialLoading,
@@ -352,10 +429,19 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     final actions = switch (_wizardStep) {
       _PayWizardStep.amount => PayAmountAction(
         state: swapState,
-        onContinue: () => _goToStep(_PayWizardStep.recipient),
+        onContinue: () {
+          _amountFocusNode.unfocus();
+          if (_reviewAfterAmount && swapState.canReviewQuote) {
+            unawaited(_openReview());
+          } else {
+            _goToStep(_PayWizardStep.recipient);
+          }
+        },
       ),
       _PayWizardStep.recipient =>
-        recipientActions.visible ? recipientActions : null,
+        _paymentRequestText == null && recipientActions.visible
+            ? recipientActions
+            : null,
       _PayWizardStep.review =>
         quote == null
             ? swapState.quoteLoading
@@ -422,8 +508,11 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                 ),
                 _PayWizardStep.recipient => PayRecipientStep(
                   controller: _recipientController,
-                  typedAddress: swapState.destinationText,
-                  addressError: swapState.destinationAddressFormatError,
+                  typedAddress:
+                      _paymentRequestText ?? swapState.destinationText,
+                  addressError: swapState
+                      .copyWith(destinationText: _paymentRequestText)
+                      .destinationAddressFormatError,
                   contacts: contacts,
                   recents: recents,
                   busy: swapState.quoteLoading,
@@ -432,6 +521,9 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                       !addressBookInitialLoading,
                   selectedContactId: swapState.userExternalContactId,
                   onAddressChanged: _handleAddressChanged,
+                  onReviewPaymentRequest: () => unawaited(
+                    _reviewInputPaymentRequest(_recipientController.text),
+                  ),
                   onOpenScanner: () => setState(
                     () => _payModal = _PayModalSurface.addressScanner,
                   ),
@@ -491,6 +583,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                     ),
                     _PayModalSurface.addressScanner => AddressQrScanModal(
                       onAddressScanned: _handleAddressScanned,
+                      onPaymentRequestScanned: _handleAddressScanned,
                       onCancel: _closePayModal,
                     ),
                     // The contact picker surface is mobile-only; the desktop
