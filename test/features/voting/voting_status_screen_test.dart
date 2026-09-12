@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -658,6 +659,110 @@ void main() {
     expect(find.text(message), findsOneWidget);
     expect(find.text('submission confirmed route'), findsNothing);
     expect(rust.eligibilityCheckCalls, 1);
+  });
+
+  testWidgets('retry leaves the error screen before asynchronous recovery', (
+    tester,
+  ) async {
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    const message =
+        'an unclassified submission reservation survived process interruption';
+    final readiness = Completer<void>();
+    final roundPlan = apiRoundPlan(
+      roundId: _roundId,
+      primaryAction: rust_frb_types.RoundPlanActionKind.vote,
+      allDecided: true,
+      pendingRecovery: true,
+      blockingRecovery: true,
+      openProposals: Uint32List(0),
+      nextSteps: const [
+        rust_wire.NextStepView(
+          kind: rust_frb_types.NextStepKind.advanceVote,
+          bundleIndex: 0,
+          proposalId: 1,
+          choice: 0,
+          shareIndex: 0,
+        ),
+      ],
+    );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSubmissionJobsProvider.overrideWith(
+          () => _StaticVotingSubmissionJobsNotifier(
+            const VotingSubmissionJobsState(jobKeys: [key]),
+          ),
+        ),
+        votingSubmissionJobProvider(key).overrideWith(
+          () => _StaticVotingSubmissionJobNotifier(
+            key,
+            const VotingSubmissionJobState(
+              key: key,
+              status: VotingSubmissionJobStatus.error,
+              errorMessage: message,
+            ),
+          ),
+        ),
+        votingSubmissionSessionProvider(key).overrideWith(
+          () => _RetryRecoveryVotingSessionNotifier(
+            key,
+            VotingSessionState(
+              roundId: _roundId,
+              accountUuid: key.accountUuid,
+              phase: VotingSessionPhase.error,
+              error: const VotingSessionError(message: message),
+              roundPlan: roundPlan,
+              eligibleWeightZatoshi: BigInt.from(100),
+              round: VotingRoundDetails(
+                roundId: _roundId,
+                title: 'Test round',
+                status: 'active',
+                snapshotHeight: 3359740,
+                eaPk: Uint8List(32),
+                ncRoot: Uint8List(32),
+                nullifierImtRoot: Uint8List(32),
+                rawJson: _roundStatusJson(),
+              ),
+            ),
+            readiness,
+          ),
+        ),
+      ],
+    );
+    addTearDown(() {
+      container.dispose();
+      readiness.complete();
+    });
+    final mobile = kAppFormFactor == AppFormFactor.mobile;
+    await tester.binding.setSurfaceSize(
+      mobile ? const Size(390, 844) : const Size(1512, 982),
+    );
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(mobile: mobile),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(message), findsOneWidget);
+
+    await tester.tap(find.text('Retry'));
+    // Observe the first frame while the next attempt is blocked on readiness.
+    await tester.pump();
+    expect(find.text('Voting failed.'), findsNothing);
+    expect(find.text(message), findsNothing);
+    expect(find.text('Retry'), findsNothing);
+    expect(
+      container.read(votingSubmissionJobProvider(key)).status,
+      VotingSubmissionJobStatus.running,
+    );
+    expect(
+      container.read(votingSubmissionSessionProvider(key)).value!.phase,
+      VotingSessionPhase.readyToVote,
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Voting failed.'), findsNothing);
   });
 
   testWidgets('status screen retry keeps setup errors specific', (
@@ -4400,16 +4505,22 @@ Widget _mobileProposalApp(GoRouter router) {
 Widget _statusHarness({
   List<int>? keystoneScanResult,
   String? initialLocation,
+  bool mobile = false,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation ?? '/voting/poll/$_roundId/status',
     routes: [
       GoRoute(
         path: '/voting/poll/:roundId/status',
-        builder: (_, state) => VotingStatusScreen(
-          roundId: state.pathParameters['roundId']!,
-          accountUuid: state.uri.queryParameters['account'],
-        ),
+        builder: (_, state) => mobile
+            ? MobileVotingStatusScreen(
+                roundId: state.pathParameters['roundId']!,
+                accountUuid: state.uri.queryParameters['account'],
+              )
+            : VotingStatusScreen(
+                roundId: state.pathParameters['roundId']!,
+                accountUuid: state.uri.queryParameters['account'],
+              ),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/submitted',
@@ -4984,6 +5095,24 @@ class _BlockingVotingSessionNotifier extends VotingSessionNotifier {
 
   @override
   Future<VotingSessionState> build() => _future;
+}
+
+class _RetryRecoveryVotingSessionNotifier
+    extends VotingSubmissionSessionNotifier {
+  _RetryRecoveryVotingSessionNotifier(
+    super.key,
+    this._initial,
+    this._readiness,
+  );
+
+  final VotingSessionState _initial;
+  final Completer<void> _readiness;
+
+  @override
+  Future<VotingSessionState> build() async => _initial;
+
+  @override
+  Future<void> ensureWalletReadyForVoting() => _readiness.future;
 }
 
 class _BlockedRefreshVotingSubmissionSessionNotifier

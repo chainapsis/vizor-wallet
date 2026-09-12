@@ -184,10 +184,10 @@ default-features = false
 features = ["zakura"]
 
 [patch.crates-io]
-# Pinned to #329, which allows fifty concurrent helper share deliveries.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "9f3bb4812a418af805742303f1a41b065a4d38fc" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "9f3bb4812a418af805742303f1a41b065a4d38fc" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "9f3bb4812a418af805742303f1a41b065a4d38fc" }
+# Includes recovery of interrupted submission reservations in the first resumed pass.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "38bd8ebd9945d60317ccc1f96f8bf829abe09438" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "38bd8ebd9945d60317ccc1f96f8bf829abe09438" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "38bd8ebd9945d60317ccc1f96f8bf829abe09438" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
