@@ -2083,12 +2083,17 @@ fn validate_scan_batch(
         )));
     }
     if !block_source.starts_after(from_state) {
-        return Err(SyncError::other(
-            "downloaded compact blocks and preceding tree state are inconsistent",
-        ));
+        return Err(inconsistent_scan_batch_error(start));
     }
 
     Ok(())
+}
+
+fn inconsistent_scan_batch_error(start: BlockHeight) -> SyncError {
+    SyncError::net(format!(
+        "lightwalletd returned an inconsistent compact block/tree-state tuple while scanning from {}",
+        u32::from(start),
+    ))
 }
 
 struct Prefetch<T> {
@@ -2513,6 +2518,9 @@ async fn run_payment_link_claim_sync_once(
                     }
                     ChainError::Wallet(SqliteClientError::BlockConflict(at)) => {
                         SyncError::continuity(u32::from(at) as u64, "payment-link block conflict")
+                    }
+                    ChainError::Wallet(SqliteClientError::NonSequentialBlocks) => {
+                        inconsistent_scan_batch_error(start)
                     }
                     ChainError::Wallet(wallet_error)
                         if is_commitment_tree_root_conflict(&wallet_error) =>
@@ -3429,11 +3437,7 @@ async fn run_sync_impl(
                     )
                 }
                 ChainError::Wallet(SqliteClientError::NonSequentialBlocks) => {
-                    let at_height = u32::from(start) as u64;
-                    SyncError::other(format!(
-                        "non-sequential compact block batch while scanning from {at_height}; \
-                         retrying with a fresh block/tree-state tuple"
-                    ))
+                    inconsistent_scan_batch_error(start)
                 }
                 ChainError::Wallet(wallet_err) if is_commitment_tree_root_conflict(&wallet_err) => {
                     let at_height = u32::from(start) as u64;
@@ -4904,6 +4908,18 @@ mod tests {
                 "{name}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn inconsistent_scan_batches_are_retryable_network_failures() {
+        let error = inconsistent_scan_batch_error(block_height(10));
+
+        assert!(matches!(error, SyncError::Network(_)));
+        assert_eq!(
+            error.recovery_strategy(),
+            RecoveryStrategy::RetryWithBackoff,
+        );
+        assert!(error.to_string().starts_with("network:"));
     }
 
     #[test]
