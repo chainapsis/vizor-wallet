@@ -53,12 +53,16 @@ signature plus sighash. The crate never receives root seed material.
 
 ### Session Pinning
 
-A `votingSessionProvider(roundId)` instance is pinned to the active account UUID
-captured when the session is built. All later context reloads, recovery reads,
-delegation setup, vote-tree sync, vote submission, and share recovery must
-continue to use that session account, even if the user switches accounts while
-the round screen is open. Do not re-read the active account inside individual
-session actions except through the session-pinned account helper.
+The foreground `votingSessionProvider(roundId)` listens for active-account
+changes. It advances the session generation and reloads the new account;
+actions keep their captured account/context and stale completions cannot update
+the replacement UI. Do not re-read the active account halfway through an action.
+
+Background `VotingSubmissionSessionNotifier` instances are instead pinned to
+their `VotingSessionKey.accountUuid` and disable the active-account listener.
+Leaving the round screen or switching accounts must not reset process-local
+state still owned by an active submission. See the app-level
+[voting contract](../../../../docs/contracts/voting.md) for lifecycle boundaries.
 
 ## Durable vs Process-Local State
 

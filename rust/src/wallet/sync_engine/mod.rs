@@ -68,7 +68,7 @@ pub(crate) use tip_cache::{
     latest_block_for_transaction_with_client,
 };
 
-/// Progress event sent to caller (Dart or Swift).
+/// Progress event sent to the calling sync adapter.
 #[derive(Clone, Debug)]
 pub struct SyncProgressEvent {
     pub scanned_height: u64,
@@ -2168,7 +2168,8 @@ where
 
 /// Run the full sync loop with automatic retry on failure.
 /// Retries up to 3 times with exponential backoff (2s, 4s, 8s).
-/// This is the unified entry point called by both Dart (FRB) and Swift (C FFI).
+/// Called by foreground FRB sync and the platform-neutral preparation core.
+/// iOS background confirmation uses read-only inspection instead of this loop.
 pub async fn run_sync_inner(
     db_data_path: &str,
     lightwalletd_url: &str,

@@ -146,9 +146,7 @@ Future<void> initializeZcashWalletRuntime() async {
     );
   }
 
-  // Order matters: window_manager creates and shows the NSWindow inside
-  // `initializeDesktopWindow`; the acrylic setup is only effective once
-  // that window exists.
+  // Create the OS window before applying its native appearance.
   log('runtime: initializing desktop window (no-op on mobile/web)');
   await initializeDesktopWindow();
   if (isDesktopLayoutPlatform) {

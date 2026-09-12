@@ -1,69 +1,17 @@
-//! Hardware-wallet PCZT pipeline.
+//! Hardware-wallet PCZT construction, proof, signature, and completion roles.
 //!
-//! Software sends are handled by `sync/send.rs`. This module owns the
-//! PCZT pipeline used by Keystone signing. A proposal is IO-finalized and
-//! proved locally. Normal sends carry a batch-redacted signer view to Keystone
-//! and receive only compact Orchard/Ironwood signatures in return.
+//! Normal Keystone flows keep the proved PCZT on the phone and exchange only a
+//! batch-redacted signer view plus compact Orchard/Ironwood signatures. TEX and
+//! transparent shielding retain the full-PCZT compatibility path because the
+//! compact response cannot carry transparent-input signatures.
 //!
-//! ```text
-//!   1. create_pczt_from_proposal                      → base PCZT (phone)
-//!      (IO-finalized, no proofs, no signatures)
-//!         │
-//!         ├── 2a. add_proofs_to_pczt(base, params?)   → pcztWithProofs   (phone, CPU)
-//!         │       (Orchard or Ironwood proof; Sapling output proofs if
-//!         │        the proposal has a non-empty Sapling bundle)
-//!         │
-//!         └── 2b. prepare_pczt_for_keystone_batch(base) → compact signer PCZT
-//!                 → zcash-sign-batch QR
-//!                 → device signs Orchard/Ironwood spend_auth_sig
-//!                 → zcash-batch-sig-result QR           → signatures only
-//!                                                             │
-//!   3. store_and_broadcast_pczts_with_compact_signatures_for_proposal(
-//!        [pcztWithProofs...], [signatures...],                   │
-//!      )                                               → validate/finalize all
-//!                                                        + ordered broadcast
-//!                                                        + atomic prefix store ◄┘
-//! ```
-//!
-//! The batch response cannot carry transparent-input or Sapling spend
-//! signatures. TEX and transparent shielding therefore retain the full-PCZT
-//! compatibility path until the batch protocol can represent those signatures.
-//!
-//! ## Critical invariants (each of these was a real regression at some point)
-//!
-//! 1. **Send validates every returned PCZT before touching the DB or network.**
-//!    For TEX, round 2 must contain exactly one transparent input spending the
-//!    extracted round-1 txid. Swaps, duplicates, modified effects, and missing
-//!    shielded or transparent signatures are rejected before persistence.
-//!
-//! 2. **Broadcast precedes persistence.** A definite lightwalletd rejection
-//!    must leave that PCZT out of the wallet DB. After each ordered broadcast
-//!    attempt stops, the accepted-or-ambiguous prefix is persisted atomically;
-//!    a later store failure rolls back every earlier write in that prefix.
-//!
-//! 3. **Sapling params must be passed to BOTH `add_proofs_to_pczt`
-//!    AND the final store/broadcast call whenever the PCZT contains a
-//!    Sapling bundle.** `add_proofs_to_pczt` uses `LocalTxProver` to
-//!    build Sapling output proofs; finalization
-//!    uses `LocalTxProver::verifying_keys()` to validate the
-//!    extracted transaction and to let
-//!    `extract_and_store_transaction_from_pczt` store it. If the
-//!    caller supplied params to `add_proofs_to_pczt` but passed
-//!    `None` here, extraction bails with `SaplingRequired` and the
-//!    user sees a cryptic error after already downloading 50MB of
-//!    params and approving on the device. The Dart call site in
-//!    `send_screen.dart` threads
-//!    `proposal.needsSaplingParams ? spendPath : null` into both.
-//!
-//! 4. **`PROPOSAL_STORE` is consume-on-entry for both execute paths,
-//!    while its wallet-input lock remains releasable until the flow
-//!    finishes.** `create_pczt_from_proposal` removes the replayable
-//!    proposal at the top. A second call with the same `proposal_id`
-//!    returns "Proposal not found (expired or already consumed)".
-//!    `discard_proposal` is idempotent and releases the retained
-//!    owner-scoped input lock after hardware cancel or pre-store failure.
-//!    Successful post-broadcast storage finishes proposal bookkeeping because
-//!    the persisted transactions now own recovery.
+//! Keep four invariants local to this implementation: validate every returned
+//! transaction and TEX dependency before effects; broadcast before atomically
+//! persisting the accepted-or-ambiguous prefix; pass Sapling parameter paths to
+//! both proof creation and final validation/storage; and consume the in-memory
+//! proposal on PCZT creation while retaining an idempotently releasable wallet
+//! input lock until completion. See `docs/contracts/hardware-signing.md` and
+//! `docs/contracts/send.md` for protocol roles and caller ownership.
 
 use std::convert::Infallible;
 
