@@ -369,7 +369,7 @@ Future<void> cleanupDesktopRegtestWallet() async {
     torDirectory: '',
   );
   final storage = AppSecureStore.instance;
-  final dbName = await getWalletDbName();
+  final dbName = await readWalletDbName();
   await storage.deleteAll();
 
   final preferences = await SharedPreferences.getInstance();
@@ -382,6 +382,7 @@ Future<void> cleanupDesktopRegtestWallet() async {
 
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
+  if (dbName == null) return;
   for (final name in [
     dbName,
     '$dbName-shm',

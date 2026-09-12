@@ -279,7 +279,7 @@ class _RecordingAppSecurityNotifier extends AppSecurityNotifier {
   Future<void> preparePasswordSetup(String password) async {}
 
   @override
-  void commitPasswordSetup() {
+  Future<void> commitPasswordSetup() async {
     state = const AppSecurityState(
       isPasswordConfigured: true,
       isUnlocked: true,

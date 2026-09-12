@@ -25,8 +25,9 @@ use zip32::fingerprint::SeedFingerprint;
 use crate::wallet::{
     db::{
         open_readonly_conn_with_timeout, open_wallet_db_for_read_with_timeout,
-        open_wallet_db_with_timeout, with_wallet_db_write_lock, WalletDatabase,
-        ACCOUNT_MUTATION_DB_BUSY_TIMEOUT, READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
+        open_wallet_db_readonly_with_timeout, open_wallet_db_with_timeout,
+        with_wallet_db_write_lock, WalletDatabase, ACCOUNT_MUTATION_DB_BUSY_TIMEOUT,
+        READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
 };
@@ -604,7 +605,36 @@ pub fn existing_software_seed_account_state(
 /// List all accounts in the wallet database.
 pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<AccountInfo>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
+    list_accounts_from_db(&db, network, true)
+}
 
+/// Inspect a recovery candidate without creating, migrating, or writing it.
+/// Receive addresses are deliberately not hydrated during locked startup.
+pub fn inspect_wallet_for_recovery(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<Vec<AccountInfo>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    let check: String = conn
+        .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
+        .map_err(|e| format!("Failed to check recovery database: {e}"))?;
+    if check != "ok" {
+        return Err("The recovery database failed its SQLite integrity check".to_string());
+    }
+    let db = WalletDatabase::from_connection(
+        conn,
+        network,
+        zcash_client_sqlite::util::SystemClock,
+        voting_crypto_deps::rand::rngs::OsRng,
+    );
+    list_accounts_from_db(&db, network, false)
+}
+
+fn list_accounts_from_db(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    include_addresses: bool,
+) -> Result<Vec<AccountInfo>, String> {
     let account_ids = db
         .get_account_ids()
         .map_err(|e| format!("Failed to list accounts: {e}"))?;
@@ -618,7 +648,11 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
 
         let (address, is_hardware) = match account.ufvk() {
             Some(ufvk) => (
-                current_receive_address(&db, network, id, ufvk)?,
+                if include_addresses {
+                    current_receive_address(db, network, id, ufvk)?
+                } else {
+                    String::new()
+                },
                 is_keystone_style_ufvk(ufvk),
             ),
             None => (String::new(), false),
@@ -635,6 +669,57 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
     }
 
     Ok(accounts)
+}
+
+/// Verify the full account key, including its ZIP32 index and BIP39 passphrase.
+/// Seed fingerprints alone are not sufficient to adopt a recovery candidate.
+pub fn verify_recovery_mnemonic(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    mnemonic: &str,
+    bip39_passphrase: &str,
+) -> Result<bool, String> {
+    let db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
+    let account = db
+        .get_account(parse_account_uuid(account_uuid)?)
+        .map_err(|e| format!("Failed to inspect recovery account: {e}"))?
+        .ok_or("Recovery account was not found")?;
+    if account.ufvk().is_some_and(is_keystone_style_ufvk) {
+        return Ok(false);
+    }
+    let derivation = account
+        .source()
+        .key_derivation()
+        .ok_or("Recovery account has no ZIP32 derivation")?;
+    let stored = account
+        .ufvk()
+        .ok_or("Recovery account has no viewing key")?;
+    let seed = mnemonic_to_seed_with_passphrase(mnemonic, bip39_passphrase)?;
+    let derived = software_account_ufvk(network, &seed, u32::from(derivation.account_index()))?;
+    Ok(derived.encode(&network) == stored.encode(&network))
+}
+
+/// Match an independently obtained hardware-device UFVK without modifying the DB.
+pub fn verify_recovery_hardware_key(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    ufvk: &str,
+) -> Result<bool, String> {
+    let db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
+    let account = db
+        .get_account(parse_account_uuid(account_uuid)?)
+        .map_err(|e| format!("Failed to inspect recovery account: {e}"))?
+        .ok_or("Recovery account was not found")?;
+    if !account.ufvk().is_some_and(is_keystone_style_ufvk) {
+        return Ok(false);
+    }
+    let supplied = UnifiedFullViewingKey::decode(&network, ufvk)
+        .map_err(|e| format!("Invalid hardware viewing key: {e}"))?;
+    Ok(account
+        .ufvk()
+        .is_some_and(|stored| stored.encode(&network) == supplied.encode(&network)))
 }
 
 pub fn get_account_export_metadata(
@@ -1244,6 +1329,132 @@ pub fn wallet_exists(db_path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovery_inspection_never_creates_or_replaces_a_database() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("missing.db");
+        let path = path.to_str().unwrap();
+        assert!(inspect_wallet_for_recovery(path, WalletNetwork::Main).is_err());
+        assert!(!Path::new(path).exists());
+        std::fs::write(path, b"damaged wallet fixture").unwrap();
+        assert!(inspect_wallet_for_recovery(path, WalletNetwork::Main).is_err());
+        assert_eq!(std::fs::read(path).unwrap(), b"damaged wallet fixture");
+    }
+
+    #[test]
+    fn recovery_verifies_each_seed_index_and_passphrase_without_writes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let first_phrase = generate_mnemonic();
+        let second_phrase = generate_mnemonic();
+        let first_seed = mnemonic_to_seed(&first_phrase).unwrap();
+        let second_seed = mnemonic_to_seed_with_passphrase(&second_phrase, "passphrase").unwrap();
+        let (first, _) =
+            init_db_and_create_account(path, WalletNetwork::Main, &first_seed, None, "First")
+                .unwrap();
+        let (second, _) =
+            add_account_at_index(path, WalletNetwork::Main, "Second", &second_seed, None, 7)
+                .unwrap();
+        let before = std::fs::read(path).unwrap();
+        let accounts = inspect_wallet_for_recovery(path, WalletNetwork::Main).unwrap();
+        assert_eq!(accounts.len(), 2);
+        assert!(accounts.iter().all(|a| a.unified_address.is_empty()));
+        assert!(
+            verify_recovery_mnemonic(path, WalletNetwork::Main, &first, &first_phrase, "").unwrap()
+        );
+        assert!(verify_recovery_mnemonic(
+            path,
+            WalletNetwork::Main,
+            &second,
+            &second_phrase,
+            "passphrase"
+        )
+        .unwrap());
+        assert!(
+            !verify_recovery_mnemonic(path, WalletNetwork::Main, &second, &first_phrase, "")
+                .unwrap()
+        );
+        assert!(
+            !verify_recovery_mnemonic(path, WalletNetwork::Main, &second, &second_phrase, "")
+                .unwrap()
+        );
+        assert!(inspect_wallet_for_recovery(path, WalletNetwork::Test).is_err());
+        assert_eq!(std::fs::read(path).unwrap(), before);
+
+        delete_account(path, WalletNetwork::Main, &first).unwrap();
+        let accounts = inspect_wallet_for_recovery(path, WalletNetwork::Main).unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert!(!accounts[0].is_seed_anchor);
+        assert!(verify_recovery_mnemonic(
+            path,
+            WalletNetwork::Main,
+            &second,
+            &second_phrase,
+            "passphrase"
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn recovery_supports_hardware_first_without_a_derived_seed_anchor() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let ufvk = hardware_style_ufvk(&seed, zip32::AccountId::ZERO);
+        let fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+        let (uuid, _) = import_hardware_account(
+            path,
+            WalletNetwork::Main,
+            "Keystone",
+            &ufvk,
+            &fingerprint,
+            0,
+            None,
+        )
+        .unwrap();
+        let before = std::fs::read(path).unwrap();
+        let accounts = inspect_wallet_for_recovery(path, WalletNetwork::Main).unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert!(accounts[0].is_hardware);
+        assert!(!accounts[0].is_seed_anchor);
+        assert!(verify_recovery_hardware_key(path, WalletNetwork::Main, &uuid, &ufvk).unwrap());
+        let other = hardware_style_ufvk(
+            &mnemonic_to_seed(&generate_mnemonic()).unwrap(),
+            zip32::AccountId::ZERO,
+        );
+        assert!(!verify_recovery_hardware_key(path, WalletNetwork::Main, &uuid, &other).unwrap());
+        assert!(!verify_recovery_mnemonic(path, WalletNetwork::Main, &uuid, &phrase, "").unwrap());
+        assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+
+    fn hardware_style_ufvk(seed: &SecretVec<u8>, account_index: zip32::AccountId) -> String {
+        use zcash_address::unified::{Encoding, Fvk, Ufvk};
+        use zcash_protocol::consensus::NetworkType;
+
+        let full_ufvk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            account_index,
+        )
+        .unwrap()
+        .to_unified_full_viewing_key();
+        let orchard_fvk = full_ufvk.orchard().unwrap().to_bytes();
+        let transparent_fvk = full_ufvk
+            .transparent()
+            .unwrap()
+            .serialize()
+            .try_into()
+            .unwrap();
+        Ufvk::try_from_items(vec![Fvk::Orchard(orchard_fvk), Fvk::P2pkh(transparent_fvk)])
+            .unwrap()
+            .encode(&NetworkType::Main)
+    }
 
     #[test]
     fn test_generate_mnemonic_is_24_words() {

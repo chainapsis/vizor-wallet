@@ -249,10 +249,11 @@ Future<void> _cleanupE2eWalletState() async {
       DateTime.now().isBefore(deadline)) {
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
-  final dbName = await getWalletDbName();
+  final dbName = await readWalletDbName();
   await AppSecureStore.instance.deleteAll();
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
+  if (dbName == null) return;
   for (final name in [
     dbName,
     '$dbName-shm',

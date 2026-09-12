@@ -26,7 +26,7 @@ void main() {
     () async {
       FlutterSecureStorage.setMockInitialValues({});
       final storage = AppSecureStore.instance;
-      final oldName = await storage.ensureWalletDbName();
+      final oldName = await storage.createWalletDbName();
       final oldCache = Directory('${root.path}/$oldName.voting-cache');
       final sibling = Directory(
         '${root.path}/zcash_wallet_${'a' * 24}.db.voting-cache',
@@ -51,7 +51,7 @@ void main() {
       expect(await oldCache.exists(), true);
       // Matches resetWallet: secrets are wiped even if cache cleanup failed.
       await storage.deleteAll();
-      expect(await storage.ensureWalletDbName(), isNot(oldName));
+      expect(await storage.readPlain(kWalletDbNameKey), isNull);
       await clearVotingCachesForReset(
         resolveSupportDirectory: () async => root,
       );
