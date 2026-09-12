@@ -56,8 +56,9 @@ impl MemoryBlockSource {
         self.blocks.first().map(|block| block.prev_hash.clone())
     }
 
-    /// Whether the preceding tree state and first compact block satisfy the
-    /// same commitment-count invariant that `put_blocks` enforces.
+    /// Whether the preceding tree state and first compact block have matching
+    /// identities and satisfy the commitment-count invariant that `put_blocks`
+    /// enforces. The zero hash identifies the synthetic pre-activation state.
     pub(super) fn starts_after(&self, from_state: &chain::ChainState) -> bool {
         self.blocks.first().is_some_and(|block| {
             let metadata = block.chain_metadata.unwrap_or_default();
@@ -65,9 +66,13 @@ impl MemoryBlockSource {
             let orchard_commitments: usize = block.vtx.iter().map(|tx| tx.actions.len()).sum();
             let ironwood_commitments: usize =
                 block.vtx.iter().map(|tx| tx.ironwood_actions.len()).sum();
+            let from_hash = from_state.block_hash().0;
+            let predecessor_matches =
+                from_hash == [0u8; 32] || block.prev_hash.as_slice() == from_hash;
 
-            from_state.final_sapling_tree().tree_size() + sapling_commitments as u64
-                == metadata.sapling_commitment_tree_size as u64
+            predecessor_matches
+                && from_state.final_sapling_tree().tree_size() + sapling_commitments as u64
+                    == metadata.sapling_commitment_tree_size as u64
                 && from_state.final_orchard_tree().tree_size() + orchard_commitments as u64
                     == metadata.orchard_commitment_tree_size as u64
                 && from_state.final_ironwood_tree().tree_size() + ironwood_commitments as u64
@@ -211,6 +216,12 @@ mod tests {
         metadata.ironwood_commitment_tree_size = 1;
 
         assert!(MemoryBlockSource::new(vec![block.clone()]).starts_after(&from_state));
+
+        let identified_state =
+            chain::ChainState::empty(BlockHeight::from_u32(9), BlockHash([1u8; 32]));
+        assert!(!MemoryBlockSource::new(vec![block.clone()]).starts_after(&identified_state));
+        block.prev_hash = vec![1u8; 32];
+        assert!(MemoryBlockSource::new(vec![block.clone()]).starts_after(&identified_state));
 
         block
             .chain_metadata
