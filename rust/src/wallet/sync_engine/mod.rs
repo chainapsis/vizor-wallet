@@ -2037,14 +2037,11 @@ async fn download_scan_batch(
         elapsed(),
         u32::from(start),
     );
-    let pinned_state = get_tree_state_for_block(
-        client,
-        u64::from(u32::from(start - 1)),
-        predecessor_hash,
-    )
-    .await?
-    .to_chain_state()
-    .map_err(|e| SyncError::parse(format!("parse hash-pinned tree state: {e}")))?;
+    let pinned_state =
+        get_tree_state_for_block(client, u64::from(u32::from(start - 1)), predecessor_hash)
+            .await?
+            .to_chain_state()
+            .map_err(|e| SyncError::parse(format!("parse hash-pinned tree state: {e}")))?;
 
     Ok((block_source, pinned_state))
 }
@@ -2066,8 +2063,7 @@ fn scan_batch_tree_state_is_sequential(
         return false;
     };
 
-    from_state.final_sapling_tree().tree_size() + sapling_commitments as u64
-        == sapling_final as u64
+    from_state.final_sapling_tree().tree_size() + sapling_commitments as u64 == sapling_final as u64
         && from_state.final_orchard_tree().tree_size() + orchard_commitments as u64
             == orchard_final as u64
         && from_state.final_ironwood_tree().tree_size() + ironwood_commitments as u64

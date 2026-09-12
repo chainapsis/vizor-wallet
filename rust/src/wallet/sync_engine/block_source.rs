@@ -60,11 +60,7 @@ impl MemoryBlockSource {
         self.blocks.first().map(|block| {
             let sapling_commitments = block.vtx.iter().map(|tx| tx.outputs.len()).sum();
             let orchard_commitments = block.vtx.iter().map(|tx| tx.actions.len()).sum();
-            let ironwood_commitments = block
-                .vtx
-                .iter()
-                .map(|tx| tx.ironwood_actions.len())
-                .sum();
+            let ironwood_commitments = block.vtx.iter().map(|tx| tx.ironwood_actions.len()).sum();
             let metadata = block.chain_metadata.unwrap_or_default();
 
             (

@@ -348,10 +348,13 @@ pub(super) async fn get_tree_state(
     client: &mut CompactTxStreamerClient<Channel>,
     height: u64,
 ) -> Result<TreeState, SyncError> {
-    request_tree_state(client, BlockId {
-        height,
-        hash: vec![],
-    })
+    request_tree_state(
+        client,
+        BlockId {
+            height,
+            hash: vec![],
+        },
+    )
     .await
 }
 
@@ -379,10 +382,7 @@ async fn request_tree_state(
     await_tonic_response(
         "get_tree_state",
         LIGHTWALLETD_UNARY_RPC_TIMEOUT,
-        client.get_tree_state(timed_request(
-            block,
-            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
-        )),
+        client.get_tree_state(timed_request(block, LIGHTWALLETD_UNARY_RPC_TIMEOUT)),
     )
     .await
     .map_err(|e| status_to_network_error("get_tree_state", e))

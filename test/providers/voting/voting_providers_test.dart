@@ -3694,6 +3694,64 @@ void main() {
     expect(rust.voteCommitBundleCalls, [0, 1]);
   });
 
+  test('bundle pipelines start concurrently with singleton drafts', () async {
+    final proofGate = Completer<void>();
+    final rust = FakeVotingRustApi(voteCommitmentGate: proofGate);
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 2,
+        delegationTxHashes: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-0',
+            vanLeafPosition: null,
+          ),
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 1,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-1',
+            vanLeafPosition: null,
+          ),
+        ],
+        votes: [
+          vote(bundleIndex: 0, proposalId: 7),
+          vote(bundleIndex: 1, proposalId: 7),
+        ],
+      ),
+    );
+    final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final casting = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            rust_wire.DraftVote(
+              proposalId: 7,
+              choice: 1,
+              numOptions: 2,
+              vcTreePosition: BigInt.zero,
+              singleShare: false,
+            ),
+          ],
+        );
+    await rust.voteCommitmentStarted.future;
+    for (var i = 0; i < 100 && rust.voteCommitBundleCalls.length < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    final callsBeforeRelease = List<int>.of(rust.voteCommitBundleCalls);
+    final draftCountsBeforeRelease = List<int>.of(
+      rust.voteCommitmentDraftCounts,
+    );
+    proofGate.complete();
+    await casting;
+
+    expect(callsBeforeRelease, [0, 1]);
+    expect(draftCountsBeforeRelease, [1, 1]);
+  });
+
   test(
     'vote submission progress displays questions while bundle work advances',
     () async {
@@ -3782,13 +3840,13 @@ void main() {
           .where((state) => state.voteSubmissionTotalCount == 2)
           .map((state) => state.voteSubmissionCompletedCount)
           .toSet();
-      expect(activeProgressCounts, containsAll(<int>{0, 1, 2}));
+      expect(activeProgressCounts, containsAll(<int>{0, 2}));
       expect(
         observed
             .where((state) => state.voteSubmissionTotalCount == 2)
             .map((state) => state.voteSubmissionProgress)
             .whereType<double>(),
-        containsAll(<double>[0, 0.25, 0.5, 0.75, 1]),
+        containsAll(<double>[0, 0.5, 1]),
       );
 
       expect(
@@ -4433,7 +4491,7 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
-  test('vote tree sync runs before each proposal', () async {
+  test('proposals stay sequential within one bundle', () async {
     final rust = FakeVotingRustApi();
     final container = _sessionContainer(rust: rust);
     addTearDown(container.dispose);
@@ -4462,6 +4520,8 @@ void main() {
 
     expect(rust.syncedVoteTrees, [kRoundId, kRoundId]);
     expect(rust.voteCommitBundleCalls, [0, 0]);
+    expect(rust.voteCommitmentKeys, ['0:7', '0:8']);
+    expect(rust.voteCommitmentDraftCounts, [1, 1]);
   });
 
   test('cast-time vote tree sync retries failover servers', () async {
@@ -7282,6 +7342,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final delegationBundleCalls = <int>[];
   final delegationMnemonics = <String>[];
   final voteCommitBundleCalls = <int>[];
+  final voteCommitmentDraftCounts = <int>[];
   final voteCommitmentKeys = <String>[];
   final recoveredVoteCommitmentKeys = <String>[];
   final storedDelegationTxHashes = <String>[];
@@ -7773,30 +7834,45 @@ class FakeVotingRustApi implements VotingRustApi {
     required List<rust_wire.DraftVote> draftVotes,
   }) async* {
     voteCommitBundleCalls.add(bundleIndex);
+    voteCommitmentDraftCounts.add(draftVotes.length);
     if (!voteCommitmentStarted.isCompleted) {
       voteCommitmentStarted.complete();
     }
     await voteCommitmentGate?.future;
+    final commitments = <rust_wire.SignedVoteCommitmentView>[];
     for (final draft in draftVotes) {
       voteCommitmentKeys.add('$bundleIndex:${draft.proposalId}');
       operationLog.add('build_vote:$bundleIndex:${draft.proposalId}');
       draftSingleShareValues.add(draft.singleShare);
       yield rust_api.ApiVoteCommitEvent(
-        phase: 'result',
+        phase: 'proving',
         proposalId: draft.proposalId,
         bundleIndex: bundleIndex,
-        proofProgress: null,
-        commitments: emitCommitments
-            ? _commitments(
-                roundId: roundId,
-                bundleIndex: bundleIndex,
-                proposalId: draft.proposalId,
-                choice: draft.choice,
-                shareCount: commitmentShareCount,
-              )
-            : null,
+        proofProgress: 0.5,
+        commitments: null,
+      );
+      commitments.add(
+        _commitments(
+          roundId: roundId,
+          bundleIndex: bundleIndex,
+          proposalId: draft.proposalId,
+          choice: draft.choice,
+          shareCount: commitmentShareCount,
+        ).commitments.single,
       );
     }
+    yield rust_api.ApiVoteCommitEvent(
+      phase: 'result',
+      proposalId: null,
+      bundleIndex: bundleIndex,
+      proofProgress: null,
+      commitments: emitCommitments
+          ? rust_wire.SignedVoteCommitmentsView(
+              bundleIndex: bundleIndex,
+              commitments: commitments,
+            )
+          : null,
+    );
   }
 
   @override

@@ -8,7 +8,7 @@ import '../../providers/voting/voting_state.dart';
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 
 const int _minProposalId = 1;
-const int _maxProposalId = 15;
+const int _maxProposalId = 50;
 const List<String> _forumUrlKeys = [
   'discussion_url',
   'discussionUrl',

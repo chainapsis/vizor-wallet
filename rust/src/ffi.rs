@@ -196,8 +196,10 @@ pub extern "C" fn zcash_lightwalletd_latest_block_height(
         match runtime.block_on(await_lightwalletd_request_or_cancellation(
             cancellation,
             async {
-                let mut client =
-                    crate::wallet::sync_engine::open_background_direct_lwd_channel(lightwalletd_url).await?;
+                let mut client = crate::wallet::sync_engine::open_background_direct_lwd_channel(
+                    lightwalletd_url,
+                )
+                .await?;
                 crate::wallet::sync_engine::get_latest_block(&mut client).await
             },
         )) {
@@ -255,9 +257,11 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
         match runtime.block_on(await_lightwalletd_request_or_cancellation(
             cancellation,
             async {
-                let mut client = crate::wallet::sync_engine::open_background_direct_lwd_channel(lightwalletd_url)
-                    .await
-                    .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
+                let mut client = crate::wallet::sync_engine::open_background_direct_lwd_channel(
+                    lightwalletd_url,
+                )
+                .await
+                .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
                 crate::wallet::sync_engine::get_transaction(&mut client, transaction_id).await
             },
         )) {
@@ -324,9 +328,11 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
         match runtime.block_on(await_lightwalletd_request_or_cancellation(
             cancellation,
             async {
-                let mut client = crate::wallet::sync_engine::open_background_direct_lwd_channel(lightwalletd_url)
-                    .await
-                    .map_err(|error| error.to_string())?;
+                let mut client = crate::wallet::sync_engine::open_background_direct_lwd_channel(
+                    lightwalletd_url,
+                )
+                .await
+                .map_err(|error| error.to_string())?;
                 crate::wallet::sync_engine::send_transaction_with_status(
                     &mut client,
                     &raw_transaction,

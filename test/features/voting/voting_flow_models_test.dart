@@ -225,18 +225,28 @@ void main() {
     );
   });
 
-  test('proposal parser rejects ids outside Rust vote protocol range', () {
+  test('proposal parser accepts ids through 50', () {
+    final proposals = proposalsFromJson({
+      'proposals': [
+        {'id': 50, 'title': 'Maximum id'},
+      ],
+    });
+
+    expect(proposals.single.id, 50);
+  });
+
+  test('proposal parser rejects ids outside supported range', () {
     expect(
       () => proposalsFromJson({
         'proposals': [
-          {'id': 0, 'title': 'Zero'},
+          {'id': 51, 'title': 'Too high'},
         ],
       }),
       throwsA(
         isA<FormatException>().having(
           (error) => error.message,
           'message',
-          'id must be 1..15, got 0',
+          'id must be 1..50, got 51',
         ),
       ),
     );

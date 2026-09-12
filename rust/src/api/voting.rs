@@ -1384,6 +1384,16 @@ pub fn recover_vote_commitment(
     })
 }
 
+fn validate_singleton_vote_draft_count(count: usize) -> Result<(), String> {
+    if count == 1 {
+        Ok(())
+    } else {
+        Err(format!(
+            "legacy vote commitment API requires exactly one draft per bundle call; got {count}"
+        ))
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn build_vote_commitments_result<F>(
     db_path: String,
@@ -1399,6 +1409,11 @@ async fn build_vote_commitments_result<F>(
 where
     F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
+    // zcash_voting 3.0.x's legacy `commit_batch` reuses the supplied VAN
+    // witness for every draft. Passing more than one draft would therefore
+    // create commitments that spend the same current VAN nullifier.
+    validate_singleton_vote_draft_count(draft_votes.len())?;
+
     // Parse network once and keep hotkey bytes in a secrecy wrapper.
     let network = keys::parse_network(&network)?;
     let stored_hotkey_secret = secrecy::SecretVec::new(stored_hotkey_secret);
@@ -1766,6 +1781,13 @@ mod tests {
     use zcash_client_backend::proto::service::TreeState;
     use zcash_voting::prelude::{TxEvent, TxEventAttribute};
     use zcash_voting::BundlePolicy;
+
+    #[test]
+    fn legacy_vote_commitment_api_rejects_multiple_drafts() {
+        assert!(validate_singleton_vote_draft_count(1).is_ok());
+        assert!(validate_singleton_vote_draft_count(0).is_err());
+        assert!(validate_singleton_vote_draft_count(2).is_err());
+    }
 
     fn b64(bytes: impl AsRef<[u8]>) -> String {
         base64::engine::general_purpose::STANDARD.encode(bytes)
