@@ -184,12 +184,10 @@ default-features = false
 features = ["zakura"]
 
 [patch.crates-io]
-# Pinned to the tip of PR #324 (perf/shared-delivery-preparation), which shares
-# round audits across helper delivery. Includes #321 (immediate-share dispatch)
-# and #322, both merged upstream.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "79ed9833188e05081547eb9b03650c6f0dd7b85f" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "79ed9833188e05081547eb9b03650c6f0dd7b85f" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "79ed9833188e05081547eb9b03650c6f0dd7b85f" }
+# Pinned to #329, which allows fifty concurrent helper share deliveries.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "9f3bb4812a418af805742303f1a41b065a4d38fc" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "9f3bb4812a418af805742303f1a41b065a4d38fc" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "9f3bb4812a418af805742303f1a41b065a4d38fc" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
