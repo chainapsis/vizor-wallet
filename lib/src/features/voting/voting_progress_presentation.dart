@@ -221,6 +221,12 @@ VotingBallotProgress votingBallotProgress(
 }) {
   final byProposal = <int, VotingSessionProgress>{};
   final fractionByProposal = <int, double>{};
+  // A question is finished when every bundle carrying it is, which is not what
+  // the furthest bundle says: a proposal voted in two bundles would otherwise
+  // count as finished while its sibling is still proving, submitting, or
+  // delivering — and because the counted total is allowed to override the SDK
+  // tally, a one-question round would read as complete on the first bundle.
+  final finishedByProposal = <int, bool>{};
   for (final entry in state.voteProgress.entries) {
     final proposalId = entry.key.proposalId;
     final furthest = byProposal[proposalId];
@@ -229,6 +235,9 @@ VotingBallotProgress votingBallotProgress(
             voteProgressPhaseRank(furthest.phase)) {
       byProposal[proposalId] = entry.value;
     }
+    final entryFinished = entry.value.phase == VotingProgressPhase.completed;
+    finishedByProposal[proposalId] =
+        (finishedByProposal[proposalId] ?? true) && entryFinished;
     final fraction = _voteEntryFraction(entry.value);
     final storedFraction = fractionByProposal[proposalId];
     if (storedFraction == null || fraction > storedFraction) {
@@ -257,7 +266,7 @@ VotingBallotProgress votingBallotProgress(
   for (final entry in byProposal.entries) {
     final progress = entry.value;
     if (_voteEntryProven(progress)) proven += 1;
-    if (progress.phase == VotingProgressPhase.completed) finished += 1;
+    if (finishedByProposal[entry.key] ?? false) finished += 1;
     if (_voteEntryDispatched(progress)) dispatched = true;
     fractionSum += fractionByProposal[entry.key] ?? 0;
   }

@@ -1850,21 +1850,30 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       publishVotes();
     }
 
+    // Unscoped failures are kept, not filtered: the SDK leaves `bundle_index`
+    // absent for a failure that belonged to no step — a plan it could not read,
+    // say — and that is a round-level failure, not an absence of one. Dropping
+    // it reported a delegation run that drove nothing as a success, and the
+    // vote run that followed then went looking for a delegation still pending
+    // with no signer to finish it.
     final failures = [
       for (final record in report.failures)
-        if (record.bundleIndex != null)
-          _DelegationBundleFailure(
-            bundleIndex: record.bundleIndex!,
-            stage: 'step',
-            error: _failureFromRecord(record),
-          ),
+        _DelegationBundleFailure(
+          bundleIndex: record.bundleIndex,
+          stage: 'step',
+          error: _failureFromRecord(record),
+        ),
     ];
     for (final failure in failures) {
-      completed.remove(failure.bundleIndex);
+      final bundleIndex = failure.bundleIndex;
+      // A round-level failure belongs to no bundle, so there is no bundle whose
+      // progress it contradicts and none to paint as failed.
+      if (bundleIndex == null) continue;
+      completed.remove(bundleIndex);
       publishProgress(
         VotingSessionProgress(
           phase: VotingProgressPhase.failed,
-          bundleIndex: failure.bundleIndex,
+          bundleIndex: bundleIndex,
           message: failure.error.toString(),
         ),
       );
@@ -2570,7 +2579,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _releaseAutomaticShareTracking();
         return;
       }
-      unawaited(_startShareTracking());
+      // The captured context is handed over rather than reloaded. Reloading it
+      // asks the voting fleet for round status, and the outage that armed this
+      // retry is usually that same fleet being unreachable — so the retry would
+      // fail on the condition it exists to wait out. The context was checked
+      // current a line above, and the retry is for the round it names.
+      //
+      // A start that fails anyway backs off again instead of ending here: the
+      // timer has already been cleared, so returning without re-arming would
+      // leave the round pinned and untracked until some later lifecycle event.
+      unawaited(
+        _startShareTracking(context).catchError((
+          Object error,
+          StackTrace stack,
+        ) {
+          debugPrint(
+            '[zcash] Voting: share tracking retry failed to start '
+            'round=${context.round.roundId} error=$error\n$stack',
+          );
+          _armShareTrackingRetry(context);
+        }),
+      );
     });
   }
 
@@ -4079,7 +4108,9 @@ class _DelegationBundleFailure {
     required this.error,
   });
 
-  final int bundleIndex;
+  /// The bundle this failure belongs to, or null for a round-level failure the
+  /// SDK could attribute to no step.
+  final int? bundleIndex;
   final String stage;
   final Object error;
 }
@@ -4100,9 +4131,11 @@ class _DelegationBundleBatchException
   String toString() {
     final details = failures
         .map(
-          (failure) =>
-              'bundle ${failure.bundleIndex + 1} ${failure.stage}: '
-              '${failure.error}',
+          (failure) => switch (failure.bundleIndex) {
+            final int bundleIndex =>
+              'bundle ${bundleIndex + 1} ${failure.stage}: ${failure.error}',
+            null => 'round ${failure.stage}: ${failure.error}',
+          },
         )
         .join('; ');
     return 'Delegation bundle processing failed: $details';

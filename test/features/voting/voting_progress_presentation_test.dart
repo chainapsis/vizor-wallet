@@ -65,6 +65,67 @@ void main() {
       expect(midway.fraction, greaterThan(early.fraction!));
     });
 
+    test('a question is finished only when every bundle carrying it is', () {
+      // One question, two bundles: the first bundle finishing is not the
+      // question finishing. Counting it that way marked a one-question round
+      // complete — the count is allowed to override the SDK tally — and the UI
+      // advanced to finalizing while the sibling was still delivering.
+      final halfDone = votingBallotProgress(
+        _ballotState(
+          voteProgress: {
+            const VotingVoteKey(
+              bundleIndex: 0,
+              proposalId: 7,
+            ): VotingSessionProgress(
+              phase: VotingProgressPhase.completed,
+              bundleIndex: 0,
+              proposalId: 7,
+              proofProgress: 1,
+            ),
+            const VotingVoteKey(
+              bundleIndex: 1,
+              proposalId: 7,
+            ): VotingSessionProgress(
+              phase: VotingProgressPhase.submitting,
+              bundleIndex: 1,
+              proposalId: 7,
+            ),
+          },
+          total: 1,
+        ),
+      );
+      expect(halfDone.completedProposals, 0);
+      expect(halfDone.stage, isNot(VotingBallotStage.complete));
+
+      final bothDone = votingBallotProgress(
+        _ballotState(
+          voteProgress: {
+            const VotingVoteKey(
+              bundleIndex: 0,
+              proposalId: 7,
+            ): VotingSessionProgress(
+              phase: VotingProgressPhase.completed,
+              bundleIndex: 0,
+              proposalId: 7,
+              proofProgress: 1,
+            ),
+            const VotingVoteKey(
+              bundleIndex: 1,
+              proposalId: 7,
+            ): VotingSessionProgress(
+              phase: VotingProgressPhase.completed,
+              bundleIndex: 1,
+              proposalId: 7,
+              proofProgress: 1,
+            ),
+          },
+          total: 1,
+        ),
+      );
+      expect(bothDone.completedProposals, 1);
+      expect(bothDone.stage, VotingBallotStage.complete);
+    });
+
     test('uses concise casting copy while proving', () {
       final early = votingBallotProgress(
         _ballotState(

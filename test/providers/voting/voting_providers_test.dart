@@ -3412,6 +3412,58 @@ void main() {
     },
   );
 
+  test('a delegation failure that names no step still fails the round', () {
+    // The SDK leaves `bundle_index` absent for a failure that belonged to no
+    // step — a plan it could not read, say. Dropping those reported a run that
+    // drove nothing as a success, and the vote run that followed went looking
+    // for a delegation still pending with no signer to finish it.
+    return () async {
+      final rust = FakeVotingRustApi();
+      final plan = apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_wire.NextStepView(
+            kind: rust_frb_types.NextStepKind.delegate,
+            bundleIndex: 0,
+            proposalId: 0,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        ],
+        openProposals: Uint32List.fromList(const [7]),
+        allDecided: false,
+        bundleCount: 1,
+      );
+      rust.scriptedRoundRuns.add([
+        roundRunReport(
+          plan: plan,
+          quiescence: rust_wire.RoundQuiescenceKind.failures,
+          failures: const [
+            rust_wire.RoundStepFailureRecordView(
+              failure: rust_wire.RoundStepFailureView(
+                kind: rust_wire.RoundStepFailureKindView.transport,
+                message: 'could not read the round plan',
+                shareDeliveries: [],
+              ),
+            ),
+          ],
+        ),
+      ]);
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.error);
+      expect(state.error?.message, contains('could not read the round plan'));
+    }();
+  });
+
   test('delegation surfaces a typed SDK rejection', () async {
     final rust = FakeVotingRustApi(
       delegationChainResultsByBundle: {
@@ -9651,6 +9703,79 @@ void main() {
       rust.shareTrackingSessions,
       hasLength(2),
       reason: 'the second run confirmed its shares, so nothing re-armed again',
+    );
+  });
+
+  test('a re-armed tracking run does not need the voting fleet', () async {
+    // The outage that arms a retry is usually the voting fleet being
+    // unreachable, and reloading the session context asks that same fleet for
+    // round status. A retry that reloaded it failed on the very condition it
+    // exists to wait out — and because the timer has already been cleared by
+    // then, nothing re-armed again and the round stayed pinned and untracked.
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final pendingShare = FakeShareDelegationRecord(
+      roundId: kRoundId,
+      bundleIndex: 0,
+      proposalId: 7,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper-a.example'],
+      ambiguousUrls: const [],
+      targetCount: 1,
+      nullifier: Uint8List.fromList(List.filled(32, 9)),
+      phase: rust_wire.WorkflowPhaseView.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.zero,
+      createdAt: BigInt.from(nowSeconds - 600),
+    );
+    final rust = FakeVotingRustApi();
+    rust.scriptedShareTrackingRuns.addAll([
+      [
+        _trackingRunResult(
+          rust_wire.ShareTrackingQuiescenceKind.failing,
+          messages: const ['helper fleet unreachable'],
+        ),
+      ],
+      [_trackingRunResult(rust_wire.ShareTrackingQuiescenceKind.allConfirmed)],
+    ]);
+    final responses = Map<String, Object>.from(votingHttpResponses());
+    final http = FakeVotingHttpClient(responses: responses);
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      recoveryApi: FakeVotingRecoveryApi(
+        state: recoveryState(
+          shareDelegations: [pendingShare],
+          unconfirmedShareDelegations: [pendingShare],
+        ),
+      ),
+      extraOverrides: [
+        votingShareTrackingFailureRetryDelayProvider.overrideWithValue(
+          Duration.zero,
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    const key = VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId);
+
+    await container.read(votingSubmissionSessionProvider(key).future);
+    final notifier = container.read(
+      votingSubmissionSessionProvider(key).notifier,
+    );
+    await _waitForShareTrackingRuns(rust, 1);
+    await notifier.shareTrackingRun;
+
+    // The fleet is down by the time the retry fires.
+    responses['/shielded-vote/v1/round/$kRoundId'] = StateError(
+      'voting fleet unreachable',
+    );
+
+    await _waitForShareTrackingRuns(rust, 2);
+    await notifier.shareTrackingRun;
+
+    expect(
+      rust.scriptedShareTrackingRuns,
+      isEmpty,
+      reason: 'the retry ran without asking the fleet for round status',
     );
   });
 
