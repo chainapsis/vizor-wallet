@@ -360,16 +360,40 @@ pub(super) async fn get_tree_state(
     client: &mut CompactTxStreamerClient<Channel>,
     height: u64,
 ) -> Result<TreeState, SyncError> {
+    request_tree_state(
+        client,
+        BlockId {
+            height,
+            hash: vec![],
+        },
+    )
+    .await
+}
+
+/// Return the note commitment tree state for an exact block identity. Pinning
+/// by hash prevents a load-balanced lightwalletd from pairing compact blocks
+/// from one reorg branch with a same-height tree state from another.
+pub(super) async fn get_tree_state_for_block(
+    client: &mut CompactTxStreamerClient<Channel>,
+    mut hash: Vec<u8>,
+) -> Result<TreeState, SyncError> {
+    // CompactBlock hashes use protocol byte order. The reference Go
+    // lightwalletd GetTreeState implementation expects display byte order for
+    // hash-only lookups, and gives height precedence whenever both fields are
+    // populated. Reverse the hash and leave height unset so this lookup is
+    // actually pinned to the compact block's predecessor.
+    hash.reverse();
+    request_tree_state(client, BlockId { height: 0, hash }).await
+}
+
+async fn request_tree_state(
+    client: &mut CompactTxStreamerClient<Channel>,
+    block: BlockId,
+) -> Result<TreeState, SyncError> {
     await_tonic_response(
         "get_tree_state",
         LIGHTWALLETD_UNARY_RPC_TIMEOUT,
-        client.get_tree_state(timed_request(
-            BlockId {
-                height,
-                hash: vec![],
-            },
-            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
-        )),
+        client.get_tree_state(timed_request(block, LIGHTWALLETD_UNARY_RPC_TIMEOUT)),
     )
     .await
     .map_err(|e| status_to_network_error("get_tree_state", e))

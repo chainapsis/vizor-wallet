@@ -52,6 +52,29 @@ impl MemoryBlockSource {
                 .all(|(offset, block)| block.height == u64::from(start) + offset as u64)
     }
 
+    pub(super) fn first_block_prev_hash(&self) -> Option<Vec<u8>> {
+        self.blocks.first().map(|block| block.prev_hash.clone())
+    }
+
+    /// Whether the preceding tree state and first compact block satisfy the
+    /// same commitment-count invariant that `put_blocks` enforces.
+    pub(super) fn starts_after(&self, from_state: &chain::ChainState) -> bool {
+        self.blocks.first().is_some_and(|block| {
+            let metadata = block.chain_metadata.unwrap_or_default();
+            let sapling_commitments: usize = block.vtx.iter().map(|tx| tx.outputs.len()).sum();
+            let orchard_commitments: usize = block.vtx.iter().map(|tx| tx.actions.len()).sum();
+            let ironwood_commitments: usize =
+                block.vtx.iter().map(|tx| tx.ironwood_actions.len()).sum();
+
+            from_state.final_sapling_tree().tree_size() + sapling_commitments as u64
+                == metadata.sapling_commitment_tree_size as u64
+                && from_state.final_orchard_tree().tree_size() + orchard_commitments as u64
+                    == metadata.orchard_commitment_tree_size as u64
+                && from_state.final_ironwood_tree().tree_size() + ironwood_commitments as u64
+                    == metadata.ironwood_commitment_tree_size as u64
+        })
+    }
+
     /// Returns the block heights that scanning will add as Orchard subtree
     /// checkpoints before Orchard checkpoint pruning runs.
     pub(super) fn orchard_checkpoint_heights(&self) -> BTreeSet<u32> {
@@ -115,6 +138,7 @@ impl chain::BlockSource for MemoryBlockSource {
 mod tests {
     use super::*;
     use zcash_client_backend::proto::compact_formats::{CompactOrchardAction, CompactTx};
+    use zcash_primitives::block::BlockHash;
 
     #[test]
     fn orchard_checkpoint_heights_exclude_later_cross_pool_checkpoints() {
@@ -164,5 +188,36 @@ mod tests {
         assert!(!blocks(&[10, 12]).contains_exact_range(10, 13));
         assert!(!blocks(&[10, 11, 12, 13]).contains_exact_range(10, 13));
         assert!(!blocks(&[11, 10, 12]).contains_exact_range(10, 13));
+    }
+
+    #[test]
+    fn first_block_must_extend_every_commitment_tree() {
+        let from_state = chain::ChainState::empty(BlockHeight::from_u32(9), BlockHash([0u8; 32]));
+        let mut block = CompactBlock {
+            height: 10,
+            prev_hash: vec![0u8; 32],
+            chain_metadata: Some(Default::default()),
+            vtx: vec![CompactTx {
+                outputs: vec![Default::default()],
+                actions: vec![CompactOrchardAction::default()],
+                ironwood_actions: vec![CompactOrchardAction::default()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let metadata = block.chain_metadata.as_mut().unwrap();
+        metadata.sapling_commitment_tree_size = 1;
+        metadata.orchard_commitment_tree_size = 1;
+        metadata.ironwood_commitment_tree_size = 1;
+
+        assert!(MemoryBlockSource::new(vec![block.clone()]).starts_after(&from_state));
+
+        block
+            .chain_metadata
+            .as_mut()
+            .unwrap()
+            .orchard_commitment_tree_size = 0;
+        assert!(!MemoryBlockSource::new(vec![block]).starts_after(&from_state));
+        assert!(!MemoryBlockSource::new(vec![]).starts_after(&from_state));
     }
 }
