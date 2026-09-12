@@ -705,20 +705,80 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   StreamSubscription? _mempoolSub;
   bool _mempoolRefreshInFlight = false;
   bool _mempoolRefreshQueued = false;
-
+  // Coalesce balance/history refreshes through `_requestBalanceRefresh`.
+  // Mid-flight requests queue one trailing pass so callers don't adopt a
+  // stale in-flight result.
   /// Last known account-scoped state per account, used only when
   /// switching accounts.
   ///
-  /// This in-memory display cache avoids a blank first frame after a switch.
-  /// It is keyed by UUID, never persisted, and cleared on lock. Restored
-  /// spendable values are marked `lastCompletedSync`; Rust proposal creation
-  /// remains authoritative. A successful switch refresh replaces the snapshot;
-  /// an unavailable balance clears it. See `docs/contracts/lock-sync.md` for
-  /// refresh-failure behavior and the lifecycle contract.
+  /// ## Why
+  ///
+  /// Switching used to clear account-scoped state and leave the screen
+  /// empty until the refresh landed. Tracing the switch showed the new
+  /// screen painting in ~20ms and then sitting blank for 370-970ms —
+  /// 95% of the switch was an empty screen, with no dropped frames.
+  /// Restoring the target account's last known values makes that first
+  /// frame carry data instead.
+  ///
+  /// ## Refresh sequence on switch
+  ///
+  /// 1. `accountProvider` publishes the new active account.
+  /// 2. `_clearAccountScopedStateFor` stores the outgoing account's
+  ///    state here, then emits either the incoming account's stored
+  ///    state (if present) or, as before, blank account-scoped state.
+  ///    The first painted frame reflects this — ~20ms after the tap.
+  /// 3. The switch's `refreshAfterSend` — which ran before this cache
+  ///    existed and is unchanged — reads balance and history and emits
+  ///    authoritative values, typically 0.9-1.6s later.
+  ///
+  /// Step 3 is not triggered by this cache and fetches nothing extra;
+  /// the cache only changes what is displayed while it is in flight.
+  ///
+  /// ## Lifetime and clearing
+  ///
+  /// In memory, per `SyncNotifier` instance, never persisted. Written
+  /// only when switching away from an account, and only when that
+  /// account's data was complete (`hasAccountScopedData`). Read only
+  /// when switching to an account. Cleared wholesale by
+  /// `clearSensitiveStateForLock`, so lock, sign-out, and the password
+  /// recovery flows drop it along with the rest of the sensitive state.
+  ///
+  /// Not cleared on account deletion, import, or network change. A
+  /// stale entry for a removed account is unreachable — entries are
+  /// keyed by uuid and only read for the account being switched to, and
+  /// a removed account cannot be switched to — but pruning it would be
+  /// tidier.
+  ///
+  /// ## What bounds staleness
+  ///
+  /// * Restored values are overwritten by the refresh already in flight
+  ///   for that switch, typically within a second. If Rust cannot provide
+  ///   an authoritative balance, the switch refresh clears the restored
+  ///   balance fields while retaining independently refreshed history.
+  /// * Only wallet-wide sync fields are taken from the live state via
+  ///   `withGlobalSyncFieldsFrom`, so sync progress cannot regress to
+  ///   whatever it was when the account was last active.
+  /// * `displaySpendableFreshness` is forced to `lastCompletedSync`, so
+  ///   consumers that distinguish authoritative balances (the mobile
+  ///   send screen's max-amount quoting) treat it as a snapshot.
+  /// * Entries are keyed by uuid and only read for the incoming
+  ///   account, so one account's figures cannot appear under another.
+  /// * Spending is unaffected: `propose_send` re-derives inputs from the
+  ///   wallet DB, so a stale display cannot produce an invalid spend.
+  ///
+  /// ## Where staleness can still be observed
+  ///
+  /// This bounds staleness; it does not eliminate it. A thrown refresh
+  /// failure leaves the restored figures in place until a later refresh
+  /// succeeds. An unavailable balance is handled differently: the
+  /// account-switch refresh returns balance surfaces to their blank state
+  /// while still committing any transaction history it fetched.
+  ///
+  /// Only the mobile send screen currently reads
+  /// `displaySpendableFreshness`; desktop surfaces render a restored
+  /// balance identically to a fresh one. Wiring desktop to that flag is
+  /// the natural follow-up.
   final Map<String, SyncState> _lastKnownByAccount = {};
-  // Coalesce balance/history refreshes through `_requestBalanceRefresh`.
-  // Mid-flight requests queue one trailing pass so callers do not adopt a
-  // stale in-flight result.
   bool _balanceRefreshInFlight = false;
   bool _balanceRefreshQueued = false;
   bool _balanceRefreshQueuedReleaseSnapshot = false;

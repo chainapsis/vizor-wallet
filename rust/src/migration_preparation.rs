@@ -1,10 +1,10 @@
 //! Platform-neutral execution core for mobile Ironwood migration preparation.
 //!
-//! Operation ownership, foreground-sync exclusion, state interpretation, sync
-//! execution, and denomination advancement live here for native adapters. The
-//! current app wires iOS only to the read-only inspection surface; foreground
-//! FRB calls own sync and advancement, and no Android worker is installed.
-//! See `docs/contracts/migration.md` for the platform boundary.
+//! Platform adapters are responsible only for converting their native inputs
+//! and outputs. Operation ownership, foreground-sync exclusion, state
+//! interpretation, sync execution, and denomination advancement live here.
+//! Android runs the full worker flow. iOS uses read-only confirmation polling;
+//! foreground FRB calls own sync and advancement between confirmed waves.
 
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};

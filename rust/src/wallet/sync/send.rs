@@ -1,17 +1,38 @@
-//! Software-key proposal, fee-estimation, execution, and broadcast primitives.
+//! Software-wallet send flow.
 //!
-//! `propose_send` stores a proposal and its owner-scoped input lock;
-//! `estimate_fee` builds the same proposal without storing it; and
-//! `execute_proposal` consumes the stored proposal before deriving and
-//! zeroizing the spending key. Once transaction creation succeeds, broadcast
-//! failures become recoverable pending results rather than safe-to-retry
-//! failures. The shared store lives in `sync/mod.rs` because the PCZT path also
-//! consumes it.
+//! This module owns the three-step software-key send pipeline:
 //!
-//! Orchard-only sends use no-op Sapling provers. If librustzcash invokes them,
-//! the proposal unexpectedly contains Sapling work, so they fail loudly rather
-//! than creating an invalid proof. See `docs/contracts/send.md` for the caller
-//! ownership and cancellation contract.
+//!   1. [`propose_send`] — build a librustzcash `Proposal` from a
+//!      user-supplied (address, amount, memo) tuple, stash it in the
+//!      shared `PROPOSAL_STORE`, and return enough metadata to drive
+//!      the confirmation UI (`ProposalResult`: proposal id, fee,
+//!      whether the recipient forces a Sapling bundle).
+//!
+//!   2. [`estimate_fee`] — the validation-only mirror of
+//!      `propose_send`: runs the same proposal construction but does
+//!      NOT store the result. Safe to call on every keystroke in the
+//!      amount field.
+//!
+//!   3. [`execute_proposal`] — consume the stored proposal, derive
+//!      the USK from the supplied seed (scoped + zeroized before
+//!      network I/O), build + sign the transaction(s), and broadcast
+//!      them via `send_transaction` gRPC. Once transaction creation
+//!      succeeds, broadcast failures are returned as a structured
+//!      pending-broadcast result instead of a fatal send failure.
+//!
+//! The `PROPOSAL_STORE` stays in `sync/mod.rs` because the hardware
+//! PCZT pipeline also consumes from it (see `sync/pczt.rs`) and
+//! keeping it in the parent avoids a cross-submodule cycle.
+//!
+//! **Sapling-proofs shortcut**: Orchard-only sends (recipient has an
+//! Orchard receiver) go through [`NoOpSpendProver`] /
+//! [`NoOpOutputProver`] so we don't have to ship the 50MB Sapling
+//! params with the app. `create_proposed_transactions` only touches
+//! the provers for Sapling spend/output circuits, so for an
+//! Orchard-only proposal these never get called — if they do get
+//! called it's a bug (the proposal contained unexpected Sapling
+//! components) and the provers log+fail loudly rather than produce a
+//! silently-invalid proof.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::convert::Infallible;
