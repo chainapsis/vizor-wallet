@@ -226,7 +226,13 @@ VotingBallotProgress votingBallotProgress(
   // count as finished while its sibling is still proving, submitting, or
   // delivering — and because the counted total is allowed to override the SDK
   // tally, a one-question round would read as complete on the first bundle.
+  //
+  // Counting entries as well as their phase is what makes that hold for a
+  // sibling the run has not reached yet. Entries appear only as the driver
+  // reports on them, so a bundle selected second is simply absent, and
+  // "every entry present is completed" is trivially true of the one that is.
   final finishedByProposal = <int, bool>{};
+  final entriesByProposal = <int, int>{};
   for (final entry in state.voteProgress.entries) {
     final proposalId = entry.key.proposalId;
     final furthest = byProposal[proposalId];
@@ -238,6 +244,7 @@ VotingBallotProgress votingBallotProgress(
     final entryFinished = entry.value.phase == VotingProgressPhase.completed;
     finishedByProposal[proposalId] =
         (finishedByProposal[proposalId] ?? true) && entryFinished;
+    entriesByProposal[proposalId] = (entriesByProposal[proposalId] ?? 0) + 1;
     final fraction = _voteEntryFraction(entry.value);
     final storedFraction = fractionByProposal[proposalId];
     if (storedFraction == null || fraction > storedFraction) {
@@ -263,10 +270,19 @@ VotingBallotProgress votingBallotProgress(
   var finished = 0;
   var dispatched = false;
   var fractionSum = 0.0;
+  // Every eligible bundle carries every question the ballot decides, so this is
+  // how many entries a finished question must have. A round whose plan is not
+  // loaded yet reports none, and then the phase rule stands alone — it is the
+  // narrower answer of the two, never the broader one.
+  final carryingBundles = roundPlanBundleCount(state.roundPlan);
   for (final entry in byProposal.entries) {
     final progress = entry.value;
     if (_voteEntryProven(progress)) proven += 1;
-    if (finishedByProposal[entry.key] ?? false) finished += 1;
+    final seenEntries = entriesByProposal[entry.key] ?? 0;
+    if ((finishedByProposal[entry.key] ?? false) &&
+        seenEntries >= carryingBundles) {
+      finished += 1;
+    }
     if (_voteEntryDispatched(progress)) dispatched = true;
     fractionSum += fractionByProposal[entry.key] ?? 0;
   }

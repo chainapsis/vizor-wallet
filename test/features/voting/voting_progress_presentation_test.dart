@@ -1,12 +1,17 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/voting/voting_progress_presentation.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 
+import 'round_plan_test_utils.dart';
+
 VotingSessionState _ballotState({
   required Map<VotingVoteKey, VotingSessionProgress> voteProgress,
   int completed = 0,
   int total = 0,
+  int? bundleCount,
 }) {
   return VotingSessionState(
     roundId: 'round',
@@ -14,6 +19,17 @@ VotingSessionState _ballotState({
     voteProgress: voteProgress,
     voteSubmissionCompletedCount: completed,
     voteSubmissionTotalCount: total,
+    roundPlan: bundleCount == null
+        ? null
+        : apiRoundPlan(
+            roundId: 'round',
+            pendingRecovery: true,
+            nextSteps: const [],
+            openProposals: Uint32List(0),
+            allDecided: false,
+            needsDraftSetup: false,
+            bundleCount: bundleCount,
+          ),
   );
 }
 
@@ -124,6 +140,61 @@ void main() {
       );
       expect(bothDone.completedProposals, 1);
       expect(bothDone.stage, VotingBallotStage.complete);
+    });
+
+    test('a sibling bundle the run has not reached yet is unfinished', () {
+      // Entries appear only as the driver reports on them, so a bundle selected
+      // second is absent rather than pending. Judging the question on the
+      // entries present would call it finished on the first bundle again — and
+      // the ratcheted UI would advance to finalizing for good.
+      final firstBundleOnly = votingBallotProgress(
+        _ballotState(
+          bundleCount: 2,
+          voteProgress: {
+            const VotingVoteKey(
+              bundleIndex: 0,
+              proposalId: 7,
+            ): const VotingSessionProgress(
+              phase: VotingProgressPhase.completed,
+              bundleIndex: 0,
+              proposalId: 7,
+              proofProgress: 1,
+            ),
+          },
+          total: 1,
+        ),
+      );
+      expect(firstBundleOnly.completedProposals, 0);
+      expect(firstBundleOnly.stage, isNot(VotingBallotStage.complete));
+
+      final bothBundles = votingBallotProgress(
+        _ballotState(
+          bundleCount: 2,
+          voteProgress: {
+            const VotingVoteKey(
+              bundleIndex: 0,
+              proposalId: 7,
+            ): const VotingSessionProgress(
+              phase: VotingProgressPhase.completed,
+              bundleIndex: 0,
+              proposalId: 7,
+              proofProgress: 1,
+            ),
+            const VotingVoteKey(
+              bundleIndex: 1,
+              proposalId: 7,
+            ): const VotingSessionProgress(
+              phase: VotingProgressPhase.completed,
+              bundleIndex: 1,
+              proposalId: 7,
+              proofProgress: 1,
+            ),
+          },
+          total: 1,
+        ),
+      );
+      expect(bothBundles.completedProposals, 1);
+      expect(bothBundles.stage, VotingBallotStage.complete);
     });
 
     test('uses concise casting copy while proving', () {
