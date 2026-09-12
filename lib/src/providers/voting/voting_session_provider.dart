@@ -371,6 +371,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (current == null) return;
     state = AsyncData(
       current.copyWith(
+        phase: current.phase == VotingSessionPhase.error
+            ? _phaseForPlans(current.roundPlan)
+            : current.phase,
         clearVoteSubmissionProgress: true,
         clearCurrentVoteKey: true,
         clearError: true,

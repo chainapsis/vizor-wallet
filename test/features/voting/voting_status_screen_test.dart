@@ -67,6 +67,7 @@ import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
 
 import 'fake_voting_round_session.dart';
 import 'round_plan_test_utils.dart';
+import 'voting_retry_recovery_test_utils.dart';
 import '../../services/voting/fake_voting_http.dart';
 import 'fake_round_recovery_state.dart';
 
@@ -658,6 +659,16 @@ void main() {
     expect(find.text(message), findsOneWidget);
     expect(find.text('submission confirmed route'), findsNothing);
     expect(rust.eligibilityCheckCalls, 1);
+  });
+
+  testWidgets('retry leaves the error screen before asynchronous recovery', (
+    tester,
+  ) async {
+    await expectVotingRetryClearsError(
+      tester,
+      screenBuilder: (roundId) => VotingStatusView(roundId: roundId),
+      surfaceSize: const Size(1512, 982),
+    );
   });
 
   testWidgets('status screen retry keeps setup errors specific', (
