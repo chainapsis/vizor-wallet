@@ -7,6 +7,7 @@ import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_models.dart';
+import '../../services/voting/voting_rust_exception.dart';
 import 'voting_config_provider.dart';
 import 'voting_home_cache_provider.dart';
 import 'voting_share_tracking_registry_provider.dart';
@@ -322,8 +323,19 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   }
 }
 
+/// Whether [error] is a wallet-global voting-storage failure rather than one
+/// round's own lookup failing.
+///
+/// Opening and migrating the sidecar is global to the wallet, so the answer
+/// has to come from the SDK's error kind: the bridge returns the SDK failure
+/// unchanged, and the legacy `Error opening voting database:` wrapper text
+/// this used to match no longer exists anywhere. `dbBusy` is another writer
+/// holding the sidecar, `storage` is the sidecar itself failing — neither
+/// becomes true for one round by retrying it for the next.
 bool _isVotingDatabaseOpenFailure(Object error) {
-  return error.toString().contains('Error opening voting database:');
+  final kind = votingRustExceptionOf(error)?.kind;
+  return kind == rust_voting.VotingErrorKindView.dbBusy ||
+      kind == rust_voting.VotingErrorKindView.storage;
 }
 
 final votingRoundsProvider =

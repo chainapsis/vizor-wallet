@@ -278,7 +278,8 @@ abstract interface class FakeRoundSessionDriver {
   ///
   /// Scripting a run says what the SDK's tracking driver did without this fake
   /// re-deriving a cadence the driver owns.
-  List<List<rust_session.ApiShareTrackingRunEvent>> get scriptedShareTrackingRuns;
+  List<List<rust_session.ApiShareTrackingRunEvent>>
+  get scriptedShareTrackingRuns;
 
   List<String> get roundSessionSteps;
 
@@ -481,6 +482,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
       for (final status in base.delegationStatuses) {
         if (covered.contains(status.bundleIndex) ||
             _delegatedBundles.contains(status.bundleIndex) ||
+            _terminalDelegationBundles.contains(status.bundleIndex) ||
             status.terminal ||
             status.phase == rust_wire.WorkflowPhaseView.confirmed) {
           continue;
@@ -510,6 +512,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
         bundleIndex++
       ) {
         if (_delegatedBundles.contains(bundleIndex) ||
+            _terminalDelegationBundles.contains(bundleIndex) ||
             driver.confirmedDelegationBundles.contains(bundleIndex)) {
           continue;
         }
@@ -530,7 +533,8 @@ class FakeVotingRoundSession implements VotingRoundSession {
         // the SDK re-plans with completed work removed. Keeping it would make
         // the plan never shrink, and the driver re-plans until it does.
         if (_isDelegationStep(step) &&
-            _delegatedBundles.contains(step.bundleIndex)) {
+            (_delegatedBundles.contains(step.bundleIndex) ||
+                _terminalDelegationBundles.contains(step.bundleIndex))) {
           continue;
         }
         steps.add(step);
@@ -598,10 +602,43 @@ class FakeVotingRoundSession implements VotingRoundSession {
       hotkeyBound: base?.hotkeyBound ?? false,
       completedVoteArtifact: base?.completedVoteArtifact ?? false,
       needsDraftSetup: base?.needsDraftSetup,
-      delegationStatuses: base?.delegationStatuses ?? const [],
+      delegationStatuses: _withTerminalDelegations(
+        base?.delegationStatuses ?? const [],
+      ),
       immediateShareKey: base?.immediateShareKey,
       immediateShareConfirmed: base?.immediateShareConfirmed ?? false,
     );
+  }
+
+  /// The round's delegation statuses with this session's terminal submissions
+  /// folded in.
+  ///
+  /// The SDK reports a terminal submission on the bundle's own status, and that
+  /// flag is the only account of it the host gets: a terminal bundle plans no
+  /// work, so nothing downstream would ever raise it.
+  List<rust_wire.DelegationStatusView> _withTerminalDelegations(
+    List<rust_wire.DelegationStatusView> statuses,
+  ) {
+    if (_terminalDelegationBundles.isEmpty) return statuses;
+    final byBundle = {
+      for (final status in statuses) status.bundleIndex: status,
+    };
+    for (final bundleIndex in _terminalDelegationBundles) {
+      final diagnostic = _terminalDelegationDiagnostics[bundleIndex];
+      byBundle[bundleIndex] = rust_wire.DelegationStatusView(
+        bundleIndex: bundleIndex,
+        phase: rust_wire.WorkflowPhaseView.submissionRejected,
+        terminal: true,
+        submissionDiagnostic: diagnostic == null
+            ? null
+            : rust_wire.SubmissionDiagnosticView(
+                kind: diagnostic.kind.name,
+                message: diagnostic.message,
+              ),
+      );
+    }
+    return (byBundle.values.toList(growable: false)
+      ..sort((a, b) => a.bundleIndex.compareTo(b.bundleIndex)));
   }
 
   /// Runs one scripted step. Private: production drives rounds through
@@ -676,6 +713,8 @@ class FakeVotingRoundSession implements VotingRoundSession {
   /// Bundles whose delegation this session already ran, so a synthesised
   /// plan stops listing them once they are done.
   final _delegatedBundles = <int>{};
+  final _terminalDelegationBundles = <int>{};
+  final _terminalDelegationDiagnostics = <int, rust_api.ApiChainDiagnostic?>{};
 
   Stream<_ScriptedStepEvent> _advanceDelegation(
     rust_wire.NextStepView step,
@@ -703,7 +742,9 @@ class FakeVotingRoundSession implements VotingRoundSession {
       case rust_session.ApiDelegationSignerKind.keystoneStored:
         final record = driver.storedKeystoneSignatures[bundleIndex];
         if (record == null) {
-          throw _FakeHarnessError('missing Keystone signature for bundle $bundleIndex',);
+          throw _FakeHarnessError(
+            'missing Keystone signature for bundle $bundleIndex',
+          );
         }
         expectedSignature = record;
         events = _steps
@@ -744,7 +785,9 @@ class FakeVotingRoundSession implements VotingRoundSession {
       );
     }
     if (payload == null) {
-      throw _FakeHarnessError('delegation proof stream ended without a payload');
+      throw _FakeHarnessError(
+        'delegation proof stream ended without a payload',
+      );
     }
     if (expectedSignature != null) {
       // The SDK verifies a stored device signature against the bundle's
@@ -784,6 +827,15 @@ class FakeVotingRoundSession implements VotingRoundSession {
     final disposition = _dispositionFor(outcome);
     if (disposition == rust_wire.RoundStepDispositionView.advanced) {
       _delegatedBundles.add(bundleIndex);
+    }
+    // A rejected or hashless submission is durably terminal in the SDK
+    // (`DelegationPhase::SubmissionRejected` / `SubmittedWithoutHash`), and the
+    // planner schedules nothing further for such a bundle. Recording it keeps
+    // the re-plan shrinking the way the real one does, so a round with one dead
+    // bundle can still drive its siblings.
+    if (disposition == rust_wire.RoundStepDispositionView.chainTerminal) {
+      _terminalDelegationBundles.add(bundleIndex);
+      _terminalDelegationDiagnostics[bundleIndex] = outcome.diagnostic;
     }
     yield await _result(
       step,
@@ -1058,7 +1110,9 @@ class FakeVotingRoundSession implements VotingRoundSession {
       }
     }
     if (lastError == null) {
-      throw _FakeHarnessError('cast vote requires at least one vote-tree node URL');
+      throw _FakeHarnessError(
+        'cast vote requires at least one vote-tree node URL',
+      );
     }
     Error.throwWithStackTrace(lastError, lastStackTrace!);
   }
@@ -1136,9 +1190,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
       rust_wire.RoundStepDispositionView.chainTerminal,
   };
 
-  _ScriptedStepEvent _progress(
-    rust_wire.RoundStepProgressView progress,
-  ) {
+  _ScriptedStepEvent _progress(rust_wire.RoundStepProgressView progress) {
     return _ScriptedStepEvent(
       kind: rust_session.ApiRoundStepEventKind.progress,
       progress: progress,
@@ -1239,8 +1291,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
         return;
       }
       if (_needsDelegationSigner(step) &&
-          signer?.kind ==
-              rust_session.ApiDelegationSignerKind.keystoneStored) {
+          signer?.kind == rust_session.ApiDelegationSignerKind.keystoneStored) {
         // The SDK checks every bundle the round still owes a delegation for
         // against the durable signature rows, and stops before dispatching
         // anything when one is missing, so the voter signs once.
@@ -1383,7 +1434,10 @@ class FakeVotingRoundSession implements VotingRoundSession {
               step: step,
               chainOutcome: chainOutcome,
             ),
-            await _plan(),
+            // The report carries the plan the run was working from, the way
+            // the SDK's does; re-planning here would describe a different
+            // round than the one the driver drove.
+            plan,
             failures,
             skipped,
             chainOutcomes,
@@ -1393,7 +1447,10 @@ class FakeVotingRoundSession implements VotingRoundSession {
         case rust_wire.RoundStepDispositionView.cancelled:
           yield _runReport(
             _quiescence(rust_wire.RoundQuiescenceKind.cancelled),
-            await _plan(),
+            // The report carries the plan the run was working from, the way
+            // the SDK's does; re-planning here would describe a different
+            // round than the one the driver drove.
+            plan,
             failures,
             skipped,
             chainOutcomes,
@@ -1407,7 +1464,10 @@ class FakeVotingRoundSession implements VotingRoundSession {
               step: step,
               chainOutcome: chainOutcome,
             ),
-            await _plan(),
+            // The report carries the plan the run was working from, the way
+            // the SDK's does; re-planning here would describe a different
+            // round than the one the driver drove.
+            plan,
             failures,
             skipped,
             chainOutcomes,
@@ -1445,7 +1505,9 @@ class FakeVotingRoundSession implements VotingRoundSession {
         return _quiescence(rust_wire.RoundQuiescenceKind.failures);
       }
       if (plan.blockingRecovery) {
-        return _quiescence(rust_wire.RoundQuiescenceKind.persistedChainTerminal);
+        return _quiescence(
+          rust_wire.RoundQuiescenceKind.persistedChainTerminal,
+        );
       }
       if (plan.needsBundleSetup) {
         return _quiescence(rust_wire.RoundQuiescenceKind.needsBundleSetup);
@@ -1527,11 +1589,12 @@ class FakeVotingRoundSession implements VotingRoundSession {
         step.proposalId,
   };
 
-  rust_session.ApiRoundRunEvent _runEvent(rust_wire.RoundDriveEventView event) =>
-      rust_session.ApiRoundRunEvent(
-        kind: rust_session.ApiRoundStepEventKind.progress,
-        event: event,
-      );
+  rust_session.ApiRoundRunEvent _runEvent(
+    rust_wire.RoundDriveEventView event,
+  ) => rust_session.ApiRoundRunEvent(
+    kind: rust_session.ApiRoundStepEventKind.progress,
+    event: event,
+  );
 
   rust_session.ApiRoundRunEvent _runReport(
     rust_wire.RoundQuiescenceView quiescence,
@@ -1832,7 +1895,8 @@ class FakeVotingRoundSession implements VotingRoundSession {
       quiescence: rust_wire.ShareTrackingQuiescenceView(
         kind: quiescence,
         messages: const [],
-        unrecoverable: quiescence ==
+        unrecoverable:
+            quiescence ==
                 rust_wire.ShareTrackingQuiescenceKind.passBudgetExhausted
             ? unrecoverable
             : const [],

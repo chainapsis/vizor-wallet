@@ -588,8 +588,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         }
         activeSession = afterEligibilityCheck ?? activeSession;
       }
-      final needsDelegation = _sessionNeedsDelegation(activeSession);
-      final needsDelegationSigning = _sessionNeedsDelegationSigning(
+      var needsDelegation = _sessionNeedsDelegation(activeSession);
+      var needsDelegationSigning = _sessionNeedsDelegationSigning(
         activeSession,
       );
       if (draftVotes.isEmpty &&
@@ -601,6 +601,47 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           message: 'Choose at least one vote before submitting.',
         );
         return;
+      }
+
+      // The ballot is recorded before either account type branches, because
+      // the plan every branch below reads is derived from it: the SDK plans a
+      // bundle's delegation only while that bundle still has a vote to cast,
+      // so a round whose intents are not yet durable reports no delegation
+      // work and no bundle needing a signature. A Keystone voter took that as
+      // "nothing to sign", showed no QR, and reached the cast with a
+      // delegation that now needed a device signature nobody had asked for;
+      // a fresh hardware round could not be voted at all.
+      //
+      // `recordBallotIntents` is idempotent and persists the bundle plan
+      // first, so this is also what gives a fresh round the rows the
+      // delegation flags are computed from.
+      if (draftVotes.isNotEmpty &&
+          (needsDelegation || needsDelegationSigning)) {
+        await sessionNotifier.recordBallotIntents(
+          draftVotes: draftVotes,
+          allProposalIds: intentProposalIds,
+        );
+        if (!_isCurrentJob(key: key, generation: generation)) return;
+        final afterIntents = _sessionForJob(key);
+        if (afterIntents?.phase == VotingSessionPhase.error) {
+          _failFromSession(
+            key: key,
+            generation: generation,
+            session: afterIntents!,
+          );
+          return;
+        }
+        activeSession = afterIntents ?? activeSession;
+        // Widened, never narrowed: recording the ballot can only add work — a
+        // bundle with a vote to cast now owes the delegation that carries it —
+        // so a round that already owed delegation still owes it, and a plan
+        // that reports less than the pre-ballot one did must not be read as
+        // the round having been relieved of it.
+        needsDelegation =
+            needsDelegation || _sessionNeedsDelegation(activeSession);
+        needsDelegationSigning =
+            needsDelegationSigning ||
+            _sessionNeedsDelegationSigning(activeSession);
       }
 
       if (activeSession.isHardwareAccount && needsDelegationSigning) {
@@ -682,25 +723,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       if (needsDelegation) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
-        // The ballot has to be durable before delegation, not after it. The
-        // SDK plans a `Delegate` obligation only for a bundle that still has
-        // a vote to cast, so delegating an unrecorded ballot finds no work at
-        // all, and the cast that follows is then refused for wanting the
-        // delegation it just skipped.
-        await sessionNotifier.recordBallotIntents(
-          draftVotes: draftVotes,
-          allProposalIds: intentProposalIds,
-        );
-        if (!_isCurrentJob(key: key, generation: generation)) return;
-        final afterIntents = _sessionForJob(key);
-        if (afterIntents?.phase == VotingSessionPhase.error) {
-          _failFromSession(
-            key: key,
-            generation: generation,
-            session: afterIntents!,
-          );
-          return;
-        }
+        // The ballot is already durable: it is recorded above, before either
+        // account type branches, because the delegation work this drives is
+        // planned from it.
         secretGuard?.check();
         await sessionNotifier.delegatePendingBundles(
           mnemonic: softwareMnemonic,

@@ -2017,10 +2017,78 @@ void main() {
           },
         },
       );
+      // Opening the sidecar reports the SDK failure unchanged, so the global
+      // failure is recognised by kind. Matching wrapper text instead would
+      // classify nothing: the old `Error opening voting database:` prefix no
+      // longer exists on either side of the bridge.
       final recoveryApi = FakeVotingRecoveryApi(
         state: recoveryState(),
-        roundPlanError: StateError(
-          'Error opening voting database: incompatible schema',
+        roundPlanError: votingRustError(
+          rust_wire.VotingErrorKindView.storage,
+          message: 'voting sidecar schema is incompatible',
+        ),
+      );
+      // Riverpod's default policy retries a failed build for any non-`Error`
+      // throw, so the typed failure would only surface after ten backed-off
+      // attempts. What this pins is the classification, not that policy.
+      final container = _sessionContainer(
+        http: http,
+        recoveryApi: recoveryApi,
+        authenticatedRoundIds: const [kRoundId, kOtherRoundId],
+        retry: (_, _) => null,
+      );
+      addTearDown(container.dispose);
+
+      await expectLater(
+        container.read(votingRoundsProvider.future),
+        throwsA(
+          isA<VotingRustException>().having(
+            (error) => error.kind,
+            'kind',
+            rust_wire.VotingErrorKindView.storage,
+          ),
+        ),
+      );
+      expect(recoveryApi.roundPlanProposalIds, hasLength(1));
+    },
+  );
+
+  test(
+    'rounds provider keeps polling other rounds after one round fails',
+    () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          ...votingHttpResponses(),
+          '/shielded-vote/v1/rounds': {
+            'rounds': [
+              {
+                'vote_round_id': kRoundId,
+                'title': 'Poll',
+                'status': 'active',
+                'proposals': [
+                  {'id': 7, 'title': 'Question', 'options': []},
+                ],
+              },
+              {
+                'vote_round_id': kOtherRoundId,
+                'title': 'Other',
+                'status': 'active',
+                'proposals': [
+                  {'id': 8, 'title': 'Other question', 'options': []},
+                ],
+              },
+            ],
+          },
+        },
+      );
+      // A failure that is not the wallet-global sidecar is one round's own:
+      // the list must still look up every other row and mark only this one as
+      // an in-progress recovery error.
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(),
+        roundPlanError: votingRustError(
+          rust_wire.VotingErrorKindView.internal,
+          message: 'round plan projection failed',
         ),
       );
       final container = _sessionContainer(
@@ -2030,17 +2098,11 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await expectLater(
-        container.read(votingRoundsProvider.future),
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            'message',
-            contains('Error opening voting database'),
-          ),
-        ),
-      );
-      expect(recoveryApi.roundPlanProposalIds, hasLength(1));
+      final rounds = await container.read(votingRoundsProvider.future);
+
+      expect(rounds.map((round) => round.roundId), [kRoundId, kOtherRoundId]);
+      expect(recoveryApi.roundPlanProposalIds, hasLength(2));
+      expect(rounds.every((round) => round.recoveryError), isTrue);
     },
   );
 
@@ -3369,6 +3431,47 @@ void main() {
     expect(state.error?.message, contains('delegation rejected by chain'));
     expect(rust.storedDelegationTxHashes, isEmpty);
   });
+
+  test(
+    'a delegation the chain rejects mid-run does not stop its siblings',
+    () async {
+      // The SDK ends the whole run at a terminal chain outcome, even when
+      // another bundle still has viable work. A terminal bundle plans no
+      // further work, so the round continues with what remains rather than
+      // failing every bundle for one dead one.
+      final rust = FakeVotingRustApi(
+        bundleCount: 2,
+        delegationChainResultsByBundle: {
+          0: [_rejectedChainSubmission('delegation rejected by chain')],
+        },
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(bundleCount: 2),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      // Bundle 1 delegates and keeps its durable progress; bundle 0 is dead
+      // and is dispatched once, not retried. Reporting the dead bundle to the
+      // user is the durable-status path covered by 'a terminal bundle is
+      // reported even when another bundle works'.
+      expect(
+        rust.delegationBundleCalls.where((call) => call == 0),
+        hasLength(1),
+      );
+      expect(rust.storedDelegationTxHashes, ['1:delegation-tx']);
+      expect(state.phase, isNot(VotingSessionPhase.error));
+      expect(state.error, isNull);
+    },
+  );
 
   test(
     'hashless delegation submission is terminal and is not retried',
@@ -4735,6 +4838,59 @@ void main() {
   );
 
   test(
+    'hardware submission records the ballot before asking Keystone to sign',
+    () async {
+      // The SDK plans a bundle's delegation, and therefore its signature, only
+      // while that bundle still has a vote to cast. A Keystone request built
+      // before the ballot is durable is a request for work the round does not
+      // yet know it owes, and a fresh hardware round could not be voted at all.
+      final rust = FakeVotingRustApi();
+      final roundStatus = roundStatusJson(roundId: kRoundId)
+        ..['proposals'] = [
+          {
+            'id': 7,
+            'title': 'Question',
+            'options': [
+              {'index': 0, 'label': 'No'},
+              {'index': 1, 'label': 'Yes'},
+            ],
+          },
+        ];
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(roundStatus: roundStatus),
+      );
+      final draftPersistence = FakeVotingDraftPersistence();
+      const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
+      await draftPersistence.save(key, const VotingDraftState(choices: {7: 1}));
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(bundleCount: 1),
+        ),
+        draftPersistence: draftPersistence,
+        accountIsHardware: true,
+        hotkeyStore: FakeVotingHotkeyStore(null),
+      );
+      addTearDown(container.dispose);
+
+      final startedKey = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, key);
+      // Encoding the QR itself needs the real bridge, so the job is observed at
+      // the point the request for the device is built.
+      await _waitForKeystoneDelegationRequest(rust);
+
+      expect(
+        rust.ballotIntentsWhenKeystoneRequestBuilt.first,
+        contains('7:false:1'),
+        reason: 'the ballot must be durable before the device is asked to sign',
+      );
+    },
+  );
+
+  test(
     'software submission prepares draft setup before ballot intent',
     () async {
       final setupGate = Completer<void>();
@@ -5210,6 +5366,70 @@ void main() {
     );
     expect(rust.shareTrackingSessions.single.isDisposed, isTrue);
   });
+
+  test(
+    'a tracking start made behind a live run starts a run when it finishes',
+    () async {
+      // A cast persists share rows behind a run already in flight and asks for
+      // tracking. That request is a no-op while the run holds the round, and
+      // the run can finish on a snapshot taken before those rows existed, so
+      // without honouring the request nothing tracks them until some later
+      // lifecycle event.
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final pendingShare = FakeShareDelegationRecord(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 4)),
+        phase: rust_wire.WorkflowPhaseView.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.zero,
+        createdAt: BigInt.from(nowSeconds - 100),
+      );
+      final trackingGate = Completer<void>();
+      final rust = FakeVotingRustApi()..trackPendingSharesGate = trackingGate;
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+      );
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId);
+
+      await container.read(votingSubmissionSessionProvider(key).future);
+      final notifier = container.read(
+        votingSubmissionSessionProvider(key).notifier,
+      );
+      final firstRun = notifier.startShareTracking();
+      await rust.trackPendingSharesStarted.future.timeout(
+        const Duration(seconds: 1),
+        onTimeout: () => throw StateError('share tracking did not start'),
+      );
+      expect(rust.shareTrackingSessions, hasLength(1));
+
+      // The cast's request, colliding with the live run.
+      await notifier.startShareTracking();
+      expect(
+        rust.shareTrackingSessions,
+        hasLength(1),
+        reason: 'the live run still holds the round',
+      );
+
+      trackingGate.complete();
+      await firstRun;
+      await _waitForShareTrackingSessionCount(rust, 2);
+
+      expect(rust.shareTrackingSessions, hasLength(2));
+    },
+  );
 
   test('provider disposal closes an in-flight share tracking handle', () async {
     final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -11469,6 +11689,7 @@ ProviderContainer _sessionContainer({
   List<String> skippedRoundIds = const [],
   rust_config.ConfigSwitchKind Function(rust_config.ResolvedVotingConfig?)?
   configSwitchKind,
+  Duration? Function(int retryCount, Object error)? retry,
 }) {
   final effectiveHttp =
       http ?? FakeVotingHttpClient(responses: votingHttpResponses());
@@ -11486,6 +11707,7 @@ ProviderContainer _sessionContainer({
       hardwareAccountUuids ?? (accountIsHardware ? {'account-1'} : <String>{});
   return ProviderContainer(
     observers: observers,
+    retry: retry,
     overrides: [
       votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
       votingHomeCacheStoreProvider.overrideWithValue(
@@ -11889,6 +12111,28 @@ Future<void> _waitForShareTrackingRuns(
     'Timed out waiting for $expectedRuns tracking run(s). '
     'Saw ${rust.shareTrackingSessions.length}.',
   );
+}
+
+Future<void> _waitForShareTrackingSessionCount(
+  FakeVotingRustApi rust,
+  int expected,
+) async {
+  for (var i = 0; i < 200; i++) {
+    if (rust.shareTrackingSessions.length >= expected) return;
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+  fail(
+    'Timed out waiting for $expected share tracking sessions; '
+    'saw ${rust.shareTrackingSessions.length}.',
+  );
+}
+
+Future<void> _waitForKeystoneDelegationRequest(FakeVotingRustApi rust) async {
+  for (var i = 0; i < 100; i++) {
+    if (rust.keystoneDelegationRequestCalls.isNotEmpty) return;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail('Timed out waiting for a Keystone delegation signing request.');
 }
 
 Future<void> _waitForVoteCommitmentKey(
@@ -13563,6 +13807,10 @@ class FakeVotingRustApi
   @override
   final sessionBallotIntents = <String>[];
 
+  /// The recorded ballot, snapshotted each time a Keystone signing request was
+  /// built.
+  final ballotIntentsWhenKeystoneRequestBuilt = <List<String>>[];
+
   @override
   final Object? sessionBallotIntentsError;
 
@@ -14016,6 +14264,13 @@ class FakeVotingRustApi
   }) async {
     final callIndex = keystoneDelegationRequestCalls.length;
     accountUuids.add(ctx.accountUuid);
+    // The ballot the round had recorded when this request was built. The SDK
+    // plans a bundle's signing work from the ballot, so a request built with
+    // no intents recorded is a request for work the round does not yet know
+    // it owes.
+    ballotIntentsWhenKeystoneRequestBuilt.add(
+      List<String>.from(sessionBallotIntents),
+    );
     keystoneDelegationRequestCalls.add(bundleIndex);
     keystoneDelegationRequestHotkeys.add(List<int>.from(storedHotkeySecret));
     final forcedFailure = keystoneDelegationRequestFailuresByCall[callIndex];

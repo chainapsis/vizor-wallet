@@ -593,23 +593,33 @@ fn save_exclusions(
     // for one sidecar now shares a single connection with SDK-owned busy
     // handling, so opening and writing here is already serialized.
     let db = super::db::open_voting_db(db_path, account).map_err(|_| INVALID)?;
-    db.conn().execute_batch(TABLE).map_err(|_| INVALID)?;
-    // Never replan a round someone has already started locally, including
-    // a concurrently prepared round. Existing recovery remains authoritative.
-    if db.get_bundle_count(round).map_err(|_| INVALID)? > 0 {
-        return Ok(true);
-    }
-    db.conn()
-        .execute(
-            "INSERT OR REPLACE INTO vizor_voting_participation VALUES (?1,?2,?3,?4)",
-            rusqlite::params![
-                account,
-                round,
-                snapshot,
-                serde_json::to_string(excluded).map_err(|_| INVALID)?
-            ],
+    let excluded = serde_json::to_string(excluded).map_err(|_| INVALID)?;
+    // One guard across the check and the write. Individually serialized
+    // statements are not enough here: `setup_bundles` committing a bundle plan
+    // between them would leave this recording exclusions for a round the
+    // wallet has just started, and reporting "not started locally" for it —
+    // which is what makes Home cache an active round as unavailable. The
+    // bundle count is queried inline rather than through `get_bundle_count`
+    // because that re-locks the same connection.
+    let conn = db.conn();
+    conn.execute_batch(TABLE).map_err(|_| INVALID)?;
+    let bundles: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM bundles WHERE round_id = ?1 AND wallet_id = ?2",
+            rusqlite::params![round, db.wallet_id()],
+            |row| row.get(0),
         )
         .map_err(|_| INVALID)?;
+    // Never replan a round someone has already started locally, including
+    // a concurrently prepared round. Existing recovery remains authoritative.
+    if bundles > 0 {
+        return Ok(true);
+    }
+    conn.execute(
+        "INSERT OR REPLACE INTO vizor_voting_participation VALUES (?1,?2,?3,?4)",
+        rusqlite::params![account, round, snapshot, excluded],
+    )
+    .map_err(|_| INVALID)?;
     Ok(false)
 }
 
@@ -655,6 +665,7 @@ pub fn clear_account(db: &zcash_voting::storage::VotingDb) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
     fn fixture(network: &str) -> (serde_json::Value, Vec<String>, i64) {
         let text = match network {
             "main" => include_str!("../../../tests/fixtures/voting-participation/main.json"),

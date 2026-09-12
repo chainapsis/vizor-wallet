@@ -119,6 +119,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Timer? _shareTrackingRetryTimer;
   int _shareTrackingRetryStreak = 0;
 
+  /// A tracking start that arrived while a run held the round.
+  ///
+  /// The finishing run honours it, because its own snapshot cannot describe
+  /// shares persisted after it started.
+  bool _shareTrackingRestartRequested = false;
+
   /// The focused immediate-share check in flight, and its session.
   ///
   /// Drained alongside a tracking run: it touches the same sidecar, so a
@@ -1901,6 +1907,75 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     rust_session.ApiDelegationSignerInput? signer,
     rust_session.ApiRoundDrivePolicy? policy,
   }) async {
+    for (var run = 1; ; run++) {
+      final report = await _runRoundOnce(
+        session,
+        context,
+        label: label,
+        onEvent: onEvent,
+        signer: signer,
+        policy: policy,
+      );
+      final quiescence = report.quiescence;
+      switch (quiescence.kind) {
+        case rust_wire.RoundQuiescenceKind.cancelled:
+          _throwIfContextStale(context, '$label-run-cancelled');
+          throw const _ChainSubmissionCancelled();
+        case rust_wire.RoundQuiescenceKind.chainTerminal:
+        case rust_wire.RoundQuiescenceKind.persistedChainTerminal:
+          // A terminal delegation is reported to the user without failing the
+          // round — `_noteTerminalDelegation` reads it off the refreshed plan
+          // — so the round's remaining bundles are driven rather than dropped.
+          // A terminal bundle plans no further work, so the re-plan that
+          // decides this has already retired the step that ended this run.
+          //
+          // Every other terminal step still surfaces: nothing else would
+          // report it, and reading it as a finished round would lose a
+          // rejection entirely.
+          final terminalStep = quiescence.step;
+          final runPlan = report.plan;
+          if (terminalStep != null &&
+              _isDelegationStep(terminalStep) &&
+              // The work the run left behind for other bundles, read from the
+              // plan the driver itself was last working from. A round whose
+              // only remaining work belonged to the bundle that just ended has
+              // nothing to continue with, and its rejection is the round's
+              // outcome.
+              (runPlan?.nextSteps ?? const <rust_wire.NextStepView>[]).any(
+                (step) => step.bundleIndex != terminalStep.bundleIndex,
+              ) &&
+              // At most one continuation per bundle: a terminal bundle plans no
+              // further work, so a plan that keeps listing the step that just
+              // ended a run is not making progress and must surface.
+              run <= roundPlanBundleCount(runPlan)) {
+            continue;
+          }
+          throw VotingChainTerminalOutcome(
+            quiescence.step,
+            quiescence.chainOutcome,
+          );
+        case rust_wire.RoundQuiescenceKind.chainRecoveryStalled:
+          throw VotingChainPendingOutcome(
+            quiescence.step,
+            quiescence.chainOutcome,
+          );
+        default:
+          break;
+      }
+      return report;
+    }
+  }
+
+  /// Streams one SDK round run, forwarding every event and returning its
+  /// report.
+  Future<rust_wire.RoundRunReportView> _runRoundOnce(
+    VotingRoundSession session,
+    _VotingSessionContext context, {
+    required String label,
+    required void Function(rust_wire.RoundDriveEventView event) onEvent,
+    rust_session.ApiDelegationSignerInput? signer,
+    rust_session.ApiRoundDrivePolicy? policy,
+  }) async {
     _throwIfContextStale(context, '$label-run');
     rust_wire.RoundRunReportView? report;
     await for (final event in session.runRound(
@@ -1917,27 +1992,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
     if (report == null) {
       throw StateError('Round run completed without a report.');
-    }
-    final quiescence = report.quiescence;
-    switch (quiescence.kind) {
-      case rust_wire.RoundQuiescenceKind.cancelled:
-        _throwIfContextStale(context, '$label-run-cancelled');
-        throw const _ChainSubmissionCancelled();
-      case rust_wire.RoundQuiescenceKind.chainTerminal:
-      case rust_wire.RoundQuiescenceKind.persistedChainTerminal:
-        // The SDK plans no retry for a rejected or hashless submission, so
-        // this has to surface rather than read as a finished round.
-        throw VotingChainTerminalOutcome(
-          quiescence.step,
-          quiescence.chainOutcome,
-        );
-      case rust_wire.RoundQuiescenceKind.chainRecoveryStalled:
-        throw VotingChainPendingOutcome(
-          quiescence.step,
-          quiescence.chainOutcome,
-        );
-      default:
-        break;
     }
     return report;
   }
@@ -2201,7 +2255,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _startShareTracking([
     _VotingSessionContext? knownContext,
   ]) async {
-    if (_shareTrackingRunIsLive) return;
+    if (_shareTrackingRunIsLive) {
+      // The live run's own snapshot predates this request. A cast that
+      // persisted new share rows behind it asks for tracking here and would
+      // otherwise get nothing: the run it collides with can finish as
+      // `AllConfirmed` on what it saw, leaving the new shares untracked until
+      // some later lifecycle event. Recording the request lets the finishing
+      // run honour it.
+      _shareTrackingRestartRequested = true;
+      return;
+    }
     if (_automaticShareTrackingStopped) return;
     if (_isDisposed || !ref.mounted) return;
     // A superseded run is settled by construction and has already been
@@ -2415,20 +2478,34 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _releaseAutomaticShareTracking();
       return;
     }
+    // A start this run made a no-op is honoured here, whatever this run's
+    // quiescence says. `AllConfirmed` and `NothingToTrack` describe what the
+    // run saw, not what the round owes now: a cast that persisted shares
+    // behind it asked for tracking and got nothing, and the plan reloaded
+    // above has just confirmed the round still owes those shares. Starting
+    // now rather than re-arming keeps the delivery inside this round's
+    // stagger instead of behind a backoff.
+    if (_shareTrackingRestartRequested) {
+      _shareTrackingRestartRequested = false;
+      _shareTrackingRetryStreak = 0;
+      // Started after this run's future settles, not from inside it: this code
+      // runs as part of the run, so the run is still live here and a start
+      // would only record another request. The stored future is the settled
+      // one, so waiting on it cannot fail.
+      final finishing = _shareTrackingRun ?? Future<void>.value();
+      unawaited(
+        finishing.then((_) {
+          if (_isDisposed || !ref.mounted) return null;
+          return _startShareTracking();
+        }),
+      );
+      return;
+    }
     // Shares remain and the round is still live, so the run stopped short of
     // its work. Only a budget a later run can be given again is re-armed here:
     // a cancellation is deliberate and the restorer starts a fresh run on
     // resume, and a clean quiescence means the run reached the end of what it
     // was tracking.
-    //
-    // Known gap: `AllConfirmed` and `NothingToTrack` describe what the run
-    // saw, not what the round owes now, so a cast that writes shares behind a
-    // running pass leaves them untracked until the next lifecycle event
-    // restarts tracking. Re-arming on those too closes it, but arms a
-    // long-lived timer in every round that ends with shares pending — which a
-    // `testWidgets` body cannot hold, and which needs wider validation than
-    // the race deserves. The targeted fix is at the source: have `castVotes`
-    // ensure a follow-up run when it wrote shares behind a live one.
     if (quiescence.kind ==
         rust_wire.ShareTrackingQuiescenceKind.passBudgetExhausted) {
       _armShareTrackingRetry(context);
@@ -2650,9 +2727,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> stopAndDrainShareTracking() async {
     _automaticShareTrackingStopped = true;
     // Before the drain loop, not after: a pending re-arm that fired mid-drain
-    // would start a run the caller has already stopped waiting for.
+    // would start a run the caller has already stopped waiting for. A recorded
+    // restart goes the same way — the caller has stopped waiting for that run
+    // too.
     _cancelShareTrackingRetry();
     _shareTrackingRetryStreak = 0;
+    _shareTrackingRestartRequested = false;
     _advanceSessionGeneration();
     _shareTrackingSession?.cancel();
     _focusedConfirmationSession?.cancel();
