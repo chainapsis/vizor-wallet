@@ -184,10 +184,12 @@ default-features = false
 features = ["zakura"]
 
 [patch.crates-io]
-# Includes recovery of interrupted submission reservations in the first resumed pass.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "38bd8ebd9945d60317ccc1f96f8bf829abe09438" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "38bd8ebd9945d60317ccc1f96f8bf829abe09438" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "38bd8ebd9945d60317ccc1f96f8bf829abe09438" }
+# Rejects impossible tree positions in chain submission, bounds exact-tree
+# recovery, and reports the bundles a round intentionally drops from its
+# selected suffix.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "856b5e83c0cdf90ca20138ac2bb2c238b1795c65" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "856b5e83c0cdf90ca20138ac2bb2c238b1795c65" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "856b5e83c0cdf90ca20138ac2bb2c238b1795c65" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }

@@ -2006,6 +2006,12 @@ mod tests {
             privacy_trim_dropped_bundles: 1,
             privacy_trim_dropped_notes: 4,
             privacy_trim_dropped_value_zatoshi: 900,
+            // The SDK also reports the trailing bundles a round intentionally
+            // leaves out of its persisted prefix. Nothing surfaces those yet,
+            // so they are not on this boundary and are left at zero here.
+            skipped_suffix_bundles: 0,
+            skipped_suffix_notes: 0,
+            skipped_suffix_value_zatoshi: 0,
         });
 
         assert_eq!(api.bundle_count, 2);
