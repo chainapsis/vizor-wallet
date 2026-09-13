@@ -27,6 +27,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.d
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
+import 'package:zcash_wallet/src/features/voting/voting_progress_presentation.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
@@ -375,6 +376,115 @@ void main() {
       find.text('Responses for 4 of 5 questions delivered'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('the delivered count climbs to a wave rather than jumping', (
+    tester,
+  ) async {
+    // Helper shares go out 50 at a time, so a batch of questions finishes
+    // together and the reported count steps by twenty at once. The line walks
+    // there over the next few frames instead of blinking from 0 to 20.
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    final updates = StreamController<VotingSessionState>();
+    addTearDown(updates.close);
+    final sessionProvider = StreamProvider((ref) => updates.stream);
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSubmissionJobsProvider.overrideWith(
+          () => _StaticVotingSubmissionJobsNotifier(
+            const VotingSubmissionJobsState(jobKeys: [key]),
+          ),
+        ),
+        votingSubmissionJobProvider(key).overrideWith(
+          () => _StaticVotingSubmissionJobNotifier(
+            key,
+            const VotingSubmissionJobState(
+              key: key,
+              status: VotingSubmissionJobStatus.running,
+              generation: 1,
+            ),
+          ),
+        ),
+        votingSubmissionJobSessionProvider(
+          key,
+        ).overrideWith((ref) => ref.watch(sessionProvider)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(
+          initialLocation: votingStatusRoute(
+            _roundId,
+            accountUuid: 'account-1',
+          ),
+        ),
+      ),
+    );
+
+    final plan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      nextSteps: const [],
+      openProposals: Uint32List.fromList([1]),
+      allDecided: true,
+    );
+    // Confirmed on the chain, so the questions are in delivery.
+    final voteProgress = <VotingVoteKey, VotingSessionProgress>{
+      for (var proposalId = 1; proposalId <= 37; proposalId++)
+        VotingVoteKey(
+          bundleIndex: 0,
+          proposalId: proposalId,
+        ): VotingSessionProgress(
+          phase: VotingProgressPhase.confirmed,
+          bundleIndex: 0,
+          proposalId: proposalId,
+          proofProgress: 1,
+        ),
+    };
+    VotingSessionState delivered(int count) {
+      return VotingSessionState(
+        roundId: _roundId,
+        accountUuid: 'account-1',
+        phase: VotingSessionPhase.castingVotes,
+        roundPlan: plan,
+        voteProgress: voteProgress,
+        voteSubmissionCompletedCount: count,
+        voteSubmissionTotalCount: 37,
+      );
+    }
+
+    int shownCount() {
+      final line = tester
+          .widgetList<Text>(find.textContaining('questions delivered'))
+          .single
+          .data!;
+      return int.parse(RegExp(r'for (\d+) of').firstMatch(line)!.group(1)!);
+    }
+
+    updates.add(delivered(0));
+    await tester.pump();
+    await tester.pump();
+    expect(shownCount(), 0);
+
+    // One wave lands: the count is somewhere on the way, not at either end.
+    updates.add(delivered(20));
+    await tester.pump();
+    await tester.pump();
+    final midWalk = shownCount();
+    expect(midWalk, greaterThan(0));
+    expect(midWalk, lessThan(20));
+
+    // And it finishes on its own frames, with no further session events. One
+    // pace interval is one step, so the frames are pumped one at a time.
+    var frames = 0;
+    while (shownCount() < 20 && frames++ < 40) {
+      await tester.pump(kVotingBallotCountPaceInterval);
+    }
+    expect(shownCount(), 20);
+    expect(frames, lessThan(16));
   });
 
   testWidgets('status screen requires software account without mnemonic', (

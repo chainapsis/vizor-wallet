@@ -162,6 +162,16 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   /// the ratchet here covers both form factors with one instance.
   final VotingProgressRatchet _progressRatchet = VotingProgressRatchet();
 
+  /// Paces the delivered count so a wave of shares does not land as one jump.
+  ///
+  /// Held beside the ratchet, and for the same reason: one instance covers the
+  /// desktop step list and the mobile screen this view hands a presentation to.
+  final VotingBallotCountPacer _ballotCountPacer = VotingBallotCountPacer();
+
+  /// Asks the pacer for its next step while it is behind. Cancelled the moment
+  /// it catches up, so a settled screen holds no timer.
+  Timer? _ballotCountTicker;
+
   /// The terminal-delegation notice from the last frame that had one to read.
   ///
   /// Held for the same reason as the ratchet: the session provider refreshes
@@ -176,6 +186,41 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   @override
+  void dispose() {
+    _ballotCountTicker?.cancel();
+    super.dispose();
+  }
+
+  /// One frame, with the ballot's delivered count paced for display.
+  ///
+  /// Called on every frame that has a projection to show, held marks included,
+  /// so the count the screen shows only ever comes from the pacer — reading the
+  /// raw mark on some frames would jump past the walk and back again.
+  VotingProgressView _paceBallotCount(VotingProgressView progress) {
+    final paced = progress.withBallot(_ballotCountPacer.pace(progress.ballot));
+    // Frames arrive only when something in the session changes, and a wave of
+    // deliveries is one change, so the walk needs its own frames.
+    if (_ballotCountPacer.isCatchingUp) {
+      _ballotCountTicker ??= Timer.periodic(kVotingBallotCountPaceInterval, (
+        _,
+      ) {
+        if (!mounted) return;
+        setState(() {});
+      });
+    } else {
+      _ballotCountTicker?.cancel();
+      _ballotCountTicker = null;
+    }
+    return paced;
+  }
+
+  void _resetBallotCountPacer() {
+    _ballotCountTicker?.cancel();
+    _ballotCountTicker = null;
+    _ballotCountPacer.reset();
+  }
+
+  @override
   void didUpdateWidget(covariant VotingStatusView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId == widget.roundId &&
@@ -184,6 +229,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     }
     _startScheduled = false;
     _progressRatchet.reset();
+    _resetBallotCountPacer();
     _heldTerminalNotice = null;
     _jobKey = widget.accountUuid == null
         ? null
@@ -398,7 +444,10 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
                 ? const VotingSubmissionProgressPresentation(
                     activeStep: VotingSubmissionProgressStep.provingAuthority,
                   )
-                : _submissionPresentation(held, warning: _heldTerminalNotice),
+                : _submissionPresentation(
+                    _paceBallotCount(held),
+                    warning: _heldTerminalNotice,
+                  ),
           );
         }
         return const VotingPaneLoading();
@@ -459,17 +508,19 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           state,
           completedSubmission: completedSubmission,
         );
-        final progress = _progressRatchet.advance(
-          step: votingSubmissionProgressStepFor(
-            phase: phase,
-            voteStepComplete:
-                completedSubmission ||
-                reportedBallot.stage == VotingBallotStage.complete,
-            submissionJobComplete: submissionJobComplete,
-            submissionJobInFlight: submissionJobInFlight,
+        final progress = _paceBallotCount(
+          _progressRatchet.advance(
+            step: votingSubmissionProgressStepFor(
+              phase: phase,
+              voteStepComplete:
+                  completedSubmission ||
+                  reportedBallot.stage == VotingBallotStage.complete,
+              submissionJobComplete: submissionJobComplete,
+              submissionJobInFlight: submissionJobInFlight,
+            ),
+            authority: votingAuthorityProgress(state),
+            ballot: reportedBallot,
           ),
-          authority: votingAuthorityProgress(state),
-          ballot: reportedBallot,
         );
         _heldTerminalNotice = state.terminalDelegationNotice;
         final ballot = progress.ballot;
@@ -632,6 +683,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     // A retry starts the submission over, so the high-water mark from the
     // attempt that failed must not hold the new one forward.
     _progressRatchet.reset();
+    _resetBallotCountPacer();
     _heldTerminalNotice = null;
     final key = _selectedJobKey();
     if (key == null) {
@@ -644,6 +696,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
 
   void _clearError() {
     _progressRatchet.reset();
+    _resetBallotCountPacer();
     _heldTerminalNotice = null;
     final key = _selectedJobKey();
     if (key != null) {

@@ -471,6 +471,93 @@ void main() {
     });
   });
 
+  group('VotingBallotCountPacer', () {
+    VotingBallotProgress delivering(int completed, {int total = 37}) {
+      return VotingBallotProgress(
+        stage: VotingBallotStage.delivering,
+        provenProposals: total,
+        completedProposals: completed,
+        totalProposals: total,
+        fraction: completed / total,
+      );
+    }
+
+    /// Every count the pacer shows walking to [target], first frame included.
+    List<int> walk(VotingBallotCountPacer pacer, int target) {
+      final shown = <int>[pacer.pace(delivering(target)).completedProposals];
+      var frames = 0;
+      while (pacer.isCatchingUp && frames++ < 200) {
+        shown.add(pacer.pace(delivering(target)).completedProposals);
+      }
+      return shown;
+    }
+
+    test('walks up to a wave instead of landing on it', () {
+      // Shares go out 50 at a time, so a batch of questions finishes together
+      // and the reported count steps by twenty at once.
+      final shown = walk(VotingBallotCountPacer(), 20);
+      expect(shown.first, greaterThan(0));
+      expect(shown.first, lessThan(20));
+      expect(shown.last, 20);
+      // Enough frames to read as movement, few enough to keep up with a round
+      // that is already finishing.
+      expect(shown.length, inInclusiveRange(4, 16));
+      expect(shown, orderedEquals(shown.toList()..sort()));
+      expect(shown.every((count) => count <= 20), isTrue);
+    });
+
+    test('the line it yields reads from the count it is showing', () {
+      final pacer = VotingBallotCountPacer();
+      final first = pacer.pace(delivering(20));
+      expect(
+        first.detail,
+        'Responses for ${first.completedProposals} of 37 questions delivered',
+      );
+      // The rest of the projection is untouched: only the count is paced.
+      expect(first.stage, VotingBallotStage.delivering);
+      expect(first.totalProposals, 37);
+      expect(first.fraction, closeTo(20 / 37, 1e-9));
+    });
+
+    test('a settled count asks for no further frames', () {
+      final pacer = VotingBallotCountPacer();
+      walk(pacer, 5);
+      expect(pacer.isCatchingUp, isFalse);
+      expect(pacer.pace(delivering(5)).completedProposals, 5);
+      expect(pacer.isCatchingUp, isFalse);
+    });
+
+    test('a finished ballot is shown at once, not walked to', () {
+      // Its row ticks to a checkmark and drops the line, so there is no walk
+      // left to see — and nothing of the voter's is waiting on one.
+      final pacer = VotingBallotCountPacer();
+      pacer.pace(delivering(2));
+      final complete = pacer.pace(
+        const VotingBallotProgress(
+          stage: VotingBallotStage.complete,
+          provenProposals: 37,
+          completedProposals: 37,
+          totalProposals: 37,
+          fraction: 1,
+        ),
+      );
+      expect(complete.completedProposals, 37);
+      expect(pacer.isCatchingUp, isFalse);
+    });
+
+    test('reset starts the next attempt from the count it is given', () {
+      final pacer = VotingBallotCountPacer();
+      walk(pacer, 20);
+      pacer.reset();
+      // A retry reports fewer done than the attempt that failed had shown; the
+      // walk must not treat that as a count it has already passed.
+      final resumed = pacer.pace(delivering(8));
+      expect(resumed.completedProposals, lessThan(8));
+      expect(pacer.isCatchingUp, isTrue);
+      expect(walk(pacer, 8).last, 8);
+    });
+  });
+
   group('VotingProgressRatchet', () {
     VotingBallotProgress ballot({
       VotingBallotStage stage = VotingBallotStage.proving,

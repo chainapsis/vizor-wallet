@@ -402,6 +402,76 @@ class VotingProgressView {
   /// The delegation row's projection, or null before it has anything to say.
   VotingAuthorityProgress? get authorityOrNull =>
       authority.totalBundles > 0 ? authority : null;
+
+  /// This frame with a different ballot projection, for a caller that paces
+  /// the ballot's counts for display.
+  VotingProgressView withBallot(VotingBallotProgress ballot) =>
+      VotingProgressView(step: step, authority: authority, ballot: ballot);
+}
+
+/// How often a screen should ask [VotingBallotCountPacer] for its next step.
+const Duration kVotingBallotCountPaceInterval = Duration(milliseconds: 45);
+
+/// Walks the delivered count up to the number the projection reports.
+///
+/// Helper shares are delivered 50 at a time, so a wave of questions finishes
+/// together and the reported count steps by ten or twenty at once: the line
+/// read "0 of 37", then "21 of 37", then was gone. This hands the screen an
+/// intermediate count on each of the next few frames instead, which is the
+/// easing the step's ring already gets from its own tween.
+///
+/// Display only. It never invents a count the projection has not reported,
+/// never runs backwards, and holds no opinion about the stage — so what it
+/// shows is always a count the round genuinely passed through, just later. The
+/// pace is per call rather than per elapsed millisecond so a caller can drive
+/// it from a plain periodic timer, and so widget tests pumping frames see the
+/// same walk a device does.
+class VotingBallotCountPacer {
+  VotingBallotCountPacer({this.catchUpFraction = 0.25});
+
+  /// How much of the remaining distance one step covers, at least one.
+  ///
+  /// An ease-out: the first step of a big jump is the largest, so a wave lands
+  /// visibly at once without the tail taking long enough to notice.
+  final double catchUpFraction;
+
+  int _shown = 0;
+
+  /// Whether the shown count is still behind the reported one, so the caller
+  /// owes another frame.
+  bool get isCatchingUp => _catchingUp;
+  bool _catchingUp = false;
+
+  /// Forgets the walk. The next [pace] starts from the count it is given.
+  void reset() {
+    _shown = 0;
+    _catchingUp = false;
+  }
+
+  /// Folds one frame, returning the ballot the screen should show.
+  VotingBallotProgress pace(VotingBallotProgress ballot) {
+    final target = ballot.completedProposals;
+    // A finished ballot shows no count at all — its row ticks to a checkmark —
+    // so there is nothing left to walk towards and nothing to cut short.
+    // Anything below the mark is a new round or a retry, which the projection
+    // reached without passing through the counts already shown.
+    if (ballot.stage == VotingBallotStage.complete || target <= _shown) {
+      _shown = target;
+      _catchingUp = false;
+      return ballot;
+    }
+    final remaining = target - _shown;
+    final step = (remaining * catchUpFraction).ceil();
+    _shown += step < 1 ? 1 : step;
+    _catchingUp = _shown < target;
+    return VotingBallotProgress(
+      stage: ballot.stage,
+      provenProposals: ballot.provenProposals,
+      completedProposals: _shown,
+      totalProposals: ballot.totalProposals,
+      fraction: ballot.fraction,
+    );
+  }
 }
 
 /// Holds the furthest point a round's submission has reached.
