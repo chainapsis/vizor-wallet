@@ -53,6 +53,46 @@ class VotingVoteKey {
 int roundPlanBundleCount(rust_wire.RoundPlanView? roundPlan) =>
     roundPlan?.delegationStatuses.length ?? 0;
 
+/// Whether a planned step is one that casts a vote or delivers its shares.
+///
+/// Exhaustive on purpose: a new step kind must be classified here rather than
+/// reading as "not a vote" in whichever caller happens to look at it first.
+bool isVoteNextStepKind(rust_wire.NextStepKind kind) {
+  return switch (kind) {
+    rust_wire.NextStepKind.castVote ||
+    rust_wire.NextStepKind.advanceVote ||
+    rust_wire.NextStepKind.advanceVoteBatch ||
+    rust_wire.NextStepKind.submitShares => true,
+    rust_wire.NextStepKind.delegate ||
+    rust_wire.NextStepKind.advanceDelegation ||
+    rust_wire.NextStepKind.advanceImportedDelegation ||
+    rust_wire.NextStepKind.confirmShare => false,
+  };
+}
+
+/// Bundles this plan still casts the ballot in, ascending.
+///
+/// Not every eligible bundle carries votes: a bundle whose delegation ended
+/// terminal never will, and the planner plans no vote step for it. So this is
+/// narrower than [roundPlanBundleCount], and it is what a projection counting
+/// "delivered in every bundle that carries this question" must divide by —
+/// the round's bundle count makes such a question impossible to finish.
+///
+/// A bundle that has already finished its votes drops out of the plan, so a
+/// caller tracking a run in progress unions in the bundles the run has itself
+/// reported on.
+List<int> voteCarryingBundleIndexes(rust_wire.RoundPlanView? roundPlan) {
+  final indexes = <int>{
+    for (final step in roundPlan?.nextSteps ?? const <rust_wire.NextStepView>[])
+      if (isVoteNextStepKind(step.kind)) step.bundleIndex,
+    for (final work
+        in roundPlan?.recoveredVoteWork ??
+            const <rust_wire.VoteRecoveryWorkView>[])
+      work.bundleIndex,
+  };
+  return indexes.toList()..sort();
+}
+
 /// Bundles whose delegation still has work to drive.
 ///
 /// The planner decides this: it plans a delegation step only for a bundle

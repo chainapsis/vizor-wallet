@@ -95,6 +95,20 @@ enum VotingBallotStage {
   /// Every proof is built; the envelope is going to the chain.
   submitting,
 
+  /// The envelope has left the wallet and the chain has not confirmed it yet.
+  ///
+  /// Distinct from [delivering] because the SDK makes each vote's helper plan
+  /// durable *before* it broadcasts, so the first per-vote event a host sees
+  /// arrives a whole chain episode ahead of any share. Folding that wait into
+  /// delivery made the delivered count sit at zero for minutes — correctly,
+  /// since nothing had been delivered — and then jump straight to done.
+  ///
+  /// A resumed unit that confirmed in an earlier run reports that same first
+  /// event with no chain episode behind it, and the two are indistinguishable
+  /// from the outside, so it passes through here as well — for as long as its
+  /// first share takes.
+  confirming,
+
   /// The chain has the votes; helper shares are going out.
   delivering,
 
@@ -128,13 +142,15 @@ class VotingBallotProgress {
   ///
   /// Proving uses concise copy while the progress ring communicates movement.
   /// Delivery reports completed questions because that count advances as
-  /// shares finish.
+  /// shares finish — and only delivery does, so the count is never shown
+  /// against a stage that cannot move it.
   String? get detail {
     if (totalProposals <= 0) return null;
     return switch (stage) {
       VotingBallotStage.preparing => 'Preparing your ballot',
       VotingBallotStage.proving => 'Casting votes',
       VotingBallotStage.submitting => '',
+      VotingBallotStage.confirming => 'Waiting for chain confirmation',
       VotingBallotStage.delivering =>
         'Responses for $completedProposals of $totalProposals questions delivered',
       VotingBallotStage.complete => null,
@@ -204,6 +220,30 @@ VotingAuthorityProgress votingAuthorityProgress(VotingSessionState state) {
   );
 }
 
+/// How many bundles this round casts the ballot in, as the plan and the run so
+/// far together know it.
+///
+/// The denominator for "this question is delivered in every bundle carrying
+/// it". The plan names the bundles that still owe vote or share work, which
+/// excludes a bundle whose delegation ended terminal and will never vote —
+/// counting those made a question impossible to finish, so the delivered count
+/// stayed at zero for the whole delivery and only the SDK tally ever moved it.
+///
+/// Bundles the run has reported on are unioned in, because a bundle that has
+/// finished its votes drops out of the plan and must not drop out of the
+/// denominator. Like the delegation row, they are restricted to the bundles the
+/// live plan knows about: `voteProgress` is never cleared, so a superseded
+/// bundle layout would otherwise leave keys behind that permanently inflate it.
+int votingBallotCarryingBundleCount(VotingSessionState state) {
+  final bundleCount = roundPlanBundleCount(state.roundPlan);
+  final indexes = <int>{
+    ...voteCarryingBundleIndexes(state.roundPlan),
+    for (final key in state.voteProgress.keys) key.bundleIndex,
+  };
+  if (bundleCount <= 0) return indexes.length;
+  return indexes.where((index) => index >= 0 && index < bundleCount).length;
+}
+
 /// Projects the ballot step from the SDK tally and its per-proposal events.
 ///
 /// The tally is the authority for how many questions the run owes and how many
@@ -269,12 +309,14 @@ VotingBallotProgress votingBallotProgress(
   var proven = 0;
   var finished = 0;
   var dispatched = false;
+  var confirmed = false;
   var fractionSum = 0.0;
-  // Every eligible bundle carries every question the ballot decides, so this is
-  // how many entries a finished question must have. A round whose plan is not
-  // loaded yet reports none, and then the phase rule stands alone — it is the
-  // narrower answer of the two, never the broader one.
-  final carryingBundles = roundPlanBundleCount(state.roundPlan);
+  // Every bundle that carries the ballot carries every question it decides, so
+  // this is how many entries a finished question must have. A round whose plan
+  // is not loaded yet and has reported nothing counts none, and then the phase
+  // rule stands alone — it is the narrower answer of the two, never the
+  // broader one.
+  final carryingBundles = votingBallotCarryingBundleCount(state);
   for (final entry in byProposal.entries) {
     final progress = entry.value;
     if (_voteEntryProven(progress)) proven += 1;
@@ -284,6 +326,7 @@ VotingBallotProgress votingBallotProgress(
       finished += 1;
     }
     if (_voteEntryDispatched(progress)) dispatched = true;
+    if (_voteEntryConfirmed(progress)) confirmed = true;
     fractionSum += fractionByProposal[entry.key] ?? 0;
   }
 
@@ -313,8 +356,12 @@ VotingBallotProgress votingBallotProgress(
     stage = VotingBallotStage.preparing;
   } else if (proven < total) {
     stage = VotingBallotStage.proving;
-  } else if (dispatched) {
+  } else if (confirmed) {
+    // Shares are delivered only after the vote confirms, so this is the first
+    // point at which the delivered count can move at all.
     stage = VotingBallotStage.delivering;
+  } else if (dispatched) {
+    stage = VotingBallotStage.confirming;
   } else {
     stage = VotingBallotStage.submitting;
   }
@@ -674,6 +721,15 @@ bool _voteEntryDispatched(VotingSessionProgress progress) {
     VotingProgressPhase.submitted ||
     VotingProgressPhase.confirmed ||
     VotingProgressPhase.completed => true,
+    _ => false,
+  };
+}
+
+/// True once the chain has confirmed this vote, which is when its shares start
+/// going out.
+bool _voteEntryConfirmed(VotingSessionProgress progress) {
+  return switch (progress.phase) {
+    VotingProgressPhase.confirmed || VotingProgressPhase.completed => true,
     _ => false,
   };
 }

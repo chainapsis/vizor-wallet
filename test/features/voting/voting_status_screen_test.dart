@@ -302,13 +302,16 @@ void main() {
       openProposals: Uint32List.fromList([1]),
       allDecided: true,
     );
+    // Confirmed on the chain, so shares are going out and the delivered line is
+    // the row's copy. A vote merely dispatched is still waiting for its block,
+    // and that stage shows no count.
     final voteProgress = <VotingVoteKey, VotingSessionProgress>{
       for (var proposalId = 1; proposalId <= 5; proposalId++)
         VotingVoteKey(
           bundleIndex: 0,
           proposalId: proposalId,
         ): VotingSessionProgress(
-          phase: VotingProgressPhase.submitting,
+          phase: VotingProgressPhase.confirmed,
           bundleIndex: 0,
           proposalId: proposalId,
           proofProgress: 1,

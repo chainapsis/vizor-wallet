@@ -1430,18 +1430,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return operation;
   }
 
-  static bool _isVoteStep(rust_wire.NextStepView step) {
-    return switch (step.kind) {
-      rust_wire.NextStepKind.castVote ||
-      rust_wire.NextStepKind.advanceVote ||
-      rust_wire.NextStepKind.advanceVoteBatch ||
-      rust_wire.NextStepKind.submitShares => true,
-      rust_wire.NextStepKind.delegate ||
-      rust_wire.NextStepKind.advanceDelegation ||
-      rust_wire.NextStepKind.advanceImportedDelegation ||
-      rust_wire.NextStepKind.confirmShare => false,
-    };
-  }
+  static bool _isVoteStep(rust_wire.NextStepView step) =>
+      isVoteNextStepKind(step.kind);
 
   static bool _isDelegationStep(rust_wire.NextStepView step) {
     return switch (step.kind) {

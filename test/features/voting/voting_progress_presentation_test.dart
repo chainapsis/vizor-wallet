@@ -4,14 +4,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/voting/voting_progress_presentation.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
+    as rust_wire;
 
 import 'round_plan_test_utils.dart';
 
+/// A session mid-ballot.
+///
+/// [voteStepBundles] scripts the bundles the plan still owes a cast for, which
+/// is how the plan names a bundle the run has not reached yet. It is separate
+/// from [bundleCount] on purpose: an eligible bundle that never votes — a
+/// terminal delegation — is in the round's bundle count and in no vote step.
 VotingSessionState _ballotState({
   required Map<VotingVoteKey, VotingSessionProgress> voteProgress,
   int completed = 0,
   int total = 0,
   int? bundleCount,
+  List<int> voteStepBundles = const [],
 }) {
   return VotingSessionState(
     roundId: 'round',
@@ -24,7 +33,16 @@ VotingSessionState _ballotState({
         : apiRoundPlan(
             roundId: 'round',
             pendingRecovery: true,
-            nextSteps: const [],
+            nextSteps: [
+              for (final bundleIndex in voteStepBundles)
+                rust_wire.NextStepView(
+                  kind: rust_wire.NextStepKind.castVote,
+                  bundleIndex: bundleIndex,
+                  proposalId: 7,
+                  choice: 1,
+                  shareIndex: 0,
+                ),
+            ],
             openProposals: Uint32List(0),
             allDecided: false,
             needsDraftSetup: false,
@@ -150,6 +168,7 @@ void main() {
       final firstBundleOnly = votingBallotProgress(
         _ballotState(
           bundleCount: 2,
+          voteStepBundles: const [0, 1],
           voteProgress: {
             const VotingVoteKey(
               bundleIndex: 0,
@@ -170,6 +189,7 @@ void main() {
       final bothBundles = votingBallotProgress(
         _ballotState(
           bundleCount: 2,
+          voteStepBundles: const [0, 1],
           voteProgress: {
             const VotingVoteKey(
               bundleIndex: 0,
@@ -195,6 +215,71 @@ void main() {
       );
       expect(bothBundles.completedProposals, 1);
       expect(bothBundles.stage, VotingBallotStage.complete);
+    });
+
+    test('an eligible bundle that never votes is not one to wait for', () {
+      // Two eligible bundles, but the plan casts in one: the other's
+      // delegation ended without confirming, so the planner plans no vote step
+      // for it and no question can ever be delivered there. Dividing by the
+      // round's bundle count instead of the bundles that carry the ballot made
+      // every question permanently unfinished, so the delivered count sat at
+      // zero for the whole delivery and only the SDK tally — which moves once,
+      // at the end — ever advanced it.
+      final delivered = votingBallotProgress(
+        _ballotState(
+          bundleCount: 2,
+          voteStepBundles: const [0],
+          voteProgress: {
+            const VotingVoteKey(
+              bundleIndex: 0,
+              proposalId: 7,
+            ): const VotingSessionProgress(
+              phase: VotingProgressPhase.completed,
+              bundleIndex: 0,
+              proposalId: 7,
+              proofProgress: 1,
+            ),
+          },
+          total: 1,
+        ),
+      );
+      expect(delivered.completedProposals, 1);
+      expect(delivered.stage, VotingBallotStage.complete);
+    });
+
+    test('counts the delivered questions of the bundle being delivered', () {
+      // Two questions in one bundle, one share batch landed: the line has to
+      // move as each batch finishes rather than waiting for the step.
+      final state = _ballotState(
+        bundleCount: 1,
+        voteStepBundles: const [0],
+        voteProgress: {
+          const VotingVoteKey(
+            bundleIndex: 0,
+            proposalId: 7,
+          ): const VotingSessionProgress(
+            phase: VotingProgressPhase.completed,
+            bundleIndex: 0,
+            proposalId: 7,
+            proofProgress: 1,
+          ),
+          const VotingVoteKey(
+            bundleIndex: 0,
+            proposalId: 8,
+          ): const VotingSessionProgress(
+            phase: VotingProgressPhase.confirmed,
+            bundleIndex: 0,
+            proposalId: 8,
+            proofProgress: 1,
+          ),
+        },
+        total: 2,
+      );
+      expect(votingBallotCarryingBundleCount(state), 1);
+      final delivering = votingBallotProgress(state);
+      expect(delivering.stage, VotingBallotStage.delivering);
+      expect(delivering.completedProposals, 1);
+      expect(delivering.detail, 'Responses for 1 of 2 questions delivered');
     });
 
     test('uses concise casting copy while proving', () {
@@ -247,6 +332,50 @@ void main() {
       );
       expect(submitting.stage, VotingBallotStage.submitting);
       expect(submitting.detail, isEmpty);
+
+      // The SDK makes each vote's helper plan durable before it broadcasts, so
+      // this — the first per-vote event after proving — is the wallet waiting
+      // out a whole chain episode. Reporting it as delivery left the delivered
+      // count truthfully at zero for the entire wait and then jumping to done.
+      final confirming = votingBallotProgress(
+        _ballotState(
+          voteProgress: {
+            for (var proposalId = 1; proposalId <= 3; proposalId++)
+              VotingVoteKey(
+                bundleIndex: 0,
+                proposalId: proposalId,
+              ): VotingSessionProgress(
+                phase: VotingProgressPhase.submitting,
+                bundleIndex: 0,
+                proposalId: proposalId,
+                proofProgress: 1,
+              ),
+          },
+          total: 3,
+        ),
+      );
+      expect(confirming.stage, VotingBallotStage.confirming);
+      expect(confirming.detail, 'Waiting for chain confirmation');
+
+      // On the wire and still unconfirmed is the same wait.
+      final onWire = votingBallotProgress(
+        _ballotState(
+          voteProgress: {
+            for (var proposalId = 1; proposalId <= 3; proposalId++)
+              VotingVoteKey(
+                bundleIndex: 0,
+                proposalId: proposalId,
+              ): VotingSessionProgress(
+                phase: VotingProgressPhase.submitted,
+                bundleIndex: 0,
+                proposalId: proposalId,
+                proofProgress: 1,
+              ),
+          },
+          total: 3,
+        ),
+      );
+      expect(onWire.stage, VotingBallotStage.confirming);
 
       final delivering = votingBallotProgress(
         _ballotState(
