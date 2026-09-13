@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,6 +26,7 @@ import 'voting_config_provider.dart';
 import 'voting_home_cache_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
+import 'voting_snapshot_warmup_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
 
@@ -49,8 +51,7 @@ final _delegationSetupRetryPolicy = VotingRetryPolicy(
     Duration(milliseconds: 400),
     Duration(milliseconds: 800),
   ],
-  shouldRetry: (error) =>
-      votingRustExceptionOf(error)?.kind == rust_wire.VotingErrorKindView.busy,
+  shouldRetry: (error) => votingRustExceptionOf(error)?.retryable ?? false,
 );
 
 /// Whether an authenticated round is still safe for automatic share recovery.
@@ -93,12 +94,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _operation = Future.value();
   final String _roundId;
-  // Foreground delegation may await only this snapshot/PIR-plan stage. Proof
-  // warm-up has a separate lifecycle so one slow sibling cannot gate bundles
-  // whose SDK-coordinated proofs are already ready.
-  final Map<String, Future<void>> _snapshotBundlePrecomputes = {};
+  // Proof warm-up remains detached from the shared snapshot/PIR prerequisite,
+  // so one slow sibling cannot gate bundles whose SDK-coordinated proofs are
+  // already ready.
   final Map<String, Future<void>> _backgroundDelegationProofPrecomputes = {};
-  final Set<String> _completedSnapshotBundlePrecomputes = {};
 
   /// The tracking run in flight, the session it runs on, and the context it
   /// was started for.
@@ -213,9 +212,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // Only the round-scoped vote-tree cache is released on disposal.
       _isDisposed = true;
       _advanceSessionGeneration();
-      _snapshotBundlePrecomputes.clear();
       _backgroundDelegationProofPrecomputes.clear();
-      _completedSnapshotBundlePrecomputes.clear();
       _cancelShareTrackingRetry();
       for (final session in _activeRoundSessions.toList()) {
         session.cancel();
@@ -304,9 +301,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _sessionAccountUuid = accountUuid;
     _sessionIsHardwareAccount = null;
     _currentContext = null;
-    _snapshotBundlePrecomputes.clear();
     _backgroundDelegationProofPrecomputes.clear();
-    _completedSnapshotBundlePrecomputes.clear();
     if (!hadSessionAccount || _isDisposed) return;
 
     final generation = _sessionGeneration;
@@ -381,77 +376,126 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  Future<void> precomputeSnapshotBundles({required String accountUuid}) {
-    final key = _snapshotBundlePrecomputeKey(accountUuid);
-    final existing = _snapshotBundlePrecomputes[key];
-    if (existing != null) return existing;
-    final existingProofs = _backgroundDelegationProofPrecomputes[key];
-    if (existingProofs != null) return existingProofs;
-    if (_completedSnapshotBundlePrecomputes.contains(key)) {
-      debugPrint(
-        '[zcash] Voting: snapshot bundle precompute skipped '
-        'round=$_roundId reason=already-completed',
-      );
-      return Future<void>.value();
+  Future<VotingSnapshotWarmupResult> precomputeSnapshotBundles({
+    required String accountUuid,
+  }) async {
+    final _VotingSessionContext context;
+    try {
+      context = await _loadContext(_roundId);
+    } catch (error) {
+      return isRetryableVotingError(error)
+          ? VotingSnapshotWarmupResult.retryableMiss(
+              reason: 'context-load-failed',
+              error: error,
+            )
+          : VotingSnapshotWarmupResult.terminalMiss(
+              reason: 'context-load-failed',
+              error: error,
+            );
+    }
+    if (!_isCurrentPrecomputeContext(context, accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
     }
 
-    final precompute = _runSnapshotBundlePrecomputeForAccount(
-      accountUuid,
-      precomputeKey: key,
-    );
-    _snapshotBundlePrecomputes[key] = precompute;
-    void removeIfCurrent() {
-      if (identical(_snapshotBundlePrecomputes[key], precompute)) {
-        _snapshotBundlePrecomputes.remove(key);
+    final key = _snapshotBundlePrecomputeKey(context);
+    final result = await ref
+        .read(votingSnapshotWarmupProvider)
+        .runOrJoin(
+          key: key,
+          operation: () => _runSnapshotBundlePrecomputeForContext(
+            context,
+            precomputeKey: key,
+          ),
+        );
+    final bundleCount = result.bundleCount;
+    final pirEndpoint = result.pirEndpoint;
+    if (result.isReady &&
+        bundleCount != null &&
+        bundleCount > 0 &&
+        pirEndpoint != null &&
+        _isCurrentPrecomputeContext(context, accountUuid)) {
+      _startBackgroundDelegationProofPrecompute(
+        context: context,
+        pirEndpoint: pirEndpoint,
+        bundleCount: bundleCount,
+        precomputeKey: key,
+      );
+    }
+    return result;
+  }
+
+  Future<VotingSnapshotWarmupResult> _runSnapshotBundlePrecomputeForContext(
+    _VotingSessionContext context, {
+    required String precomputeKey,
+  }) async {
+    final delays = ref.read(votingSnapshotWarmupRetryDelaysProvider);
+    final coordinator = ref.read(votingSnapshotWarmupProvider);
+    for (var attempt = 0; ; attempt++) {
+      final releaseBackgroundWork = ref
+          .read(votingShareTrackingRegistryProvider)
+          .beginBackgroundWork(accountUuid: context.accountUuid);
+      if (releaseBackgroundWork == null) {
+        debugPrint(
+          '[zcash] Voting: snapshot bundle precompute skipped '
+          'round=$_roundId reason=wallet-mutation-in-progress',
+        );
+        return const VotingSnapshotWarmupResult.retryableMiss(
+          reason: 'wallet-mutation-in-progress',
+        );
+      }
+      final VotingSnapshotWarmupResult result;
+      try {
+        result = await _runRegisteredSnapshotBundlePrecomputeForContext(
+          context,
+        );
+      } finally {
+        releaseBackgroundWork();
+      }
+      final retryNow =
+          result.shouldRearm &&
+          result.reason != 'wallet-mutation-in-progress' &&
+          result.reason != 'wallet-sync-timeout' &&
+          !coordinator.isForegroundRequested(precomputeKey) &&
+          attempt < delays.length;
+      if (!retryNow) return result;
+
+      final delay = delays[attempt];
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute retry '
+        'round=${context.round.roundId} account=${context.accountUuid} '
+        'attempt=${attempt + 2}/${delays.length + 1} '
+        'reason=${result.reason} delayMs=${delay.inMilliseconds}',
+      );
+      await Future.any<void>([
+        Future<void>.delayed(delay),
+        _sessionInvalidated.future,
+        coordinator.foregroundRequested(precomputeKey),
+      ]);
+      if (coordinator.isForegroundRequested(precomputeKey)) return result;
+      if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+        return const VotingSnapshotWarmupResult.stale(
+          reason: 'context-changed',
+        );
       }
     }
-
-    unawaited(
-      precompute.then<void>(
-        (_) => removeIfCurrent(),
-        onError: (Object _, StackTrace _) => removeIfCurrent(),
-      ),
-    );
-    return precompute;
   }
 
-  Future<void> _runSnapshotBundlePrecomputeForAccount(
-    String accountUuid, {
-    required String precomputeKey,
-  }) async {
-    final releaseBackgroundWork = ref
-        .read(votingShareTrackingRegistryProvider)
-        .beginBackgroundWork(accountUuid: accountUuid);
-    if (releaseBackgroundWork == null) {
-      debugPrint(
-        '[zcash] Voting: snapshot bundle precompute skipped '
-        'round=$_roundId reason=wallet-mutation-in-progress',
-      );
-      return;
+  Future<VotingSnapshotWarmupResult>
+  _runRegisteredSnapshotBundlePrecomputeForContext(
+    _VotingSessionContext context,
+  ) async {
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
     }
-    try {
-      await _runRegisteredSnapshotBundlePrecomputeForAccount(
-        accountUuid,
-        precomputeKey: precomputeKey,
-      );
-    } finally {
-      releaseBackgroundWork();
-    }
-  }
-
-  Future<void> _runRegisteredSnapshotBundlePrecomputeForAccount(
-    String accountUuid, {
-    required String precomputeKey,
-  }) async {
-    final context = await _loadContext(_roundId);
-    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     final current = state.value;
     if (current == null || !current.hasConfirmedVotingEligibility) {
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=eligibility-not-confirmed',
       );
-      return;
+      return const VotingSnapshotWarmupResult.retryableMiss(
+        reason: 'eligibility-not-confirmed',
+      );
     }
     try {
       await _waitUntilWalletReadyForVoting(
@@ -459,7 +503,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         stopIfVotingBackgroundWorkQuiesced: true,
       );
     } on _StaleVotingSessionAction {
-      return;
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
     } on _VotingBackgroundWorkQuiesced catch (e) {
       final readiness = e.readiness;
       if (readiness != null) {
@@ -473,7 +517,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=wallet-mutation-in-progress',
       );
-      return;
+      return VotingSnapshotWarmupResult.retryableMiss(
+        reason: 'wallet-mutation-in-progress',
+        error: e,
+      );
     } on _VotingWalletSyncTimeout catch (e) {
       _setWalletSyncReadinessState(
         context: context,
@@ -484,29 +531,63 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=wallet-sync-timeout error=$e',
       );
-      return;
+      return VotingSnapshotWarmupResult.retryableMiss(
+        reason: 'wallet-sync-timeout',
+        error: e,
+      );
     }
-    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
-    final pirEndpoint = await _resolvePirEndpoint(context);
-    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
-    if (pirEndpoint == null) return;
-    final bundleCount = await _runSnapshotBundlePrecompute(
-      context: context,
-      pirEndpoint: pirEndpoint,
-    );
-    if (bundleCount == null ||
-        !_isCurrentPrecomputeContext(context, accountUuid)) {
-      return;
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
     }
-    if (bundleCount == 0) {
-      _completedSnapshotBundlePrecomputes.add(precomputeKey);
-      return;
+
+    final Uri pirEndpoint;
+    try {
+      pirEndpoint = await _resolvePirEndpointForWarmup(context);
+    } catch (error) {
+      final retryable = _isRetryableSnapshotWarmupError(error);
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute missed '
+        'round=${context.round.roundId} stage=pir-resolution '
+        'retryable=$retryable error=$error',
+      );
+      return retryable
+          ? VotingSnapshotWarmupResult.retryableMiss(
+              reason: 'pir-resolution-failed',
+              error: error,
+            )
+          : VotingSnapshotWarmupResult.terminalMiss(
+              reason: 'pir-resolution-failed',
+              error: error,
+            );
     }
-    _startBackgroundDelegationProofPrecompute(
-      context: context,
-      pirEndpoint: pirEndpoint,
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
+    }
+
+    final int bundleCount;
+    try {
+      bundleCount = await _runSnapshotBundlePrecompute(
+        context: context,
+        pirEndpoint: pirEndpoint,
+      );
+    } catch (error) {
+      final retryable = _isRetryableSnapshotWarmupError(error);
+      return retryable
+          ? VotingSnapshotWarmupResult.retryableMiss(
+              reason: 'snapshot-precompute-failed',
+              error: error,
+            )
+          : VotingSnapshotWarmupResult.terminalMiss(
+              reason: 'snapshot-precompute-failed',
+              error: error,
+            );
+    }
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
+    }
+    return VotingSnapshotWarmupResult.ready(
       bundleCount: bundleCount,
-      precomputeKey: precomputeKey,
+      pirEndpoint: pirEndpoint,
     );
   }
 
@@ -2836,7 +2917,48 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<int?> _runSnapshotBundlePrecompute({
+  Future<Uri> _resolvePirEndpointForWarmup(
+    _VotingSessionContext context,
+  ) async {
+    final currentEndpoint = state.value?.pirEndpoint;
+    if (currentEndpoint != null) return currentEndpoint;
+    try {
+      final resolution = await ref
+          .read(votingPirResolverProvider)
+          .resolve(
+            endpoints: context.config.pirEndpointUrls,
+            expectedSnapshotHeight: context.round.snapshotHeight,
+          );
+      return resolution.endpoint;
+    } on PirSnapshotNoMatchingEndpoint catch (error) {
+      _logPirSnapshotMismatch(context: context, error: error);
+      rethrow;
+    }
+  }
+
+  static bool _isRetryableSnapshotWarmupError(Object error) {
+    if (isRetryableVotingError(error)) return true;
+    if (error is! PirSnapshotNoMatchingEndpoint) return false;
+    return error.diagnostics.any((diagnostic) {
+      switch (diagnostic.status) {
+        case PirSnapshotEndpointStatus.behind:
+        case PirSnapshotEndpointStatus.timeoutOrNetworkError:
+          return true;
+        case PirSnapshotEndpointStatus.nonSuccessStatus:
+          final status = diagnostic.httpStatusCode;
+          return status == 408 ||
+              status == 429 ||
+              (status != null && status >= 500);
+        case PirSnapshotEndpointStatus.matched:
+        case PirSnapshotEndpointStatus.ahead:
+        case PirSnapshotEndpointStatus.missingHeight:
+        case PirSnapshotEndpointStatus.malformedJson:
+          return false;
+      }
+    });
+  }
+
+  Future<int> _runSnapshotBundlePrecompute({
     required _VotingSessionContext context,
     required Uri pirEndpoint,
   }) async {
@@ -2845,9 +2967,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       '[zcash] Voting: snapshot bundle precompute start '
       'round=${context.round.roundId}',
     );
+    final rust = ref.read(votingRustApiProvider);
+    rust.warmVotingProvingCaches();
     try {
-      final rust = ref.read(votingRustApiProvider);
-      rust.warmVotingProvingCaches();
       final result = await rust.precomputeSnapshotBundles(
         ctx: _apiRoundContext(context),
         pirServerUrl: _transportUrl(pirEndpoint),
@@ -2867,14 +2989,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'elapsed=${formatElapsedSeconds(timer.elapsed)}',
       );
       return result.bundleCount;
-    } catch (e) {
+    } catch (error) {
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute failed '
         'round=${context.round.roundId} '
-        'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
-        'reason=cache-miss',
+        'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$error '
+        'retryable=${_isRetryableSnapshotWarmupError(error)}',
       );
-      return null;
+      rethrow;
     }
   }
 
@@ -2903,15 +3025,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     late final Future<void> proofPrecompute;
     proofPrecompute = () async {
       try {
-        final completed = await _runBackgroundDelegationProofPrecompute(
+        await _runBackgroundDelegationProofPrecompute(
           context: context,
           pirEndpoint: pirEndpoint,
           bundleCount: bundleCount,
         );
-        if (completed &&
-            _isCurrentPrecomputeContext(context, context.accountUuid)) {
-          _completedSnapshotBundlePrecomputes.add(precomputeKey);
-        }
       } catch (error) {
         debugPrint(
           '[zcash] Voting: background delegation proof pass failed '
@@ -3020,10 +3138,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _awaitSnapshotBundlePrecomputeIfRunning(
     _VotingSessionContext context,
   ) async {
-    final precompute =
-        _snapshotBundlePrecomputes[_snapshotBundlePrecomputeKey(
-          context.accountUuid,
-        )];
+    final precompute = ref
+        .read(votingSnapshotWarmupProvider)
+        .joinForForeground(_snapshotBundlePrecomputeKey(context));
     if (precompute == null) return;
 
     debugPrint(
@@ -3051,8 +3168,31 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return candidates;
   }
 
-  String _snapshotBundlePrecomputeKey(String accountUuid) {
-    return '$_roundId|$accountUuid|$_sessionGeneration';
+  String _snapshotBundlePrecomputeKey(_VotingSessionContext context) {
+    final layout = context.config.pirLayout;
+    return jsonEncode([
+      context.dbPath,
+      context.accountUuid,
+      context.network,
+      context.lightwalletdUrl,
+      context.round.roundId,
+      context.round.snapshotHeight,
+      context.round.sessionJson,
+      context.roundParams.voteRoundId,
+      base64UrlEncode(context.roundParams.eaPk),
+      base64UrlEncode(context.roundParams.ncRoot),
+      base64UrlEncode(context.roundParams.nullifierImtRoot),
+      context.config.sourceFingerprint,
+      context.config.trustedKeyFingerprint,
+      context.config.dynamicConfigFingerprint,
+      layout.pirDepth,
+      layout.tier0Layers,
+      layout.tier1Layers,
+      layout.polyLen,
+      for (final endpoint in context.config.pirEndpointUrls)
+        _transportUrl(endpoint),
+      context.isHardwareAccount,
+    ]);
   }
 
   static void _logPirSnapshotMismatch({

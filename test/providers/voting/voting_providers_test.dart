@@ -43,6 +43,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart'
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_restorer_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_snapshot_warmup_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_tree_sync_provider.dart';
 import '../../features/voting/fake_rust_api_shapes.dart' as rust_api;
@@ -10958,6 +10959,80 @@ void main() {
     expect(rust.backgroundDelegationProofCalls, isEmpty);
   });
 
+  test('retryable snapshot warmup failure retries within one pass', () async {
+    final rust = FakeVotingRustApi(
+      precomputeErrors: [
+        votingRustError(
+          rust_wire.VotingErrorKindView.pirUnavailable,
+          message: 'temporary PIR outage',
+          retryable: true,
+        ),
+        votingRustError(
+          rust_wire.VotingErrorKindView.dbBusy,
+          message: 'temporary sidecar contention',
+          retryable: true,
+        ),
+      ],
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      snapshotWarmupRetryDelays: const [Duration.zero, Duration.zero],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.refreshEligibleWeight();
+
+    final result = await notifier.precomputeSnapshotBundles(
+      accountUuid: 'account-1',
+    );
+
+    expect(result.isReady, isTrue);
+    expect(rust.snapshotBundlePrecomputeAccounts, [
+      'account-1',
+      'account-1',
+      'account-1',
+    ]);
+  });
+
+  test(
+    'snapshot retry delay does not block destructive account drain',
+    () async {
+      final rust = FakeVotingRustApi(
+        precomputeErrors: [
+          votingRustError(
+            rust_wire.VotingErrorKindView.pirUnavailable,
+            message: 'temporary PIR outage',
+            retryable: true,
+          ),
+        ],
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        snapshotWarmupRetryDelays: const [Duration(days: 1)],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      final warmup = notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
+      await rust.precomputeStarted.future;
+      await Future<void>.delayed(Duration.zero);
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      await registry
+          .quiesceAndDrain(accountUuid: 'account-1')
+          .timeout(const Duration(seconds: 1));
+      container.invalidate(votingSessionProvider(kRoundId));
+      await warmup.timeout(const Duration(seconds: 1));
+      registry.resume(accountUuid: 'account-1');
+    },
+  );
+
   test('failed background ZKP1 remains retryable', () async {
     final rust = FakeVotingRustApi(
       backgroundDelegationProofErrorsByBundle: {
@@ -10972,11 +11047,15 @@ void main() {
     await notifier.refreshEligibleWeight();
 
     await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+    await Future<void>.delayed(const Duration(milliseconds: 1));
     await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
-    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
-    await notifier.precomputeSnapshotBundles(accountUuid: 'account-1');
+    await Future<void>(() async {
+      while (rust.backgroundDelegationProofCalls.length < 2) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }).timeout(const Duration(seconds: 1));
 
-    expect(rust.snapshotBundlePrecomputeAccounts, ['account-1', 'account-1']);
+    expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
     expect(rust.backgroundDelegationProofCalls, [0, 0]);
   });
 
@@ -11020,6 +11099,97 @@ void main() {
     expect(rust.setupCalls, 1);
     expect(rust.delegationBundleCalls, [0]);
   });
+
+  test(
+    'submission notifier joins review snapshot warmup before bundle setup',
+    () async {
+      final precomputeGate = Completer<void>();
+      final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+      final key = const VotingSessionKey(
+        roundId: kRoundId,
+        accountUuid: 'account-1',
+      );
+      final submissionProvider = votingSubmissionSessionProvider(key);
+      final subscription = container.listen(submissionProvider, (_, _) {});
+      addTearDown(subscription.close);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container.read(submissionProvider.future);
+      final review = container.read(votingSessionProvider(kRoundId).notifier);
+      final submission = container.read(submissionProvider.notifier);
+      await review.refreshEligibleWeight();
+      await submission.refreshEligibleWeight();
+
+      final warmup = review.precomputeSnapshotBundles(
+        accountUuid: key.accountUuid,
+      );
+      await rust.precomputeStarted.future;
+      final delegation = submission.delegatePendingBundles(
+        mnemonic: kTestMnemonic,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(rust.setupCalls, 0);
+      expect(rust.delegationBundleCalls, isEmpty);
+
+      precomputeGate.complete();
+      await Future.wait([warmup, delegation]);
+
+      expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
+      expect(rust.setupCalls, 1);
+      expect(rust.delegationBundleCalls, [0]);
+    },
+  );
+
+  test(
+    'foreground submission cancels a pending snapshot warmup retry',
+    () async {
+      final rust = FakeVotingRustApi(
+        precomputeErrors: [
+          votingRustError(
+            rust_wire.VotingErrorKindView.pirUnavailable,
+            message: 'temporary PIR outage',
+            retryable: true,
+          ),
+        ],
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        snapshotWarmupRetryDelays: const [Duration(days: 1)],
+      );
+      addTearDown(container.dispose);
+      final key = const VotingSessionKey(
+        roundId: kRoundId,
+        accountUuid: 'account-1',
+      );
+      final submissionProvider = votingSubmissionSessionProvider(key);
+      final subscription = container.listen(submissionProvider, (_, _) {});
+      addTearDown(subscription.close);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container.read(submissionProvider.future);
+      final review = container.read(votingSessionProvider(kRoundId).notifier);
+      final submission = container.read(submissionProvider.notifier);
+      await review.refreshEligibleWeight();
+      await submission.refreshEligibleWeight();
+
+      final warmup = review.precomputeSnapshotBundles(
+        accountUuid: key.accountUuid,
+      );
+      await rust.precomputeStarted.future;
+      await Future<void>.delayed(Duration.zero);
+
+      await submission
+          .delegatePendingBundles(mnemonic: kTestMnemonic)
+          .timeout(const Duration(seconds: 1));
+      await warmup.timeout(const Duration(seconds: 1));
+
+      expect(rust.snapshotBundlePrecomputeAccounts, ['account-1']);
+      expect(rust.delegationBundleCalls, [0]);
+    },
+  );
 
   test(
     'snapshot bundle precompute failure is a non-fatal cache miss',
@@ -11269,10 +11439,8 @@ void main() {
     'background PIR cache warmup dedupes concurrent and repeated passes',
     () async {
       final rust = FakeVotingRustApi()..warmPirProofCacheGate = Completer();
-      final container = _sessionContainer(
-        rust: rust,
-        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
-      );
+      final http = FakeVotingHttpClient(responses: warmupHttpResponses());
+      final container = _sessionContainer(rust: rust, http: http);
       addTearDown(container.dispose);
 
       final coordinator = container.read(votingPirWarmupProvider);
@@ -11283,6 +11451,15 @@ void main() {
       await Future.wait([first, second]);
 
       expect(rust.warmPirProofCacheSnapshotHeights, [123]);
+      expect(
+        http.requests
+            .where(
+              (request) =>
+                  request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+            )
+            .length,
+        1,
+      );
 
       // A completed snapshot is not re-warmed by a later pass.
       await coordinator.maybeWarmActiveRounds();
@@ -11307,6 +11484,14 @@ void main() {
 
     final registry = container.read(votingShareTrackingRegistryProvider);
     addTearDown(() => registry.resume(accountUuid: 'account-1'));
+
+    // Once the active account is known, the pass no longer holds an unscoped
+    // lease that would unnecessarily block destructive work on other accounts.
+    await registry
+        .quiesceAndDrain(accountUuid: 'account-2')
+        .timeout(const Duration(seconds: 1));
+    registry.resume(accountUuid: 'account-2');
+
     var drained = false;
     final drain = registry.quiesceAndDrain(accountUuid: 'account-1').then<void>(
       (_) {
@@ -11330,6 +11515,52 @@ void main() {
     rust.warmPirProofCacheError = null;
     await coordinator.maybeWarmActiveRounds();
     expect(rust.warmPirProofCacheSnapshotHeights, [123, 123]);
+  });
+
+  test('background PIR cache warmup hands its lease to the active account '
+      'without a destructive-operation gap', () async {
+    final accountLookupStarted = Completer<void>();
+    final releaseAccountLookup = Completer<void>();
+    final rust = FakeVotingRustApi();
+    final http = FakeVotingHttpClient(responses: warmupHttpResponses());
+    final container = _sessionContainer(
+      rust: rust,
+      http: http,
+      activeAccountUuid: () async {
+        if (!accountLookupStarted.isCompleted) accountLookupStarted.complete();
+        await releaseAccountLookup.future;
+        return 'account-1';
+      },
+    );
+    addTearDown(container.dispose);
+
+    final warmup = container
+        .read(votingPirWarmupProvider)
+        .maybeWarmActiveRounds();
+    await accountLookupStarted.future;
+
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    addTearDown(() => registry.resume(accountUuid: 'account-1'));
+    var drained = false;
+    final drain = registry.quiesceAndDrain(accountUuid: 'account-1').then<void>(
+      (_) {
+        drained = true;
+      },
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(drained, isFalse);
+
+    releaseAccountLookup.complete();
+    await Future.wait([warmup, drain]).timeout(const Duration(seconds: 1));
+
+    expect(drained, isTrue);
+    expect(
+      http.requests.where(
+        (request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+      ),
+      isEmpty,
+    );
+    expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
   });
 
   test('destructive drain stops PIR warmup waiting for wallet scan', () async {
@@ -11402,13 +11633,14 @@ void main() {
     'background PIR cache warmup min interval does not block a new account',
     () async {
       final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(responses: warmupHttpResponses());
       final activeAccountProvider =
           NotifierProvider<_ActiveVotingAccountNotifier, String?>(
             _ActiveVotingAccountNotifier.new,
           );
       final container = _sessionContainer(
         rust: rust,
-        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+        http: http,
         activeAccountUuidListenable: activeAccountProvider,
       );
       addTearDown(container.dispose);
@@ -11420,6 +11652,63 @@ void main() {
       container.read(activeAccountProvider.notifier).set('account-2');
       await coordinator.maybeWarmActiveRounds();
       expect(rust.warmPirProofCacheAccountUuids, ['account-1', 'account-2']);
+
+      final roundListCalls = http.requests
+          .where(
+            (request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+          )
+          .length;
+      expect(roundListCalls, 2);
+
+      container.read(activeAccountProvider.notifier).set('account-1');
+      await coordinator.maybeWarmActiveRounds();
+      expect(
+        http.requests
+            .where(
+              (request) =>
+                  request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+            )
+            .length,
+        roundListCalls,
+      );
+    },
+  );
+
+  test(
+    'new account starts its own PIR pass while the old pass is in flight',
+    () async {
+      final gate = Completer<void>();
+      final rust = FakeVotingRustApi()..warmPirProofCacheGate = gate;
+      final activeAccountProvider =
+          NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+            _ActiveVotingAccountNotifier.new,
+          );
+      final container = _sessionContainer(
+        rust: rust,
+        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+        activeAccountUuidListenable: activeAccountProvider,
+      );
+      addTearDown(container.dispose);
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+
+      final coordinator = container.read(votingPirWarmupProvider);
+      final first = coordinator.maybeWarmActiveRounds();
+      await rust.warmPirProofCacheStarted.future;
+
+      container.read(activeAccountProvider.notifier).set('account-2');
+      final second = coordinator.maybeWarmActiveRounds();
+      await Future<void>(() async {
+        while (!rust.warmPirProofCacheAccountUuids.contains('account-2')) {
+          await Future<void>.delayed(Duration.zero);
+        }
+      }).timeout(const Duration(seconds: 1));
+
+      expect(rust.warmPirProofCacheAccountUuids, ['account-1', 'account-2']);
+
+      gate.complete();
+      await Future.wait([first, second]);
     },
   );
 
@@ -11808,6 +12097,7 @@ ProviderContainer _sessionContainer({
   VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
   void Function()? walletSyncStarter,
   Duration? walletSyncPollInterval,
+  List<Duration> snapshotWarmupRetryDelays = const [],
   VotingPendingShareRoundLoader? pendingShareRoundLoader,
   List<String> authenticatedRoundIds = const [kRoundId, kOtherRoundId],
   Map<String, Uint8List>? authenticatedRoundEaPks,
@@ -11936,6 +12226,9 @@ ProviderContainer _sessionContainer({
       ),
       votingWalletSyncPollIntervalProvider.overrideWithValue(
         walletSyncPollInterval ?? Duration.zero,
+      ),
+      votingSnapshotWarmupRetryDelaysProvider.overrideWithValue(
+        snapshotWarmupRetryDelays,
       ),
       ...extraOverrides,
     ],
@@ -13705,6 +13998,7 @@ class FakeVotingRustApi
     ],
     this.hotkeyGenerationGate,
     this.precomputeGate,
+    List<Object> precomputeErrors = const [],
     this.failPrecompute = false,
     this.backgroundDelegationProofGate,
     this.backgroundDelegationProofGatesByBundle = const {},
@@ -13751,7 +14045,7 @@ class FakeVotingRustApi
     this.initialDeliveryTimeoutMilliseconds = 60000,
     this.maxConcurrentHelperPosts = 16,
     this.sessionBallotIntentsError,
-  });
+  }) : _precomputeErrors = List<Object>.of(precomputeErrors);
 
   final Duration setupDelay;
   final Completer<void>? setupGate;
@@ -13759,6 +14053,7 @@ class FakeVotingRustApi
   final List<List<int>> generatedHotkeys;
   final Completer<void>? hotkeyGenerationGate;
   final Completer<void>? precomputeGate;
+  final List<Object> _precomputeErrors;
   final bool failPrecompute;
   final Completer<void>? backgroundDelegationProofGate;
   final Map<int, Completer<void>> backgroundDelegationProofGatesByBundle;
@@ -14620,6 +14915,9 @@ class FakeVotingRustApi
     }
     try {
       await precomputeGate?.future;
+      if (_precomputeErrors.isNotEmpty) {
+        throw _precomputeErrors.removeAt(0);
+      }
       if (failPrecompute) {
         throw StateError('precompute failed');
       }

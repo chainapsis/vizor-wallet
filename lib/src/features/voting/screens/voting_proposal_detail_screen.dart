@@ -120,7 +120,10 @@ class _VotingProposalDetailViewState
     if (state != AppLifecycleState.resumed) return;
     _visibleShareRefreshKey = null;
     final session = ref.read(votingSessionProvider(widget.roundId)).value;
-    if (session != null) _maybeRefreshVisibleShareStatus(session);
+    if (session != null) {
+      _maybeRefreshVisibleShareStatus(session);
+      _maybePrecomputeSnapshotBundles(session);
+    }
   }
 
   @override
@@ -458,10 +461,19 @@ class _VotingProposalDetailViewState
 
   Future<void> _startSnapshotBundlePrecompute(String accountUuid) async {
     try {
-      await ref
+      final result = await ref
           .read(votingSessionProvider(widget.roundId).notifier)
           .precomputeSnapshotBundles(accountUuid: accountUuid);
+      if (mounted &&
+          _snapshotBundlePrecomputeKey == '${widget.roundId}|$accountUuid' &&
+          result.shouldRearm) {
+        _snapshotBundlePrecomputeKey = null;
+      }
     } catch (e) {
+      if (mounted &&
+          _snapshotBundlePrecomputeKey == '${widget.roundId}|$accountUuid') {
+        _snapshotBundlePrecomputeKey = null;
+      }
       debugPrint('[zcash] Voting: snapshot bundle precompute skipped: $e');
     }
   }

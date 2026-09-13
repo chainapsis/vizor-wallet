@@ -78,6 +78,13 @@ Any durable key or process-local cache that touches prepared PCZTs, vote-tree
 sync state, hotkeys, recovery rows, or share-delegation history must include the
 wallet DB path plus the session account UUID where applicable.
 
+Dart shares only the in-flight snapshot/PIR preparation prerequisite between
+the review and submission providers. It does not mirror proof state or add a
+proof lock. Delegation proof locking, durable persistence, concurrent-caller
+coordination, and reuse remain exclusively owned by `zcash_voting`; a
+foreground caller may join snapshot readiness but never waits for every
+background sibling proof.
+
 ### Reset Semantics
 
 `reset_vote_tree(db_path, account_uuid, round_id)` clears only process-local

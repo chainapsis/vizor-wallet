@@ -53,13 +53,33 @@ class VotingReviewView extends ConsumerStatefulWidget {
   ConsumerState<VotingReviewView> createState() => _VotingReviewViewState();
 }
 
-class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
+class _VotingReviewViewState extends ConsumerState<VotingReviewView>
+    with WidgetsBindingObserver {
   bool _snapshotPrecomputeStarted = false;
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
   String? _snapshotBundlePrecomputeKey;
   String? _resultsRedirectRoundId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final session = ref.read(votingSessionProvider(widget.roundId)).value;
+    if (session != null) _maybePrecomputeSnapshotBundles(session);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant VotingReviewView oldWidget) {
@@ -134,10 +154,21 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView> {
     if (_snapshotPrecomputeStarted) return;
     _snapshotPrecomputeStarted = true;
     try {
-      await ref
+      final result = await ref
           .read(votingSessionProvider(widget.roundId).notifier)
           .precomputeSnapshotBundles(accountUuid: accountUuid);
+      if (mounted &&
+          _snapshotBundlePrecomputeKey == '${widget.roundId}|$accountUuid' &&
+          result.shouldRearm) {
+        _snapshotPrecomputeStarted = false;
+        _snapshotBundlePrecomputeKey = null;
+      }
     } catch (e) {
+      if (mounted &&
+          _snapshotBundlePrecomputeKey == '${widget.roundId}|$accountUuid') {
+        _snapshotPrecomputeStarted = false;
+        _snapshotBundlePrecomputeKey = null;
+      }
       debugPrint('[zcash] Voting: snapshot bundle precompute skipped: $e');
     }
   }
