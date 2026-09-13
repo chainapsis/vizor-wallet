@@ -50,6 +50,7 @@ void main() {
       'signers verify the wallet before requesting ${bluetooth ? 'Bluetooth' : 'USB'} signatures',
       () async {
         final events = <String>[];
+        var now = DateTime.utc(2026, 9, 14);
         final ble = _CancelBleService();
         final container = ProviderContainer(
           overrides: [
@@ -61,6 +62,15 @@ void main() {
               () async => '/tmp/wallet.db',
             ),
             ledgerMobileBleServiceProvider.overrideWithValue(ble),
+            ledgerMobileSigningStatusGateProvider.overrideWithValue(
+              LedgerMobileSigningStatusGate(
+                now: () => now,
+                delay: (duration) async {
+                  events.add('wait:${duration.inSeconds}s');
+                  now = now.add(duration);
+                },
+              ),
+            ),
             ledgerConnectionServiceProvider.overrideWith(
               (ref) => _DirectConnectionService(ref, bluetooth ? ble : null),
             ),
@@ -83,7 +93,13 @@ void main() {
           container.read(ledgerActionPcztSignerProvider)('acct', const [2]),
           throwsA(isA<LedgerWrongWalletException>()),
         );
-        expect(events, ['guard:acct:$bluetooth', 'guard:acct:$bluetooth']);
+        // Over Bluetooth the second wallet check waits for the status screen
+        // the first request may have left on the device; USB waits in Rust.
+        expect(events, [
+          'guard:acct:$bluetooth',
+          if (bluetooth) 'wait:4s',
+          'guard:acct:$bluetooth',
+        ]);
       },
     );
   }

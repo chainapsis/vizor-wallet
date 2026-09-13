@@ -47,8 +47,10 @@ static LEDGER_SIGNING_READY_AT: Mutex<Option<Instant>> = Mutex::new(None);
 const LEDGER_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const APP_TRANSITION_TIMEOUT: Duration = Duration::from_secs(10);
 const APP_TRANSITION_POLL_INTERVAL: Duration = Duration::from_millis(200);
+// The Zcash app shows a status screen for three seconds after signing and
+// silently drops app commands sent meanwhile; the extra second absorbs timer slack.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const SIGNING_STATUS_COOLDOWN: Duration = Duration::from_secs(3);
+const SIGNING_STATUS_COOLDOWN: Duration = Duration::from_secs(4);
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const SIGNING_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const ZCASH_APP_NAME: &str = "Zcash";
@@ -709,7 +711,6 @@ pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     }
 
     let operation = lock_operation()?;
-    wait_for_signing_status(operation.context())?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     transport.send_pczt(&commands)?;
@@ -770,7 +771,6 @@ pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     let operation = lock_operation()?;
-    wait_for_signing_status(operation.context())?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     transport.send_pczt(&commands)?;
@@ -908,13 +908,18 @@ fn lock_operation() -> Result<OperationGuard, String> {
         .lock()
         .map_err(|_| "Ledger operation lock was poisoned".to_string())?;
     let generation = LEDGER_OPERATION_STATE.begin();
-    Ok(OperationGuard {
+    let guard = OperationGuard {
         _lock: lock,
         context: OperationContext {
             generation,
             deadline: Instant::now() + LEDGER_OPERATION_TIMEOUT,
         },
-    })
+    };
+    // Every operation waits, not only signing: the wallet check before a
+    // back-to-back signature is also an app command.
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    wait_for_signing_status(guard.context())?;
+    Ok(guard)
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -981,8 +986,20 @@ mod tests {
 
     #[test]
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-    fn signing_cooldown_is_three_seconds() {
-        assert_eq!(SIGNING_STATUS_COOLDOWN, Duration::from_secs(3));
+    fn signing_cooldown_is_four_seconds() {
+        assert_eq!(SIGNING_STATUS_COOLDOWN, Duration::from_secs(4));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    fn every_device_operation_waits_for_the_signing_status_screen() {
+        let ready_at = Instant::now() + Duration::from_millis(150);
+        *LEDGER_SIGNING_READY_AT.lock().unwrap() = Some(ready_at);
+        let operation = lock_operation();
+        let returned_at = Instant::now();
+        *LEDGER_SIGNING_READY_AT.lock().unwrap() = None;
+        drop(operation);
+        assert!(returned_at >= ready_at);
     }
 
     #[test]

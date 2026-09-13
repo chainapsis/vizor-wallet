@@ -23,10 +23,12 @@ typedef LedgerWalletDbPathLoader = Future<String> Function();
 typedef LedgerSigningDelay = Future<void> Function(Duration duration);
 typedef LedgerSigningClock = DateTime Function();
 
-const kLedgerMobileSigningStatusCooldown = Duration(seconds: 3);
+const kLedgerMobileSigningStatusCooldown = Duration(seconds: 4);
 
 /// Serializes mobile signing streams and waits until the Zcash app can accept
-/// another stream after returning its previous signatures.
+/// another stream after returning its previous signatures. The app drops app
+/// commands sent while its status screen is up, so a signer's wallet check
+/// runs inside the gate too.
 class LedgerMobileSigningStatusGate {
   LedgerMobileSigningStatusGate({
     this.cooldown = kLedgerMobileSigningStatusCooldown,
@@ -180,10 +182,10 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
               network: networkName,
             );
           },
-          bluetooth: (mobile) async {
-            await verifyWallet(accountUuid, mobile: mobile);
+          bluetooth: (mobile) {
             return ref.read(ledgerMobileSigningStatusGateProvider).run(
               () async {
+                await verifyWallet(accountUuid, mobile: mobile);
                 final plan = await rust_ledger
                     .ledgerBuildPcztFullSigningApduPlan(
                       dbPath: dbPath,
@@ -240,19 +242,19 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
               network: networkName,
             );
           },
-          bluetooth: (mobile) async {
-            await verifyWallet(accountUuid, mobile: mobile);
-            return ref
-                .read(ledgerMobileSigningStatusGateProvider)
-                .run(
-                  () => _signMobileVotingPczt(
-                    mobile: mobile,
-                    dbPath: dbPath,
-                    accountUuid: accountUuid,
-                    pcztBytes: pcztBytes,
-                    networkName: networkName,
-                  ),
+          bluetooth: (mobile) {
+            return ref.read(ledgerMobileSigningStatusGateProvider).run(
+              () async {
+                await verifyWallet(accountUuid, mobile: mobile);
+                return _signMobileVotingPczt(
+                  mobile: mobile,
+                  dbPath: dbPath,
+                  accountUuid: accountUuid,
+                  pcztBytes: pcztBytes,
+                  networkName: networkName,
                 );
+              },
+            );
           },
         );
     return [
